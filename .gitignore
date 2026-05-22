@@ -1,0 +1,79 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+!.mvn/wrapper/maven-wrapper.jar
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea/modules.xml
+.idea/jarRepositories.xml
+.idea/compiler.xml
+.idea/libraries/
+*.iws
+*.iml
+*.ipr
+.idea
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+lib/
+
+/.idea
+/.out
+*.class
+/.com
+/.company
+/.udemy
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+
+### Allure ###
+.allure
+
+*~
+.run/
+
+### Runtime logs ###
+logs/
+**/logs/
+*.log
+*.log.*
+**/archived/
+
+### Docker runtime logs ###
+docker-compose/docker-logs/
+
+**/src/main/resources/twitter4j.properties
+
+
+
+
+
+
+
