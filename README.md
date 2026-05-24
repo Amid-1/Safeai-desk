@@ -48,7 +48,247 @@ Safeai-desk/
 - Docker Compose
 - Git
 
-### Start infrastructure
+## Working with project folders on Windows
+
+The project is located here:
+
+```text
+D:\Java projects\Safeai-desk
+```
+
+Because the path contains a space in `Java projects`, always wrap the path in quotes.
+
+### Open the project root
+
+In Windows CMD:
+
+```bat
+cd /d "D:\Java projects\Safeai-desk"
+```
+
+Explanation:
+
+- `cd` means change directory.
+- `/d` allows switching the drive as well, for example from `C:` to `D:`.
+- Quotes are required because the path contains a space.
+
+In PowerShell:
+
+```powershell
+Set-Location "D:\Java projects\Safeai-desk"
+```
+
+or shorter:
+
+```powershell
+cd "D:\Java projects\Safeai-desk"
+```
+
+### Check current folder
+
+In CMD:
+
+```bat
+cd
+```
+
+In PowerShell:
+
+```powershell
+Get-Location
+```
+
+Expected project root:
+
+```text
+D:\Java projects\Safeai-desk
+```
+
+### Go to backend
+
+From the project root:
+
+```bat
+cd backend
+```
+
+Expected folder:
+
+```text
+D:\Java projects\Safeai-desk\backend
+```
+
+Start backend from this folder:
+
+```bat
+mvnw.cmd spring-boot:run
+```
+
+### Go to frontend
+
+From the project root:
+
+```bat
+cd frontend
+```
+
+Expected folder:
+
+```text
+D:\Java projects\Safeai-desk\frontend
+```
+
+Start frontend from this folder:
+
+```bat
+npm install
+npm run dev
+```
+
+### Go to infrastructure folder
+
+From the project root:
+
+```bat
+cd infra
+```
+
+Expected folder:
+
+```text
+D:\Java projects\Safeai-desk\infra
+```
+
+Start Docker infrastructure from this folder:
+
+```bat
+docker compose up -d
+```
+
+Check Docker containers:
+
+```bat
+docker compose ps
+```
+
+### Go back one folder
+
+```bat
+cd ..
+```
+
+Example:
+```text
+D:\Java projects\Safeai-desk\backend
+```
+
+After:
+```bat
+cd ..
+```
+
+You will be here:
+```text
+D:\Java projects\Safeai-desk
+```
+
+### Go directly to any project folder
+
+Instead of moving step by step, you can jump directly.
+
+Project root:
+```bat
+cd /d "D:\Java projects\Safeai-desk"
+```
+
+Backend:
+```bat
+cd /d "D:\Java projects\Safeai-desk\backend"
+```
+
+Frontend:
+```bat
+cd /d "D:\Java projects\Safeai-desk\frontend"
+```
+
+Infrastructure:
+```bat
+cd /d "D:\Java projects\Safeai-desk\infra"
+```
+
+### List files in the current folder
+
+In CMD:
+```bat
+dir
+```
+
+In PowerShell:
+```powershell
+ls
+```
+
+### Stop a running command
+
+If the backend or frontend is running in the terminal and you want to stop it:
+
+```text
+Ctrl + C
+```
+
+Then confirm if the terminal asks for confirmation.
+
+### Common commands from the project root
+
+Open the project root:
+```bat
+cd /d "D:\Java projects\Safeai-desk"
+```
+
+Start infrastructure:
+```bat
+cd infra
+docker compose up -d
+cd ..
+```
+
+Start backend:
+```bat
+cd backend
+mvnw.cmd spring-boot:run
+```
+
+Start frontend in another terminal:
+```bat
+cd /d "D:\Java projects\Safeai-desk\frontend"
+npm install
+npm run dev
+```
+
+### Recommended terminal usage
+
+Use separate terminal windows:
+
+```text
+Terminal 1: Docker / infrastructure
+Terminal 2: backend
+Terminal 3: frontend
+```
+
+Example:
+
+```text
+Terminal 1:
+D:\Java projects\Safeai-desk\infra
+
+Terminal 2:
+D:\Java projects\Safeai-desk\backend
+
+Terminal 3:
+D:\Java projects\Safeai-desk\frontend
+```
+
+## Start infrastructure
 
 ```bash
 cd infra
