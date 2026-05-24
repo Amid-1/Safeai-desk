@@ -1,3 +1,25 @@
+# "D:\Java projects\Safeai-desk\backend\src\main\resources\application.yml"
 spring:
   application:
-    name: safeai-backen
+    name: safeai-backend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/safeai
+    username: safeai
+    password: safeai_password
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
