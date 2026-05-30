@@ -1,4 +1,4 @@
-package ru.safeai.gateway.organization.entity;
+package ru.safeai.gateway.user.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -7,22 +7,18 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Getter
 @Setter
 @Entity
-@Table(name = "organizations")
-public class OrganizationEntity {
+@Table(name = "roles")
+public class RoleEntity {
 
     @Id
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    @Column(name = "name", nullable = false, length = 255)
+    @Column(name = "name", nullable = false, unique = true, length = 100)
     private String name;
-
-    @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
 }

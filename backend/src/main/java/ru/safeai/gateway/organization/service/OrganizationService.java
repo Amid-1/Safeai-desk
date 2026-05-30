@@ -3,6 +3,7 @@ package ru.safeai.gateway.organization.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
@@ -41,7 +42,7 @@ public class OrganizationService {
     @Transactional(readOnly = true)
     public OrganizationResponse findById(UUID id) {
         OrganizationEntity entity = organizationRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Organization not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Организация не найдена: " + id));
 
         return toResponse(entity);
     }
