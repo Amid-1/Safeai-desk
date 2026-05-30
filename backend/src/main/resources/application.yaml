@@ -23,3 +23,9 @@ spring:
 
 server:
   port: 8080
+
+app:
+  security:
+    jwt:
+      secret: "safeai-local-development-secret-key-change-this-value-please-123456789"
+      expiration-minutes: 60

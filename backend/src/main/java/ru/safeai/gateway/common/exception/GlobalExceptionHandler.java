@@ -1,19 +1,23 @@
 package ru.safeai.gateway.common.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -98,7 +102,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidJson(
-            HttpMessageNotReadableException exception,
             HttpServletRequest request
     ) {
         ApiErrorResponse response = new ApiErrorResponse(
@@ -113,11 +116,48 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(response);
     }
 
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiErrorResponse> handleAuthenticationException(
+            HttpServletRequest request
+    ) {
+        ApiErrorResponse response = new ApiErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.UNAUTHORIZED.value(),
+                "UNAUTHORIZED",
+                "Неверный email или пароль",
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiErrorResponse> handleResponseStatusException(
+            ResponseStatusException exception,
+            HttpServletRequest request
+    ) {
+        HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
+
+        ApiErrorResponse response = new ApiErrorResponse(
+                LocalDateTime.now(),
+                status.value(),
+                status.name(),
+                exception.getReason(),
+                request.getRequestURI(),
+                null
+        );
+
+        return ResponseEntity.status(status).body(response);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleUnexpected(
             Exception exception,
             HttpServletRequest request
     ) {
+        log.error("Неожиданная ошибка при обработке запроса {}", request.getRequestURI(), exception);
+
         ApiErrorResponse response = new ApiErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
@@ -129,5 +169,4 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
-
 }
