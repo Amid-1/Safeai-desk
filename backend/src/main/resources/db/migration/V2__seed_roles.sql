@@ -1,3 +1,4 @@
+/* Safeai-desk/backend/src/main/resources/db/migration/V2__seed_roles.sql */
 insert into roles (id, name)
 values
     ('11111111-1111-1111-1111-111111111111', 'ADMIN'),

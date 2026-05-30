@@ -1,3 +1,4 @@
+/* Safeai-desk/backend/src/main/resources/db/migration/V1__init_schema.sql */
 create table organizations (
     id uuid primary key,
     name varchar(255) not null,
