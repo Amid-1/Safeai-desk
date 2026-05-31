@@ -71,6 +71,26 @@ docker-compose/docker-logs/
 
 **/src/main/resources/twitter4j.properties
 
+# Local secrets
+.env
+*.env
+!*.env.example
+
+# Build output
+backend/target/
+
+
+# Local personal documentation
+docs/README_SAFEAI_DESK_FOR_PUSH.md
+docs/SAFEAI_DESK_API_JWT_VERIFICATION.md
+docs/SAFEAI_DESK_API_VERIFICATION.md
+docs/SAFEAI_DESK_RUN_AND_CHECK.cmd
+docs/SAFEAI_DESK_RUN_INSTRUCTIONS.md
+docs/SAFEAI_DESK_UNIVERSAL_RUN_AND_API_VERIFICATION.md
+
+# Keep docs directory if needed
+!docs/.gitkeep
+
 
 
 

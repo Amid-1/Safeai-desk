@@ -1,4 +1,22 @@
 services:
+  backend:
+    build:
+      context: ../backend
+    container_name: safeai-backend
+    env_file:
+      - ../backend/.env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/safeai
+      SPRING_DATASOURCE_USERNAME: safeai
+      SPRING_DATASOURCE_PASSWORD: safeai_password
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   postgres:
     image: postgres:16
     container_name: safeai-postgres
@@ -10,6 +28,11 @@ services:
       - "5432:5432"
     volumes:
       - safeai_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U safeai -d safeai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7

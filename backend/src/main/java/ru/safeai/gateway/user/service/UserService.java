@@ -69,7 +69,13 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<UserResponse> findAll() {
-        return userRepository.findAll()
+        // TODO technical debt:
+        // Сейчас метод возвращает пользователей всех организаций.
+        // Для production нужно ограничить выборку:
+        // ADMIN видит только пользователей своей организации,
+        // SUPER_ADMIN видит всех,
+        // USER не имеет доступа к списку пользователей.
+        return userRepository.findAllWithRoles()
                 .stream()
                 .map(this::toResponse)
                 .toList();

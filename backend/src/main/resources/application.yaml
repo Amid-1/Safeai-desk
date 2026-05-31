@@ -4,9 +4,9 @@ spring:
     name: safeai-backend
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/safeai
-    username: safeai
-    password: safeai_password
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/safeai}
+    username: ${SPRING_DATASOURCE_USERNAME:safeai}
+    password: ${SPRING_DATASOURCE_PASSWORD:safeai_password}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -27,5 +27,5 @@ server:
 app:
   security:
     jwt:
-      secret: "safeai-local-development-secret-key-change-this-value-please-123456789"
-      expiration-minutes: 60
+      secret: ${SAFEAI_JWT_SECRET}
+      expiration-minutes: ${SAFEAI_JWT_EXPIRATION_MINUTES:60}
