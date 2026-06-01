@@ -2,6 +2,8 @@ services:
   backend:
     build:
       context: ../backend
+    profiles:
+      - full
     container_name: safeai-backend
     env_file:
       - ../backend/.env

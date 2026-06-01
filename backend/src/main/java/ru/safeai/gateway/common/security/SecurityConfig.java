@@ -32,6 +32,8 @@ import java.nio.charset.StandardCharsets;
 public class SecurityConfig {
 
     private final SafeAiJwtAuthenticationConverter safeAiJwtAuthenticationConverter;
+    private final JsonAuthenticationEntryPoint jsonAuthenticationEntryPoint;
+    private final JsonAccessDeniedHandler jsonAccessDeniedHandler;
 
     @Value("${app.security.jwt.secret}")
     private String jwtSecret;
@@ -43,6 +45,10 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint(jsonAuthenticationEntryPoint)
+                        .accessDeniedHandler(jsonAccessDeniedHandler)
+                )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
@@ -51,10 +57,13 @@ public class SecurityConfig {
                         .requestMatchers("/api/organizations/**").hasRole("ADMIN")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
+                        .requestMatchers("/api/chats/**").authenticated()
+
                         .anyRequest().authenticated()
                 )
-                .oauth2ResourceServer(oauth2 ->
-                        oauth2.jwt(jwt ->
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .authenticationEntryPoint(jsonAuthenticationEntryPoint)
+                        .jwt(jwt ->
                                 jwt.jwtAuthenticationConverter(safeAiJwtAuthenticationConverter)
                         )
                 )

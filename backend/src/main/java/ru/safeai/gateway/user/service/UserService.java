@@ -75,6 +75,7 @@ public class UserService {
         // ADMIN видит только пользователей своей организации,
         // SUPER_ADMIN видит всех,
         // USER не имеет доступа к списку пользователей.
+        // И метод что-то типа findAllByOrganizationId(UUID organizationId)
         return userRepository.findAllWithRoles()
                 .stream()
                 .map(this::toResponse)

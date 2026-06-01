@@ -1,0 +1,55 @@
+package ru.safeai.gateway.chat.controller;
+
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
+import ru.safeai.gateway.chat.dto.ChatResponse;
+import ru.safeai.gateway.chat.dto.CreateChatRequest;
+import ru.safeai.gateway.chat.dto.SendMessageRequest;
+import ru.safeai.gateway.chat.service.ChatService;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/chats")
+@RequiredArgsConstructor
+public class ChatController {
+
+    private final ChatService chatService;
+
+    @PostMapping
+    public ChatResponse create(
+            @Valid @RequestBody CreateChatRequest request,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return chatService.create(request, currentUser);
+    }
+
+    @GetMapping
+    public List<ChatResponse> findAll(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return chatService.findAll(currentUser);
+    }
+
+    @GetMapping("/{id}")
+    public ChatDetailsResponse findById(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return chatService.findById(id, currentUser);
+    }
+
+    @PostMapping("/{id}/messages")
+    public ChatDetailsResponse sendMessage(
+            @PathVariable UUID id,
+            @Valid @RequestBody SendMessageRequest request,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return chatService.sendMessage(id, request, currentUser);
+    }
+}
