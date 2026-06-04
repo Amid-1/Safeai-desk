@@ -1,4 +1,7 @@
 package ru.safeai.gateway.ai;
 
-public record AiMessage() {
+public record AiMessage(
+        String role,
+        String content
+) {
 }

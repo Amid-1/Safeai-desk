@@ -3,6 +3,10 @@ package ru.safeai.gateway.chat.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.safeai.gateway.ai.AiChatRequest;
+import ru.safeai.gateway.ai.AiChatResponse;
+import ru.safeai.gateway.ai.AiMessage;
+import ru.safeai.gateway.ai.AiProvider;
 import ru.safeai.gateway.chat.dto.*;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
@@ -23,11 +27,11 @@ public class ChatService {
 
     private static final String ROLE_USER = "USER";
     private static final String ROLE_ASSISTANT = "ASSISTANT";
-    private static final String MOCK_MODEL = "mock-safeai";
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
+    private final AiProvider aiProvider;
 
     @Transactional
     public ChatResponse create(CreateChatRequest request, SafeAiUserPrincipal currentUser) {
@@ -89,15 +93,34 @@ public class ChatService {
 
         chatMessageRepository.save(userMessage);
 
+        List<AiMessage> history = chatMessageRepository
+                .findBySession_IdOrderByCreatedAtAsc(session.getId())
+                .stream()
+                .map(message -> new AiMessage(
+                        message.getRole(),
+                        message.getContent()
+                ))
+                .toList();
+
+        AiChatRequest aiRequest = new AiChatRequest(
+                currentUser.getId(),
+                currentUser.getOrganizationId(),
+                session.getId(),
+                request.content(),
+                history
+        );
+
+        AiChatResponse aiResponse = aiProvider.sendMessage(aiRequest);
+
         ChatMessageEntity assistantMessage = new ChatMessageEntity();
         assistantMessage.setId(UUID.randomUUID());
         assistantMessage.setSession(session);
         assistantMessage.setRole(ROLE_ASSISTANT);
-        assistantMessage.setContent(generateMockAnswer(request.content()));
-        assistantMessage.setModel(MOCK_MODEL);
-        assistantMessage.setInputTokens(null);
-        assistantMessage.setOutputTokens(null);
-        assistantMessage.setCostUsd(null);
+        assistantMessage.setContent(aiResponse.content());
+        assistantMessage.setModel(aiResponse.model());
+        assistantMessage.setInputTokens(aiResponse.inputTokens());
+        assistantMessage.setOutputTokens(aiResponse.outputTokens());
+        assistantMessage.setCostUsd(aiResponse.costUsd());
         assistantMessage.setCreatedAt(LocalDateTime.now());
 
         chatMessageRepository.save(assistantMessage);
@@ -124,10 +147,6 @@ public class ChatService {
         }
 
         return title.trim();
-    }
-
-    private String generateMockAnswer(String userMessage) {
-        return "Mock AI response: " + userMessage;
     }
 
     private ChatResponse toChatResponse(ChatSessionEntity entity) {

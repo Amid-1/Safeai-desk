@@ -1,4 +1,12 @@
 package ru.safeai.gateway.ai;
 
-public record AiChatResponse() {
+import java.math.BigDecimal;
+
+public record AiChatResponse(
+        String content,
+        String model,
+        Integer inputTokens,
+        Integer outputTokens,
+        BigDecimal costUsd
+) {
 }
