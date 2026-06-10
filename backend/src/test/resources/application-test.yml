@@ -1,0 +1,6 @@
+# "D:\Java projects\Safeai-desk\backend\src\test\resources\application-test.yml"
+app:
+  security:
+    jwt:
+      secret: safeai-local-development-secret-key-change-this-value-please-123456789
+      expiration-minutes: 60

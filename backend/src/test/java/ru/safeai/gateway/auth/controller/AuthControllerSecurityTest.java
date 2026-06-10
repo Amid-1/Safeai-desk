@@ -8,12 +8,15 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.safeai.gateway.auth.dto.AuthUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
 import ru.safeai.gateway.auth.service.AuthService;
+import ru.safeai.gateway.common.security.JsonAccessDeniedHandler;
+import ru.safeai.gateway.common.security.JsonAuthenticationEntryPoint;
 import ru.safeai.gateway.common.security.SafeAiJwtAuthenticationConverter;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.common.security.SecurityConfig;
@@ -29,7 +32,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(AuthController.class)
-@Import(SecurityConfig.class)
+@Import({
+        SecurityConfig.class,
+        JsonAuthenticationEntryPoint.class,
+        JsonAccessDeniedHandler.class
+})
+@ActiveProfiles("test")
 class AuthControllerSecurityTest {
 
     @Autowired
@@ -61,7 +69,8 @@ class AuthControllerSecurityTest {
                 )
         );
 
-        when(authService.login(any(LoginRequest.class))).thenReturn(loginResponse);
+        when(authService.login(any(LoginRequest.class)))
+                .thenReturn(loginResponse);
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -92,21 +101,8 @@ class AuthControllerSecurityTest {
         UUID userId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         UUID organizationId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
-        SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
-                userId,
-                organizationId,
-                "admin@test.com",
-                "",
-                true,
-                Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
-        );
-
         UsernamePasswordAuthenticationToken authentication =
-                new UsernamePasswordAuthenticationToken(
-                        principal,
-                        null,
-                        principal.getAuthorities()
-                );
+                authenticationForAdmin(userId, organizationId);
 
         mockMvc.perform(get("/api/auth/me")
                         .with(authentication(authentication)))
@@ -116,5 +112,25 @@ class AuthControllerSecurityTest {
                 .andExpect(jsonPath("$.email").value("admin@test.com"))
                 .andExpect(jsonPath("$.enabled").value(true))
                 .andExpect(jsonPath("$.roles[0]").value("ADMIN"));
+    }
+
+    private UsernamePasswordAuthenticationToken authenticationForAdmin(
+            UUID userId,
+            UUID organizationId
+    ) {
+        SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
+                userId,
+                organizationId,
+                "admin@test.com",
+                "",
+                true,
+                Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
+
+        return new UsernamePasswordAuthenticationToken(
+                principal,
+                null,
+                principal.getAuthorities()
+        );
     }
 }

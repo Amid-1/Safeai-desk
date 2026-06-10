@@ -104,7 +104,7 @@ ru.safeai.gateway
 │   ├── entity
 │   ├── repository
 │   └── service
-└── future modules
+└── 
     ├── chat
     ├── ai
     ├── audit

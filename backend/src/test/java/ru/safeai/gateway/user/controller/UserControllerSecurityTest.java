@@ -6,8 +6,11 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import ru.safeai.gateway.common.security.JsonAccessDeniedHandler;
+import ru.safeai.gateway.common.security.JsonAuthenticationEntryPoint;
 import ru.safeai.gateway.common.security.SafeAiJwtAuthenticationConverter;
 import ru.safeai.gateway.common.security.SecurityConfig;
 import ru.safeai.gateway.user.dto.UserResponse;
@@ -24,8 +27,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(UserController.class)
-@Import(SecurityConfig.class)
-
+@Import({
+        SecurityConfig.class,
+        JsonAuthenticationEntryPoint.class,
+        JsonAccessDeniedHandler.class
+})
+@ActiveProfiles("test")
 class UserControllerSecurityTest {
 
     @Autowired

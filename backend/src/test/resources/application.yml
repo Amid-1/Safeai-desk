@@ -1,6 +1,0 @@
-# "D:\Java projects\Safeai-desk\backend\src\test\resources\application.yml"
-app:
-  security:
-    jwt:
-      secret: safeai-test-secret-key-safeai-test-secret-key-123456789
-      expiration-minutes: 60

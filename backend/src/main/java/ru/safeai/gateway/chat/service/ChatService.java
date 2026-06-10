@@ -7,6 +7,8 @@ import ru.safeai.gateway.ai.AiChatRequest;
 import ru.safeai.gateway.ai.AiChatResponse;
 import ru.safeai.gateway.ai.AiMessage;
 import ru.safeai.gateway.ai.AiProvider;
+import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.*;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
@@ -18,7 +20,9 @@ import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -32,6 +36,7 @@ public class ChatService {
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
     private final AiProvider aiProvider;
+    private final AuditEventService auditEventService;
 
     @Transactional
     public ChatResponse create(CreateChatRequest request, SafeAiUserPrincipal currentUser) {
@@ -47,6 +52,15 @@ public class ChatService {
         session.setCreatedAt(LocalDateTime.now());
 
         ChatSessionEntity saved = chatSessionRepository.save(session);
+
+        auditEventService.record(
+                currentUser.getId(),
+                AuditEventType.CHAT_CREATED,
+                Map.of(
+                        "chatId", saved.getId().toString(),
+                        "title", saved.getTitle()
+                )
+        );
 
         return toChatResponse(saved);
     }
@@ -91,7 +105,17 @@ public class ChatService {
         userMessage.setCostUsd(null);
         userMessage.setCreatedAt(LocalDateTime.now());
 
-        chatMessageRepository.save(userMessage);
+        ChatMessageEntity savedUserMessage = chatMessageRepository.save(userMessage);
+
+        auditEventService.record(
+                currentUser.getId(),
+                AuditEventType.CHAT_MESSAGE_SENT,
+                Map.of(
+                        "chatId", session.getId().toString(),
+                        "messageId", savedUserMessage.getId().toString(),
+                        "messageLength", request.content().length()
+                )
+        );
 
         List<AiMessage> history = chatMessageRepository
                 .findBySession_IdOrderByCreatedAtAsc(session.getId())
@@ -123,7 +147,21 @@ public class ChatService {
         assistantMessage.setCostUsd(aiResponse.costUsd());
         assistantMessage.setCreatedAt(LocalDateTime.now());
 
-        chatMessageRepository.save(assistantMessage);
+        ChatMessageEntity savedAssistantMessage = chatMessageRepository.save(assistantMessage);
+
+        Map<String, Object> aiResponseDetails = new HashMap<>();
+        aiResponseDetails.put("chatId", session.getId().toString());
+        aiResponseDetails.put("messageId", savedAssistantMessage.getId().toString());
+        aiResponseDetails.put("model", aiResponse.model());
+        aiResponseDetails.put("inputTokens", aiResponse.inputTokens());
+        aiResponseDetails.put("outputTokens", aiResponse.outputTokens());
+        aiResponseDetails.put("costUsd", aiResponse.costUsd());
+
+        auditEventService.record(
+                currentUser.getId(),
+                AuditEventType.AI_RESPONSE_RECEIVED,
+                aiResponseDetails
+        );
 
         List<MessageResponse> messages = chatMessageRepository
                 .findBySession_IdOrderByCreatedAtAsc(session.getId())

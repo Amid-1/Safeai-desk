@@ -1,15 +1,17 @@
 package ru.safeai.gateway.chat.service;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.ai.AiChatRequest;
 import ru.safeai.gateway.ai.AiChatResponse;
 import ru.safeai.gateway.ai.AiProvider;
+import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
 import ru.safeai.gateway.chat.dto.ChatResponse;
 import ru.safeai.gateway.chat.dto.CreateChatRequest;
@@ -32,6 +34,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -53,8 +57,21 @@ class ChatServiceTest {
     @Mock
     private AiProvider aiProvider;
 
-    @InjectMocks
+    @Mock
+    private AuditEventService auditEventService;
+
     private ChatService chatService;
+
+    @BeforeEach
+    void setUp() {
+        chatService = new ChatService(
+                chatSessionRepository,
+                chatMessageRepository,
+                userRepository,
+                aiProvider,
+                auditEventService
+        );
+    }
 
     @Test
     void create_shouldCreateChatForCurrentUser() {
@@ -87,6 +104,12 @@ class ChatServiceTest {
         assertThat(savedSession.getUser()).isEqualTo(user);
         assertThat(savedSession.getTitle()).isEqualTo("Новый тестовый чат");
         assertThat(savedSession.getCreatedAt()).isNotNull();
+
+        verify(auditEventService).record(
+                eq(USER_ID),
+                eq(AuditEventType.CHAT_CREATED),
+                anyMap()
+        );
     }
 
     @Test
@@ -177,6 +200,18 @@ class ChatServiceTest {
 
         assertThat(response.id()).isEqualTo(CHAT_ID);
         assertThat(response.messages()).hasSize(2);
+
+        verify(auditEventService).record(
+                eq(USER_ID),
+                eq(AuditEventType.CHAT_MESSAGE_SENT),
+                anyMap()
+        );
+
+        verify(auditEventService).record(
+                eq(USER_ID),
+                eq(AuditEventType.AI_RESPONSE_RECEIVED),
+                anyMap()
+        );
     }
 
     @Test
@@ -195,6 +230,7 @@ class ChatServiceTest {
                 .hasMessageContaining("Чат не найден");
 
         verifyNoInteractions(aiProvider);
+        verifyNoInteractions(auditEventService);
         verify(chatMessageRepository, never()).save(any());
     }
 
