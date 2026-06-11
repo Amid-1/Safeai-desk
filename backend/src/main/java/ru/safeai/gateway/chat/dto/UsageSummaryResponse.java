@@ -1,34 +1,15 @@
 package ru.safeai.gateway.chat.dto;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 public record UsageSummaryResponse(
+        UUID userId,
+        String userEmail,
         String model,
-        Long messagesCount,
         Long inputTokens,
         Long outputTokens,
+        Long totalTokens,
         BigDecimal costUsd
 ) {
-
-    public UsageSummaryResponse {
-        if (model == null || model.isBlank()) {
-            model = "unknown";
-        }
-
-        if (messagesCount == null) {
-            messagesCount = 0L;
-        }
-
-        if (inputTokens == null) {
-            inputTokens = 0L;
-        }
-
-        if (outputTokens == null) {
-            outputTokens = 0L;
-        }
-
-        if (costUsd == null) {
-            costUsd = BigDecimal.ZERO;
-        }
-    }
 }

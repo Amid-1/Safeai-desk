@@ -14,16 +14,24 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
 
     @Query("""
             select new ru.safeai.gateway.chat.dto.UsageSummaryResponse(
+                u.id,
+                u.email,
                 m.model,
-                count(m.id),
                 sum(m.inputTokens),
                 sum(m.outputTokens),
+                sum(m.inputTokens) + sum(m.outputTokens),
                 sum(m.costUsd)
             )
             from ChatMessageEntity m
+            join m.session s
+            join s.user u
             where m.role = 'ASSISTANT'
-            group by m.model
-            order by sum(m.costUsd) desc
+              and m.model is not null
+              and m.inputTokens is not null
+              and m.outputTokens is not null
+              and m.costUsd is not null
+            group by u.id, u.email, m.model
+            order by u.email asc, m.model asc
             """)
-    List<UsageSummaryResponse> getUsageSummaryByModel();
+    List<UsageSummaryResponse> findUsageSummary();
 }
