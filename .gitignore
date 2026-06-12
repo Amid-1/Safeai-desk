@@ -79,31 +79,21 @@ docker-compose/docker-logs/
 # Build output
 backend/target/
 
-
-# SafeAI generated documentation files
-
-docs/00_PROJECT_OVERVIEW.md
-docs/01_LOCAL_RUNBOOK.md
-docs/02_DOCKER_RUNBOOK.md
-docs/03_AUTH_JWT_VERIFICATION.md
-docs/04_ORGANIZATION_USER_API.md
-docs/05_CHAT_CORE_VERIFICATION.md
-docs/06_AI_PROVIDER_ABSTRACTION.md
-docs/07_AUDIT_VERIFICATION.md
-docs/08_DATABASE_CHECKS.md
-docs/09_TESTING_GUIDE.md
-docs/10_TROUBLESHOOTING.md
-docs/11_ROADMAP.md
-
-scripts/run-infra.bat
-scripts/run-backend-local.bat
-scripts/stop-infra.bat
-scripts/full-docker-up.bat
-scripts/check-health.bat
-scripts/psql-audit-events.bat
-
-# Keep docs directory if needed
 !docs/.gitkeep
+
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.env
+frontend/.env.local
+
+backend/.env
+
+
+
+.idea/
+
+Thumbs.db
 
 
 
