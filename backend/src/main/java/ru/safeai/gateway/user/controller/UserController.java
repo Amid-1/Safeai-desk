@@ -8,6 +8,12 @@ import ru.safeai.gateway.user.dto.CreateUserRequest;
 import ru.safeai.gateway.user.dto.UserResponse;
 import ru.safeai.gateway.user.service.UserService;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
+import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
+import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -34,5 +40,35 @@ public class UserController {
     @GetMapping("/{id}")
     public UserResponse findById(@PathVariable UUID id) {
         return userService.findById(id);
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PatchMapping("/{id}/enabled")
+    public UserResponse updateEnabled(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateUserEnabledRequest request,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return userService.updateEnabled(id, request, currentUser);
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PatchMapping("/{id}/roles")
+    public UserResponse updateRoles(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateUserRolesRequest request,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return userService.updateRoles(id, request, currentUser);
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/{id}/reset-password")
+    public UserResponse resetPassword(
+            @PathVariable UUID id,
+            @Valid @RequestBody ResetUserPasswordRequest request,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return userService.resetPassword(id, request, currentUser);
     }
 }

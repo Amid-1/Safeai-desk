@@ -74,6 +74,10 @@ Password: v2F4r1C4@$
 Email:    dimac@mail.com
 Password: v2F4r1C4!#
 ```
+```text
+Petiya@mail.ru
+v2F4r1C4!@
+```
 
 ---
 

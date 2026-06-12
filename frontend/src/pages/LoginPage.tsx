@@ -14,17 +14,35 @@ function LoginPage() {
 
     async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
         event.preventDefault()
+
         setError('')
         setLoading(true)
 
         try {
-            const response = await login(email, password)
+            const response = await login({
+                email: email.trim(),
+                password,
+            })
+
             setToken(response.token)
             navigate('/chat')
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Login failed')
+            setError(getErrorMessage(err))
         } finally {
             setLoading(false)
+        }
+    }
+
+    function getErrorMessage(err: unknown): string {
+        if (!(err instanceof Error)) {
+            return 'Login failed'
+        }
+
+        try {
+            const parsed = JSON.parse(err.message) as { message?: string }
+            return parsed.message || 'Login failed'
+        } catch {
+            return err.message || 'Login failed'
         }
     }
 

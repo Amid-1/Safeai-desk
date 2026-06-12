@@ -40,5 +40,11 @@ export async function apiRequest<T>(
         throw new Error(text || `Request failed with status ${response.status}`)
     }
 
-    return response.json() as Promise<T>
+    if (response.status === 204) {
+        return undefined as T
+    }
+
+    const data = await response.json()
+
+    return data as T
 }

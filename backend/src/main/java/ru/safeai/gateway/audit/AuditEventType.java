@@ -15,4 +15,8 @@ public final class AuditEventType {
 
     public static final String USER_CREATED = "USER_CREATED";
     public static final String ORGANIZATION_CREATED = "ORGANIZATION_CREATED";
+
+    public static final String USER_ENABLED_CHANGED = "USER_ENABLED_CHANGED";
+    public static final String USER_ROLES_CHANGED = "USER_ROLES_CHANGED";
+    public static final String USER_PASSWORD_RESET = "USER_PASSWORD_RESET";
 }

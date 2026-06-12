@@ -1,5 +1,10 @@
 import { apiRequest } from './http'
 
+export type LoginRequest = {
+    email: string
+    password: string
+}
+
 export type AuthUser = {
     id: string
     organizationId: string
@@ -10,17 +15,16 @@ export type AuthUser = {
 
 export type LoginResponse = {
     token: string
-    tokenType: string
     user: AuthUser
 }
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
+export function login(request: LoginRequest): Promise<LoginResponse> {
     return apiRequest<LoginResponse>('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(request),
     })
 }
 
-export async function getMe(): Promise<AuthUser> {
+export function getCurrentUser(): Promise<AuthUser> {
     return apiRequest<AuthUser>('/api/auth/me')
 }

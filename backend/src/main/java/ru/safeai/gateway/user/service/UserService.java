@@ -15,6 +15,15 @@ import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
+import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
+import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
+
+import java.util.Map;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -29,6 +38,7 @@ public class UserService {
     private final RoleRepository roleRepository;
     private final OrganizationRepository organizationRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditEventService auditEventService;
 
     @Transactional
     public UserResponse create(CreateUserRequest request) {
@@ -101,5 +111,131 @@ public class UserService {
                 roleNames,
                 entity.getCreatedAt()
         );
+    }
+
+    @Transactional
+    public UserResponse updateEnabled(
+            UUID id,
+            UpdateUserEnabledRequest request,
+            SafeAiUserPrincipal currentUser
+    ) {
+        UserEntity user = findUserEntity(id);
+
+        boolean newEnabledValue = Boolean.TRUE.equals(request.enabled());
+
+        if (user.getId().equals(currentUser.getId()) && !newEnabledValue) {
+            throw new ConflictException("Нельзя отключить самого себя");
+        }
+
+        if (!newEnabledValue && isEnabledAdmin(user) && userRepository.countEnabledAdmins() <= 1) {
+            throw new ConflictException("Нельзя отключить последнего активного администратора");
+        }
+
+        user.setEnabled(newEnabledValue);
+
+        UserEntity saved = userRepository.save(user);
+
+        auditEventService.record(
+                currentUser.getId(),
+                AuditEventType.USER_ENABLED_CHANGED,
+                Map.of(
+                        "targetUserId", saved.getId().toString(),
+                        "targetUserEmail", saved.getEmail(),
+                        "enabled", saved.isEnabled()
+                )
+        );
+
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public UserResponse updateRoles(
+            UUID id,
+            UpdateUserRolesRequest request,
+            SafeAiUserPrincipal currentUser
+    ) {
+        UserEntity user = findUserEntity(id);
+
+        Set<String> requestedRoles = request.roles()
+                .stream()
+                .map(role -> role.trim().toUpperCase())
+                .collect(Collectors.toSet());
+
+        if (requestedRoles.isEmpty()) {
+            throw new ConflictException("У пользователя должна быть хотя бы одна роль");
+        }
+
+        boolean removesAdminRole = hasRole(user) && !requestedRoles.contains("ADMIN");
+
+        if (user.getId().equals(currentUser.getId()) && removesAdminRole) {
+            throw new ConflictException("Нельзя снять роль ADMIN с самого себя");
+        }
+
+        if (user.isEnabled() && removesAdminRole && userRepository.countEnabledAdmins() <= 1) {
+            throw new ConflictException("Нельзя снять роль ADMIN с последнего активного администратора");
+        }
+
+        Set<RoleEntity> roles = requestedRoles.stream()
+                .map(roleName -> roleRepository.findByName(roleName)
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Роль не найдена: " + roleName
+                        )))
+                .collect(Collectors.toSet());
+
+        user.setRoles(roles);
+
+        UserEntity saved = userRepository.save(user);
+
+        auditEventService.record(
+                currentUser.getId(),
+                AuditEventType.USER_ROLES_CHANGED,
+                Map.of(
+                        "targetUserId", saved.getId().toString(),
+                        "targetUserEmail", saved.getEmail(),
+                        "roles", requestedRoles
+                )
+        );
+
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public UserResponse resetPassword(
+            UUID id,
+            ResetUserPasswordRequest request,
+            SafeAiUserPrincipal currentUser
+    ) {
+        UserEntity user = findUserEntity(id);
+
+        user.setPasswordHash(passwordEncoder.encode(request.password()));
+
+        UserEntity saved = userRepository.save(user);
+
+        auditEventService.record(
+                currentUser.getId(),
+                AuditEventType.USER_PASSWORD_RESET,
+                Map.of(
+                        "targetUserId", saved.getId().toString(),
+                        "targetUserEmail", saved.getEmail()
+                )
+        );
+
+        return toResponse(saved);
+    }
+
+    private UserEntity findUserEntity(UUID id) {
+        return userRepository.findByIdWithRolesAndOrganization(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Пользователь не найден: " + id));
+    }
+
+    private boolean isEnabledAdmin(UserEntity user) {
+        return user.isEnabled() && hasRole(user);
+    }
+
+    private boolean hasRole(UserEntity user) {
+        return user.getRoles()
+                .stream()
+                .map(RoleEntity::getName)
+                .anyMatch("ADMIN"::equals);
     }
 }
