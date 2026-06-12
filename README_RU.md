@@ -1,36 +1,36 @@
 # SafeAI Desk
 
-SafeAI Desk is a full-stack MVP of a corporate AI Gateway.
+SafeAI Desk — это рабочий full-stack MVP корпоративного AI Gateway.
 
-The project lets employees use AI through a controlled internal gateway while the organization can manage users, roles, chat history, audit events, usage statistics, provider configuration, limits and future document-based RAG workflows.
+Проект позволяет сотрудникам использовать AI через контролируемый внутренний шлюз, а организации — управлять пользователями, ролями, историей чатов, audit events, usage-статистикой, настройкой AI-провайдеров, будущими лимитами и RAG-сценариями на основе документов.
 
-Current status: **working full-stack MVP**.
+Текущий статус: **рабочий full-stack MVP**.
 
 ---
 
-## 1. What the project does
+## 1. Что делает проект
 
-SafeAI Desk provides:
+SafeAI Desk предоставляет:
 
 ```text
-- JWT authentication
-- ADMIN / USER roles
-- organization and user management
-- chat sessions and chat messages
-- AI provider abstraction
-- mock AI provider for local development
-- OpenAI provider scaffold
-- Anthropic provider scaffold
+- JWT-авторизацию
+- роли ADMIN / USER
+- управление организациями и пользователями
+- chat sessions и chat messages
+- абстракцию AI-провайдера
+- Mock AI provider для локальной разработки
+- заготовку OpenAI provider
+- заготовку Anthropic provider
 - audit events
-- usage tracking by tokens and cost
-- React + TypeScript admin/frontend UI
-- Redis-ready infrastructure for rate limits
+- учет usage по токенам и стоимости
+- React + TypeScript frontend/admin UI
+- Redis-ready инфраструктуру для будущих rate limits
 ```
 
-Main runtime flow:
+Основной runtime-flow:
 
 ```text
-User
+Пользователь
   ↓
 React frontend
   ↓
@@ -43,23 +43,23 @@ PostgreSQL + Redis
 
 ---
 
-## 2. Current MVP status
+## 2. Текущий статус MVP
 
-Implemented:
+Реализовано:
 
 ```text
 ✅ Spring Boot backend
 ✅ React + TypeScript frontend
-✅ PostgreSQL and Redis local infrastructure
+✅ локальная инфраструктура PostgreSQL и Redis
 ✅ Flyway database migrations
 ✅ Organization API
 ✅ User API
-✅ ADMIN / USER roles
-✅ BCrypt passwords
+✅ роли ADMIN / USER
+✅ BCrypt password hashing
 ✅ JWT authentication
 ✅ OAuth2 Resource Server JWT validation
-✅ JSON 401/403/error responses
-✅ Chat sessions and messages
+✅ JSON-ответы для 401/403/API ошибок
+✅ chat sessions и messages
 ✅ AI provider abstraction
 ✅ MockAiProvider
 ✅ OpenAiProvider scaffold
@@ -74,20 +74,20 @@ Implemented:
 ✅ Frontend admin audit
 ✅ Frontend admin usage
 ✅ Protected frontend routes
-✅ Frontend token cleanup on 401
-✅ Backend unit/security tests
-✅ Frontend production build
+✅ очистка frontend token при 401
+✅ backend unit/security tests
+✅ frontend production build
 ```
 
-Next major stage:
+Следующий большой этап:
 
 ```text
-➡️ Rate limits through Redis
+➡️ Rate limits через Redis
 ```
 
 ---
 
-## 3. Tech stack
+## 3. Технологический стек
 
 ### Backend
 
@@ -124,7 +124,7 @@ Redis 7
 
 ---
 
-## 4. High-level architecture
+## 4. Общая архитектура
 
 ```mermaid
 flowchart LR
@@ -153,11 +153,23 @@ flowchart LR
     API -. next stage .-> REDIS[(Redis)]
 ```
 
+Смысл схемы:
+
+```text
+- frontend работает через HTTP API;
+- frontend передает JWT в Authorization: Bearer <token>;
+- backend проверяет JWT через Spring Security;
+- бизнес-модули сохраняют данные в PostgreSQL;
+- AI вызывается через общий интерфейс AiProvider;
+- конкретный provider выбирается через environment variable;
+- Redis уже есть в инфраструктуре и будет использоваться для rate limits.
+```
+
 ---
 
 ## 5. Runtime request flow
 
-### Login flow
+### 5.1. Login flow
 
 ```mermaid
 sequenceDiagram
@@ -178,7 +190,19 @@ sequenceDiagram
     Frontend-->>User: Navigate to /chat
 ```
 
-### Chat message flow
+Пояснение:
+
+```text
+1. Пользователь вводит email/password.
+2. Backend ищет пользователя в БД.
+3. Пароль проверяется через BCrypt.
+4. При успехе backend генерирует JWT.
+5. Login success пишется в audit_events.
+6. Frontend сохраняет token в localStorage.
+7. Дальше frontend отправляет token во всех защищенных запросах.
+```
+
+### 5.2. Chat message flow
 
 ```mermaid
 sequenceDiagram
@@ -211,9 +235,19 @@ sequenceDiagram
     Controller-->>Frontend: Updated chat
 ```
 
+Пояснение:
+
+```text
+1. USER message сохраняется до вызова AI.
+2. Внешний вызов AI выполняется вне долгой database transaction.
+3. ASSISTANT message сохраняется после ответа provider.
+4. Usage-поля сохраняются в chat_messages.
+5. Audit events пишутся отдельно.
+```
+
 ---
 
-## 6. Project structure
+## 6. Структура проекта
 
 ```text
 Safeai-desk/
@@ -255,7 +289,7 @@ Safeai-desk/
 
 ---
 
-## 7. Backend package structure
+## 7. Структура backend packages
 
 ```text
 ru.safeai.gateway
@@ -301,9 +335,22 @@ ru.safeai.gateway
     └── service
 ```
 
+Назначение основных модулей:
+
+```text
+auth          login, /me, JWT выдача
+common        общие ошибки, security config, JWT converter, principal
+organization  организации
+user          пользователи и роли
+chat          чаты, сообщения, история
+ai            интерфейс AI provider и реализации mock/openai/anthropic
+audit         запись и чтение audit events
+admin         usage aggregation endpoints
+```
+
 ---
 
-## 8. Frontend structure
+## 8. Структура frontend
 
 ```text
 frontend/src
@@ -326,9 +373,22 @@ frontend/src
 └── vite-env.d.ts
 ```
 
+Назначение frontend-частей:
+
+```text
+api/http.ts       общий fetch wrapper, token injection, token cleanup on 401
+api/authApi.ts    login и getMe
+api/chatApi.ts    chats и messages
+api/adminApi.ts   audit и usage
+api/userApi.ts    users
+pages/*           страницы интерфейса
+App.tsx           routes, topbar, protected routes
+vite.config.ts    Vite dev proxy на backend localhost:8080
+```
+
 ---
 
-## 9. Database schema
+## 9. Схема базы данных
 
 ```mermaid
 erDiagram
@@ -393,17 +453,30 @@ erDiagram
     }
 ```
 
+Ключевые таблицы:
+
+```text
+organizations  организации клиентов/компаний
+users          пользователи системы
+roles          роли ADMIN / USER
+user_roles     many-to-many связь пользователей и ролей
+chat_sessions  отдельные чаты пользователя
+chat_messages  сообщения чатов + usage-поля
+metadata       model/input_tokens/output_tokens/cost_usd
+audit_events   журнал действий пользователей и системы
+```
+
 ---
 
 ## 10. Flyway migrations
 
-Migration directory:
+Директория миграций:
 
 ```text
 backend/src/main/resources/db/migration
 ```
 
-Current migrations:
+Текущие миграции:
 
 ```text
 V1__init_schema.sql
@@ -414,11 +487,11 @@ V5__add_indexes.sql
 V6__add_unique_organization_name.sql
 ```
 
-Important rule:
+Важное правило:
 
 ```text
-Do not edit already applied Flyway migrations.
-Add a new V{number}__description.sql migration instead.
+Нельзя редактировать уже примененные Flyway migrations.
+Если нужно изменить схему — добавляется новая миграция V{number}__description.sql.
 ```
 
 Seed data:
@@ -430,20 +503,20 @@ Admin pass:   admin123
 Role:         ADMIN
 ```
 
-Passwords are stored only as BCrypt hashes.
+Пароли хранятся только как BCrypt hashes. Обычный пароль `admin123` в базе храниться не должен.
 
 ---
 
 ## 11. Environment variables
 
-Create local backend env file:
+Создать локальный backend env-файл:
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk\backend"
 copy .env.example .env
 ```
 
-Example local mock configuration:
+Пример локальной mock-конфигурации:
 
 ```env
 SAFEAI_JWT_SECRET=safeai-local-development-secret-key-change-this-value-please-123456789
@@ -462,9 +535,9 @@ ANTHROPIC_VERSION=2023-06-01
 ANTHROPIC_MAX_TOKENS=1024
 ```
 
-Do not commit real `.env` files.
+Реальные `.env` файлы и API keys нельзя коммитить.
 
-Expected `.gitignore` entries:
+Ожидаемые `.gitignore` entries:
 
 ```gitignore
 backend/.env
@@ -479,15 +552,15 @@ frontend/dist/
 
 ---
 
-## 12. AI provider selection
+## 12. Выбор AI provider
 
-Provider is selected by environment variable:
+Provider выбирается через environment variable:
 
 ```env
 SAFEAI_AI_PROVIDER=mock
 ```
 
-Available values:
+Доступные значения:
 
 ```text
 mock
@@ -501,7 +574,7 @@ anthropic
 SAFEAI_AI_PROVIDER=mock
 ```
 
-Used for local development. No API key required.
+Используется для локальной разработки. API key не нужен.
 
 ### OpenAI provider
 
@@ -520,19 +593,19 @@ ANTHROPIC_MODEL=claude-opus-4-8
 ANTHROPIC_MAX_TOKENS=1024
 ```
 
-Current note:
+Текущий статус:
 
 ```text
-Mock provider has been verified locally.
-OpenAI and Anthropic providers are implemented as configurable provider scaffolds.
-Live provider verification requires valid API keys.
+Mock provider проверен локально.
+OpenAI и Anthropic providers реализованы как configurable scaffolds.
+Live-проверка OpenAI/Anthropic требует валидных API keys.
 ```
 
 ---
 
-## 13. Local database connection
+## 13. Локальное подключение к базе данных
 
-PostgreSQL runs in Docker.
+PostgreSQL запускается в Docker.
 
 Default local connection:
 
@@ -545,13 +618,13 @@ Username: safeai
 Password: safeai_password
 ```
 
-JDBC URL when backend runs locally:
+JDBC URL, если backend запускается локально на хосте:
 
 ```text
 jdbc:postgresql://localhost:5432/safeai
 ```
 
-JDBC URL when backend runs inside Docker Compose:
+JDBC URL, если backend запускается внутри Docker Compose:
 
 ```text
 jdbc:postgresql://postgres:5432/safeai
@@ -559,9 +632,9 @@ jdbc:postgresql://postgres:5432/safeai
 
 ---
 
-## 14. Local development start
+## 14. Локальный запуск разработки
 
-Use three terminals.
+Для локальной разработки используется 3 терминала.
 
 ### Terminal 1 — infrastructure
 
@@ -571,7 +644,7 @@ docker compose up -d postgres redis
 docker ps
 ```
 
-Expected containers:
+Ожидаемые контейнеры:
 
 ```text
 safeai-postgres
@@ -602,7 +675,7 @@ Health check:
 curl -i http://localhost:8080/actuator/health
 ```
 
-Expected:
+Ожидаемо:
 
 ```text
 HTTP/1.1 200
@@ -634,7 +707,7 @@ cd /d "D:\Java projects\Safeai-desk\frontend"
 npm run build
 ```
 
-Expected:
+Ожидаемо:
 
 ```text
 ✓ built in ...
@@ -646,13 +719,15 @@ Build output:
 frontend/dist
 ```
 
-`npm run build` does not start the site. For local development use:
+`npm run build` только собирает frontend. Он не запускает сайт.
+
+Для локальной разработки использовать:
 
 ```bat
 npm run dev
 ```
 
-For checking production build locally:
+Для проверки production build локально:
 
 ```bat
 npm run preview
@@ -720,6 +795,12 @@ GET /api/admin/usage/by-user/{userId}
 GET /api/admin/usage/by-organization/{organizationId}
 ```
 
+`/api/admin/usage-summary` оставлен как старый совместимый endpoint. Основной новый endpoint:
+
+```text
+GET /api/admin/usage/summary
+```
+
 ---
 
 ## 17. Security rules
@@ -738,7 +819,7 @@ flowchart TD
     ROLE -->|authenticated only| ALLOW
 ```
 
-Rules:
+Правила доступа:
 
 ```text
 POST /api/auth/login        public
@@ -752,7 +833,7 @@ all other endpoints         authenticated
 
 ---
 
-## 18. Manual API verification
+## 18. Ручная проверка API
 
 ### Login
 
@@ -764,13 +845,13 @@ curl -i -X POST http://localhost:8080/api/auth/login ^
   -d "{\"email\":\"admin@test.com\",\"password\":\"admin123\"}"
 ```
 
-Expected:
+Ожидаемо:
 
 ```text
 HTTP/1.1 200
 ```
 
-Response contains:
+Ответ содержит:
 
 ```json
 {
@@ -784,7 +865,7 @@ Response contains:
 }
 ```
 
-Save token:
+Сохранить token:
 
 ```bat
 set "TOKEN=PASTE_TOKEN_HERE"
@@ -797,7 +878,7 @@ curl -i http://localhost:8080/api/auth/me ^
   -H "Authorization: Bearer %TOKEN%"
 ```
 
-Expected:
+Ожидаемо:
 
 ```text
 HTTP/1.1 200
@@ -812,7 +893,7 @@ curl -X POST http://localhost:8080/api/chats ^
   -d "{\"title\":\"Test chat\"}"
 ```
 
-Save chat id:
+Сохранить chat id:
 
 ```bat
 set "CHAT_ID=PASTE_CHAT_ID_HERE"
@@ -827,7 +908,7 @@ curl -X POST http://localhost:8080/api/chats/%CHAT_ID%/messages ^
   -d "{\"content\":\"Привет, проверь AI\"}"
 ```
 
-Expected assistant content:
+Ожидаемый assistant content:
 
 ```text
 Mock AI provider response: Привет, проверь AI
@@ -840,7 +921,7 @@ curl http://localhost:8080/api/admin/audit-events ^
   -H "Authorization: Bearer %TOKEN%"
 ```
 
-Expected events:
+Ожидаемые events:
 
 ```text
 USER_LOGIN_SUCCESS
@@ -856,7 +937,7 @@ curl http://localhost:8080/api/admin/usage/summary ^
   -H "Authorization: Bearer %TOKEN%"
 ```
 
-Expected fields:
+Ожидаемые поля:
 
 ```text
 userEmail
@@ -867,13 +948,13 @@ totalTokens
 costUsd
 ```
 
-### Protected endpoint without token
+### Protected endpoint без token
 
 ```bat
 curl http://localhost:8080/api/chats
 ```
 
-Expected:
+Ожидаемо:
 
 ```json
 {
@@ -884,32 +965,32 @@ Expected:
 
 ---
 
-## 19. Frontend verification
+## 19. Проверка frontend
 
-Open:
+Открыть:
 
 ```text
 http://localhost:5173/login
 ```
 
-Check:
+Проверить:
 
 ```text
 1. Login as admin@test.com / admin123
-2. /chat opens after login
+2. /chat открывается после login
 3. Create chat
 4. Send message
-5. Mock AI response appears
-6. /admin/users shows users
-7. /admin/audit shows audit events
-8. /admin/usage shows usage summary
-9. Logout returns to /login
-10. Opening /chat without token redirects to /login
+5. Появляется Mock AI response
+6. /admin/users показывает пользователей
+7. /admin/audit показывает audit events
+8. /admin/usage показывает usage summary
+9. Logout возвращает на /login
+10. Открытие /chat без token перекидывает на /login
 ```
 
 ---
 
-## 20. Database verification
+## 20. Проверка базы данных
 
 ### Flyway history
 
@@ -917,7 +998,7 @@ Check:
 docker exec -it safeai-postgres psql -U safeai -d safeai -c "select installed_rank, version, description, success from flyway_schema_history order by installed_rank;"
 ```
 
-Expected:
+Ожидаемо:
 
 ```text
 1 | 1 | init schema
@@ -934,7 +1015,7 @@ Expected:
 docker exec -it safeai-postgres psql -U safeai -d safeai -c "select email, enabled, created_at from users;"
 ```
 
-Expected:
+Ожидаемо:
 
 ```text
 admin@test.com | t
@@ -954,7 +1035,7 @@ docker exec -it safeai-postgres psql -U safeai -d safeai -c "select event_type, 
 
 ---
 
-## 21. Running tests
+## 21. Запуск тестов
 
 Backend:
 
@@ -970,7 +1051,7 @@ cd /d "D:\Java projects\Safeai-desk\frontend"
 npm run build
 ```
 
-Expected:
+Ожидаемо:
 
 ```text
 BUILD SUCCESS
@@ -979,45 +1060,45 @@ BUILD SUCCESS
 
 ---
 
-## 22. Common commands
+## 22. Полезные команды
 
-### Start infrastructure
+### Запустить infrastructure
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk\infra"
 docker compose up -d postgres redis
 ```
 
-### Stop containers
+### Остановить containers
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk\infra"
 docker compose stop
 ```
 
-### Remove containers but keep volumes
+### Удалить containers, но оставить volumes
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk\infra"
 docker compose down
 ```
 
-### Remove containers and database data
+### Удалить containers и данные базы
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk\infra"
 docker compose down -v
 ```
 
-Use `down -v` carefully. It deletes local PostgreSQL data.
+`down -v` использовать осторожно: он удаляет локальные PostgreSQL data.
 
-### View containers
+### Посмотреть containers
 
 ```bat
 docker ps
 ```
 
-### View logs
+### Посмотреть logs
 
 ```bat
 docker logs safeai-postgres
@@ -1030,13 +1111,13 @@ docker logs safeai-redis
 
 ### `SAFEAI_JWT_SECRET` is not set
 
-Reason:
+Причина:
 
 ```text
-Spring Boot does not automatically load backend/.env when using mvnw.cmd spring-boot:run.
+Spring Boot не читает backend/.env автоматически при запуске через mvnw.cmd spring-boot:run.
 ```
 
-Fix in Windows CMD:
+Исправление в Windows CMD:
 
 ```bat
 set SAFEAI_JWT_SECRET=safeai-local-development-secret-key-change-this-value-please-123456789
@@ -1044,43 +1125,43 @@ set SAFEAI_JWT_EXPIRATION_MINUTES=60
 set SAFEAI_AI_PROVIDER=mock
 ```
 
-Then run:
+Потом запуск:
 
 ```bat
 mvnw.cmd spring-boot:run
 ```
 
-### `ERR_CONNECTION_REFUSED` on localhost:5173
+### `ERR_CONNECTION_REFUSED` на localhost:5173
 
-Reason:
+Причина:
 
 ```text
-npm run build only builds frontend.
-It does not start Vite dev server.
+npm run build только собирает frontend.
+Он не запускает Vite dev server.
 ```
 
-Fix:
+Исправление:
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk\frontend"
 npm run dev
 ```
 
-### Backend cannot connect to PostgreSQL
+### Backend не подключается к PostgreSQL
 
-If backend runs locally:
+Если backend запускается локально:
 
 ```text
 jdbc:postgresql://localhost:5432/safeai
 ```
 
-If backend runs in Docker:
+Если backend запускается в Docker:
 
 ```text
 jdbc:postgresql://postgres:5432/safeai
 ```
 
-Check:
+Проверка:
 
 ```bat
 docker ps
@@ -1088,13 +1169,13 @@ docker ps
 
 ### Port 8080 is already in use
 
-Stop the local backend with:
+Остановить локальный backend:
 
 ```text
 Ctrl + C
 ```
 
-Or stop Docker backend if used:
+Или остановить Docker backend, если он используется:
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk\infra"
@@ -1103,34 +1184,34 @@ docker compose stop backend
 
 ### Token is malformed
 
-Correct:
+Правильно:
 
 ```text
 Authorization: Bearer eyJ...
 ```
 
-Incorrect:
+Неправильно:
 
 ```text
 Authorization: Bearer "token":"eyJ..."
 ```
 
-### Token expired or deleted
+### Token expired или удален
 
-Frontend should clear token on `401` and redirect protected routes to `/login`.
+Frontend должен удалить token при `401` и защищенные routes должны перекидывать пользователя на `/login`.
 
 ---
 
 ## 24. Commit checklist
 
-Before commit:
+Перед commit:
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk"
 git status
 ```
 
-Run:
+Запустить:
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk\backend"
@@ -1142,7 +1223,7 @@ cd /d "D:\Java projects\Safeai-desk\frontend"
 npm run build
 ```
 
-Do not commit:
+Не коммитить:
 
 ```text
 backend/.env
@@ -1157,7 +1238,7 @@ production secrets
 temporary files
 ```
 
-Can commit:
+Можно коммитить:
 
 ```text
 README.md
@@ -1172,29 +1253,29 @@ infra/docker-compose.yml
 
 ## 25. Development roadmap
 
-Next stages:
+Следующие этапы:
 
 ```text
-1. Rate limits through Redis                         next
-2. OpenAI live verification                          pending
-3. Anthropic live verification                       pending
-4. Provider timeout/retry/error handling             pending
-5. Better frontend error UI                          pending
-6. Admin usage charts                                pending
-7. User management actions                           pending
-8. Document upload                                   pending
-9. RAG indexing and retrieval                        pending
-10. Production Docker profile                        pending
-11. CI pipeline                                      pending
-12. Deployment documentation                         pending
+1. Rate limits через Redis                         next
+2. OpenAI live verification                        pending
+3. Anthropic live verification                     pending
+4. Provider timeout/retry/error handling           pending
+5. Better frontend error UI                        pending
+6. Admin usage charts                              pending
+7. User management actions                         pending
+8. Document upload                                 pending
+9. RAG indexing and retrieval                      pending
+10. Production Docker profile                      pending
+11. CI pipeline                                    pending
+12. Deployment documentation                       pending
 ```
 
 ---
 
-## 26. Interview summary
+## 26. Формулировка для собеседования
 
 ```text
-SafeAI Desk is a full-stack MVP of a corporate AI Gateway. I implemented a Spring Boot backend with organizations, users, roles, JWT authentication, chat sessions, AI provider abstraction, mock provider, OpenAI/Anthropic provider scaffolds, audit events and usage tracking. The chat module does not depend on a specific AI provider because it uses the AiProvider interface.
+SafeAI Desk — это full-stack MVP корпоративного AI Gateway. Я реализовал Spring Boot backend с организациями, пользователями, ролями, JWT-авторизацией, chat sessions, абстракцией AI-провайдера, mock provider, заготовками OpenAI/Anthropic providers, audit events и usage tracking. Модуль chat не зависит от конкретного AI-провайдера, потому что работает через интерфейс AiProvider.
 
-Admin APIs expose users, audit events and usage analytics. Usage is stored in chat_messages and aggregated by user, model and day. I also added a React + TypeScript frontend with login, chat, admin users, admin audit and admin usage pages. The next stage is Redis-based rate limiting, then live provider verification and RAG.
+Admin APIs показывают users, audit events и usage analytics. Usage сохраняется в chat_messages и агрегируется по пользователю, модели и дням. Также реализован React + TypeScript frontend: login, chat, admin users, admin audit и admin usage. Следующий этап — rate limiting через Redis, затем live-проверка реальных AI-провайдеров и RAG.
 ```
