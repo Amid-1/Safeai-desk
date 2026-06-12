@@ -24,5 +24,5 @@ export async function getAuditEvents(): Promise<AuditEvent[]> {
 }
 
 export async function getUsageSummary(): Promise<UsageSummary[]> {
-    return apiRequest<UsageSummary[]>('/api/admin/usage-summary')
+    return apiRequest<UsageSummary[]>('/api/admin/usage/summary')
 }

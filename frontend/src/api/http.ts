@@ -32,10 +32,13 @@ export async function apiRequest<T>(
     })
 
     if (!response.ok) {
+        if (response.status === 401) {
+            clearToken()
+        }
+
         const text = await response.text()
         throw new Error(text || `Request failed with status ${response.status}`)
     }
 
-    const data = await response.json()
-    return data as T
+    return response.json() as Promise<T>
 }
