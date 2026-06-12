@@ -12,4 +12,26 @@ public record UsageSummaryResponse(
         Long totalTokens,
         BigDecimal costUsd
 ) {
+    public UsageSummaryResponse(
+            UUID userId,
+            String userEmail,
+            String model,
+            Long inputTokens,
+            Long outputTokens,
+            BigDecimal costUsd
+    ) {
+        this(
+                userId,
+                userEmail,
+                model,
+                inputTokens,
+                outputTokens,
+                safeLong(inputTokens) + safeLong(outputTokens),
+                costUsd
+        );
+    }
+
+    private static long safeLong(Long value) {
+        return value == null ? 0L : value;
+    }
 }

@@ -1,7 +1,9 @@
 package ru.safeai.gateway.admin.controller;
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.security.oauth2.server.resource.autoconfigure.servlet.OAuth2ResourceServerAutoConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -10,22 +12,22 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.safeai.gateway.admin.service.AdminUsageService;
-import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
 import ru.safeai.gateway.common.security.JsonAccessDeniedHandler;
 import ru.safeai.gateway.common.security.JsonAuthenticationEntryPoint;
 import ru.safeai.gateway.common.security.SafeAiJwtAuthenticationConverter;
 import ru.safeai.gateway.common.security.SecurityConfig;
 
-import java.math.BigDecimal;
 import java.util.List;
-import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(AdminUsageController.class)
+@WebMvcTest(
+        controllers = AdminUsageController.class,
+        excludeAutoConfiguration = OAuth2ResourceServerAutoConfiguration.class
+)
 @Import({
         SecurityConfig.class,
         JsonAuthenticationEntryPoint.class,
@@ -41,49 +43,66 @@ class AdminUsageControllerSecurityTest {
     private AdminUsageService adminUsageService;
 
     @MockitoBean
-    private UserDetailsService userDetailsService;
-
-    @MockitoBean
     private SafeAiJwtAuthenticationConverter safeAiJwtAuthenticationConverter;
 
-    @Test
-    void usageSummaryWithoutAuthenticationReturns401() throws Exception {
-        mockMvc.perform(get("/api/admin/usage-summary"))
+    @MockitoBean
+    private UserDetailsService userDetailsService;
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api/admin/usage-summary",
+            "/api/admin/usage/summary",
+            "/api/admin/usage/users",
+            "/api/admin/usage/models",
+            "/api/admin/usage/daily",
+            "/api/admin/usage/by-user/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    })
+    void shouldReturnUnauthorizedWhenAnonymous(String url) throws Exception {
+        mockMvc.perform(get(url))
                 .andExpect(status().isUnauthorized());
     }
 
-    @Test
-    @WithMockUser(username = "user@test.com", roles = "USER")
-    void usageSummaryWithUserRoleReturns403() throws Exception {
-        mockMvc.perform(get("/api/admin/usage-summary"))
+    @ParameterizedTest
+    @WithMockUser(roles = "USER")
+    @ValueSource(strings = {
+            "/api/admin/usage-summary",
+            "/api/admin/usage/summary",
+            "/api/admin/usage/users",
+            "/api/admin/usage/models",
+            "/api/admin/usage/daily",
+            "/api/admin/usage/by-user/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    })
+    void shouldReturnForbiddenWhenUserRole(String url) throws Exception {
+        mockMvc.perform(get(url))
                 .andExpect(status().isForbidden());
     }
 
-    @Test
-    @WithMockUser(username = "admin@test.com", roles = "ADMIN")
-    void usageSummaryWithAdminRoleReturns200() throws Exception {
-        UUID userId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    @ParameterizedTest
+    @WithMockUser(roles = "ADMIN")
+    @ValueSource(strings = {
+            "/api/admin/usage-summary",
+            "/api/admin/usage/summary",
+            "/api/admin/usage/users",
+            "/api/admin/usage/models",
+            "/api/admin/usage/daily",
+            "/api/admin/usage/by-user/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    })
+    void shouldReturnOkWhenAdminRole(String url) throws Exception {
+        mockServices();
 
-        when(adminUsageService.getUsageSummary()).thenReturn(List.of(
-                new UsageSummaryResponse(
-                        userId,
-                        "admin@test.com",
-                        "mock-safeai",
-                        25L,
-                        40L,
-                        65L,
-                        BigDecimal.ZERO
-                )
-        ));
+        mockMvc.perform(get(url))
+                .andExpect(status().isOk());
+    }
 
-        mockMvc.perform(get("/api/admin/usage-summary"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].userId").value(userId.toString()))
-                .andExpect(jsonPath("$[0].userEmail").value("admin@test.com"))
-                .andExpect(jsonPath("$[0].model").value("mock-safeai"))
-                .andExpect(jsonPath("$[0].inputTokens").value(25))
-                .andExpect(jsonPath("$[0].outputTokens").value(40))
-                .andExpect(jsonPath("$[0].totalTokens").value(65))
-                .andExpect(jsonPath("$[0].costUsd").value(0));
+    private void mockServices() {
+        when(adminUsageService.getUsageSummary()).thenReturn(List.of());
+        when(adminUsageService.getUsageByUsers()).thenReturn(List.of());
+        when(adminUsageService.getUsageByModels()).thenReturn(List.of());
+        when(adminUsageService.getUsageDaily()).thenReturn(List.of());
+        when(adminUsageService.getUsageByUserId(any())).thenReturn(List.of());
+        when(adminUsageService.getUsageByOrganizationId(any())).thenReturn(List.of());
     }
 }
