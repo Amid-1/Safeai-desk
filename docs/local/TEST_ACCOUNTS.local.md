@@ -45,10 +45,10 @@ Organization ID:   aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
 
 ## Обычные пользователи
 
-| № | Email | Password | Role | Комментарий |
-|---|---|---|---|---|
+| № | Email | Password   | Role | Комментарий |
+|---|---|------------|---|---|
 | 1 | dimac@mail.com | v2F4r1C4!# | USER | Создан вручную через frontend/admin users |
-| 2 | user1@test.com | UNKNOWN | USER | Пароль не сохранён в открытом виде; если нужен — создать нового USER или сделать отдельный reset password |
+| 2 | user1@test.com | user123    | USER | Пароль не сохранён в открытом виде; если нужен — создать нового USER или сделать отдельный reset password |
 
 ---
 

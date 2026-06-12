@@ -2,7 +2,9 @@
 
 SafeAI Desk — это рабочий full-stack MVP корпоративного AI Gateway.
 
-Проект позволяет сотрудникам использовать AI через контролируемый внутренний шлюз, а организации — управлять пользователями, ролями, историей чатов, audit events, usage-статистикой, настройкой AI-провайдеров, будущими лимитами и RAG-сценариями на основе документов.
+Проект позволяет сотрудникам использовать AI через контролируемый внутренний шлюз, а организации — управлять 
+пользователями, ролями, историей чатов, audit events, usage-статистикой, настройкой AI-провайдеров, будущими лимитами 
+и RAG-сценариями на основе документов.
 
 Текущий статус: **рабочий full-stack MVP**.
 
@@ -16,6 +18,10 @@ SafeAI Desk предоставляет:
 - JWT-авторизацию
 - роли ADMIN / USER
 - управление организациями и пользователями
+- создание пользователей через admin UI
+- включение и отключение пользователей
+- сброс забытых паролей
+- изменение ролей USER / ADMIN
 - chat sessions и chat messages
 - абстракцию AI-провайдера
 - Mock AI provider для локальной разработки
@@ -24,7 +30,7 @@ SafeAI Desk предоставляет:
 - audit events
 - учет usage по токенам и стоимости
 - React + TypeScript frontend/admin UI
-- Redis-ready инфраструктуру для будущих rate limits
+- Redis-ready инфраструктуру для будущих rate limits и token revocation
 ```
 
 Основной runtime-flow:
@@ -36,7 +42,7 @@ React frontend
   ↓
 Spring Boot API
   ↓
-Auth / Chat / AI Provider / Audit / Usage
+Auth / User Management / Chat / AI Provider / Audit / Usage
   ↓
 PostgreSQL + Redis
 ```
@@ -54,6 +60,7 @@ PostgreSQL + Redis
 ✅ Flyway database migrations
 ✅ Organization API
 ✅ User API
+✅ Admin user-management API
 ✅ роли ADMIN / USER
 ✅ BCrypt password hashing
 ✅ JWT authentication
@@ -74,6 +81,10 @@ PostgreSQL + Redis
 ✅ Frontend admin audit
 ✅ Frontend admin usage
 ✅ Protected frontend routes
+✅ Admin-only frontend routes
+✅ Role-aware topbar
+✅ Current user display
+✅ User action buttons: enable/disable, reset password, change role
 ✅ очистка frontend token при 401
 ✅ backend unit/security tests
 ✅ frontend production build
@@ -134,6 +145,7 @@ flowchart LR
     API --> AUTH[Auth Module]
     API --> ORG[Organization Module]
     API --> USERS[User Module]
+    API --> USERMGMT[Admin User Management]
     API --> CHAT[Chat Module]
     API --> AI[AiProvider Interface]
     API --> AUDIT[Audit Module]
@@ -146,6 +158,7 @@ flowchart LR
     AUTH --> PG[(PostgreSQL)]
     ORG --> PG
     USERS --> PG
+    USERMGMT --> PG
     CHAT --> PG
     AUDIT --> PG
     ADMIN --> PG
@@ -159,10 +172,11 @@ flowchart LR
 - frontend работает через HTTP API;
 - frontend передает JWT в Authorization: Bearer <token>;
 - backend проверяет JWT через Spring Security;
+- backend ограничивает доступ по ролям ADMIN / USER;
 - бизнес-модули сохраняют данные в PostgreSQL;
 - AI вызывается через общий интерфейс AiProvider;
 - конкретный provider выбирается через environment variable;
-- Redis уже есть в инфраструктуре и будет использоваться для rate limits.
+- Redis уже есть в инфраструктуре и будет использоваться для rate limits и будущего force logout/token revocation.
 ```
 
 ---
@@ -245,6 +259,39 @@ sequenceDiagram
 5. Audit events пишутся отдельно.
 ```
 
+### 5.3. Admin user-management flow
+
+```mermaid
+sequenceDiagram
+    participant Admin
+    participant Frontend
+    participant Controller as UserController
+    participant Service as UserService
+    participant DB as PostgreSQL
+    participant Audit as AuditEventService
+
+    Admin->>Frontend: Click Enable / Disable / Reset password / Make ADMIN / Make USER
+    Frontend->>Controller: PATCH/POST /api/users/{id}/...
+    Controller->>Service: update user
+    Service->>DB: Load user with roles and organization
+    Service->>Service: Validate safety rules
+    Service->>DB: Save user changes
+    Service->>Audit: Save USER_* audit event
+    Service-->>Controller: UserResponse
+    Controller-->>Frontend: UserResponse
+    Frontend->>Frontend: Update users table row
+```
+
+Пояснение:
+
+```text
+- Disable не удаляет пользователя, а ставит enabled=false.
+- Reset password не показывает старый пароль, а задаёт новый passwordHash.
+- Make ADMIN / Make USER меняет роль пользователя.
+- Все действия пишутся в audit.
+- Backend защищает последнего активного ADMIN.
+```
+
 ---
 
 ## 6. Структура проекта
@@ -283,7 +330,9 @@ Safeai-desk/
 ├── infra/
 │   └── docker-compose.yml
 ├── docs/
-│   └── 12_ROADMAP.md
+│   ├── 12_ROADMAP.md
+│   └── local/
+│       └── TEST_ACCOUNTS.local.md    # local only, not committed
 └── README.md
 ```
 
@@ -341,7 +390,7 @@ ru.safeai.gateway
 auth          login, /me, JWT выдача
 common        общие ошибки, security config, JWT converter, principal
 organization  организации
-user          пользователи и роли
+user          пользователи, роли и admin user-management
 chat          чаты, сообщения, история
 ai            интерфейс AI provider и реализации mock/openai/anthropic
 audit         запись и чтение audit events
@@ -377,12 +426,12 @@ frontend/src
 
 ```text
 api/http.ts       общий fetch wrapper, token injection, token cleanup on 401
-api/authApi.ts    login и getMe
+api/authApi.ts    login и getCurrentUser
 api/chatApi.ts    chats и messages
 api/adminApi.ts   audit и usage
-api/userApi.ts    users
+api/userApi.ts    users + admin user-management actions
 pages/*           страницы интерфейса
-App.tsx           routes, topbar, protected routes
+App.tsx           routes, topbar, protected routes, admin-only routes
 vite.config.ts    Vite dev proxy на backend localhost:8080
 ```
 
@@ -462,7 +511,6 @@ roles          роли ADMIN / USER
 user_roles     many-to-many связь пользователей и ролей
 chat_sessions  отдельные чаты пользователя
 chat_messages  сообщения чатов + usage-поля
-metadata       model/input_tokens/output_tokens/cost_usd
 audit_events   журнал действий пользователей и системы
 ```
 
@@ -548,6 +596,8 @@ backend/target/
 frontend/node_modules/
 frontend/dist/
 .idea/
+docs/local/
+*.local.md
 ```
 
 ---
@@ -762,9 +812,12 @@ GET  /api/organizations/{id}
 ### Users
 
 ```text
-POST /api/users
-GET  /api/users
-GET  /api/users/{id}
+POST  /api/users
+GET   /api/users
+GET   /api/users/{id}
+PATCH /api/users/{id}/enabled
+PATCH /api/users/{id}/roles
+POST  /api/users/{id}/reset-password
 ```
 
 ### Chats
@@ -831,9 +884,95 @@ GET  /actuator/health       public
 all other endpoints         authenticated
 ```
 
+Обычный USER может:
+
+```text
+✅ войти через /login
+✅ открыть /chat
+✅ создать свой чат
+✅ смотреть только свои чаты
+✅ отправлять сообщения в AI
+```
+
+Обычный USER не может:
+
+```text
+❌ смотреть /admin/users
+❌ смотреть /admin/audit
+❌ смотреть /admin/usage
+❌ управлять другими пользователями
+```
+
 ---
 
-## 18. Ручная проверка API
+## 18. Admin user-management
+
+На странице:
+
+```text
+/admin/users
+```
+
+ADMIN может:
+
+```text
+✅ создать USER
+✅ создать ADMIN
+✅ отфильтровать All / Admins / Users
+✅ отключить пользователя через Disable
+✅ включить пользователя через Enable
+✅ сбросить пароль через Reset password
+✅ повысить USER до ADMIN через Make ADMIN
+✅ понизить ADMIN до USER через Make USER
+```
+
+Что делают кнопки:
+
+```text
+Disable        → PATCH /api/users/{id}/enabled        { "enabled": false }
+Enable         → PATCH /api/users/{id}/enabled        { "enabled": true }
+Reset password → POST  /api/users/{id}/reset-password { "password": "..." }
+Make ADMIN     → PATCH /api/users/{id}/roles          { "roles": ["ADMIN"] }
+Make USER      → PATCH /api/users/{id}/roles          { "roles": ["USER"] }
+```
+
+Backend-защита:
+
+```text
+- нельзя отключить самого себя;
+- нельзя снять ADMIN-роль с самого себя;
+- нельзя отключить последнего активного ADMIN;
+- нельзя снять ADMIN-роль с последнего активного ADMIN;
+- USER не может вызывать эти endpoints.
+```
+
+Audit events:
+
+```text
+USER_ENABLED_CHANGED
+USER_ROLES_CHANGED
+USER_PASSWORD_RESET
+```
+
+Важно про пароли:
+
+```text
+Старый пароль посмотреть нельзя.
+Если пароль забыт, админ задаёт новый пароль через Reset password.
+В БД хранится BCrypt hash, а не обычный пароль.
+```
+
+Важно про отключение:
+
+```text
+Disable запрещает новый login.
+Но уже выданный JWT может работать до истечения срока жизни токена.
+Для мгновенного force logout нужен будущий Redis token revocation.
+```
+
+---
+
+## 19. Ручная проверка API
 
 ### Login
 
@@ -914,6 +1053,42 @@ curl -X POST http://localhost:8080/api/chats/%CHAT_ID%/messages ^
 Mock AI provider response: Привет, проверь AI
 ```
 
+### Disable user
+
+```bat
+curl -i -X PATCH http://localhost:8080/api/users/USER_ID/enabled ^
+  -H "Authorization: Bearer %TOKEN%" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"enabled\":false}"
+```
+
+### Enable user
+
+```bat
+curl -i -X PATCH http://localhost:8080/api/users/USER_ID/enabled ^
+  -H "Authorization: Bearer %TOKEN%" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"enabled\":true}"
+```
+
+### Change role
+
+```bat
+curl -i -X PATCH http://localhost:8080/api/users/USER_ID/roles ^
+  -H "Authorization: Bearer %TOKEN%" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"roles\":[\"ADMIN\"]}"
+```
+
+### Reset password
+
+```bat
+curl -i -X POST http://localhost:8080/api/users/USER_ID/reset-password ^
+  -H "Authorization: Bearer %TOKEN%" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"password\":\"NewPass123\"}"
+```
+
 ### Audit
 
 ```bat
@@ -928,6 +1103,9 @@ USER_LOGIN_SUCCESS
 CHAT_CREATED
 CHAT_MESSAGE_SENT
 AI_RESPONSE_RECEIVED
+USER_ENABLED_CHANGED
+USER_ROLES_CHANGED
+USER_PASSWORD_RESET
 ```
 
 ### Usage
@@ -965,7 +1143,7 @@ curl http://localhost:8080/api/chats
 
 ---
 
-## 19. Проверка frontend
+## 20. Проверка frontend
 
 Открыть:
 
@@ -973,24 +1151,42 @@ curl http://localhost:8080/api/chats
 http://localhost:5173/login
 ```
 
-Проверить:
+Проверить ADMIN flow:
 
 ```text
 1. Login as admin@test.com / admin123
-2. /chat открывается после login
-3. Create chat
-4. Send message
-5. Появляется Mock AI response
-6. /admin/users показывает пользователей
-7. /admin/audit показывает audit events
-8. /admin/usage показывает usage summary
-9. Logout возвращает на /login
-10. Открытие /chat без token перекидывает на /login
+2. В topbar видно текущий email и ADMIN
+3. /chat открывается после login
+4. Create chat
+5. Send message
+6. Появляется Mock AI response
+7. /admin/users показывает пользователей
+8. Create user работает
+9. Confirm password проверяется на frontend
+10. Disable / Enable работают
+11. Reset password работает
+12. Make ADMIN / Make USER работают
+13. Фильтры All / Admins / Users работают
+14. /admin/audit показывает audit events
+15. /admin/usage показывает usage summary
+16. Logout возвращает на /login
+17. Открытие /chat без token перекидывает на /login
+```
+
+Проверить USER flow:
+
+```text
+1. Login as обычный USER
+2. В topbar видно email и USER
+3. В меню виден только Chat
+4. Users / Audit / Usage не видны
+5. /chat работает
+6. Ручной переход на /admin/users возвращает на /chat или получает 403 на backend
 ```
 
 ---
 
-## 20. Проверка базы данных
+## 21. Проверка базы данных
 
 ### Flyway history
 
@@ -1015,10 +1211,10 @@ docker exec -it safeai-postgres psql -U safeai -d safeai -c "select installed_ra
 docker exec -it safeai-postgres psql -U safeai -d safeai -c "select email, enabled, created_at from users;"
 ```
 
-Ожидаемо:
+### User roles
 
-```text
-admin@test.com | t
+```bat
+docker exec -it safeai-postgres psql -U safeai -d safeai -c "select u.email, r.name from users u join user_roles ur on ur.user_id = u.id join roles r on r.id = ur.role_id order by u.email;"
 ```
 
 ### Chat messages
@@ -1035,7 +1231,7 @@ docker exec -it safeai-postgres psql -U safeai -d safeai -c "select event_type, 
 
 ---
 
-## 21. Запуск тестов
+## 22. Запуск тестов
 
 Backend:
 
@@ -1060,7 +1256,7 @@ BUILD SUCCESS
 
 ---
 
-## 22. Полезные команды
+## 23. Полезные команды
 
 ### Запустить infrastructure
 
@@ -1107,7 +1303,35 @@ docker logs safeai-redis
 
 ---
 
-## 23. Troubleshooting
+## 24. Локальные тестовые аккаунты
+
+Для локальной разработки можно создать файл:
+
+```text
+docs/local/TEST_ACCOUNTS.local.md
+```
+
+В нём можно хранить тестовые email/password, которые нужны только тебе при локальной проверке.
+
+Этот файл нельзя коммитить. В `.gitignore` должны быть строки:
+
+```gitignore
+docs/local/
+*.local.md
+```
+
+Почему так:
+
+```text
+- в production пароли нельзя хранить в документации;
+- в Git нельзя коммитить пароли и секреты;
+- в базе пароли должны быть только в виде BCrypt hashes;
+- если пароль забыт, его нельзя посмотреть, можно только сбросить через Reset password.
+```
+
+---
+
+## 25. Troubleshooting
 
 ### `SAFEAI_JWT_SECRET` is not set
 
@@ -1145,6 +1369,47 @@ npm run build только собирает frontend.
 ```bat
 cd /d "D:\Java projects\Safeai-desk\frontend"
 npm run dev
+```
+
+### Login возвращает 400 BAD_REQUEST
+
+Возможная причина:
+
+```text
+frontend отправляет тело login-запроса не как JSON object.
+```
+
+Правильно:
+
+```json
+{
+  "email": "admin@test.com",
+  "password": "admin123"
+}
+```
+
+В `LoginPage.tsx` вызов должен быть таким:
+
+```ts
+const response = await login({
+    email: email.trim(),
+    password,
+})
+```
+
+### Login возвращает 401 UNAUTHORIZED
+
+Это значит:
+
+```text
+email/password неверные
+или пользователь disabled
+```
+
+Если пароль забыт:
+
+```text
+ADMIN → /admin/users → Reset password
 ```
 
 ### Backend не подключается к PostgreSQL
@@ -1200,9 +1465,24 @@ Authorization: Bearer "token":"eyJ..."
 
 Frontend должен удалить token при `401` и защищенные routes должны перекидывать пользователя на `/login`.
 
+### Disabled user still works with an old token
+
+Это ожидаемо для текущего MVP:
+
+```text
+Disable запрещает новый login.
+Старый JWT может работать до истечения срока жизни токена.
+```
+
+Будущее улучшение:
+
+```text
+Redis token revocation / force logout
+```
+
 ---
 
-## 24. Commit checklist
+## 26. Commit checklist
 
 Перед commit:
 
@@ -1233,6 +1513,8 @@ backend/target/
 frontend/node_modules/
 frontend/dist/
 .idea/
+docs/local/
+*.local.md
 API keys
 production secrets
 temporary files
@@ -1249,20 +1531,32 @@ frontend/src/**
 infra/docker-compose.yml
 ```
 
+Для текущего этапа хороший commit message:
+
+```text
+feat: add admin user management
+```
+
+Для обновления документации:
+
+```text
+docs: update roadmap and README
+```
+
 ---
 
-## 25. Development roadmap
+## 27. Development roadmap
 
 Следующие этапы:
 
 ```text
 1. Rate limits через Redis                         next
-2. OpenAI live verification                        pending
-3. Anthropic live verification                     pending
-4. Provider timeout/retry/error handling           pending
-5. Better frontend error UI                        pending
-6. Admin usage charts                              pending
-7. User management actions                         pending
+2. Redis token revocation / force logout           pending
+3. OpenAI live verification                        pending
+4. Anthropic live verification                     pending
+5. Provider timeout/retry/error handling           pending
+6. Better frontend error UI                        pending
+7. Admin usage charts                              pending
 8. Document upload                                 pending
 9. RAG indexing and retrieval                      pending
 10. Production Docker profile                      pending
@@ -1270,12 +1564,24 @@ infra/docker-compose.yml
 12. Deployment documentation                       pending
 ```
 
+Уже сделано:
+
+```text
+✅ User management actions: enable/disable, roles, reset password
+✅ Frontend buttons for user management
+✅ Current user display
+✅ Admin menu hiding for USER
+✅ Audit events for user management
+```
+
 ---
 
-## 26. Формулировка для собеседования
+## 28. Формулировка для собеседования
 
 ```text
 SafeAI Desk — это full-stack MVP корпоративного AI Gateway. Я реализовал Spring Boot backend с организациями, пользователями, ролями, JWT-авторизацией, chat sessions, абстракцией AI-провайдера, mock provider, заготовками OpenAI/Anthropic providers, audit events и usage tracking. Модуль chat не зависит от конкретного AI-провайдера, потому что работает через интерфейс AiProvider.
 
-Admin APIs показывают users, audit events и usage analytics. Usage сохраняется в chat_messages и агрегируется по пользователю, модели и дням. Также реализован React + TypeScript frontend: login, chat, admin users, admin audit и admin usage. Следующий этап — rate limiting через Redis, затем live-проверка реальных AI-провайдеров и RAG.
+Admin APIs показывают users, audit events и usage analytics. Для администраторов реализованы user-management actions: создание пользователей, enable/disable, reset password и смена ролей USER/ADMIN. Backend защищает критические сценарии: нельзя отключить самого себя, нельзя снять с себя ADMIN, нельзя оставить систему без активного администратора. Все административные действия пишутся в audit.
+
+Usage сохраняется в chat_messages и агрегируется по пользователю, модели и дням. Также реализован React + TypeScript frontend: login, chat, admin users, admin audit и admin usage. Frontend показывает текущего пользователя и роль, скрывает admin menu для обычного USER и даёт админу кнопки управления пользователями. Следующий этап — rate limiting через Redis, затем token revocation, live-проверка реальных AI-провайдеров и RAG.
 ```
