@@ -12,6 +12,7 @@ import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -23,12 +24,18 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     @Transactional(readOnly = true)
     public @NonNull UserDetails loadUserByUsername(@NonNull String email) throws UsernameNotFoundException {
-        UserEntity user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UsernameNotFoundException("Пользователь не найден: " + email));
+        String normalizedEmail = email.trim().toLowerCase();
+
+        UserEntity user = userRepository.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new UsernameNotFoundException(
+                        "Пользователь не найден: " + normalizedEmail
+                ));
 
         var authorities = user.getRoles()
                 .stream()
+                .filter(Objects::nonNull)
                 .map(RoleEntity::getName)
+                .filter(Objects::nonNull)
                 .map(role -> role.startsWith("ROLE_") ? role : "ROLE_" + role)
                 .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toSet());
@@ -38,7 +45,7 @@ public class CustomUserDetailsService implements UserDetailsService {
                 user.getOrganization().getId(),
                 user.getEmail(),
                 user.getPasswordHash(),
-                user.getEnabled(),
+                user.isEnabled(),
                 authorities
         );
     }

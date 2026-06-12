@@ -1,10 +1,17 @@
 package ru.safeai.gateway.ai;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 
 @Service
+@ConditionalOnProperty(
+        name = "safeai.ai.provider",
+        havingValue = "mock",
+        matchIfMissing = true
+)
 public class MockAiProvider implements AiProvider {
 
     private static final String MOCK_MODEL = "mock-safeai";
@@ -23,18 +30,25 @@ public class MockAiProvider implements AiProvider {
     }
 
     private Integer calculateMockInputTokens(AiChatRequest request) {
-        if (request.userMessage() == null || request.userMessage().isBlank()) {
-            return 0;
-        }
+        int historyTokens = request.history()
+                .stream()
+                .filter(Objects::nonNull)
+                .map(AiMessage::content)
+                .mapToInt(this::estimateTokens)
+                .sum();
 
-        return Math.max(1, request.userMessage().length() / 4);
+        return historyTokens + estimateTokens(request.userMessage());
     }
 
     private Integer calculateMockOutputTokens(String content) {
-        if (content == null || content.isBlank()) {
+        return estimateTokens(content);
+    }
+
+    private int estimateTokens(String text) {
+        if (text == null || text.isBlank()) {
             return 0;
         }
 
-        return Math.max(1, content.length() / 4);
+        return Math.max(1, text.length() / 4);
     }
 }

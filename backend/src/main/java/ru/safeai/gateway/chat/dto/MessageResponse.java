@@ -1,7 +1,7 @@
 package ru.safeai.gateway.chat.dto;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 public record MessageResponse(
@@ -12,6 +12,6 @@ public record MessageResponse(
         Integer inputTokens,
         Integer outputTokens,
         BigDecimal costUsd,
-        LocalDateTime createdAt
+        Instant createdAt
 ) {
 }

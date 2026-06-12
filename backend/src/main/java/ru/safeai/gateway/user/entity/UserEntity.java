@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -34,10 +34,10 @@ public class UserEntity {
     private String fullName;
 
     @Column(name = "enabled", nullable = false)
-    private Boolean enabled;
+    private boolean enabled;
 
     @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(

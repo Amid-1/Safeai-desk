@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -13,7 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -26,16 +27,13 @@ public class GlobalExceptionHandler {
             ResourceNotFoundException exception,
             HttpServletRequest request
     ) {
-        ApiErrorResponse response = new ApiErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.NOT_FOUND.value(),
+        return buildResponse(
+                HttpStatus.NOT_FOUND,
                 "NOT_FOUND",
                 exception.getMessage(),
                 request.getRequestURI(),
                 null
         );
-
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 
     @ExceptionHandler(ConflictException.class)
@@ -43,16 +41,13 @@ public class GlobalExceptionHandler {
             ConflictException exception,
             HttpServletRequest request
     ) {
-        ApiErrorResponse response = new ApiErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.CONFLICT.value(),
+        return buildResponse(
+                HttpStatus.CONFLICT,
                 "CONFLICT",
                 exception.getMessage(),
                 request.getRequestURI(),
                 null
         );
-
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -71,16 +66,13 @@ public class GlobalExceptionHandler {
                         (first, second) -> first
                 ));
 
-        ApiErrorResponse response = new ApiErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.BAD_REQUEST.value(),
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
                 "VALIDATION_ERROR",
                 "Ошибка валидации запроса",
                 request.getRequestURI(),
                 fieldErrors
         );
-
-        return ResponseEntity.badRequest().body(response);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -88,48 +80,52 @@ public class GlobalExceptionHandler {
             MethodArgumentTypeMismatchException exception,
             HttpServletRequest request
     ) {
-        ApiErrorResponse response = new ApiErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.BAD_REQUEST.value(),
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
                 "BAD_REQUEST",
                 "Некорректный параметр запроса: " + exception.getName(),
                 request.getRequestURI(),
                 null
         );
-
-        return ResponseEntity.badRequest().body(response);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidJson(
             HttpServletRequest request
     ) {
-        ApiErrorResponse response = new ApiErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.BAD_REQUEST.value(),
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
                 "BAD_REQUEST",
                 "Некорректное тело запроса. Проверьте формат JSON и типы полей",
                 request.getRequestURI(),
                 null
         );
-
-        return ResponseEntity.badRequest().body(response);
     }
 
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ApiErrorResponse> handleAuthenticationException(
             HttpServletRequest request
     ) {
-        ApiErrorResponse response = new ApiErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.UNAUTHORIZED.value(),
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
                 "UNAUTHORIZED",
                 "Неверный email или пароль",
                 request.getRequestURI(),
                 null
         );
+    }
 
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAuthorizationDeniedException(
+            HttpServletRequest request
+    ) {
+        return buildResponse(
+                HttpStatus.FORBIDDEN,
+                "FORBIDDEN",
+                "Доступ запрещён",
+                request.getRequestURI(),
+                null
+        );
     }
 
     @ExceptionHandler(ResponseStatusException.class)
@@ -139,16 +135,17 @@ public class GlobalExceptionHandler {
     ) {
         HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
 
-        ApiErrorResponse response = new ApiErrorResponse(
-                LocalDateTime.now(),
-                status.value(),
+        String message = exception.getReason() == null || exception.getReason().isBlank()
+                ? status.getReasonPhrase()
+                : exception.getReason();
+
+        return buildResponse(
+                status,
                 status.name(),
-                exception.getReason(),
+                message,
                 request.getRequestURI(),
                 null
         );
-
-        return ResponseEntity.status(status).body(response);
     }
 
     @ExceptionHandler(Exception.class)
@@ -158,15 +155,31 @@ public class GlobalExceptionHandler {
     ) {
         log.error("Неожиданная ошибка при обработке запроса {}", request.getRequestURI(), exception);
 
-        ApiErrorResponse response = new ApiErrorResponse(
-                LocalDateTime.now(),
-                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+        return buildResponse(
+                HttpStatus.INTERNAL_SERVER_ERROR,
                 "INTERNAL_SERVER_ERROR",
                 "Внутренняя ошибка сервера",
                 request.getRequestURI(),
                 null
         );
+    }
 
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+    private ResponseEntity<ApiErrorResponse> buildResponse(
+            HttpStatus status,
+            String error,
+            String message,
+            String path,
+            Map<String, String> fieldErrors
+    ) {
+        ApiErrorResponse response = new ApiErrorResponse(
+                Instant.now(),
+                status.value(),
+                error,
+                message,
+                path,
+                fieldErrors
+        );
+
+        return ResponseEntity.status(status).body(response);
     }
 }

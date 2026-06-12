@@ -2,6 +2,7 @@ package ru.safeai.gateway.organization.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
@@ -13,6 +14,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/organizations")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('ADMIN')")
 public class OrganizationController {
 
     private final OrganizationService organizationService;

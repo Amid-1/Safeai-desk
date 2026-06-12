@@ -1,6 +1,7 @@
 package ru.safeai.gateway.admin.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import ru.safeai.gateway.admin.service.AdminUsageService;
 import ru.safeai.gateway.chat.dto.UsageDailySummaryResponse;
@@ -14,6 +15,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminUsageController {
 
     private final AdminUsageService adminUsageService;

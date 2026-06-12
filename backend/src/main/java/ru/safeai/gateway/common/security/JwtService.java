@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -24,11 +25,15 @@ public class JwtService {
     private long expirationMinutes;
 
     public String generateToken(SafeAiUserPrincipal user) {
+        Objects.requireNonNull(user, "user не должен быть null");
+
         Instant now = Instant.now();
 
         String roles = user.getAuthorities()
                 .stream()
+                .filter(Objects::nonNull)
                 .map(GrantedAuthority::getAuthority)
+                .filter(Objects::nonNull)
                 .collect(Collectors.joining(" "));
 
         JwsHeader headers = JwsHeader.with(MacAlgorithm.HS256).build();
@@ -40,6 +45,7 @@ public class JwtService {
                 .subject(user.getEmail())
                 .claim("userId", user.getId().toString())
                 .claim("organizationId", user.getOrganizationId().toString())
+                .claim("enabled", user.isEnabled())
                 .claim("scope", roles)
                 .build();
 

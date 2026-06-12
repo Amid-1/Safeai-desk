@@ -15,7 +15,7 @@ import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -32,8 +32,10 @@ public class UserService {
 
     @Transactional
     public UserResponse create(CreateUserRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
-            throw new ConflictException("Пользователь с таким email уже существует: " + request.email());
+        String email = request.email().trim().toLowerCase();
+
+        if (userRepository.existsByEmail(email)) {
+            throw new ConflictException("Пользователь с таким email уже существует: " + email);
         }
 
         OrganizationEntity organization = organizationRepository.findById(request.organizationId())
@@ -46,6 +48,7 @@ public class UserService {
                 : request.roles();
 
         Set<RoleEntity> roles = requestedRoles.stream()
+                .map(roleName -> roleName.trim().toUpperCase())
                 .map(roleName -> roleRepository.findByName(roleName)
                         .orElseThrow(() -> new ResourceNotFoundException(
                                 "Роль не найдена: " + roleName
@@ -55,11 +58,11 @@ public class UserService {
         UserEntity entity = new UserEntity();
         entity.setId(UUID.randomUUID());
         entity.setOrganization(organization);
-        entity.setEmail(request.email());
+        entity.setEmail(email);
         entity.setPasswordHash(passwordEncoder.encode(request.password()));
         entity.setFullName(request.fullName());
         entity.setEnabled(true);
-        entity.setCreatedAt(LocalDateTime.now());
+        entity.setCreatedAt(Instant.now());
         entity.setRoles(roles);
 
         UserEntity saved = userRepository.save(entity);
@@ -69,17 +72,18 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<UserResponse> findAll() {
-        // TODO technical debt:
-        // Сейчас метод возвращает пользователей всех организаций.
-        // Для production нужно ограничить выборку:
-        // ADMIN видит только пользователей своей организации,
-        // SUPER_ADMIN видит всех,
-        // USER не имеет доступа к списку пользователей.
-        // И метод что-то типа findAllByOrganizationId(UUID organizationId)
         return userRepository.findAllWithRoles()
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public UserResponse findById(UUID id) {
+        UserEntity user = userRepository.findByIdWithRolesAndOrganization(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Пользователь не найден: " + id));
+
+        return toResponse(user);
     }
 
     private UserResponse toResponse(UserEntity entity) {
@@ -93,7 +97,7 @@ public class UserService {
                 entity.getOrganization().getId(),
                 entity.getEmail(),
                 entity.getFullName(),
-                entity.getEnabled(),
+                entity.isEnabled(),
                 roleNames,
                 entity.getCreatedAt()
         );

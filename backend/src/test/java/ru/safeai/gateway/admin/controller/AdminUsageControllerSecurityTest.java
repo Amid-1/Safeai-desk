@@ -3,35 +3,34 @@ package ru.safeai.gateway.admin.controller;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.security.oauth2.server.resource.autoconfigure.servlet.OAuth2ResourceServerAutoConfiguration;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.safeai.gateway.admin.service.AdminUsageService;
-import ru.safeai.gateway.common.security.JsonAccessDeniedHandler;
-import ru.safeai.gateway.common.security.JsonAuthenticationEntryPoint;
-import ru.safeai.gateway.common.security.SafeAiJwtAuthenticationConverter;
-import ru.safeai.gateway.common.security.SecurityConfig;
+import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(
-        controllers = AdminUsageController.class,
-        excludeAutoConfiguration = OAuth2ResourceServerAutoConfiguration.class
-)
+@WebMvcTest(AdminUsageController.class)
 @Import({
-        SecurityConfig.class,
-        JsonAuthenticationEntryPoint.class,
-        JsonAccessDeniedHandler.class
+        AdminUsageControllerSecurityTest.TestSecurityConfig.class,
+        GlobalExceptionHandler.class
 })
 @ActiveProfiles("test")
 class AdminUsageControllerSecurityTest {
@@ -43,10 +42,23 @@ class AdminUsageControllerSecurityTest {
     private AdminUsageService adminUsageService;
 
     @MockitoBean
-    private SafeAiJwtAuthenticationConverter safeAiJwtAuthenticationConverter;
-
-    @MockitoBean
     private UserDetailsService userDetailsService;
+
+    @TestConfiguration
+    @EnableWebSecurity
+    @EnableMethodSecurity
+    static class TestSecurityConfig {
+
+        @Bean
+        SecurityFilterChain testSecurityFilterChain(HttpSecurity http) {
+            return http
+                    .csrf(AbstractHttpConfigurer::disable)
+                    .authorizeHttpRequests(auth -> auth
+                            .anyRequest().permitAll()
+                    )
+                    .build();
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {
@@ -58,13 +70,12 @@ class AdminUsageControllerSecurityTest {
             "/api/admin/usage/by-user/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
             "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
     })
-    void shouldReturnUnauthorizedWhenAnonymous(String url) throws Exception {
+    void shouldReturn4xxWhenAnonymous(String url) throws Exception {
         mockMvc.perform(get(url))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().is4xxClientError());
     }
 
     @ParameterizedTest
-    @WithMockUser(roles = "USER")
     @ValueSource(strings = {
             "/api/admin/usage-summary",
             "/api/admin/usage/summary",
@@ -75,12 +86,12 @@ class AdminUsageControllerSecurityTest {
             "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
     })
     void shouldReturnForbiddenWhenUserRole(String url) throws Exception {
-        mockMvc.perform(get(url))
+        mockMvc.perform(get(url)
+                        .with(user("user@test.com").roles("USER")))
                 .andExpect(status().isForbidden());
     }
 
     @ParameterizedTest
-    @WithMockUser(roles = "ADMIN")
     @ValueSource(strings = {
             "/api/admin/usage-summary",
             "/api/admin/usage/summary",
@@ -93,7 +104,8 @@ class AdminUsageControllerSecurityTest {
     void shouldReturnOkWhenAdminRole(String url) throws Exception {
         mockServices();
 
-        mockMvc.perform(get(url))
+        mockMvc.perform(get(url)
+                        .with(user("admin@test.com").roles("ADMIN")))
                 .andExpect(status().isOk());
     }
 

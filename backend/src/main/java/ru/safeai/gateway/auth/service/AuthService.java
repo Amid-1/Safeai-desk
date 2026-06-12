@@ -28,10 +28,12 @@ public class AuthService {
     private final AuditEventService auditEventService;
 
     public LoginResponse login(LoginRequest request) {
+        String email = request.email().trim().toLowerCase();
+
         try {
             var authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(
-                            request.email(),
+                            email,
                             request.password()
                     )
             );
@@ -51,20 +53,12 @@ public class AuthService {
                     )
             );
 
-            Set<String> roles = principal.getAuthorities()
-                    .stream()
-                    .filter(Objects::nonNull)
-                    .map(GrantedAuthority::getAuthority)
-                    .filter(Objects::nonNull)
-                    .map(authority -> authority.replaceFirst("^ROLE_", ""))
-                    .collect(Collectors.toSet());
-
             AuthUserResponse user = new AuthUserResponse(
                     principal.getId(),
                     principal.getOrganizationId(),
                     principal.getEmail(),
                     principal.isEnabled(),
-                    roles
+                    extractRoles(principal)
             );
 
             return new LoginResponse(token, "Bearer", user);
@@ -74,11 +68,21 @@ public class AuthService {
                     null,
                     AuditEventType.USER_LOGIN_FAILED,
                     Map.of(
-                            "email", request.email()
+                            "email", email
                     )
             );
 
             throw exception;
         }
+    }
+
+    private Set<String> extractRoles(SafeAiUserPrincipal principal) {
+        return principal.getAuthorities()
+                .stream()
+                .filter(Objects::nonNull)
+                .map(GrantedAuthority::getAuthority)
+                .filter(Objects::nonNull)
+                .map(authority -> authority.replaceFirst("^ROLE_", ""))
+                .collect(Collectors.toSet());
     }
 }

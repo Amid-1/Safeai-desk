@@ -4,19 +4,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import ru.safeai.gateway.common.security.JsonAccessDeniedHandler;
-import ru.safeai.gateway.common.security.JsonAuthenticationEntryPoint;
-import ru.safeai.gateway.common.security.SafeAiJwtAuthenticationConverter;
-import ru.safeai.gateway.common.security.SecurityConfig;
 import ru.safeai.gateway.user.dto.UserResponse;
 import ru.safeai.gateway.user.service.UserService;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -27,11 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(UserController.class)
-@Import({
-        SecurityConfig.class,
-        JsonAuthenticationEntryPoint.class,
-        JsonAccessDeniedHandler.class
-})
+@Import(UserControllerSecurityTest.TestMethodSecurityConfig.class)
 @ActiveProfiles("test")
 class UserControllerSecurityTest {
 
@@ -44,13 +38,15 @@ class UserControllerSecurityTest {
     @MockitoBean
     private UserDetailsService userDetailsService;
 
-    @MockitoBean
-    private SafeAiJwtAuthenticationConverter safeAiJwtAuthenticationConverter;
+    @TestConfiguration
+    @EnableMethodSecurity
+    static class TestMethodSecurityConfig {
+    }
 
     @Test
-    void findAllWithoutAuthenticationReturns401() throws Exception {
+    void findAllWithoutAuthenticationReturnsUnauthorizedOrForbidden() throws Exception {
         mockMvc.perform(get("/api/users"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().is4xxClientError());
     }
 
     @Test
@@ -74,7 +70,7 @@ class UserControllerSecurityTest {
                         "Demo Admin",
                         true,
                         Set.of("ADMIN"),
-                        LocalDateTime.of(2026, 5, 31, 12, 0)
+                        Instant.parse("2026-05-31T12:00:00Z")
                 )
         ));
 

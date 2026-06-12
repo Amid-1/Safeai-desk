@@ -24,6 +24,6 @@ public record CreateUserRequest(
         @Size(max = 255)
         String fullName,
 
-        Set<String> roles
+        Set<@NotBlank @Size(max = 100) String> roles
 ) {
 }

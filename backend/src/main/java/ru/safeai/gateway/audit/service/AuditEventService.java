@@ -9,7 +9,7 @@ import ru.safeai.gateway.audit.repository.AuditEventRepository;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -33,7 +33,7 @@ public class AuditEventService {
         event.setUser(user);
         event.setEventType(eventType);
         event.setDetails(details);
-        event.setCreatedAt(LocalDateTime.now());
+        event.setCreatedAt(Instant.now());
 
         auditEventRepository.save(event);
     }

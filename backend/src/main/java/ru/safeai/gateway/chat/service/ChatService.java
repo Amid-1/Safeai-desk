@@ -3,13 +3,15 @@ package ru.safeai.gateway.chat.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.safeai.gateway.ai.AiChatRequest;
 import ru.safeai.gateway.ai.AiChatResponse;
-import ru.safeai.gateway.ai.AiMessage;
 import ru.safeai.gateway.ai.AiProvider;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.chat.dto.*;
+import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
+import ru.safeai.gateway.chat.dto.ChatResponse;
+import ru.safeai.gateway.chat.dto.CreateChatRequest;
+import ru.safeai.gateway.chat.dto.MessageResponse;
+import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
@@ -19,8 +21,7 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
-import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,14 +30,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ChatService {
 
-    private static final String ROLE_USER = "USER";
-    private static final String ROLE_ASSISTANT = "ASSISTANT";
-
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
     private final AiProvider aiProvider;
     private final AuditEventService auditEventService;
+    private final ChatPersistenceService chatPersistenceService;
 
     @Transactional
     public ChatResponse create(CreateChatRequest request, SafeAiUserPrincipal currentUser) {
@@ -49,7 +48,7 @@ public class ChatService {
         session.setId(UUID.randomUUID());
         session.setUser(user);
         session.setTitle(normalizeTitle(request.title()));
-        session.setCreatedAt(LocalDateTime.now());
+        session.setCreatedAt(Instant.now());
 
         ChatSessionEntity saved = chatSessionRepository.save(session);
 
@@ -86,90 +85,25 @@ public class ChatService {
         return toChatDetailsResponse(session, messages);
     }
 
-    @Transactional
     public ChatDetailsResponse sendMessage(
             UUID chatId,
             SendMessageRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        ChatSessionEntity session = findOwnedSession(chatId, currentUser);
+        ChatProcessingContext context =
+                chatPersistenceService.saveUserMessageAndPrepareAiRequest(
+                        chatId,
+                        request,
+                        currentUser
+                );
 
-        ChatMessageEntity userMessage = new ChatMessageEntity();
-        userMessage.setId(UUID.randomUUID());
-        userMessage.setSession(session);
-        userMessage.setRole(ROLE_USER);
-        userMessage.setContent(request.content());
-        userMessage.setModel(null);
-        userMessage.setInputTokens(null);
-        userMessage.setOutputTokens(null);
-        userMessage.setCostUsd(null);
-        userMessage.setCreatedAt(LocalDateTime.now());
+        AiChatResponse aiResponse = aiProvider.sendMessage(context.aiRequest());
 
-        ChatMessageEntity savedUserMessage = chatMessageRepository.save(userMessage);
-
-        auditEventService.record(
-                currentUser.getId(),
-                AuditEventType.CHAT_MESSAGE_SENT,
-                Map.of(
-                        "chatId", session.getId().toString(),
-                        "messageId", savedUserMessage.getId().toString(),
-                        "messageLength", request.content().length()
-                )
+        return chatPersistenceService.saveAssistantMessageAndReturnChat(
+                context.chatId(),
+                aiResponse,
+                currentUser
         );
-
-        List<AiMessage> history = chatMessageRepository
-                .findBySession_IdOrderByCreatedAtAsc(session.getId())
-                .stream()
-                .map(message -> new AiMessage(
-                        message.getRole(),
-                        message.getContent()
-                ))
-                .toList();
-
-        AiChatRequest aiRequest = new AiChatRequest(
-                currentUser.getId(),
-                currentUser.getOrganizationId(),
-                session.getId(),
-                request.content(),
-                history
-        );
-
-        AiChatResponse aiResponse = aiProvider.sendMessage(aiRequest);
-
-        ChatMessageEntity assistantMessage = new ChatMessageEntity();
-        assistantMessage.setId(UUID.randomUUID());
-        assistantMessage.setSession(session);
-        assistantMessage.setRole(ROLE_ASSISTANT);
-        assistantMessage.setContent(aiResponse.content());
-        assistantMessage.setModel(aiResponse.model());
-        assistantMessage.setInputTokens(aiResponse.inputTokens());
-        assistantMessage.setOutputTokens(aiResponse.outputTokens());
-        assistantMessage.setCostUsd(aiResponse.costUsd());
-        assistantMessage.setCreatedAt(LocalDateTime.now());
-
-        ChatMessageEntity savedAssistantMessage = chatMessageRepository.save(assistantMessage);
-
-        Map<String, Object> aiResponseDetails = new HashMap<>();
-        aiResponseDetails.put("chatId", session.getId().toString());
-        aiResponseDetails.put("messageId", savedAssistantMessage.getId().toString());
-        aiResponseDetails.put("model", aiResponse.model());
-        aiResponseDetails.put("inputTokens", aiResponse.inputTokens());
-        aiResponseDetails.put("outputTokens", aiResponse.outputTokens());
-        aiResponseDetails.put("costUsd", aiResponse.costUsd());
-
-        auditEventService.record(
-                currentUser.getId(),
-                AuditEventType.AI_RESPONSE_RECEIVED,
-                aiResponseDetails
-        );
-
-        List<MessageResponse> messages = chatMessageRepository
-                .findBySession_IdOrderByCreatedAtAsc(session.getId())
-                .stream()
-                .map(this::toMessageResponse)
-                .toList();
-
-        return toChatDetailsResponse(session, messages);
     }
 
     private ChatSessionEntity findOwnedSession(UUID chatId, SafeAiUserPrincipal currentUser) {

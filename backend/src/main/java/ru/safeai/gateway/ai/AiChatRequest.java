@@ -10,4 +10,9 @@ public record AiChatRequest(
         String userMessage,
         List<AiMessage> history
 ) {
+
+    public AiChatRequest {
+        userMessage = userMessage == null ? "" : userMessage;
+        history = history == null ? List.of() : List.copyOf(history);
+    }
 }

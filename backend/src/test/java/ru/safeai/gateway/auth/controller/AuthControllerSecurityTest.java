@@ -2,12 +2,19 @@ package ru.safeai.gateway.auth.controller;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -15,11 +22,8 @@ import ru.safeai.gateway.auth.dto.AuthUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
 import ru.safeai.gateway.auth.service.AuthService;
-import ru.safeai.gateway.common.security.JsonAccessDeniedHandler;
-import ru.safeai.gateway.common.security.JsonAuthenticationEntryPoint;
-import ru.safeai.gateway.common.security.SafeAiJwtAuthenticationConverter;
+import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.common.security.SecurityConfig;
 
 import java.util.Set;
 import java.util.UUID;
@@ -33,12 +37,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(AuthController.class)
 @Import({
-        SecurityConfig.class,
-        JsonAuthenticationEntryPoint.class,
-        JsonAccessDeniedHandler.class
+        AuthControllerSecurityTest.TestSecurityConfig.class,
+        GlobalExceptionHandler.class
 })
 @ActiveProfiles("test")
 class AuthControllerSecurityTest {
+
+    private static final UUID USER_ID = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    private static final UUID ORGANIZATION_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     @Autowired
     private MockMvc mockMvc;
@@ -49,20 +55,30 @@ class AuthControllerSecurityTest {
     @MockitoBean
     private UserDetailsService userDetailsService;
 
-    @MockitoBean
-    private SafeAiJwtAuthenticationConverter safeAiJwtAuthenticationConverter;
+    @TestConfiguration
+    @EnableWebSecurity
+    static class TestSecurityConfig {
+
+        @Bean
+        SecurityFilterChain testSecurityFilterChain(HttpSecurity http) {
+            return http
+                    .csrf(AbstractHttpConfigurer::disable)
+                    .authorizeHttpRequests(auth -> auth
+                            .requestMatchers("/api/auth/login").permitAll()
+                            .anyRequest().permitAll()
+                    )
+                    .build();
+        }
+    }
 
     @Test
     void loginEndpointIsPublicAndReturnsToken() throws Exception {
-        UUID userId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-        UUID organizationId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-
         LoginResponse loginResponse = new LoginResponse(
                 "test-jwt-token",
                 "Bearer",
                 new AuthUserResponse(
-                        userId,
-                        organizationId,
+                        USER_ID,
+                        ORGANIZATION_ID,
                         "admin@test.com",
                         true,
                         Set.of("ADMIN")
@@ -83,11 +99,24 @@ class AuthControllerSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").value("test-jwt-token"))
                 .andExpect(jsonPath("$.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.user.id").value(userId.toString()))
-                .andExpect(jsonPath("$.user.organizationId").value(organizationId.toString()))
+                .andExpect(jsonPath("$.user.id").value(USER_ID.toString()))
+                .andExpect(jsonPath("$.user.organizationId").value(ORGANIZATION_ID.toString()))
                 .andExpect(jsonPath("$.user.email").value("admin@test.com"))
                 .andExpect(jsonPath("$.user.enabled").value(true))
                 .andExpect(jsonPath("$.user.roles[0]").value("ADMIN"));
+    }
+
+    @Test
+    void loginWithInvalidBodyReturns400() throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "",
+                                  "password": ""
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -98,39 +127,34 @@ class AuthControllerSecurityTest {
 
     @Test
     void meWithAuthenticationReturnsCurrentUser() throws Exception {
-        UUID userId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-        UUID organizationId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-
-        UsernamePasswordAuthenticationToken authentication =
-                authenticationForAdmin(userId, organizationId);
+        SafeAiUserPrincipal principal = currentUser();
 
         mockMvc.perform(get("/api/auth/me")
-                        .with(authentication(authentication)))
+                        .with(authentication(authToken(principal))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(userId.toString()))
-                .andExpect(jsonPath("$.organizationId").value(organizationId.toString()))
+                .andExpect(jsonPath("$.id").value(USER_ID.toString()))
+                .andExpect(jsonPath("$.organizationId").value(ORGANIZATION_ID.toString()))
                 .andExpect(jsonPath("$.email").value("admin@test.com"))
                 .andExpect(jsonPath("$.enabled").value(true))
                 .andExpect(jsonPath("$.roles[0]").value("ADMIN"));
     }
 
-    private UsernamePasswordAuthenticationToken authenticationForAdmin(
-            UUID userId,
-            UUID organizationId
-    ) {
-        SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
-                userId,
-                organizationId,
-                "admin@test.com",
-                "",
-                true,
-                Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
-        );
-
+    private Authentication authToken(SafeAiUserPrincipal principal) {
         return new UsernamePasswordAuthenticationToken(
                 principal,
                 null,
                 principal.getAuthorities()
+        );
+    }
+
+    private SafeAiUserPrincipal currentUser() {
+        return new SafeAiUserPrincipal(
+                USER_ID,
+                ORGANIZATION_ID,
+                "admin@test.com",
+                "",
+                true,
+                Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
     }
 }

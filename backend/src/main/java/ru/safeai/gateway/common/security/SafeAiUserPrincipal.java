@@ -17,7 +17,7 @@ public class SafeAiUserPrincipal implements UserDetails {
     private final UUID organizationId;
     private final String email;
     private final String passwordHash;
-    private final Boolean enabled;
+    private final boolean enabled;
     private final Collection<? extends GrantedAuthority> authorities;
 
     public SafeAiUserPrincipal(
@@ -25,7 +25,7 @@ public class SafeAiUserPrincipal implements UserDetails {
             UUID organizationId,
             String email,
             String passwordHash,
-            Boolean enabled,
+            boolean enabled,
             Collection<? extends GrantedAuthority> authorities
     ) {
         this.id = Objects.requireNonNull(id, "id не должен быть null");
@@ -33,7 +33,11 @@ public class SafeAiUserPrincipal implements UserDetails {
         this.email = Objects.requireNonNull(email, "email не должен быть null");
         this.passwordHash = Objects.requireNonNull(passwordHash, "passwordHash не должен быть null");
         this.enabled = enabled;
-        this.authorities = authorities == null ? List.of() : List.copyOf(authorities);
+        this.authorities = authorities == null
+                ? List.of()
+                : authorities.stream()
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     @Override
@@ -53,6 +57,6 @@ public class SafeAiUserPrincipal implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return Boolean.TRUE.equals(enabled);
+        return enabled;
     }
 }

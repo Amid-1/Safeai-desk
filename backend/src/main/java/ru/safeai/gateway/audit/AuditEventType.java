@@ -11,6 +11,7 @@ public final class AuditEventType {
     public static final String CHAT_CREATED = "CHAT_CREATED";
     public static final String CHAT_MESSAGE_SENT = "CHAT_MESSAGE_SENT";
     public static final String AI_RESPONSE_RECEIVED = "AI_RESPONSE_RECEIVED";
+    public static final String AI_RESPONSE_FAILED = "AI_RESPONSE_FAILED";
 
     public static final String USER_CREATED = "USER_CREATED";
     public static final String ORGANIZATION_CREATED = "ORGANIZATION_CREATED";

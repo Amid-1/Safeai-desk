@@ -5,7 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import ru.safeai.gateway.user.entity.UserEntity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -26,5 +26,5 @@ public class ChatSessionEntity {
     private String title;
 
     @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 }

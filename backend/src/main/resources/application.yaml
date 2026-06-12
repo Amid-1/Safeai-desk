@@ -29,3 +29,19 @@ app:
     jwt:
       secret: ${SAFEAI_JWT_SECRET}
       expiration-minutes: ${SAFEAI_JWT_EXPIRATION_MINUTES:60}
+
+safeai:
+  ai:
+    provider: ${SAFEAI_AI_PROVIDER:mock}
+
+    openai:
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      api-key: ${OPENAI_API_KEY:}
+      model: ${OPENAI_MODEL:gpt-4.1}
+
+    anthropic:
+      base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/v1}
+      api-key: ${ANTHROPIC_API_KEY:}
+      model: ${ANTHROPIC_MODEL:claude-opus-4-8}
+      version: ${ANTHROPIC_VERSION:2023-06-01}
+      max-tokens: ${ANTHROPIC_MAX_TOKENS:1024}

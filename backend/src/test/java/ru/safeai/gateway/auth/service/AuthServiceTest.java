@@ -3,6 +3,7 @@ package ru.safeai.gateway.auth.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -21,10 +22,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -57,7 +55,7 @@ class AuthServiceTest {
         UUID organizationId = UUID.randomUUID();
 
         LoginRequest request = new LoginRequest(
-                "admin@test.com",
+                " Admin@Test.COM ",
                 "admin123"
         );
 
@@ -94,6 +92,16 @@ class AuthServiceTest {
         assertThat(response.user().enabled()).isTrue();
         assertThat(response.user().roles()).containsExactly("ADMIN");
 
+        ArgumentCaptor<UsernamePasswordAuthenticationToken> authCaptor =
+                ArgumentCaptor.forClass(UsernamePasswordAuthenticationToken.class);
+
+        verify(authenticationManager).authenticate(authCaptor.capture());
+
+        UsernamePasswordAuthenticationToken authToken = authCaptor.getValue();
+
+        assertThat(authToken.getPrincipal()).isEqualTo("admin@test.com");
+        assertThat(authToken.getCredentials()).isEqualTo("admin123");
+
         verify(auditEventService).record(
                 eq(userId),
                 eq(AuditEventType.USER_LOGIN_SUCCESS),
@@ -104,7 +112,7 @@ class AuthServiceTest {
     @Test
     void loginWhenCredentialsAreInvalidThrowsBadCredentialsException() {
         LoginRequest request = new LoginRequest(
-                "admin@test.com",
+                " Admin@Test.COM ",
                 "wrong-password"
         );
 

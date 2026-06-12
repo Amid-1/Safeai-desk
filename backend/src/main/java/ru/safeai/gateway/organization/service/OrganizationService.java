@@ -3,13 +3,14 @@ package ru.safeai.gateway.organization.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,10 +22,16 @@ public class OrganizationService {
 
     @Transactional
     public OrganizationResponse create(CreateOrganizationRequest request) {
+        String name = request.name().trim();
+
+        if (organizationRepository.existsByNameIgnoreCase(name)) {
+            throw new ConflictException("Организация с таким названием уже существует: " + name);
+        }
+
         OrganizationEntity entity = new OrganizationEntity();
         entity.setId(UUID.randomUUID());
-        entity.setName(request.name());
-        entity.setCreatedAt(LocalDateTime.now());
+        entity.setName(name);
+        entity.setCreatedAt(Instant.now());
 
         OrganizationEntity saved = organizationRepository.save(entity);
 
@@ -42,7 +49,9 @@ public class OrganizationService {
     @Transactional(readOnly = true)
     public OrganizationResponse findById(UUID id) {
         OrganizationEntity entity = organizationRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Организация не найдена: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Организация не найдена: " + id
+                ));
 
         return toResponse(entity);
     }

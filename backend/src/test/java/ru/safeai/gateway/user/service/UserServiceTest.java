@@ -153,7 +153,7 @@ class UserServiceTest {
         assertThat(savedEntity.getEmail()).isEqualTo("admin@test.com");
         assertThat(savedEntity.getPasswordHash()).isEqualTo("encoded-password");
         assertThat(savedEntity.getFullName()).isEqualTo("Demo Admin");
-        assertThat(savedEntity.getEnabled()).isTrue();
+        assertThat(savedEntity.isEnabled()).isTrue();
         assertThat(savedEntity.getRoles()).extracting(RoleEntity::getName).containsExactly("ADMIN");
 
         assertThat(response.email()).isEqualTo("admin@test.com");

@@ -35,20 +35,22 @@ public class AuthController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Пользователь не авторизован");
         }
 
-        Set<String> roles = principal.getAuthorities()
+        return new AuthUserResponse(
+                principal.getId(),
+                principal.getOrganizationId(),
+                principal.getEmail(),
+                principal.isEnabled(),
+                extractRoles(principal)
+        );
+    }
+
+    private Set<String> extractRoles(SafeAiUserPrincipal principal) {
+        return principal.getAuthorities()
                 .stream()
                 .filter(Objects::nonNull)
                 .map(GrantedAuthority::getAuthority)
                 .filter(Objects::nonNull)
                 .map(authority -> authority.replaceFirst("^ROLE_", ""))
                 .collect(Collectors.toSet());
-
-        return new AuthUserResponse(
-                principal.getId(),
-                principal.getOrganizationId(),
-                principal.getEmail(),
-                principal.isEnabled(),
-                roles
-        );
     }
 }
