@@ -1,3 +1,4 @@
+// frontend/src/api/adminApi.ts
 import { apiRequest } from './http'
 
 export type AuditEvent = {

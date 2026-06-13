@@ -1,3 +1,4 @@
+// pages/AdminUsagePage.tsx
 import { useEffect, useState } from 'react'
 import { getUsageSummary, UsageSummary } from '../api/adminApi'
 

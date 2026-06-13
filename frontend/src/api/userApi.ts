@@ -1,3 +1,4 @@
+// frontend/src/api/userApi.ts
 import { apiRequest } from './http'
 
 export type User = {

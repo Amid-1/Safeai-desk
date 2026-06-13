@@ -1,3 +1,4 @@
+//frontend/src/pages/App.tsx
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'

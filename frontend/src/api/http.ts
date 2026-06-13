@@ -1,3 +1,4 @@
+// frontend/src/api/http.ts
 export type ApiErrorBody = {
     timestamp?: string
     status?: number

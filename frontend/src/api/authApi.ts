@@ -1,3 +1,4 @@
+// frontend/src/api/authApi.ts
 import { apiRequest } from './http'
 
 export type LoginRequest = {

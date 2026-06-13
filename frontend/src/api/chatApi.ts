@@ -1,3 +1,4 @@
+// frontend/src/api/chatApi.ts
 import { apiRequest } from './http'
 
 export type Chat = {
