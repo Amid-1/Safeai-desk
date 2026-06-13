@@ -3,7 +3,9 @@ package ru.safeai.gateway.organization.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
 import ru.safeai.gateway.organization.service.OrganizationService;
@@ -20,8 +22,11 @@ public class OrganizationController {
     private final OrganizationService organizationService;
 
     @PostMapping
-    public OrganizationResponse create(@Valid @RequestBody CreateOrganizationRequest request) {
-        return organizationService.create(request);
+    public OrganizationResponse create(
+            @Valid @RequestBody CreateOrganizationRequest request,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return organizationService.create(request, currentUser);
     }
 
     @GetMapping

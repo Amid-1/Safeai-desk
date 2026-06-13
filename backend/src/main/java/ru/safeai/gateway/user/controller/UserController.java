@@ -26,8 +26,11 @@ public class UserController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
-    public UserResponse create(@Valid @RequestBody CreateUserRequest request) {
-        return userService.create(request);
+    public UserResponse create(
+            @Valid @RequestBody CreateUserRequest request,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return userService.create(request, currentUser);
     }
 
     @PreAuthorize("hasRole('ADMIN')")

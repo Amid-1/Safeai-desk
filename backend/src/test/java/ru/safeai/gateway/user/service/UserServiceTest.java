@@ -79,7 +79,7 @@ class UserServiceTest {
 
         when(userRepository.existsByEmail("admin@test.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> userService.create(request))
+        assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Пользователь с таким email уже существует");
 
@@ -99,7 +99,7 @@ class UserServiceTest {
         when(userRepository.existsByEmail("admin@test.com")).thenReturn(false);
         when(organizationRepository.findById(ORGANIZATION_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> userService.create(request))
+        assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Организация не найдена");
 
@@ -122,7 +122,7 @@ class UserServiceTest {
         when(organizationRepository.findById(ORGANIZATION_ID)).thenReturn(Optional.of(organization));
         when(roleRepository.findByName("ADMIN")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> userService.create(request))
+        assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Роль не найдена");
 
@@ -145,9 +145,21 @@ class UserServiceTest {
         when(organizationRepository.findById(ORGANIZATION_ID)).thenReturn(Optional.of(organizationEntity()));
         when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
         when(passwordEncoder.encode("admin123")).thenReturn("encoded-password");
-        when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> {
+            UserEntity user = invocation.getArgument(0);
 
-        UserResponse response = userService.create(request);
+            if (user.getId() == null) {
+                user.setId(UUID.randomUUID());
+            }
+
+            if (user.getCreatedAt() == null) {
+                user.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+            }
+
+            return user;
+        });
+
+        UserResponse response = userService.create(request, adminPrincipal());
 
         ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
         verify(userRepository).save(captor.capture());
@@ -165,6 +177,12 @@ class UserServiceTest {
         assertThat(response.email()).isEqualTo("admin@test.com");
         assertThat(response.organizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(response.roles()).containsExactly("ADMIN");
+
+        verify(auditEventService).record(
+                eq(ADMIN_ID),
+                eq(AuditEventType.USER_CREATED),
+                anyMap()
+        );
     }
 
     @Test

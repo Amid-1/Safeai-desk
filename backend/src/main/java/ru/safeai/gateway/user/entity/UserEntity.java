@@ -46,4 +46,15 @@ public class UserEntity {
             inverseJoinColumns = @JoinColumn(name = "role_id")
     )
     private Set<RoleEntity> roles = new HashSet<>();
+
+    @PrePersist
+    void prePersist() {
+        if (id == null) {
+            id = UUID.randomUUID();
+        }
+
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
+    }
 }

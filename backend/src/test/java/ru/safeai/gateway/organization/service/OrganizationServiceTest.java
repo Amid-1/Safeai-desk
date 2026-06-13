@@ -6,8 +6,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
@@ -21,7 +25,11 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class OrganizationServiceTest {
@@ -29,14 +37,23 @@ class OrganizationServiceTest {
     private static final UUID ORGANIZATION_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
+    private static final UUID ADMIN_ID =
+            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
     @Mock
     private OrganizationRepository organizationRepository;
+
+    @Mock
+    private AuditEventService auditEventService;
 
     private OrganizationService organizationService;
 
     @BeforeEach
     void setUp() {
-        organizationService = new OrganizationService(organizationRepository);
+        organizationService = new OrganizationService(
+                organizationRepository,
+                auditEventService
+        );
     }
 
     @Test
@@ -45,15 +62,28 @@ class OrganizationServiceTest {
                 .thenReturn(false);
 
         when(organizationRepository.save(any(OrganizationEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> {
+                    OrganizationEntity organization = invocation.getArgument(0);
+
+                    if (organization.getId() == null) {
+                        organization.setId(ORGANIZATION_ID);
+                    }
+
+                    if (organization.getCreatedAt() == null) {
+                        organization.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+                    }
+
+                    return organization;
+                });
 
         OrganizationResponse response = organizationService.create(
-                new CreateOrganizationRequest(" SafeAI ")
+                new CreateOrganizationRequest(" SafeAI "),
+                adminPrincipal()
         );
 
-        assertThat(response.id()).isNotNull();
+        assertThat(response.id()).isEqualTo(ORGANIZATION_ID);
         assertThat(response.name()).isEqualTo("SafeAI");
-        assertThat(response.createdAt()).isNotNull();
+        assertThat(response.createdAt()).isEqualTo(Instant.parse("2026-06-12T12:00:00Z"));
 
         ArgumentCaptor<OrganizationEntity> captor =
                 ArgumentCaptor.forClass(OrganizationEntity.class);
@@ -62,9 +92,15 @@ class OrganizationServiceTest {
 
         OrganizationEntity savedEntity = captor.getValue();
 
-        assertThat(savedEntity.getId()).isNotNull();
+        assertThat(savedEntity.getId()).isEqualTo(ORGANIZATION_ID);
         assertThat(savedEntity.getName()).isEqualTo("SafeAI");
-        assertThat(savedEntity.getCreatedAt()).isNotNull();
+        assertThat(savedEntity.getCreatedAt()).isEqualTo(Instant.parse("2026-06-12T12:00:00Z"));
+
+        verify(auditEventService).record(
+                eq(ADMIN_ID),
+                eq(AuditEventType.ORGANIZATION_CREATED),
+                anyMap()
+        );
     }
 
     @Test
@@ -73,7 +109,8 @@ class OrganizationServiceTest {
                 .thenReturn(true);
 
         assertThatThrownBy(() -> organizationService.create(
-                new CreateOrganizationRequest("SafeAI")
+                new CreateOrganizationRequest("SafeAI"),
+                adminPrincipal()
         ))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Организация с таким названием уже существует");
@@ -85,7 +122,7 @@ class OrganizationServiceTest {
     void findAll_shouldReturnOrganizations() {
         OrganizationEntity organization = organizationEntity();
 
-        when(organizationRepository.findAll())
+        when(organizationRepository.findAllByOrderByCreatedAtDesc())
                 .thenReturn(List.of(organization));
 
         List<OrganizationResponse> response = organizationService.findAll();
@@ -125,5 +162,16 @@ class OrganizationServiceTest {
         organization.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
 
         return organization;
+    }
+
+    private SafeAiUserPrincipal adminPrincipal() {
+        return new SafeAiUserPrincipal(
+                ADMIN_ID,
+                UUID.randomUUID(),
+                "admin@test.com",
+                "encoded-password",
+                true,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
     }
 }

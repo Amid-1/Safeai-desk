@@ -25,7 +25,6 @@ import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
 
 import java.util.Map;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -42,7 +41,7 @@ public class UserService {
     private final AuditEventService auditEventService;
 
     @Transactional
-    public UserResponse create(CreateUserRequest request) {
+    public UserResponse create(CreateUserRequest request, SafeAiUserPrincipal currentUser) {
         String email = request.email().trim().toLowerCase();
 
         if (userRepository.existsByEmail(email)) {
@@ -61,18 +60,33 @@ public class UserService {
         Set<RoleEntity> roles = resolveRoles(requestedRoles);
 
         UserEntity entity = new UserEntity();
-        entity.setId(UUID.randomUUID());
         entity.setOrganization(organization);
         entity.setEmail(email);
         entity.setPasswordHash(passwordEncoder.encode(request.password()));
         entity.setFullName(request.fullName());
         entity.setEnabled(true);
-        entity.setCreatedAt(Instant.now());
         entity.setRoles(roles);
 
         UserEntity saved = userRepository.save(entity);
 
+        auditEventService.record(
+                currentUser.getId(),
+                AuditEventType.USER_CREATED,
+                Map.of(
+                        "targetUserId", saved.getId().toString(),
+                        "targetUserEmail", saved.getEmail(),
+                        "roles", roleNames(saved)
+                )
+        );
+
         return toResponse(saved);
+    }
+
+    private Set<String> roleNames(UserEntity entity) {
+        return entity.getRoles()
+                .stream()
+                .map(RoleEntity::getName)
+                .collect(Collectors.toSet());
     }
 
     @Transactional(readOnly = true)
@@ -196,7 +210,9 @@ public class UserService {
 
     private Set<RoleEntity> resolveRoles(Set<String> requestedRoles) {
         return requestedRoles.stream()
-                .map(role -> role.trim().toUpperCase())
+                .map(String::trim)
+                .filter(role -> !role.isBlank())
+                .map(String::toUpperCase)
                 .map(roleName -> roleRepository.findByName(roleName)
                         .orElseThrow(() -> new ResourceNotFoundException(
                                 "Роль не найдена: " + roleName
@@ -212,22 +228,17 @@ public class UserService {
         return user.getRoles()
                 .stream()
                 .map(RoleEntity::getName)
-                .anyMatch("ADMIN"::equals);
+                .anyMatch("ADMIN"::equalsIgnoreCase);
     }
 
     private UserResponse toResponse(UserEntity entity) {
-        Set<String> roleNames = entity.getRoles()
-                .stream()
-                .map(RoleEntity::getName)
-                .collect(Collectors.toSet());
-
         return new UserResponse(
                 entity.getId(),
                 entity.getOrganization().getId(),
                 entity.getEmail(),
                 entity.getFullName(),
                 entity.isEnabled(),
-                roleNames,
+                roleNames(entity),
                 entity.getCreatedAt()
         );
     }

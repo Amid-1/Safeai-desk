@@ -3,15 +3,18 @@ package ru.safeai.gateway.organization.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
 
-import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -19,9 +22,13 @@ import java.util.UUID;
 public class OrganizationService {
 
     private final OrganizationRepository organizationRepository;
+    private final AuditEventService auditEventService;
 
     @Transactional
-    public OrganizationResponse create(CreateOrganizationRequest request) {
+    public OrganizationResponse create(
+            CreateOrganizationRequest request,
+            SafeAiUserPrincipal currentUser
+    ) {
         String name = request.name().trim();
 
         if (organizationRepository.existsByNameIgnoreCase(name)) {
@@ -29,18 +36,25 @@ public class OrganizationService {
         }
 
         OrganizationEntity entity = new OrganizationEntity();
-        entity.setId(UUID.randomUUID());
         entity.setName(name);
-        entity.setCreatedAt(Instant.now());
 
         OrganizationEntity saved = organizationRepository.save(entity);
+
+        auditEventService.record(
+                currentUser.getId(),
+                AuditEventType.ORGANIZATION_CREATED,
+                Map.of(
+                        "organizationId", saved.getId().toString(),
+                        "organizationName", saved.getName()
+                )
+        );
 
         return toResponse(saved);
     }
 
     @Transactional(readOnly = true)
     public List<OrganizationResponse> findAll() {
-        return organizationRepository.findAll()
+        return organizationRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
                 .map(this::toResponse)
                 .toList();

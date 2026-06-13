@@ -96,6 +96,6 @@ class OrganizationControllerSecurityTest {
                                 """))
                 .andExpect(status().isBadRequest());
 
-        verify(organizationService, never()).create(any());
+        verify(organizationService, never()).create(any(), any());
     }
 }

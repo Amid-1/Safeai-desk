@@ -21,7 +21,7 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     Optional<UserEntity> findByIdWithRolesAndOrganization(UUID id);
 
     @EntityGraph(attributePaths = {"roles", "organization"})
-    @Query("select u from UserEntity u")
+    @Query("select distinct u from UserEntity u order by u.createdAt desc")
     List<UserEntity> findAllWithRoles();
 
     @Query("""
