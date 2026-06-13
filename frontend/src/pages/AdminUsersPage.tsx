@@ -8,6 +8,7 @@ import {
     updateUserRoles,
 } from '../api/userApi'
 import type { User } from '../api/userApi'
+import { getApiErrorMessage } from '../api/http'
 
 const DEMO_ORGANIZATION_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 
@@ -52,7 +53,7 @@ function AdminUsersPage() {
             const data = await getUsers()
             setUsers(data)
         } catch (err) {
-            setError(getErrorMessage(err, 'Failed to load users'))
+            setError(getApiErrorMessage(err, 'Failed to load users'))
         } finally {
             setLoading(false)
         }
@@ -106,7 +107,7 @@ function AdminUsersPage() {
 
             setSuccess(`User ${createdUser.email} created`)
         } catch (err) {
-            setError(getErrorMessage(err, 'Failed to create user'))
+            setError(getApiErrorMessage(err, 'Failed to create user'))
         } finally {
             setCreating(false)
         }
@@ -142,7 +143,7 @@ function AdminUsersPage() {
                     : `User ${updatedUser.email} disabled`
             )
         } catch (err) {
-            setError(getErrorMessage(err, 'Failed to update user status'))
+            setError(getApiErrorMessage(err, 'Failed to update user status'))
         } finally {
             setActionUserId(null)
         }
@@ -170,7 +171,7 @@ function AdminUsersPage() {
 
             setSuccess(`Role for ${updatedUser.email} changed to ${nextRole}`)
         } catch (err) {
-            setError(getErrorMessage(err, 'Failed to change user role'))
+            setError(getApiErrorMessage(err, 'Failed to change user role'))
         } finally {
             setActionUserId(null)
         }
@@ -214,7 +215,7 @@ function AdminUsersPage() {
 
             setSuccess(`Password for ${updatedUser.email} reset`)
         } catch (err) {
-            setError(getErrorMessage(err, 'Failed to reset password'))
+            setError(getApiErrorMessage(err, 'Failed to reset password'))
         } finally {
             setActionUserId(null)
         }
@@ -224,19 +225,6 @@ function AdminUsersPage() {
         setUsers((prev) =>
             prev.map((user) => (user.id === updatedUser.id ? updatedUser : user))
         )
-    }
-
-    function getErrorMessage(err: unknown, fallback: string): string {
-        if (!(err instanceof Error)) {
-            return fallback
-        }
-
-        try {
-            const parsed = JSON.parse(err.message) as { message?: string }
-            return parsed.message || fallback
-        } catch {
-            return err.message || fallback
-        }
     }
 
     return (

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { createChat, getChatById, getChats, sendMessage } from '../api/chatApi'
 import type { Chat, ChatDetails } from '../api/chatApi'
+import { getApiErrorMessage } from '../api/http'
 
 function ChatPage() {
     const [chats, setChats] = useState<Chat[]>([])
@@ -16,7 +17,7 @@ function ChatPage() {
                 const data = await getChats()
                 setChats(data)
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to load chats')
+                setError(getApiErrorMessage(err, 'Failed to load chats'))
             }
         }
 
@@ -37,7 +38,7 @@ function ChatPage() {
                 messages: [],
             })
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to create chat')
+            setError(getApiErrorMessage(err, 'Failed to create chat'))
         } finally {
             setLoading(false)
         }
@@ -56,7 +57,7 @@ function ChatPage() {
             setActiveChat(updatedChat)
             setMessage('')
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to send message')
+            setError(getApiErrorMessage(err, 'Failed to send message'))
         } finally {
             setLoading(false)
         }
@@ -70,7 +71,7 @@ function ChatPage() {
             const chatDetails = await getChatById(chatId)
             setActiveChat(chatDetails)
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to open chat')
+            setError(getApiErrorMessage(err, 'Failed to open chat'))
         } finally {
             setLoading(false)
         }

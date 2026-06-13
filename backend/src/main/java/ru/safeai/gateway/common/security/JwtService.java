@@ -45,7 +45,6 @@ public class JwtService {
                 .subject(user.getEmail())
                 .claim("userId", user.getId().toString())
                 .claim("organizationId", user.getOrganizationId().toString())
-                .claim("enabled", user.isEnabled())
                 .claim("scope", roles)
                 .build();
 

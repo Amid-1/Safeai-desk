@@ -4,20 +4,18 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.auth.dto.AuthUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
+import ru.safeai.gateway.auth.mapper.AuthUserMapper;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -26,9 +24,14 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final AuditEventService auditEventService;
+    private final AuthUserMapper authUserMapper;
 
     public LoginResponse login(LoginRequest request) {
-        String email = request.email().trim().toLowerCase();
+        Objects.requireNonNull(request, "request не должен быть null");
+
+        String email = Objects.requireNonNull(request.email(), "email не должен быть null")
+                .trim()
+                .toLowerCase();
 
         try {
             var authentication = authenticationManager.authenticate(
@@ -53,13 +56,7 @@ public class AuthService {
                     )
             );
 
-            AuthUserResponse user = new AuthUserResponse(
-                    principal.getId(),
-                    principal.getOrganizationId(),
-                    principal.getEmail(),
-                    principal.isEnabled(),
-                    extractRoles(principal)
-            );
+            AuthUserResponse user = authUserMapper.toResponse(principal);
 
             return new LoginResponse(token, "Bearer", user);
 
@@ -68,21 +65,12 @@ public class AuthService {
                     null,
                     AuditEventType.USER_LOGIN_FAILED,
                     Map.of(
-                            "email", email
+                            "email", email,
+                            "reason", "BAD_CREDENTIALS_OR_DISABLED"
                     )
             );
 
             throw exception;
         }
-    }
-
-    private Set<String> extractRoles(SafeAiUserPrincipal principal) {
-        return principal.getAuthorities()
-                .stream()
-                .filter(Objects::nonNull)
-                .map(GrantedAuthority::getAuthority)
-                .filter(Objects::nonNull)
-                .map(authority -> authority.replaceFirst("^ROLE_", ""))
-                .collect(Collectors.toSet());
     }
 }

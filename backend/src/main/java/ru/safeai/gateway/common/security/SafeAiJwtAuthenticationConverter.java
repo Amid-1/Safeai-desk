@@ -36,14 +36,12 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
                 .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toSet());
 
-        Boolean enabled = jwt.getClaimAsBoolean("enabled");
-
         SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
                 parseUuid(userId, "userId"),
                 parseUuid(organizationId, "organizationId"),
                 email,
                 "",
-                enabled == null || enabled,
+                true,
                 authorities
         );
 

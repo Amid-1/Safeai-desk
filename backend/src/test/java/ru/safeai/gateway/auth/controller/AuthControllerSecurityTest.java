@@ -24,6 +24,7 @@ import ru.safeai.gateway.auth.dto.LoginResponse;
 import ru.safeai.gateway.auth.service.AuthService;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.auth.mapper.AuthUserMapper;
 
 import java.util.Set;
 import java.util.UUID;
@@ -38,7 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(AuthController.class)
 @Import({
         AuthControllerSecurityTest.TestSecurityConfig.class,
-        GlobalExceptionHandler.class
+        GlobalExceptionHandler.class,
+        AuthUserMapper.class
 })
 @ActiveProfiles("test")
 class AuthControllerSecurityTest {

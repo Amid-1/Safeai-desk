@@ -16,6 +16,7 @@ import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.auth.mapper.AuthUserMapper;
 
 import java.util.Set;
 import java.util.UUID;
@@ -42,10 +43,13 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
+        AuthUserMapper authUserMapper = new AuthUserMapper();
+
         authService = new AuthService(
                 authenticationManager,
                 jwtService,
-                auditEventService
+                auditEventService,
+                authUserMapper
         );
     }
 

@@ -5,6 +5,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.common.exception.ConflictException;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
@@ -57,13 +58,7 @@ public class UserService {
                 ? Set.of("USER")
                 : request.roles();
 
-        Set<RoleEntity> roles = requestedRoles.stream()
-                .map(roleName -> roleName.trim().toUpperCase())
-                .map(roleName -> roleRepository.findByName(roleName)
-                        .orElseThrow(() -> new ResourceNotFoundException(
-                                "Роль не найдена: " + roleName
-                        )))
-                .collect(Collectors.toSet());
+        Set<RoleEntity> roles = resolveRoles(requestedRoles);
 
         UserEntity entity = new UserEntity();
         entity.setId(UUID.randomUUID());
@@ -90,27 +85,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public UserResponse findById(UUID id) {
-        UserEntity user = userRepository.findByIdWithRolesAndOrganization(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Пользователь не найден: " + id));
-
-        return toResponse(user);
-    }
-
-    private UserResponse toResponse(UserEntity entity) {
-        Set<String> roleNames = entity.getRoles()
-                .stream()
-                .map(RoleEntity::getName)
-                .collect(Collectors.toSet());
-
-        return new UserResponse(
-                entity.getId(),
-                entity.getOrganization().getId(),
-                entity.getEmail(),
-                entity.getFullName(),
-                entity.isEnabled(),
-                roleNames,
-                entity.getCreatedAt()
-        );
+        return toResponse(findUserEntity(id));
     }
 
     @Transactional
@@ -120,19 +95,17 @@ public class UserService {
             SafeAiUserPrincipal currentUser
     ) {
         UserEntity user = findUserEntity(id);
-
         boolean newEnabledValue = Boolean.TRUE.equals(request.enabled());
 
         if (user.getId().equals(currentUser.getId()) && !newEnabledValue) {
-            throw new ConflictException("Нельзя отключить самого себя");
+            throw new ForbiddenOperationException("Нельзя отключить самого себя");
         }
 
         if (!newEnabledValue && isEnabledAdmin(user) && userRepository.countEnabledAdmins() <= 1) {
-            throw new ConflictException("Нельзя отключить последнего активного администратора");
+            throw new ForbiddenOperationException("Нельзя отключить последнего активного администратора");
         }
 
         user.setEnabled(newEnabledValue);
-
         UserEntity saved = userRepository.save(user);
 
         auditEventService.record(
@@ -165,25 +138,19 @@ public class UserService {
             throw new ConflictException("У пользователя должна быть хотя бы одна роль");
         }
 
-        boolean removesAdminRole = hasRole(user) && !requestedRoles.contains("ADMIN");
+        boolean removesAdminRole = hasAdminRole(user) && !requestedRoles.contains("ADMIN");
 
         if (user.getId().equals(currentUser.getId()) && removesAdminRole) {
-            throw new ConflictException("Нельзя снять роль ADMIN с самого себя");
+            throw new ForbiddenOperationException("Нельзя снять роль ADMIN с самого себя");
         }
 
         if (user.isEnabled() && removesAdminRole && userRepository.countEnabledAdmins() <= 1) {
-            throw new ConflictException("Нельзя снять роль ADMIN с последнего активного администратора");
+            throw new ForbiddenOperationException("Нельзя снять роль ADMIN с последнего активного администратора");
         }
 
-        Set<RoleEntity> roles = requestedRoles.stream()
-                .map(roleName -> roleRepository.findByName(roleName)
-                        .orElseThrow(() -> new ResourceNotFoundException(
-                                "Роль не найдена: " + roleName
-                        )))
-                .collect(Collectors.toSet());
+        Set<RoleEntity> roles = resolveRoles(requestedRoles);
 
         user.setRoles(roles);
-
         UserEntity saved = userRepository.save(user);
 
         auditEventService.record(
@@ -208,7 +175,6 @@ public class UserService {
         UserEntity user = findUserEntity(id);
 
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-
         UserEntity saved = userRepository.save(user);
 
         auditEventService.record(
@@ -228,14 +194,41 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("Пользователь не найден: " + id));
     }
 
-    private boolean isEnabledAdmin(UserEntity user) {
-        return user.isEnabled() && hasRole(user);
+    private Set<RoleEntity> resolveRoles(Set<String> requestedRoles) {
+        return requestedRoles.stream()
+                .map(role -> role.trim().toUpperCase())
+                .map(roleName -> roleRepository.findByName(roleName)
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Роль не найдена: " + roleName
+                        )))
+                .collect(Collectors.toSet());
     }
 
-    private boolean hasRole(UserEntity user) {
+    private boolean isEnabledAdmin(UserEntity user) {
+        return user.isEnabled() && hasAdminRole(user);
+    }
+
+    private boolean hasAdminRole(UserEntity user) {
         return user.getRoles()
                 .stream()
                 .map(RoleEntity::getName)
                 .anyMatch("ADMIN"::equals);
+    }
+
+    private UserResponse toResponse(UserEntity entity) {
+        Set<String> roleNames = entity.getRoles()
+                .stream()
+                .map(RoleEntity::getName)
+                .collect(Collectors.toSet());
+
+        return new UserResponse(
+                entity.getId(),
+                entity.getOrganization().getId(),
+                entity.getEmail(),
+                entity.getFullName(),
+                entity.isEnabled(),
+                roleNames,
+                entity.getCreatedAt()
+        );
     }
 }

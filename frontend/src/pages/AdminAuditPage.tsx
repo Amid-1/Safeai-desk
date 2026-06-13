@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AuditEvent, getAuditEvents } from '../api/adminApi'
+import { getApiErrorMessage } from '../api/http'
 
 function AdminAuditPage() {
     const [events, setEvents] = useState<AuditEvent[]>([])
@@ -12,7 +13,7 @@ function AdminAuditPage() {
                 const data = await getAuditEvents()
                 setEvents(data)
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to load audit events')
+                setError(getApiErrorMessage(err, 'Failed to load audit events'))
             } finally {
                 setLoading(false)
             }

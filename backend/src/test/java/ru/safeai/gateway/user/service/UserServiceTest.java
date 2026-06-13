@@ -24,6 +24,7 @@ import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 
 import java.time.Instant;
 import java.util.List;
@@ -245,7 +246,7 @@ class UserServiceTest {
                 new UpdateUserEnabledRequest(false),
                 adminPrincipal()
         ))
-                .isInstanceOf(ConflictException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Нельзя отключить самого себя");
 
         verify(userRepository, never()).save(any());
@@ -274,7 +275,7 @@ class UserServiceTest {
                 new UpdateUserEnabledRequest(false),
                 adminPrincipal()
         ))
-                .isInstanceOf(ConflictException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("последнего активного администратора");
 
         verify(userRepository, never()).save(any());
@@ -333,7 +334,7 @@ class UserServiceTest {
                 new UpdateUserRolesRequest(Set.of("USER")),
                 adminPrincipal()
         ))
-                .isInstanceOf(ConflictException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Нельзя снять роль ADMIN с самого себя");
 
         verify(userRepository, never()).save(any());
@@ -362,7 +363,7 @@ class UserServiceTest {
                 new UpdateUserRolesRequest(Set.of("USER")),
                 adminPrincipal()
         ))
-                .isInstanceOf(ConflictException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Нельзя снять роль ADMIN с последнего активного администратора");
 
         verify(userRepository, never()).save(any());

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { login } from '../api/authApi'
-import { setToken } from '../api/http'
+import { getApiErrorMessage, setToken } from '../api/http'
 
 function LoginPage() {
     const navigate = useNavigate()
@@ -27,22 +27,9 @@ function LoginPage() {
             setToken(response.token)
             navigate('/chat')
         } catch (err) {
-            setError(getErrorMessage(err))
+            setError(getApiErrorMessage(err, 'Login failed'))
         } finally {
             setLoading(false)
-        }
-    }
-
-    function getErrorMessage(err: unknown): string {
-        if (!(err instanceof Error)) {
-            return 'Login failed'
-        }
-
-        try {
-            const parsed = JSON.parse(err.message) as { message?: string }
-            return parsed.message || 'Login failed'
-        } catch {
-            return err.message || 'Login failed'
         }
     }
 

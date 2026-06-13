@@ -4,18 +4,14 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import ru.safeai.gateway.auth.dto.AuthUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
+import ru.safeai.gateway.auth.mapper.AuthUserMapper;
 import ru.safeai.gateway.auth.service.AuthService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -23,6 +19,7 @@ import java.util.stream.Collectors;
 public class AuthController {
 
     private final AuthService authService;
+    private final AuthUserMapper authUserMapper;
 
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest request) {
@@ -35,22 +32,6 @@ public class AuthController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Пользователь не авторизован");
         }
 
-        return new AuthUserResponse(
-                principal.getId(),
-                principal.getOrganizationId(),
-                principal.getEmail(),
-                principal.isEnabled(),
-                extractRoles(principal)
-        );
-    }
-
-    private Set<String> extractRoles(SafeAiUserPrincipal principal) {
-        return principal.getAuthorities()
-                .stream()
-                .filter(Objects::nonNull)
-                .map(GrantedAuthority::getAuthority)
-                .filter(Objects::nonNull)
-                .map(authority -> authority.replaceFirst("^ROLE_", ""))
-                .collect(Collectors.toSet());
+        return authUserMapper.toResponse(principal);
     }
 }
