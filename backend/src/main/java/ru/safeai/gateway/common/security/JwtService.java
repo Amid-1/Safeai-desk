@@ -12,8 +12,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -29,12 +29,13 @@ public class JwtService {
 
         Instant now = Instant.now();
 
-        String roles = user.getAuthorities()
+        List<String> roles = user.getAuthorities()
                 .stream()
                 .filter(Objects::nonNull)
                 .map(GrantedAuthority::getAuthority)
                 .filter(Objects::nonNull)
-                .collect(Collectors.joining(" "));
+                .map(role -> role.replaceFirst("^ROLE_", ""))
+                .toList();
 
         JwsHeader headers = JwsHeader.with(MacAlgorithm.HS256).build();
 
@@ -45,7 +46,7 @@ public class JwtService {
                 .subject(user.getEmail())
                 .claim("userId", user.getId().toString())
                 .claim("organizationId", user.getOrganizationId().toString())
-                .claim("scope", roles)
+                .claim("roles", roles)
                 .build();
 
         return jwtEncoder.encode(JwtEncoderParameters.from(headers, claims)).getTokenValue();

@@ -9,7 +9,7 @@ import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -27,12 +27,13 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
             throw new BadJwtException("JWT subject is missing");
         }
 
-        String scope = jwt.getClaimAsString("scope");
+        List<String> roles = jwt.getClaimAsStringList("roles");
 
-        Set<SimpleGrantedAuthority> authorities = scope == null || scope.isBlank()
+        Set<SimpleGrantedAuthority> authorities = roles == null
                 ? Set.of()
-                : Arrays.stream(scope.split(" "))
-                .filter(role -> !role.isBlank())
+                : roles.stream()
+                .filter(role -> role != null && !role.isBlank())
+                .map(role -> role.startsWith("ROLE_") ? role : "ROLE_" + role)
                 .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toSet());
 

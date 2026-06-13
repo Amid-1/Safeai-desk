@@ -7,6 +7,7 @@ import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -36,7 +37,7 @@ class SafeAiJwtAuthenticationConverterTest {
                 "userId", USER_ID.toString(),
                 "organizationId", ORGANIZATION_ID.toString(),
                 "enabled", true,
-                "scope", "ROLE_ADMIN ROLE_USER"
+                "roles", List.of("ADMIN", "USER")
         ));
 
         AbstractAuthenticationToken authentication =
@@ -74,7 +75,7 @@ class SafeAiJwtAuthenticationConverterTest {
         Jwt jwt = jwt(Map.of(
                 "sub", "admin@test.com",
                 "organizationId", ORGANIZATION_ID.toString(),
-                "scope", "ROLE_ADMIN"
+                "roles", List.of("ADMIN")
         ));
 
         assertThatThrownBy(() -> converter.convert(jwt))
@@ -88,7 +89,7 @@ class SafeAiJwtAuthenticationConverterTest {
                 "sub", "admin@test.com",
                 "userId", USER_ID.toString(),
                 "organizationId", "not-uuid",
-                "scope", "ROLE_ADMIN"
+                "roles", List.of("ADMIN")
         ));
 
         assertThatThrownBy(() -> converter.convert(jwt))
