@@ -65,13 +65,16 @@ class ChatServiceTest {
 
     @BeforeEach
     void setUp() {
+        ChatMapper chatMapper = new ChatMapper();
+
         chatService = new ChatService(
                 chatSessionRepository,
                 chatMessageRepository,
                 userRepository,
                 aiProvider,
                 auditEventService,
-                chatPersistenceService
+                chatPersistenceService,
+                chatMapper
         );
     }
 
@@ -84,7 +87,7 @@ class ChatServiceTest {
                 .thenReturn(Optional.of(user));
 
         when(chatSessionRepository.save(any(ChatSessionEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> persistSession(invocation.getArgument(0)));
 
         ChatResponse response = chatService.create(
                 new CreateChatRequest(" Новый тестовый чат "),
@@ -204,5 +207,17 @@ class ChatServiceTest {
         user.setEnabled(true);
 
         return user;
+    }
+
+    private ChatSessionEntity persistSession(ChatSessionEntity session) {
+        if (session.getId() == null) {
+            session.setId(CHAT_ID);
+        }
+
+        if (session.getCreatedAt() == null) {
+            session.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+        }
+
+        return session;
     }
 }

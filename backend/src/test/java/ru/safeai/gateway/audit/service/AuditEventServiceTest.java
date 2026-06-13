@@ -50,7 +50,7 @@ class AuditEventServiceTest {
                 .thenReturn(Optional.of(user));
 
         when(auditEventRepository.save(any(AuditEventEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> persistAuditEvent(invocation.getArgument(0)));
 
         auditEventService.record(
                 USER_ID,
@@ -77,7 +77,7 @@ class AuditEventServiceTest {
     @Test
     void record_shouldSaveAuditEventWithoutUserWhenUserIdIsNull() {
         when(auditEventRepository.save(any(AuditEventEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> persistAuditEvent(invocation.getArgument(0)));
 
         auditEventService.record(
                 null,
@@ -107,7 +107,7 @@ class AuditEventServiceTest {
                 .thenReturn(Optional.empty());
 
         when(auditEventRepository.save(any(AuditEventEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> persistAuditEvent(invocation.getArgument(0)));
 
         auditEventService.record(
                 USER_ID,
@@ -135,5 +135,17 @@ class AuditEventServiceTest {
         user.setEnabled(true);
 
         return user;
+    }
+
+    private AuditEventEntity persistAuditEvent(AuditEventEntity event) {
+        if (event.getId() == null) {
+            event.setId(UUID.randomUUID());
+        }
+
+        if (event.getCreatedAt() == null) {
+            event.setCreatedAt(java.time.Instant.parse("2026-06-12T12:00:00Z"));
+        }
+
+        return event;
     }
 }

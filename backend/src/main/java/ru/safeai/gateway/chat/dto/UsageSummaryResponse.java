@@ -27,11 +27,15 @@ public record UsageSummaryResponse(
                 inputTokens,
                 outputTokens,
                 safeLong(inputTokens) + safeLong(outputTokens),
-                costUsd
+                safeBigDecimal(costUsd)
         );
     }
 
     private static long safeLong(Long value) {
         return value == null ? 0L : value;
+    }
+
+    private static BigDecimal safeBigDecimal(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 }

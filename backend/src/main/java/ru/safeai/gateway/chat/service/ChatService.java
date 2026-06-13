@@ -12,7 +12,6 @@ import ru.safeai.gateway.chat.dto.ChatResponse;
 import ru.safeai.gateway.chat.dto.CreateChatRequest;
 import ru.safeai.gateway.chat.dto.MessageResponse;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
-import ru.safeai.gateway.chat.entity.ChatMessageEntity;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
@@ -21,7 +20,7 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
-import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,6 +35,7 @@ public class ChatService {
     private final AiProvider aiProvider;
     private final AuditEventService auditEventService;
     private final ChatPersistenceService chatPersistenceService;
+    private final ChatMapper chatMapper;
 
     @Transactional
     public ChatResponse create(CreateChatRequest request, SafeAiUserPrincipal currentUser) {
@@ -45,30 +45,29 @@ public class ChatService {
                 ));
 
         ChatSessionEntity session = new ChatSessionEntity();
-        session.setId(UUID.randomUUID());
         session.setUser(user);
         session.setTitle(normalizeTitle(request.title()));
-        session.setCreatedAt(Instant.now());
 
         ChatSessionEntity saved = chatSessionRepository.save(session);
+
+        Map<String, Object> details = new HashMap<>();
+        details.put("chatId", saved.getId().toString());
+        details.put("title", saved.getTitle());
 
         auditEventService.record(
                 currentUser.getId(),
                 AuditEventType.CHAT_CREATED,
-                Map.of(
-                        "chatId", saved.getId().toString(),
-                        "title", saved.getTitle()
-                )
+                details
         );
 
-        return toChatResponse(saved);
+        return chatMapper.toChatResponse(saved);
     }
 
     @Transactional(readOnly = true)
     public List<ChatResponse> findAll(SafeAiUserPrincipal currentUser) {
         return chatSessionRepository.findByUser_IdOrderByCreatedAtDesc(currentUser.getId())
                 .stream()
-                .map(this::toChatResponse)
+                .map(chatMapper::toChatResponse)
                 .toList();
     }
 
@@ -79,10 +78,10 @@ public class ChatService {
         List<MessageResponse> messages = chatMessageRepository
                 .findBySession_IdOrderByCreatedAtAsc(session.getId())
                 .stream()
-                .map(this::toMessageResponse)
+                .map(chatMapper::toMessageResponse)
                 .toList();
 
-        return toChatDetailsResponse(session, messages);
+        return chatMapper.toChatDetailsResponse(session, messages);
     }
 
     public ChatDetailsResponse sendMessage(
@@ -97,13 +96,26 @@ public class ChatService {
                         currentUser
                 );
 
-        AiChatResponse aiResponse = aiProvider.sendMessage(context.aiRequest());
+        try {
+            AiChatResponse aiResponse = aiProvider.sendMessage(context.aiRequest());
 
-        return chatPersistenceService.saveAssistantMessageAndReturnChat(
-                context.chatId(),
-                aiResponse,
-                currentUser
-        );
+            return chatPersistenceService.saveAssistantMessageAndReturnChat(
+                    context.chatId(),
+                    aiResponse,
+                    currentUser
+            );
+        } catch (RuntimeException exception) {
+            auditEventService.record(
+                    currentUser.getId(),
+                    AuditEventType.AI_RESPONSE_FAILED,
+                    Map.of(
+                            "chatId", context.chatId().toString(),
+                            "error", exception.getClass().getSimpleName()
+                    )
+            );
+
+            throw exception;
+        }
     }
 
     private ChatSessionEntity findOwnedSession(UUID chatId, SafeAiUserPrincipal currentUser) {
@@ -119,38 +131,5 @@ public class ChatService {
         }
 
         return title.trim();
-    }
-
-    private ChatResponse toChatResponse(ChatSessionEntity entity) {
-        return new ChatResponse(
-                entity.getId(),
-                entity.getTitle(),
-                entity.getCreatedAt()
-        );
-    }
-
-    private MessageResponse toMessageResponse(ChatMessageEntity entity) {
-        return new MessageResponse(
-                entity.getId(),
-                entity.getRole(),
-                entity.getContent(),
-                entity.getModel(),
-                entity.getInputTokens(),
-                entity.getOutputTokens(),
-                entity.getCostUsd(),
-                entity.getCreatedAt()
-        );
-    }
-
-    private ChatDetailsResponse toChatDetailsResponse(
-            ChatSessionEntity session,
-            List<MessageResponse> messages
-    ) {
-        return new ChatDetailsResponse(
-                session.getId(),
-                session.getTitle(),
-                session.getCreatedAt(),
-                messages
-        );
     }
 }

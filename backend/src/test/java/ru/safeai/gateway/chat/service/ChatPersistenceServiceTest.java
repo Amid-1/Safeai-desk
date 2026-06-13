@@ -53,10 +53,13 @@ class ChatPersistenceServiceTest {
 
     @BeforeEach
     void setUp() {
+        ChatMapper chatMapper = new ChatMapper();
+
         chatPersistenceService = new ChatPersistenceService(
                 chatSessionRepository,
                 chatMessageRepository,
-                auditEventService
+                auditEventService,
+                chatMapper
         );
     }
 
@@ -81,7 +84,7 @@ class ChatPersistenceServiceTest {
                 .thenReturn(List.of(oldMessage));
 
         when(chatMessageRepository.save(any(ChatMessageEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> persistMessage(invocation.getArgument(0)));
 
         ChatProcessingContext context =
                 chatPersistenceService.saveUserMessageAndPrepareAiRequest(
@@ -151,7 +154,7 @@ class ChatPersistenceServiceTest {
                 .thenReturn(Optional.of(session));
 
         when(chatMessageRepository.save(any(ChatMessageEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> persistMessage(invocation.getArgument(0)));
 
         when(chatMessageRepository.findBySession_IdOrderByCreatedAtAsc(CHAT_ID))
                 .thenReturn(List.of(userMessage, assistantMessage));
@@ -179,6 +182,7 @@ class ChatPersistenceServiceTest {
         assertThat(savedMessage.getInputTokens()).isEqualTo(1);
         assertThat(savedMessage.getOutputTokens()).isEqualTo(8);
         assertThat(savedMessage.getCostUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(savedMessage.getCreatedAt()).isNotNull();
 
         verify(auditEventService).record(
                 eq(USER_ID),
@@ -233,7 +237,7 @@ class ChatPersistenceServiceTest {
         session.setId(CHAT_ID);
         session.setUser(userEntity());
         session.setTitle("Первый тестовый чат");
-        session.setCreatedAt(Instant.now());
+        session.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
 
         return session;
     }
@@ -255,7 +259,19 @@ class ChatPersistenceServiceTest {
         message.setInputTokens(inputTokens);
         message.setOutputTokens(outputTokens);
         message.setCostUsd(costUsd);
-        message.setCreatedAt(Instant.now());
+        message.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+
+        return message;
+    }
+
+    private ChatMessageEntity persistMessage(ChatMessageEntity message) {
+        if (message.getId() == null) {
+            message.setId(UUID.randomUUID());
+        }
+
+        if (message.getCreatedAt() == null) {
+            message.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+        }
 
         return message;
     }

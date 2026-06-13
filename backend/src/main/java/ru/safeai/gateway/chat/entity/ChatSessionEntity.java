@@ -27,4 +27,15 @@ public class ChatSessionEntity {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
+
+    @PrePersist
+    void prePersist() {
+        if (id == null) {
+            id = UUID.randomUUID();
+        }
+
+        if (createdAt == null) {
+            createdAt = Instant.now();
+        }
+    }
 }

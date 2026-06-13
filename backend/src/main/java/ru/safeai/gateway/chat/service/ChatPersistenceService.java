@@ -18,7 +18,6 @@ import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +33,7 @@ public class ChatPersistenceService {
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final AuditEventService auditEventService;
+    private final ChatMapper chatMapper;
 
     @Transactional
     public ChatProcessingContext saveUserMessageAndPrepareAiRequest(
@@ -53,7 +53,6 @@ public class ChatPersistenceService {
                 .toList();
 
         ChatMessageEntity userMessage = new ChatMessageEntity();
-        userMessage.setId(UUID.randomUUID());
         userMessage.setSession(session);
         userMessage.setRole(ROLE_USER);
         userMessage.setContent(request.content());
@@ -61,7 +60,6 @@ public class ChatPersistenceService {
         userMessage.setInputTokens(null);
         userMessage.setOutputTokens(null);
         userMessage.setCostUsd(null);
-        userMessage.setCreatedAt(Instant.now());
 
         ChatMessageEntity savedUserMessage = chatMessageRepository.save(userMessage);
 
@@ -98,7 +96,6 @@ public class ChatPersistenceService {
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
 
         ChatMessageEntity assistantMessage = new ChatMessageEntity();
-        assistantMessage.setId(UUID.randomUUID());
         assistantMessage.setSession(session);
         assistantMessage.setRole(ROLE_ASSISTANT);
         assistantMessage.setContent(aiResponse.content());
@@ -106,7 +103,6 @@ public class ChatPersistenceService {
         assistantMessage.setInputTokens(aiResponse.inputTokens());
         assistantMessage.setOutputTokens(aiResponse.outputTokens());
         assistantMessage.setCostUsd(aiResponse.costUsd());
-        assistantMessage.setCreatedAt(Instant.now());
 
         ChatMessageEntity savedAssistantMessage = chatMessageRepository.save(assistantMessage);
 
@@ -127,10 +123,10 @@ public class ChatPersistenceService {
         List<MessageResponse> messages = chatMessageRepository
                 .findBySession_IdOrderByCreatedAtAsc(session.getId())
                 .stream()
-                .map(this::toMessageResponse)
+                .map(chatMapper::toMessageResponse)
                 .toList();
 
-        return toChatDetailsResponse(session, messages);
+        return chatMapper.toChatDetailsResponse(session, messages);
     }
 
     private ChatSessionEntity findOwnedSession(UUID chatId, SafeAiUserPrincipal currentUser) {
@@ -138,30 +134,5 @@ public class ChatPersistenceService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Чат не найден: " + chatId
                 ));
-    }
-
-    private MessageResponse toMessageResponse(ChatMessageEntity entity) {
-        return new MessageResponse(
-                entity.getId(),
-                entity.getRole(),
-                entity.getContent(),
-                entity.getModel(),
-                entity.getInputTokens(),
-                entity.getOutputTokens(),
-                entity.getCostUsd(),
-                entity.getCreatedAt()
-        );
-    }
-
-    private ChatDetailsResponse toChatDetailsResponse(
-            ChatSessionEntity session,
-            List<MessageResponse> messages
-    ) {
-        return new ChatDetailsResponse(
-                session.getId(),
-                session.getTitle(),
-                session.getCreatedAt(),
-                messages
-        );
     }
 }
