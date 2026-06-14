@@ -22,8 +22,9 @@ public class ChatMessageEntity {
     @JoinColumn(name = "session_id", nullable = false)
     private ChatSessionEntity session;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 50)
-    private String role;
+    private ChatMessageRole role;
 
     @Column(name = "content", nullable = false, columnDefinition = "text")
     private String content;

@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
+import ru.safeai.gateway.ai.AiProviderException;
+import ru.safeai.gateway.ai.AiProviderTimeoutException;
 import ru.safeai.gateway.common.security.RequestIdFilter;
 
 import java.time.Instant;
@@ -95,6 +97,38 @@ public class GlobalExceptionHandler {
         log.error("Неожиданная ошибка при обработке запроса {}", request.getRequestURI(), exception);
 
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_SERVER_ERROR", "Внутренняя ошибка сервера", request, null);
+    }
+
+    @ExceptionHandler(AiProviderTimeoutException.class)
+    public ResponseEntity<ApiErrorResponse> handleAiProviderTimeout(
+            AiProviderTimeoutException exception,
+            HttpServletRequest request
+    ) {
+        log.warn("AI provider timeout: {}", exception.getMessage());
+
+        return buildResponse(
+                HttpStatus.GATEWAY_TIMEOUT,
+                "AI_PROVIDER_TIMEOUT",
+                "AI provider не ответил вовремя",
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(AiProviderException.class)
+    public ResponseEntity<ApiErrorResponse> handleAiProviderException(
+            AiProviderException exception,
+            HttpServletRequest request
+    ) {
+        log.warn("AI provider error: {}", exception.getMessage());
+
+        return buildResponse(
+                HttpStatus.BAD_GATEWAY,
+                "AI_PROVIDER_ERROR",
+                "Ошибка AI provider",
+                request,
+                null
+        );
     }
 
     private ResponseEntity<ApiErrorResponse> buildResponse(

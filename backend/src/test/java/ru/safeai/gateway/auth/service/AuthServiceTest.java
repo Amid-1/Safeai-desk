@@ -3,7 +3,6 @@ package ru.safeai.gateway.auth.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -14,9 +13,11 @@ import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
+import ru.safeai.gateway.auth.mapper.AuthUserMapper;
+import ru.safeai.gateway.common.ratelimit.LoginRateLimitService;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.auth.mapper.AuthUserMapper;
+import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.util.Set;
 import java.util.UUID;
@@ -39,6 +40,12 @@ class AuthServiceTest {
     @Mock
     private AuditEventService auditEventService;
 
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private LoginRateLimitService loginRateLimitService;
+
     private AuthService authService;
 
     @BeforeEach
@@ -49,7 +56,9 @@ class AuthServiceTest {
                 authenticationManager,
                 jwtService,
                 auditEventService,
-                authUserMapper
+                authUserMapper,
+                userRepository,
+                loginRateLimitService
         );
     }
 
@@ -69,6 +78,7 @@ class AuthServiceTest {
                 "admin@test.com",
                 "encoded-password",
                 true,
+                0L,
                 Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
 
@@ -96,15 +106,13 @@ class AuthServiceTest {
         assertThat(response.user().enabled()).isTrue();
         assertThat(response.user().roles()).containsExactly("ADMIN");
 
-        ArgumentCaptor<UsernamePasswordAuthenticationToken> authCaptor =
-                ArgumentCaptor.forClass(UsernamePasswordAuthenticationToken.class);
+        verify(loginRateLimitService).checkAllowed("admin@test.com");
 
-        verify(authenticationManager).authenticate(authCaptor.capture());
-
-        UsernamePasswordAuthenticationToken authToken = authCaptor.getValue();
-
-        assertThat(authToken.getPrincipal()).isEqualTo("admin@test.com");
-        assertThat(authToken.getCredentials()).isEqualTo("admin123");
+        verify(authenticationManager).authenticate(argThat(auth ->
+                auth instanceof UsernamePasswordAuthenticationToken
+                        && "admin@test.com".equals(auth.getPrincipal())
+                        && "admin123".equals(auth.getCredentials())
+        ));
 
         verify(auditEventService).record(
                 eq(userId),
@@ -125,6 +133,8 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class);
+
+        verify(loginRateLimitService).checkAllowed("admin@test.com");
 
         verify(auditEventService).record(
                 isNull(),

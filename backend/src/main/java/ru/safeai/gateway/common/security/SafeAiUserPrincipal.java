@@ -19,6 +19,7 @@ public class SafeAiUserPrincipal implements UserDetails {
     private final String passwordHash;
     private final boolean enabled;
     private final Collection<? extends GrantedAuthority> authorities;
+    private final long tokenVersion;
 
     public SafeAiUserPrincipal(
             UUID id,
@@ -26,6 +27,7 @@ public class SafeAiUserPrincipal implements UserDetails {
             String email,
             String passwordHash,
             boolean enabled,
+            long tokenVersion,
             Collection<? extends GrantedAuthority> authorities
     ) {
         this.id = Objects.requireNonNull(id, "id не должен быть null");
@@ -33,11 +35,10 @@ public class SafeAiUserPrincipal implements UserDetails {
         this.email = Objects.requireNonNull(email, "email не должен быть null");
         this.passwordHash = Objects.requireNonNull(passwordHash, "passwordHash не должен быть null");
         this.enabled = enabled;
+        this.tokenVersion = tokenVersion;
         this.authorities = authorities == null
                 ? List.of()
-                : authorities.stream()
-                .filter(Objects::nonNull)
-                .toList();
+                : authorities.stream().filter(Objects::nonNull).toList();
     }
 
     @Override

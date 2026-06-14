@@ -39,10 +39,15 @@ public class UserService {
     private final OrganizationRepository organizationRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditEventService auditEventService;
+    private static final Set<String> ALLOWED_ROLES = Set.of("USER", "ADMIN");
 
     @Transactional
     public UserResponse create(CreateUserRequest request, SafeAiUserPrincipal currentUser) {
         String email = request.email().trim().toLowerCase();
+
+        if (!currentUser.getOrganizationId().equals(request.organizationId())) {
+            throw new ForbiddenOperationException("Нельзя создавать пользователя в другой организации");
+        }
 
         if (userRepository.existsByEmail(email)) {
             throw new ConflictException("Пользователь с таким email уже существует: " + email);
@@ -63,7 +68,7 @@ public class UserService {
         entity.setOrganization(organization);
         entity.setEmail(email);
         entity.setPasswordHash(passwordEncoder.encode(request.password()));
-        entity.setFullName(request.fullName());
+        entity.setFullName(normalizeFullName(request.fullName()));
         entity.setEnabled(true);
         entity.setRoles(roles);
 
@@ -90,8 +95,8 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public List<UserResponse> findAll() {
-        return userRepository.findAllWithRoles()
+    public List<UserResponse> findAll(SafeAiUserPrincipal currentUser) {
+        return userRepository.findAllByOrganizationIdWithRoles(currentUser.getOrganizationId())
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -120,6 +125,11 @@ public class UserService {
         }
 
         user.setEnabled(newEnabledValue);
+
+        if (!newEnabledValue) {
+            user.setTokenVersion(user.getTokenVersion() + 1);
+        }
+
         UserEntity saved = userRepository.save(user);
 
         auditEventService.record(
@@ -165,6 +175,8 @@ public class UserService {
         Set<RoleEntity> roles = resolveRoles(requestedRoles);
 
         user.setRoles(roles);
+        user.setTokenVersion(user.getTokenVersion() + 1);
+
         UserEntity saved = userRepository.save(user);
 
         auditEventService.record(
@@ -189,6 +201,8 @@ public class UserService {
         UserEntity user = findUserEntity(id);
 
         user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setTokenVersion(user.getTokenVersion() + 1);
+
         UserEntity saved = userRepository.save(user);
 
         auditEventService.record(
@@ -209,10 +223,21 @@ public class UserService {
     }
 
     private Set<RoleEntity> resolveRoles(Set<String> requestedRoles) {
-        return requestedRoles.stream()
+        Set<String> normalizedRoles = requestedRoles.stream()
                 .map(String::trim)
                 .filter(role -> !role.isBlank())
                 .map(String::toUpperCase)
+                .collect(Collectors.toSet());
+
+        if (normalizedRoles.isEmpty()) {
+            throw new ConflictException("У пользователя должна быть хотя бы одна роль");
+        }
+
+        if (!ALLOWED_ROLES.containsAll(normalizedRoles)) {
+            throw new ConflictException("Недопустимые роли: " + normalizedRoles);
+        }
+
+        return normalizedRoles.stream()
                 .map(roleName -> roleRepository.findByName(roleName)
                         .orElseThrow(() -> new ResourceNotFoundException(
                                 "Роль не найдена: " + roleName
@@ -241,5 +266,13 @@ public class UserService {
                 roleNames(entity),
                 entity.getCreatedAt()
         );
+    }
+
+    private String normalizeFullName(String fullName) {
+        if (fullName == null || fullName.isBlank()) {
+            return null;
+        }
+
+        return fullName.trim();
     }
 }

@@ -36,7 +36,7 @@ class SafeAiJwtAuthenticationConverterTest {
                 "sub", "admin@test.com",
                 "userId", USER_ID.toString(),
                 "organizationId", ORGANIZATION_ID.toString(),
-                "enabled", true,
+                "tokenVersion", 0L,
                 "roles", List.of("ADMIN", "USER")
         ));
 
@@ -51,19 +51,11 @@ class SafeAiJwtAuthenticationConverterTest {
 
         SafeAiUserPrincipal principal = (SafeAiUserPrincipal) principalObject;
 
-        assertThat(principal)
-                .extracting(
-                        SafeAiUserPrincipal::getId,
-                        SafeAiUserPrincipal::getOrganizationId,
-                        SafeAiUserPrincipal::getEmail,
-                        SafeAiUserPrincipal::isEnabled
-                )
-                .containsExactly(
-                        USER_ID,
-                        ORGANIZATION_ID,
-                        "admin@test.com",
-                        true
-                );
+        assertThat(principal.getId()).isEqualTo(USER_ID);
+        assertThat(principal.getOrganizationId()).isEqualTo(ORGANIZATION_ID);
+        assertThat(principal.getEmail()).isEqualTo("admin@test.com");
+        assertThat(principal.isEnabled()).isTrue();
+        assertThat(principal.getTokenVersion()).isEqualTo(0L);
 
         assertThat(authentication.getAuthorities())
                 .extracting("authority")
@@ -75,6 +67,7 @@ class SafeAiJwtAuthenticationConverterTest {
         Jwt jwt = jwt(Map.of(
                 "sub", "admin@test.com",
                 "organizationId", ORGANIZATION_ID.toString(),
+                "tokenVersion", 0L,
                 "roles", List.of("ADMIN")
         ));
 
@@ -84,11 +77,26 @@ class SafeAiJwtAuthenticationConverterTest {
     }
 
     @Test
+    void convert_shouldThrowBadJwtExceptionWhenTokenVersionIsMissing() {
+        Jwt jwt = jwt(Map.of(
+                "sub", "admin@test.com",
+                "userId", USER_ID.toString(),
+                "organizationId", ORGANIZATION_ID.toString(),
+                "roles", List.of("ADMIN")
+        ));
+
+        assertThatThrownBy(() -> converter.convert(jwt))
+                .isInstanceOf(BadJwtException.class)
+                .hasMessageContaining("tokenVersion");
+    }
+
+    @Test
     void convert_shouldThrowBadJwtExceptionWhenOrganizationIdIsInvalid() {
         Jwt jwt = jwt(Map.of(
                 "sub", "admin@test.com",
                 "userId", USER_ID.toString(),
                 "organizationId", "not-uuid",
+                "tokenVersion", 0L,
                 "roles", List.of("ADMIN")
         ));
 

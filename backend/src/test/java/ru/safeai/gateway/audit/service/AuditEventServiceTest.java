@@ -1,5 +1,6 @@
 package ru.safeai.gateway.audit.service;
 
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -10,10 +11,8 @@ import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.entity.AuditEventEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
 import ru.safeai.gateway.user.entity.UserEntity;
-import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,7 +29,7 @@ class AuditEventServiceTest {
     private AuditEventRepository auditEventRepository;
 
     @Mock
-    private UserRepository userRepository;
+    private EntityManager entityManager;
 
     private AuditEventService auditEventService;
 
@@ -38,16 +37,16 @@ class AuditEventServiceTest {
     void setUp() {
         auditEventService = new AuditEventService(
                 auditEventRepository,
-                userRepository
+                entityManager
         );
     }
 
     @Test
-    void record_shouldSaveAuditEventWithUserWhenUserExists() {
+    void record_shouldSaveAuditEventWithUserWhenUserIdExists() {
         UserEntity user = userEntity();
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+        when(entityManager.getReference(UserEntity.class, USER_ID))
+                .thenReturn(user);
 
         when(auditEventRepository.save(any(AuditEventEntity.class)))
                 .thenAnswer(invocation -> persistAuditEvent(invocation.getArgument(0)));
@@ -67,11 +66,11 @@ class AuditEventServiceTest {
 
         assertThat(savedEvent.getId()).isNotNull();
         assertThat(savedEvent.getUser()).isEqualTo(user);
-        assertThat(savedEvent.getEventType()).isEqualTo(AuditEventType.USER_LOGIN_SUCCESS);
+        assertThat(savedEvent.getEventType()).isEqualTo(AuditEventType.USER_LOGIN_SUCCESS.name());
         assertThat(savedEvent.getDetails()).containsEntry("email", "admin@test.com");
         assertThat(savedEvent.getCreatedAt()).isNotNull();
 
-        verify(userRepository).findById(USER_ID);
+        verify(entityManager).getReference(UserEntity.class, USER_ID);
     }
 
     @Test
@@ -94,38 +93,25 @@ class AuditEventServiceTest {
 
         assertThat(savedEvent.getId()).isNotNull();
         assertThat(savedEvent.getUser()).isNull();
-        assertThat(savedEvent.getEventType()).isEqualTo(AuditEventType.USER_LOGIN_FAILED);
+        assertThat(savedEvent.getEventType()).isEqualTo(AuditEventType.USER_LOGIN_FAILED.name());
         assertThat(savedEvent.getDetails()).containsEntry("email", "unknown@test.com");
         assertThat(savedEvent.getCreatedAt()).isNotNull();
 
-        verifyNoInteractions(userRepository);
+        verifyNoInteractions(entityManager);
     }
 
     @Test
-    void record_shouldSaveAuditEventWithoutUserWhenUserDoesNotExist() {
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.empty());
-
+    void record_shouldNotThrowWhenRepositoryFails() {
         when(auditEventRepository.save(any(AuditEventEntity.class)))
-                .thenAnswer(invocation -> persistAuditEvent(invocation.getArgument(0)));
+                .thenThrow(new RuntimeException("db error"));
 
         auditEventService.record(
-                USER_ID,
+                null,
                 AuditEventType.USER_LOGIN_FAILED,
                 Map.of("email", "admin@test.com")
         );
 
-        ArgumentCaptor<AuditEventEntity> captor =
-                ArgumentCaptor.forClass(AuditEventEntity.class);
-
-        verify(auditEventRepository).save(captor.capture());
-
-        AuditEventEntity savedEvent = captor.getValue();
-
-        assertThat(savedEvent.getId()).isNotNull();
-        assertThat(savedEvent.getUser()).isNull();
-        assertThat(savedEvent.getEventType()).isEqualTo(AuditEventType.USER_LOGIN_FAILED);
-        assertThat(savedEvent.getCreatedAt()).isNotNull();
+        verify(auditEventRepository).save(any(AuditEventEntity.class));
     }
 
     private UserEntity userEntity() {

@@ -35,8 +35,10 @@ public class UserController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
-    public List<UserResponse> findAll() {
-        return userService.findAll();
+    public List<UserResponse> findAll(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return userService.findAll(currentUser);
     }
 
     @PreAuthorize("hasRole('ADMIN')")

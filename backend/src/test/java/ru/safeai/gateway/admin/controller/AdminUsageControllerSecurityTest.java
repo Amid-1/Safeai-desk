@@ -18,6 +18,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.safeai.gateway.admin.service.AdminUsageService;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
+import ru.safeai.gateway.common.security.JsonSecurityErrorWriter;
+import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.util.List;
 
@@ -44,6 +46,13 @@ class AdminUsageControllerSecurityTest {
     @MockitoBean
     private UserDetailsService userDetailsService;
 
+    @MockitoBean
+    private UserRepository userRepository;
+
+    @MockitoBean
+    private JsonSecurityErrorWriter jsonSecurityErrorWriter;
+
+
     @TestConfiguration
     @EnableWebSecurity
     @EnableMethodSecurity
@@ -54,7 +63,7 @@ class AdminUsageControllerSecurityTest {
             return http
                     .csrf(AbstractHttpConfigurer::disable)
                     .authorizeHttpRequests(auth -> auth
-                            .anyRequest().permitAll()
+                            .anyRequest().authenticated()
                     )
                     .build();
         }

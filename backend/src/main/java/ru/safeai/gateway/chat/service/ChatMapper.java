@@ -23,7 +23,7 @@ public class ChatMapper {
     public MessageResponse toMessageResponse(ChatMessageEntity entity) {
         return new MessageResponse(
                 entity.getId(),
-                entity.getRole(),
+                entity.getRole().name(),
                 entity.getContent(),
                 entity.getModel(),
                 entity.getInputTokens(),

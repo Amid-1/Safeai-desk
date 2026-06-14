@@ -1,13 +1,14 @@
 package ru.safeai.gateway.audit.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
 import ru.safeai.gateway.audit.entity.AuditEventEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
 
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -17,19 +18,15 @@ public class AuditEventQueryService {
     private final AuditEventRepository auditEventRepository;
 
     @Transactional(readOnly = true)
-    public List<AuditEventResponse> findAll() {
-        return auditEventRepository.findAllByOrderByCreatedAtDesc()
-                .stream()
-                .map(this::toResponse)
-                .toList();
+    public Page<AuditEventResponse> findAll(Pageable pageable) {
+        return auditEventRepository.findAllByOrderByCreatedAtDesc(pageable)
+                .map(this::toResponse);
     }
 
     @Transactional(readOnly = true)
-    public List<AuditEventResponse> findByUserId(UUID userId) {
-        return auditEventRepository.findByUser_IdOrderByCreatedAtDesc(userId)
-                .stream()
-                .map(this::toResponse)
-                .toList();
+    public Page<AuditEventResponse> findByUserId(UUID userId, Pageable pageable) {
+        return auditEventRepository.findByUser_IdOrderByCreatedAtDesc(userId, pageable)
+                .map(this::toResponse);
     }
 
     private AuditEventResponse toResponse(AuditEventEntity entity) {

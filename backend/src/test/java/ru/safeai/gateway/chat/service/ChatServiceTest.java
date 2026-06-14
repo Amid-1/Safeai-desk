@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.ai.AiChatRequest;
 import ru.safeai.gateway.ai.AiChatResponse;
+import ru.safeai.gateway.ai.AiProvider;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
@@ -18,10 +19,10 @@ import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
-import ru.safeai.gateway.ai.AiProvider;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -31,9 +32,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -61,6 +60,9 @@ class ChatServiceTest {
     @Mock
     private ChatPersistenceService chatPersistenceService;
 
+    @Mock
+    private RedisRateLimitService rateLimitService;
+
     private ChatService chatService;
 
     @BeforeEach
@@ -74,7 +76,8 @@ class ChatServiceTest {
                 aiProvider,
                 auditEventService,
                 chatPersistenceService,
-                chatMapper
+                chatMapper,
+                rateLimitService
         );
     }
 
@@ -108,7 +111,7 @@ class ChatServiceTest {
     }
 
     @Test
-    void sendMessage_shouldSaveUserMessageCallAiProviderAndSaveAssistantMessageThroughPersistenceService() {
+    void sendMessage_shouldCheckRateLimitCallAiProviderAndSaveAssistantMessageThroughPersistenceService() {
         SafeAiUserPrincipal currentUser = currentUser();
 
         AiChatRequest aiRequest = new AiChatRequest(
@@ -168,6 +171,8 @@ class ChatServiceTest {
                 eq(currentUser)
         );
 
+        verify(rateLimitService).checkAiMessageAllowed(currentUser);
+
         verify(aiProvider).sendMessage(aiRequest);
 
         verify(chatPersistenceService).saveAssistantMessageAndReturnChat(
@@ -196,6 +201,7 @@ class ChatServiceTest {
                 "admin@test.com",
                 "password-hash",
                 true,
+                0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
     }
@@ -205,7 +211,6 @@ class ChatServiceTest {
         user.setId(USER_ID);
         user.setEmail("admin@test.com");
         user.setEnabled(true);
-
         return user;
     }
 

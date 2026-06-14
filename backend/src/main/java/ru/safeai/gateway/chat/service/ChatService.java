@@ -16,6 +16,7 @@ import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
@@ -24,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -36,9 +38,11 @@ public class ChatService {
     private final AuditEventService auditEventService;
     private final ChatPersistenceService chatPersistenceService;
     private final ChatMapper chatMapper;
+    private final RedisRateLimitService rateLimitService;
 
     @Transactional
     public ChatResponse create(CreateChatRequest request, SafeAiUserPrincipal currentUser) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
         UserEntity user = userRepository.findById(currentUser.getId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Пользователь не найден: " + currentUser.getId()
@@ -65,6 +69,7 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public List<ChatResponse> findAll(SafeAiUserPrincipal currentUser) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
         return chatSessionRepository.findByUser_IdOrderByCreatedAtDesc(currentUser.getId())
                 .stream()
                 .map(chatMapper::toChatResponse)
@@ -73,6 +78,7 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public ChatDetailsResponse findById(UUID chatId, SafeAiUserPrincipal currentUser) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
 
         List<MessageResponse> messages = chatMessageRepository
@@ -89,6 +95,7 @@ public class ChatService {
             SendMessageRequest request,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
         ChatProcessingContext context =
                 chatPersistenceService.saveUserMessageAndPrepareAiRequest(
                         chatId,
@@ -97,6 +104,8 @@ public class ChatService {
                 );
 
         try {
+            rateLimitService.checkAiMessageAllowed(currentUser);
+
             AiChatResponse aiResponse = aiProvider.sendMessage(context.aiRequest());
 
             return chatPersistenceService.saveAssistantMessageAndReturnChat(

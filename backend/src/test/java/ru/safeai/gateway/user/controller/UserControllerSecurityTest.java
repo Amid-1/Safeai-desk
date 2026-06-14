@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -21,6 +23,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.common.security.UserStatusFilter;
 import ru.safeai.gateway.user.dto.UserResponse;
 import ru.safeai.gateway.user.service.UserService;
 
@@ -34,13 +37,16 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(UserController.class)
+@WebMvcTest(
+        controllers = UserController.class,
+        excludeFilters = @ComponentScan.Filter(
+                type = FilterType.ASSIGNABLE_TYPE,
+                classes = UserStatusFilter.class
+        )
+)
 @Import({
         UserControllerSecurityTest.TestSecurityConfig.class,
         GlobalExceptionHandler.class
@@ -50,6 +56,9 @@ class UserControllerSecurityTest {
 
     private static final UUID USER_ID =
             UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+    private static final UUID ADMIN_ID =
+            UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
 
     private static final UUID ORGANIZATION_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
@@ -73,7 +82,7 @@ class UserControllerSecurityTest {
             return http
                     .csrf(AbstractHttpConfigurer::disable)
                     .authorizeHttpRequests(auth -> auth
-                            .anyRequest().permitAll()
+                            .anyRequest().authenticated()
                     )
                     .build();
         }
@@ -94,10 +103,13 @@ class UserControllerSecurityTest {
 
     @Test
     void findAllWithAdminRoleReturns200() throws Exception {
-        when(userService.findAll()).thenReturn(List.of(adminResponse()));
+        SafeAiUserPrincipal currentUser = adminPrincipal();
+
+        when(userService.findAll(any(SafeAiUserPrincipal.class)))
+                .thenReturn(List.of(adminResponse()));
 
         mockMvc.perform(get("/api/users")
-                        .with(user("admin@test.com").roles("ADMIN")))
+                        .with(authentication(authToken(currentUser))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(USER_ID.toString()))
                 .andExpect(jsonPath("$[0].organizationId").value(ORGANIZATION_ID.toString()))
@@ -198,11 +210,12 @@ class UserControllerSecurityTest {
 
     private SafeAiUserPrincipal adminPrincipal() {
         return new SafeAiUserPrincipal(
-                USER_ID,
+                ADMIN_ID,
                 ORGANIZATION_ID,
                 "admin@test.com",
-                "password-hash",
+                "encoded-password",
                 true,
+                0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
     }

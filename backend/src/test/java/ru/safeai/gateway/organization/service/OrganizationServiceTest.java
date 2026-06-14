@@ -171,6 +171,7 @@ class OrganizationServiceTest {
                 "admin@test.com",
                 "encoded-password",
                 true,
+                0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
     }

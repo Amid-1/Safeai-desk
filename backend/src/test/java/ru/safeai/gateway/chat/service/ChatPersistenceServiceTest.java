@@ -13,6 +13,7 @@ import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
+import ru.safeai.gateway.chat.entity.ChatMessageRole;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
@@ -28,9 +29,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -69,7 +68,7 @@ class ChatPersistenceServiceTest {
         ChatSessionEntity session = chatSessionEntity();
 
         ChatMessageEntity oldMessage = messageEntity(
-                "USER",
+                ChatMessageRole.USER,
                 "Старое сообщение",
                 null,
                 null,
@@ -80,7 +79,7 @@ class ChatPersistenceServiceTest {
         when(chatSessionRepository.findByIdAndUser_Id(CHAT_ID, USER_ID))
                 .thenReturn(Optional.of(session));
 
-        when(chatMessageRepository.findBySession_IdOrderByCreatedAtAsc(CHAT_ID))
+        when(chatMessageRepository.findTop30BySession_IdOrderByCreatedAtDesc(CHAT_ID))
                 .thenReturn(List.of(oldMessage));
 
         when(chatMessageRepository.save(any(ChatMessageEntity.class)))
@@ -108,7 +107,7 @@ class ChatPersistenceServiceTest {
 
         ChatMessageEntity savedMessage = messageCaptor.getValue();
 
-        assertThat(savedMessage.getRole()).isEqualTo("USER");
+        assertThat(savedMessage.getRole()).isEqualTo(ChatMessageRole.USER);
         assertThat(savedMessage.getContent()).isEqualTo("Новое сообщение");
         assertThat(savedMessage.getCreatedAt()).isNotNull();
 
@@ -133,7 +132,7 @@ class ChatPersistenceServiceTest {
         );
 
         ChatMessageEntity userMessage = messageEntity(
-                "USER",
+                ChatMessageRole.USER,
                 "Привет",
                 null,
                 null,
@@ -142,7 +141,7 @@ class ChatPersistenceServiceTest {
         );
 
         ChatMessageEntity assistantMessage = messageEntity(
-                "ASSISTANT",
+                ChatMessageRole.ASSISTANT,
                 "Mock AI provider response: Привет",
                 "mock-safeai",
                 1,
@@ -176,7 +175,7 @@ class ChatPersistenceServiceTest {
 
         ChatMessageEntity savedMessage = messageCaptor.getValue();
 
-        assertThat(savedMessage.getRole()).isEqualTo("ASSISTANT");
+        assertThat(savedMessage.getRole()).isEqualTo(ChatMessageRole.ASSISTANT);
         assertThat(savedMessage.getContent()).isEqualTo("Mock AI provider response: Привет");
         assertThat(savedMessage.getModel()).isEqualTo("mock-safeai");
         assertThat(savedMessage.getInputTokens()).isEqualTo(1);
@@ -219,6 +218,7 @@ class ChatPersistenceServiceTest {
                 "admin@test.com",
                 "password-hash",
                 true,
+                0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
     }
@@ -228,7 +228,6 @@ class ChatPersistenceServiceTest {
         user.setId(USER_ID);
         user.setEmail("admin@test.com");
         user.setEnabled(true);
-
         return user;
     }
 
@@ -243,7 +242,7 @@ class ChatPersistenceServiceTest {
     }
 
     private ChatMessageEntity messageEntity(
-            String role,
+            ChatMessageRole role,
             String content,
             String model,
             Integer inputTokens,

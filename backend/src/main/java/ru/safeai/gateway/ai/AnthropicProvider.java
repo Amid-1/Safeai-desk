@@ -47,19 +47,26 @@ public class AnthropicProvider implements AiProvider {
                     .retrieve()
                     .body(JsonNode.class);
 
+            String content = extractText(response);
+
+            if (content.isBlank()) {
+                throw new AiProviderException("Anthropic provider returned empty response");
+            }
+
             return new AiChatResponse(
-                    extractText(response),
+                    content,
                     properties.model(),
                     AiProviderSupport.extractInputTokens(response),
                     AiProviderSupport.extractOutputTokens(response),
                     BigDecimal.ZERO
             );
         } catch (RestClientResponseException exception) {
-            throw new IllegalStateException(
-                    "Anthropic API error: status=" + exception.getStatusCode()
-                            + ", body=" + exception.getResponseBodyAsString(),
+            throw new AiProviderException(
+                    "Anthropic API error: status=" + exception.getStatusCode(),
                     exception
             );
+        } catch (RuntimeException exception) {
+            throw new AiProviderException("Anthropic provider request failed", exception);
         }
     }
 

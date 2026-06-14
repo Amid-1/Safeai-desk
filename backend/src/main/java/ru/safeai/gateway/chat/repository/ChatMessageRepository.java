@@ -15,6 +15,8 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
 
     List<ChatMessageEntity> findBySession_IdOrderByCreatedAtAsc(UUID sessionId);
 
+    List<ChatMessageEntity> findTop30BySession_IdOrderByCreatedAtDesc(UUID sessionId);
+
     @Query("""
             select new ru.safeai.gateway.chat.dto.UsageSummaryResponse(
                 u.id,
@@ -27,7 +29,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
             from ChatMessageEntity m
             join m.session s
             join s.user u
-            where m.role = 'ASSISTANT'
+            where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
               and m.model is not null
             group by u.id, u.email, m.model
             order by u.email asc, m.model asc
@@ -45,7 +47,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
             from ChatMessageEntity m
             join m.session s
             join s.user u
-            where m.role = 'ASSISTANT'
+            where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
               and m.model is not null
             group by u.id, u.email
             order by u.email asc
@@ -60,7 +62,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
                 sum(m.costUsd)
             )
             from ChatMessageEntity m
-            where m.role = 'ASSISTANT'
+            where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
               and m.model is not null
             group by m.model
             order by m.model asc
@@ -79,7 +81,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
             from ChatMessageEntity m
             join m.session s
             join s.user u
-            where m.role = 'ASSISTANT'
+            where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
               and u.id = :userId
               and m.model is not null
             group by u.id, u.email, m.model
@@ -99,7 +101,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
             from ChatMessageEntity m
             join m.session s
             join s.user u
-            where m.role = 'ASSISTANT'
+            where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
               and u.organization.id = :organizationId
               and m.model is not null
             group by u.id, u.email, m.model
@@ -109,15 +111,15 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
 
     @Query(value = """
             select
-                cast(m.created_at as date) as "usageDate",
+                date(m.created_at at time zone 'UTC') as "usageDate",
                 cast(coalesce(sum(m.input_tokens), 0) as bigint) as "inputTokens",
                 cast(coalesce(sum(m.output_tokens), 0) as bigint) as "outputTokens",
                 coalesce(sum(m.cost_usd), 0) as "costUsd"
             from chat_messages m
             where m.role = 'ASSISTANT'
               and m.model is not null
-            group by cast(m.created_at as date)
-            order by cast(m.created_at as date) desc
+            group by date(m.created_at at time zone 'UTC')
+            order by date(m.created_at at time zone 'UTC') desc
             """, nativeQuery = true)
     List<UsageDailySummaryProjection> findUsageDaily();
 }

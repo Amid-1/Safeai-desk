@@ -21,7 +21,7 @@ public class OrganizationEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    @Column(name = "name", nullable = false, unique = true, length = 255)
+    @Column(name = "name", nullable = false, length = 255)
     private String name;
 
     @Column(name = "created_at", nullable = false)

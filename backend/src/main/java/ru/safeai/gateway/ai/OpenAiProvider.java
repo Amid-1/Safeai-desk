@@ -45,19 +45,26 @@ public class OpenAiProvider implements AiProvider {
                     .retrieve()
                     .body(JsonNode.class);
 
+            String content = extractOutputText(response);
+
+            if (content.isBlank()) {
+                throw new AiProviderException("OpenAI provider returned empty response");
+            }
+
             return new AiChatResponse(
-                    extractOutputText(response),
+                    content,
                     properties.model(),
                     AiProviderSupport.extractInputTokens(response),
                     AiProviderSupport.extractOutputTokens(response),
                     BigDecimal.ZERO
             );
         } catch (RestClientResponseException exception) {
-            throw new IllegalStateException(
-                    "OpenAI API error: status=" + exception.getStatusCode()
-                            + ", body=" + exception.getResponseBodyAsString(),
+            throw new AiProviderException(
+                    "OpenAI API error: status=" + exception.getStatusCode(),
                     exception
             );
+        } catch (RuntimeException exception) {
+            throw new AiProviderException("OpenAI provider request failed", exception);
         }
     }
 

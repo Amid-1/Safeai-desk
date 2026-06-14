@@ -18,13 +18,18 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.context.annotation.ComponentScan;
+
 import ru.safeai.gateway.auth.dto.AuthUserResponse;
+import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
+import ru.safeai.gateway.auth.mapper.AuthUserMapper;
 import ru.safeai.gateway.auth.service.AuthService;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.auth.mapper.AuthUserMapper;
+import org.springframework.context.annotation.FilterType;
+import ru.safeai.gateway.common.security.UserStatusFilter;
 
 import java.util.Set;
 import java.util.UUID;
@@ -36,7 +41,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(AuthController.class)
+@WebMvcTest(
+        controllers = AuthController.class,
+        excludeFilters = @ComponentScan.Filter(
+                type = FilterType.ASSIGNABLE_TYPE,
+                classes = UserStatusFilter.class
+        )
+)
 @Import({
         AuthControllerSecurityTest.TestSecurityConfig.class,
         GlobalExceptionHandler.class,
@@ -131,12 +142,23 @@ class AuthControllerSecurityTest {
     void meWithAuthenticationReturnsCurrentUser() throws Exception {
         SafeAiUserPrincipal principal = currentUser();
 
+        when(authService.getCurrentUser(any(SafeAiUserPrincipal.class)))
+                .thenReturn(new CurrentUserResponse(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        "admin@test.com",
+                        "Demo Admin",
+                        true,
+                        Set.of("ADMIN")
+                ));
+
         mockMvc.perform(get("/api/auth/me")
                         .with(authentication(authToken(principal))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(USER_ID.toString()))
                 .andExpect(jsonPath("$.organizationId").value(ORGANIZATION_ID.toString()))
                 .andExpect(jsonPath("$.email").value("admin@test.com"))
+                .andExpect(jsonPath("$.fullName").value("Demo Admin"))
                 .andExpect(jsonPath("$.enabled").value(true))
                 .andExpect(jsonPath("$.roles[0]").value("ADMIN"));
     }
@@ -156,6 +178,7 @@ class AuthControllerSecurityTest {
                 "admin@test.com",
                 "",
                 true,
+                0L,
                 Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
     }

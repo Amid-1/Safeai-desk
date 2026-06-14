@@ -19,10 +19,14 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.context.annotation.ComponentScan;
+
 import ru.safeai.gateway.chat.dto.ChatResponse;
 import ru.safeai.gateway.chat.service.ChatService;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import org.springframework.context.annotation.FilterType;
+import ru.safeai.gateway.common.security.UserStatusFilter;
 
 import java.time.Instant;
 import java.util.List;
@@ -39,7 +43,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(ChatController.class)
+@WebMvcTest(
+        controllers = ChatController.class,
+        excludeFilters = @ComponentScan.Filter(
+                type = FilterType.ASSIGNABLE_TYPE,
+                classes = UserStatusFilter.class
+        )
+)
 @Import({
         ChatControllerSecurityTest.TestSecurityConfig.class,
         GlobalExceptionHandler.class
@@ -66,7 +76,7 @@ class ChatControllerSecurityTest {
     static class TestSecurityConfig {
 
         @Bean
-        SecurityFilterChain testSecurityFilterChain(HttpSecurity http) throws Exception {
+        SecurityFilterChain testSecurityFilterChain(HttpSecurity http) {
             return http
                     .csrf(AbstractHttpConfigurer::disable)
                     .authorizeHttpRequests(auth -> auth
@@ -137,6 +147,7 @@ class ChatControllerSecurityTest {
                 "admin@test.com",
                 "password-hash",
                 true,
+                0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
     }

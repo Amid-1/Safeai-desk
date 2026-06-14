@@ -27,6 +27,12 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
             throw new BadJwtException("JWT subject is missing");
         }
 
+        Long tokenVersion = jwt.getClaim("tokenVersion");
+
+        if (tokenVersion == null) {
+            throw new BadJwtException("JWT claim is missing: tokenVersion");
+        }
+
         List<String> roles = jwt.getClaimAsStringList("roles");
 
         Set<SimpleGrantedAuthority> authorities = roles == null
@@ -43,6 +49,7 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
                 email,
                 "",
                 true,
+                tokenVersion,
                 authorities
         );
 

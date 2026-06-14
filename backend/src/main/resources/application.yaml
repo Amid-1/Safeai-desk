@@ -36,6 +36,7 @@ app:
     jwt:
       secret: ${SAFEAI_JWT_SECRET}
       expiration-minutes: ${SAFEAI_JWT_EXPIRATION_MINUTES:60}
+      issuer: ${SAFEAI_JWT_ISSUER:safeai-desk}
 
 safeai:
   ai:
@@ -52,3 +53,12 @@ safeai:
       model: ${ANTHROPIC_MODEL:claude-opus-4-8}
       version: ${ANTHROPIC_VERSION:2023-06-01}
       max-tokens: ${ANTHROPIC_MAX_TOKENS:1024}
+
+  rate-limit:
+    ai-messages:
+      enabled: true
+      user-limit-per-hour: 20
+      admin-limit-per-hour: 100
+
+  cors:
+    allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS:http://localhost:5173}

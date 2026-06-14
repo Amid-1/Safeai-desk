@@ -15,6 +15,7 @@ import ru.safeai.gateway.organization.repository.OrganizationRepository;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -29,7 +30,9 @@ public class OrganizationService {
             CreateOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        String name = request.name().trim();
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        String name = normalizeName(request.name());
 
         if (organizationRepository.existsByNameIgnoreCase(name)) {
             throw new ConflictException("Организация с таким названием уже существует: " + name);
@@ -68,6 +71,10 @@ public class OrganizationService {
                 ));
 
         return toResponse(entity);
+    }
+
+    private String normalizeName(String name) {
+        return name.trim().replaceAll("\\s+", " ");
     }
 
     private OrganizationResponse toResponse(OrganizationEntity entity) {

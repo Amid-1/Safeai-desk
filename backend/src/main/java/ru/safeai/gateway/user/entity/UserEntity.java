@@ -39,6 +39,13 @@ public class UserEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Column(name = "token_version", nullable = false)
+    private long tokenVersion;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "user_roles",

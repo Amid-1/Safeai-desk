@@ -1,12 +1,13 @@
 package ru.safeai.gateway.audit.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
 import ru.safeai.gateway.audit.service.AuditEventQueryService;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -18,12 +19,15 @@ public class AuditController {
     private final AuditEventQueryService auditEventQueryService;
 
     @GetMapping
-    public List<AuditEventResponse> findAll() {
-        return auditEventQueryService.findAll();
+    public Page<AuditEventResponse> findAll(Pageable pageable) {
+        return auditEventQueryService.findAll(pageable);
     }
 
     @GetMapping("/users/{userId}")
-    public List<AuditEventResponse> findByUserId(@PathVariable UUID userId) {
-        return auditEventQueryService.findByUserId(userId);
+    public Page<AuditEventResponse> findByUserId(
+            @PathVariable UUID userId,
+            Pageable pageable
+    ) {
+        return auditEventQueryService.findByUserId(userId, pageable);
     }
 }

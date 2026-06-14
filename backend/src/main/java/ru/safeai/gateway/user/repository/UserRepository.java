@@ -20,10 +20,6 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     @Query("select u from UserEntity u where u.id = :id")
     Optional<UserEntity> findByIdWithRolesAndOrganization(UUID id);
 
-    @EntityGraph(attributePaths = {"roles", "organization"})
-    @Query("select distinct u from UserEntity u order by u.createdAt desc")
-    List<UserEntity> findAllWithRoles();
-
     @Query("""
         select count(u)
         from UserEntity u
@@ -32,4 +28,13 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
           and r.name = 'ADMIN'
         """)
     long countEnabledAdmins();
+
+    @EntityGraph(attributePaths = {"roles", "organization"})
+    @Query("""
+    select distinct u
+    from UserEntity u
+    where u.organization.id = :organizationId
+    order by u.createdAt desc
+    """)
+    List<UserEntity> findAllByOrganizationIdWithRoles(UUID organizationId);
 }

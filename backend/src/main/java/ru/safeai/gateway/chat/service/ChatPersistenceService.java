@@ -12,12 +12,14 @@ import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
 import ru.safeai.gateway.chat.dto.MessageResponse;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
+import ru.safeai.gateway.chat.entity.ChatMessageRole;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,9 +28,6 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class ChatPersistenceService {
-
-    private static final String ROLE_USER = "USER";
-    private static final String ROLE_ASSISTANT = "ASSISTANT";
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -44,17 +43,18 @@ public class ChatPersistenceService {
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
 
         List<AiMessage> historyBeforeNewMessage = chatMessageRepository
-                .findBySession_IdOrderByCreatedAtAsc(session.getId())
+                .findTop30BySession_IdOrderByCreatedAtDesc(session.getId())
                 .stream()
+                .sorted(Comparator.comparing(ChatMessageEntity::getCreatedAt))
                 .map(message -> new AiMessage(
-                        message.getRole(),
+                        message.getRole().name(),
                         message.getContent()
                 ))
                 .toList();
 
         ChatMessageEntity userMessage = new ChatMessageEntity();
         userMessage.setSession(session);
-        userMessage.setRole(ROLE_USER);
+        userMessage.setRole(ChatMessageRole.USER);
         userMessage.setContent(request.content());
         userMessage.setModel(null);
         userMessage.setInputTokens(null);
@@ -97,7 +97,7 @@ public class ChatPersistenceService {
 
         ChatMessageEntity assistantMessage = new ChatMessageEntity();
         assistantMessage.setSession(session);
-        assistantMessage.setRole(ROLE_ASSISTANT);
+        assistantMessage.setRole(ChatMessageRole.ASSISTANT);
         assistantMessage.setContent(aiResponse.content());
         assistantMessage.setModel(aiResponse.model());
         assistantMessage.setInputTokens(aiResponse.inputTokens());

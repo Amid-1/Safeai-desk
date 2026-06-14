@@ -1,7 +1,6 @@
 package ru.safeai.gateway.common.security;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
@@ -20,9 +19,7 @@ import java.util.Objects;
 public class JwtService {
 
     private final JwtEncoder jwtEncoder;
-
-    @Value("${app.security.jwt.expiration-minutes}")
-    private long expirationMinutes;
+    private final JwtProperties jwtProperties;
 
     public String generateToken(SafeAiUserPrincipal user) {
         Objects.requireNonNull(user, "user не должен быть null");
@@ -40,13 +37,14 @@ public class JwtService {
         JwsHeader headers = JwsHeader.with(MacAlgorithm.HS256).build();
 
         JwtClaimsSet claims = JwtClaimsSet.builder()
-                .issuer("safeai-desk")
+                .issuer(jwtProperties.issuer())
                 .issuedAt(now)
-                .expiresAt(now.plus(expirationMinutes, ChronoUnit.MINUTES))
+                .expiresAt(now.plus(jwtProperties.expirationMinutes(), ChronoUnit.MINUTES))
                 .subject(user.getEmail())
                 .claim("userId", user.getId().toString())
                 .claim("organizationId", user.getOrganizationId().toString())
                 .claim("roles", roles)
+                .claim("tokenVersion", user.getTokenVersion())
                 .build();
 
         return jwtEncoder.encode(JwtEncoderParameters.from(headers, claims)).getTokenValue();

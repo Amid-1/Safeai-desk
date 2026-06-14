@@ -5,6 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
 import ru.safeai.gateway.audit.entity.AuditEventEntity;
@@ -40,64 +44,76 @@ class AuditEventQueryServiceTest {
 
     @Test
     void findAll_shouldReturnAuditEvents() {
+        Pageable pageable = PageRequest.of(0, 50);
         AuditEventEntity event = auditEventEntity();
 
-        when(auditEventRepository.findAllByOrderByCreatedAtDesc())
-                .thenReturn(List.of(event));
+        when(auditEventRepository.findAllByOrderByCreatedAtDesc(pageable))
+                .thenReturn(new PageImpl<>(List.of(event)));
 
-        List<AuditEventResponse> response = auditEventQueryService.findAll();
+        Page<AuditEventResponse> response = auditEventQueryService.findAll(pageable);
 
-        assertThat(response).hasSize(1);
-        assertThat(response.getFirst().id()).isEqualTo(AUDIT_EVENT_ID);
-        assertThat(response.getFirst().userId()).isEqualTo(USER_ID);
-        assertThat(response.getFirst().userEmail()).isEqualTo("admin@test.com");
-        assertThat(response.getFirst().eventType()).isEqualTo(AuditEventType.USER_LOGIN_SUCCESS);
-        assertThat(response.getFirst().details()).containsEntry("email", "admin@test.com");
-        assertThat(response.getFirst().createdAt()).isEqualTo(Instant.parse("2026-06-12T12:00:00Z"));
+        assertThat(response.getContent()).hasSize(1);
 
-        verify(auditEventRepository).findAllByOrderByCreatedAtDesc();
+        AuditEventResponse item = response.getContent().getFirst();
+
+        assertThat(item.id()).isEqualTo(AUDIT_EVENT_ID);
+        assertThat(item.userId()).isEqualTo(USER_ID);
+        assertThat(item.userEmail()).isEqualTo("admin@test.com");
+        assertThat(item.eventType()).isEqualTo(AuditEventType.USER_LOGIN_SUCCESS.name());
+        assertThat(item.details()).containsEntry("email", "admin@test.com");
+        assertThat(item.createdAt()).isEqualTo(Instant.parse("2026-06-12T12:00:00Z"));
+
+        verify(auditEventRepository).findAllByOrderByCreatedAtDesc(pageable);
         verifyNoMoreInteractions(auditEventRepository);
     }
 
     @Test
     void findByUserId_shouldReturnUserAuditEvents() {
+        Pageable pageable = PageRequest.of(0, 50);
         AuditEventEntity event = auditEventEntity();
 
-        when(auditEventRepository.findByUser_IdOrderByCreatedAtDesc(USER_ID))
-                .thenReturn(List.of(event));
+        when(auditEventRepository.findByUser_IdOrderByCreatedAtDesc(USER_ID, pageable))
+                .thenReturn(new PageImpl<>(List.of(event)));
 
-        List<AuditEventResponse> response = auditEventQueryService.findByUserId(USER_ID);
+        Page<AuditEventResponse> response = auditEventQueryService.findByUserId(USER_ID, pageable);
 
-        assertThat(response).hasSize(1);
-        assertThat(response.getFirst().id()).isEqualTo(AUDIT_EVENT_ID);
-        assertThat(response.getFirst().userId()).isEqualTo(USER_ID);
-        assertThat(response.getFirst().userEmail()).isEqualTo("admin@test.com");
+        assertThat(response.getContent()).hasSize(1);
 
-        verify(auditEventRepository).findByUser_IdOrderByCreatedAtDesc(USER_ID);
+        AuditEventResponse item = response.getContent().getFirst();
+
+        assertThat(item.id()).isEqualTo(AUDIT_EVENT_ID);
+        assertThat(item.userId()).isEqualTo(USER_ID);
+        assertThat(item.userEmail()).isEqualTo("admin@test.com");
+
+        verify(auditEventRepository).findByUser_IdOrderByCreatedAtDesc(USER_ID, pageable);
         verifyNoMoreInteractions(auditEventRepository);
     }
 
     @Test
     void findAll_shouldReturnAuditEventWithoutUserWhenUserIsNull() {
+        Pageable pageable = PageRequest.of(0, 50);
         AuditEventEntity event = auditEventEntity();
         event.setUser(null);
 
-        when(auditEventRepository.findAllByOrderByCreatedAtDesc())
-                .thenReturn(List.of(event));
+        when(auditEventRepository.findAllByOrderByCreatedAtDesc(pageable))
+                .thenReturn(new PageImpl<>(List.of(event)));
 
-        List<AuditEventResponse> response = auditEventQueryService.findAll();
+        Page<AuditEventResponse> response = auditEventQueryService.findAll(pageable);
 
-        assertThat(response).hasSize(1);
-        assertThat(response.getFirst().id()).isEqualTo(AUDIT_EVENT_ID);
-        assertThat(response.getFirst().userId()).isNull();
-        assertThat(response.getFirst().userEmail()).isNull();
+        assertThat(response.getContent()).hasSize(1);
+
+        AuditEventResponse item = response.getContent().getFirst();
+
+        assertThat(item.id()).isEqualTo(AUDIT_EVENT_ID);
+        assertThat(item.userId()).isNull();
+        assertThat(item.userEmail()).isNull();
     }
 
     private AuditEventEntity auditEventEntity() {
         AuditEventEntity event = new AuditEventEntity();
         event.setId(AUDIT_EVENT_ID);
         event.setUser(userEntity());
-        event.setEventType(AuditEventType.USER_LOGIN_SUCCESS);
+        event.setEventType(AuditEventType.USER_LOGIN_SUCCESS.name());
         event.setDetails(Map.of("email", "admin@test.com"));
         event.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
 
