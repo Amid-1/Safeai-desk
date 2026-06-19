@@ -21,6 +21,8 @@ public class RequestIdFilter extends OncePerRequestFilter {
     public static final String REQUEST_ID_ATTRIBUTE = "requestId";
     public static final String REQUEST_ID_HEADER = "X-Request-Id";
 
+    private static final int MAX_REQUEST_ID_LENGTH = 128;
+
     @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
@@ -29,7 +31,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         String requestId = request.getHeader(REQUEST_ID_HEADER);
 
-        if (requestId == null || requestId.isBlank()) {
+        if (requestId == null || requestId.isBlank() || requestId.length() > MAX_REQUEST_ID_LENGTH) {
             requestId = UUID.randomUUID().toString();
         }
 

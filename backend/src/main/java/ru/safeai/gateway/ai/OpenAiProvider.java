@@ -1,7 +1,8 @@
 package ru.safeai.gateway.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpHeaders;
@@ -12,8 +13,8 @@ import org.springframework.web.client.RestClientResponseException;
 import java.math.BigDecimal;
 import java.util.Map;
 
+@Slf4j
 @Service
-@RequiredArgsConstructor
 @EnableConfigurationProperties(OpenAiProperties.class)
 @ConditionalOnProperty(
         name = "safeai.ai.provider",
@@ -22,25 +23,40 @@ import java.util.Map;
 public class OpenAiProvider implements AiProvider {
 
     private final OpenAiProperties properties;
+    private final RestClient client;
+
+    public OpenAiProvider(OpenAiProperties properties) {
+        this.properties = properties;
+        this.client = AiRestClientFactory.create(
+                properties.baseUrl(),
+                properties.connectTimeout(),
+                properties.readTimeout()
+        );
+    }
 
     @Override
     public AiChatResponse sendMessage(AiChatRequest request) {
         properties.validate();
-
-        RestClient client = RestClient.builder()
-                .baseUrl(properties.baseUrl())
-                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiKey())
-                .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                .build();
 
         Map<String, Object> payload = Map.of(
                 "model", properties.model(),
                 "input", AiProviderSupport.buildMessages(request, this::normalizeRole)
         );
 
+        log.info(
+                "Отправка запроса в OpenAI: userId={}, organizationId={}, chatId={}, model={}, messageLength={}",
+                request.userId(),
+                request.organizationId(),
+                request.chatId(),
+                properties.model(),
+                request.userMessage().length()
+        );
+
         try {
             JsonNode response = client.post()
                     .uri("/responses")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiKey())
+                    .header(HttpHeaders.CONTENT_TYPE, "application/json")
                     .body(payload)
                     .retrieve()
                     .body(JsonNode.class);
@@ -58,11 +74,15 @@ public class OpenAiProvider implements AiProvider {
                     AiProviderSupport.extractOutputTokens(response),
                     BigDecimal.ZERO
             );
+        } catch (ResourceAccessException exception) {
+            throw new AiProviderTimeoutException("OpenAI provider timeout", exception);
         } catch (RestClientResponseException exception) {
             throw new AiProviderException(
                     "OpenAI API error: status=" + exception.getStatusCode(),
                     exception
             );
+        } catch (AiProviderException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             throw new AiProviderException("OpenAI provider request failed", exception);
         }

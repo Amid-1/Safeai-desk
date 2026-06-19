@@ -9,6 +9,12 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:safeai_password}
     driver-class-name: org.postgresql.Driver
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
   jpa:
     hibernate:
       ddl-auto: validate
@@ -46,6 +52,8 @@ safeai:
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
       api-key: ${OPENAI_API_KEY:}
       model: ${OPENAI_MODEL:gpt-4.1}
+      connect-timeout: 5s
+      read-timeout: 60s
 
     anthropic:
       base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/v1}
@@ -53,6 +61,8 @@ safeai:
       model: ${ANTHROPIC_MODEL:claude-opus-4-8}
       version: ${ANTHROPIC_VERSION:2023-06-01}
       max-tokens: ${ANTHROPIC_MAX_TOKENS:1024}
+      connect-timeout: 5s
+      read-timeout: 60s
 
   rate-limit:
     ai-messages:

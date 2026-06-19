@@ -2,12 +2,14 @@ package ru.safeai.gateway.admin.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ru.safeai.gateway.admin.service.AdminUsageService;
 import ru.safeai.gateway.chat.dto.UsageDailySummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageModelSummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageUserSummaryResponse;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.util.List;
 import java.util.UUID;
@@ -24,16 +26,20 @@ public class AdminUsageController {
      * Старый endpoint оставляем, чтобы не сломать текущий frontend.
      */
     @GetMapping("/usage-summary")
-    public List<UsageSummaryResponse> getOldUsageSummary() {
-        return adminUsageService.getUsageSummary();
+    public List<UsageSummaryResponse> getOldUsageSummary(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return adminUsageService.getUsageSummary(currentUser);
     }
 
     /**
      * Новый нормальный endpoint.
      */
     @GetMapping("/usage/summary")
-    public List<UsageSummaryResponse> getUsageSummary() {
-        return adminUsageService.getUsageSummary();
+    public List<UsageSummaryResponse> getUsageSummary(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return adminUsageService.getUsageSummary(currentUser);
     }
 
     @GetMapping("/usage/users")
@@ -57,7 +63,10 @@ public class AdminUsageController {
     }
 
     @GetMapping("/usage/by-organization/{organizationId}")
-    public List<UsageSummaryResponse> getUsageByOrganizationId(@PathVariable UUID organizationId) {
-        return adminUsageService.getUsageByOrganizationId(organizationId);
+    public List<UsageSummaryResponse> getUsageByOrganizationId(
+            @PathVariable UUID organizationId,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return adminUsageService.getUsageByOrganizationId(organizationId, currentUser);
     }
 }

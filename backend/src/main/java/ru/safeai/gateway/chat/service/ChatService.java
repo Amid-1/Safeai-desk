@@ -96,16 +96,19 @@ public class ChatService {
             SafeAiUserPrincipal currentUser
     ) {
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        String normalizedContent = normalizeMessageContent(request.content());
+
+        rateLimitService.checkAiMessageAllowed(currentUser);
+
         ChatProcessingContext context =
                 chatPersistenceService.saveUserMessageAndPrepareAiRequest(
                         chatId,
-                        request,
+                        new SendMessageRequest(normalizedContent),
                         currentUser
                 );
 
         try {
-            rateLimitService.checkAiMessageAllowed(currentUser);
-
             AiChatResponse aiResponse = aiProvider.sendMessage(context.aiRequest());
 
             return chatPersistenceService.saveAssistantMessageAndReturnChat(
@@ -140,5 +143,13 @@ public class ChatService {
         }
 
         return title.trim();
+    }
+
+    private String normalizeMessageContent(String content) {
+        if (content == null || content.trim().isBlank()) {
+            throw new IllegalArgumentException("Сообщение не должно быть пустым");
+        }
+
+        return content.trim();
     }
 }

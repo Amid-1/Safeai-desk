@@ -9,8 +9,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import ru.safeai.gateway.audit.AuditEventType;
-import ru.safeai.gateway.audit.service.AuditEventService;
+import org.springframework.mock.web.MockHttpServletRequest;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
 import ru.safeai.gateway.auth.mapper.AuthUserMapper;
@@ -38,7 +37,7 @@ class AuthServiceTest {
     private JwtService jwtService;
 
     @Mock
-    private AuditEventService auditEventService;
+    private AuthEventService authEventService;
 
     @Mock
     private UserRepository userRepository;
@@ -55,7 +54,7 @@ class AuthServiceTest {
         authService = new AuthService(
                 authenticationManager,
                 jwtService,
-                auditEventService,
+                authEventService,
                 authUserMapper,
                 userRepository,
                 loginRateLimitService
@@ -95,7 +94,10 @@ class AuthServiceTest {
         when(jwtService.generateToken(principal))
                 .thenReturn("test-jwt-token");
 
-        LoginResponse response = authService.login(request);
+        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        httpRequest.setRemoteAddr("127.0.0.1");
+
+        LoginResponse response = authService.login(request, httpRequest);
 
         assertThat(response.token()).isEqualTo("test-jwt-token");
         assertThat(response.tokenType()).isEqualTo("Bearer");
@@ -106,7 +108,7 @@ class AuthServiceTest {
         assertThat(response.user().enabled()).isTrue();
         assertThat(response.user().roles()).containsExactly("ADMIN");
 
-        verify(loginRateLimitService).checkAllowed("admin@test.com");
+        verify(loginRateLimitService).checkAllowed("admin@test.com", "127.0.0.1");
 
         verify(authenticationManager).authenticate(argThat(auth ->
                 auth instanceof UsernamePasswordAuthenticationToken
@@ -114,10 +116,9 @@ class AuthServiceTest {
                         && "admin123".equals(auth.getCredentials())
         ));
 
-        verify(auditEventService).record(
-                eq(userId),
-                eq(AuditEventType.USER_LOGIN_SUCCESS),
-                anyMap()
+        verify(authEventService).loginSuccess(
+                eq(principal),
+                any(MockHttpServletRequest.class)
         );
     }
 
@@ -131,15 +132,17 @@ class AuthServiceTest {
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenThrow(new BadCredentialsException("Bad credentials"));
 
-        assertThatThrownBy(() -> authService.login(request))
+        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        httpRequest.setRemoteAddr("127.0.0.1");
+
+        assertThatThrownBy(() -> authService.login(request, httpRequest))
                 .isInstanceOf(BadCredentialsException.class);
 
-        verify(loginRateLimitService).checkAllowed("admin@test.com");
+        verify(loginRateLimitService).checkAllowed("admin@test.com", "127.0.0.1");
 
-        verify(auditEventService).record(
-                isNull(),
-                eq(AuditEventType.USER_LOGIN_FAILED),
-                anyMap()
+        verify(authEventService).loginFailed(
+                eq("admin@test.com"),
+                any(MockHttpServletRequest.class)
         );
     }
 }

@@ -2,13 +2,17 @@ package ru.safeai.gateway.ai;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.time.Duration;
+
 @ConfigurationProperties(prefix = "safeai.ai.anthropic")
 public record AnthropicProperties(
         String baseUrl,
         String apiKey,
         String model,
         String version,
-        Integer maxTokens
+        Integer maxTokens,
+        Duration connectTimeout,
+        Duration readTimeout
 ) {
 
     public AnthropicProperties {
@@ -23,6 +27,14 @@ public record AnthropicProperties(
         maxTokens = maxTokens == null || maxTokens <= 0
                 ? 1024
                 : maxTokens;
+
+        connectTimeout = connectTimeout == null
+                ? Duration.ofSeconds(5)
+                : connectTimeout;
+
+        readTimeout = readTimeout == null
+                ? Duration.ofSeconds(60)
+                : readTimeout;
     }
 
     public void validate() {

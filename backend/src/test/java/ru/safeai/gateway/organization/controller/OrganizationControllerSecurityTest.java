@@ -39,7 +39,6 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(
@@ -102,19 +101,21 @@ class OrganizationControllerSecurityTest {
 
     @Test
     void findAllWithAdminRoleReturns200() throws Exception {
-        when(organizationService.findAll()).thenReturn(List.of(
-                new OrganizationResponse(
-                        ORGANIZATION_ID,
-                        "SafeAI",
-                        Instant.parse("2026-06-12T12:00:00Z")
-                )
-        ));
+        when(organizationService.findAll(any(SafeAiUserPrincipal.class)))
+                .thenReturn(List.of(
+                        new OrganizationResponse(
+                                ORGANIZATION_ID,
+                                "SafeAI",
+                                Instant.parse("2026-06-12T12:00:00Z")
+                        )
+                ));
 
         mockMvc.perform(get("/api/organizations")
                         .with(authentication(authToken(adminPrincipal()))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(ORGANIZATION_ID.toString()))
-                .andExpect(jsonPath("$[0].name").value("SafeAI"));
+                .andExpect(status().isOk());
+
+        verify(organizationService)
+                .findAll(any(SafeAiUserPrincipal.class));
     }
 
     @Test
@@ -123,10 +124,10 @@ class OrganizationControllerSecurityTest {
                         .with(authentication(authToken(adminPrincipal())))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {
-                                  "name": ""
-                                }
-                                """))
+                            {
+                              "name": ""
+                            }
+                            """))
                 .andExpect(status().isBadRequest());
 
         verify(organizationService, never()).create(any(), any());

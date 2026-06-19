@@ -43,8 +43,11 @@ public class UserController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{id}")
-    public UserResponse findById(@PathVariable UUID id) {
-        return userService.findById(id);
+    public UserResponse findById(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return userService.findById(id, currentUser);
     }
 
     @PreAuthorize("hasRole('ADMIN')")

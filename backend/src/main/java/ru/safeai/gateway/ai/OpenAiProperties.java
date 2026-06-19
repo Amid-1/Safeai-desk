@@ -2,11 +2,15 @@ package ru.safeai.gateway.ai;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.time.Duration;
+
 @ConfigurationProperties(prefix = "safeai.ai.openai")
 public record OpenAiProperties(
         String baseUrl,
         String apiKey,
-        String model
+        String model,
+        Duration connectTimeout,
+        Duration readTimeout
 ) {
 
     public OpenAiProperties {
@@ -17,6 +21,14 @@ public record OpenAiProperties(
         model = model == null || model.isBlank()
                 ? "gpt-4.1"
                 : model;
+
+        connectTimeout = connectTimeout == null
+                ? Duration.ofSeconds(5)
+                : connectTimeout;
+
+        readTimeout = readTimeout == null
+                ? Duration.ofSeconds(60)
+                : readTimeout;
     }
 
     public void validate() {

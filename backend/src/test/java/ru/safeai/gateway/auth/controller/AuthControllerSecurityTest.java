@@ -1,5 +1,6 @@
 package ru.safeai.gateway.auth.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -98,8 +99,10 @@ class AuthControllerSecurityTest {
                 )
         );
 
-        when(authService.login(any(LoginRequest.class)))
-                .thenReturn(loginResponse);
+        when(authService.login(
+                any(LoginRequest.class),
+                any(HttpServletRequest.class)
+        )).thenReturn(loginResponse);
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

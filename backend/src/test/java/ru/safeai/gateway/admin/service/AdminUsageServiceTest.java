@@ -11,6 +11,8 @@ import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageUserSummaryResponse;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.UsageDailySummaryProjection;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -44,9 +46,9 @@ class AdminUsageServiceTest {
                 )
         );
 
-        when(chatMessageRepository.findUsageSummary()).thenReturn(expected);
+        when(chatMessageRepository.findUsageByOrganizationId(ORGANIZATION_ID)).thenReturn(expected);
 
-        List<UsageSummaryResponse> result = adminUsageService.getUsageSummary();
+        List<UsageSummaryResponse> result = adminUsageService.getUsageSummary(adminPrincipal());
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().userId()).isEqualTo(userId);
@@ -57,7 +59,7 @@ class AdminUsageServiceTest {
         assertThat(result.getFirst().totalTokens()).isEqualTo(30L);
         assertThat(result.getFirst().costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
 
-        verify(chatMessageRepository).findUsageSummary();
+        verify(chatMessageRepository).findUsageByOrganizationId(ORGANIZATION_ID);
         verifyNoMoreInteractions(chatMessageRepository);
     }
 
@@ -183,7 +185,6 @@ class AdminUsageServiceTest {
 
     @Test
     void getUsageByOrganizationId_shouldReturnRepositoryResult() {
-        UUID organizationId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
 
         List<UsageSummaryResponse> expected = List.of(
@@ -197,15 +198,36 @@ class AdminUsageServiceTest {
                 )
         );
 
-        when(chatMessageRepository.findUsageByOrganizationId(organizationId)).thenReturn(expected);
+        when(chatMessageRepository.findUsageByOrganizationId(ORGANIZATION_ID)).thenReturn(expected);
 
-        List<UsageSummaryResponse> result = adminUsageService.getUsageByOrganizationId(organizationId);
+        List<UsageSummaryResponse> result = adminUsageService.getUsageByOrganizationId(
+                ORGANIZATION_ID,
+                adminPrincipal()
+        );
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().userId()).isEqualTo(userId);
         assertThat(result.getFirst().totalTokens()).isEqualTo(20L);
 
-        verify(chatMessageRepository).findUsageByOrganizationId(organizationId);
+        verify(chatMessageRepository).findUsageByOrganizationId(ORGANIZATION_ID);
         verifyNoMoreInteractions(chatMessageRepository);
+    }
+
+    private static final UUID ADMIN_ID =
+            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+    private static final UUID ORGANIZATION_ID =
+            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+    private SafeAiUserPrincipal adminPrincipal() {
+        return new SafeAiUserPrincipal(
+                ADMIN_ID,
+                ORGANIZATION_ID,
+                "admin@test.com",
+                "",
+                true,
+                0L,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
     }
 }

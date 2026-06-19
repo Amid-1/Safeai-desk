@@ -16,15 +16,23 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+
 import ru.safeai.gateway.admin.service.AdminUsageService;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.JsonSecurityErrorWriter;
+
 import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -51,6 +59,12 @@ class AdminUsageControllerSecurityTest {
 
     @MockitoBean
     private JsonSecurityErrorWriter jsonSecurityErrorWriter;
+
+    private static final UUID ADMIN_ID =
+            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+    private static final UUID ORGANIZATION_ID =
+            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
 
     @TestConfiguration
@@ -114,16 +128,36 @@ class AdminUsageControllerSecurityTest {
         mockServices();
 
         mockMvc.perform(get(url)
-                        .with(user("admin@test.com").roles("ADMIN")))
+                        .with(authentication(authToken(adminPrincipal()))))
                 .andExpect(status().isOk());
     }
 
     private void mockServices() {
-        when(adminUsageService.getUsageSummary()).thenReturn(List.of());
+        when(adminUsageService.getUsageSummary(any())).thenReturn(List.of());
         when(adminUsageService.getUsageByUsers()).thenReturn(List.of());
         when(adminUsageService.getUsageByModels()).thenReturn(List.of());
         when(adminUsageService.getUsageDaily()).thenReturn(List.of());
         when(adminUsageService.getUsageByUserId(any())).thenReturn(List.of());
-        when(adminUsageService.getUsageByOrganizationId(any())).thenReturn(List.of());
+        when(adminUsageService.getUsageByOrganizationId(any(), any())).thenReturn(List.of());
+    }
+
+    private Authentication authToken(SafeAiUserPrincipal principal) {
+        return new UsernamePasswordAuthenticationToken(
+                principal,
+                null,
+                principal.getAuthorities()
+        );
+    }
+
+    private SafeAiUserPrincipal adminPrincipal() {
+        return new SafeAiUserPrincipal(
+                ADMIN_ID,
+                ORGANIZATION_ID,
+                "admin@test.com",
+                "",
+                true,
+                0L,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
     }
 }

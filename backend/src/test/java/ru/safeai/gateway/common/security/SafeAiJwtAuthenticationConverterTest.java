@@ -47,10 +47,9 @@ class SafeAiJwtAuthenticationConverterTest {
 
         Object principalObject = authentication.getPrincipal();
 
-        assertThat(principalObject).isInstanceOf(SafeAiUserPrincipal.class);
-
-        SafeAiUserPrincipal principal = (SafeAiUserPrincipal) principalObject;
-
+        if (!(principalObject instanceof SafeAiUserPrincipal principal)) {
+            throw new AssertionError("Principal должен быть SafeAiUserPrincipal");
+        }
         assertThat(principal.getId()).isEqualTo(USER_ID);
         assertThat(principal.getOrganizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(principal.getEmail()).isEqualTo("admin@test.com");

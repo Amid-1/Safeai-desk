@@ -1,11 +1,14 @@
 package ru.safeai.gateway.organization.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ConflictException;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
@@ -38,33 +41,50 @@ public class OrganizationService {
             throw new ConflictException("Организация с таким названием уже существует: " + name);
         }
 
-        OrganizationEntity entity = new OrganizationEntity();
-        entity.setName(name);
+        try {
+            OrganizationEntity entity = new OrganizationEntity();
+            entity.setName(name);
 
-        OrganizationEntity saved = organizationRepository.save(entity);
+            OrganizationEntity saved = organizationRepository.save(entity);
 
-        auditEventService.record(
-                currentUser.getId(),
-                AuditEventType.ORGANIZATION_CREATED,
-                Map.of(
-                        "organizationId", saved.getId().toString(),
-                        "organizationName", saved.getName()
-                )
-        );
+            auditEventService.record(
+                    currentUser.getId(),
+                    AuditEventType.ORGANIZATION_CREATED,
+                    Map.of(
+                            "organizationId", saved.getId().toString(),
+                            "organizationName", saved.getName()
+                    )
+            );
 
-        return toResponse(saved);
+            return toResponse(saved);
+        } catch (DataIntegrityViolationException exception) {
+            throw new ConflictException("Организация с таким названием уже существует: " + name);
+        }
     }
 
     @Transactional(readOnly = true)
-    public List<OrganizationResponse> findAll() {
-        return organizationRepository.findAllByOrderByCreatedAtDesc()
-                .stream()
-                .map(this::toResponse)
-                .toList();
+    public List<OrganizationResponse> findAll(SafeAiUserPrincipal currentUser) {
+        if (isSuperAdmin(currentUser)) {
+            return organizationRepository.findAllByOrderByCreatedAtDesc()
+                    .stream()
+                    .map(this::toResponse)
+                    .toList();
+        }
+
+        OrganizationEntity organization = organizationRepository.findById(currentUser.getOrganizationId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Организация не найдена: " + currentUser.getOrganizationId()
+                ));
+
+        return List.of(toResponse(organization));
     }
 
     @Transactional(readOnly = true)
-    public OrganizationResponse findById(UUID id) {
+    public OrganizationResponse findById(UUID id, SafeAiUserPrincipal currentUser) {
+        if (!isSuperAdmin(currentUser) && !currentUser.getOrganizationId().equals(id)) {
+            throw new ForbiddenOperationException("Нельзя просматривать другую организацию");
+        }
+
         OrganizationEntity entity = organizationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Организация не найдена: " + id
@@ -83,5 +103,12 @@ public class OrganizationService {
                 entity.getName(),
                 entity.getCreatedAt()
         );
+    }
+
+    private boolean isSuperAdmin(SafeAiUserPrincipal currentUser) {
+        return currentUser.getAuthorities()
+                .stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch("ROLE_SUPER_ADMIN"::equals);
     }
 }

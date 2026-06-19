@@ -16,11 +16,11 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/organizations")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
 public class OrganizationController {
 
     private final OrganizationService organizationService;
 
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping
     public OrganizationResponse create(
             @Valid @RequestBody CreateOrganizationRequest request,
@@ -29,13 +29,20 @@ public class OrganizationController {
         return organizationService.create(request, currentUser);
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @GetMapping
-    public List<OrganizationResponse> findAll() {
-        return organizationService.findAll();
+    public List<OrganizationResponse> findAll(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return organizationService.findAll(currentUser);
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/{id}")
-    public OrganizationResponse findById(@PathVariable UUID id) {
-        return organizationService.findById(id);
+    public OrganizationResponse findById(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return organizationService.findById(id, currentUser);
     }
 }

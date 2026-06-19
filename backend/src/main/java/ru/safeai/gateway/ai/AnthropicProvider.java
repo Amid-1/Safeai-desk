@@ -1,38 +1,41 @@
 package ru.safeai.gateway.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.util.Map;
 
+@Slf4j
 @Service
-@RequiredArgsConstructor
 @EnableConfigurationProperties(AnthropicProperties.class)
 @ConditionalOnProperty(
         name = "safeai.ai.provider",
         havingValue = "anthropic"
 )
 public class AnthropicProvider implements AiProvider {
-
     private final AnthropicProperties properties;
+    private final RestClient client;
+
+    public AnthropicProvider(AnthropicProperties properties) {
+        this.properties = properties;
+        this.client = AiRestClientFactory.create(
+                properties.baseUrl(),
+                properties.connectTimeout(),
+                properties.readTimeout()
+        );
+    }
 
     @Override
     public AiChatResponse sendMessage(AiChatRequest request) {
         properties.validate();
-
-        RestClient client = RestClient.builder()
-                .baseUrl(properties.baseUrl())
-                .defaultHeader("x-api-key", properties.apiKey())
-                .defaultHeader("anthropic-version", properties.version())
-                .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json")
-                .build();
 
         Map<String, Object> payload = Map.of(
                 "model", properties.model(),
@@ -40,9 +43,21 @@ public class AnthropicProvider implements AiProvider {
                 "messages", AiProviderSupport.buildMessages(request, this::normalizeRole)
         );
 
+        log.info(
+                "Отправка запроса в Anthropic: userId={}, organizationId={}, chatId={}, model={}, messageLength={}",
+                request.userId(),
+                request.organizationId(),
+                request.chatId(),
+                properties.model(),
+                request.userMessage().length()
+        );
+
         try {
             JsonNode response = client.post()
                     .uri("/messages")
+                    .header("x-api-key", properties.apiKey())
+                    .header("anthropic-version", properties.version())
+                    .header(HttpHeaders.CONTENT_TYPE, "application/json")
                     .body(payload)
                     .retrieve()
                     .body(JsonNode.class);
@@ -60,11 +75,15 @@ public class AnthropicProvider implements AiProvider {
                     AiProviderSupport.extractOutputTokens(response),
                     BigDecimal.ZERO
             );
+        } catch (ResourceAccessException exception) {
+            throw new AiProviderTimeoutException("Anthropic provider timeout", exception);
         } catch (RestClientResponseException exception) {
             throw new AiProviderException(
                     "Anthropic API error: status=" + exception.getStatusCode(),
                     exception
             );
+        } catch (AiProviderException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             throw new AiProviderException("Anthropic provider request failed", exception);
         }

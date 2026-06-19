@@ -38,7 +38,12 @@ public class AuditEventService {
 
             auditEventRepository.save(event);
         } catch (Exception exception) {
-            log.error("Failed to write audit event: userId={}, eventType={}", userId, eventType, exception);
+            log.error(
+                    "Не удалось записать событие аудита: userId={}, eventType={}",
+                    userId,
+                    eventType,
+                    exception
+            );
         }
     }
 }

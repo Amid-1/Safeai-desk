@@ -122,10 +122,10 @@ class OrganizationServiceTest {
     void findAll_shouldReturnOrganizations() {
         OrganizationEntity organization = organizationEntity();
 
-        when(organizationRepository.findAllByOrderByCreatedAtDesc())
-                .thenReturn(List.of(organization));
+        when(organizationRepository.findById(ORGANIZATION_ID))
+                .thenReturn(Optional.of(organization));
 
-        List<OrganizationResponse> response = organizationService.findAll();
+        List<OrganizationResponse> response = organizationService.findAll(adminPrincipal());
 
         assertThat(response).hasSize(1);
         assertThat(response.getFirst().id()).isEqualTo(ORGANIZATION_ID);
@@ -139,7 +139,10 @@ class OrganizationServiceTest {
         when(organizationRepository.findById(ORGANIZATION_ID))
                 .thenReturn(Optional.of(organization));
 
-        OrganizationResponse response = organizationService.findById(ORGANIZATION_ID);
+        OrganizationResponse response = organizationService.findById(
+                ORGANIZATION_ID,
+                adminPrincipal()
+        );
 
         assertThat(response.id()).isEqualTo(ORGANIZATION_ID);
         assertThat(response.name()).isEqualTo("SafeAI");
@@ -150,7 +153,10 @@ class OrganizationServiceTest {
         when(organizationRepository.findById(ORGANIZATION_ID))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> organizationService.findById(ORGANIZATION_ID))
+        assertThatThrownBy(() -> organizationService.findById(
+                ORGANIZATION_ID,
+                adminPrincipal()
+        ))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Организация не найдена");
     }
@@ -167,7 +173,7 @@ class OrganizationServiceTest {
     private SafeAiUserPrincipal adminPrincipal() {
         return new SafeAiUserPrincipal(
                 ADMIN_ID,
-                UUID.randomUUID(),
+                ORGANIZATION_ID,
                 "admin@test.com",
                 "encoded-password",
                 true,

@@ -1,5 +1,6 @@
 package ru.safeai.gateway.auth.service;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -33,19 +34,19 @@ public class AuthService {
 
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
-    private final AuditEventService auditEventService;
+    private final AuthEventService authEventService;
     private final AuthUserMapper authUserMapper;
     private final UserRepository userRepository;
     private final LoginRateLimitService loginRateLimitService;
 
-    public LoginResponse login(LoginRequest request) {
+    public LoginResponse login(LoginRequest request, HttpServletRequest httpRequest) {
         Objects.requireNonNull(request, "request не должен быть null");
 
         String email = Objects.requireNonNull(request.email(), "email не должен быть null")
                 .trim()
                 .toLowerCase();
 
-        loginRateLimitService.checkAllowed(email);
+        loginRateLimitService.checkAllowed(email, extractClientIp(httpRequest));
 
         try {
             var authentication = authenticationManager.authenticate(
@@ -61,29 +62,14 @@ public class AuthService {
 
             String token = jwtService.generateToken(principal);
 
-            auditEventService.record(
-                    principal.getId(),
-                    AuditEventType.USER_LOGIN_SUCCESS,
-                    Map.of(
-                            "email", principal.getEmail(),
-                            "organizationId", principal.getOrganizationId().toString()
-                    )
-            );
+            authEventService.loginSuccess(principal, httpRequest);
 
             AuthUserResponse user = authUserMapper.toResponse(principal);
 
             return new LoginResponse(token, "Bearer", user);
 
         } catch (AuthenticationException exception) {
-            auditEventService.record(
-                    null,
-                    AuditEventType.USER_LOGIN_FAILED,
-                    Map.of(
-                            "email", email,
-                            "reason", "BAD_CREDENTIALS_OR_DISABLED"
-                    )
-            );
-
+            authEventService.loginFailed(email, httpRequest);
             throw exception;
         }
     }
@@ -108,5 +94,26 @@ public class AuthService {
                 user.isEnabled(),
                 roles
         );
+    }
+
+    private String extractClientIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",")[0].trim();
+        }
+
+        String realIp = request.getHeader("X-Real-IP");
+
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+
+        return request.getRemoteAddr();
+    }
+
+    private String getHeaderOrUnknown(HttpServletRequest request, String name) {
+        String value = request.getHeader(name);
+        return value == null || value.isBlank() ? "unknown" : value;
     }
 }

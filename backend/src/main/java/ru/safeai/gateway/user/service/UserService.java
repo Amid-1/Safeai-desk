@@ -23,11 +23,8 @@ import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
 import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
 import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
 
-import java.util.Map;
+import java.util.*;
 
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,7 +36,7 @@ public class UserService {
     private final OrganizationRepository organizationRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditEventService auditEventService;
-    private static final Set<String> ALLOWED_ROLES = Set.of("USER", "ADMIN");
+    private static final Set<String> ALLOWED_ROLES = Set.of("USER", "ADMIN", "SUPER_ADMIN");
 
     @Transactional
     public UserResponse create(CreateUserRequest request, SafeAiUserPrincipal currentUser) {
@@ -91,6 +88,8 @@ public class UserService {
         return entity.getRoles()
                 .stream()
                 .map(RoleEntity::getName)
+                .filter(Objects::nonNull)
+                .map(role -> role.replaceFirst("^ROLE_", ""))
                 .collect(Collectors.toSet());
     }
 
@@ -103,8 +102,8 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public UserResponse findById(UUID id) {
-        return toResponse(findUserEntity(id));
+    public UserResponse findById(UUID id, SafeAiUserPrincipal currentUser) {
+        return toResponse(findUserEntityForCurrentOrganization(id, currentUser));
     }
 
     @Transactional
@@ -113,7 +112,7 @@ public class UserService {
             UpdateUserEnabledRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        UserEntity user = findUserEntity(id);
+        UserEntity user = findUserEntityForCurrentOrganization(id, currentUser);
         boolean newEnabledValue = Boolean.TRUE.equals(request.enabled());
 
         if (user.getId().equals(currentUser.getId()) && !newEnabledValue) {
@@ -124,9 +123,11 @@ public class UserService {
             throw new ForbiddenOperationException("Нельзя отключить последнего активного администратора");
         }
 
+        boolean changed = user.isEnabled() != newEnabledValue;
+
         user.setEnabled(newEnabledValue);
 
-        if (!newEnabledValue) {
+        if (changed) {
             user.setTokenVersion(user.getTokenVersion() + 1);
         }
 
@@ -151,7 +152,7 @@ public class UserService {
             UpdateUserRolesRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        UserEntity user = findUserEntity(id);
+        UserEntity user = findUserEntityForCurrentOrganization(id, currentUser);
 
         Set<String> requestedRoles = request.roles()
                 .stream()
@@ -198,7 +199,7 @@ public class UserService {
             ResetUserPasswordRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        UserEntity user = findUserEntity(id);
+        UserEntity user = findUserEntityForCurrentOrganization(id, currentUser);
 
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setTokenVersion(user.getTokenVersion() + 1);
@@ -274,5 +275,18 @@ public class UserService {
         }
 
         return fullName.trim();
+    }
+
+    private UserEntity findUserEntityForCurrentOrganization(
+            UUID id,
+            SafeAiUserPrincipal currentUser
+    ) {
+        UserEntity user = findUserEntity(id);
+
+        if (!user.getOrganization().getId().equals(currentUser.getOrganizationId())) {
+            throw new ForbiddenOperationException("Нельзя управлять пользователем другой организации");
+        }
+
+        return user;
     }
 }
