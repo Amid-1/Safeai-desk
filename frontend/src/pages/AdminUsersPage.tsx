@@ -9,14 +9,17 @@ import {
     updateUserRoles,
 } from '../api/userApi'
 import type { User } from '../api/userApi'
+import type { AuthUser } from '../api/authApi'
 import { getApiErrorMessage } from '../api/http'
-
-const DEMO_ORGANIZATION_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 
 type Role = 'USER' | 'ADMIN'
 type UserFilter = 'ALL' | 'ADMIN' | 'USER'
 
-function AdminUsersPage() {
+type AdminUsersPageProps = {
+    currentUser: AuthUser
+}
+
+function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [users, setUsers] = useState<User[]>([])
     const [error, setError] = useState('')
     const [success, setSuccess] = useState('')
@@ -91,7 +94,7 @@ function AdminUsersPage() {
 
         try {
             const createdUser = await createUser({
-                organizationId: DEMO_ORGANIZATION_ID,
+                organizationId: currentUser.organizationId,
                 email: normalizedEmail,
                 password,
                 fullName: fullName.trim() || null,
@@ -228,6 +231,18 @@ function AdminUsersPage() {
         )
     }
 
+    function getRoleBadgeClass(userRole: string): string {
+        if (userRole === 'SUPER_ADMIN') {
+            return 'role-badge role-super-admin'
+        }
+
+        if (userRole === 'ADMIN') {
+            return 'role-badge role-admin'
+        }
+
+        return 'role-badge role-user'
+    }
+
     return (
         <div className="page">
             <h1>Admin Users</h1>
@@ -337,28 +352,27 @@ function AdminUsersPage() {
                     <tbody>
                     {filteredUsers.map((user) => {
                         const isAdmin = user.roles.includes('ADMIN')
+                        const isSuperAdminUser = user.roles.includes('SUPER_ADMIN')
                         const isBusy = actionUserId === user.id
 
                         return (
                             <tr key={user.id}>
                                 <td>{user.email}</td>
                                 <td>{user.fullName ?? '-'}</td>
+
                                 <td>
                                     <div className="role-list">
                                         {user.roles.map((userRole) => (
                                             <span
                                                 key={userRole}
-                                                className={
-                                                    userRole === 'ADMIN'
-                                                        ? 'role-badge role-admin'
-                                                        : 'role-badge role-user'
-                                                }
+                                                className={getRoleBadgeClass(userRole)}
                                             >
                                                 {userRole}
                                             </span>
                                         ))}
                                     </div>
                                 </td>
+
                                 <td>
                                     <span
                                         className={
@@ -370,43 +384,53 @@ function AdminUsersPage() {
                                         {user.enabled ? 'enabled' : 'disabled'}
                                     </span>
                                 </td>
+
                                 <td>{user.createdAt}</td>
+
                                 <td>
-                                    <div className="user-actions">
-                                        <button
-                                            className={user.enabled ? 'danger-button' : 'secondary-button'}
-                                            disabled={isBusy}
-                                            onClick={() => void handleToggleEnabled(user)}
-                                        >
-                                            {user.enabled ? 'Disable' : 'Enable'}
-                                        </button>
+                                    {isSuperAdminUser ? (
+                                        <span className="muted">Platform admin</span>
+                                    ) : (
+                                        <div className="user-actions">
+                                            <button
+                                                className={
+                                                    user.enabled
+                                                        ? 'danger-button'
+                                                        : 'secondary-button'
+                                                }
+                                                disabled={isBusy}
+                                                onClick={() => void handleToggleEnabled(user)}
+                                            >
+                                                {user.enabled ? 'Disable' : 'Enable'}
+                                            </button>
 
-                                        <button
-                                            className="secondary-button"
-                                            disabled={isBusy}
-                                            onClick={() => void handleResetPassword(user)}
-                                        >
-                                            Reset password
-                                        </button>
-
-                                        {isAdmin ? (
                                             <button
                                                 className="secondary-button"
                                                 disabled={isBusy}
-                                                onClick={() => void handleChangeRole(user, 'USER')}
+                                                onClick={() => void handleResetPassword(user)}
                                             >
-                                                Make USER
+                                                Reset password
                                             </button>
-                                        ) : (
-                                            <button
-                                                className="secondary-button"
-                                                disabled={isBusy}
-                                                onClick={() => void handleChangeRole(user, 'ADMIN')}
-                                            >
-                                                Make ADMIN
-                                            </button>
-                                        )}
-                                    </div>
+
+                                            {isAdmin ? (
+                                                <button
+                                                    className="secondary-button"
+                                                    disabled={isBusy}
+                                                    onClick={() => void handleChangeRole(user, 'USER')}
+                                                >
+                                                    Make USER
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    className="secondary-button"
+                                                    disabled={isBusy}
+                                                    onClick={() => void handleChangeRole(user, 'ADMIN')}
+                                                >
+                                                    Make ADMIN
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
                                 </td>
                             </tr>
                         )

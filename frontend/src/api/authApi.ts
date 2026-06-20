@@ -10,18 +10,21 @@ export type AuthUser = {
     id: string
     organizationId: string
     email: string
+    fullName?: string | null
     enabled: boolean
     roles: string[]
 }
 
 export type LoginResponse = {
     token: string
+    tokenType?: string
     user: AuthUser
 }
 
 export function login(request: LoginRequest): Promise<LoginResponse> {
     return apiRequest<LoginResponse>('/api/auth/login', {
         method: 'POST',
+        auth: false,
         body: JSON.stringify(request),
     })
 }

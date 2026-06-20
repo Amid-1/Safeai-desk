@@ -463,8 +463,10 @@ sequenceDiagram
 По текущей структуре проект выглядит так:
 
 ```text
+```text
 Safeai-desk/
 ├── backend/
+│   ├── .idea/
 │   ├── .mvn/
 │   ├── src/
 │   │   ├── main/
@@ -476,20 +478,48 @@ Safeai-desk/
 │   │   │   │   ├── chat/
 │   │   │   │   ├── common/
 │   │   │   │   ├── organization/
+│   │   │   │   ├── ratelimit/
 │   │   │   │   ├── user/
 │   │   │   │   └── SafeaiBackendApplication.java
 │   │   │   └── resources/
 │   │   │       ├── application.yml
+│   │   │       ├── static/
+│   │   │       ├── templates/
 │   │   │       └── db/migration/
+│   │   │           ├── V1__init_schema.sql
+│   │   │           ├── V2__seed_roles.sql
+│   │   │           ├── V3__seed_demo_admin.sql
+│   │   │           ├── V4__use_timestamptz_for_created_at.sql
+│   │   │           ├── V5__add_indexes.sql
+│   │   │           ├── V6__add_unique_organization_name.sql
+│   │   │           ├── V7__add_user_token_version.sql
+│   │   │           ├── V8__add_audit_event_type_index.sql
+│   │   │           ├── V9__add_super_admin_role.sql
+│   │   │           ├── V10__add_case_insensitive_user_email_index.sql
+│   │   │           ├── V11__seed_platform_super_admin.sql
+│   │   │           ├── V12__seed_platform_super_admin.sql
+│   │   │           └── V13__add_audit_event_organization_id.sql
 │   │   └── test/
-│   │       ├── java/
-│   │       └── resources/application-test.yml
+│   │       ├── java/ru/safeai/gateway/
+│   │       │   ├── admin/
+│   │       │   ├── ai/
+│   │       │   ├── audit/
+│   │       │   ├── auth/
+│   │       │   ├── chat/
+│   │       │   ├── common/
+│   │       │   ├── organization/
+│   │       │   ├── ratelimit/
+│   │       │   ├── user/
+│   │       │   └── SafeaiBackendApplicationTests.java
+│   │       └── resources/
+│   │           └── application-test.yml
 │   ├── .env
 │   ├── .env.example
 │   ├── Dockerfile
 │   ├── mvnw
 │   ├── mvnw.cmd
 │   └── pom.xml
+│
 ├── frontend/
 │   ├── src/
 │   │   ├── api/
@@ -506,8 +536,10 @@ Safeai-desk/
 │   ├── tsconfig.json
 │   ├── tsconfig.node.json
 │   └── vite.config.ts
+│
 ├── infra/
 │   └── docker-compose.yml
+│
 ├── scripts/
 │   ├── check-health.bat
 │   ├── full-docker-up.bat
@@ -515,80 +547,118 @@ Safeai-desk/
 │   ├── run-backend-local.bat
 │   ├── run-infra.bat
 │   └── stop-infra.bat
+│
 ├── docs/
 ├── .gitignore
-└── README_RU.md / README.md
+└── README.md
 ```
+
+
 
 ---
 
 ## Backend-модули
 
 ```text
+```text
 ru.safeai.gateway
 ├── admin
-│   ├── controller/AdminUsageController
-│   └── service/AdminUsageService
+│   ├── controller
+│   │   └── AdminUsageController
+│   └── service
+│       └── AdminUsageService
+│
 ├── ai
+│   ├── AiChatRequest
+│   ├── AiChatResponse
+│   ├── AiConfiguration
+│   ├── AiExceptionHandler
+│   ├── AiMessage
 │   ├── AiProvider
 │   ├── AiProviderException
+│   ├── AiProviderProperties
+│   ├── AiProviderSupport
 │   ├── AiProviderTimeoutException
-│   ├── AiExceptionHandler
-│   ├── OpenAiProvider
+│   ├── AiRestClientFactory
+│   ├── AnthropicProperties
 │   ├── AnthropicProvider
-│   └── MockAiProvider
+│   ├── MockAiProvider
+│   ├── OpenAiProperties
+│   └── OpenAiProvider
 │
 ├── audit
 │   ├── controller
+│   │   └── AuditController
 │   ├── dto
+│   │   └── AuditEventResponse
 │   ├── entity
+│   │   └── AuditEventEntity
 │   ├── listener
 │   │   └── RateLimitAuditListener
 │   ├── repository
-│   └── service
+│   │   └── AuditEventRepository
+│   ├── service
+│   │   ├── AuditEventQueryService
+│   │   └── AuditEventService
+│   └── AuditEventType
 │
 ├── auth
 │   ├── controller
+│   │   └── AuthController
 │   ├── dto
-│   ├── service
-│   └── security
-│       ├── SecurityConfig
-│       ├── CustomUserDetailsService
-│       └── UserStatusFilter
+│   │   ├── AuthUserResponse
+│   │   ├── CurrentUserResponse
+│   │   ├── LoginRequest
+│   │   └── LoginResponse
+│   ├── mapper
+│   │   └── AuthUserMapper
+│   ├── security
+│   │   ├── CustomUserDetailsService
+│   │   ├── SecurityConfig
+│   │   └── UserStatusFilter
+│   └── service
+│       ├── AuthEventService
+│       └── AuthService
 │
 ├── chat
-│   ├── controller/ChatController
-│   ├── dto/ChatDetailsResponse
-│   ├── dto/ChatResponse
-│   ├── dto/CreateChatRequest
-│   ├── dto/MessageResponse
-│   ├── dto/SendMessageRequest
-│   ├── dto/UsageDailySummaryResponse
-│   ├── dto/UsageModelSummaryResponse
-│   ├── dto/UsageSummaryResponse
-│   ├── dto/UsageUserSummaryResponse
-│   ├── entity/ChatMessageEntity
-│   ├── entity/ChatMessageRole
-│   ├── entity/ChatSessionEntity
-│   ├── repository/ChatMessageRepository
-│   ├── repository/ChatSessionRepository
-│   ├── repository/UsageDailySummaryProjection
-│   ├── service/ChatMapper
-│   ├── service/ChatPersistenceService
-│   ├── service/ChatProcessingContext
-│   └── service/ChatService
+│   ├── controller
+│   │   └── ChatController
+│   ├── dto
+│   │   ├── ChatDetailsResponse
+│   │   ├── ChatResponse
+│   │   ├── CreateChatRequest
+│   │   ├── MessageResponse
+│   │   ├── SendMessageRequest
+│   │   ├── UsageDailySummaryResponse
+│   │   ├── UsageModelSummaryResponse
+│   │   ├── UsageSummaryResponse
+│   │   └── UsageUserSummaryResponse
+│   ├── entity
+│   │   ├── ChatMessageEntity
+│   │   ├── ChatMessageRole
+│   │   └── ChatSessionEntity
+│   ├── repository
+│   │   ├── ChatMessageRepository
+│   │   ├── ChatSessionRepository
+│   │   └── UsageDailySummaryProjection
+│   └── service
+│       ├── ChatMapper
+│       ├── ChatPersistenceService
+│       ├── ChatProcessingContext
+│       └── ChatService
+│
 ├── common
 │   ├── exception
 │   │   ├── ApiErrorResponse
 │   │   ├── ApiErrorResponseFactory
-│   │   ├── GlobalExceptionHandler
 │   │   ├── ConflictException
 │   │   ├── ForbiddenOperationException
-│   │   ├── ResourceNotFoundException
+│   │   ├── GlobalExceptionHandler
 │   │   ├── RateLimitExceededException
-│   │   └── RateLimitUnavailableException
-│   │
+│   │   ├── RateLimitUnavailableException
+│   │   └── ResourceNotFoundException
 │   └── security
+│       ├── ClientIpResolver
 │       ├── CorsProperties
 │       ├── JsonAccessDeniedHandler
 │       ├── JsonAuthenticationEntryPoint
@@ -596,35 +666,57 @@ ru.safeai.gateway
 │       ├── JwtProperties
 │       ├── JwtService
 │       ├── RequestIdFilter
+│       ├── RoleAuthorityMapper
 │       ├── SafeAiJwtAuthenticationConverter
 │       └── SafeAiUserPrincipal
 │
 ├── organization
-│   ├── controller/OrganizationController
-│   ├── dto/*
-│   ├── entity/OrganizationEntity
-│   ├── repository/OrganizationRepository
-│   └── service/OrganizationService
+│   ├── controller
+│   │   └── OrganizationController
+│   ├── dto
+│   │   ├── CreateOrganizationRequest
+│   │   └── OrganizationResponse
+│   ├── entity
+│   │   └── OrganizationEntity
+│   ├── repository
+│   │   └── OrganizationRepository
+│   └── service
+│       └── OrganizationService
+│
 ├── ratelimit
 │   ├── AiMessageRateLimitProperties
+│   ├── LoginRateLimitProperties
 │   ├── LoginRateLimitService
+│   ├── RateLimitExceededEvent
 │   ├── RedisFixedWindowRateLimiter
-│   ├── RedisRateLimitService
-│   └── RateLimitExceededEvent
+│   └── RedisRateLimitService
 │
 └── user
-    ├── controller/UserController
-    ├── dto/*
-    ├── entity/RoleEntity
-    ├── entity/UserEntity
-    ├── repository/*
+    ├── controller
+    │   └── UserController
+    ├── dto
+    │   ├── CreateUserRequest
+    │   ├── ResetUserPasswordRequest
+    │   ├── UpdateUserEnabledRequest
+    │   ├── UpdateUserRolesRequest
+    │   └── UserResponse
+    ├── entity
+    │   ├── RoleEntity
+    │   └── UserEntity
+    ├── event
+    │   └── UserSecurityStateChangedEvent
+    ├── repository
+    │   ├── RoleRepository
+    │   └── UserRepository
     └── service
-        ├── UserService
         ├── UserSecurityStatus
+        ├── UserService
+        ├── UserStatusCacheInvalidationListener
         ├── UserStatusCacheProperties
-        ├── UserStatusCacheService
-        └── UserStatusCacheInvalidationListener
+        └── UserStatusCacheService
 ```
+
+
 
 ### Назначение модулей
 

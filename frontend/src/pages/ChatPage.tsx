@@ -14,6 +14,8 @@ function ChatPage() {
 
     useEffect(() => {
         async function loadChats() {
+            setError('')
+
             try {
                 const data = await getChats()
                 setChats(data)
@@ -26,11 +28,16 @@ function ChatPage() {
     }, [])
 
     async function handleCreateChat() {
+        if (loading) {
+            return
+        }
+
         setError('')
         setLoading(true)
 
         try {
             const chat = await createChat(`Demo chat ${new Date().toLocaleTimeString()}`)
+
             setChats((prev) => [chat, ...prev])
             setActiveChat({
                 id: chat.id,
@@ -46,7 +53,9 @@ function ChatPage() {
     }
 
     async function handleSendMessage() {
-        if (!activeChat || !message.trim()) {
+        const trimmedMessage = message.trim()
+
+        if (loading || !activeChat || !trimmedMessage) {
             return
         }
 
@@ -54,7 +63,8 @@ function ChatPage() {
         setLoading(true)
 
         try {
-            const updatedChat = await sendMessage(activeChat.id, message.trim())
+            const updatedChat = await sendMessage(activeChat.id, trimmedMessage)
+
             setActiveChat(updatedChat)
             setMessage('')
         } catch (err) {
@@ -65,6 +75,10 @@ function ChatPage() {
     }
 
     async function handleOpenChat(chatId: string) {
+        if (loading) {
+            return
+        }
+
         setError('')
         setLoading(true)
 
@@ -79,7 +93,7 @@ function ChatPage() {
     }
 
     function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' && !loading) {
             void handleSendMessage()
         }
     }
@@ -92,16 +106,19 @@ function ChatPage() {
 
             <div className="chat-layout">
                 <aside className="card sidebar">
-                    <button onClick={handleCreateChat} disabled={loading}>
-                        Create chat
+                    <button onClick={() => void handleCreateChat()} disabled={loading}>
+                        {loading ? 'Loading...' : 'Create chat'}
                     </button>
 
                     <h3>Chats</h3>
+
+                    {chats.length === 0 && <p>No chats yet.</p>}
 
                     {chats.map((chat) => (
                         <button
                             key={chat.id}
                             className="chat-item"
+                            disabled={loading}
                             onClick={() => {
                                 void handleOpenChat(chat.id)
                             }}
@@ -119,14 +136,24 @@ function ChatPage() {
                             <h2>{activeChat.title}</h2>
 
                             <div className="messages">
+                                {activeChat.messages.length === 0 && (
+                                    <p>No messages yet.</p>
+                                )}
+
                                 {activeChat.messages.map((msg) => (
-                                    <div key={msg.id} className={`message ${msg.role.toLowerCase()}`}>
+                                    <div
+                                        key={msg.id}
+                                        className={`message ${msg.role.toLowerCase()}`}
+                                    >
                                         <strong>{msg.role}</strong>
                                         <p>{msg.content}</p>
 
                                         {msg.role === 'ASSISTANT' && (
                                             <small>
-                                                model: {msg.model} | input: {msg.inputTokens} | output: {msg.outputTokens} | cost: {msg.costUsd}
+                                                model: {msg.model ?? '-'} | input:{' '}
+                                                {msg.inputTokens ?? 0} | output:{' '}
+                                                {msg.outputTokens ?? 0} | cost:{' '}
+                                                {msg.costUsd ?? 0}
                                             </small>
                                         )}
                                     </div>
@@ -139,9 +166,13 @@ function ChatPage() {
                                     onChange={(event) => setMessage(event.target.value)}
                                     onKeyDown={handleInputKeyDown}
                                     placeholder="Type message..."
+                                    disabled={loading}
                                 />
 
-                                <button onClick={() => void handleSendMessage()} disabled={loading}>
+                                <button
+                                    onClick={() => void handleSendMessage()}
+                                    disabled={loading || !message.trim()}
+                                >
                                     {loading ? 'Sending...' : 'Send'}
                                 </button>
                             </div>

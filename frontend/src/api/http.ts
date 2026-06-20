@@ -28,6 +28,10 @@ export class ApiError extends Error {
     }
 }
 
+type ApiRequestOptions = RequestInit & {
+    auth?: boolean
+}
+
 export function getToken(): string | null {
     return localStorage.getItem('safeai_token')
 }
@@ -55,22 +59,23 @@ export function getApiErrorMessage(err: unknown, fallback: string): string {
 
 export async function apiRequest<T>(
     url: string,
-    options: RequestInit = {}
+    options: ApiRequestOptions = {}
 ): Promise<T> {
-    const token = getToken()
+    const { auth = true, ...fetchOptions } = options
 
-    const headers = new Headers(options.headers)
+    const token = getToken()
+    const headers = new Headers(fetchOptions.headers)
 
     if (!headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json')
     }
 
-    if (token) {
+    if (auth && token) {
         headers.set('Authorization', `Bearer ${token}`)
     }
 
     const response = await fetch(url, {
-        ...options,
+        ...fetchOptions,
         headers,
     })
 
@@ -102,6 +107,5 @@ export async function apiRequest<T>(
         return undefined as T
     }
 
-    const data = await response.json()
-    return data as T
+    return await response.json() as T
 }

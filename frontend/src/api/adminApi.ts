@@ -1,6 +1,17 @@
 // frontend/src/api/adminApi.ts
 import { apiRequest } from './http'
 
+export type PageResponse<T> = {
+    content: T[]
+    totalElements: number
+    totalPages: number
+    size: number
+    number?: number
+    page?: number
+    first?: boolean
+    last?: boolean
+}
+
 export type AuditEvent = {
     id: string
     userId: string | null
@@ -20,8 +31,13 @@ export type UsageSummary = {
     costUsd: number
 }
 
-export async function getAuditEvents(): Promise<AuditEvent[]> {
-    return apiRequest<AuditEvent[]>('/api/admin/audit-events')
+export async function getAuditEvents(
+    page = 0,
+    size = 50
+): Promise<PageResponse<AuditEvent>> {
+    return apiRequest<PageResponse<AuditEvent>>(
+        `/api/admin/audit-events?page=${page}&size=${size}`
+    )
 }
 
 export async function getUsageSummary(): Promise<UsageSummary[]> {

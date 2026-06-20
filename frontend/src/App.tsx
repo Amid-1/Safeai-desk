@@ -11,11 +11,41 @@ import { clearToken, getToken } from './api/http'
 import { getCurrentUser } from './api/authApi'
 import type { AuthUser } from './api/authApi'
 
-function RequireAuth({ children }: { children: ReactNode }) {
+function hasAnyRole(user: AuthUser | null, roles: string[]): boolean {
+    return user?.roles.some((role) => roles.includes(role)) ?? false
+}
+
+function getDisplayRole(user: AuthUser | null): string {
+    if (!user) {
+        return ''
+    }
+
+    if (user.roles.includes('SUPER_ADMIN')) {
+        return 'SUPER_ADMIN'
+    }
+
+    if (user.roles.includes('ADMIN')) {
+        return 'ADMIN'
+    }
+
+    return 'USER'
+}
+
+function RequireAuth({
+                         children,
+                         authLoading,
+                     }: {
+    children: ReactNode
+    authLoading: boolean
+}) {
     const token = getToken()
 
     if (!token) {
         return <Navigate to="/login" />
+    }
+
+    if (authLoading) {
+        return <p>Checking access...</p>
     }
 
     return children
@@ -24,9 +54,11 @@ function RequireAuth({ children }: { children: ReactNode }) {
 function RequireAdmin({
                           children,
                           currentUser,
+                          authLoading,
                       }: {
     children: ReactNode
     currentUser: AuthUser | null
+    authLoading: boolean
 }) {
     const token = getToken()
 
@@ -34,7 +66,11 @@ function RequireAdmin({
         return <Navigate to="/login" />
     }
 
-    if (currentUser && !currentUser.roles.includes('ADMIN')) {
+    if (authLoading) {
+        return <p>Checking access...</p>
+    }
+
+    if (!currentUser || !hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])) {
         return <Navigate to="/chat" />
     }
 
@@ -46,14 +82,19 @@ function App() {
     const token = getToken()
 
     const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
+    const [authLoading, setAuthLoading] = useState(Boolean(token))
 
-    const isAdmin = currentUser?.roles.includes('ADMIN') ?? false
+    const canAccessAdmin = hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])
+    const displayRole = getDisplayRole(currentUser)
 
     useEffect(() => {
         if (!token) {
             setCurrentUser(null)
+            setAuthLoading(false)
             return
         }
+
+        setAuthLoading(true)
 
         getCurrentUser()
             .then(setCurrentUser)
@@ -61,6 +102,9 @@ function App() {
                 clearToken()
                 setCurrentUser(null)
                 navigate('/login')
+            })
+            .finally(() => {
+                setAuthLoading(false)
             })
     }, [token, navigate])
 
@@ -79,7 +123,7 @@ function App() {
                     <nav>
                         <Link to="/chat">Chat</Link>
 
-                        {isAdmin && (
+                        {canAccessAdmin && (
                             <>
                                 <Link to="/admin/users">Users</Link>
                                 <Link to="/admin/audit">Audit</Link>
@@ -92,8 +136,16 @@ function App() {
                         {currentUser && (
                             <div className="current-user">
                                 <span>{currentUser.email}</span>
-                                <span className={isAdmin ? 'role-badge role-admin' : 'role-badge role-user'}>
-                                    {isAdmin ? 'ADMIN' : 'USER'}
+                                <span
+                                    className={
+                                        displayRole === 'SUPER_ADMIN'
+                                            ? 'role-badge role-super-admin'
+                                            : displayRole === 'ADMIN'
+                                                ? 'role-badge role-admin'
+                                                : 'role-badge role-user'
+                                    }
+                                >
+                                    {displayRole}
                                 </span>
                             </div>
                         )}
@@ -111,7 +163,7 @@ function App() {
                     <Route
                         path="/chat"
                         element={
-                            <RequireAuth>
+                            <RequireAuth authLoading={authLoading}>
                                 <ChatPage />
                             </RequireAuth>
                         }
@@ -120,8 +172,8 @@ function App() {
                     <Route
                         path="/admin/users"
                         element={
-                            <RequireAdmin currentUser={currentUser}>
-                                <AdminUsersPage />
+                            <RequireAdmin currentUser={currentUser} authLoading={authLoading}>
+                                <AdminUsersPage currentUser={currentUser!} />
                             </RequireAdmin>
                         }
                     />
@@ -129,7 +181,7 @@ function App() {
                     <Route
                         path="/admin/audit"
                         element={
-                            <RequireAdmin currentUser={currentUser}>
+                            <RequireAdmin currentUser={currentUser} authLoading={authLoading}>
                                 <AdminAuditPage />
                             </RequireAdmin>
                         }
@@ -138,7 +190,7 @@ function App() {
                     <Route
                         path="/admin/usage"
                         element={
-                            <RequireAdmin currentUser={currentUser}>
+                            <RequireAdmin currentUser={currentUser} authLoading={authLoading}>
                                 <AdminUsagePage />
                             </RequireAdmin>
                         }
