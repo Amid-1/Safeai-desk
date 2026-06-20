@@ -34,6 +34,18 @@ public class ChatPersistenceService {
     private final AuditEventService auditEventService;
     private final ChatMapper chatMapper;
 
+    @Transactional(readOnly = true)
+    public void assertOwnedChatExists(UUID chatId, SafeAiUserPrincipal currentUser) {
+        boolean exists = chatSessionRepository.existsByIdAndUser_Id(
+                chatId,
+                currentUser.getId()
+        );
+
+        if (!exists) {
+            throw new ResourceNotFoundException("Чат не найден: " + chatId);
+        }
+    }
+
     @Transactional
     public ChatProcessingContext saveUserMessageAndPrepareAiRequest(
             UUID chatId,
@@ -43,9 +55,12 @@ public class ChatPersistenceService {
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
 
         List<AiMessage> historyBeforeNewMessage = chatMessageRepository
-                .findTop30BySession_IdOrderByCreatedAtDesc(session.getId())
+                .findTop30BySession_IdOrderByCreatedAtDescIdDesc(session.getId())
                 .stream()
-                .sorted(Comparator.comparing(ChatMessageEntity::getCreatedAt))
+                .sorted(
+                        Comparator.comparing(ChatMessageEntity::getCreatedAt)
+                                .thenComparing(ChatMessageEntity::getId)
+                )
                 .map(message -> new AiMessage(
                         message.getRole().name(),
                         message.getContent()
@@ -65,6 +80,7 @@ public class ChatPersistenceService {
 
         auditEventService.record(
                 currentUser.getId(),
+                currentUser.getOrganizationId(),
                 AuditEventType.CHAT_MESSAGE_SENT,
                 Map.of(
                         "chatId", session.getId().toString(),
@@ -116,12 +132,13 @@ public class ChatPersistenceService {
 
         auditEventService.record(
                 currentUser.getId(),
+                currentUser.getOrganizationId(),
                 AuditEventType.AI_RESPONSE_RECEIVED,
                 aiResponseDetails
         );
 
         List<MessageResponse> messages = chatMessageRepository
-                .findBySession_IdOrderByCreatedAtAsc(session.getId())
+                .findBySession_IdOrderByCreatedAtAscIdAsc(session.getId())
                 .stream()
                 .map(chatMapper::toMessageResponse)
                 .toList();

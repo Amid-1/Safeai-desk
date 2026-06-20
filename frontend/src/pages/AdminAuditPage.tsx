@@ -1,4 +1,4 @@
-// pages/AdminAuditPages.tsx
+// frontend/src/pages/AdminAuditPages.tsx
 import { useEffect, useState } from 'react'
 import { AuditEvent, getAuditEvents } from '../api/adminApi'
 import { getApiErrorMessage } from '../api/http'

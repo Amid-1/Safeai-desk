@@ -79,7 +79,7 @@ class ChatPersistenceServiceTest {
         when(chatSessionRepository.findByIdAndUser_Id(CHAT_ID, USER_ID))
                 .thenReturn(Optional.of(session));
 
-        when(chatMessageRepository.findTop30BySession_IdOrderByCreatedAtDesc(CHAT_ID))
+        when(chatMessageRepository.findTop30BySession_IdOrderByCreatedAtDescIdDesc(CHAT_ID))
                 .thenReturn(List.of(oldMessage));
 
         when(chatMessageRepository.save(any(ChatMessageEntity.class)))
@@ -113,6 +113,7 @@ class ChatPersistenceServiceTest {
 
         verify(auditEventService).record(
                 eq(USER_ID),
+                eq(ORGANIZATION_ID),
                 eq(AuditEventType.CHAT_MESSAGE_SENT),
                 anyMap()
         );
@@ -155,7 +156,7 @@ class ChatPersistenceServiceTest {
         when(chatMessageRepository.save(any(ChatMessageEntity.class)))
                 .thenAnswer(invocation -> persistMessage(invocation.getArgument(0)));
 
-        when(chatMessageRepository.findBySession_IdOrderByCreatedAtAsc(CHAT_ID))
+        when(chatMessageRepository.findBySession_IdOrderByCreatedAtAscIdAsc(CHAT_ID))
                 .thenReturn(List.of(userMessage, assistantMessage));
 
         ChatDetailsResponse response =
@@ -185,6 +186,7 @@ class ChatPersistenceServiceTest {
 
         verify(auditEventService).record(
                 eq(USER_ID),
+                eq(ORGANIZATION_ID),
                 eq(AuditEventType.AI_RESPONSE_RECEIVED),
                 anyMap()
         );
@@ -209,6 +211,38 @@ class ChatPersistenceServiceTest {
 
         verify(chatMessageRepository, never()).save(any());
         verifyNoInteractions(auditEventService);
+    }
+
+    @Test
+    void assertOwnedChatExists_shouldDoNothingWhenChatOwnedByUser() {
+        SafeAiUserPrincipal currentUser = currentUser();
+
+        when(chatSessionRepository.existsByIdAndUser_Id(CHAT_ID, USER_ID))
+                .thenReturn(true);
+
+        chatPersistenceService.assertOwnedChatExists(CHAT_ID, currentUser);
+
+        verify(chatSessionRepository).existsByIdAndUser_Id(CHAT_ID, USER_ID);
+        verifyNoMoreInteractions(chatSessionRepository);
+        verifyNoInteractions(chatMessageRepository, auditEventService);
+    }
+
+    @Test
+    void assertOwnedChatExists_shouldThrowResourceNotFoundWhenChatNotOwnedByUser() {
+        SafeAiUserPrincipal currentUser = currentUser();
+
+        when(chatSessionRepository.existsByIdAndUser_Id(CHAT_ID, USER_ID))
+                .thenReturn(false);
+
+        assertThatThrownBy(() ->
+                chatPersistenceService.assertOwnedChatExists(CHAT_ID, currentUser)
+        )
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("Чат не найден");
+
+        verify(chatSessionRepository).existsByIdAndUser_Id(CHAT_ID, USER_ID);
+        verifyNoMoreInteractions(chatSessionRepository);
+        verifyNoInteractions(chatMessageRepository, auditEventService);
     }
 
     private SafeAiUserPrincipal currentUser() {

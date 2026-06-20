@@ -13,7 +13,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
 import ru.safeai.gateway.auth.mapper.AuthUserMapper;
-import ru.safeai.gateway.common.ratelimit.LoginRateLimitService;
+import ru.safeai.gateway.common.security.ClientIpResolver;
+import ru.safeai.gateway.ratelimit.LoginRateLimitService;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.repository.UserRepository;
@@ -50,6 +51,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         AuthUserMapper authUserMapper = new AuthUserMapper();
+        ClientIpResolver clientIpResolver = new ClientIpResolver();
 
         authService = new AuthService(
                 authenticationManager,
@@ -57,7 +59,8 @@ class AuthServiceTest {
                 authEventService,
                 authUserMapper,
                 userRepository,
-                loginRateLimitService
+                loginRateLimitService,
+                clientIpResolver
         );
     }
 

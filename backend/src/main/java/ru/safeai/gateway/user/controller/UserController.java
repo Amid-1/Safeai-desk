@@ -20,11 +20,11 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
+@PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 public class UserController {
 
     private final UserService userService;
 
-    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public UserResponse create(
             @Valid @RequestBody CreateUserRequest request,
@@ -33,7 +33,6 @@ public class UserController {
         return userService.create(request, currentUser);
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
     public List<UserResponse> findAll(
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
@@ -41,7 +40,6 @@ public class UserController {
         return userService.findAll(currentUser);
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{id}")
     public UserResponse findById(
             @PathVariable UUID id,
@@ -50,7 +48,6 @@ public class UserController {
         return userService.findById(id, currentUser);
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{id}/enabled")
     public UserResponse updateEnabled(
             @PathVariable UUID id,
@@ -60,7 +57,6 @@ public class UserController {
         return userService.updateEnabled(id, request, currentUser);
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{id}/roles")
     public UserResponse updateRoles(
             @PathVariable UUID id,
@@ -70,7 +66,6 @@ public class UserController {
         return userService.updateRoles(id, request, currentUser);
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/reset-password")
     public UserResponse resetPassword(
             @PathVariable UUID id,

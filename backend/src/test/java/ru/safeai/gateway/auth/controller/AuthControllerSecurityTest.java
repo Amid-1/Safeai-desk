@@ -26,11 +26,12 @@ import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
 import ru.safeai.gateway.auth.mapper.AuthUserMapper;
+import ru.safeai.gateway.auth.security.UserStatusFilter;
 import ru.safeai.gateway.auth.service.AuthService;
+import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import org.springframework.context.annotation.FilterType;
-import ru.safeai.gateway.common.security.UserStatusFilter;
 
 import java.util.Set;
 import java.util.UUID;
@@ -52,7 +53,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({
         AuthControllerSecurityTest.TestSecurityConfig.class,
         GlobalExceptionHandler.class,
-        AuthUserMapper.class
+        ApiErrorResponseFactory.class
 })
 @ActiveProfiles("test")
 class AuthControllerSecurityTest {

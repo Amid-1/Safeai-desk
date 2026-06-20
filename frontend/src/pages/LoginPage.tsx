@@ -1,4 +1,4 @@
-// LoghinPage.tsx
+// frontend/src/pages/LoghinPage.tsx
 import { useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { useNavigate } from 'react-router-dom'

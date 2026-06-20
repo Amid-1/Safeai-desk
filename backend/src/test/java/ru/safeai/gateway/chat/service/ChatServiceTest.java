@@ -19,7 +19,7 @@ import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
-import ru.safeai.gateway.common.ratelimit.RedisRateLimitService;
+import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
@@ -105,6 +105,7 @@ class ChatServiceTest {
 
         verify(auditEventService).record(
                 eq(USER_ID),
+                eq(ORGANIZATION_ID),
                 eq(AuditEventType.CHAT_CREATED),
                 anyMap()
         );

@@ -9,6 +9,7 @@ import ru.safeai.gateway.chat.dto.UsageModelSummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageUserSummaryResponse;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
+import ru.safeai.gateway.chat.repository.UsageDailySummaryProjection;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
@@ -22,24 +23,55 @@ public class AdminUsageService {
     private final ChatMessageRepository chatMessageRepository;
 
     @Transactional(readOnly = true)
-    public List<UsageSummaryResponse> getUsageSummary() {
-        return chatMessageRepository.findUsageSummary();
+    public List<UsageSummaryResponse> getUsageSummary(
+            SafeAiUserPrincipal currentUser
+    ) {
+        if (isSuperAdmin(currentUser)) {
+            return chatMessageRepository.findUsageSummary();
+        }
+
+        return chatMessageRepository.findUsageByOrganizationId(
+                currentUser.getOrganizationId()
+        );
     }
 
     @Transactional(readOnly = true)
-    public List<UsageUserSummaryResponse> getUsageByUsers() {
-        return chatMessageRepository.findUsageByUsers();
+    public List<UsageUserSummaryResponse> getUsageByUsers(
+            SafeAiUserPrincipal currentUser
+    ) {
+        if (isSuperAdmin(currentUser)) {
+            return chatMessageRepository.findUsageByUsers();
+        }
+
+        return chatMessageRepository.findUsageByUsersByOrganizationId(
+                currentUser.getOrganizationId()
+        );
     }
 
     @Transactional(readOnly = true)
-    public List<UsageModelSummaryResponse> getUsageByModels() {
-        return chatMessageRepository.findUsageByModels();
+    public List<UsageModelSummaryResponse> getUsageByModels(
+            SafeAiUserPrincipal currentUser
+    ) {
+        if (isSuperAdmin(currentUser)) {
+            return chatMessageRepository.findUsageByModels();
+        }
+
+        return chatMessageRepository.findUsageByModelsByOrganizationId(
+                currentUser.getOrganizationId()
+        );
     }
 
     @Transactional(readOnly = true)
-    public List<UsageDailySummaryResponse> getUsageDaily() {
-        return chatMessageRepository.findUsageDaily()
-                .stream()
+    public List<UsageDailySummaryResponse> getUsageDaily(
+            SafeAiUserPrincipal currentUser
+    ) {
+        List<UsageDailySummaryProjection> rows = isSuperAdmin(currentUser)
+                ? chatMessageRepository.findUsageDaily()
+                : chatMessageRepository.findUsageDailyByOrganizationId(
+                currentUser.getOrganizationId()
+        );
+
+        return rows.stream()
                 .map(row -> new UsageDailySummaryResponse(
                         row.getUsageDate(),
                         row.getInputTokens(),
@@ -50,8 +82,18 @@ public class AdminUsageService {
     }
 
     @Transactional(readOnly = true)
-    public List<UsageSummaryResponse> getUsageByUserId(UUID userId) {
-        return chatMessageRepository.findUsageByUserId(userId);
+    public List<UsageSummaryResponse> getUsageByUserId(
+            UUID userId,
+            SafeAiUserPrincipal currentUser
+    ) {
+        if (isSuperAdmin(currentUser)) {
+            return chatMessageRepository.findUsageByUserId(userId);
+        }
+
+        return chatMessageRepository.findUsageByUserIdAndOrganizationId(
+                userId,
+                currentUser.getOrganizationId()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -59,20 +101,14 @@ public class AdminUsageService {
             UUID organizationId,
             SafeAiUserPrincipal currentUser
     ) {
-        if (!isSuperAdmin(currentUser) && !currentUser.getOrganizationId().equals(organizationId)) {
-            throw new ForbiddenOperationException("Нельзя смотреть usage другой организации");
+        if (!isSuperAdmin(currentUser)
+                && !currentUser.getOrganizationId().equals(organizationId)) {
+            throw new ForbiddenOperationException(
+                    "Нельзя смотреть usage другой организации"
+            );
         }
 
         return chatMessageRepository.findUsageByOrganizationId(organizationId);
-    }
-
-    @Transactional(readOnly = true)
-    public List<UsageSummaryResponse> getUsageSummary(SafeAiUserPrincipal currentUser) {
-        if (isSuperAdmin(currentUser)) {
-            return chatMessageRepository.findUsageSummary();
-        }
-
-        return chatMessageRepository.findUsageByOrganizationId(currentUser.getOrganizationId());
     }
 
     private boolean isSuperAdmin(SafeAiUserPrincipal currentUser) {

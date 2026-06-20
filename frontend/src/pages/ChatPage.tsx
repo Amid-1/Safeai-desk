@@ -1,4 +1,4 @@
-// ChatPage.tsx
+// frontend/src/pages/ChatPage.tsx
 import { useEffect, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { createChat, getChatById, getChats, sendMessage } from '../api/chatApi'

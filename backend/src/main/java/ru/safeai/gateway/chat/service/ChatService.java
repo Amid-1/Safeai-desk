@@ -1,8 +1,10 @@
 package ru.safeai.gateway.chat.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 import ru.safeai.gateway.ai.AiChatResponse;
 import ru.safeai.gateway.ai.AiProvider;
 import ru.safeai.gateway.audit.AuditEventType;
@@ -16,7 +18,7 @@ import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
-import ru.safeai.gateway.common.ratelimit.RedisRateLimitService;
+import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
@@ -60,6 +62,7 @@ public class ChatService {
 
         auditEventService.record(
                 currentUser.getId(),
+                currentUser.getOrganizationId(),
                 AuditEventType.CHAT_CREATED,
                 details
         );
@@ -79,10 +82,11 @@ public class ChatService {
     @Transactional(readOnly = true)
     public ChatDetailsResponse findById(UUID chatId, SafeAiUserPrincipal currentUser) {
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
 
         List<MessageResponse> messages = chatMessageRepository
-                .findBySession_IdOrderByCreatedAtAsc(session.getId())
+                .findBySession_IdOrderByCreatedAtAscIdAsc(session.getId())
                 .stream()
                 .map(chatMapper::toMessageResponse)
                 .toList();
@@ -98,6 +102,8 @@ public class ChatService {
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
         String normalizedContent = normalizeMessageContent(request.content());
+
+        chatPersistenceService.assertOwnedChatExists(chatId, currentUser);
 
         rateLimitService.checkAiMessageAllowed(currentUser);
 
@@ -119,6 +125,7 @@ public class ChatService {
         } catch (RuntimeException exception) {
             auditEventService.record(
                     currentUser.getId(),
+                    currentUser.getOrganizationId(),
                     AuditEventType.AI_RESPONSE_FAILED,
                     Map.of(
                             "chatId", context.chatId().toString(),
@@ -147,7 +154,10 @@ public class ChatService {
 
     private String normalizeMessageContent(String content) {
         if (content == null || content.trim().isBlank()) {
-            throw new IllegalArgumentException("Сообщение не должно быть пустым");
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Сообщение не должно быть пустым"
+            );
         }
 
         return content.trim();

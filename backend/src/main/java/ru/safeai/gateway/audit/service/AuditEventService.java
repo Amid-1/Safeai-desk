@@ -24,6 +24,16 @@ public class AuditEventService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(UUID userId, AuditEventType eventType, Map<String, Object> details) {
+        record(userId, null, eventType, details);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void record(
+            UUID userId,
+            UUID organizationId,
+            AuditEventType eventType,
+            Map<String, Object> details
+    ) {
         try {
             UserEntity user = null;
 
@@ -33,14 +43,16 @@ public class AuditEventService {
 
             AuditEventEntity event = new AuditEventEntity();
             event.setUser(user);
+            event.setOrganizationId(organizationId);
             event.setEventType(eventType.name());
             event.setDetails(details == null ? Map.of() : details);
 
             auditEventRepository.save(event);
         } catch (Exception exception) {
             log.error(
-                    "Не удалось записать событие аудита: userId={}, eventType={}",
+                    "Не удалось записать событие аудита: userId={}, organizationId={}, eventType={}",
                     userId,
+                    organizationId,
                     eventType,
                     exception
             );

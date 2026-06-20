@@ -1,2 +1,2 @@
-//frontend/src/pages/global.d.ts
+//frontend/src/global.d.ts
 declare module '*.css'

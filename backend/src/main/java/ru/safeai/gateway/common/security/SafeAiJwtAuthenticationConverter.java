@@ -12,36 +12,37 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Component
 public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
 
     @Override
     public @NonNull AbstractAuthenticationToken convert(@NonNull Jwt jwt) {
-        String userId = requiredClaim(jwt, "userId");
-        String organizationId = requiredClaim(jwt, "organizationId");
-        String email = jwt.getSubject();
+        String subject = jwt.getSubject();
 
-        if (email == null || email.isBlank()) {
+        if (subject == null || subject.isBlank()) {
             throw new BadJwtException("JWT subject is missing");
         }
 
-        Long tokenVersion = jwt.getClaim("tokenVersion");
+        String userId = requiredClaim(jwt, "userId");
+        String organizationId = requiredClaim(jwt, "organizationId");
+        String email = requiredClaim(jwt, "email");
 
-        if (tokenVersion == null) {
+        if (!subject.equals(userId)) {
+            throw new BadJwtException("JWT subject does not match userId");
+        }
+
+        Number tokenVersionClaim = jwt.getClaim("tokenVersion");
+
+        if (tokenVersionClaim == null) {
             throw new BadJwtException("JWT claim is missing: tokenVersion");
         }
 
+        long tokenVersion = tokenVersionClaim.longValue();
+
         List<String> roles = jwt.getClaimAsStringList("roles");
 
-        Set<SimpleGrantedAuthority> authorities = roles == null
-                ? Set.of()
-                : roles.stream()
-                .filter(role -> role != null && !role.isBlank())
-                .map(role -> role.startsWith("ROLE_") ? role : "ROLE_" + role)
-                .map(SimpleGrantedAuthority::new)
-                .collect(Collectors.toSet());
+        Set<SimpleGrantedAuthority> authorities = RoleAuthorityMapper.toAuthorities(roles);
 
         SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
                 parseUuid(userId, "userId"),

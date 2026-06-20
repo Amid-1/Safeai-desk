@@ -6,26 +6,26 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-
 import ru.safeai.gateway.admin.service.AdminUsageService;
+import ru.safeai.gateway.auth.security.UserStatusFilter;
+import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
-import ru.safeai.gateway.common.security.JsonSecurityErrorWriter;
-
-import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.util.List;
 import java.util.UUID;
@@ -37,13 +37,32 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(AdminUsageController.class)
+@WebMvcTest(
+        controllers = AdminUsageController.class,
+        excludeFilters = @ComponentScan.Filter(
+                type = FilterType.ASSIGNABLE_TYPE,
+                classes = UserStatusFilter.class
+        )
+)
 @Import({
         AdminUsageControllerSecurityTest.TestSecurityConfig.class,
-        GlobalExceptionHandler.class
+        GlobalExceptionHandler.class,
+        ApiErrorResponseFactory.class
 })
 @ActiveProfiles("test")
 class AdminUsageControllerSecurityTest {
+
+    private static final UUID ADMIN_ID =
+            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+    private static final UUID ORGANIZATION_ID =
+            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+    private static final UUID SUPER_ADMIN_ID =
+            UUID.fromString("00000000-0000-0000-0000-000000000101");
+
+    private static final UUID PLATFORM_ORGANIZATION_ID =
+            UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     @Autowired
     private MockMvc mockMvc;
@@ -53,19 +72,6 @@ class AdminUsageControllerSecurityTest {
 
     @MockitoBean
     private UserDetailsService userDetailsService;
-
-    @MockitoBean
-    private UserRepository userRepository;
-
-    @MockitoBean
-    private JsonSecurityErrorWriter jsonSecurityErrorWriter;
-
-    private static final UUID ADMIN_ID =
-            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-
-    private static final UUID ORGANIZATION_ID =
-            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-
 
     @TestConfiguration
     @EnableWebSecurity
@@ -132,13 +138,46 @@ class AdminUsageControllerSecurityTest {
                 .andExpect(status().isOk());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api/admin/usage-summary",
+            "/api/admin/usage/summary",
+            "/api/admin/usage/users",
+            "/api/admin/usage/models",
+            "/api/admin/usage/daily",
+            "/api/admin/usage/by-user/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    })
+    void shouldReturnOkWhenSuperAdminRole(String url) throws Exception {
+        mockServices();
+
+        mockMvc.perform(get(url)
+                        .with(authentication(authToken(superAdminPrincipal()))))
+                .andExpect(status().isOk());
+    }
+
     private void mockServices() {
-        when(adminUsageService.getUsageSummary(any())).thenReturn(List.of());
-        when(adminUsageService.getUsageByUsers()).thenReturn(List.of());
-        when(adminUsageService.getUsageByModels()).thenReturn(List.of());
-        when(adminUsageService.getUsageDaily()).thenReturn(List.of());
-        when(adminUsageService.getUsageByUserId(any())).thenReturn(List.of());
-        when(adminUsageService.getUsageByOrganizationId(any(), any())).thenReturn(List.of());
+        when(adminUsageService.getUsageSummary(any(SafeAiUserPrincipal.class)))
+                .thenReturn(List.of());
+
+        when(adminUsageService.getUsageByUsers(any(SafeAiUserPrincipal.class)))
+                .thenReturn(List.of());
+
+        when(adminUsageService.getUsageByModels(any(SafeAiUserPrincipal.class)))
+                .thenReturn(List.of());
+
+        when(adminUsageService.getUsageDaily(any(SafeAiUserPrincipal.class)))
+                .thenReturn(List.of());
+
+        when(adminUsageService.getUsageByUserId(
+                any(UUID.class),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(List.of());
+
+        when(adminUsageService.getUsageByOrganizationId(
+                any(UUID.class),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(List.of());
     }
 
     private Authentication authToken(SafeAiUserPrincipal principal) {
@@ -158,6 +197,18 @@ class AdminUsageControllerSecurityTest {
                 true,
                 0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
+    }
+
+    private SafeAiUserPrincipal superAdminPrincipal() {
+        return new SafeAiUserPrincipal(
+                SUPER_ADMIN_ID,
+                PLATFORM_ORGANIZATION_ID,
+                "superadmin@test.com",
+                "",
+                true,
+                0L,
+                List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
         );
     }
 }

@@ -1,4 +1,4 @@
-package ru.safeai.gateway.common.security;
+package ru.safeai.gateway.auth.security;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -8,11 +8,11 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import ru.safeai.gateway.organization.entity.OrganizationEntity;
-import ru.safeai.gateway.user.entity.UserEntity;
-import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.common.security.JsonSecurityErrorWriter;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.user.service.UserSecurityStatus;
+import ru.safeai.gateway.user.service.UserStatusCacheService;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,24 +29,24 @@ class UserStatusFilterTest {
     private static final UUID ORGANIZATION_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
-    private UserRepository userRepository;
+    private UserStatusCacheService userStatusCacheService;
     private UserStatusFilter filter;
 
     @BeforeEach
     void setUp() {
-        userRepository = mock(UserRepository.class);
+        userStatusCacheService = mock(UserStatusCacheService.class);
 
         JsonSecurityErrorWriter errorWriter = new JsonSecurityErrorWriter(
                 new tools.jackson.databind.ObjectMapper()
         );
 
-        filter = new UserStatusFilter(userRepository, errorWriter);
+        filter = new UserStatusFilter(userStatusCacheService, errorWriter);
 
         SecurityContextHolder.clearContext();
     }
 
     @Test
-    void doFilterInternal_shouldReturn401WhenUserIsDisabled() throws Exception {
+    void doFilter_shouldReturn401WhenUserIsDisabled() throws Exception {
         SafeAiUserPrincipal principal = principal();
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -57,23 +57,21 @@ class UserStatusFilterTest {
                 )
         );
 
-        UserEntity user = userEntity(false, 0L);
-
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+        when(userStatusCacheService.getStatus(USER_ID))
+                .thenReturn(Optional.of(new UserSecurityStatus(false, 0L)));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 
-        filter.doFilterInternal(request, response, chain);
+        filter.doFilter(request, response, chain);
 
         assertThat(response.getStatus()).isEqualTo(401);
         assertThat(response.getContentAsString()).contains("TOKEN_REVOKED");
     }
 
     @Test
-    void doFilterInternal_shouldReturn401WhenTokenVersionMismatch() throws Exception {
+    void doFilter_shouldReturn401WhenTokenVersionMismatch() throws Exception {
         SafeAiUserPrincipal principal = principal();
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -84,23 +82,21 @@ class UserStatusFilterTest {
                 )
         );
 
-        UserEntity user = userEntity(true, 1L);
-
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+        when(userStatusCacheService.getStatus(USER_ID))
+                .thenReturn(Optional.of(new UserSecurityStatus(true, 1L)));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 
-        filter.doFilterInternal(request, response, chain);
+        filter.doFilter(request, response, chain);
 
         assertThat(response.getStatus()).isEqualTo(401);
         assertThat(response.getContentAsString()).contains("TOKEN_REVOKED");
     }
 
     @Test
-    void doFilterInternal_shouldContinueWhenUserIsValid() throws Exception {
+    void doFilter_shouldContinueWhenUserIsValid() throws Exception {
         SafeAiUserPrincipal principal = principal();
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -111,16 +107,14 @@ class UserStatusFilterTest {
                 )
         );
 
-        UserEntity user = userEntity(true, 0L);
-
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+        when(userStatusCacheService.getStatus(USER_ID))
+                .thenReturn(Optional.of(new UserSecurityStatus(true, 0L)));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 
-        filter.doFilterInternal(request, response, chain);
+        filter.doFilter(request, response, chain);
 
         assertThat(response.getStatus()).isEqualTo(200);
     }
@@ -135,24 +129,5 @@ class UserStatusFilterTest {
                 0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
-    }
-
-    private UserEntity userEntity(boolean enabled, long tokenVersion) {
-        OrganizationEntity organization = new OrganizationEntity();
-        organization.setId(ORGANIZATION_ID);
-        organization.setName("Demo Company");
-        organization.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-
-        UserEntity user = new UserEntity();
-        user.setId(USER_ID);
-        user.setOrganization(organization);
-        user.setEmail("admin@test.com");
-        user.setPasswordHash("encoded-password");
-        user.setFullName("Demo Admin");
-        user.setEnabled(enabled);
-        user.setTokenVersion(tokenVersion);
-        user.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-
-        return user;
     }
 }

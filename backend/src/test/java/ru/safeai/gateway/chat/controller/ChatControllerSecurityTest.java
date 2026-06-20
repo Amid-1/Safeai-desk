@@ -21,12 +21,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.context.annotation.ComponentScan;
 
+import ru.safeai.gateway.auth.security.UserStatusFilter;
 import ru.safeai.gateway.chat.dto.ChatResponse;
 import ru.safeai.gateway.chat.service.ChatService;
+import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import org.springframework.context.annotation.FilterType;
-import ru.safeai.gateway.common.security.UserStatusFilter;
 
 import java.time.Instant;
 import java.util.List;
@@ -52,7 +53,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 )
 @Import({
         ChatControllerSecurityTest.TestSecurityConfig.class,
-        GlobalExceptionHandler.class
+        GlobalExceptionHandler.class,
+        ApiErrorResponseFactory.class
 })
 @ActiveProfiles("test")
 class ChatControllerSecurityTest {

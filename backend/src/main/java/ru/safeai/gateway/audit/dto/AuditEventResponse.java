@@ -7,6 +7,7 @@ import java.util.UUID;
 public record AuditEventResponse(
         UUID id,
         UUID userId,
+        UUID organizationId,
         String userEmail,
         String eventType,
         Map<String, Object> details,

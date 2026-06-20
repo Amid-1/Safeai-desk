@@ -49,6 +49,7 @@ public class OrganizationService {
 
             auditEventService.record(
                     currentUser.getId(),
+                    saved.getId(),
                     AuditEventType.ORGANIZATION_CREATED,
                     Map.of(
                             "organizationId", saved.getId().toString(),

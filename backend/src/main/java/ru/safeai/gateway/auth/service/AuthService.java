@@ -7,26 +7,23 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.safeai.gateway.audit.AuditEventType;
-import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.auth.dto.AuthUserResponse;
+import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.dto.LoginResponse;
 import ru.safeai.gateway.auth.mapper.AuthUserMapper;
-import ru.safeai.gateway.common.ratelimit.LoginRateLimitService;
+import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.user.repository.UserRepository;
-import ru.safeai.gateway.auth.dto.CurrentUserResponse;
-import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.ratelimit.LoginRateLimitService;
 import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
+import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-
-import java.util.Map;
-import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -38,6 +35,7 @@ public class AuthService {
     private final AuthUserMapper authUserMapper;
     private final UserRepository userRepository;
     private final LoginRateLimitService loginRateLimitService;
+    private final ClientIpResolver clientIpResolver;
 
     public LoginResponse login(LoginRequest request, HttpServletRequest httpRequest) {
         Objects.requireNonNull(request, "request не должен быть null");
@@ -46,7 +44,7 @@ public class AuthService {
                 .trim()
                 .toLowerCase();
 
-        loginRateLimitService.checkAllowed(email, extractClientIp(httpRequest));
+        loginRateLimitService.checkAllowed(email, clientIpResolver.resolve(httpRequest));
 
         try {
             var authentication = authenticationManager.authenticate(
@@ -63,6 +61,8 @@ public class AuthService {
             String token = jwtService.generateToken(principal);
 
             authEventService.loginSuccess(principal, httpRequest);
+
+            loginRateLimitService.resetEmailLimit(email);
 
             AuthUserResponse user = authUserMapper.toResponse(principal);
 
@@ -94,26 +94,5 @@ public class AuthService {
                 user.isEnabled(),
                 roles
         );
-    }
-
-    private String extractClientIp(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            return forwardedFor.split(",")[0].trim();
-        }
-
-        String realIp = request.getHeader("X-Real-IP");
-
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-
-        return request.getRemoteAddr();
-    }
-
-    private String getHeaderOrUnknown(HttpServletRequest request, String name) {
-        String value = request.getHeader(name);
-        return value == null || value.isBlank() ? "unknown" : value;
     }
 }

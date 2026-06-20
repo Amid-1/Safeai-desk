@@ -98,6 +98,7 @@ class OrganizationServiceTest {
 
         verify(auditEventService).record(
                 eq(ADMIN_ID),
+                eq(ORGANIZATION_ID),
                 eq(AuditEventType.ORGANIZATION_CREATED),
                 anyMap()
         );

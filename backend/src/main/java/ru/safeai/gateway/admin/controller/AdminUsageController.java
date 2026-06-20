@@ -17,14 +17,11 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 public class AdminUsageController {
 
     private final AdminUsageService adminUsageService;
 
-    /**
-     * Старый endpoint оставляем, чтобы не сломать текущий frontend.
-     */
     @GetMapping("/usage-summary")
     public List<UsageSummaryResponse> getOldUsageSummary(
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
@@ -32,9 +29,6 @@ public class AdminUsageController {
         return adminUsageService.getUsageSummary(currentUser);
     }
 
-    /**
-     * Новый нормальный endpoint.
-     */
     @GetMapping("/usage/summary")
     public List<UsageSummaryResponse> getUsageSummary(
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
@@ -43,23 +37,32 @@ public class AdminUsageController {
     }
 
     @GetMapping("/usage/users")
-    public List<UsageUserSummaryResponse> getUsageByUsers() {
-        return adminUsageService.getUsageByUsers();
+    public List<UsageUserSummaryResponse> getUsageByUsers(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return adminUsageService.getUsageByUsers(currentUser);
     }
 
     @GetMapping("/usage/models")
-    public List<UsageModelSummaryResponse> getUsageByModels() {
-        return adminUsageService.getUsageByModels();
+    public List<UsageModelSummaryResponse> getUsageByModels(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return adminUsageService.getUsageByModels(currentUser);
     }
 
     @GetMapping("/usage/daily")
-    public List<UsageDailySummaryResponse> getUsageDaily() {
-        return adminUsageService.getUsageDaily();
+    public List<UsageDailySummaryResponse> getUsageDaily(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return adminUsageService.getUsageDaily(currentUser);
     }
 
     @GetMapping("/usage/by-user/{userId}")
-    public List<UsageSummaryResponse> getUsageByUserId(@PathVariable UUID userId) {
-        return adminUsageService.getUsageByUserId(userId);
+    public List<UsageSummaryResponse> getUsageByUserId(
+            @PathVariable UUID userId,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return adminUsageService.getUsageByUserId(userId, currentUser);
     }
 
     @GetMapping("/usage/by-organization/{organizationId}")

@@ -11,8 +11,24 @@ import java.util.UUID;
 public interface AuditEventRepository extends JpaRepository<AuditEventEntity, UUID> {
 
     @EntityGraph(attributePaths = "user")
-    Page<AuditEventEntity> findByUser_IdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
+    Page<AuditEventEntity> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
     @EntityGraph(attributePaths = "user")
-    Page<AuditEventEntity> findAllByOrderByCreatedAtDesc(Pageable pageable);
+    Page<AuditEventEntity> findByOrganizationIdOrderByCreatedAtDesc(
+            UUID organizationId,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "user")
+    Page<AuditEventEntity> findByUser_IdOrderByCreatedAtDesc(
+            UUID userId,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "user")
+    Page<AuditEventEntity> findByUser_IdAndOrganizationIdOrderByCreatedAtDesc(
+            UUID userId,
+            UUID organizationId,
+            Pageable pageable
+    );
 }

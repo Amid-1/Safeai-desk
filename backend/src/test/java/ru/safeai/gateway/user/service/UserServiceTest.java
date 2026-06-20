@@ -1,16 +1,18 @@
 package ru.safeai.gateway.user.service;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ConflictException;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
@@ -22,9 +24,9 @@ import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
 import ru.safeai.gateway.user.dto.UserResponse;
 import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
+import ru.safeai.gateway.user.event.UserSecurityStateChangedEvent;
 import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
-import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 
 import java.time.Instant;
 import java.util.List;
@@ -64,8 +66,22 @@ class UserServiceTest {
     @Mock
     private AuditEventService auditEventService;
 
-    @InjectMocks
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     private UserService userService;
+
+    @BeforeEach
+    void setUp() {
+        userService = new UserService(
+                userRepository,
+                roleRepository,
+                organizationRepository,
+                passwordEncoder,
+                auditEventService,
+                eventPublisher
+        );
+    }
 
     @Test
     void createWhenEmailAlreadyExistsThrowsConflictException() {
@@ -180,6 +196,7 @@ class UserServiceTest {
 
         verify(auditEventService).record(
                 eq(ADMIN_ID),
+                eq(ORGANIZATION_ID),
                 eq(AuditEventType.USER_CREATED),
                 anyMap()
         );
@@ -194,7 +211,7 @@ class UserServiceTest {
                 Set.of(roleEntity("USER"))
         );
 
-        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
+        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
                 .thenReturn(Optional.of(user));
 
         when(userRepository.save(any(UserEntity.class)))
@@ -209,9 +226,11 @@ class UserServiceTest {
         assertThat(response.enabled()).isFalse();
 
         verify(userRepository).save(user);
+        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
                 eq(ADMIN_ID),
+                eq(ORGANIZATION_ID),
                 eq(AuditEventType.USER_ENABLED_CHANGED),
                 anyMap()
         );
@@ -226,7 +245,7 @@ class UserServiceTest {
                 Set.of(roleEntity("USER"))
         );
 
-        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
+        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
                 .thenReturn(Optional.of(user));
 
         when(userRepository.save(any(UserEntity.class)))
@@ -242,6 +261,7 @@ class UserServiceTest {
 
         verify(auditEventService).record(
                 eq(ADMIN_ID),
+                eq(ORGANIZATION_ID),
                 eq(AuditEventType.USER_ENABLED_CHANGED),
                 anyMap()
         );
@@ -256,7 +276,7 @@ class UserServiceTest {
                 Set.of(roleEntity("ADMIN"))
         );
 
-        when(userRepository.findByIdWithRolesAndOrganization(ADMIN_ID))
+        when(userRepository.findByIdAndOrganizationId(ADMIN_ID, ORGANIZATION_ID))
                 .thenReturn(Optional.of(admin));
 
         assertThatThrownBy(() -> userService.updateEnabled(
@@ -282,11 +302,11 @@ class UserServiceTest {
                 Set.of(roleEntity("ADMIN"))
         );
 
-        when(userRepository.findByIdWithRolesAndOrganization(targetAdminId))
+        when(userRepository.findByIdAndOrganizationId(targetAdminId, ORGANIZATION_ID))
                 .thenReturn(Optional.of(targetAdmin));
 
-        when(userRepository.countEnabledAdmins())
-                .thenReturn(1L);
+        when(userRepository.findEnabledAdminsForUpdate(ORGANIZATION_ID))
+                .thenReturn(List.of(targetAdmin));
 
         assertThatThrownBy(() -> userService.updateEnabled(
                 targetAdminId,
@@ -311,7 +331,7 @@ class UserServiceTest {
 
         RoleEntity adminRole = roleEntity("ADMIN");
 
-        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
+        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
                 .thenReturn(Optional.of(user));
 
         when(roleRepository.findByName("ADMIN"))
@@ -330,6 +350,7 @@ class UserServiceTest {
 
         verify(auditEventService).record(
                 eq(ADMIN_ID),
+                eq(ORGANIZATION_ID),
                 eq(AuditEventType.USER_ROLES_CHANGED),
                 anyMap()
         );
@@ -344,7 +365,7 @@ class UserServiceTest {
                 Set.of(roleEntity("ADMIN"))
         );
 
-        when(userRepository.findByIdWithRolesAndOrganization(ADMIN_ID))
+        when(userRepository.findByIdAndOrganizationId(ADMIN_ID, ORGANIZATION_ID))
                 .thenReturn(Optional.of(admin));
 
         assertThatThrownBy(() -> userService.updateRoles(
@@ -353,7 +374,7 @@ class UserServiceTest {
                 adminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Нельзя снять роль ADMIN с самого себя");
+                .hasMessageContaining("Нельзя менять собственные роли");
 
         verify(userRepository, never()).save(any());
         verifyNoInteractions(auditEventService);
@@ -370,11 +391,11 @@ class UserServiceTest {
                 Set.of(roleEntity("ADMIN"))
         );
 
-        when(userRepository.findByIdWithRolesAndOrganization(targetAdminId))
+        when(userRepository.findByIdAndOrganizationId(targetAdminId, ORGANIZATION_ID))
                 .thenReturn(Optional.of(targetAdmin));
 
-        when(userRepository.countEnabledAdmins())
-                .thenReturn(1L);
+        when(userRepository.findEnabledAdminsForUpdate(ORGANIZATION_ID))
+                .thenReturn(List.of(targetAdmin));
 
         assertThatThrownBy(() -> userService.updateRoles(
                 targetAdminId,
@@ -397,7 +418,7 @@ class UserServiceTest {
                 Set.of(roleEntity("USER"))
         );
 
-        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
+        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
                 .thenReturn(Optional.of(user));
 
         when(passwordEncoder.encode("NewPass123"))
@@ -417,6 +438,7 @@ class UserServiceTest {
 
         verify(auditEventService).record(
                 eq(ADMIN_ID),
+                eq(ORGANIZATION_ID),
                 eq(AuditEventType.USER_PASSWORD_RESET),
                 anyMap()
         );

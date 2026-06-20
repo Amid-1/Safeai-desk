@@ -11,13 +11,15 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/safeai
       SPRING_DATASOURCE_USERNAME: safeai
       SPRING_DATASOURCE_PASSWORD: safeai_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
 
   postgres:
     image: postgres:16
@@ -41,6 +43,11 @@ services:
     container_name: safeai-redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   safeai_postgres_data:

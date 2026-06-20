@@ -1,4 +1,4 @@
-package ru.safeai.gateway.common.security;
+package ru.safeai.gateway.auth.security;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -10,7 +10,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.common.security.JsonSecurityErrorWriter;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.user.service.UserStatusCacheService;
 
 import java.io.IOException;
 
@@ -18,7 +20,7 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class UserStatusFilter extends OncePerRequestFilter {
 
-    private final UserRepository userRepository;
+    private final UserStatusCacheService userStatusCacheService;
     private final JsonSecurityErrorWriter errorWriter;
 
     @Override
@@ -36,8 +38,11 @@ public class UserStatusFilter extends OncePerRequestFilter {
             return;
         }
 
-        boolean valid = userRepository.findById(principal.getId())
-                .map(user -> user.isEnabled() && user.getTokenVersion() == principal.getTokenVersion())
+        boolean valid = userStatusCacheService.getStatus(principal.getId())
+                .map(status ->
+                        status.enabled()
+                                && status.tokenVersion() == principal.getTokenVersion()
+                )
                 .orElse(false);
 
         if (!valid) {

@@ -4,15 +4,16 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.jspecify.annotations.NonNull;
 import org.slf4j.MDC;
-import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.jspecify.annotations.NonNull;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -22,6 +23,8 @@ public class RequestIdFilter extends OncePerRequestFilter {
     public static final String REQUEST_ID_HEADER = "X-Request-Id";
 
     private static final int MAX_REQUEST_ID_LENGTH = 128;
+    private static final Pattern REQUEST_ID_PATTERN =
+            Pattern.compile("^[A-Za-z0-9._-]+$");
 
     @Override
     protected void doFilterInternal(
@@ -29,11 +32,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-        String requestId = request.getHeader(REQUEST_ID_HEADER);
-
-        if (requestId == null || requestId.isBlank() || requestId.length() > MAX_REQUEST_ID_LENGTH) {
-            requestId = UUID.randomUUID().toString();
-        }
+        String requestId = normalizeRequestId(request.getHeader(REQUEST_ID_HEADER));
 
         request.setAttribute(REQUEST_ID_ATTRIBUTE, requestId);
         response.setHeader(REQUEST_ID_HEADER, requestId);
@@ -44,5 +43,21 @@ public class RequestIdFilter extends OncePerRequestFilter {
         } finally {
             MDC.remove(REQUEST_ID_ATTRIBUTE);
         }
+    }
+
+    private String normalizeRequestId(String requestId) {
+        if (requestId == null) {
+            return UUID.randomUUID().toString();
+        }
+
+        String normalized = requestId.trim();
+
+        if (normalized.isBlank()
+                || normalized.length() > MAX_REQUEST_ID_LENGTH
+                || !REQUEST_ID_PATTERN.matcher(normalized).matches()) {
+            return UUID.randomUUID().toString();
+        }
+
+        return normalized;
     }
 }

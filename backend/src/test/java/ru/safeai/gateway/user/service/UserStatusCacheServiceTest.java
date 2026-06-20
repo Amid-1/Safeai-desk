@@ -1,0 +1,167 @@
+package ru.safeai.gateway.user.service;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import ru.safeai.gateway.user.entity.UserEntity;
+import ru.safeai.gateway.user.repository.UserRepository;
+
+import java.time.Duration;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class UserStatusCacheServiceTest {
+
+    private static final UUID USER_ID =
+            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+    private static final String KEY =
+            "user-status:" + USER_ID;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private StringRedisTemplate redisTemplate;
+
+    @Mock
+    private ValueOperations<String, String> valueOperations;
+
+    @Test
+    void getStatus_whenCacheHit_shouldReturnCachedStatusAndNotCallDatabase() {
+        UserStatusCacheService service = enabledService();
+
+        when(valueOperations.get(KEY))
+                .thenReturn("true:5");
+
+        Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
+
+        assertThat(status).contains(new UserSecurityStatus(true, 5L));
+
+        verifyNoInteractions(userRepository);
+        verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
+    }
+
+    @Test
+    void getStatus_whenCacheMiss_shouldLoadFromDatabaseAndCacheResult() {
+        UserStatusCacheService service = enabledService();
+
+        when(valueOperations.get(KEY))
+                .thenReturn(null);
+
+        when(userRepository.findById(USER_ID))
+                .thenReturn(Optional.of(userEntity(true, 3L)));
+
+        Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
+
+        assertThat(status).contains(new UserSecurityStatus(true, 3L));
+
+        verify(userRepository).findById(USER_ID);
+        verify(valueOperations).set(
+                KEY,
+                "true:3",
+                Duration.ofSeconds(60)
+        );
+    }
+
+    @Test
+    void getStatus_whenRedisFails_shouldFallbackToDatabase() {
+        UserStatusCacheService service = enabledService();
+
+        when(valueOperations.get(KEY))
+                .thenThrow(new RuntimeException("Redis unavailable"));
+
+        when(userRepository.findById(USER_ID))
+                .thenReturn(Optional.of(userEntity(false, 9L)));
+
+        Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
+
+        assertThat(status).contains(new UserSecurityStatus(false, 9L));
+
+        verify(userRepository).findById(USER_ID);
+    }
+
+    @Test
+    void getStatus_whenUserNotFound_shouldReturnEmpty() {
+        UserStatusCacheService service = enabledService();
+
+        when(valueOperations.get(KEY))
+                .thenReturn(null);
+
+        when(userRepository.findById(USER_ID))
+                .thenReturn(Optional.empty());
+
+        Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
+
+        assertThat(status).isEmpty();
+
+        verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
+    }
+
+    @Test
+    void evict_shouldDeleteRedisKey() {
+        UserStatusCacheService service = new UserStatusCacheService(
+                userRepository,
+                redisTemplate,
+                new UserStatusCacheProperties(
+                        true,
+                        Duration.ofSeconds(60)
+                )
+        );
+
+        service.evict(USER_ID);
+
+        verify(redisTemplate).delete(KEY);
+    }
+
+    @Test
+    void getStatus_whenCacheDisabled_shouldUseDatabaseOnly() {
+        UserStatusCacheService service = new UserStatusCacheService(
+                userRepository,
+                redisTemplate,
+                new UserStatusCacheProperties(
+                        false,
+                        Duration.ofSeconds(60)
+                )
+        );
+
+        when(userRepository.findById(USER_ID))
+                .thenReturn(Optional.of(userEntity(true, 1L)));
+
+        Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
+
+        assertThat(status).contains(new UserSecurityStatus(true, 1L));
+
+        verify(userRepository).findById(USER_ID);
+        verifyNoInteractions(redisTemplate);
+    }
+
+    private UserStatusCacheService enabledService() {
+        when(redisTemplate.opsForValue())
+                .thenReturn(valueOperations);
+
+        return new UserStatusCacheService(
+                userRepository,
+                redisTemplate,
+                new UserStatusCacheProperties(
+                        true,
+                        Duration.ofSeconds(60)
+                )
+        );
+    }
+
+    private UserEntity userEntity(boolean enabled, long tokenVersion) {
+        UserEntity user = new UserEntity();
+        user.setId(USER_ID);
+        user.setEnabled(enabled);
+        user.setTokenVersion(tokenVersion);
+        return user;
+    }
+}

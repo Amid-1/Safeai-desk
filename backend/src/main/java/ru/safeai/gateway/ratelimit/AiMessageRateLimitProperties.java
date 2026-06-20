@@ -1,4 +1,4 @@
-package ru.safeai.gateway.common.ratelimit;
+package ru.safeai.gateway.ratelimit;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
