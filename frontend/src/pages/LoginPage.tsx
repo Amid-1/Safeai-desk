@@ -1,12 +1,13 @@
-// frontend/src/pages/LoghinPage.tsx
+// frontend/src/pages/LoginPage.tsx
 import { useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { login } from '../api/authApi'
-import { getApiErrorMessage, setToken } from '../api/http'
+import { getApiErrorMessage } from '../api/http'
+import { useAuth } from '../auth/AuthContext'
 
 function LoginPage() {
     const navigate = useNavigate()
+    const { loginUser } = useAuth()
 
     const [email, setEmail] = useState('admin@test.com')
     const [password, setPassword] = useState('admin123')
@@ -20,12 +21,11 @@ function LoginPage() {
         setLoading(true)
 
         try {
-            const response = await login({
+            await loginUser({
                 email: email.trim(),
                 password,
             })
 
-            setToken(response.token)
             navigate('/chat')
         } catch (err) {
             setError(getApiErrorMessage(err, 'Login failed'))

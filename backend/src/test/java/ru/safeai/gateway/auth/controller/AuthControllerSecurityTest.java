@@ -21,11 +21,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.context.annotation.ComponentScan;
 
-import ru.safeai.gateway.auth.dto.AuthUserResponse;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
-import ru.safeai.gateway.auth.dto.LoginResponse;
-import ru.safeai.gateway.auth.mapper.AuthUserMapper;
 import ru.safeai.gateway.auth.security.UserStatusFilter;
 import ru.safeai.gateway.auth.service.AuthService;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
@@ -87,40 +84,37 @@ class AuthControllerSecurityTest {
     }
 
     @Test
-    void loginEndpointIsPublicAndReturnsToken() throws Exception {
-        LoginResponse loginResponse = new LoginResponse(
-                "test-jwt-token",
-                "Bearer",
-                new AuthUserResponse(
-                        USER_ID,
-                        ORGANIZATION_ID,
-                        "admin@test.com",
-                        true,
-                        Set.of("ADMIN")
-                )
+    void loginEndpointIsPublicAndReturnsCurrentUser() throws Exception {
+        CurrentUserResponse currentUserResponse = new CurrentUserResponse(
+                USER_ID,
+                ORGANIZATION_ID,
+                "admin@test.com",
+                "Demo Admin",
+                true,
+                Set.of("ADMIN")
         );
 
         when(authService.login(
                 any(LoginRequest.class),
-                any(HttpServletRequest.class)
-        )).thenReturn(loginResponse);
+                any(HttpServletRequest.class),
+                any(jakarta.servlet.http.HttpServletResponse.class)
+        )).thenReturn(currentUserResponse);
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {
-                                  "email": "admin@test.com",
-                                  "password": "admin123"
-                                }
-                                """))
+                            {
+                              "email": "admin@test.com",
+                              "password": "admin123"
+                            }
+                            """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").value("test-jwt-token"))
-                .andExpect(jsonPath("$.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.user.id").value(USER_ID.toString()))
-                .andExpect(jsonPath("$.user.organizationId").value(ORGANIZATION_ID.toString()))
-                .andExpect(jsonPath("$.user.email").value("admin@test.com"))
-                .andExpect(jsonPath("$.user.enabled").value(true))
-                .andExpect(jsonPath("$.user.roles[0]").value("ADMIN"));
+                .andExpect(jsonPath("$.id").value(USER_ID.toString()))
+                .andExpect(jsonPath("$.organizationId").value(ORGANIZATION_ID.toString()))
+                .andExpect(jsonPath("$.email").value("admin@test.com"))
+                .andExpect(jsonPath("$.fullName").value("Demo Admin"))
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.roles[0]").value("ADMIN"));
     }
 
     @Test

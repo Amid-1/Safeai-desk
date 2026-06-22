@@ -1,133 +1,87 @@
-//frontend/src/App.tsx
-import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+// frontend/src/App.tsx
+import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import LoginPage from './pages/LoginPage'
 import ChatPage from './pages/ChatPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import AdminAuditPage from './pages/AdminAuditPage'
 import AdminUsagePage from './pages/AdminUsagePage'
-import { clearToken, getToken } from './api/http'
-import { getCurrentUser } from './api/authApi'
 import type { AuthUser } from './api/authApi'
+import { AuthProvider, useAuth } from './auth/AuthContext'
 
 function hasAnyRole(user: AuthUser | null, roles: string[]): boolean {
     return user?.roles.some((role) => roles.includes(role)) ?? false
 }
 
 function getDisplayRole(user: AuthUser | null): string {
-    if (!user) {
-        return ''
-    }
-
-    if (user.roles.includes('SUPER_ADMIN')) {
-        return 'SUPER_ADMIN'
-    }
-
-    if (user.roles.includes('ADMIN')) {
-        return 'ADMIN'
-    }
-
+    if (!user) return ''
+    if (user.roles.includes('SUPER_ADMIN')) return 'SUPER_ADMIN'
+    if (user.roles.includes('ADMIN')) return 'ADMIN'
     return 'USER'
 }
 
-function RequireAuth({
-                         children,
-                         authLoading,
-                     }: {
-    children: ReactNode
-    authLoading: boolean
-}) {
-    const token = getToken()
+function getNavLinkClass({ isActive }: { isActive: boolean }): string {
+    return isActive ? 'nav-link active' : 'nav-link'
+}
 
-    if (!token) {
-        return <Navigate to="/login" />
-    }
+function RequireAuth({ children }: { children: ReactNode }) {
+    const { currentUser, authLoading } = useAuth()
 
-    if (authLoading) {
-        return <p>Checking access...</p>
-    }
-
+    if (authLoading) return <p>Checking access...</p>
+    if (!currentUser) return <Navigate to="/login" />
     return children
 }
 
-function RequireAdmin({
-                          children,
-                          currentUser,
-                          authLoading,
-                      }: {
-    children: ReactNode
-    currentUser: AuthUser | null
-    authLoading: boolean
-}) {
-    const token = getToken()
+function RequireAdmin({ children }: { children: ReactNode }) {
+    const { currentUser, authLoading } = useAuth()
 
-    if (!token) {
-        return <Navigate to="/login" />
-    }
+    if (authLoading) return <p>Checking access...</p>
+    if (!currentUser) return <Navigate to="/login" />
 
-    if (authLoading) {
-        return <p>Checking access...</p>
-    }
-
-    if (!currentUser || !hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])) {
+    if (!hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])) {
         return <Navigate to="/chat" />
     }
 
     return children
 }
 
-function App() {
+function AppLayout() {
     const navigate = useNavigate()
-    const token = getToken()
+    const { currentUser, logoutUser } = useAuth()
 
-    const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
-    const [authLoading, setAuthLoading] = useState(Boolean(token))
-
+    const isAuthenticated = currentUser !== null
     const canAccessAdmin = hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])
     const displayRole = getDisplayRole(currentUser)
 
-    useEffect(() => {
-        if (!token) {
-            setCurrentUser(null)
-            setAuthLoading(false)
-            return
-        }
-
-        setAuthLoading(true)
-
-        getCurrentUser()
-            .then(setCurrentUser)
-            .catch(() => {
-                clearToken()
-                setCurrentUser(null)
-                navigate('/login')
-            })
-            .finally(() => {
-                setAuthLoading(false)
-            })
-    }, [token, navigate])
-
-    function logout() {
-        clearToken()
-        setCurrentUser(null)
+    async function handleLogout() {
+        await logoutUser()
         navigate('/login')
     }
 
     return (
         <div className="app">
-            {token && (
+            {isAuthenticated && (
                 <header className="topbar">
                     <div className="logo">SafeAI Desk</div>
 
                     <nav>
-                        <Link to="/chat">Chat</Link>
+                        <NavLink to="/chat" className={getNavLinkClass}>
+                            Chat
+                        </NavLink>
 
                         {canAccessAdmin && (
                             <>
-                                <Link to="/admin/users">Users</Link>
-                                <Link to="/admin/audit">Audit</Link>
-                                <Link to="/admin/usage">Usage</Link>
+                                <NavLink to="/admin/users" className={getNavLinkClass}>
+                                    Users
+                                </NavLink>
+
+                                <NavLink to="/admin/audit" className={getNavLinkClass}>
+                                    Audit
+                                </NavLink>
+
+                                <NavLink to="/admin/usage" className={getNavLinkClass}>
+                                    Usage
+                                </NavLink>
                             </>
                         )}
                     </nav>
@@ -150,20 +104,24 @@ function App() {
                             </div>
                         )}
 
-                        <button onClick={logout}>Logout</button>
+                        <button onClick={() => void handleLogout()}>Logout</button>
                     </div>
                 </header>
             )}
 
             <main className="content">
                 <Routes>
-                    <Route path="/" element={<Navigate to={token ? '/chat' : '/login'} />} />
+                    <Route
+                        path="/"
+                        element={<Navigate to={isAuthenticated ? '/chat' : '/login'} />}
+                    />
+
                     <Route path="/login" element={<LoginPage />} />
 
                     <Route
                         path="/chat"
                         element={
-                            <RequireAuth authLoading={authLoading}>
+                            <RequireAuth>
                                 <ChatPage />
                             </RequireAuth>
                         }
@@ -172,7 +130,7 @@ function App() {
                     <Route
                         path="/admin/users"
                         element={
-                            <RequireAdmin currentUser={currentUser} authLoading={authLoading}>
+                            <RequireAdmin>
                                 <AdminUsersPage currentUser={currentUser!} />
                             </RequireAdmin>
                         }
@@ -181,7 +139,7 @@ function App() {
                     <Route
                         path="/admin/audit"
                         element={
-                            <RequireAdmin currentUser={currentUser} authLoading={authLoading}>
+                            <RequireAdmin>
                                 <AdminAuditPage />
                             </RequireAdmin>
                         }
@@ -190,7 +148,7 @@ function App() {
                     <Route
                         path="/admin/usage"
                         element={
-                            <RequireAdmin currentUser={currentUser} authLoading={authLoading}>
+                            <RequireAdmin>
                                 <AdminUsagePage />
                             </RequireAdmin>
                         }
@@ -200,6 +158,14 @@ function App() {
                 </Routes>
             </main>
         </div>
+    )
+}
+
+function App() {
+    return (
+        <AuthProvider>
+            <AppLayout />
+        </AuthProvider>
     )
 }
 

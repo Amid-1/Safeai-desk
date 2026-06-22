@@ -34,12 +34,20 @@ Organization ID:   aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
 
 ---
 
+---
+
+## Супер админ
+email: superadmin@test.com
+password: superadmin123
+
+---
+
 ## Администраторы
 
-| № | Email | Password | Role | Комментарий |
-|---|---|---|---|---|
-| 1 | admin@test.com | admin123 | ADMIN | Demo admin из seed-миграции |
-| 2 | ivan@mail.com | v2F4r1C4@$ | ADMIN | Создан вручную через frontend/admin users |
+| № | Email | Password | Role | Комментарий                                                      |
+|---|---|---|---|------------------------------------------------------------------|
+| 1 | admin@test.com | admin123 | ADMIN | Demo admin из seed-миграции      Demo Admin полное имя           |
+| 2 | ivan@mail.com | v2F4r1C4@$ | ADMIN | Создан вручную через frontend/admin users Ivan Ivanov полное имя |
 
 ---
 
@@ -53,6 +61,13 @@ Organization ID:   aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
 ---
 
 ## Быстрый вход
+
+### Супер админ
+
+```text
+email: superadmin@test.com
+password: Admin_Dev_2026!Strong#91
+```
 
 ### Админ
 

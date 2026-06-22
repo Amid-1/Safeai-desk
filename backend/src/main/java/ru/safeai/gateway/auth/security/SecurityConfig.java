@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -19,25 +20,13 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtValidators;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
-import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
-import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.http.HttpMethod;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import ru.safeai.gateway.common.security.CorsProperties;
-import ru.safeai.gateway.common.security.JsonAccessDeniedHandler;
-import ru.safeai.gateway.common.security.JsonAuthenticationEntryPoint;
-import ru.safeai.gateway.common.security.JwtProperties;
-import ru.safeai.gateway.common.security.SafeAiJwtAuthenticationConverter;
+import org.springframework.web.cors.*;
+import ru.safeai.gateway.auth.service.AuthCookieService;
+import ru.safeai.gateway.common.security.*;
 
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
@@ -75,23 +64,19 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         .requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers("/api/auth/refresh").permitAll()
+                        .requestMatchers("/api/auth/logout").permitAll()
                         .requestMatchers("/api/auth/me").authenticated()
 
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/actuator/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
 
-                        .requestMatchers(HttpMethod.POST, "/api/organizations")
-                        .hasRole("SUPER_ADMIN")
-
+                        .requestMatchers(HttpMethod.POST, "/api/organizations").hasRole("SUPER_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/organizations", "/api/organizations/**")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN")
 
-                        .requestMatchers("/api/users/**")
-                        .hasAnyRole("ADMIN", "SUPER_ADMIN")
-
-                        .requestMatchers("/api/admin/**")
-                        .hasAnyRole("ADMIN", "SUPER_ADMIN")
-
+                        .requestMatchers("/api/users/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
+                        .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/api/chats/**").authenticated()
 
                         .anyRequest().authenticated()
@@ -132,7 +117,7 @@ public class SecurityConfig {
                 "X-Request-Id"
         ));
 
-        configuration.setAllowCredentials(false);
+        configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -143,14 +128,26 @@ public class SecurityConfig {
 
     @Bean
     public BearerTokenResolver bearerTokenResolver() {
-        DefaultBearerTokenResolver delegate = new DefaultBearerTokenResolver();
-
         return request -> {
-            if ("/api/auth/login".equals(request.getServletPath())) {
+            String servletPath = request.getServletPath();
+
+            if ("/api/auth/login".equals(servletPath)
+                    || "/api/auth/refresh".equals(servletPath)
+                    || "/api/auth/logout".equals(servletPath)) {
                 return null;
             }
 
-            return delegate.resolve(request);
+            if (request.getCookies() == null) {
+                return null;
+            }
+
+            for (var cookie : request.getCookies()) {
+                if (AuthCookieService.ACCESS_TOKEN_COOKIE.equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+
+            return null;
         };
     }
 
@@ -174,16 +171,13 @@ public class SecurityConfig {
 
     @Bean
     public JwtEncoder jwtEncoder() {
-        SecretKeySpec secretKey = jwtSecretKey();
-        return new NimbusJwtEncoder(new ImmutableSecret<>(secretKey));
+        return new NimbusJwtEncoder(new ImmutableSecret<>(jwtSecretKey()));
     }
 
     @Bean
     public JwtDecoder jwtDecoder() {
-        SecretKeySpec secretKey = jwtSecretKey();
-
         NimbusJwtDecoder decoder = NimbusJwtDecoder
-                .withSecretKey(secretKey)
+                .withSecretKey(jwtSecretKey())
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
 

@@ -89,12 +89,18 @@ pre {
     flex: 1;
 }
 
-.topbar nav a {
-    opacity: 0.85;
+.nav-link {
+    opacity: 0.75;
 }
 
-.topbar nav a:hover {
+.nav-link:hover {
     opacity: 1;
+}
+
+.nav-link.active {
+    opacity: 1;
+    text-decoration: underline;
+    text-underline-offset: 4px;
 }
 
 .topbar-user {

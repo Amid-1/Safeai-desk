@@ -6,7 +6,7 @@ export type ApiErrorBody = {
     message?: string
     path?: string
     requestId?: string
-    fieldErrors?: Record<string, string> | null
+    fieldErrors?: Record<string, string[]> | null
 }
 
 export class ApiError extends Error {
@@ -14,7 +14,7 @@ export class ApiError extends Error {
     errorCode?: string
     path?: string
     requestId?: string
-    fieldErrors?: Record<string, string> | null
+    fieldErrors?: Record<string, string[]> | null
 
     constructor(message: string, body: ApiErrorBody, status: number) {
         super(message)
@@ -30,18 +30,7 @@ export class ApiError extends Error {
 
 type ApiRequestOptions = RequestInit & {
     auth?: boolean
-}
-
-export function getToken(): string | null {
-    return localStorage.getItem('safeai_token')
-}
-
-export function setToken(token: string): void {
-    localStorage.setItem('safeai_token', token)
-}
-
-export function clearToken(): void {
-    localStorage.removeItem('safeai_token')
+    skipRefresh?: boolean
 }
 
 export function getApiErrorMessage(err: unknown, fallback: string): string {
@@ -57,33 +46,45 @@ export function getApiErrorMessage(err: unknown, fallback: string): string {
     return fallback
 }
 
+async function refreshAccessToken(): Promise<boolean> {
+    const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+    })
+
+    return response.ok
+}
+
 export async function apiRequest<T>(
     url: string,
     options: ApiRequestOptions = {}
 ): Promise<T> {
-    const { auth = true, ...fetchOptions } = options
+    const { skipRefresh = false, ...fetchOptions } = options
 
-    const token = getToken()
     const headers = new Headers(fetchOptions.headers)
 
     if (!headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json')
     }
 
-    if (auth && token) {
-        headers.set('Authorization', `Bearer ${token}`)
-    }
-
     const response = await fetch(url, {
         ...fetchOptions,
         headers,
+        credentials: 'include',
     })
 
-    if (!response.ok) {
-        if (response.status === 401) {
-            clearToken()
-        }
+    if (response.status === 401 && !skipRefresh) {
+        const refreshed = await refreshAccessToken()
 
+        if (refreshed) {
+            return apiRequest<T>(url, {
+                ...options,
+                skipRefresh: true,
+            })
+        }
+    }
+
+    if (!response.ok) {
         let body: ApiErrorBody
 
         try {

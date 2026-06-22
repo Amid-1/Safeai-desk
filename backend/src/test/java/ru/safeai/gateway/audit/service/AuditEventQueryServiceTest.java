@@ -9,8 +9,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
 import ru.safeai.gateway.audit.entity.AuditEventEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
@@ -23,6 +25,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
@@ -63,14 +67,132 @@ class AuditEventQueryServiceTest {
         Pageable pageable = PageRequest.of(0, 50);
         AuditEventEntity event = auditEventEntity();
 
-        when(auditEventRepository.findByOrganizationIdOrderByCreatedAtDesc(
-                ORGANIZATION_ID,
-                pageable
-        )).thenReturn(new PageImpl<>(List.of(event)));
+        whenFindAllReturns(pageable, event);
 
         Page<AuditEventResponse> response =
-                auditEventQueryService.findAll(adminPrincipal(), pageable);
+                auditEventQueryService.findAll(adminPrincipal(), emptyFilter(), pageable);
 
+        assertAuditEvent(response);
+
+        verifyFindAll(pageable);
+    }
+
+    @Test
+    void findAll_whenSuperAdmin_shouldReturnGlobalAuditEvents() {
+        Pageable pageable = PageRequest.of(0, 50);
+        AuditEventEntity event = auditEventEntity();
+
+        whenFindAllReturns(pageable, event);
+
+        Page<AuditEventResponse> response =
+                auditEventQueryService.findAll(superAdminPrincipal(), emptyFilter(), pageable);
+
+        assertAuditEvent(response);
+
+        verifyFindAll(pageable);
+    }
+
+    @Test
+    void findAll_whenSuperAdminWithOrganizationFilter_shouldReturnOrganizationScopedAuditEvents() {
+        Pageable pageable = PageRequest.of(0, 50);
+        AuditEventEntity event = auditEventEntity();
+
+        AuditEventFilter filter = new AuditEventFilter(
+                null,
+                null,
+                null,
+                null,
+                ORGANIZATION_ID
+        );
+
+        whenFindAllReturns(pageable, event);
+
+        Page<AuditEventResponse> response =
+                auditEventQueryService.findAll(superAdminPrincipal(), filter, pageable);
+
+        assertAuditEvent(response);
+
+        verifyFindAll(pageable);
+    }
+
+    @Test
+    void findByUserId_whenAdmin_shouldReturnOrganizationScopedUserAuditEvents() {
+        Pageable pageable = PageRequest.of(0, 50);
+        AuditEventEntity event = auditEventEntity();
+
+        whenFindAllReturns(pageable, event);
+
+        Page<AuditEventResponse> response =
+                auditEventQueryService.findByUserId(
+                        USER_ID,
+                        adminPrincipal(),
+                        pageable
+                );
+
+        assertAuditEvent(response);
+
+        verifyFindAll(pageable);
+    }
+
+    @Test
+    void findByUserId_whenSuperAdmin_shouldReturnGlobalUserAuditEvents() {
+        Pageable pageable = PageRequest.of(0, 50);
+        AuditEventEntity event = auditEventEntity();
+
+        whenFindAllReturns(pageable, event);
+
+        Page<AuditEventResponse> response =
+                auditEventQueryService.findByUserId(
+                        USER_ID,
+                        superAdminPrincipal(),
+                        pageable
+                );
+
+        assertAuditEvent(response);
+
+        verifyFindAll(pageable);
+    }
+
+    @Test
+    void findAll_shouldReturnAuditEventWithoutUserWhenUserIsNull() {
+        Pageable pageable = PageRequest.of(0, 50);
+        AuditEventEntity event = auditEventEntity();
+        event.setUser(null);
+
+        whenFindAllReturns(pageable, event);
+
+        Page<AuditEventResponse> response =
+                auditEventQueryService.findAll(adminPrincipal(), emptyFilter(), pageable);
+
+        assertThat(response.getContent()).hasSize(1);
+
+        AuditEventResponse item = response.getContent().getFirst();
+
+        assertThat(item.id()).isEqualTo(AUDIT_EVENT_ID);
+        assertThat(item.userId()).isNull();
+        assertThat(item.userEmail()).isNull();
+        assertThat(item.organizationId()).isEqualTo(ORGANIZATION_ID);
+
+        verifyFindAll(pageable);
+    }
+
+    private void whenFindAllReturns(Pageable pageable, AuditEventEntity event) {
+        when(auditEventRepository.findAll(
+                any(Specification.class),
+                eq(pageable)
+        )).thenReturn(new PageImpl<>(List.of(event)));
+    }
+
+    private void verifyFindAll(Pageable pageable) {
+        verify(auditEventRepository).findAll(
+                any(Specification.class),
+                eq(pageable)
+        );
+
+        verifyNoMoreInteractions(auditEventRepository);
+    }
+
+    private void assertAuditEvent(Page<AuditEventResponse> response) {
         assertThat(response.getContent()).hasSize(1);
 
         AuditEventResponse item = response.getContent().getFirst();
@@ -82,134 +204,16 @@ class AuditEventQueryServiceTest {
         assertThat(item.eventType()).isEqualTo(AuditEventType.USER_LOGIN_SUCCESS.name());
         assertThat(item.details()).containsEntry("email", "admin@test.com");
         assertThat(item.createdAt()).isEqualTo(Instant.parse("2026-06-12T12:00:00Z"));
-
-        verify(auditEventRepository).findByOrganizationIdOrderByCreatedAtDesc(
-                ORGANIZATION_ID,
-                pageable
-        );
-        verifyNoMoreInteractions(auditEventRepository);
     }
 
-    @Test
-    void findAll_whenSuperAdmin_shouldReturnGlobalAuditEvents() {
-        Pageable pageable = PageRequest.of(0, 50);
-        AuditEventEntity event = auditEventEntity();
-
-        when(auditEventRepository.findAllByOrderByCreatedAtDesc(pageable))
-                .thenReturn(new PageImpl<>(List.of(event)));
-
-        Page<AuditEventResponse> response =
-                auditEventQueryService.findAll(superAdminPrincipal(), pageable);
-
-        assertThat(response.getContent()).hasSize(1);
-
-        AuditEventResponse item = response.getContent().getFirst();
-
-        assertThat(item.id()).isEqualTo(AUDIT_EVENT_ID);
-        assertThat(item.userId()).isEqualTo(USER_ID);
-        assertThat(item.organizationId()).isEqualTo(ORGANIZATION_ID);
-        assertThat(item.userEmail()).isEqualTo("admin@test.com");
-
-        verify(auditEventRepository).findAllByOrderByCreatedAtDesc(pageable);
-        verifyNoMoreInteractions(auditEventRepository);
-    }
-
-    @Test
-    void findByUserId_whenAdmin_shouldReturnOrganizationScopedUserAuditEvents() {
-        Pageable pageable = PageRequest.of(0, 50);
-        AuditEventEntity event = auditEventEntity();
-
-        when(auditEventRepository.findByUser_IdAndOrganizationIdOrderByCreatedAtDesc(
-                USER_ID,
-                ORGANIZATION_ID,
-                pageable
-        )).thenReturn(new PageImpl<>(List.of(event)));
-
-        Page<AuditEventResponse> response =
-                auditEventQueryService.findByUserId(
-                        USER_ID,
-                        adminPrincipal(),
-                        pageable
-                );
-
-        assertThat(response.getContent()).hasSize(1);
-
-        AuditEventResponse item = response.getContent().getFirst();
-
-        assertThat(item.id()).isEqualTo(AUDIT_EVENT_ID);
-        assertThat(item.userId()).isEqualTo(USER_ID);
-        assertThat(item.organizationId()).isEqualTo(ORGANIZATION_ID);
-        assertThat(item.userEmail()).isEqualTo("admin@test.com");
-
-        verify(auditEventRepository).findByUser_IdAndOrganizationIdOrderByCreatedAtDesc(
-                USER_ID,
-                ORGANIZATION_ID,
-                pageable
+    private AuditEventFilter emptyFilter() {
+        return new AuditEventFilter(
+                null,
+                null,
+                null,
+                null,
+                null
         );
-        verifyNoMoreInteractions(auditEventRepository);
-    }
-
-    @Test
-    void findByUserId_whenSuperAdmin_shouldReturnGlobalUserAuditEvents() {
-        Pageable pageable = PageRequest.of(0, 50);
-        AuditEventEntity event = auditEventEntity();
-
-        when(auditEventRepository.findByUser_IdOrderByCreatedAtDesc(
-                USER_ID,
-                pageable
-        )).thenReturn(new PageImpl<>(List.of(event)));
-
-        Page<AuditEventResponse> response =
-                auditEventQueryService.findByUserId(
-                        USER_ID,
-                        superAdminPrincipal(),
-                        pageable
-                );
-
-        assertThat(response.getContent()).hasSize(1);
-
-        AuditEventResponse item = response.getContent().getFirst();
-
-        assertThat(item.id()).isEqualTo(AUDIT_EVENT_ID);
-        assertThat(item.userId()).isEqualTo(USER_ID);
-        assertThat(item.organizationId()).isEqualTo(ORGANIZATION_ID);
-        assertThat(item.userEmail()).isEqualTo("admin@test.com");
-
-        verify(auditEventRepository).findByUser_IdOrderByCreatedAtDesc(
-                USER_ID,
-                pageable
-        );
-        verifyNoMoreInteractions(auditEventRepository);
-    }
-
-    @Test
-    void findAll_shouldReturnAuditEventWithoutUserWhenUserIsNull() {
-        Pageable pageable = PageRequest.of(0, 50);
-        AuditEventEntity event = auditEventEntity();
-        event.setUser(null);
-
-        when(auditEventRepository.findByOrganizationIdOrderByCreatedAtDesc(
-                ORGANIZATION_ID,
-                pageable
-        )).thenReturn(new PageImpl<>(List.of(event)));
-
-        Page<AuditEventResponse> response =
-                auditEventQueryService.findAll(adminPrincipal(), pageable);
-
-        assertThat(response.getContent()).hasSize(1);
-
-        AuditEventResponse item = response.getContent().getFirst();
-
-        assertThat(item.id()).isEqualTo(AUDIT_EVENT_ID);
-        assertThat(item.userId()).isNull();
-        assertThat(item.userEmail()).isNull();
-        assertThat(item.organizationId()).isEqualTo(ORGANIZATION_ID);
-
-        verify(auditEventRepository).findByOrganizationIdOrderByCreatedAtDesc(
-                ORGANIZATION_ID,
-                pageable
-        );
-        verifyNoMoreInteractions(auditEventRepository);
     }
 
     private AuditEventEntity auditEventEntity() {

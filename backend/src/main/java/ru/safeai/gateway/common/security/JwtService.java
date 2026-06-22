@@ -7,6 +7,8 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
+import ru.safeai.gateway.user.entity.RoleEntity;
+import ru.safeai.gateway.user.entity.UserEntity;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -44,5 +46,24 @@ public class JwtService {
                 .build();
 
         return jwtEncoder.encode(JwtEncoderParameters.from(headers, claims)).getTokenValue();
+    }
+
+    public String generateAccessToken(UserEntity user) {
+        SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
+                user.getId(),
+                user.getOrganization().getId(),
+                user.getEmail(),
+                user.getPasswordHash(),
+                user.isEnabled(),
+                user.getTokenVersion(),
+                RoleAuthorityMapper.toAuthorities(
+                        user.getRoles()
+                                .stream()
+                                .map(RoleEntity::getName)
+                                .toList()
+                )
+        );
+
+        return generateToken(principal);
     }
 }

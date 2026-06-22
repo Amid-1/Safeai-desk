@@ -11,6 +11,7 @@ import {
 import type { User } from '../api/userApi'
 import type { AuthUser } from '../api/authApi'
 import { getApiErrorMessage } from '../api/http'
+import { formatDateTime } from '../utils/format'
 
 type Role = 'USER' | 'ADMIN'
 type UserFilter = 'ALL' | 'ADMIN' | 'USER'
@@ -385,7 +386,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                     </span>
                                 </td>
 
-                                <td>{user.createdAt}</td>
+                                <td>{formatDateTime(user.createdAt)}</td>
 
                                 <td>
                                     {isSuperAdminUser ? (

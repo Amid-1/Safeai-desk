@@ -8,6 +8,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
 import ru.safeai.gateway.audit.service.AuditEventQueryService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -25,6 +26,7 @@ public class AuditController {
     @GetMapping
     public Page<AuditEventResponse> findAll(
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser,
+            @ModelAttribute AuditEventFilter filter,
             @PageableDefault(
                     size = 50,
                     sort = "createdAt",
@@ -32,7 +34,7 @@ public class AuditController {
             )
             Pageable pageable
     ) {
-        return auditEventQueryService.findAll(currentUser, pageable);
+        return auditEventQueryService.findAll(currentUser, filter, pageable);
     }
 
     @GetMapping("/users/{userId}")

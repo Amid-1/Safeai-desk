@@ -145,6 +145,7 @@ class AuditControllerSecurityTest {
     private void mockServices() {
         when(auditEventQueryService.findAll(
                 any(SafeAiUserPrincipal.class),
+                any(ru.safeai.gateway.audit.dto.AuditEventFilter.class),
                 any(Pageable.class)
         )).thenReturn(new PageImpl<>(List.of()));
 

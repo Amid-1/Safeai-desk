@@ -1,17 +1,17 @@
 package ru.safeai.gateway.auth.service;
 
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.safeai.gateway.auth.dto.AuthUserResponse;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
-import ru.safeai.gateway.auth.dto.LoginResponse;
-import ru.safeai.gateway.auth.mapper.AuthUserMapper;
+import ru.safeai.gateway.auth.entity.RefreshTokenEntity;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
@@ -32,12 +32,18 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final AuthEventService authEventService;
-    private final AuthUserMapper authUserMapper;
     private final UserRepository userRepository;
     private final LoginRateLimitService loginRateLimitService;
     private final ClientIpResolver clientIpResolver;
+    private final RefreshTokenService refreshTokenService;
+    private final AuthCookieService authCookieService;
 
-    public LoginResponse login(LoginRequest request, HttpServletRequest httpRequest) {
+    @Transactional
+    public CurrentUserResponse login(
+            LoginRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse response
+    ) {
         Objects.requireNonNull(request, "request не должен быть null");
 
         String email = Objects.requireNonNull(request.email(), "email не должен быть null")
@@ -58,20 +64,71 @@ public class AuthService {
                 throw new IllegalStateException("Некорректный тип principal после авторизации");
             }
 
-            String token = jwtService.generateToken(principal);
+            UserEntity user = userRepository.findByIdWithRolesAndOrganization(principal.getId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Пользователь не найден: " + principal.getId()
+                    ));
+
+            String accessToken = jwtService.generateAccessToken(user);
+            String refreshToken = refreshTokenService.create(user, httpRequest);
+
+            authCookieService.addAccessTokenCookie(response, accessToken);
+            authCookieService.addRefreshTokenCookie(response, refreshToken);
 
             authEventService.loginSuccess(principal, httpRequest);
-
             loginRateLimitService.resetEmailLimit(email);
 
-            AuthUserResponse user = authUserMapper.toResponse(principal);
-
-            return new LoginResponse(token, "Bearer", user);
+            return toCurrentUserResponse(user);
 
         } catch (AuthenticationException exception) {
             authEventService.loginFailed(email, httpRequest);
             throw exception;
         }
+    }
+
+    @Transactional
+    public void refresh(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
+        String rawRefreshToken = extractCookieValue(
+                request,
+                AuthCookieService.REFRESH_TOKEN_COOKIE
+        );
+
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            throw new ResourceNotFoundException("Refresh token не найден");
+        }
+
+        RefreshTokenEntity refreshToken = refreshTokenService.validate(rawRefreshToken);
+
+        UserEntity user = userRepository.findByIdWithRolesAndOrganization(
+                        refreshToken.getUser().getId()
+                )
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Пользователь не найден: " + refreshToken.getUser().getId()
+                ));
+
+        String newAccessToken = jwtService.generateAccessToken(user);
+
+        authCookieService.addAccessTokenCookie(response, newAccessToken);
+    }
+
+    @Transactional
+    public void logout(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
+        String rawRefreshToken = extractCookieValue(
+                request,
+                AuthCookieService.REFRESH_TOKEN_COOKIE
+        );
+
+        if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
+            refreshTokenService.revoke(rawRefreshToken);
+        }
+
+        authCookieService.clearAuthCookies(response);
     }
 
     @Transactional(readOnly = true)
@@ -81,6 +138,10 @@ public class AuthService {
                         "Пользователь не найден: " + principal.getId()
                 ));
 
+        return toCurrentUserResponse(user);
+    }
+
+    private CurrentUserResponse toCurrentUserResponse(UserEntity user) {
         Set<String> roles = user.getRoles()
                 .stream()
                 .map(RoleEntity::getName)
@@ -94,5 +155,21 @@ public class AuthService {
                 user.isEnabled(),
                 roles
         );
+    }
+
+    private String extractCookieValue(HttpServletRequest request, String cookieName) {
+        Cookie[] cookies = request.getCookies();
+
+        if (cookies == null) {
+            return null;
+        }
+
+        for (Cookie cookie : cookies) {
+            if (cookieName.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+
+        return null;
     }
 }

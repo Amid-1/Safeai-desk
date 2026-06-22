@@ -5,20 +5,24 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.mock.web.MockHttpServletRequest;
+import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
-import ru.safeai.gateway.auth.dto.LoginResponse;
-import ru.safeai.gateway.auth.mapper.AuthUserMapper;
 import ru.safeai.gateway.common.security.ClientIpResolver;
-import ru.safeai.gateway.ratelimit.LoginRateLimitService;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.organization.entity.OrganizationEntity;
+import ru.safeai.gateway.ratelimit.LoginRateLimitService;
+import ru.safeai.gateway.user.entity.RoleEntity;
+import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -46,26 +50,32 @@ class AuthServiceTest {
     @Mock
     private LoginRateLimitService loginRateLimitService;
 
+    @Mock
+    private RefreshTokenService refreshTokenService;
+
+    @Mock
+    private AuthCookieService authCookieService;
+
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
-        AuthUserMapper authUserMapper = new AuthUserMapper();
         ClientIpResolver clientIpResolver = new ClientIpResolver();
 
         authService = new AuthService(
                 authenticationManager,
                 jwtService,
                 authEventService,
-                authUserMapper,
                 userRepository,
                 loginRateLimitService,
-                clientIpResolver
+                clientIpResolver,
+                refreshTokenService,
+                authCookieService
         );
     }
 
     @Test
-    void loginWhenCredentialsAreValidReturnsTokenAndUser() {
+    void loginWhenCredentialsAreValidReturnsCurrentUserAndSetsCookies() {
         UUID userId = UUID.randomUUID();
         UUID organizationId = UUID.randomUUID();
 
@@ -91,25 +101,38 @@ class AuthServiceTest {
                         principal.getAuthorities()
                 );
 
+        UserEntity user = userEntity(userId, organizationId);
+
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenReturn(authentication);
 
-        when(jwtService.generateToken(principal))
-                .thenReturn("test-jwt-token");
+        when(userRepository.findByIdWithRolesAndOrganization(userId))
+                .thenReturn(Optional.of(user));
+
+        when(jwtService.generateAccessToken(user))
+                .thenReturn("access-token");
+
+        when(jwtService.generateAccessToken(user))
+                .thenReturn("access-token");
+
+        when(refreshTokenService.create(
+                eq(user),
+                any(MockHttpServletRequest.class)
+        )).thenReturn("refresh-token");
 
         MockHttpServletRequest httpRequest = new MockHttpServletRequest();
         httpRequest.setRemoteAddr("127.0.0.1");
 
-        LoginResponse response = authService.login(request, httpRequest);
+        MockHttpServletResponse httpResponse = new MockHttpServletResponse();
 
-        assertThat(response.token()).isEqualTo("test-jwt-token");
-        assertThat(response.tokenType()).isEqualTo("Bearer");
+        CurrentUserResponse response = authService.login(request, httpRequest, httpResponse);
 
-        assertThat(response.user().id()).isEqualTo(userId);
-        assertThat(response.user().organizationId()).isEqualTo(organizationId);
-        assertThat(response.user().email()).isEqualTo("admin@test.com");
-        assertThat(response.user().enabled()).isTrue();
-        assertThat(response.user().roles()).containsExactly("ADMIN");
+        assertThat(response.id()).isEqualTo(userId);
+        assertThat(response.organizationId()).isEqualTo(organizationId);
+        assertThat(response.email()).isEqualTo("admin@test.com");
+        assertThat(response.fullName()).isEqualTo("Demo Admin");
+        assertThat(response.enabled()).isTrue();
+        assertThat(response.roles()).containsExactly("ADMIN");
 
         verify(loginRateLimitService).checkAllowed("admin@test.com", "127.0.0.1");
 
@@ -119,10 +142,15 @@ class AuthServiceTest {
                         && "admin123".equals(auth.getCredentials())
         ));
 
+        verify(authCookieService).addAccessTokenCookie(httpResponse, "access-token");
+        verify(authCookieService).addRefreshTokenCookie(httpResponse, "refresh-token");
+
         verify(authEventService).loginSuccess(
                 eq(principal),
                 any(MockHttpServletRequest.class)
         );
+
+        verify(loginRateLimitService).resetEmailLimit("admin@test.com");
     }
 
     @Test
@@ -138,7 +166,9 @@ class AuthServiceTest {
         MockHttpServletRequest httpRequest = new MockHttpServletRequest();
         httpRequest.setRemoteAddr("127.0.0.1");
 
-        assertThatThrownBy(() -> authService.login(request, httpRequest))
+        MockHttpServletResponse httpResponse = new MockHttpServletResponse();
+
+        assertThatThrownBy(() -> authService.login(request, httpRequest, httpResponse))
                 .isInstanceOf(BadCredentialsException.class);
 
         verify(loginRateLimitService).checkAllowed("admin@test.com", "127.0.0.1");
@@ -147,5 +177,27 @@ class AuthServiceTest {
                 eq("admin@test.com"),
                 any(MockHttpServletRequest.class)
         );
+    }
+
+    private UserEntity userEntity(UUID userId, UUID organizationId) {
+        OrganizationEntity organization = new OrganizationEntity();
+        organization.setId(organizationId);
+        organization.setName("Test Org");
+
+        RoleEntity role = new RoleEntity();
+        role.setId(UUID.randomUUID());
+        role.setName("ADMIN");
+
+        UserEntity user = new UserEntity();
+        user.setId(userId);
+        user.setOrganization(organization);
+        user.setEmail("admin@test.com");
+        user.setPasswordHash("encoded-password");
+        user.setFullName("Demo Admin");
+        user.setEnabled(true);
+        user.setTokenVersion(0L);
+        user.setRoles(Set.of(role));
+
+        return user;
     }
 }
