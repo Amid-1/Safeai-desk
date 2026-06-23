@@ -77,7 +77,7 @@ class RedisRateLimitServiceTest {
     @Test
     void checkAiMessageAllowed_whenUserLimitExceededFirstTime_shouldPublishEventAndThrow() {
         when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(new RateLimitResult(20L, 3600L));
+                .thenReturn(new RateLimitResult(21L, 3600L));
 
         assertThatThrownBy(() -> service.checkAiMessageAllowed(userPrincipal()))
                 .isInstanceOf(RateLimitExceededException.class)
@@ -89,7 +89,7 @@ class RedisRateLimitServiceTest {
     @Test
     void checkAiMessageAllowed_whenUserAlreadyExceededLimit_shouldNotPublishEventAgain() {
         when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(new RateLimitResult(20L, 3600L));
+                .thenReturn(new RateLimitResult(22L, 3600L));
 
         assertThatThrownBy(() -> service.checkAiMessageAllowed(userPrincipal()))
                 .isInstanceOf(RateLimitExceededException.class);
