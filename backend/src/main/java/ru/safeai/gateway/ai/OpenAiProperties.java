@@ -9,6 +9,7 @@ public record OpenAiProperties(
         String baseUrl,
         String apiKey,
         String model,
+        Integer maxOutputTokens,
         Duration connectTimeout,
         Duration readTimeout
 ) {
@@ -22,6 +23,10 @@ public record OpenAiProperties(
                 ? "gpt-4.1"
                 : model;
 
+        maxOutputTokens = maxOutputTokens == null || maxOutputTokens <= 0
+                ? 1024
+                : maxOutputTokens;
+
         connectTimeout = connectTimeout == null
                 ? Duration.ofSeconds(5)
                 : connectTimeout;
@@ -34,10 +39,6 @@ public record OpenAiProperties(
     public void validate() {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("OPENAI_API_KEY не задан");
-        }
-
-        if (model == null || model.isBlank()) {
-            throw new IllegalStateException("OPENAI_MODEL не задан");
         }
     }
 }

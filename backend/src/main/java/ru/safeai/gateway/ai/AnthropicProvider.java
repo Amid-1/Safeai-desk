@@ -21,6 +21,7 @@ import java.util.Map;
         havingValue = "anthropic"
 )
 public class AnthropicProvider implements AiProvider {
+
     private final AnthropicProperties properties;
     private final RestClient client;
 
@@ -52,6 +53,8 @@ public class AnthropicProvider implements AiProvider {
                 request.userMessage().length()
         );
 
+        long startedAt = System.nanoTime();
+
         try {
             JsonNode response = client.post()
                     .uri("/messages")
@@ -62,6 +65,21 @@ public class AnthropicProvider implements AiProvider {
                     .retrieve()
                     .body(JsonNode.class);
 
+            int inputTokens = AiProviderSupport.extractInputTokens(response);
+            int outputTokens = AiProviderSupport.extractOutputTokens(response);
+            long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
+
+            log.info(
+                    "Anthropic response received: userId={}, organizationId={}, chatId={}, model={}, durationMs={}, inputTokens={}, outputTokens={}",
+                    request.userId(),
+                    request.organizationId(),
+                    request.chatId(),
+                    properties.model(),
+                    durationMs,
+                    inputTokens,
+                    outputTokens
+            );
+
             String content = extractText(response);
 
             if (content.isBlank()) {
@@ -71,13 +89,20 @@ public class AnthropicProvider implements AiProvider {
             return new AiChatResponse(
                     content,
                     properties.model(),
-                    AiProviderSupport.extractInputTokens(response),
-                    AiProviderSupport.extractOutputTokens(response),
+                    inputTokens,
+                    outputTokens,
                     BigDecimal.ZERO
             );
         } catch (ResourceAccessException exception) {
             throw new AiProviderTimeoutException("Anthropic provider timeout", exception);
         } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 429) {
+                throw new AiProviderRateLimitedException(
+                        "Anthropic API rate limited: status=" + exception.getStatusCode(),
+                        exception
+                );
+            }
+
             throw new AiProviderException(
                     "Anthropic API error: status=" + exception.getStatusCode(),
                     exception

@@ -133,8 +133,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidJson(
+            HttpMessageNotReadableException exception,
             HttpServletRequest request
     ) {
+        log.debug("Invalid JSON body for request {}", request.getRequestURI(), exception);
+
         return buildResponse(
                 HttpStatus.BAD_REQUEST,
                 "BAD_REQUEST",

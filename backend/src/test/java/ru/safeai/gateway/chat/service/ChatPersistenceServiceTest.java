@@ -20,6 +20,7 @@ import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
+import ru.safeai.gateway.chat.entity.ChatMessageStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -159,9 +160,13 @@ class ChatPersistenceServiceTest {
         when(chatMessageRepository.findBySession_IdOrderByCreatedAtAscIdAsc(CHAT_ID))
                 .thenReturn(List.of(userMessage, assistantMessage));
 
+        when(chatMessageRepository.findById(userMessage.getId()))
+                .thenReturn(Optional.of(userMessage));
+
         ChatDetailsResponse response =
                 chatPersistenceService.saveAssistantMessageAndReturnChat(
                         CHAT_ID,
+                        userMessage.getId(),
                         aiResponse,
                         currentUser
                 );
@@ -293,6 +298,7 @@ class ChatPersistenceServiceTest {
         message.setOutputTokens(outputTokens);
         message.setCostUsd(costUsd);
         message.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+        message.setStatus(ChatMessageStatus.COMPLETED);
 
         return message;
     }

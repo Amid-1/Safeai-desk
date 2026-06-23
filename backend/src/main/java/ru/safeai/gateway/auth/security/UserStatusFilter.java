@@ -40,7 +40,8 @@ public class UserStatusFilter extends OncePerRequestFilter {
 
         boolean valid = userStatusCacheService.getStatus(principal.getId())
                 .map(status ->
-                        status.enabled()
+                        status.userEnabled()
+                                && status.organizationEnabled()
                                 && status.tokenVersion() == principal.getTokenVersion()
                 )
                 .orElse(false);

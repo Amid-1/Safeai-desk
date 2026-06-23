@@ -1,4 +1,4 @@
-/*backend/src/main/resources/db/migration/V14__add_chat_message_constraints.sql*/
+/*backend/src/main/resources/db/migration/V15__add_chat_message_constraints.sql*/
 alter table chat_messages
     add constraint chk_chat_messages_role
         check (role in ('USER', 'ASSISTANT', 'SYSTEM'));

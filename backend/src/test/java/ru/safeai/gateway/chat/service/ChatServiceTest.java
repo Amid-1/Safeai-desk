@@ -19,8 +19,8 @@ import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
-import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
@@ -38,9 +38,20 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ChatServiceTest {
 
-    private static final UUID USER_ID = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-    private static final UUID ORGANIZATION_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private static final UUID CHAT_ID = UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
+    private static final UUID USER_ID =
+            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+    private static final UUID ORGANIZATION_ID =
+            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+    private static final UUID CHAT_ID =
+            UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
+
+    private static final Instant CREATED_AT =
+            Instant.parse("2026-06-12T12:00:00Z");
+
+    private static final Instant UPDATED_AT =
+            Instant.parse("2026-06-12T12:01:00Z");
 
     @Mock
     private ChatSessionRepository chatSessionRepository;
@@ -65,10 +76,11 @@ class ChatServiceTest {
 
     private ChatService chatService;
 
+    @Mock
+    private ChatLockService chatLockService;
+
     @BeforeEach
     void setUp() {
-        ChatMapper chatMapper = new ChatMapper();
-
         chatService = new ChatService(
                 chatSessionRepository,
                 chatMessageRepository,
@@ -76,18 +88,18 @@ class ChatServiceTest {
                 aiProvider,
                 auditEventService,
                 chatPersistenceService,
-                chatMapper,
-                rateLimitService
+                new ChatMapper(),
+                rateLimitService,
+                chatLockService
         );
     }
 
     @Test
     void create_shouldCreateChatForCurrentUser() {
         SafeAiUserPrincipal currentUser = currentUser();
-        UserEntity user = userEntity();
 
         when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(user));
+                .thenReturn(Optional.of(userEntity()));
 
         when(chatSessionRepository.save(any(ChatSessionEntity.class)))
                 .thenAnswer(invocation -> persistSession(invocation.getArgument(0)));
@@ -97,10 +109,12 @@ class ChatServiceTest {
                 currentUser
         );
 
-        assertThat(response.id()).isNotNull();
+        assertThat(response.id()).isEqualTo(CHAT_ID);
         assertThat(response.title()).isEqualTo("Новый тестовый чат");
-        assertThat(response.createdAt()).isNotNull();
+        assertThat(response.createdAt()).isEqualTo(CREATED_AT);
+        assertThat(response.updatedAt()).isEqualTo(UPDATED_AT);
 
+        verify(userRepository).findById(USER_ID);
         verify(chatSessionRepository).save(any(ChatSessionEntity.class));
 
         verify(auditEventService).record(
@@ -109,6 +123,47 @@ class ChatServiceTest {
                 eq(AuditEventType.CHAT_CREATED),
                 anyMap()
         );
+
+        verifyNoMoreInteractions(userRepository, chatSessionRepository, auditEventService);
+    }
+
+    @Test
+    void create_shouldUseDefaultTitleWhenTitleIsBlank() {
+        SafeAiUserPrincipal currentUser = currentUser();
+
+        when(userRepository.findById(USER_ID))
+                .thenReturn(Optional.of(userEntity()));
+
+        when(chatSessionRepository.save(any(ChatSessionEntity.class)))
+                .thenAnswer(invocation -> persistSession(invocation.getArgument(0)));
+
+        ChatResponse response = chatService.create(
+                new CreateChatRequest("   "),
+                currentUser
+        );
+
+        assertThat(response.title()).isEqualTo("Новый чат");
+
+        verify(userRepository).findById(USER_ID);
+        verify(chatSessionRepository).save(any(ChatSessionEntity.class));
+    }
+
+    @Test
+    void create_shouldThrowResourceNotFoundWhenCurrentUserNotFound() {
+        SafeAiUserPrincipal currentUser = currentUser();
+
+        when(userRepository.findById(USER_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatService.create(
+                new CreateChatRequest("Чат"),
+                currentUser
+        ))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("Пользователь не найден");
+
+        verify(userRepository).findById(USER_ID);
+        verifyNoInteractions(chatSessionRepository, auditEventService);
     }
 
     @Test
@@ -123,8 +178,11 @@ class ChatServiceTest {
                 List.of()
         );
 
+        UUID userMessageId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+
         ChatProcessingContext context = new ChatProcessingContext(
                 CHAT_ID,
+                userMessageId,
                 aiRequest
         );
 
@@ -139,9 +197,16 @@ class ChatServiceTest {
         ChatDetailsResponse expectedResponse = new ChatDetailsResponse(
                 CHAT_ID,
                 "Первый тестовый чат",
-                Instant.parse("2026-06-12T12:00:00Z"),
+                CREATED_AT,
+                UPDATED_AT,
                 List.of()
         );
+
+        doNothing().when(chatPersistenceService)
+                .assertOwnedChatExists(CHAT_ID, currentUser);
+
+        doNothing().when(rateLimitService)
+                .checkAiMessageAllowed(currentUser);
 
         when(chatPersistenceService.saveUserMessageAndPrepareAiRequest(
                 eq(CHAT_ID),
@@ -154,31 +219,98 @@ class ChatServiceTest {
 
         when(chatPersistenceService.saveAssistantMessageAndReturnChat(
                 CHAT_ID,
+                userMessageId,
                 aiResponse,
                 currentUser
         )).thenReturn(expectedResponse);
 
         ChatDetailsResponse response = chatService.sendMessage(
                 CHAT_ID,
-                new SendMessageRequest("Привет"),
+                new SendMessageRequest(" Привет "),
                 currentUser
         );
 
         assertThat(response).isEqualTo(expectedResponse);
 
+        verify(chatPersistenceService).assertOwnedChatExists(CHAT_ID, currentUser);
+        verify(rateLimitService).checkAiMessageAllowed(currentUser);
+
         verify(chatPersistenceService).saveUserMessageAndPrepareAiRequest(
                 eq(CHAT_ID),
-                any(SendMessageRequest.class),
+                argThat(request -> request.content().equals("Привет")),
                 eq(currentUser)
         );
-
-        verify(rateLimitService).checkAiMessageAllowed(currentUser);
 
         verify(aiProvider).sendMessage(aiRequest);
 
         verify(chatPersistenceService).saveAssistantMessageAndReturnChat(
                 CHAT_ID,
+                userMessageId,
                 aiResponse,
+                currentUser
+        );
+    }
+
+    @Test
+    void sendMessage_shouldAuditFailureAndRethrowWhenAiProviderFails() {
+        SafeAiUserPrincipal currentUser = currentUser();
+
+        AiChatRequest aiRequest = new AiChatRequest(
+                USER_ID,
+                ORGANIZATION_ID,
+                CHAT_ID,
+                "Привет",
+                List.of()
+        );
+
+        UUID userMessageId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+        ChatProcessingContext context = new ChatProcessingContext(
+                CHAT_ID,
+                userMessageId,
+                aiRequest
+        );
+
+        RuntimeException exception = new RuntimeException("AI unavailable");
+
+        when(chatPersistenceService.saveUserMessageAndPrepareAiRequest(
+                eq(CHAT_ID),
+                any(SendMessageRequest.class),
+                eq(currentUser)
+        )).thenReturn(context);
+
+        when(aiProvider.sendMessage(aiRequest))
+                .thenThrow(exception);
+
+        assertThatThrownBy(() -> chatService.sendMessage(
+                CHAT_ID,
+                new SendMessageRequest("Привет"),
+                currentUser
+        ))
+                .isSameAs(exception);
+
+        verify(chatPersistenceService).assertOwnedChatExists(CHAT_ID, currentUser);
+        verify(rateLimitService).checkAiMessageAllowed(currentUser);
+        verify(aiProvider).sendMessage(aiRequest);
+
+        verify(auditEventService).record(
+                eq(USER_ID),
+                eq(ORGANIZATION_ID),
+                eq(AuditEventType.AI_RESPONSE_FAILED),
+                anyMap()
+        );
+
+        verify(chatPersistenceService, never()).saveAssistantMessageAndReturnChat(
+                any(),
+                any(),
+                any(),
+                any()
+        );
+
+        verify(chatLockService).lock(CHAT_ID);
+        verify(chatLockService).unlock(CHAT_ID);
+        verify(chatPersistenceService).markUserMessageFailed(
+                userMessageId,
                 currentUser
         );
     }
@@ -193,6 +325,8 @@ class ChatServiceTest {
         assertThatThrownBy(() -> chatService.findById(CHAT_ID, currentUser))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Чат не найден");
+
+        verify(chatSessionRepository).findByIdAndUser_Id(CHAT_ID, USER_ID);
     }
 
     private SafeAiUserPrincipal currentUser() {
@@ -216,12 +350,14 @@ class ChatServiceTest {
     }
 
     private ChatSessionEntity persistSession(ChatSessionEntity session) {
-        if (session.getId() == null) {
-            session.setId(CHAT_ID);
-        }
+        session.setId(CHAT_ID);
 
         if (session.getCreatedAt() == null) {
-            session.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+            session.setCreatedAt(CREATED_AT);
+        }
+
+        if (session.getUpdatedAt() == null) {
+            session.setUpdatedAt(UPDATED_AT);
         }
 
         return session;

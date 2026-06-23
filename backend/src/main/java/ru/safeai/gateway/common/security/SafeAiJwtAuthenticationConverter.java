@@ -42,6 +42,10 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
 
         List<String> roles = jwt.getClaimAsStringList("roles");
 
+        if (roles == null || roles.isEmpty()) {
+            throw new BadJwtException("JWT claim is missing: roles");
+        }
+
         Set<SimpleGrantedAuthority> authorities = RoleAuthorityMapper.toAuthorities(roles);
 
         SafeAiUserPrincipal principal = new SafeAiUserPrincipal(

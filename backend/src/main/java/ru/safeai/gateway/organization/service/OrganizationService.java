@@ -102,6 +102,7 @@ public class OrganizationService {
         return new OrganizationResponse(
                 entity.getId(),
                 entity.getName(),
+                entity.isEnabled(),
                 entity.getCreatedAt()
         );
     }

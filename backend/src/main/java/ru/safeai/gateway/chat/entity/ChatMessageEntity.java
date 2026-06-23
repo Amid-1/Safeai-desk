@@ -44,6 +44,10 @@ public class ChatMessageEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 50)
+    private ChatMessageStatus status;
+
     @PrePersist
     void prePersist() {
         if (id == null) {
@@ -52,6 +56,10 @@ public class ChatMessageEntity {
 
         if (createdAt == null) {
             createdAt = Instant.now();
+        }
+
+        if (status == null) {
+            status = ChatMessageStatus.COMPLETED;
         }
     }
 }

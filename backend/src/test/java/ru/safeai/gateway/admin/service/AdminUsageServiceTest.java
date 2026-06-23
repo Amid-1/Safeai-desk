@@ -10,21 +10,20 @@ import ru.safeai.gateway.chat.dto.UsageDailySummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageModelSummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageUserSummaryResponse;
-import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.UsageDailySummaryProjection;
+import ru.safeai.gateway.chat.repository.UsageQueryRepository;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AdminUsageServiceTest {
@@ -44,8 +43,16 @@ class AdminUsageServiceTest {
     private static final UUID PLATFORM_ORGANIZATION_ID =
             UUID.fromString("00000000-0000-0000-0000-000000000001");
 
+    private static final Instant DATE_FROM =
+            Instant.parse("2026-06-01T00:00:00Z");
+
+    private static final Instant DATE_TO =
+            Instant.parse("2026-07-01T00:00:00Z");
+
+    private static final String MODEL = "mock-safeai";
+
     @Mock
-    private ChatMessageRepository chatMessageRepository;
+    private UsageQueryRepository usageQueryRepository;
 
     @InjectMocks
     private AdminUsageService adminUsageService;
@@ -55,33 +62,30 @@ class AdminUsageServiceTest {
         UUID userId = UUID.randomUUID();
 
         List<UsageSummaryResponse> expected = List.of(
-                new UsageSummaryResponse(
-                        userId,
-                        "admin@test.com",
-                        "mock-safeai",
-                        10L,
-                        20L,
-                        BigDecimal.ZERO
-                )
+                new UsageSummaryResponse(userId, "admin@test.com", MODEL, 10L, 20L, BigDecimal.ZERO)
         );
 
-        when(chatMessageRepository.findUsageByOrganizationId(ORGANIZATION_ID))
-                .thenReturn(expected);
+        when(usageQueryRepository.findUsageByOrganizationId(
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
+        )).thenReturn(expected);
 
         List<UsageSummaryResponse> result =
-                adminUsageService.getUsageSummary(adminPrincipal());
+                adminUsageService.getUsageSummary(DATE_FROM, DATE_TO, MODEL, adminPrincipal());
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).userId()).isEqualTo(userId);
-        assertThat(result.get(0).userEmail()).isEqualTo("admin@test.com");
-        assertThat(result.get(0).model()).isEqualTo("mock-safeai");
-        assertThat(result.get(0).inputTokens()).isEqualTo(10L);
-        assertThat(result.get(0).outputTokens()).isEqualTo(20L);
-        assertThat(result.get(0).totalTokens()).isEqualTo(30L);
-        assertThat(result.get(0).costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(result.getFirst().userId()).isEqualTo(userId);
+        assertThat(result.getFirst().totalTokens()).isEqualTo(30L);
 
-        verify(chatMessageRepository).findUsageByOrganizationId(ORGANIZATION_ID);
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageByOrganizationId(
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
+        );
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
@@ -89,27 +93,21 @@ class AdminUsageServiceTest {
         UUID userId = UUID.randomUUID();
 
         List<UsageSummaryResponse> expected = List.of(
-                new UsageSummaryResponse(
-                        userId,
-                        "admin@test.com",
-                        "mock-safeai",
-                        10L,
-                        20L,
-                        BigDecimal.ZERO
-                )
+                new UsageSummaryResponse(userId, "admin@test.com", MODEL, 10L, 20L, BigDecimal.ZERO)
         );
 
-        when(chatMessageRepository.findUsageSummary()).thenReturn(expected);
+        when(usageQueryRepository.findUsageSummary(DATE_FROM, DATE_TO, MODEL))
+                .thenReturn(expected);
 
         List<UsageSummaryResponse> result =
-                adminUsageService.getUsageSummary(superAdminPrincipal());
+                adminUsageService.getUsageSummary(DATE_FROM, DATE_TO, MODEL, superAdminPrincipal());
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).userId()).isEqualTo(userId);
-        assertThat(result.get(0).totalTokens()).isEqualTo(30L);
+        assertThat(result.getFirst().userId()).isEqualTo(userId);
+        assertThat(result.getFirst().totalTokens()).isEqualTo(30L);
 
-        verify(chatMessageRepository).findUsageSummary();
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageSummary(DATE_FROM, DATE_TO, MODEL);
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
@@ -117,30 +115,28 @@ class AdminUsageServiceTest {
         UUID userId = UUID.randomUUID();
 
         List<UsageUserSummaryResponse> expected = List.of(
-                new UsageUserSummaryResponse(
-                        userId,
-                        "admin@test.com",
-                        5L,
-                        15L,
-                        BigDecimal.ZERO
-                )
+                new UsageUserSummaryResponse(userId, "admin@test.com", 5L, 15L, BigDecimal.ZERO)
         );
 
-        when(chatMessageRepository.findUsageByUsersByOrganizationId(ORGANIZATION_ID))
-                .thenReturn(expected);
+        when(usageQueryRepository.findUsageByUsersByOrganizationId(
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO
+        )).thenReturn(expected);
 
         List<UsageUserSummaryResponse> result =
-                adminUsageService.getUsageByUsers(adminPrincipal());
+                adminUsageService.getUsageByUsers(DATE_FROM, DATE_TO, adminPrincipal());
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).userId()).isEqualTo(userId);
-        assertThat(result.get(0).userEmail()).isEqualTo("admin@test.com");
-        assertThat(result.get(0).inputTokens()).isEqualTo(5L);
-        assertThat(result.get(0).outputTokens()).isEqualTo(15L);
-        assertThat(result.get(0).totalTokens()).isEqualTo(20L);
+        assertThat(result.getFirst().userId()).isEqualTo(userId);
+        assertThat(result.getFirst().totalTokens()).isEqualTo(20L);
 
-        verify(chatMessageRepository).findUsageByUsersByOrganizationId(ORGANIZATION_ID);
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageByUsersByOrganizationId(
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO
+        );
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
@@ -148,116 +144,107 @@ class AdminUsageServiceTest {
         UUID userId = UUID.randomUUID();
 
         List<UsageUserSummaryResponse> expected = List.of(
-                new UsageUserSummaryResponse(
-                        userId,
-                        "admin@test.com",
-                        5L,
-                        15L,
-                        BigDecimal.ZERO
-                )
+                new UsageUserSummaryResponse(userId, "admin@test.com", 5L, 15L, BigDecimal.ZERO)
         );
 
-        when(chatMessageRepository.findUsageByUsers()).thenReturn(expected);
+        when(usageQueryRepository.findUsageByUsers(DATE_FROM, DATE_TO))
+                .thenReturn(expected);
 
         List<UsageUserSummaryResponse> result =
-                adminUsageService.getUsageByUsers(superAdminPrincipal());
+                adminUsageService.getUsageByUsers(DATE_FROM, DATE_TO, superAdminPrincipal());
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).userId()).isEqualTo(userId);
-        assertThat(result.get(0).totalTokens()).isEqualTo(20L);
+        assertThat(result.getFirst().userId()).isEqualTo(userId);
+        assertThat(result.getFirst().totalTokens()).isEqualTo(20L);
 
-        verify(chatMessageRepository).findUsageByUsers();
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageByUsers(DATE_FROM, DATE_TO);
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
     void getUsageByModels_whenAdmin_shouldReturnOrganizationScopedResult() {
         List<UsageModelSummaryResponse> expected = List.of(
-                new UsageModelSummaryResponse(
-                        "mock-safeai",
-                        7L,
-                        13L,
-                        BigDecimal.ZERO
-                )
+                new UsageModelSummaryResponse(MODEL, 7L, 13L, BigDecimal.ZERO)
         );
 
-        when(chatMessageRepository.findUsageByModelsByOrganizationId(ORGANIZATION_ID))
-                .thenReturn(expected);
+        when(usageQueryRepository.findUsageByModelsByOrganizationId(
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO
+        )).thenReturn(expected);
 
         List<UsageModelSummaryResponse> result =
-                adminUsageService.getUsageByModels(adminPrincipal());
+                adminUsageService.getUsageByModels(DATE_FROM, DATE_TO, adminPrincipal());
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).model()).isEqualTo("mock-safeai");
-        assertThat(result.get(0).inputTokens()).isEqualTo(7L);
-        assertThat(result.get(0).outputTokens()).isEqualTo(13L);
-        assertThat(result.get(0).totalTokens()).isEqualTo(20L);
+        assertThat(result.getFirst().model()).isEqualTo(MODEL);
+        assertThat(result.getFirst().totalTokens()).isEqualTo(20L);
 
-        verify(chatMessageRepository).findUsageByModelsByOrganizationId(ORGANIZATION_ID);
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageByModelsByOrganizationId(
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO
+        );
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
     void getUsageByModels_whenSuperAdmin_shouldReturnGlobalResult() {
         List<UsageModelSummaryResponse> expected = List.of(
-                new UsageModelSummaryResponse(
-                        "mock-safeai",
-                        7L,
-                        13L,
-                        BigDecimal.ZERO
-                )
+                new UsageModelSummaryResponse(MODEL, 7L, 13L, BigDecimal.ZERO)
         );
 
-        when(chatMessageRepository.findUsageByModels()).thenReturn(expected);
+        when(usageQueryRepository.findUsageByModels(DATE_FROM, DATE_TO))
+                .thenReturn(expected);
 
         List<UsageModelSummaryResponse> result =
-                adminUsageService.getUsageByModels(superAdminPrincipal());
+                adminUsageService.getUsageByModels(DATE_FROM, DATE_TO, superAdminPrincipal());
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).model()).isEqualTo("mock-safeai");
-        assertThat(result.get(0).totalTokens()).isEqualTo(20L);
+        assertThat(result.getFirst().model()).isEqualTo(MODEL);
+        assertThat(result.getFirst().totalTokens()).isEqualTo(20L);
 
-        verify(chatMessageRepository).findUsageByModels();
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageByModels(DATE_FROM, DATE_TO);
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
     void getUsageDaily_whenAdmin_shouldReturnOrganizationScopedResult() {
-        UsageDailySummaryProjection projection = usageDailyProjection();
-
-        when(chatMessageRepository.findUsageDailyByOrganizationId(ORGANIZATION_ID))
-                .thenReturn(List.of(projection));
+        when(usageQueryRepository.findUsageDailyByOrganizationId(
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO
+        )).thenReturn(List.of(usageDailyProjection()));
 
         List<UsageDailySummaryResponse> result =
-                adminUsageService.getUsageDaily(adminPrincipal());
+                adminUsageService.getUsageDaily(DATE_FROM, DATE_TO, adminPrincipal());
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).usageDate()).isEqualTo(LocalDate.of(2026, 6, 12));
-        assertThat(result.get(0).inputTokens()).isEqualTo(11L);
-        assertThat(result.get(0).outputTokens()).isEqualTo(22L);
-        assertThat(result.get(0).totalTokens()).isEqualTo(33L);
-        assertThat(result.get(0).costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(result.getFirst().usageDate()).isEqualTo(LocalDate.of(2026, 6, 12));
+        assertThat(result.getFirst().totalTokens()).isEqualTo(33L);
 
-        verify(chatMessageRepository).findUsageDailyByOrganizationId(ORGANIZATION_ID);
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageDailyByOrganizationId(
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO
+        );
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
     void getUsageDaily_whenSuperAdmin_shouldReturnGlobalResult() {
-        UsageDailySummaryProjection projection = usageDailyProjection();
-
-        when(chatMessageRepository.findUsageDaily())
-                .thenReturn(List.of(projection));
+        when(usageQueryRepository.findUsageDaily(DATE_FROM, DATE_TO))
+                .thenReturn(List.of(usageDailyProjection()));
 
         List<UsageDailySummaryResponse> result =
-                adminUsageService.getUsageDaily(superAdminPrincipal());
+                adminUsageService.getUsageDaily(DATE_FROM, DATE_TO, superAdminPrincipal());
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).usageDate()).isEqualTo(LocalDate.of(2026, 6, 12));
-        assertThat(result.get(0).totalTokens()).isEqualTo(33L);
+        assertThat(result.getFirst().usageDate()).isEqualTo(LocalDate.of(2026, 6, 12));
+        assertThat(result.getFirst().totalTokens()).isEqualTo(33L);
 
-        verify(chatMessageRepository).findUsageDaily();
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageDaily(DATE_FROM, DATE_TO);
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
@@ -265,33 +252,38 @@ class AdminUsageServiceTest {
         UUID userId = UUID.randomUUID();
 
         List<UsageSummaryResponse> expected = List.of(
-                new UsageSummaryResponse(
-                        userId,
-                        "admin@test.com",
-                        "mock-safeai",
-                        3L,
-                        4L,
-                        BigDecimal.ZERO
-                )
+                new UsageSummaryResponse(userId, "admin@test.com", MODEL, 3L, 4L, BigDecimal.ZERO)
         );
 
-        when(chatMessageRepository.findUsageByUserIdAndOrganizationId(
+        when(usageQueryRepository.findUsageByUserIdAndOrganizationId(
                 userId,
-                ORGANIZATION_ID
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
         )).thenReturn(expected);
 
         List<UsageSummaryResponse> result =
-                adminUsageService.getUsageByUserId(userId, adminPrincipal());
+                adminUsageService.getUsageByUserId(
+                        userId,
+                        DATE_FROM,
+                        DATE_TO,
+                        MODEL,
+                        adminPrincipal()
+                );
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).userId()).isEqualTo(userId);
-        assertThat(result.get(0).totalTokens()).isEqualTo(7L);
+        assertThat(result.getFirst().userId()).isEqualTo(userId);
+        assertThat(result.getFirst().totalTokens()).isEqualTo(7L);
 
-        verify(chatMessageRepository).findUsageByUserIdAndOrganizationId(
+        verify(usageQueryRepository).findUsageByUserIdAndOrganizationId(
                 userId,
-                ORGANIZATION_ID
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
         );
-        verifyNoMoreInteractions(chatMessageRepository);
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
@@ -299,28 +291,36 @@ class AdminUsageServiceTest {
         UUID userId = UUID.randomUUID();
 
         List<UsageSummaryResponse> expected = List.of(
-                new UsageSummaryResponse(
-                        userId,
-                        "admin@test.com",
-                        "mock-safeai",
-                        3L,
-                        4L,
-                        BigDecimal.ZERO
-                )
+                new UsageSummaryResponse(userId, "admin@test.com", MODEL, 3L, 4L, BigDecimal.ZERO)
         );
 
-        when(chatMessageRepository.findUsageByUserId(userId))
-                .thenReturn(expected);
+        when(usageQueryRepository.findUsageByUserId(
+                userId,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
+        )).thenReturn(expected);
 
         List<UsageSummaryResponse> result =
-                adminUsageService.getUsageByUserId(userId, superAdminPrincipal());
+                adminUsageService.getUsageByUserId(
+                        userId,
+                        DATE_FROM,
+                        DATE_TO,
+                        MODEL,
+                        superAdminPrincipal()
+                );
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).userId()).isEqualTo(userId);
-        assertThat(result.get(0).totalTokens()).isEqualTo(7L);
+        assertThat(result.getFirst().userId()).isEqualTo(userId);
+        assertThat(result.getFirst().totalTokens()).isEqualTo(7L);
 
-        verify(chatMessageRepository).findUsageByUserId(userId);
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageByUserId(
+                userId,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
+        );
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
@@ -328,43 +328,51 @@ class AdminUsageServiceTest {
         UUID userId = UUID.randomUUID();
 
         List<UsageSummaryResponse> expected = List.of(
-                new UsageSummaryResponse(
-                        userId,
-                        "admin@test.com",
-                        "mock-safeai",
-                        8L,
-                        12L,
-                        BigDecimal.ZERO
-                )
+                new UsageSummaryResponse(userId, "admin@test.com", MODEL, 8L, 12L, BigDecimal.ZERO)
         );
 
-        when(chatMessageRepository.findUsageByOrganizationId(ORGANIZATION_ID))
-                .thenReturn(expected);
+        when(usageQueryRepository.findUsageByOrganizationId(
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
+        )).thenReturn(expected);
 
         List<UsageSummaryResponse> result =
                 adminUsageService.getUsageByOrganizationId(
                         ORGANIZATION_ID,
+                        DATE_FROM,
+                        DATE_TO,
+                        MODEL,
                         adminPrincipal()
                 );
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).userId()).isEqualTo(userId);
-        assertThat(result.get(0).totalTokens()).isEqualTo(20L);
+        assertThat(result.getFirst().userId()).isEqualTo(userId);
+        assertThat(result.getFirst().totalTokens()).isEqualTo(20L);
 
-        verify(chatMessageRepository).findUsageByOrganizationId(ORGANIZATION_ID);
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageByOrganizationId(
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
+        );
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
     void getUsageByOrganizationId_whenAdminRequestsOtherOrganization_shouldThrowForbidden() {
         assertThatThrownBy(() -> adminUsageService.getUsageByOrganizationId(
                 OTHER_ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL,
                 adminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessage("Нельзя смотреть usage другой организации");
 
-        verifyNoMoreInteractions(chatMessageRepository);
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     @Test
@@ -372,31 +380,36 @@ class AdminUsageServiceTest {
         UUID userId = UUID.randomUUID();
 
         List<UsageSummaryResponse> expected = List.of(
-                new UsageSummaryResponse(
-                        userId,
-                        "admin@test.com",
-                        "mock-safeai",
-                        8L,
-                        12L,
-                        BigDecimal.ZERO
-                )
+                new UsageSummaryResponse(userId, "admin@test.com", MODEL, 8L, 12L, BigDecimal.ZERO)
         );
 
-        when(chatMessageRepository.findUsageByOrganizationId(OTHER_ORGANIZATION_ID))
-                .thenReturn(expected);
+        when(usageQueryRepository.findUsageByOrganizationId(
+                OTHER_ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
+        )).thenReturn(expected);
 
         List<UsageSummaryResponse> result =
                 adminUsageService.getUsageByOrganizationId(
                         OTHER_ORGANIZATION_ID,
+                        DATE_FROM,
+                        DATE_TO,
+                        MODEL,
                         superAdminPrincipal()
                 );
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).userId()).isEqualTo(userId);
-        assertThat(result.get(0).totalTokens()).isEqualTo(20L);
+        assertThat(result.getFirst().userId()).isEqualTo(userId);
+        assertThat(result.getFirst().totalTokens()).isEqualTo(20L);
 
-        verify(chatMessageRepository).findUsageByOrganizationId(OTHER_ORGANIZATION_ID);
-        verifyNoMoreInteractions(chatMessageRepository);
+        verify(usageQueryRepository).findUsageByOrganizationId(
+                OTHER_ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
+        );
+        verifyNoMoreInteractions(usageQueryRepository);
     }
 
     private UsageDailySummaryProjection usageDailyProjection() {

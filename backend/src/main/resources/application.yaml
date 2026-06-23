@@ -14,6 +14,9 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+    web:
+      pageable:
+        max-page-size: 200
 
   jpa:
     hibernate:
@@ -54,6 +57,7 @@ safeai:
       model: ${OPENAI_MODEL:gpt-4.1}
       connect-timeout: 5s
       read-timeout: 60s
+      max-output-tokens: 1024
 
     anthropic:
       base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/v1}
@@ -77,3 +81,6 @@ safeai:
 
   cors:
     allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+  platform:
+    organization-id: 00000000-0000-0000-0000-000000000001

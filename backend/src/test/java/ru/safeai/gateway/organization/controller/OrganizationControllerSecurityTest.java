@@ -108,6 +108,7 @@ class OrganizationControllerSecurityTest {
                         new OrganizationResponse(
                                 ORGANIZATION_ID,
                                 "SafeAI",
+                                true,
                                 Instant.parse("2026-06-12T12:00:00Z")
                         )
                 ));

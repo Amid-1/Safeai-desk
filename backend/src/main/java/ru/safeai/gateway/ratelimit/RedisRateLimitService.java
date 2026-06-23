@@ -38,7 +38,8 @@ public class RedisRateLimitService {
         String key = "rate-limit:ai-message:user:" + user.getId();
 
         try {
-            long count = rateLimiter.incrementAndGet(key, window);
+            RateLimitResult result = rateLimiter.incrementAndGet(key, window);
+            long count = result.count();
 
             if (count > limit) {
                 if (count == limit + 1) {
@@ -60,8 +61,8 @@ public class RedisRateLimitService {
                 }
 
                 throw new RateLimitExceededException(
-                        "Превышен лимит AI-сообщений. Лимит: " + limit + " в час",
-                        window
+                        "Превышен лимит AI-запросов. Лимит: " + limit + " в час",
+                        Duration.ofSeconds(result.ttlSeconds())
                 );
             }
         } catch (RateLimitExceededException exception) {

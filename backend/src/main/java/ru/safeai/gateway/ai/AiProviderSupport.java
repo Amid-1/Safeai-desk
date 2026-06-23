@@ -21,10 +21,18 @@ final class AiProviderSupport {
         request.history()
                 .stream()
                 .filter(message -> message != null && !message.content().isBlank())
-                .forEach(message -> messages.add(Map.of(
-                        "role", roleNormalizer.apply(message.role()),
-                        "content", message.content()
-                )));
+                .forEach(message -> {
+                    String role = roleNormalizer.apply(message.role());
+
+                    if (role == null || role.isBlank()) {
+                        role = "user";
+                    }
+
+                    messages.add(Map.of(
+                            "role", role,
+                            "content", message.content()
+                    ));
+                });
 
         messages.add(Map.of(
                 "role", "user",

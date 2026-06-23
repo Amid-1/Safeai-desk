@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.common.platform.PlatformProperties;
+import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.util.Map;
@@ -14,15 +16,18 @@ import java.util.Map;
 public class AuthEventService {
 
     private final AuditEventService auditEventService;
+    private final ClientIpResolver clientIpResolver;
+    private final PlatformProperties platformProperties;
 
     public void loginSuccess(SafeAiUserPrincipal principal, HttpServletRequest request) {
         auditEventService.record(
                 principal.getId(),
+                principal.getOrganizationId(),
                 AuditEventType.USER_LOGIN_SUCCESS,
                 Map.of(
                         "email", principal.getEmail(),
                         "organizationId", principal.getOrganizationId().toString(),
-                        "ip", extractClientIp(request),
+                        "ip", clientIpResolver.resolve(request),
                         "userAgent", getHeaderOrUnknown(request, "User-Agent"),
                         "requestId", getHeaderOrUnknown(request, "X-Request-Id")
                 )
@@ -30,33 +35,17 @@ public class AuthEventService {
     }
 
     public void loginFailed(String email, HttpServletRequest request) {
-        auditEventService.record(
-                null,
+        auditEventService.recordSystem(
+                platformProperties.effectiveOrganizationId(),
                 AuditEventType.USER_LOGIN_FAILED,
                 Map.of(
                         "email", email,
                         "reason", "BAD_CREDENTIALS_OR_DISABLED",
-                        "ip", extractClientIp(request),
+                        "ip", clientIpResolver.resolve(request),
                         "userAgent", getHeaderOrUnknown(request, "User-Agent"),
                         "requestId", getHeaderOrUnknown(request, "X-Request-Id")
                 )
         );
-    }
-
-    private String extractClientIp(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            return forwardedFor.split(",")[0].trim();
-        }
-
-        String realIp = request.getHeader("X-Real-IP");
-
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-
-        return request.getRemoteAddr();
     }
 
     private String getHeaderOrUnknown(HttpServletRequest request, String name) {

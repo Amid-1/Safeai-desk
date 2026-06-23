@@ -6,6 +6,8 @@ import java.util.UUID;
 
 public record ChatProcessingContext(
         UUID chatId,
+        UUID userMessageId,
         AiChatRequest aiRequest
 ) {
+
 }

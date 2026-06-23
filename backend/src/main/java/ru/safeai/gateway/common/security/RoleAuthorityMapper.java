@@ -46,12 +46,18 @@ public final class RoleAuthorityMapper {
     }
 
     private static String withRolePrefix(String role) {
-        return role.startsWith(ROLE_PREFIX) ? role : ROLE_PREFIX + role;
+        String normalized = role.trim().toUpperCase();
+
+        return normalized.startsWith(ROLE_PREFIX)
+                ? normalized
+                : ROLE_PREFIX + normalized;
     }
 
     private static String withoutRolePrefix(String authority) {
-        return authority.startsWith(ROLE_PREFIX)
-                ? authority.substring(ROLE_PREFIX.length())
-                : authority;
+        String normalized = authority.trim().toUpperCase();
+
+        return normalized.startsWith(ROLE_PREFIX)
+                ? normalized.substring(ROLE_PREFIX.length())
+                : normalized;
     }
 }

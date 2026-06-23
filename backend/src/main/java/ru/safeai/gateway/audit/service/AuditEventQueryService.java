@@ -58,12 +58,17 @@ public class AuditEventQueryService {
                 ));
             }
 
+            if (filter.userId() != null) {
+                var user = root.join("user", JoinType.LEFT);
+                predicates.add(cb.equal(user.get("id"), filter.userId()));
+            }
+
             if (filter.dateFrom() != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), filter.dateFrom()));
             }
 
             if (filter.dateTo() != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), filter.dateTo()));
+                predicates.add(cb.lessThan(root.get("createdAt"), filter.dateTo()));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));

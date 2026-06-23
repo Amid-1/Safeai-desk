@@ -102,7 +102,8 @@ class ChatControllerSecurityTest {
                 new ChatResponse(
                         CHAT_ID,
                         "Первый тестовый чат",
-                        Instant.parse("2026-06-12T12:00:00Z")
+                        Instant.parse("2026-06-12T12:00:00Z"),
+                        Instant.parse("2026-06-12T12:01:00Z")
                 )
         ));
 
@@ -110,7 +111,8 @@ class ChatControllerSecurityTest {
                         .with(authentication(authToken(currentUser))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(CHAT_ID.toString()))
-                .andExpect(jsonPath("$[0].title").value("Первый тестовый чат"));
+                .andExpect(jsonPath("$[0].title").value("Первый тестовый чат"))
+                .andExpect(jsonPath("$[0].updatedAt").exists());
     }
 
     @Test

@@ -12,6 +12,7 @@ public record MessageResponse(
         Integer inputTokens,
         Integer outputTokens,
         BigDecimal costUsd,
-        Instant createdAt
+        Instant createdAt,
+        String status
 ) {
 }

@@ -23,6 +23,9 @@ public class OrganizationEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Column(name = "enabled", nullable = false)
+    private boolean enabled = true;
+
     @Version
     @Column(name = "version", nullable = false)
     private long version;

@@ -4,10 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
-import ru.safeai.gateway.chat.dto.ChatResponse;
-import ru.safeai.gateway.chat.dto.CreateChatRequest;
-import ru.safeai.gateway.chat.dto.SendMessageRequest;
+import ru.safeai.gateway.chat.dto.*;
 import ru.safeai.gateway.chat.service.ChatService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
@@ -51,5 +48,15 @@ public class ChatController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return chatService.sendMessage(id, request, currentUser);
+    }
+
+    @GetMapping("/{id}/messages")
+    public List<MessageResponse> findMessages(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return chatService.findMessages(id, page, size, currentUser);
     }
 }

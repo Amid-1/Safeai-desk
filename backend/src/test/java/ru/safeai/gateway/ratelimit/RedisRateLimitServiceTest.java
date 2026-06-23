@@ -55,7 +55,7 @@ class RedisRateLimitServiceTest {
         when(rateLimiter.incrementAndGet(
                 "rate-limit:ai-message:user:" + USER_ID,
                 Duration.ofHours(1)
-        )).thenReturn(20L);
+        )).thenReturn(new RateLimitResult(20L, 3600L));
 
         assertThatCode(() -> service.checkAiMessageAllowed(userPrincipal()))
                 .doesNotThrowAnyException();
@@ -66,7 +66,7 @@ class RedisRateLimitServiceTest {
     @Test
     void checkAiMessageAllowed_whenAdminAboveUserLimitButWithinAdminLimit_shouldPass() {
         when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(21L);
+                .thenReturn(new RateLimitResult(20L, 3600L));
 
         assertThatCode(() -> service.checkAiMessageAllowed(adminPrincipal()))
                 .doesNotThrowAnyException();
@@ -77,11 +77,11 @@ class RedisRateLimitServiceTest {
     @Test
     void checkAiMessageAllowed_whenUserLimitExceededFirstTime_shouldPublishEventAndThrow() {
         when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(21L);
+                .thenReturn(new RateLimitResult(20L, 3600L));
 
         assertThatThrownBy(() -> service.checkAiMessageAllowed(userPrincipal()))
                 .isInstanceOf(RateLimitExceededException.class)
-                .hasMessageContaining("Превышен лимит AI-сообщений");
+                .hasMessageContaining("Превышен лимит AI-запросов");
 
         verify(eventPublisher).publishEvent(any(RateLimitExceededEvent.class));
     }
@@ -89,7 +89,7 @@ class RedisRateLimitServiceTest {
     @Test
     void checkAiMessageAllowed_whenUserAlreadyExceededLimit_shouldNotPublishEventAgain() {
         when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(22L);
+                .thenReturn(new RateLimitResult(20L, 3600L));
 
         assertThatThrownBy(() -> service.checkAiMessageAllowed(userPrincipal()))
                 .isInstanceOf(RateLimitExceededException.class);

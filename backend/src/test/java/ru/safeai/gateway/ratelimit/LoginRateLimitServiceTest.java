@@ -42,7 +42,7 @@ class LoginRateLimitServiceTest {
     @Test
     void checkAllowed_whenWithinLimits_shouldIncrementEmailAndIpKeys() {
         when(rateLimiter.incrementAndGet(anyString(), any(Duration.class)))
-                .thenReturn(1L);
+                .thenReturn(new RateLimitResult(1L, 600L));
 
         service.checkAllowed(" Admin@Test.COM ", "127.0.0.1");
 
@@ -64,7 +64,7 @@ class LoginRateLimitServiceTest {
     @Test
     void checkAllowed_whenEmailLimitExceeded_shouldThrowRateLimitExceededException() {
         when(rateLimiter.incrementAndGet(anyString(), any(Duration.class)))
-                .thenReturn(11L);
+                .thenReturn(new RateLimitResult(11L, 600L));
 
         assertThatThrownBy(() -> service.checkAllowed("admin@test.com", "127.0.0.1"))
                 .isInstanceOf(RateLimitExceededException.class)
@@ -77,7 +77,10 @@ class LoginRateLimitServiceTest {
     @Test
     void checkAllowed_whenIpLimitExceeded_shouldThrowRateLimitExceededException() {
         when(rateLimiter.incrementAndGet(anyString(), any(Duration.class)))
-                .thenReturn(1L, 31L);
+                .thenReturn(
+                        new RateLimitResult(1L, 600L),
+                        new RateLimitResult(31L, 600L)
+                );
 
         assertThatThrownBy(() -> service.checkAllowed("admin@test.com", "127.0.0.1"))
                 .isInstanceOf(RateLimitExceededException.class)

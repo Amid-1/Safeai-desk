@@ -13,6 +13,7 @@ import ru.safeai.gateway.chat.dto.MessageResponse;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
 import ru.safeai.gateway.chat.entity.ChatMessageRole;
+import ru.safeai.gateway.chat.entity.ChatMessageStatus;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
@@ -53,6 +54,7 @@ public class ChatPersistenceService {
             SafeAiUserPrincipal currentUser
     ) {
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
+        session.touch();
 
         List<AiMessage> historyBeforeNewMessage = chatMessageRepository
                 .findTop30BySession_IdOrderByCreatedAtDescIdDesc(session.getId())
@@ -71,10 +73,7 @@ public class ChatPersistenceService {
         userMessage.setSession(session);
         userMessage.setRole(ChatMessageRole.USER);
         userMessage.setContent(request.content());
-        userMessage.setModel(null);
-        userMessage.setInputTokens(null);
-        userMessage.setOutputTokens(null);
-        userMessage.setCostUsd(null);
+        userMessage.setStatus(ChatMessageStatus.PENDING);
 
         ChatMessageEntity savedUserMessage = chatMessageRepository.save(userMessage);
 
@@ -99,6 +98,7 @@ public class ChatPersistenceService {
 
         return new ChatProcessingContext(
                 session.getId(),
+                savedUserMessage.getId(),
                 aiRequest
         );
     }
@@ -106,35 +106,29 @@ public class ChatPersistenceService {
     @Transactional
     public ChatDetailsResponse saveAssistantMessageAndReturnChat(
             UUID chatId,
+            UUID userMessageId,
             AiChatResponse aiResponse,
             SafeAiUserPrincipal currentUser
     ) {
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
+        session.touch();
 
-        ChatMessageEntity assistantMessage = new ChatMessageEntity();
-        assistantMessage.setSession(session);
-        assistantMessage.setRole(ChatMessageRole.ASSISTANT);
-        assistantMessage.setContent(aiResponse.content());
-        assistantMessage.setModel(aiResponse.model());
-        assistantMessage.setInputTokens(aiResponse.inputTokens());
-        assistantMessage.setOutputTokens(aiResponse.outputTokens());
-        assistantMessage.setCostUsd(aiResponse.costUsd());
+        ChatMessageEntity userMessage = findOwnedUserMessage(
+                userMessageId,
+                session,
+                currentUser
+        );
 
+        userMessage.setStatus(ChatMessageStatus.COMPLETED);
+
+        ChatMessageEntity assistantMessage = createAssistantMessage(session, aiResponse);
         ChatMessageEntity savedAssistantMessage = chatMessageRepository.save(assistantMessage);
-
-        Map<String, Object> aiResponseDetails = new HashMap<>();
-        aiResponseDetails.put("chatId", session.getId().toString());
-        aiResponseDetails.put("messageId", savedAssistantMessage.getId().toString());
-        aiResponseDetails.put("model", aiResponse.model());
-        aiResponseDetails.put("inputTokens", aiResponse.inputTokens());
-        aiResponseDetails.put("outputTokens", aiResponse.outputTokens());
-        aiResponseDetails.put("costUsd", aiResponse.costUsd());
 
         auditEventService.record(
                 currentUser.getId(),
                 currentUser.getOrganizationId(),
                 AuditEventType.AI_RESPONSE_RECEIVED,
-                aiResponseDetails
+                aiResponseDetails(session, savedAssistantMessage, aiResponse)
         );
 
         List<MessageResponse> messages = chatMessageRepository
@@ -144,6 +138,75 @@ public class ChatPersistenceService {
                 .toList();
 
         return chatMapper.toChatDetailsResponse(session, messages);
+    }
+
+    @Transactional
+    public void markUserMessageFailed(
+            UUID userMessageId,
+            SafeAiUserPrincipal currentUser
+    ) {
+        ChatMessageEntity message = chatMessageRepository.findById(userMessageId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Сообщение не найдено: " + userMessageId
+                ));
+
+        if (!message.getSession().getUser().getId().equals(currentUser.getId())) {
+            throw new ResourceNotFoundException("Сообщение не найдено: " + userMessageId);
+        }
+
+        message.setStatus(ChatMessageStatus.FAILED);
+    }
+
+    private ChatMessageEntity findOwnedUserMessage(
+            UUID userMessageId,
+            ChatSessionEntity session,
+            SafeAiUserPrincipal currentUser
+    ) {
+        ChatMessageEntity userMessage = chatMessageRepository.findById(userMessageId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Сообщение не найдено: " + userMessageId
+                ));
+
+        if (!userMessage.getSession().getId().equals(session.getId())
+                || !userMessage.getSession().getUser().getId().equals(currentUser.getId())
+                || userMessage.getRole() != ChatMessageRole.USER) {
+            throw new ResourceNotFoundException("Сообщение не найдено: " + userMessageId);
+        }
+
+        return userMessage;
+    }
+
+    private ChatMessageEntity createAssistantMessage(
+            ChatSessionEntity session,
+            AiChatResponse aiResponse
+    ) {
+        ChatMessageEntity assistantMessage = new ChatMessageEntity();
+        assistantMessage.setSession(session);
+        assistantMessage.setRole(ChatMessageRole.ASSISTANT);
+        assistantMessage.setContent(aiResponse.content());
+        assistantMessage.setModel(aiResponse.model());
+        assistantMessage.setInputTokens(aiResponse.inputTokens());
+        assistantMessage.setOutputTokens(aiResponse.outputTokens());
+        assistantMessage.setCostUsd(aiResponse.costUsd());
+        assistantMessage.setStatus(ChatMessageStatus.COMPLETED);
+
+        return assistantMessage;
+    }
+
+    private Map<String, Object> aiResponseDetails(
+            ChatSessionEntity session,
+            ChatMessageEntity savedAssistantMessage,
+            AiChatResponse aiResponse
+    ) {
+        Map<String, Object> details = new HashMap<>();
+        details.put("chatId", session.getId().toString());
+        details.put("messageId", savedAssistantMessage.getId().toString());
+        details.put("model", aiResponse.model());
+        details.put("inputTokens", aiResponse.inputTokens());
+        details.put("outputTokens", aiResponse.outputTokens());
+        details.put("costUsd", aiResponse.costUsd());
+
+        return details;
     }
 
     private ChatSessionEntity findOwnedSession(UUID chatId, SafeAiUserPrincipal currentUser) {

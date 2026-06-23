@@ -28,14 +28,27 @@ public class ChatSessionEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
     @PrePersist
     void prePersist() {
         if (id == null) {
             id = UUID.randomUUID();
         }
 
+        Instant now = Instant.now();
+
         if (createdAt == null) {
-            createdAt = Instant.now();
+            createdAt = now;
         }
+
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
+    }
+
+    public void touch() {
+        this.updatedAt = Instant.now();
     }
 }

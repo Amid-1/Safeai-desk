@@ -40,7 +40,8 @@ public class OpenAiProvider implements AiProvider {
 
         Map<String, Object> payload = Map.of(
                 "model", properties.model(),
-                "input", AiProviderSupport.buildMessages(request, this::normalizeRole)
+                "input", AiProviderSupport.buildMessages(request, this::normalizeRole),
+                "max_output_tokens", properties.maxOutputTokens()
         );
 
         log.info(
@@ -52,6 +53,8 @@ public class OpenAiProvider implements AiProvider {
                 request.userMessage().length()
         );
 
+        long startedAt = System.nanoTime();
+
         try {
             JsonNode response = client.post()
                     .uri("/responses")
@@ -60,6 +63,21 @@ public class OpenAiProvider implements AiProvider {
                     .body(payload)
                     .retrieve()
                     .body(JsonNode.class);
+
+            int inputTokens = AiProviderSupport.extractInputTokens(response);
+            int outputTokens = AiProviderSupport.extractOutputTokens(response);
+            long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
+
+            log.info(
+                    "OpenAI response received: userId={}, organizationId={}, chatId={}, model={}, durationMs={}, inputTokens={}, outputTokens={}",
+                    request.userId(),
+                    request.organizationId(),
+                    request.chatId(),
+                    properties.model(),
+                    durationMs,
+                    inputTokens,
+                    outputTokens
+            );
 
             String content = extractOutputText(response);
 
@@ -70,13 +88,21 @@ public class OpenAiProvider implements AiProvider {
             return new AiChatResponse(
                     content,
                     properties.model(),
-                    AiProviderSupport.extractInputTokens(response),
-                    AiProviderSupport.extractOutputTokens(response),
+                    inputTokens,
+                    outputTokens,
                     BigDecimal.ZERO
             );
+
         } catch (ResourceAccessException exception) {
             throw new AiProviderTimeoutException("OpenAI provider timeout", exception);
         } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 429) {
+                throw new AiProviderRateLimitedException(
+                        "OpenAI API rate limited: status=" + exception.getStatusCode(),
+                        exception
+                );
+            }
+
             throw new AiProviderException(
                     "OpenAI API error: status=" + exception.getStatusCode(),
                     exception

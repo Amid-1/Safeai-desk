@@ -27,6 +27,10 @@ public class JsonSecurityErrorWriter {
             String error,
             String message
     ) throws IOException {
+        if (response.isCommitted()) {
+            return;
+        }
+
         String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 
         ApiErrorResponse body = new ApiErrorResponse(

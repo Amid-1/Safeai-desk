@@ -1,0 +1,14 @@
+feat: реализована многотенантная система аудита, usage analytics и hardening AI-провайдеров
+
+- добавлена изоляция audit events по organizationId
+- добавлены PlatformProperties и recordSystem для системных audit-событий
+- запрещена запись audit-событий без organizationId
+- добавлена фильтрация аудита по типу события, пользователю, организации и датам
+- расширены usage endpoints фильтрами dateFrom/dateTo/model
+- вынесены usage-запросы в UsageQueryRepository
+- добавлены status сообщений, updatedAt чатов и per-chat Redis lock
+- улучшена обработка rate limit и ошибок AI-провайдеров
+- добавлены maxOutputTokens для OpenAI и latency/token logging
+- улучшена нормализация AiChatResponse
+- улучшен Redis rate limiter
+- обновлены тесты audit, usage, AI, security и chat-слоёв

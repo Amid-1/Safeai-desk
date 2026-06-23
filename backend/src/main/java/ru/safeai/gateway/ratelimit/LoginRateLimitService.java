@@ -65,10 +65,13 @@ public class LoginRateLimitService {
 
     private void checkKey(String key, int limit, Duration window, String message) {
         try {
-            long count = rateLimiter.incrementAndGet(key, window);
+            RateLimitResult result = rateLimiter.incrementAndGet(key, window);
 
-            if (count > limit) {
-                throw new RateLimitExceededException(message, window);
+            if (result.count() > limit) {
+                throw new RateLimitExceededException(
+                        message,
+                        Duration.ofSeconds(result.ttlSeconds())
+                );
             }
         } catch (RateLimitExceededException exception) {
             throw exception;

@@ -27,6 +27,7 @@ import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -157,25 +158,44 @@ class AdminUsageControllerSecurityTest {
     }
 
     private void mockServices() {
-        when(adminUsageService.getUsageSummary(any(SafeAiUserPrincipal.class)))
-                .thenReturn(List.of());
+        when(adminUsageService.getUsageSummary(
+                any(Instant.class),
+                any(Instant.class),
+                any(String.class),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(List.of());
 
-        when(adminUsageService.getUsageByUsers(any(SafeAiUserPrincipal.class)))
-                .thenReturn(List.of());
+        when(adminUsageService.getUsageByUsers(
+                any(Instant.class),
+                any(Instant.class),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(List.of());
 
-        when(adminUsageService.getUsageByModels(any(SafeAiUserPrincipal.class)))
-                .thenReturn(List.of());
+        when(adminUsageService.getUsageByModels(
+                any(Instant.class),
+                any(Instant.class),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(List.of());
 
-        when(adminUsageService.getUsageDaily(any(SafeAiUserPrincipal.class)))
-                .thenReturn(List.of());
+        when(adminUsageService.getUsageDaily(
+                any(Instant.class),
+                any(Instant.class),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(List.of());
 
         when(adminUsageService.getUsageByUserId(
                 any(UUID.class),
+                any(Instant.class),
+                any(Instant.class),
+                any(String.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
         when(adminUsageService.getUsageByOrganizationId(
                 any(UUID.class),
+                any(Instant.class),
+                any(Instant.class),
+                any(String.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
     }

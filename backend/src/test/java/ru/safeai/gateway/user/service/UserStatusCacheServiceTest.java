@@ -6,6 +6,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
@@ -21,6 +22,9 @@ class UserStatusCacheServiceTest {
 
     private static final UUID USER_ID =
             UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+    private static final UUID ORGANIZATION_ID =
+            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     private static final String KEY =
             "user-status:" + USER_ID;
@@ -39,11 +43,11 @@ class UserStatusCacheServiceTest {
         UserStatusCacheService service = enabledService();
 
         when(valueOperations.get(KEY))
-                .thenReturn("true:5");
+                .thenReturn("true:true:5");
 
         Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
 
-        assertThat(status).contains(new UserSecurityStatus(true, 5L));
+        assertThat(status).contains(new UserSecurityStatus(true, true, 5L));
 
         verifyNoInteractions(userRepository);
         verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
@@ -56,17 +60,17 @@ class UserStatusCacheServiceTest {
         when(valueOperations.get(KEY))
                 .thenReturn(null);
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(userEntity(true, 3L)));
+        when(userRepository.findByIdWithOrganization(USER_ID))
+                .thenReturn(Optional.of(userEntity(true, true, 3L)));
 
         Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
 
-        assertThat(status).contains(new UserSecurityStatus(true, 3L));
+        assertThat(status).contains(new UserSecurityStatus(true, true, 3L));
 
-        verify(userRepository).findById(USER_ID);
+        verify(userRepository).findByIdWithOrganization(USER_ID);
         verify(valueOperations).set(
                 KEY,
-                "true:3",
+                "true:true:3",
                 Duration.ofSeconds(60)
         );
     }
@@ -78,14 +82,14 @@ class UserStatusCacheServiceTest {
         when(valueOperations.get(KEY))
                 .thenThrow(new RuntimeException("Redis unavailable"));
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(userEntity(false, 9L)));
+        when(userRepository.findByIdWithOrganization(USER_ID))
+                .thenReturn(Optional.of(userEntity(false, true, 9L)));
 
         Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
 
-        assertThat(status).contains(new UserSecurityStatus(false, 9L));
+        assertThat(status).contains(new UserSecurityStatus(false, true, 9L));
 
-        verify(userRepository).findById(USER_ID);
+        verify(userRepository).findByIdWithOrganization(USER_ID);
     }
 
     @Test
@@ -95,14 +99,37 @@ class UserStatusCacheServiceTest {
         when(valueOperations.get(KEY))
                 .thenReturn(null);
 
-        when(userRepository.findById(USER_ID))
+        when(userRepository.findByIdWithOrganization(USER_ID))
                 .thenReturn(Optional.empty());
 
         Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
 
         assertThat(status).isEmpty();
 
+        verify(userRepository).findByIdWithOrganization(USER_ID);
         verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
+    }
+
+    @Test
+    void getStatus_whenOrganizationDisabled_shouldReturnStatusWithDisabledOrganization() {
+        UserStatusCacheService service = enabledService();
+
+        when(valueOperations.get(KEY))
+                .thenReturn(null);
+
+        when(userRepository.findByIdWithOrganization(USER_ID))
+                .thenReturn(Optional.of(userEntity(true, false, 7L)));
+
+        Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
+
+        assertThat(status).contains(new UserSecurityStatus(true, false, 7L));
+
+        verify(userRepository).findByIdWithOrganization(USER_ID);
+        verify(valueOperations).set(
+                KEY,
+                "true:false:7",
+                Duration.ofSeconds(60)
+        );
     }
 
     @Test
@@ -132,14 +159,14 @@ class UserStatusCacheServiceTest {
                 )
         );
 
-        when(userRepository.findById(USER_ID))
-                .thenReturn(Optional.of(userEntity(true, 1L)));
+        when(userRepository.findByIdWithOrganization(USER_ID))
+                .thenReturn(Optional.of(userEntity(true, true, 1L)));
 
         Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
 
-        assertThat(status).contains(new UserSecurityStatus(true, 1L));
+        assertThat(status).contains(new UserSecurityStatus(true, true, 1L));
 
-        verify(userRepository).findById(USER_ID);
+        verify(userRepository).findByIdWithOrganization(USER_ID);
         verifyNoInteractions(redisTemplate);
     }
 
@@ -157,11 +184,22 @@ class UserStatusCacheServiceTest {
         );
     }
 
-    private UserEntity userEntity(boolean enabled, long tokenVersion) {
+    private UserEntity userEntity(
+            boolean userEnabled,
+            boolean organizationEnabled,
+            long tokenVersion
+    ) {
+        OrganizationEntity organization = new OrganizationEntity();
+        organization.setId(ORGANIZATION_ID);
+        organization.setName("SafeAI");
+        organization.setEnabled(organizationEnabled);
+
         UserEntity user = new UserEntity();
         user.setId(USER_ID);
-        user.setEnabled(enabled);
+        user.setOrganization(organization);
+        user.setEnabled(userEnabled);
         user.setTokenVersion(tokenVersion);
+
         return user;
     }
 }

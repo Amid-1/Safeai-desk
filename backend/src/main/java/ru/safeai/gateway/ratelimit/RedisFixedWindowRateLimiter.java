@@ -13,26 +13,27 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class RedisFixedWindowRateLimiter {
 
-    private static final DefaultRedisScript<Long> INCREMENT_WITH_TTL_SCRIPT;
+    private static final DefaultRedisScript<String> INCREMENT_WITH_TTL_SCRIPT;
 
     static {
         INCREMENT_WITH_TTL_SCRIPT = new DefaultRedisScript<>();
-        INCREMENT_WITH_TTL_SCRIPT.setResultType(Long.class);
+        INCREMENT_WITH_TTL_SCRIPT.setResultType(String.class);
         INCREMENT_WITH_TTL_SCRIPT.setScriptText("""
                 local current = redis.call('INCR', KEYS[1])
                 local ttl = redis.call('PTTL', KEYS[1])
 
                 if ttl < 0 then
                     redis.call('PEXPIRE', KEYS[1], ARGV[1])
+                    ttl = tonumber(ARGV[1])
                 end
 
-                return current
+                return tostring(current) .. ':' .. tostring(ttl)
                 """);
     }
 
     private final StringRedisTemplate redisTemplate;
 
-    public long incrementAndGet(String key, Duration ttl) {
+    public RateLimitResult incrementAndGet(String key, Duration ttl) {
         Objects.requireNonNull(key, "key не должен быть null");
         Objects.requireNonNull(ttl, "ttl не должен быть null");
 
@@ -44,17 +45,27 @@ public class RedisFixedWindowRateLimiter {
             throw new IllegalArgumentException("ttl должен быть положительным");
         }
 
-        Long count = redisTemplate.execute(
+        String result = redisTemplate.execute(
                 INCREMENT_WITH_TTL_SCRIPT,
                 List.of(key),
                 String.valueOf(ttl.toMillis())
         );
 
-        if (count == null) {
-            throw new IllegalStateException("Redis Lua script returned null");
+        if (result == null || result.isBlank()) {
+            throw new IllegalStateException("Redis Lua script returned invalid result");
         }
 
-        return count;
+        String[] parts = result.split(":");
+
+        if (parts.length != 2) {
+            throw new IllegalStateException("Redis Lua script returned invalid result: " + result);
+        }
+
+        long count = Long.parseLong(parts[0]);
+        long ttlMillis = Long.parseLong(parts[1]);
+        long ttlSeconds = Math.max(1, (long) Math.ceil(ttlMillis / 1000.0));
+
+        return new RateLimitResult(count, ttlSeconds);
     }
 
     public void reset(String key) {

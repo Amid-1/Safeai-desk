@@ -6,6 +6,8 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
+
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
@@ -89,7 +91,15 @@ public class UserService {
         entity.setEnabled(true);
         entity.setRoles(roles);
 
-        UserEntity saved = userRepository.save(entity);
+        UserEntity saved;
+
+        try {
+            saved = userRepository.save(entity);
+        } catch (DataIntegrityViolationException exception) {
+            throw new ConflictException(
+                    "Пользователь с таким email уже существует: " + email
+            );
+        }
 
         auditEventService.record(
                 currentUser.getId(),
@@ -135,6 +145,8 @@ public class UserService {
             SafeAiUserPrincipal currentUser
     ) {
         UserEntity user = findUserVisibleForCurrentUser(id, currentUser);
+        rejectSuperAdminMutation(user);
+
         boolean newEnabledValue = Boolean.TRUE.equals(request.enabled());
 
         if (user.getId().equals(currentUser.getId()) && !newEnabledValue) {
@@ -188,6 +200,7 @@ public class UserService {
             SafeAiUserPrincipal currentUser
     ) {
         UserEntity user = findUserVisibleForCurrentUser(id, currentUser);
+        rejectSuperAdminMutation(user);
 
         if (user.getId().equals(currentUser.getId())) {
             throw new ForbiddenOperationException("Нельзя менять собственные роли");
@@ -243,6 +256,7 @@ public class UserService {
             SafeAiUserPrincipal currentUser
     ) {
         UserEntity user = findUserVisibleForCurrentUser(id, currentUser);
+        rejectSuperAdminMutation(user);
 
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setTokenVersion(user.getTokenVersion() + 1);
@@ -354,6 +368,21 @@ public class UserService {
                 .stream()
                 .map(RoleEntity::getName)
                 .anyMatch(ROLE_ADMIN::equalsIgnoreCase);
+    }
+
+    private boolean hasSuperAdminRole(UserEntity user) {
+        return user.getRoles()
+                .stream()
+                .map(RoleEntity::getName)
+                .anyMatch(ROLE_SUPER_ADMIN::equalsIgnoreCase);
+    }
+
+    private void rejectSuperAdminMutation(UserEntity user) {
+        if (hasSuperAdminRole(user)) {
+            throw new ForbiddenOperationException(
+                    "SUPER_ADMIN нельзя изменять через обычный user-management endpoint"
+            );
+        }
     }
 
     private Set<String> roleNames(UserEntity entity) {

@@ -15,6 +15,8 @@ public record AiChatResponse(
         model = model == null || model.isBlank() ? "unknown" : model;
         inputTokens = inputTokens == null ? 0 : Math.max(0, inputTokens);
         outputTokens = outputTokens == null ? 0 : Math.max(0, outputTokens);
-        costUsd = costUsd == null ? BigDecimal.ZERO : costUsd;
+        costUsd = costUsd == null || costUsd.signum() < 0
+                ? BigDecimal.ZERO
+                : costUsd;
     }
 }

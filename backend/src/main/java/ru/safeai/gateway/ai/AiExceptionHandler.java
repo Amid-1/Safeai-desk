@@ -38,6 +38,24 @@ public class AiExceptionHandler {
                 ));
     }
 
+    @ExceptionHandler(AiProviderRateLimitedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAiProviderRateLimited(
+            AiProviderRateLimitedException exception,
+            HttpServletRequest request
+    ) {
+        log.warn("AI provider rate limited: {}", exception.getMessage());
+
+        return ResponseEntity
+                .status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(errorResponseFactory.create(
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "AI_PROVIDER_RATE_LIMITED",
+                        "AI provider временно ограничил запросы",
+                        request,
+                        null
+                ));
+    }
+
     @ExceptionHandler(AiProviderException.class)
     public ResponseEntity<ApiErrorResponse> handleAiProviderException(
             AiProviderException exception,

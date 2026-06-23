@@ -23,8 +23,12 @@ public class AuditEventService {
     private final EntityManager entityManager;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void record(UUID userId, AuditEventType eventType, Map<String, Object> details) {
-        record(userId, null, eventType, details);
+    public void recordSystem(
+            UUID organizationId,
+            AuditEventType eventType,
+            Map<String, Object> details
+    ) {
+        record(null, organizationId, eventType, details);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -35,6 +39,10 @@ public class AuditEventService {
             Map<String, Object> details
     ) {
         try {
+            if (organizationId == null) {
+                throw new IllegalArgumentException("organizationId не должен быть null для audit event");
+            }
+
             UserEntity user = null;
 
             if (userId != null) {
@@ -45,7 +53,7 @@ public class AuditEventService {
             event.setUser(user);
             event.setOrganizationId(organizationId);
             event.setEventType(eventType.name());
-            event.setDetails(details == null ? Map.of() : details);
+            event.setDetails(details == null ? Map.of() : Map.copyOf(details));
 
             auditEventRepository.save(event);
         } catch (Exception exception) {

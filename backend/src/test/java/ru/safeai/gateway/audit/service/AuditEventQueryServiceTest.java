@@ -102,6 +102,7 @@ class AuditEventQueryServiceTest {
                 null,
                 null,
                 null,
+                null,
                 ORGANIZATION_ID
         );
 
@@ -176,6 +177,7 @@ class AuditEventQueryServiceTest {
         verifyFindAll(pageable);
     }
 
+    @SuppressWarnings("unchecked")
     private void whenFindAllReturns(Pageable pageable, AuditEventEntity event) {
         when(auditEventRepository.findAll(
                 any(Specification.class),
@@ -183,6 +185,7 @@ class AuditEventQueryServiceTest {
         )).thenReturn(new PageImpl<>(List.of(event)));
     }
 
+    @SuppressWarnings("unchecked")
     private void verifyFindAll(Pageable pageable) {
         verify(auditEventRepository).findAll(
                 any(Specification.class),
@@ -208,6 +211,7 @@ class AuditEventQueryServiceTest {
 
     private AuditEventFilter emptyFilter() {
         return new AuditEventFilter(
+                null,
                 null,
                 null,
                 null,

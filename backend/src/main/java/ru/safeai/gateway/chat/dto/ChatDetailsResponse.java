@@ -8,6 +8,7 @@ public record ChatDetailsResponse(
         UUID id,
         String title,
         Instant createdAt,
+        Instant updatedAt,
         List<MessageResponse> messages
 ) {
 }

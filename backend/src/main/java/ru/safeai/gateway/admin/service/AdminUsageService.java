@@ -8,11 +8,12 @@ import ru.safeai.gateway.chat.dto.UsageDailySummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageModelSummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageUserSummaryResponse;
-import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.UsageDailySummaryProjection;
+import ru.safeai.gateway.chat.repository.UsageQueryRepository;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,55 +21,86 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AdminUsageService {
 
-    private final ChatMessageRepository chatMessageRepository;
+    private final UsageQueryRepository usageQueryRepository;
 
     @Transactional(readOnly = true)
     public List<UsageSummaryResponse> getUsageSummary(
+            Instant dateFrom,
+            Instant dateTo,
+            String model,
             SafeAiUserPrincipal currentUser
     ) {
+        Instant from = effectiveDateFrom(dateFrom);
+        Instant to = effectiveDateTo(dateTo);
+        String normalizedModel = normalizeModel(model);
+
         if (isSuperAdmin(currentUser)) {
-            return chatMessageRepository.findUsageSummary();
+            return usageQueryRepository.findUsageSummary(from, to, normalizedModel);
         }
 
-        return chatMessageRepository.findUsageByOrganizationId(
-                currentUser.getOrganizationId()
+        return usageQueryRepository.findUsageByOrganizationId(
+                currentUser.getOrganizationId(),
+                from,
+                to,
+                normalizedModel
         );
     }
 
     @Transactional(readOnly = true)
     public List<UsageUserSummaryResponse> getUsageByUsers(
+            Instant dateFrom,
+            Instant dateTo,
             SafeAiUserPrincipal currentUser
     ) {
+        Instant from = effectiveDateFrom(dateFrom);
+        Instant to = effectiveDateTo(dateTo);
+
         if (isSuperAdmin(currentUser)) {
-            return chatMessageRepository.findUsageByUsers();
+            return usageQueryRepository.findUsageByUsers(from, to);
         }
 
-        return chatMessageRepository.findUsageByUsersByOrganizationId(
-                currentUser.getOrganizationId()
+        return usageQueryRepository.findUsageByUsersByOrganizationId(
+                currentUser.getOrganizationId(),
+                from,
+                to
         );
     }
 
     @Transactional(readOnly = true)
     public List<UsageModelSummaryResponse> getUsageByModels(
+            Instant dateFrom,
+            Instant dateTo,
             SafeAiUserPrincipal currentUser
     ) {
+        Instant from = effectiveDateFrom(dateFrom);
+        Instant to = effectiveDateTo(dateTo);
+
         if (isSuperAdmin(currentUser)) {
-            return chatMessageRepository.findUsageByModels();
+            return usageQueryRepository.findUsageByModels(from, to);
         }
 
-        return chatMessageRepository.findUsageByModelsByOrganizationId(
-                currentUser.getOrganizationId()
+        return usageQueryRepository.findUsageByModelsByOrganizationId(
+                currentUser.getOrganizationId(),
+                from,
+                to
         );
     }
 
     @Transactional(readOnly = true)
     public List<UsageDailySummaryResponse> getUsageDaily(
+            Instant dateFrom,
+            Instant dateTo,
             SafeAiUserPrincipal currentUser
     ) {
+        Instant from = effectiveDateFrom(dateFrom);
+        Instant to = effectiveDateTo(dateTo);
+
         List<UsageDailySummaryProjection> rows = isSuperAdmin(currentUser)
-                ? chatMessageRepository.findUsageDaily()
-                : chatMessageRepository.findUsageDailyByOrganizationId(
-                currentUser.getOrganizationId()
+                ? usageQueryRepository.findUsageDaily(from, to)
+                : usageQueryRepository.findUsageDailyByOrganizationId(
+                currentUser.getOrganizationId(),
+                from,
+                to
         );
 
         return rows.stream()
@@ -84,21 +116,39 @@ public class AdminUsageService {
     @Transactional(readOnly = true)
     public List<UsageSummaryResponse> getUsageByUserId(
             UUID userId,
+            Instant dateFrom,
+            Instant dateTo,
+            String model,
             SafeAiUserPrincipal currentUser
     ) {
+        Instant from = effectiveDateFrom(dateFrom);
+        Instant to = effectiveDateTo(dateTo);
+        String normalizedModel = normalizeModel(model);
+
         if (isSuperAdmin(currentUser)) {
-            return chatMessageRepository.findUsageByUserId(userId);
+            return usageQueryRepository.findUsageByUserId(
+                    userId,
+                    from,
+                    to,
+                    normalizedModel
+            );
         }
 
-        return chatMessageRepository.findUsageByUserIdAndOrganizationId(
+        return usageQueryRepository.findUsageByUserIdAndOrganizationId(
                 userId,
-                currentUser.getOrganizationId()
+                currentUser.getOrganizationId(),
+                from,
+                to,
+                normalizedModel
         );
     }
 
     @Transactional(readOnly = true)
     public List<UsageSummaryResponse> getUsageByOrganizationId(
             UUID organizationId,
+            Instant dateFrom,
+            Instant dateTo,
+            String model,
             SafeAiUserPrincipal currentUser
     ) {
         if (!isSuperAdmin(currentUser)
@@ -108,7 +158,32 @@ public class AdminUsageService {
             );
         }
 
-        return chatMessageRepository.findUsageByOrganizationId(organizationId);
+        Instant from = effectiveDateFrom(dateFrom);
+        Instant to = effectiveDateTo(dateTo);
+        String normalizedModel = normalizeModel(model);
+
+        return usageQueryRepository.findUsageByOrganizationId(
+                organizationId,
+                from,
+                to,
+                normalizedModel
+        );
+    }
+
+    private Instant effectiveDateFrom(Instant dateFrom) {
+        return dateFrom == null ? Instant.EPOCH : dateFrom;
+    }
+
+    private Instant effectiveDateTo(Instant dateTo) {
+        return dateTo == null ? Instant.now() : dateTo;
+    }
+
+    private String normalizeModel(String model) {
+        if (model == null || model.isBlank()) {
+            return null;
+        }
+
+        return model.trim();
     }
 
     private boolean isSuperAdmin(SafeAiUserPrincipal currentUser) {

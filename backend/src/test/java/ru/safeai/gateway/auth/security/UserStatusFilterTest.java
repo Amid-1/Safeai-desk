@@ -58,7 +58,7 @@ class UserStatusFilterTest {
         );
 
         when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(new UserSecurityStatus(false, 0L)));
+                .thenReturn(Optional.of(new UserSecurityStatus(false, true, 0L)));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -83,7 +83,7 @@ class UserStatusFilterTest {
         );
 
         when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(new UserSecurityStatus(true, 1L)));
+                .thenReturn(Optional.of(new UserSecurityStatus(true, true, 1L)));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -108,7 +108,7 @@ class UserStatusFilterTest {
         );
 
         when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(new UserSecurityStatus(true, 0L)));
+                .thenReturn(Optional.of(new UserSecurityStatus(true, true, 0L)));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -129,5 +129,30 @@ class UserStatusFilterTest {
                 0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
+    }
+
+    @Test
+    void doFilter_shouldReturn401WhenOrganizationIsDisabled() throws Exception {
+        SafeAiUserPrincipal principal = principal();
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        principal,
+                        null,
+                        principal.getAuthorities()
+                )
+        );
+
+        when(userStatusCacheService.getStatus(USER_ID))
+                .thenReturn(Optional.of(new UserSecurityStatus(true, false, 0L)));
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("TOKEN_REVOKED");
     }
 }

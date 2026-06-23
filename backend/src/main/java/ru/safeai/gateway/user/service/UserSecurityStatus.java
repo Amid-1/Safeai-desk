@@ -1,7 +1,8 @@
 package ru.safeai.gateway.user.service;
 
 public record UserSecurityStatus(
-        boolean enabled,
+        boolean userEnabled,
+        boolean organizationEnabled,
         long tokenVersion
 ) {
 }

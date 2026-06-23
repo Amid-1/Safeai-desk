@@ -16,7 +16,8 @@ public class ChatMapper {
         return new ChatResponse(
                 entity.getId(),
                 entity.getTitle(),
-                entity.getCreatedAt()
+                entity.getCreatedAt(),
+                entity.getUpdatedAt()
         );
     }
 
@@ -29,7 +30,8 @@ public class ChatMapper {
                 entity.getInputTokens(),
                 entity.getOutputTokens(),
                 entity.getCostUsd(),
-                entity.getCreatedAt()
+                entity.getCreatedAt(),
+                entity.getStatus().name()
         );
     }
 
@@ -41,6 +43,7 @@ public class ChatMapper {
                 session.getId(),
                 session.getTitle(),
                 session.getCreatedAt(),
+                session.getUpdatedAt(),
                 messages
         );
     }

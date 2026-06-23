@@ -65,9 +65,10 @@ public class UserStatusCacheService {
     }
 
     private Optional<UserSecurityStatus> loadFromDatabase(UUID userId) {
-        return userRepository.findById(userId)
+        return userRepository.findByIdWithOrganization(userId)
                 .map(user -> new UserSecurityStatus(
                         user.isEnabled(),
+                        user.getOrganization().isEnabled(),
                         user.getTokenVersion()
                 ));
     }
@@ -91,22 +92,32 @@ public class UserStatusCacheService {
 
         String[] parts = value.split(":");
 
-        if (parts.length != 2) {
+        if (parts.length != 3) {
             return Optional.empty();
         }
 
         try {
-            boolean enabled = Boolean.parseBoolean(parts[0]);
-            long tokenVersion = Long.parseLong(parts[1]);
+            boolean userEnabled = Boolean.parseBoolean(parts[0]);
+            boolean organizationEnabled = Boolean.parseBoolean(parts[1]);
+            long tokenVersion = Long.parseLong(parts[2]);
 
-            return Optional.of(new UserSecurityStatus(enabled, tokenVersion));
+            return Optional.of(new UserSecurityStatus(
+                    userEnabled,
+                    organizationEnabled,
+                    tokenVersion
+            ));
         } catch (RuntimeException exception) {
             return Optional.empty();
         }
     }
 
     private String serialize(UserSecurityStatus status) {
-        return status.enabled() + ":" + status.tokenVersion();
+
+        return status.userEnabled()
+                + ":"
+                + status.organizationEnabled()
+                + ":"
+                + status.tokenVersion();
     }
 
     private String key(UUID userId) {
