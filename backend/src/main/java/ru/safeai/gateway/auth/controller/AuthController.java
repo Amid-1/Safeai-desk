@@ -38,6 +38,7 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void logout(
             HttpServletRequest request,
             HttpServletResponse response

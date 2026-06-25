@@ -1,0 +1,12 @@
+# "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local-nginx.yml"
+safeai:
+  security:
+    client-ip:
+      trusted-proxy-cidrs:
+        - 127.0.0.1/32
+        - ::1/128
+
+  auth:
+    cookies:
+      secure: false
+      same-site: Lax

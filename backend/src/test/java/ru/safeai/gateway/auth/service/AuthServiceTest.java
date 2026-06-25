@@ -13,6 +13,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
+import ru.safeai.gateway.common.security.ClientIpProperties;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -22,6 +23,7 @@ import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -60,7 +62,9 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        ClientIpResolver clientIpResolver = new ClientIpResolver();
+        ClientIpResolver clientIpResolver = new ClientIpResolver(
+                new ClientIpProperties(List.of())
+        );
 
         authService = new AuthService(
                 authenticationManager,

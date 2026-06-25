@@ -130,6 +130,25 @@ set SAFEAI_JWT_EXPIRATION_MINUTES=60
 mvnw.cmd spring-boot:run
 ```
 
+лучше так:
+```bat
+\backend"
+
+set SPRING_PROFILES_ACTIVE=local
+set SAFEAI_JWT_SECRET=safeai-local-development-secret-key-change-this-value-please-123456789
+set SAFEAI_JWT_EXPIRATION_MINUTES=60
+set SAFEAI_JWT_ISSUER=safeai-desk
+
+set SAFEAI_AUTH_COOKIES_SECURE=false
+set SAFEAI_AUTH_COOKIES_SAME_SITE=Lax
+set SAFEAI_AUTH_ACCESS_TOKEN_MAX_AGE=15m
+set SAFEAI_AUTH_REFRESH_TOKEN_MAX_AGE=30d
+
+set REDIS_PASSWORD=safeai_redis_password
+
+mvnw.cmd spring-boot:run
+```
+
 Ожидаемый результат в логах:
 
 ```text

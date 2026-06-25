@@ -1,5 +1,6 @@
 package ru.safeai.gateway.auth.security;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
@@ -18,8 +19,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class UserStatusFilterTest {
 
@@ -45,17 +45,26 @@ class UserStatusFilterTest {
         SecurityContextHolder.clearContext();
     }
 
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void doFilter_shouldContinueWhenAuthenticationIsMissing() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        verifyNoInteractions(userStatusCacheService);
+    }
+
     @Test
     void doFilter_shouldReturn401WhenUserIsDisabled() throws Exception {
-        SafeAiUserPrincipal principal = principal();
-
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(
-                        principal,
-                        null,
-                        principal.getAuthorities()
-                )
-        );
+        setPrincipal();
 
         when(userStatusCacheService.getStatus(USER_ID))
                 .thenReturn(Optional.of(new UserSecurityStatus(false, true, 0L)));
@@ -71,16 +80,25 @@ class UserStatusFilterTest {
     }
 
     @Test
-    void doFilter_shouldReturn401WhenTokenVersionMismatch() throws Exception {
-        SafeAiUserPrincipal principal = principal();
+    void doFilter_shouldReturn401WhenOrganizationIsDisabled() throws Exception {
+        setPrincipal();
 
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(
-                        principal,
-                        null,
-                        principal.getAuthorities()
-                )
-        );
+        when(userStatusCacheService.getStatus(USER_ID))
+                .thenReturn(Optional.of(new UserSecurityStatus(true, false, 0L)));
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("TOKEN_REVOKED");
+    }
+
+    @Test
+    void doFilter_shouldReturn401WhenTokenVersionMismatch() throws Exception {
+        setPrincipal();
 
         when(userStatusCacheService.getStatus(USER_ID))
                 .thenReturn(Optional.of(new UserSecurityStatus(true, true, 1L)));
@@ -96,16 +114,25 @@ class UserStatusFilterTest {
     }
 
     @Test
-    void doFilter_shouldContinueWhenUserIsValid() throws Exception {
-        SafeAiUserPrincipal principal = principal();
+    void doFilter_shouldReturn401WhenStatusIsMissing() throws Exception {
+        setPrincipal();
 
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(
-                        principal,
-                        null,
-                        principal.getAuthorities()
-                )
-        );
+        when(userStatusCacheService.getStatus(USER_ID))
+                .thenReturn(Optional.empty());
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("TOKEN_REVOKED");
+    }
+
+    @Test
+    void doFilter_shouldContinueWhenUserIsValid() throws Exception {
+        setPrincipal();
 
         when(userStatusCacheService.getStatus(USER_ID))
                 .thenReturn(Optional.of(new UserSecurityStatus(true, true, 0L)));
@@ -119,8 +146,8 @@ class UserStatusFilterTest {
         assertThat(response.getStatus()).isEqualTo(200);
     }
 
-    private SafeAiUserPrincipal principal() {
-        return new SafeAiUserPrincipal(
+    private void setPrincipal() {
+        SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
                 USER_ID,
                 ORGANIZATION_ID,
                 "admin@test.com",
@@ -129,11 +156,6 @@ class UserStatusFilterTest {
                 0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
-    }
-
-    @Test
-    void doFilter_shouldReturn401WhenOrganizationIsDisabled() throws Exception {
-        SafeAiUserPrincipal principal = principal();
 
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
@@ -142,17 +164,5 @@ class UserStatusFilterTest {
                         principal.getAuthorities()
                 )
         );
-
-        when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(new UserSecurityStatus(true, false, 0L)));
-
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        MockFilterChain chain = new MockFilterChain();
-
-        filter.doFilter(request, response, chain);
-
-        assertThat(response.getStatus()).isEqualTo(401);
-        assertThat(response.getContentAsString()).contains("TOKEN_REVOKED");
     }
 }

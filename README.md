@@ -286,6 +286,81 @@ exp
 iss
 ```
 
+```text
+Login:
+POST /api/auth/login
+backend проверяет пароль
+backend ставит access_token cookie
+backend ставит refresh_token cookie
+frontend НЕ получает JWT в body и НЕ кладет его в localStorage
+
+Authenticated requests:
+frontend делает fetch(..., { credentials: "include" })
+браузер сам прикладывает cookie
+backend достает access token из cookie через BearerTokenResolver
+
+Refresh:
+POST /api/auth/refresh
+backend читает refresh_token cookie
+выдает новый access_token cookie
+
+Logout:
+POST /api/auth/logout
+backend удаляет cookies
+backend отзывает refresh token в БД
+```
+
+```text
+Prodaction:
+
+
+refresh-token rotation
+revokedByIp / revokedReason
+device/session management
+отдельный UnauthorizedException вместо ResourceNotFoundException для refresh
+тесты на ClientIpResolver с X-Forwarded-For spoofing
+```
+
+
+```text
+Вариант 1 — frontend через Authorization header
+fetch("/api/chats", {
+headers: {
+Authorization: `Bearer ${token}`,
+"Content-Type": "application/json",
+},
+});
+Вариант 2 — frontend через cookie
+fetch("/api/chats", {
+credentials: "include",
+headers: {
+"Content-Type": "application/json",
+},
+});
+
+access token в HttpOnly Secure SameSite cookie
+refresh token в HttpOnly Secure SameSite cookie
+CSRF protection для unsafe methods
+frontend не хранит JWT в localStorage
+BearerTokenResolver из cookie — нормально
+```
+
+```text
+access_token  -> HttpOnly Secure SameSite cookie
+refresh_token -> HttpOnly Secure SameSite cookie
+XSRF-TOKEN    -> НЕ HttpOnly cookie, только для чтения frontend-ом
+frontend      -> отправляет X-XSRF-TOKEN header на POST/PATCH/PUT/DELETE
+backend       -> включает csrf(), а не disable()
+
+access_token  -> HttpOnly=true
+refresh_token -> HttpOnly=true
+XSRF-TOKEN    -> HttpOnly=false, но его лучше создает Spring CSRF, а AuthCookieService только очищает
+secure        -> через application.yml/env
+sameSite      -> через application.yml/env
+maxAge        -> через Duration, не руками в секундах
+```
+
+
 Backend не полагается только на email. В токене явно присутствуют `userId`, `organizationId`, `roles` и `tokenVersion`.
 
 ### Token Revocation через tokenVersion
@@ -1023,55 +1098,6 @@ safeai.ai.provider=mock
 safeai.ai.provider=openai
 safeai.ai.provider=anthropic
 ```
-
----
-
-## 22. Current Production Gaps
-
-Проект является production-oriented MVP, но не finished production system.
-
-Известные gaps:
-
-```text
-Frontend пока prototype-level.
-JWT хранится в localStorage.
-OpenAI/Anthropic providers требуют live verification.
-AI cost calculation пока не полностью реализован.
-Нет streaming AI responses.
-Нет RAG / Knowledge Base.
-Нет organization budgets.
-Нет date filters для usage analytics.
-Нет полного CI/CD pipeline.
-Нет production Nginx/HTTPS deployment profile.
-Нет frontend component library/form library.
-Нет refresh-token flow.
-Нет organization enabled/disabled status.
-```
-
-Это planned improvements, а не случайные недоработки.
-
----
-
-## 23. Architectural Strengths
-
-Сильные стороны текущей архитектуры:
-
-```text
-Stateless JWT security
-tokenVersion-based token invalidation
-Redis-backed user security status cache
-multi-tenant service-level authorization
-role-based access control
-audit trail
-usage analytics
-Redis rate limiting
-request id correlation
-Flyway-managed schema
-pluggable AI provider abstraction
-DB transaction boundary around external AI calls
-admin/user/platform role separation
-```
-
 ---
 
 ## 24. Interview Positioning
@@ -1097,17 +1123,6 @@ SafeAI Desk можно презентовать так:
 
 ---
 
-## 25. Project Status
-
-Текущий статус:
-
-```text
-Working full-stack MVP
-Backend заметно сильнее frontend
-Core security и multi-tenant architecture реализованы
-Admin, audit, usage и chat flows функциональны
-Готов к portfolio hardening и следующей фазе развития
-```
 
 Рекомендуемая следующая фаза:
 
@@ -1118,3 +1133,353 @@ Admin, audit, usage и chat flows функциональны
 4. Live-verify OpenAI provider
 5. Add RAG Knowledge Base
 ```
+
+## Структура проекта
+
+По текущей структуре проект выглядит так:
+
+```text
+```text
+Safeai-desk/
+├── backend/
+│   ├── .idea/
+│   ├── .mvn/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── java/ru/safeai/gateway/
+│   │   │   │   ├── admin/
+│   │   │   │   ├── ai/
+│   │   │   │   ├── audit/
+│   │   │   │   ├── auth/
+│   │   │   │   ├── chat/
+│   │   │   │   ├── common/
+│   │   │   │   ├── organization/
+│   │   │   │   ├── ratelimit/
+│   │   │   │   ├── user/
+│   │   │   │   └── SafeaiBackendApplication.java
+│   │   │   └── resources/
+│   │   │       ├── application.yml
+│   │   │       ├── application-local.yml
+│   │   │       ├── application-local-nginx.yml
+│   │   │       ├── static/
+│   │   │       ├── templates/
+│   │   │       └── db/migration/
+│   │   │           ├── V1__init_schema.sql
+│   │   │           ├── V2__seed_roles.sql
+│   │   │           ├── V3__seed_demo_admin.sql
+│   │   │           ├── V4__use_timestamptz_for_created_at.sql
+│   │   │           ├── V5__add_indexes.sql
+│   │   │           ├── V6__add_unique_organization_name.sql
+│   │   │           ├── V7__add_user_token_version.sql
+│   │   │           ├── V8__add_audit_event_type_index.sql
+│   │   │           ├── V9__add_super_admin_role.sql
+│   │   │           ├── V10__add_case_insensitive_user_email_index.sql
+│   │   │           ├── V11__seed_platform_super_admin.sql
+│   │   │           ├── V12__seed_platform_super_admin.sql
+│   │   │           └── V13__add_audit_event_organization_id.sql
+│   │   │           └── V14__add_audit_event_organization_id.sql
+│   │   │           └── V15__add_chat_message_constraints.sql
+│   │   │           └── V16__fix_super_admin_password_and_user_email_unique.sql
+│   │   │           └── V17__add_refresh_tokens.sql
+│   │   │           └── V18__add_organization_enabled.sql
+│   │   │           └── V19__add_chat_session_updated_at.sql
+│   │   │           └── V20__add_chat_message_status.sql
+│   │   │           └── V21__backfill_audit_event_organization_id.sql
+│   │   │           └── V22__make_audit_event_organization_id_not_null.sql
+│   │   └── test/
+│   │       ├── java/ru/safeai/gateway/
+│   │       │   ├── admin/
+│   │       │   ├── ai/
+│   │       │   ├── audit/
+│   │       │   ├── auth/
+│   │       │   ├── chat/
+│   │       │   ├── common/
+│   │       │   ├── organization/
+│   │       │   ├── ratelimit/
+│   │       │   ├── user/
+│   │       │   └── SafeaiBackendApplicationTests.java
+│   │       └── resources/
+│   │           ├──
+│   │           └── application-test.yml
+│   ├── .env
+│   ├── .env.example
+│   ├── Dockerfile
+│   ├── mvnw
+│   ├── mvnw.cmd
+│   └── pom.xml
+│
+├── frontend/
+│   ├── src/
+│   │   ├── api/
+│   │   ├── pages/
+│   │   ├── App.tsx
+│   │   ├── global.d.ts
+│   │   ├── index.css
+│   │   ├── main.tsx
+│   │   └── vite-env.d.ts
+│   ├── index.html
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.app.json
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
+│   └── vite.config.ts
+│
+├── infra/
+│   └── docker-compose.yml
+│
+├── scripts/
+│   ├── check-health.bat
+│   ├── full-docker-up.bat
+│   ├── psql-audit-events.bat
+│   ├── run-backend-local.bat
+│   ├── run-infra.bat
+│   └── stop-infra.bat
+│
+├── docs/
+├── .gitignore
+└── README.md
+```
+
+
+
+---
+
+## Backend-модули
+
+```text
+```text
+ru.safeai.gateway
+├── admin
+│   ├── controller
+│   │   └── AdminUsageController
+│   └── service
+│       └── AdminUsageService
+│
+├── ai
+│   ├── AiChatRequest
+│   ├── AiChatResponse
+│   ├── AiConfiguration
+│   ├── AiExceptionHandler
+│   ├── AiMessage
+│   ├── AiProvider
+│   ├── AiProviderException
+│   ├── AiProviderProperties
+│   ├── AiProviderSupport
+│   ├── AiProviderTimeoutException
+│   ├── AiRestClientFactory
+│   ├── AnthropicProperties
+│   ├── AnthropicProvider
+│   ├── MockAiProvider
+│   ├── OpenAiProperties
+│   └── OpenAiProvider
+│
+├── audit
+│   ├── controller
+│   │   └── AuditController
+│   ├── dto
+│   │   └── AuditEventFilter
+│   │   └── AuditEventResponse
+│   ├── entity
+│   │   └── AuditEventEntity
+│   ├── listener
+│   │   └── RateLimitAuditListener
+│   ├── repository
+│   │   └── AuditEventRepository
+│   ├── service
+│   │   ├── AuditEventQueryService
+│   │   └── AuditEventService
+│   └── AuditEventType
+│
+├── auth
+│   ├── controller
+│   │   └── AuthController
+│   ├── dto
+│   │   ├── AuthUserResponse
+│   │   ├── CurrentUserResponse
+│   │   ├── LoginRequest
+│   │   └── LoginResponse
+│   ├── entity
+│   │   └── RefreshTokenEntity
+│   ├── mapper
+│   │   └── AuthUserMapper
+│   ├── repository
+│   │   └── RefreshTokenRepository
+│   ├── security
+│   │   ├── CustomUserDetailsService
+│   │   ├── SecurityConfig
+│   │   └── UserStatusFilter
+│   └── service
+│       ├── AuthCookieProperties
+│       ├── AuthCookieService
+│       ├── AuthEventService
+│       ├── AuthService
+│       └── RefreshTokenService
+│
+├── chat
+│   ├── controller
+│   │   └── ChatController
+│   ├── dto
+│   │   ├── ChatDetailsResponse
+│   │   ├── ChatResponse
+│   │   ├── CreateChatRequest
+│   │   ├── MessageResponse
+│   │   ├── SendMessageRequest
+│   │   ├── UsageDailySummaryResponse
+│   │   ├── UsageModelSummaryResponse
+│   │   ├── UsageSummaryResponse
+│   │   └── UsageUserSummaryResponse
+│   ├── entity
+│   │   ├── ChatMessageEntity
+│   │   ├── ChatMessageRole
+│   │   ├── ChatMessageStatus
+│   │   └── ChatSessionEntity
+│   ├── repository
+│   │   ├── ChatMessageRepository
+│   │   ├── ChatSessionRepository
+│   │   ├── UsageDailySummaryProjection
+│   │   └── UsageQueryRepository
+│   └── service
+│       ├── ChatLockService
+│       ├── ChatMapper
+│       ├── ChatPersistenceService
+│       ├── ChatProcessingContext
+│       └── ChatService
+│
+├── common
+│   ├── exception
+│   │   ├── ApiErrorResponse
+│   │   ├── ApiErrorResponseFactory
+│   │   ├── ConflictException
+│   │   ├── ForbiddenOperationException
+│   │   ├── GlobalExceptionHandler
+│   │   ├── RateLimitExceededException
+│   │   ├── RateLimitUnavailableException
+│   │   └── ResourceNotFoundException
+│   └── platform
+│   │   └── PlatformProperties
+│   │
+│   └── security
+│       ├── ClientIpProperties
+│       ├── ClientIpResolver
+│       ├── CorsProperties
+│       ├── JsonAccessDeniedHandler
+│       ├── JsonAuthenticationEntryPoint
+│       ├── JsonSecurityErrorWriter
+│       ├── JwtProperties
+│       ├── JwtService
+│       ├── RequestIdFilter
+│       ├── RoleAuthorityMapper
+│       ├── SafeAiJwtAuthenticationConverter
+│       └── SafeAiUserPrincipal
+│
+├── organization
+│   ├── controller
+│   │   └── OrganizationController
+│   ├── dto
+│   │   ├── CreateOrganizationRequest
+│   │   └── OrganizationResponse
+│   ├── entity
+│   │   └── OrganizationEntity
+│   ├── repository
+│   │   └── OrganizationRepository
+│   └── service
+│       └── OrganizationService
+│
+├── ratelimit
+│   ├── AiMessageRateLimitProperties
+│   ├── LoginRateLimitProperties
+│   ├── LoginRateLimitService
+│   ├── RateLimitExceededEvent
+│   ├── RateLimitResult
+│   ├── RedisFixedWindowRateLimiter
+│   └── RedisRateLimitService
+│
+└── user
+    ├── controller
+    │   └── UserController
+    ├── dto
+    │   ├── CreateUserRequest
+    │   ├── ResetUserPasswordRequest
+    │   ├── UpdateUserEnabledRequest
+    │   ├── UpdateUserRolesRequest
+    │   └── UserResponse
+    ├── entity
+    │   ├── RoleEntity
+    │   └── UserEntity
+    ├── event
+    │   └── UserSecurityStateChangedEvent
+    ├── repository
+    │   ├── RoleRepository
+    │   └── UserRepository
+    └── service
+        ├── UserSecurityStatus
+        ├── UserService
+        ├── UserStatusCacheInvalidationListener
+        ├── UserStatusCacheProperties
+        └── UserStatusCacheService
+```
+
+
+
+### Назначение модулей
+
+| Модуль | Назначение |
+|---|---|
+| `auth` | login, текущий пользователь, JWT выдача, audit login events |
+| `common.security` | SecurityConfig, JWT, principal, requestId, JSON 401/403, UserStatusFilter |
+| `common.exception` | единый формат API ошибок |
+| `common.ratelimit` | Redis login/AI-message rate limits |
+| `organization` | организации, platform-level управление |
+| `user` | пользователи, роли, enable/disable, reset password |
+| `chat` | chat sessions/messages, сохранение usage |
+| `ai` | AI provider abstraction и реализации |
+| `audit` | запись и чтение audit events |
+| `admin` | usage dashboards/aggregation endpoints |
+
+---
+
+## Frontend-модули
+
+```text
+frontend/src
+├── api/
+│   ├── adminApi.ts
+│   ├── authApi.ts
+│   ├── chatApi.ts
+│   ├── http.ts
+│   └── userApi.ts
+├── auth/
+│   └──AuthContext.tsx
+├── pages/
+│   ├── AdminAuditPage.tsx
+│   ├── AdminUsagePage.tsx
+│   ├── AdminUsersPage.tsx
+│   ├── ChatPage.tsx
+│   └── LoginPage.tsx
+├── utils/
+│   └── format.ts
+├── App.tsx
+├── global.d.ts
+├── index.css
+├── main.tsx
+└── vite-env.d.ts
+```
+
+### Назначение frontend-файлов
+
+| Файл | Назначение |
+|---|---|
+| `api/http.ts` | общий `apiRequest`, token handling, ApiError |
+| `api/authApi.ts` | login и `/api/auth/me` |
+| `api/chatApi.ts` | CRUD чатов и отправка сообщений |
+| `api/userApi.ts` | admin user-management actions |
+| `api/adminApi.ts` | audit и usage APIs |
+| `App.tsx` | routes, protected routes, topbar |
+| `LoginPage.tsx` | login form |
+| `ChatPage.tsx` | список чатов и сообщения |
+| `AdminUsersPage.tsx` | пользователи, роли, enable/disable, reset password |
+| `AdminAuditPage.tsx` | audit events |
+| `AdminUsagePage.tsx` | usage summary |
+
+---

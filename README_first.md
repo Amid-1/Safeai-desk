@@ -499,6 +499,15 @@ Safeai-desk/
 │   │   │           ├── V11__seed_platform_super_admin.sql
 │   │   │           ├── V12__seed_platform_super_admin.sql
 │   │   │           └── V13__add_audit_event_organization_id.sql
+│   │   │           └── V14__add_audit_event_organization_id.sql
+│   │   │           └── V15__add_chat_message_constraints.sql
+│   │   │           └── V16__fix_super_admin_password_and_user_email_unique.sql
+│   │   │           └── V17__add_refresh_tokens.sql
+│   │   │           └── V18__add_organization_enabled.sql
+│   │   │           └── V19__add_chat_session_updated_at.sql
+│   │   │           └── V20__add_chat_message_status.sql
+│   │   │           └── V21__backfill_audit_event_organization_id.sql
+│   │   │           └── V22__make_audit_event_organization_id_not_null.sql
 │   │   └── test/
 │   │       ├── java/ru/safeai/gateway/
 │   │       │   ├── admin/
@@ -590,6 +599,7 @@ ru.safeai.gateway
 │   ├── controller
 │   │   └── AuditController
 │   ├── dto
+│   │   └── AuditEventFilter
 │   │   └── AuditEventResponse
 │   ├── entity
 │   │   └── AuditEventEntity
@@ -610,15 +620,21 @@ ru.safeai.gateway
 │   │   ├── CurrentUserResponse
 │   │   ├── LoginRequest
 │   │   └── LoginResponse
+│   ├── entity
+│   │   └── RefreshTokenEntity
 │   ├── mapper
 │   │   └── AuthUserMapper
+│   ├── repository
+│   │   └── RefreshTokenRepository
 │   ├── security
 │   │   ├── CustomUserDetailsService
 │   │   ├── SecurityConfig
 │   │   └── UserStatusFilter
 │   └── service
+│       ├── AuthCookieService
 │       ├── AuthEventService
-│       └── AuthService
+│       ├── AuthService
+│       └── RefreshTokenService
 │
 ├── chat
 │   ├── controller
@@ -636,12 +652,15 @@ ru.safeai.gateway
 │   ├── entity
 │   │   ├── ChatMessageEntity
 │   │   ├── ChatMessageRole
+│   │   ├── ChatMessageStatus
 │   │   └── ChatSessionEntity
 │   ├── repository
 │   │   ├── ChatMessageRepository
 │   │   ├── ChatSessionRepository
-│   │   └── UsageDailySummaryProjection
+│   │   ├── UsageDailySummaryProjection
+│   │   └── UsageQueryRepository
 │   └── service
+│       ├── ChatLockService
 │       ├── ChatMapper
 │       ├── ChatPersistenceService
 │       ├── ChatProcessingContext
@@ -657,6 +676,9 @@ ru.safeai.gateway
 │   │   ├── RateLimitExceededException
 │   │   ├── RateLimitUnavailableException
 │   │   └── ResourceNotFoundException
+│   └── platform
+│   │   └── PlatformProperties
+│   │
 │   └── security
 │       ├── ClientIpResolver
 │       ├── CorsProperties
@@ -688,6 +710,7 @@ ru.safeai.gateway
 │   ├── LoginRateLimitProperties
 │   ├── LoginRateLimitService
 │   ├── RateLimitExceededEvent
+│   ├── RateLimitResult
 │   ├── RedisFixedWindowRateLimiter
 │   └── RedisRateLimitService
 │
@@ -745,12 +768,16 @@ frontend/src
 │   ├── chatApi.ts
 │   ├── http.ts
 │   └── userApi.ts
+├── auth/
+│   └──AuthContext.tsx
 ├── pages/
 │   ├── AdminAuditPage.tsx
 │   ├── AdminUsagePage.tsx
 │   ├── AdminUsersPage.tsx
 │   ├── ChatPage.tsx
 │   └── LoginPage.tsx
+├── utils/
+│   └── format.ts
 ├── App.tsx
 ├── global.d.ts
 ├── index.css

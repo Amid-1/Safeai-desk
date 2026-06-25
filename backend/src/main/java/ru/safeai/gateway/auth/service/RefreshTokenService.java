@@ -53,11 +53,12 @@ public class RefreshTokenService {
 
     @Transactional
     public void revoke(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return;
+        }
+
         refreshTokenRepository.findByTokenHash(hash(rawToken))
-                .ifPresent(token -> {
-                    token.setRevokedAt(Instant.now());
-                    refreshTokenRepository.save(token);
-                });
+                .ifPresent(token -> token.setRevokedAt(Instant.now()));
     }
 
     private String hash(String rawToken) {

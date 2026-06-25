@@ -24,9 +24,16 @@ import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.web.cors.*;
+import ru.safeai.gateway.auth.service.AuthCookieProperties;
 import ru.safeai.gateway.auth.service.AuthCookieService;
 import ru.safeai.gateway.common.security.*;
+
+import ru.safeai.gateway.common.security.ClientIpProperties;
 
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
@@ -36,7 +43,9 @@ import java.util.List;
 @EnableMethodSecurity
 @EnableConfigurationProperties({
         JwtProperties.class,
-        CorsProperties.class
+        CorsProperties.class,
+        AuthCookieProperties.class,
+        ClientIpProperties.class
 })
 @RequiredArgsConstructor
 public class SecurityConfig {
@@ -51,11 +60,17 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) {
         return http
-                .csrf(AbstractHttpConfigurer::disable)
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(csrfTokenRepository())
+                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
+                )
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
+                .formLogin(AbstractHttpConfigurer::disable)
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .logout(AbstractHttpConfigurer::disable)
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(jsonAuthenticationEntryPoint)
                         .accessDeniedHandler(jsonAccessDeniedHandler)
@@ -63,6 +78,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
+                        .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/refresh").permitAll()
                         .requestMatchers("/api/auth/logout").permitAll()
@@ -88,6 +104,7 @@ public class SecurityConfig {
                                 jwt.jwtAuthenticationConverter(safeAiJwtAuthenticationConverter)
                         )
                 )
+                .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
                 .addFilterAfter(userStatusFilter, BearerTokenAuthenticationFilter.class)
                 .build();
     }
@@ -127,14 +144,39 @@ public class SecurityConfig {
     }
 
     @Bean
+    public CsrfTokenRepository csrfTokenRepository() {
+        CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+
+        repository.setCookieName("XSRF-TOKEN");
+        repository.setHeaderName("X-XSRF-TOKEN");
+        repository.setCookiePath("/");
+
+        repository.setCookieCustomizer(cookie -> cookie
+                .sameSite("Lax")
+                .secure(false)
+                .httpOnly(false)
+                .path("/")
+        );
+
+        return repository;
+    }
+
+    @Bean
     public BearerTokenResolver bearerTokenResolver() {
+        DefaultBearerTokenResolver headerResolver = new DefaultBearerTokenResolver();
+
         return request -> {
             String servletPath = request.getServletPath();
 
             if ("/api/auth/login".equals(servletPath)
-                    || "/api/auth/refresh".equals(servletPath)
-                    || "/api/auth/logout".equals(servletPath)) {
+                    || "/api/auth/refresh".equals(servletPath)) {
                 return null;
+            }
+
+            String headerToken = headerResolver.resolve(request);
+
+            if (headerToken != null && !headerToken.isBlank()) {
+                return headerToken;
             }
 
             if (request.getCookies() == null) {
@@ -143,7 +185,11 @@ public class SecurityConfig {
 
             for (var cookie : request.getCookies()) {
                 if (AuthCookieService.ACCESS_TOKEN_COOKIE.equals(cookie.getName())) {
-                    return cookie.getValue();
+                    String cookieToken = cookie.getValue();
+
+                    if (cookieToken != null && !cookieToken.isBlank()) {
+                        return cookieToken;
+                    }
                 }
             }
 

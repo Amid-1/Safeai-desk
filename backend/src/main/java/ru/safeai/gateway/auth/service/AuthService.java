@@ -1,6 +1,5 @@
 package ru.safeai.gateway.auth.service;
 
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +44,8 @@ public class AuthService {
             HttpServletResponse response
     ) {
         Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(httpRequest, "httpRequest не должен быть null");
+        Objects.requireNonNull(response, "response не должен быть null");
 
         String email = Objects.requireNonNull(request.email(), "email не должен быть null")
                 .trim()
@@ -91,12 +92,12 @@ public class AuthService {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        String rawRefreshToken = extractCookieValue(
-                request,
-                AuthCookieService.REFRESH_TOKEN_COOKIE
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(response, "response не должен быть null");
 
-        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+        String rawRefreshToken = authCookieService.extractRefreshToken(request);
+
+        if (rawRefreshToken == null) {
             throw new ResourceNotFoundException("Refresh token не найден");
         }
 
@@ -119,12 +120,12 @@ public class AuthService {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        String rawRefreshToken = extractCookieValue(
-                request,
-                AuthCookieService.REFRESH_TOKEN_COOKIE
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(response, "response не должен быть null");
 
-        if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
+        String rawRefreshToken = authCookieService.extractRefreshToken(request);
+
+        if (rawRefreshToken != null) {
             refreshTokenService.revoke(rawRefreshToken);
         }
 
@@ -133,6 +134,8 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public CurrentUserResponse getCurrentUser(SafeAiUserPrincipal principal) {
+        Objects.requireNonNull(principal, "principal не должен быть null");
+
         UserEntity user = userRepository.findByIdWithRolesAndOrganization(principal.getId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Пользователь не найден: " + principal.getId()
@@ -155,21 +158,5 @@ public class AuthService {
                 user.isEnabled(),
                 roles
         );
-    }
-
-    private String extractCookieValue(HttpServletRequest request, String cookieName) {
-        Cookie[] cookies = request.getCookies();
-
-        if (cookies == null) {
-            return null;
-        }
-
-        for (Cookie cookie : cookies) {
-            if (cookieName.equals(cookie.getName())) {
-                return cookie.getValue();
-            }
-        }
-
-        return null;
     }
 }
