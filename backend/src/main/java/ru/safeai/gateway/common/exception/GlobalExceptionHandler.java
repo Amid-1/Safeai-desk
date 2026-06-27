@@ -203,6 +203,35 @@ public class GlobalExceptionHandler {
         );
     }
 
+
+    @ExceptionHandler(ExpiredRefreshTokenException.class)
+    public ResponseEntity<ApiErrorResponse> handleExpiredRefreshToken(
+            ExpiredRefreshTokenException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
+                "EXPIRED_REFRESH_TOKEN",
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidRefreshToken(
+            InvalidRefreshTokenException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
+                "INVALID_REFRESH_TOKEN",
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
+
     private ResponseEntity<ApiErrorResponse> buildResponse(
             HttpStatus status,
             String error,

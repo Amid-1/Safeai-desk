@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.RequestIdFilter;
@@ -65,6 +66,54 @@ public class AuthEventService {
             log.warn(
                     "Failed to write USER_LOGIN_FAILED audit event for email={}",
                     email,
+                    exception
+            );
+        }
+    }
+
+    public void refreshReuseDetected(
+            RefreshTokenReuseDetectedException exception,
+            HttpServletRequest request
+    ) {
+        try {
+            auditEventService.record(
+                    exception.getUserId(),
+                    exception.getOrganizationId(),
+                    AuditEventType.SECURITY_REFRESH_REUSE_DETECTED,
+                    Map.of(
+                            "tokenFamilyId", exception.getTokenFamilyId().toString(),
+                            "ip", clientIpResolver.resolve(request),
+                            "userAgent", headerOrUnknown(request, "User-Agent", MAX_USER_AGENT_LENGTH),
+                            "requestId", requestId(request)
+                    )
+            );
+        } catch (RuntimeException auditException) {
+            log.warn(
+                    "Failed to write SECURITY_REFRESH_REUSE_DETECTED audit event for userId={}",
+                    exception.getUserId(),
+                    auditException
+            );
+        }
+    }
+
+    public void logout(SafeAiUserPrincipal principal, HttpServletRequest request) {
+        try {
+            auditEventService.record(
+                    principal.getId(),
+                    principal.getOrganizationId(),
+                    AuditEventType.USER_LOGOUT,
+                    Map.of(
+                            "email", truncateOrUnknown(principal.getEmail(), MAX_EMAIL_LENGTH),
+                            "organizationId", principal.getOrganizationId().toString(),
+                            "ip", clientIpResolver.resolve(request),
+                            "userAgent", headerOrUnknown(request, "User-Agent", MAX_USER_AGENT_LENGTH),
+                            "requestId", requestId(request)
+                    )
+            );
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "Failed to write USER_LOGOUT audit event for userId={}",
+                    principal.getId(),
                     exception
             );
         }

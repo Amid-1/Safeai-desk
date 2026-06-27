@@ -1,11 +1,19 @@
-/* Safeai-desk/backend/src/main/resources/db/migration/V3__seed_demo_admin.sql */
-insert into organizations (id, name, created_at)
+/* Safeai-desk/backend/src/main/resources/db/migration/V3__seed_local_demo_data.sql */
+insert into organizations (
+    id,
+    name,
+    enabled,
+    created_at,
+    version
+)
 values (
            'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
            'Demo Company',
-           now()
+           true,
+           now(),
+           0
        )
-    on conflict (id) do nothing;
+on conflict (id) do nothing;
 
 
 insert into users (
@@ -15,24 +23,68 @@ insert into users (
     password_hash,
     full_name,
     enabled,
-    created_at
+    created_at,
+    token_version,
+    version
 )
 values (
            'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
            'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
            'admin@test.com',
-           '$2y$10$qcWB2wkTGlA7MvSoYdPFy.7R7BZzvifDywN4hOUd9ipijInEF7CjG',
+           '$2a$10$qcWB2wkTGlA7MvSoYdPFy.7R7BZzvifDywN4hOUd9ipijInEF7CjG',
            'Demo Admin',
            true,
-           now()
+           now(),
+           0,
+           0
        )
-    on conflict (email) do nothing;
+on conflict do nothing;
+
+
+insert into users (
+    id,
+    organization_id,
+    email,
+    password_hash,
+    full_name,
+    enabled,
+    created_at,
+    token_version,
+    version
+)
+values (
+           '00000000-0000-0000-0000-000000000101',
+           '00000000-0000-0000-0000-000000000001',
+           'superadmin@test.com',
+           '$2a$10$yJB.CHsf1cPn3lYot0djHuiBE4Dk7o8iFkZdCNLAoaCy5TFvIxS36',
+           'SafeAI Platform Admin',
+           true,
+           now(),
+           0,
+           0
+       )
+on conflict do nothing;
 
 
 insert into user_roles (user_id, role_id)
 select u.id, r.id
 from users u
-         cross join roles r
+         join roles r on r.name = 'ADMIN'
 where u.email = 'admin@test.com'
-  and r.name = 'ADMIN'
-    on conflict do nothing;
+on conflict do nothing;
+
+
+insert into user_roles (user_id, role_id)
+select u.id, r.id
+from users u
+         join roles r on r.name = 'USER'
+where u.email = 'admin@test.com'
+on conflict do nothing;
+
+
+insert into user_roles (user_id, role_id)
+select u.id, r.id
+from users u
+         join roles r on r.name = 'SUPER_ADMIN'
+where u.email = 'superadmin@test.com'
+on conflict do nothing;

@@ -27,6 +27,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             join m.session s
             join s.user u
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
+              and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
               and m.model is not null
               and m.createdAt >= :dateFrom
               and m.createdAt < :dateTo
@@ -52,6 +53,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             join m.session s
             join s.user u
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
+              and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
               and m.model is not null
               and m.createdAt >= :dateFrom
               and m.createdAt < :dateTo
@@ -72,6 +74,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             )
             from ChatMessageEntity m
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
+              and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
               and m.model is not null
               and m.createdAt >= :dateFrom
               and m.createdAt < :dateTo
@@ -96,6 +99,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             join m.session s
             join s.user u
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
+              and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
               and u.id = :userId
               and m.model is not null
               and m.createdAt >= :dateFrom
@@ -124,6 +128,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             join m.session s
             join s.user u
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
+              and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
               and u.organization.id = :organizationId
               and m.model is not null
               and m.createdAt >= :dateFrom
@@ -147,6 +152,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
                 coalesce(sum(m.cost_usd), 0) as "costUsd"
             from chat_messages m
             where m.role = 'ASSISTANT'
+              and m.status = 'COMPLETED'
               and m.model is not null
               and m.created_at >= :dateFrom
               and m.created_at < :dateTo
@@ -170,6 +176,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             join m.session s
             join s.user u
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
+              and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
               and u.organization.id = :organizationId
               and m.model is not null
               and m.createdAt >= :dateFrom
@@ -194,6 +201,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             join m.session s
             join s.user u
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
+              and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
               and u.organization.id = :organizationId
               and m.model is not null
               and m.createdAt >= :dateFrom
@@ -217,6 +225,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             join chat_sessions s on s.id = m.session_id
             join users u on u.id = s.user_id
             where m.role = 'ASSISTANT'
+              and m.status = 'COMPLETED'
               and m.model is not null
               and u.organization_id = :organizationId
               and m.created_at >= :dateFrom
@@ -243,6 +252,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             join m.session s
             join s.user u
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
+              and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
               and u.id = :userId
               and u.organization.id = :organizationId
               and m.model is not null

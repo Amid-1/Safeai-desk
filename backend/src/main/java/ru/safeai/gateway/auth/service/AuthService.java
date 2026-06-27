@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
-import ru.safeai.gateway.auth.entity.RefreshTokenEntity;
+import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
@@ -19,6 +19,7 @@ import ru.safeai.gateway.ratelimit.LoginRateLimitService;
 import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
 
 import java.util.Objects;
 import java.util.Set;
@@ -98,21 +99,29 @@ public class AuthService {
         String rawRefreshToken = authCookieService.extractRefreshToken(request);
 
         if (rawRefreshToken == null) {
-            throw new ResourceNotFoundException("Refresh token не найден");
+            authCookieService.clearAuthCookies(response);
+            throw new InvalidRefreshTokenException("Refresh token не найден");
         }
 
-        RefreshTokenEntity refreshToken = refreshTokenService.validate(rawRefreshToken);
+        try {
+            var rotationResult = refreshTokenService.rotate(rawRefreshToken, request);
 
-        UserEntity user = userRepository.findByIdWithRolesAndOrganization(
-                        refreshToken.getUser().getId()
-                )
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Пользователь не найден: " + refreshToken.getUser().getId()
-                ));
+            UserEntity user = rotationResult.user();
 
-        String newAccessToken = jwtService.generateAccessToken(user);
+            String newAccessToken = jwtService.generateAccessToken(user);
 
-        authCookieService.addAccessTokenCookie(response, newAccessToken);
+            authCookieService.addAccessTokenCookie(response, newAccessToken);
+            authCookieService.addRefreshTokenCookie(response, rotationResult.rawRefreshToken());
+
+        } catch (RefreshTokenReuseDetectedException exception) {
+            authEventService.refreshReuseDetected(exception, request);
+            authCookieService.clearAuthCookies(response);
+            throw exception;
+
+        } catch (InvalidRefreshTokenException exception) {
+            authCookieService.clearAuthCookies(response);
+            throw exception;
+        }
     }
 
     @Transactional
@@ -122,6 +131,15 @@ public class AuthService {
     ) {
         Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(response, "response не должен быть null");
+
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext()
+                .getAuthentication();
+
+        if (authentication != null
+                && authentication.getPrincipal() instanceof SafeAiUserPrincipal principal) {
+            authEventService.logout(principal, request);
+        }
 
         String rawRefreshToken = authCookieService.extractRefreshToken(request);
 

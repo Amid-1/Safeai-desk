@@ -32,7 +32,7 @@ public class AuditEventEntity {
     @JoinColumn(name = "user_id")
     private UserEntity user;
 
-    @Column(name = "organization_id")
+    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
     @Column(name = "event_type", nullable = false, length = 100)

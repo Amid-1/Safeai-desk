@@ -257,6 +257,96 @@ createdAt
 
 Backend использует stateless JWT authentication на Spring Security.
 
+### Auth / CSRF
+```text
+Frontend использует cookie-based authentication.
+
+Перед небезопасными методами `POST`, `PUT`, `PATCH`, `DELETE` frontend должен получить CSRF token через:
+
+GET /api/auth/csrf
+
+После этого значение token нужно отправлять в header:
+
+X-XSRF-TOKEN: <token>
+
+Endpoint `POST /api/auth/logout` доступен без авторизации на уровне permitAll, но остается под CSRF-защитой. 
+Поэтому logout также должен отправляться с `X-XSRF-TOKEN`.
+
+Authorization Bearer header поддерживается дополнительно для API-клиентов и тестов. Основной browser
+ flow использует cookies.
+ ```
+
+```text
+JWT uses HS256.
+
+In production SAFEAI_JWT_SECRET must be provided through environment variables
+or external secret manager. It must not be committed to git.
+
+Minimum secret length: 32 bytes.
+ ```
+
+```text
+Frontend browser flow uses cookie authentication.
+
+Access token is stored in HttpOnly cookie:
+
+access_token
+
+Authorization Bearer header is also supported for API clients,
+integration tests, Postman and non-browser consumers.
+
+When both Authorization header and access_token cookie are present,
+Authorization header has priority.
+ ```
+
+```text
+Итоговый refresh flow
+
+POST /api/auth/refresh
+↓
+read refresh_token from HttpOnly cookie
+↓
+hash refresh_token
+↓
+find token by hash with PESSIMISTIC_WRITE lock
+↓
+if not found:
+    clear cookies
+    401 INVALID_REFRESH_TOKEN
+↓
+if expired:
+    mark revoked_at
+    clear cookies
+    401 EXPIRED_REFRESH_TOKEN
+↓
+if revoked:
+    revoke all active tokens in same token_family_id
+    audit SECURITY_REFRESH_REUSE_DETECTED
+    clear cookies
+    401 INVALID_REFRESH_TOKEN
+↓
+mark old token:
+    last_used_at = now
+    revoked_at = now
+↓
+create new refresh token:
+    same token_family_id
+    new token_hash
+    new expires_at
+    created_by_ip
+    user_agent
+↓
+old.replaced_by_token_id = new.id
+↓
+issue new access token
+↓
+set access_token HttpOnly cookie
+↓
+set refresh_token HttpOnly cookie
+ ```
+
+
+
 ### Login Flow
 
 ```text
@@ -344,6 +434,23 @@ CSRF protection для unsafe methods
 frontend не хранит JWT в localStorage
 BearerTokenResolver из cookie — нормально
 ```
+
+```text
+POST /api/auth/logout не требует авторизации на уровне Spring Security,
+но остается под CSRF-защитой.
+
+Перед logout frontend должен получить CSRF token через:
+
+GET /api/auth/csrf
+
+И отправить его в header:
+
+X-XSRF-TOKEN: <token>
+
+Иначе logout может вернуть 403 Forbidden.
+
+```
+
 
 ```text
 access_token  -> HttpOnly Secure SameSite cookie

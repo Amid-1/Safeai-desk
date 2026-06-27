@@ -37,8 +37,18 @@ public class RefreshTokenEntity {
     @Column(name = "created_by_ip", length = 100)
     private String createdByIp;
 
-    @Column(name = "user_agent")
+    @Column(name = "user_agent", length = 512)
     private String userAgent;
+
+    @Column(name = "token_family_id", nullable = false)
+    private UUID tokenFamilyId;
+
+    @Column(name = "replaced_by_token_id")
+    private UUID replacedByTokenId;
+
+    @Column(name = "last_used_at")
+    private Instant lastUsedAt;
+
 
     @PrePersist
     void prePersist() {

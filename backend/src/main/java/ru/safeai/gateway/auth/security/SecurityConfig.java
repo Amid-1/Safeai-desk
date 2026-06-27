@@ -56,6 +56,7 @@ public class SecurityConfig {
     private final UserStatusFilter userStatusFilter;
     private final JwtProperties jwtProperties;
     private final CorsProperties corsProperties;
+    private final AuthCookieProperties authCookieProperties;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) {
@@ -127,7 +128,8 @@ public class SecurityConfig {
         configuration.setAllowedHeaders(List.of(
                 "Authorization",
                 "Content-Type",
-                "X-Request-Id"
+                "X-Request-Id",
+                "X-XSRF-TOKEN"
         ));
 
         configuration.setExposedHeaders(List.of(
@@ -152,8 +154,8 @@ public class SecurityConfig {
         repository.setCookiePath("/");
 
         repository.setCookieCustomizer(cookie -> cookie
-                .sameSite("Lax")
-                .secure(false)
+                .sameSite(authCookieProperties.sameSite())
+                .secure(authCookieProperties.secure())
                 .httpOnly(false)
                 .path("/")
         );
