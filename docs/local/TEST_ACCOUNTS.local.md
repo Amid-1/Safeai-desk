@@ -220,3 +220,11 @@ POST /api/admin/users/{id}/reset-password
 ```text
 USER_PASSWORD_RESET
 ```
+
+
+cd /d "D:\Java projects\Safeai-desk"
+git status
+git add .
+git restore --staged backend/.env
+git commit -F commit-message.txt
+git push

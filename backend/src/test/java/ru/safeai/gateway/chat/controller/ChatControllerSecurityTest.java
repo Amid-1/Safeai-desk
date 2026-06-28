@@ -5,7 +5,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -19,15 +23,12 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.context.annotation.ComponentScan;
-
 import ru.safeai.gateway.auth.security.UserStatusFilter;
 import ru.safeai.gateway.chat.dto.ChatResponse;
 import ru.safeai.gateway.chat.service.ChatService;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import org.springframework.context.annotation.FilterType;
 
 import java.time.Instant;
 import java.util.List;
@@ -59,9 +60,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 class ChatControllerSecurityTest {
 
-    private static final UUID USER_ID = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-    private static final UUID ORGANIZATION_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private static final UUID CHAT_ID = UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
+    private static final UUID USER_ID =
+            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+    private static final UUID ORGANIZATION_ID =
+            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+    private static final UUID CHAT_ID =
+            UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
 
     @Autowired
     private MockMvc mockMvc;
@@ -98,21 +104,29 @@ class ChatControllerSecurityTest {
     void findAllWithAuthenticatedUserReturns200() throws Exception {
         SafeAiUserPrincipal currentUser = currentUser();
 
-        when(chatService.findAll(any(SafeAiUserPrincipal.class))).thenReturn(List.of(
+        when(chatService.findAll(
+                any(SafeAiUserPrincipal.class),
+                any(Pageable.class)
+        )).thenReturn(new PageImpl<>(List.of(
                 new ChatResponse(
                         CHAT_ID,
                         "Первый тестовый чат",
                         Instant.parse("2026-06-12T12:00:00Z"),
                         Instant.parse("2026-06-12T12:01:00Z")
                 )
-        ));
+        )));
 
         mockMvc.perform(get("/api/chats")
                         .with(authentication(authToken(currentUser))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(CHAT_ID.toString()))
-                .andExpect(jsonPath("$[0].title").value("Первый тестовый чат"))
-                .andExpect(jsonPath("$[0].updatedAt").exists());
+                .andExpect(jsonPath("$.content[0].id").value(CHAT_ID.toString()))
+                .andExpect(jsonPath("$.content[0].title").value("Первый тестовый чат"))
+                .andExpect(jsonPath("$.content[0].updatedAt").exists());
+
+        verify(chatService).findAll(
+                any(SafeAiUserPrincipal.class),
+                any(Pageable.class)
+        );
     }
 
     @Test

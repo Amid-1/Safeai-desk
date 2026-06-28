@@ -18,12 +18,13 @@ public record CreateUserRequest(
         String email,
 
         @NotBlank
-        @Size(min = 6, max = 72)
+        @Size(min = 12, max = 72)
         String password,
 
         @Size(max = 255)
         String fullName,
 
+        @Size(max = 2)
         Set<@NotBlank @Size(max = 100) String> roles
 ) {
 }

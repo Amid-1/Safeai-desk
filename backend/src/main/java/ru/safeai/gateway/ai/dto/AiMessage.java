@@ -1,4 +1,4 @@
-package ru.safeai.gateway.ai;
+package ru.safeai.gateway.ai.dto;
 
 public record AiMessage(
         String role,

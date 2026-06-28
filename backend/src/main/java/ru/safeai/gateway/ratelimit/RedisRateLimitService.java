@@ -11,6 +11,7 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -23,19 +24,22 @@ public class RedisRateLimitService {
     private final RedisFixedWindowRateLimiter rateLimiter;
     private final AiMessageRateLimitProperties properties;
     private final ApplicationEventPublisher eventPublisher;
+    private final RateLimitKeyFactory keyFactory;
 
     public void checkAiMessageAllowed(SafeAiUserPrincipal user) {
-        if (!properties.enabled()) {
+        Objects.requireNonNull(user, "user не должен быть null");
+
+        if (!properties.isEnabled()) {
             return;
         }
 
         int limit = isAdminOrSuperAdmin(user)
-                ? properties.adminLimitPerHour()
-                : properties.userLimitPerHour();
+                ? properties.effectiveAdminLimitPerHour()
+                : properties.effectiveUserLimitPerHour();
 
         Duration window = Duration.ofHours(1);
 
-        String key = "rate-limit:ai-message:user:" + user.getId();
+        String key = keyFactory.aiMessageUser(user.getId());
 
         try {
             RateLimitResult result = rateLimiter.incrementAndGet(key, window);

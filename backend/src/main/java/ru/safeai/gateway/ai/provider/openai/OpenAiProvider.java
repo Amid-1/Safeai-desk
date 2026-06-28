@@ -1,32 +1,51 @@
-package ru.safeai.gateway.ai;
+package ru.safeai.gateway.ai.provider.openai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.client.ResourceAccessException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
+import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
+import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
+import ru.safeai.gateway.ai.pricing.ModelPricingService;
+import ru.safeai.gateway.ai.provider.AiProvider;
+import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
+import ru.safeai.gateway.ai.provider.AiProviderSupport;
+import ru.safeai.gateway.ai.provider.AiRestClientFactory;
 
 import java.math.BigDecimal;
 import java.util.Map;
 
 @Slf4j
 @Service
-@EnableConfigurationProperties(OpenAiProperties.class)
 @ConditionalOnProperty(
         name = "safeai.ai.provider",
         havingValue = "openai"
 )
 public class OpenAiProvider implements AiProvider {
 
+    private static final String PROVIDER_NAME = "openai";
+
     private final OpenAiProperties properties;
     private final RestClient client;
+    private final ModelPricingService pricingService;
+    private final AiProviderRetryExecutor retryExecutor;
 
-    public OpenAiProvider(OpenAiProperties properties) {
+    public OpenAiProvider(
+            OpenAiProperties properties,
+            ModelPricingService pricingService,
+            AiProviderRetryExecutor retryExecutor
+    ) {
         this.properties = properties;
+        this.pricingService = pricingService;
+        this.retryExecutor = retryExecutor;
         this.client = AiRestClientFactory.create(
                 properties.baseUrl(),
                 properties.connectTimeout(),
@@ -38,6 +57,14 @@ public class OpenAiProvider implements AiProvider {
     public AiChatResponse sendMessage(AiChatRequest request) {
         properties.validate();
 
+        return retryExecutor.execute(
+                PROVIDER_NAME,
+                properties.model(),
+                () -> doSendMessage(request)
+        );
+    }
+
+    private AiChatResponse doSendMessage(AiChatRequest request) {
         Map<String, Object> payload = Map.of(
                 "model", properties.model(),
                 "input", AiProviderSupport.buildMessages(request, this::normalizeRole),
@@ -45,7 +72,7 @@ public class OpenAiProvider implements AiProvider {
         );
 
         log.info(
-                "Отправка запроса в OpenAI: userId={}, organizationId={}, chatId={}, model={}, messageLength={}",
+                "Sending request to OpenAI: userId={}, organizationId={}, chatId={}, model={}, messageLength={}",
                 request.userId(),
                 request.organizationId(),
                 request.chatId(),
@@ -68,50 +95,103 @@ public class OpenAiProvider implements AiProvider {
             int outputTokens = AiProviderSupport.extractOutputTokens(response);
             long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
 
+            String content = AiProviderSupport.requireValidContent(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    extractOutputText(response),
+                    properties.maxResponseChars()
+            );
+
+            BigDecimal costUsd = pricingService.calculateCostUsd(
+                    properties.model(),
+                    inputTokens,
+                    outputTokens
+            );
+
             log.info(
-                    "OpenAI response received: userId={}, organizationId={}, chatId={}, model={}, durationMs={}, inputTokens={}, outputTokens={}",
+                    "OpenAI response received: userId={}, organizationId={}, chatId={}, model={}, durationMs={}, inputTokens={}, outputTokens={}, costUsd={}",
                     request.userId(),
                     request.organizationId(),
                     request.chatId(),
                     properties.model(),
                     durationMs,
                     inputTokens,
-                    outputTokens
+                    outputTokens,
+                    costUsd
             );
-
-            String content = extractOutputText(response);
-
-            if (content.isBlank()) {
-                throw new AiProviderException("OpenAI provider returned empty response");
-            }
 
             return new AiChatResponse(
                     content,
                     properties.model(),
                     inputTokens,
                     outputTokens,
-                    BigDecimal.ZERO
+                    costUsd
             );
 
         } catch (ResourceAccessException exception) {
-            throw new AiProviderTimeoutException("OpenAI provider timeout", exception);
-        } catch (RestClientResponseException exception) {
-            if (exception.getStatusCode().value() == 429) {
-                throw new AiProviderRateLimitedException(
-                        "OpenAI API rate limited: status=" + exception.getStatusCode(),
+            if (AiProviderSupport.isTimeout(exception)) {
+                throw new AiProviderTimeoutException(
+                        PROVIDER_NAME,
+                        properties.model(),
+                        "OpenAI provider timeout",
                         exception
                 );
             }
 
-            throw new AiProviderException(
-                    "OpenAI API error: status=" + exception.getStatusCode(),
+            throw new AiProviderUnavailableException(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    "OpenAI provider unavailable",
                     exception
             );
+        } catch (RestClientResponseException exception) {
+            throw mapOpenAiHttpException(exception);
         } catch (AiProviderException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            throw new AiProviderException("OpenAI provider request failed", exception);
+            throw new AiProviderException(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    null,
+                    null,
+                    false,
+                    "OpenAI provider request failed",
+                    exception
+            );
         }
+    }
+
+    private AiProviderException mapOpenAiHttpException(
+            RestClientResponseException exception
+    ) {
+        int status = exception.getStatusCode().value();
+        String requestId = AiProviderSupport.extractProviderRequestId(exception);
+
+        if (status == 429) {
+            return new AiProviderRateLimitedException(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    status,
+                    requestId,
+                    "OpenAI API rate limited: status=" + status,
+                    exception
+            );
+        }
+
+        boolean retryable = status == 500
+                || status == 502
+                || status == 503
+                || status == 504;
+
+        return new AiProviderException(
+                PROVIDER_NAME,
+                properties.model(),
+                status,
+                requestId,
+                retryable,
+                "OpenAI API error: status=" + status,
+                exception
+        );
     }
 
     private String normalizeRole(String role) {
@@ -135,6 +215,7 @@ public class OpenAiProvider implements AiProvider {
         }
 
         String directOutputText = response.path("output_text").asText(null);
+
         if (directOutputText != null && !directOutputText.isBlank()) {
             return directOutputText;
         }

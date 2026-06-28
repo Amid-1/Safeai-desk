@@ -8,6 +8,7 @@ import java.util.Set;
 
 public record UpdateUserRolesRequest(
         @NotEmpty
+        @Size(max = 2)
         Set<@NotBlank @Size(max = 100) String> roles
 ) {
 }

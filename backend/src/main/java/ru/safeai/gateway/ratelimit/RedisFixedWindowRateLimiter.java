@@ -55,7 +55,7 @@ public class RedisFixedWindowRateLimiter {
             throw new IllegalStateException("Redis Lua script returned invalid result");
         }
 
-        String[] parts = result.split(":");
+        String[] parts = result.split(":", -1);
 
         if (parts.length != 2) {
             throw new IllegalStateException("Redis Lua script returned invalid result: " + result);

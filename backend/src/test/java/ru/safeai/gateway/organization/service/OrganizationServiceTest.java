@@ -6,11 +6,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
@@ -34,6 +38,9 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class OrganizationServiceTest {
 
+    private static final UUID PLATFORM_ORGANIZATION_ID =
+            UUID.fromString("00000000-0000-0000-0000-000000000001");
+
     private static final UUID ORGANIZATION_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
@@ -46,13 +53,18 @@ class OrganizationServiceTest {
     @Mock
     private AuditEventService auditEventService;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     private OrganizationService organizationService;
 
     @BeforeEach
     void setUp() {
         organizationService = new OrganizationService(
                 organizationRepository,
-                auditEventService
+                auditEventService,
+                eventPublisher,
+                new PlatformProperties(PLATFORM_ORGANIZATION_ID)
         );
     }
 
@@ -83,6 +95,7 @@ class OrganizationServiceTest {
 
         assertThat(response.id()).isEqualTo(ORGANIZATION_ID);
         assertThat(response.name()).isEqualTo("SafeAI");
+        assertThat(response.enabled()).isTrue();
         assertThat(response.createdAt()).isEqualTo(Instant.parse("2026-06-12T12:00:00Z"));
 
         ArgumentCaptor<OrganizationEntity> captor =
@@ -94,6 +107,7 @@ class OrganizationServiceTest {
 
         assertThat(savedEntity.getId()).isEqualTo(ORGANIZATION_ID);
         assertThat(savedEntity.getName()).isEqualTo("SafeAI");
+        assertThat(savedEntity.isEnabled()).isTrue();
         assertThat(savedEntity.getCreatedAt()).isEqualTo(Instant.parse("2026-06-12T12:00:00Z"));
 
         verify(auditEventService).record(
@@ -120,17 +134,21 @@ class OrganizationServiceTest {
     }
 
     @Test
-    void findAll_shouldReturnOrganizations() {
+    void findAll_shouldReturnCurrentOrganizationForAdmin() {
         OrganizationEntity organization = organizationEntity();
 
         when(organizationRepository.findById(ORGANIZATION_ID))
                 .thenReturn(Optional.of(organization));
 
-        List<OrganizationResponse> response = organizationService.findAll(adminPrincipal());
+        Page<OrganizationResponse> response = organizationService.findAll(
+                adminPrincipal(),
+                PageRequest.of(0, 20)
+        );
 
-        assertThat(response).hasSize(1);
-        assertThat(response.getFirst().id()).isEqualTo(ORGANIZATION_ID);
-        assertThat(response.getFirst().name()).isEqualTo("SafeAI");
+        assertThat(response.getContent()).hasSize(1);
+        assertThat(response.getContent().getFirst().id()).isEqualTo(ORGANIZATION_ID);
+        assertThat(response.getContent().getFirst().name()).isEqualTo("SafeAI");
+        assertThat(response.getTotalElements()).isEqualTo(1);
     }
 
     @Test
@@ -166,6 +184,7 @@ class OrganizationServiceTest {
         OrganizationEntity organization = new OrganizationEntity();
         organization.setId(ORGANIZATION_ID);
         organization.setName("SafeAI");
+        organization.setEnabled(true);
         organization.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
 
         return organization;

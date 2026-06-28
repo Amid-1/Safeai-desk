@@ -11,5 +11,9 @@ safeai:
       secure: false
       same-site: Lax
 
+  rate-limit:
+    redis:
+      key-prefix: safeai:local
+
 server:
   forward-headers-strategy: framework

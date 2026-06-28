@@ -1,6 +1,6 @@
 package ru.safeai.gateway.chat.service;
 
-import ru.safeai.gateway.ai.AiChatRequest;
+import ru.safeai.gateway.ai.dto.AiChatRequest;
 
 import java.util.UUID;
 

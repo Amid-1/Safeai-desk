@@ -1,13 +1,16 @@
 package ru.safeai.gateway.chat.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import ru.safeai.gateway.ai.AiChatResponse;
-import ru.safeai.gateway.ai.AiProvider;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
@@ -15,6 +18,7 @@ import ru.safeai.gateway.chat.dto.ChatResponse;
 import ru.safeai.gateway.chat.dto.CreateChatRequest;
 import ru.safeai.gateway.chat.dto.MessageResponse;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
+import ru.safeai.gateway.chat.entity.ChatMessageEntity;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
@@ -23,14 +27,13 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.ai.provider.AiProvider;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@EnableConfigurationProperties(ChatProperties.class)
 public class ChatService {
 
     private final ChatSessionRepository chatSessionRepository;
@@ -42,6 +45,7 @@ public class ChatService {
     private final ChatMapper chatMapper;
     private final RedisRateLimitService rateLimitService;
     private final ChatLockService chatLockService;
+    private final ChatProperties chatProperties;
 
     @Transactional
     public ChatResponse create(CreateChatRequest request, SafeAiUserPrincipal currentUser) {
@@ -58,13 +62,19 @@ public class ChatService {
 
         ChatSessionEntity saved = chatSessionRepository.save(session);
 
+        String normalizedTitle = normalizeTitle(request.title());
+        boolean defaultTitle = request.title() == null || request.title().isBlank();
+
+        session.setTitle(normalizedTitle);
+
         auditEventService.record(
                 currentUser.getId(),
                 currentUser.getOrganizationId(),
                 AuditEventType.CHAT_CREATED,
                 Map.of(
                         "chatId", saved.getId().toString(),
-                        "title", saved.getTitle()
+                        "titleLength", saved.getTitle() == null ? 0 : saved.getTitle().length(),
+                        "defaultTitle", defaultTitle
                 )
         );
 
@@ -72,13 +82,16 @@ public class ChatService {
     }
 
     @Transactional(readOnly = true)
-    public List<ChatResponse> findAll(SafeAiUserPrincipal currentUser) {
+    public Page<ChatResponse> findAll(
+            SafeAiUserPrincipal currentUser,
+            Pageable pageable
+    ) {
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(pageable, "pageable не должен быть null");
 
-        return chatSessionRepository.findByUser_IdOrderByUpdatedAtDesc(currentUser.getId())
-                .stream()
-                .map(chatMapper::toChatResponse)
-                .toList();
+        return chatSessionRepository
+                .findByUser_IdOrderByUpdatedAtDesc(currentUser.getId(), pageable)
+                .map(chatMapper::toChatResponse);
     }
 
     @Transactional(readOnly = true)
@@ -88,8 +101,15 @@ public class ChatService {
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
 
         List<MessageResponse> messages = chatMessageRepository
-                .findBySession_IdOrderByCreatedAtAscIdAsc(session.getId())
+                .findBySession_IdOrderByCreatedAtDescIdDesc(
+                        session.getId(),
+                        PageRequest.of(0, chatProperties.effectiveDetailsMessageLimit())
+                )
                 .stream()
+                .sorted(
+                        Comparator.comparing(ChatMessageEntity::getCreatedAt)
+                                .thenComparing(ChatMessageEntity::getId)
+                )
                 .map(chatMapper::toMessageResponse)
                 .toList();
 
@@ -101,6 +121,8 @@ public class ChatService {
             SendMessageRequest request,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(chatId, "chatId не должен быть null");
+        Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
         String normalizedContent = normalizeMessageContent(request.content());
@@ -108,7 +130,7 @@ public class ChatService {
         chatPersistenceService.assertOwnedChatExists(chatId, currentUser);
         rateLimitService.checkAiMessageAllowed(currentUser);
 
-        chatLockService.lock(chatId);
+        ChatLockService.ChatLock lock = chatLockService.lock(chatId);
 
         try {
             ChatProcessingContext context =
@@ -128,36 +150,28 @@ public class ChatService {
                         currentUser
                 );
             } catch (RuntimeException exception) {
-                chatPersistenceService.markUserMessageFailed(
+                chatPersistenceService.saveFailedAssistantMessage(
+                        context.chatId(),
                         context.userMessageId(),
+                        exception,
                         currentUser
-                );
-
-                auditEventService.record(
-                        currentUser.getId(),
-                        currentUser.getOrganizationId(),
-                        AuditEventType.AI_RESPONSE_FAILED,
-                        Map.of(
-                                "chatId", context.chatId().toString(),
-                                "userMessageId", context.userMessageId().toString(),
-                                "error", exception.getClass().getSimpleName()
-                        )
                 );
 
                 throw exception;
             }
         } finally {
-            chatLockService.unlock(chatId);
+            chatLockService.unlockQuietly(lock);
         }
     }
 
     @Transactional(readOnly = true)
-    public List<MessageResponse> findMessages(
+    public Page<MessageResponse> findMessages(
             UUID chatId,
             int page,
             int size,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(chatId, "chatId не должен быть null");
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
@@ -170,9 +184,7 @@ public class ChatService {
                         session.getId(),
                         PageRequest.of(safePage, safeSize)
                 )
-                .stream()
-                .map(chatMapper::toMessageResponse)
-                .toList();
+                .map(chatMapper::toMessageResponse);
     }
 
     private ChatSessionEntity findOwnedSession(UUID chatId, SafeAiUserPrincipal currentUser) {

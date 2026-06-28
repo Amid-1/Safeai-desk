@@ -29,11 +29,16 @@ class RedisRateLimitServiceTest {
     private static final UUID ORGANIZATION_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
+    private static final String AI_MESSAGE_KEY = "test-ai-message-key";
+
     @Mock
     private RedisFixedWindowRateLimiter rateLimiter;
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private RateLimitKeyFactory keyFactory;
 
     private RedisRateLimitService service;
 
@@ -46,14 +51,18 @@ class RedisRateLimitServiceTest {
                         20,
                         100
                 ),
-                eventPublisher
+                eventPublisher,
+                keyFactory
         );
     }
 
     @Test
     void checkAiMessageAllowed_whenUserWithinLimit_shouldPass() {
+        when(keyFactory.aiMessageUser(USER_ID))
+                .thenReturn(AI_MESSAGE_KEY);
+
         when(rateLimiter.incrementAndGet(
-                "rate-limit:ai-message:user:" + USER_ID,
+                AI_MESSAGE_KEY,
                 Duration.ofHours(1)
         )).thenReturn(new RateLimitResult(20L, 3600L));
 
@@ -65,6 +74,9 @@ class RedisRateLimitServiceTest {
 
     @Test
     void checkAiMessageAllowed_whenAdminAboveUserLimitButWithinAdminLimit_shouldPass() {
+        when(keyFactory.aiMessageUser(USER_ID))
+                .thenReturn(AI_MESSAGE_KEY);
+
         when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
                 .thenReturn(new RateLimitResult(20L, 3600L));
 
@@ -76,6 +88,9 @@ class RedisRateLimitServiceTest {
 
     @Test
     void checkAiMessageAllowed_whenUserLimitExceededFirstTime_shouldPublishEventAndThrow() {
+        when(keyFactory.aiMessageUser(USER_ID))
+                .thenReturn(AI_MESSAGE_KEY);
+
         when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
                 .thenReturn(new RateLimitResult(21L, 3600L));
 
@@ -88,6 +103,9 @@ class RedisRateLimitServiceTest {
 
     @Test
     void checkAiMessageAllowed_whenUserAlreadyExceededLimit_shouldNotPublishEventAgain() {
+        when(keyFactory.aiMessageUser(USER_ID))
+                .thenReturn(AI_MESSAGE_KEY);
+
         when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
                 .thenReturn(new RateLimitResult(22L, 3600L));
 
@@ -106,17 +124,22 @@ class RedisRateLimitServiceTest {
                         20,
                         100
                 ),
-                eventPublisher
+                eventPublisher,
+                keyFactory
         );
 
         disabledService.checkAiMessageAllowed(userPrincipal());
 
         verifyNoInteractions(rateLimiter);
         verifyNoInteractions(eventPublisher);
+        verifyNoInteractions(keyFactory);
     }
 
     @Test
     void checkAiMessageAllowed_whenRedisFails_shouldThrowRateLimitUnavailableException() {
+        when(keyFactory.aiMessageUser(USER_ID))
+                .thenReturn(AI_MESSAGE_KEY);
+
         when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
                 .thenThrow(new RuntimeException("Redis unavailable"));
 

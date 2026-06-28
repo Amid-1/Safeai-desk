@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -103,34 +105,38 @@ class OrganizationControllerSecurityTest {
 
     @Test
     void findAllWithAdminRoleReturns200() throws Exception {
-        when(organizationService.findAll(any(SafeAiUserPrincipal.class)))
-                .thenReturn(List.of(
-                        new OrganizationResponse(
-                                ORGANIZATION_ID,
-                                "SafeAI",
-                                true,
-                                Instant.parse("2026-06-12T12:00:00Z")
-                        )
-                ));
+        when(organizationService.findAll(
+                any(SafeAiUserPrincipal.class),
+                any(Pageable.class)
+        )).thenReturn(new PageImpl<>(List.of(
+                new OrganizationResponse(
+                        ORGANIZATION_ID,
+                        "SafeAI",
+                        true,
+                        Instant.parse("2026-06-12T12:00:00Z")
+                )
+        )));
 
         mockMvc.perform(get("/api/organizations")
                         .with(authentication(authToken(adminPrincipal()))))
                 .andExpect(status().isOk());
 
-        verify(organizationService)
-                .findAll(any(SafeAiUserPrincipal.class));
+        verify(organizationService).findAll(
+                any(SafeAiUserPrincipal.class),
+                any(Pageable.class)
+        );
     }
 
     @Test
     void createWithBlankNameReturns400() throws Exception {
         mockMvc.perform(post("/api/organizations")
-                        .with(authentication(authToken(adminPrincipal())))
+                        .with(authentication(authToken(superAdminPrincipal())))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                            {
-                              "name": ""
-                            }
-                            """))
+                                {
+                                  "name": ""
+                                }
+                                """))
                 .andExpect(status().isBadRequest());
 
         verify(organizationService, never()).create(any(), any());
@@ -153,6 +159,18 @@ class OrganizationControllerSecurityTest {
                 true,
                 0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
+    }
+
+    private SafeAiUserPrincipal superAdminPrincipal() {
+        return new SafeAiUserPrincipal(
+                ADMIN_ID,
+                ORGANIZATION_ID,
+                "superadmin@test.com",
+                "encoded-password",
+                true,
+                0L,
+                List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
         );
     }
 }

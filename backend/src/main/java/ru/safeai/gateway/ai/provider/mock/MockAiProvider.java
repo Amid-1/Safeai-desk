@@ -1,7 +1,11 @@
-package ru.safeai.gateway.ai;
+package ru.safeai.gateway.ai.provider.mock;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
+import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.dto.AiMessage;
+import ru.safeai.gateway.ai.provider.AiProvider;
 
 import java.math.BigDecimal;
 import java.util.Objects;

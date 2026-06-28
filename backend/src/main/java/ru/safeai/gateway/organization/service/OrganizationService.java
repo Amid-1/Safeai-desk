@@ -1,7 +1,12 @@
 package ru.safeai.gateway.organization.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -10,10 +15,14 @@ import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
+import ru.safeai.gateway.organization.dto.UpdateOrganizationEnabledRequest;
+import ru.safeai.gateway.organization.dto.UpdateOrganizationRequest;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
+import ru.safeai.gateway.organization.event.OrganizationSecurityStateChangedEvent;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
 
 import java.util.List;
@@ -23,10 +32,13 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@EnableConfigurationProperties(PlatformProperties.class)
 public class OrganizationService {
 
     private final OrganizationRepository organizationRepository;
     private final AuditEventService auditEventService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final PlatformProperties platformProperties;
 
     @Transactional
     public OrganizationResponse create(
@@ -44,6 +56,7 @@ public class OrganizationService {
         try {
             OrganizationEntity entity = new OrganizationEntity();
             entity.setName(name);
+            entity.setEnabled(true);
 
             OrganizationEntity saved = organizationRepository.save(entity);
 
@@ -64,12 +77,16 @@ public class OrganizationService {
     }
 
     @Transactional(readOnly = true)
-    public List<OrganizationResponse> findAll(SafeAiUserPrincipal currentUser) {
+    public Page<OrganizationResponse> findAll(
+            SafeAiUserPrincipal currentUser,
+            Pageable pageable
+    ) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(pageable, "pageable не должен быть null");
+
         if (isSuperAdmin(currentUser)) {
-            return organizationRepository.findAllByOrderByCreatedAtDesc()
-                    .stream()
-                    .map(this::toResponse)
-                    .toList();
+            return organizationRepository.findAllByOrderByCreatedAtDesc(pageable)
+                    .map(this::toResponse);
         }
 
         OrganizationEntity organization = organizationRepository.findById(currentUser.getOrganizationId())
@@ -77,11 +94,21 @@ public class OrganizationService {
                         "Организация не найдена: " + currentUser.getOrganizationId()
                 ));
 
-        return List.of(toResponse(organization));
+        List<OrganizationResponse> content = pageable.getOffset() == 0
+                ? List.of(toResponse(organization))
+                : List.of();
+
+        return new PageImpl<>(content, pageable, 1);
     }
 
     @Transactional(readOnly = true)
-    public OrganizationResponse findById(UUID id, SafeAiUserPrincipal currentUser) {
+    public OrganizationResponse findById(
+            UUID id,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(id, "id не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         if (!isSuperAdmin(currentUser) && !currentUser.getOrganizationId().equals(id)) {
             throw new ForbiddenOperationException("Нельзя просматривать другую организацию");
         }
@@ -92,6 +119,101 @@ public class OrganizationService {
                 ));
 
         return toResponse(entity);
+    }
+
+    @Transactional
+    public OrganizationResponse updateName(
+            UUID id,
+            UpdateOrganizationRequest request,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(id, "id не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        rejectPlatformOrganizationMutation(id);
+
+        OrganizationEntity entity = organizationRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Организация не найдена: " + id
+                ));
+
+        String oldName = entity.getName();
+        String newName = normalizeName(request.name());
+
+        if (oldName.equals(newName)) {
+            return toResponse(entity);
+        }
+
+        if (organizationRepository.existsByNameIgnoreCaseAndIdNot(newName, id)) {
+            throw new ConflictException("Организация с таким названием уже существует: " + newName);
+        }
+
+        try {
+            entity.setName(newName);
+
+            OrganizationEntity saved = organizationRepository.save(entity);
+
+            auditEventService.record(
+                    currentUser.getId(),
+                    saved.getId(),
+                    AuditEventType.ORGANIZATION_NAME_CHANGED,
+                    Map.of(
+                            "organizationId", saved.getId().toString(),
+                            "oldName", oldName,
+                            "newName", saved.getName()
+                    )
+            );
+
+            return toResponse(saved);
+        } catch (DataIntegrityViolationException exception) {
+            throw new ConflictException("Организация с таким названием уже существует: " + newName);
+        }
+    }
+
+    @Transactional
+    public OrganizationResponse updateEnabled(
+            UUID id,
+            UpdateOrganizationEnabledRequest request,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(id, "id не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        rejectPlatformOrganizationMutation(id);
+
+        OrganizationEntity entity = organizationRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Организация не найдена: " + id
+                ));
+
+        boolean oldEnabled = entity.isEnabled();
+        boolean newEnabled = Boolean.TRUE.equals(request.enabled());
+
+        if (oldEnabled == newEnabled) {
+            return toResponse(entity);
+        }
+
+        entity.setEnabled(newEnabled);
+
+        OrganizationEntity saved = organizationRepository.save(entity);
+
+        eventPublisher.publishEvent(
+                new OrganizationSecurityStateChangedEvent(saved.getId())
+        );
+
+        auditEventService.record(
+                currentUser.getId(),
+                saved.getId(),
+                AuditEventType.ORGANIZATION_ENABLED_CHANGED,
+                Map.of(
+                        "organizationId", saved.getId().toString(),
+                        "organizationName", saved.getName(),
+                        "oldEnabled", oldEnabled,
+                        "newEnabled", saved.isEnabled()
+                )
+        );
+
+        return toResponse(saved);
     }
 
     private String normalizeName(String name) {
@@ -112,5 +234,13 @@ public class OrganizationService {
                 .stream()
                 .map(GrantedAuthority::getAuthority)
                 .anyMatch("ROLE_SUPER_ADMIN"::equals);
+    }
+
+    private void rejectPlatformOrganizationMutation(UUID organizationId) {
+        if (platformProperties.organizationId().equals(organizationId)) {
+            throw new ForbiddenOperationException(
+                    "Платформенную организацию нельзя изменять через обычный organization-management endpoint"
+            );
+        }
     }
 }

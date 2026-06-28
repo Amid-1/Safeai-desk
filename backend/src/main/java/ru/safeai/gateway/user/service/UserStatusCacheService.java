@@ -90,7 +90,7 @@ public class UserStatusCacheService {
             return Optional.empty();
         }
 
-        String[] parts = value.split(":");
+        String[] parts = value.split(":", -1);
 
         if (parts.length != 3) {
             return Optional.empty();

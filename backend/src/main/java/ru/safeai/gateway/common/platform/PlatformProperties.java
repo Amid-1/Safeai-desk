@@ -8,9 +8,16 @@ import java.util.UUID;
 public record PlatformProperties(
         UUID organizationId
 ) {
+    private static final UUID DEFAULT_PLATFORM_ORGANIZATION_ID =
+            UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    public PlatformProperties {
+        if (organizationId == null) {
+            organizationId = DEFAULT_PLATFORM_ORGANIZATION_ID;
+        }
+    }
+
     public UUID effectiveOrganizationId() {
-        return organizationId == null
-                ? UUID.fromString("00000000-0000-0000-0000-000000000001")
-                : organizationId;
+        return organizationId;
     }
 }

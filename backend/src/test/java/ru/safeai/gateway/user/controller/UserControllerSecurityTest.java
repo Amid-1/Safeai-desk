@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -22,11 +24,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.safeai.gateway.auth.security.UserStatusFilter;
+import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.dto.UserResponse;
 import ru.safeai.gateway.user.service.UserService;
-import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 
 import java.time.Instant;
 import java.util.List;
@@ -35,11 +37,15 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(
         controllers = UserController.class,
@@ -107,18 +113,20 @@ class UserControllerSecurityTest {
     void findAllWithAdminRoleReturns200() throws Exception {
         SafeAiUserPrincipal currentUser = adminPrincipal();
 
-        when(userService.findAll(any(SafeAiUserPrincipal.class)))
-                .thenReturn(List.of(adminResponse()));
+        when(userService.findAll(
+                any(SafeAiUserPrincipal.class),
+                any(Pageable.class)
+        )).thenReturn(new PageImpl<>(List.of(adminResponse())));
 
         mockMvc.perform(get("/api/users")
                         .with(authentication(authToken(currentUser))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(USER_ID.toString()))
-                .andExpect(jsonPath("$[0].organizationId").value(ORGANIZATION_ID.toString()))
-                .andExpect(jsonPath("$[0].email").value("admin@test.com"))
-                .andExpect(jsonPath("$[0].fullName").value("Demo Admin"))
-                .andExpect(jsonPath("$[0].enabled").value(true))
-                .andExpect(jsonPath("$[0].roles[0]").value("ADMIN"));
+                .andExpect(jsonPath("$.content[0].id").value(USER_ID.toString()))
+                .andExpect(jsonPath("$.content[0].organizationId").value(ORGANIZATION_ID.toString()))
+                .andExpect(jsonPath("$.content[0].email").value("admin@test.com"))
+                .andExpect(jsonPath("$.content[0].fullName").value("Demo Admin"))
+                .andExpect(jsonPath("$.content[0].enabled").value(true))
+                .andExpect(jsonPath("$.content[0].roles[0]").value("ADMIN"));
     }
 
     @Test
@@ -181,25 +189,24 @@ class UserControllerSecurityTest {
     }
 
     @Test
-    void resetPasswordWithAdminRoleReturns200() throws Exception {
+    void resetPasswordWithAdminRoleReturns204() throws Exception {
         SafeAiUserPrincipal currentUser = adminPrincipal();
-
-        when(userService.resetPassword(
-                eq(USER_ID),
-                any(),
-                any(SafeAiUserPrincipal.class)
-        )).thenReturn(adminResponse());
 
         mockMvc.perform(post("/api/users/{id}/reset-password", USER_ID)
                         .with(authentication(authToken(currentUser)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "password": "NewPass123"
+                                  "password": "NewPass123!45"
                                 }
                                 """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(USER_ID.toString()));
+                .andExpect(status().isNoContent());
+
+        verify(userService).resetPassword(
+                eq(USER_ID),
+                any(),
+                any(SafeAiUserPrincipal.class)
+        );
     }
 
     private Authentication authToken(SafeAiUserPrincipal currentUser) {

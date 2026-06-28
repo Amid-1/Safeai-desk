@@ -1,4 +1,4 @@
-package ru.safeai.gateway.ai;
+package ru.safeai.gateway.ai.provider.openai;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -10,6 +10,7 @@ public record OpenAiProperties(
         String apiKey,
         String model,
         Integer maxOutputTokens,
+        Integer maxResponseChars,
         Duration connectTimeout,
         Duration readTimeout
 ) {
@@ -26,6 +27,10 @@ public record OpenAiProperties(
         maxOutputTokens = maxOutputTokens == null || maxOutputTokens <= 0
                 ? 1024
                 : maxOutputTokens;
+
+        maxResponseChars = maxResponseChars == null || maxResponseChars <= 0
+                ? 100_000
+                : Math.min(maxResponseChars, 1_000_000);
 
         connectTimeout = connectTimeout == null
                 ? Duration.ofSeconds(5)

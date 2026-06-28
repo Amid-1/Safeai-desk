@@ -78,6 +78,9 @@ public class AuthService {
             authCookieService.addRefreshTokenCookie(response, refreshToken);
 
             authEventService.loginSuccess(principal, httpRequest);
+
+            // Сбрасываем только email-limit после успешного входа.
+            // IP-limit не сбрасываем намеренно: он защищает от массового перебора с одного IP.
             loginRateLimitService.resetEmailLimit(email);
 
             return toCurrentUserResponse(user);

@@ -1,4 +1,4 @@
-package ru.safeai.gateway.ai;
+package ru.safeai.gateway.ai.provider.anthropic;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -11,6 +11,7 @@ public record AnthropicProperties(
         String model,
         String version,
         Integer maxTokens,
+        Integer maxResponseChars,
         Duration connectTimeout,
         Duration readTimeout
 ) {
@@ -27,6 +28,10 @@ public record AnthropicProperties(
         maxTokens = maxTokens == null || maxTokens <= 0
                 ? 1024
                 : maxTokens;
+
+        maxResponseChars = maxResponseChars == null || maxResponseChars <= 0
+                ? 100_000
+                : Math.min(maxResponseChars, 1_000_000);
 
         connectTimeout = connectTimeout == null
                 ? Duration.ofSeconds(5)

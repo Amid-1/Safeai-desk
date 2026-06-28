@@ -3,9 +3,10 @@ package ru.safeai.gateway.chat.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.safeai.gateway.ai.AiChatRequest;
-import ru.safeai.gateway.ai.AiChatResponse;
-import ru.safeai.gateway.ai.AiMessage;
+import org.springframework.data.domain.PageRequest;
+
+import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
@@ -19,6 +20,7 @@ import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.ai.dto.AiMessage;
 
 import java.util.Comparator;
 import java.util.HashMap;
@@ -34,6 +36,7 @@ public class ChatPersistenceService {
     private final ChatMessageRepository chatMessageRepository;
     private final AuditEventService auditEventService;
     private final ChatMapper chatMapper;
+    private final ChatProperties chatProperties;
 
     @Transactional(readOnly = true)
     public void assertOwnedChatExists(UUID chatId, SafeAiUserPrincipal currentUser) {
@@ -57,7 +60,10 @@ public class ChatPersistenceService {
         session.touch();
 
         List<AiMessage> historyBeforeNewMessage = chatMessageRepository
-                .findTop30BySession_IdOrderByCreatedAtDescIdDesc(session.getId())
+                .findBySession_IdOrderByCreatedAtDescIdDesc(
+                        session.getId(),
+                        PageRequest.of(0, chatProperties.effectiveHistoryMessageLimit())
+                )
                 .stream()
                 .sorted(
                         Comparator.comparing(ChatMessageEntity::getCreatedAt)
@@ -73,7 +79,7 @@ public class ChatPersistenceService {
         userMessage.setSession(session);
         userMessage.setRole(ChatMessageRole.USER);
         userMessage.setContent(request.content());
-        userMessage.setStatus(ChatMessageStatus.PENDING);
+        userMessage.setStatus(ChatMessageStatus.COMPLETED);
 
         ChatMessageEntity savedUserMessage = chatMessageRepository.save(userMessage);
 
@@ -113,13 +119,11 @@ public class ChatPersistenceService {
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
         session.touch();
 
-        ChatMessageEntity userMessage = findOwnedUserMessage(
+        assertOwnedUserMessageExists(
                 userMessageId,
                 session,
                 currentUser
         );
-
-        userMessage.setStatus(ChatMessageStatus.COMPLETED);
 
         ChatMessageEntity assistantMessage = createAssistantMessage(session, aiResponse);
         ChatMessageEntity savedAssistantMessage = chatMessageRepository.save(assistantMessage);
@@ -141,6 +145,43 @@ public class ChatPersistenceService {
     }
 
     @Transactional
+    public void saveFailedAssistantMessage(
+            UUID chatId,
+            UUID userMessageId,
+            RuntimeException exception,
+            SafeAiUserPrincipal currentUser
+    ) {
+        ChatSessionEntity session = findOwnedSession(chatId, currentUser);
+        session.touch();
+
+        assertOwnedUserMessageExists(
+                userMessageId,
+                session,
+                currentUser
+        );
+
+        ChatMessageEntity failedAssistantMessage = new ChatMessageEntity();
+        failedAssistantMessage.setSession(session);
+        failedAssistantMessage.setRole(ChatMessageRole.ASSISTANT);
+        failedAssistantMessage.setContent("Не удалось получить ответ от AI-провайдера");
+        failedAssistantMessage.setStatus(ChatMessageStatus.FAILED);
+
+        ChatMessageEntity saved = chatMessageRepository.save(failedAssistantMessage);
+
+        auditEventService.record(
+                currentUser.getId(),
+                currentUser.getOrganizationId(),
+                AuditEventType.AI_RESPONSE_FAILED,
+                Map.of(
+                        "chatId", session.getId().toString(),
+                        "messageId", saved.getId().toString(),
+                        "userMessageId", userMessageId.toString(),
+                        "error", exception.getClass().getSimpleName()
+                )
+        );
+    }
+
+    @Transactional
     public void markUserMessageFailed(
             UUID userMessageId,
             SafeAiUserPrincipal currentUser
@@ -157,7 +198,7 @@ public class ChatPersistenceService {
         message.setStatus(ChatMessageStatus.FAILED);
     }
 
-    private ChatMessageEntity findOwnedUserMessage(
+    private void assertOwnedUserMessageExists(
             UUID userMessageId,
             ChatSessionEntity session,
             SafeAiUserPrincipal currentUser
@@ -172,8 +213,6 @@ public class ChatPersistenceService {
                 || userMessage.getRole() != ChatMessageRole.USER) {
             throw new ResourceNotFoundException("Сообщение не найдено: " + userMessageId);
         }
-
-        return userMessage;
     }
 
     private ChatMessageEntity createAssistantMessage(

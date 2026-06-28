@@ -136,6 +136,18 @@ createdAt
 version
 ```
 
+```text
+organization.enabled изменился
+↓
+публикуем OrganizationSecurityStateChangedEvent
+↓
+после commit находим всех пользователей организации
+↓
+удаляем их user-status cache из Redis
+↓
+следующий запрос пользователя пойдет в БД и увидит organization.enabled = false
+```
+
 Граница организации используется для:
 
 - ограничения видимости пользователей;
@@ -199,9 +211,23 @@ USER:
 - имеет доступ только к собственным чатам
 ```
 
+```text
+### SUPER_ADMIN lifecycle
+
+Пользователи с ролью SUPER_ADMIN не изменяются через обычные `/api/users/**` endpoints.
+
+Обычный user-management flow предназначен для ролей:
+
+- USER
+- ADMIN
+
+Создание, изменение и удаление SUPER_ADMIN должно выполняться отдельно:
+через seed/Flyway, административную консоль платформы или отдельный platform-admin endpoint.
+
 ### ChatSession
 
 Сессия чата, принадлежащая конкретному пользователю.
+```
 
 ```text
 id
@@ -1267,32 +1293,15 @@ Safeai-desk/
 │   │   │   └── resources/
 │   │   │       ├── application.yml
 │   │   │       ├── application-local.yml
-│   │   │       ├── application-local-nginx.yml
+│   │   │       ├── application-local-nginx.yml  
+│   │   │       ├── application-prod.yml 
 │   │   │       ├── static/
 │   │   │       ├── templates/
 │   │   │       └── db/migration/
 │   │   │           ├── V1__init_schema.sql
-│   │   │           ├── V2__seed_roles.sql
-│   │   │           ├── V3__seed_demo_admin.sql
-│   │   │           ├── V4__use_timestamptz_for_created_at.sql
-│   │   │           ├── V5__add_indexes.sql
-│   │   │           ├── V6__add_unique_organization_name.sql
-│   │   │           ├── V7__add_user_token_version.sql
-│   │   │           ├── V8__add_audit_event_type_index.sql
-│   │   │           ├── V9__add_super_admin_role.sql
-│   │   │           ├── V10__add_case_insensitive_user_email_index.sql
-│   │   │           ├── V11__seed_platform_super_admin.sql
-│   │   │           ├── V12__seed_platform_super_admin.sql
-│   │   │           └── V13__add_audit_event_organization_id.sql
-│   │   │           └── V14__add_audit_event_organization_id.sql
-│   │   │           └── V15__add_chat_message_constraints.sql
-│   │   │           └── V16__fix_super_admin_password_and_user_email_unique.sql
-│   │   │           └── V17__add_refresh_tokens.sql
-│   │   │           └── V18__add_organization_enabled.sql
-│   │   │           └── V19__add_chat_session_updated_at.sql
-│   │   │           └── V20__add_chat_message_status.sql
-│   │   │           └── V21__backfill_audit_event_organization_id.sql
-│   │   │           └── V22__make_audit_event_organization_id_not_null.sql
+│   │   │           ├── V2__seed_reference_data.sql
+│   │   │           ├── V3__seed_local_demo_data.sql
+│   │   │           └── V4__refresh_token_rotation.sql
 │   │   └── test/
 │   │       ├── java/ru/safeai/gateway/
 │   │       │   ├── admin/
@@ -1304,12 +1313,14 @@ Safeai-desk/
 │   │       │   ├── organization/
 │   │       │   ├── ratelimit/
 │   │       │   ├── user/
+│   │       │   ├── PasswordHashGenerator
 │   │       │   └── SafeaiBackendApplicationTests.java
 │   │       └── resources/
 │   │           ├──
 │   │           └── application-test.yml
 │   ├── .env
 │   ├── .env.example
+│   ├── .env.prod
 │   ├── Dockerfile
 │   ├── mvnw
 │   ├── mvnw.cmd
@@ -1354,7 +1365,7 @@ Safeai-desk/
 
 ## Backend-модули
 
-```text
+
 ```text
 ru.safeai.gateway
 ├── admin
@@ -1364,28 +1375,51 @@ ru.safeai.gateway
 │       └── AdminUsageService
 │
 ├── ai
-│   ├── AiChatRequest
-│   ├── AiChatResponse
-│   ├── AiConfiguration
-│   ├── AiExceptionHandler
-│   ├── AiMessage
-│   ├── AiProvider
-│   ├── AiProviderException
-│   ├── AiProviderProperties
-│   ├── AiProviderSupport
-│   ├── AiProviderTimeoutException
-│   ├── AiRestClientFactory
-│   ├── AnthropicProperties
-│   ├── AnthropicProvider
-│   ├── MockAiProvider
-│   ├── OpenAiProperties
-│   └── OpenAiProvider
+│   ├── config
+│   │   └── AiConfiguration
+│   │
+│   ├── dto
+│   │   ├── AiChatRequest
+│   │   ├── AiChatResponse
+│   │   └── AiMessage
+│   │
+│   ├── exception
+│   │   ├── AiProviderException
+│   │   ├── AiProviderRateLimitedException
+│   │   ├── AiProviderTimeoutException
+│   │   └── AiProviderUnavailableException
+│   │
+│   ├── pricing
+│   │   ├── ModelPricingProperties
+│   │   └── ModelPricingService
+│   │
+│   ├── provider
+│   │   ├── AiProvider
+│   │   ├── AiProviderProperties
+│   │   ├── AiProviderRetryExecutor
+│   │   ├── AiProviderSupport
+│   │   ├── AiRestClientFactory
+│   │   ├── AiRetryProperties
+│   │   │
+│   │   ├── anthropic
+│   │   │   ├── AnthropicProperties
+│   │   │   └── AnthropicProvider
+│   │   │
+│   │   ├── mock
+│   │   │   └── MockAiProvider
+│   │   │
+│   │   └── openai
+│   │       ├── OpenAiProperties
+│   │       └── OpenAiProvider
+│   │
+│   └── web
+│       └── AiExceptionHandler
 │
 ├── audit
 │   ├── controller
 │   │   └── AuditController
 │   ├── dto
-│   │   └── AuditEventFilter
+│   │   ├── AuditEventFilter
 │   │   └── AuditEventResponse
 │   ├── entity
 │   │   └── AuditEventEntity
@@ -1400,7 +1434,8 @@ ru.safeai.gateway
 │
 ├── auth
 │   ├── controller
-│   │   └── AuthController
+│   │   ├── AuthController
+│   │   └── CsrfController
 │   ├── dto
 │   │   ├── AuthUserResponse
 │   │   ├── CurrentUserResponse
@@ -1413,8 +1448,10 @@ ru.safeai.gateway
 │   ├── repository
 │   │   └── RefreshTokenRepository
 │   ├── security
+│   │   ├── CsrfCookieFilter
 │   │   ├── CustomUserDetailsService
 │   │   ├── SecurityConfig
+│   │   ├── SpaCsrfTokenRequestHandler
 │   │   └── UserStatusFilter
 │   └── service
 │       ├── AuthCookieProperties
@@ -1447,10 +1484,12 @@ ru.safeai.gateway
 │   │   ├── UsageDailySummaryProjection
 │   │   └── UsageQueryRepository
 │   └── service
+│       ├── ChatLockProperties
 │       ├── ChatLockService
 │       ├── ChatMapper
 │       ├── ChatPersistenceService
 │       ├── ChatProcessingContext
+│       ├── ChatProperties
 │       └── ChatService
 │
 ├── common
@@ -1458,12 +1497,16 @@ ru.safeai.gateway
 │   │   ├── ApiErrorResponse
 │   │   ├── ApiErrorResponseFactory
 │   │   ├── ConflictException
+│   │   ├── ExpiredRefreshTokenException
 │   │   ├── ForbiddenOperationException
 │   │   ├── GlobalExceptionHandler
+│   │   ├── InvalidRefreshTokenException
 │   │   ├── RateLimitExceededException
 │   │   ├── RateLimitUnavailableException
+│   │   ├── RefreshTokenReuseDetectedException
 │   │   └── ResourceNotFoundException
-│   └── platform
+│   │
+│   ├── platform
 │   │   └── PlatformProperties
 │   │
 │   └── security
@@ -1485,19 +1528,26 @@ ru.safeai.gateway
 │   │   └── OrganizationController
 │   ├── dto
 │   │   ├── CreateOrganizationRequest
-│   │   └── OrganizationResponse
+│   │   ├── OrganizationResponse
+│   │   ├── UpdateOrganizationEnabledRequest
+│   │   └── UpdateOrganizationRequest
 │   ├── entity
 │   │   └── OrganizationEntity
+│   ├── event
+│   │   └── OrganizationSecurityStateChangedEvent
 │   ├── repository
 │   │   └── OrganizationRepository
 │   └── service
-│       └── OrganizationService
+│       ├── OrganizationService
+│       └── OrganizationStatusCacheInvalidationListener
 │
 ├── ratelimit
 │   ├── AiMessageRateLimitProperties
 │   ├── LoginRateLimitProperties
 │   ├── LoginRateLimitService
 │   ├── RateLimitExceededEvent
+│   ├── RateLimitKeyFactory
+│   ├── RateLimitRedisKeyProperties
 │   ├── RateLimitResult
 │   ├── RedisFixedWindowRateLimiter
 │   └── RedisRateLimitService

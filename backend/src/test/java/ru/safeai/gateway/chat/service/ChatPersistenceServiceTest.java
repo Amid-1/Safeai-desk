@@ -6,21 +6,22 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import ru.safeai.gateway.ai.AiChatResponse;
+import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
 import ru.safeai.gateway.chat.entity.ChatMessageRole;
+import ru.safeai.gateway.chat.entity.ChatMessageStatus;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
-import ru.safeai.gateway.chat.entity.ChatMessageStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -30,15 +31,29 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ChatPersistenceServiceTest {
 
-    private static final UUID USER_ID = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-    private static final UUID ORGANIZATION_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private static final UUID CHAT_ID = UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
+    private static final UUID USER_ID =
+            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+    private static final UUID ORGANIZATION_ID =
+            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+    private static final UUID CHAT_ID =
+            UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
+
+    private static final Instant CREATED_AT =
+            Instant.parse("2026-06-12T12:00:00Z");
 
     @Mock
     private ChatSessionRepository chatSessionRepository;
@@ -59,7 +74,8 @@ class ChatPersistenceServiceTest {
                 chatSessionRepository,
                 chatMessageRepository,
                 auditEventService,
-                chatMapper
+                chatMapper,
+                new ChatProperties(50, 30)
         );
     }
 
@@ -80,8 +96,10 @@ class ChatPersistenceServiceTest {
         when(chatSessionRepository.findByIdAndUser_Id(CHAT_ID, USER_ID))
                 .thenReturn(Optional.of(session));
 
-        when(chatMessageRepository.findTop30BySession_IdOrderByCreatedAtDescIdDesc(CHAT_ID))
-                .thenReturn(List.of(oldMessage));
+        when(chatMessageRepository.findBySession_IdOrderByCreatedAtDescIdDesc(
+                eq(CHAT_ID),
+                any(Pageable.class)
+        )).thenReturn(List.of(oldMessage));
 
         when(chatMessageRepository.save(any(ChatMessageEntity.class)))
                 .thenAnswer(invocation -> persistMessage(invocation.getArgument(0)));
@@ -110,6 +128,7 @@ class ChatPersistenceServiceTest {
 
         assertThat(savedMessage.getRole()).isEqualTo(ChatMessageRole.USER);
         assertThat(savedMessage.getContent()).isEqualTo("Новое сообщение");
+        assertThat(savedMessage.getStatus()).isEqualTo(ChatMessageStatus.COMPLETED);
         assertThat(savedMessage.getCreatedAt()).isNotNull();
 
         verify(auditEventService).record(
@@ -154,14 +173,14 @@ class ChatPersistenceServiceTest {
         when(chatSessionRepository.findByIdAndUser_Id(CHAT_ID, USER_ID))
                 .thenReturn(Optional.of(session));
 
+        when(chatMessageRepository.findById(userMessage.getId()))
+                .thenReturn(Optional.of(userMessage));
+
         when(chatMessageRepository.save(any(ChatMessageEntity.class)))
                 .thenAnswer(invocation -> persistMessage(invocation.getArgument(0)));
 
         when(chatMessageRepository.findBySession_IdOrderByCreatedAtAscIdAsc(CHAT_ID))
                 .thenReturn(List.of(userMessage, assistantMessage));
-
-        when(chatMessageRepository.findById(userMessage.getId()))
-                .thenReturn(Optional.of(userMessage));
 
         ChatDetailsResponse response =
                 chatPersistenceService.saveAssistantMessageAndReturnChat(
@@ -187,6 +206,7 @@ class ChatPersistenceServiceTest {
         assertThat(savedMessage.getInputTokens()).isEqualTo(1);
         assertThat(savedMessage.getOutputTokens()).isEqualTo(8);
         assertThat(savedMessage.getCostUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(savedMessage.getStatus()).isEqualTo(ChatMessageStatus.COMPLETED);
         assertThat(savedMessage.getCreatedAt()).isNotNull();
 
         verify(auditEventService).record(
@@ -267,6 +287,7 @@ class ChatPersistenceServiceTest {
         user.setId(USER_ID);
         user.setEmail("admin@test.com");
         user.setEnabled(true);
+
         return user;
     }
 
@@ -275,7 +296,8 @@ class ChatPersistenceServiceTest {
         session.setId(CHAT_ID);
         session.setUser(userEntity());
         session.setTitle("Первый тестовый чат");
-        session.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+        session.setCreatedAt(CREATED_AT);
+        session.setUpdatedAt(CREATED_AT);
 
         return session;
     }
@@ -297,7 +319,7 @@ class ChatPersistenceServiceTest {
         message.setInputTokens(inputTokens);
         message.setOutputTokens(outputTokens);
         message.setCostUsd(costUsd);
-        message.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+        message.setCreatedAt(CREATED_AT);
         message.setStatus(ChatMessageStatus.COMPLETED);
 
         return message;
@@ -309,7 +331,11 @@ class ChatPersistenceServiceTest {
         }
 
         if (message.getCreatedAt() == null) {
-            message.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+            message.setCreatedAt(CREATED_AT);
+        }
+
+        if (message.getStatus() == null) {
+            message.setStatus(ChatMessageStatus.COMPLETED);
         }
 
         return message;

@@ -421,20 +421,23 @@ class UserServiceTest {
         when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
                 .thenReturn(Optional.of(user));
 
-        when(passwordEncoder.encode("NewPass123"))
+        when(passwordEncoder.encode("NewPass123!45"))
                 .thenReturn("new-encoded-password");
 
         when(userRepository.save(any(UserEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        UserResponse response = userService.resetPassword(
+        userService.resetPassword(
                 USER_ID,
-                new ResetUserPasswordRequest("NewPass123"),
+                new ResetUserPasswordRequest("NewPass123!45"),
                 adminPrincipal()
         );
 
-        assertThat(response.id()).isEqualTo(USER_ID);
         assertThat(user.getPasswordHash()).isEqualTo("new-encoded-password");
+        assertThat(user.getTokenVersion()).isEqualTo(1L);
+
+        verify(userRepository).save(user);
+        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
                 eq(ADMIN_ID),

@@ -60,16 +60,43 @@ app:
       issuer: ${SAFEAI_JWT_ISSUER:safeai-desk}
 
 safeai:
+
+  chat:
+    lock:
+      key-prefix: ${SAFEAI_CHAT_LOCK_KEY_PREFIX:safeai:local:chat-lock}
+      ttl: ${SAFEAI_CHAT_LOCK_TTL:120s}
+    details-message-limit: ${SAFEAI_CHAT_DETAILS_MESSAGE_LIMIT:50}
+    history-message-limit: ${SAFEAI_CHAT_HISTORY_MESSAGE_LIMIT:30}
+
   ai:
     provider: ${SAFEAI_AI_PROVIDER:mock}
+
+    retry:
+      enabled: ${SAFEAI_AI_RETRY_ENABLED:true}
+      max-attempts: ${SAFEAI_AI_RETRY_MAX_ATTEMPTS:2}
+      initial-backoff: ${SAFEAI_AI_RETRY_INITIAL_BACKOFF:250ms}
+      max-backoff: ${SAFEAI_AI_RETRY_MAX_BACKOFF:2s}
+
+    pricing:
+      models:
+        - model: mock-safeai
+          input-usd-per-1m-tokens: 0
+          output-usd-per-1m-tokens: 0
+        - model: gpt-4.1
+          input-usd-per-1m-tokens: 0
+          output-usd-per-1m-tokens: 0
+        - model: claude-opus-4-8
+          input-usd-per-1m-tokens: 0
+          output-usd-per-1m-tokens: 0
 
     openai:
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
       api-key: ${OPENAI_API_KEY:}
       model: ${OPENAI_MODEL:gpt-4.1}
-      connect-timeout: 5s
-      read-timeout: 60s
-      max-output-tokens: 1024
+      connect-timeout: ${OPENAI_CONNECT_TIMEOUT:5s}
+      read-timeout: ${OPENAI_READ_TIMEOUT:60s}
+      max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS:1024}
+      max-response-chars: ${SAFEAI_AI_OPENAI_MAX_RESPONSE_CHARS:100000}
 
     anthropic:
       base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/v1}
@@ -77,20 +104,24 @@ safeai:
       model: ${ANTHROPIC_MODEL:claude-opus-4-8}
       version: ${ANTHROPIC_VERSION:2023-06-01}
       max-tokens: ${ANTHROPIC_MAX_TOKENS:1024}
-      connect-timeout: 5s
-      read-timeout: 60s
+      max-response-chars: ${SAFEAI_AI_ANTHROPIC_MAX_RESPONSE_CHARS:100000}
+      connect-timeout: ${ANTHROPIC_CONNECT_TIMEOUT:5s}
+      read-timeout: ${ANTHROPIC_READ_TIMEOUT:60s}
 
   rate-limit:
-    ai-messages:
-      enabled: true
-      user-limit-per-hour: 20
-      admin-limit-per-hour: 100
+    redis:
+      key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX:safeai:local}
 
     login:
       enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}
       email-limit: ${SAFEAI_RATE_LIMIT_LOGIN_EMAIL_LIMIT:10}
       ip-limit: ${SAFEAI_RATE_LIMIT_LOGIN_IP_LIMIT:30}
       window: ${SAFEAI_RATE_LIMIT_LOGIN_WINDOW:10m}
+
+    ai-messages:
+      enabled: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ENABLED:true}
+      user-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_USER_LIMIT_PER_HOUR:20}
+      admin-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ADMIN_LIMIT_PER_HOUR:100}
 
   cors:
     allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS:http://localhost:5173}

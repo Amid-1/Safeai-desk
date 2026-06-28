@@ -4,17 +4,23 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "safeai.rate-limit.ai-messages")
 public record AiMessageRateLimitProperties(
-        boolean enabled,
-        int userLimitPerHour,
-        int adminLimitPerHour
+        Boolean enabled,
+        Integer userLimitPerHour,
+        Integer adminLimitPerHour
 ) {
-    public AiMessageRateLimitProperties {
-        if (userLimitPerHour <= 0) {
-            userLimitPerHour = 20;
-        }
+    public boolean isEnabled() {
+        return enabled == null || enabled;
+    }
 
-        if (adminLimitPerHour <= 0) {
-            adminLimitPerHour = 100;
-        }
+    public int effectiveUserLimitPerHour() {
+        return userLimitPerHour == null || userLimitPerHour <= 0
+                ? 20
+                : userLimitPerHour;
+    }
+
+    public int effectiveAdminLimitPerHour() {
+        return adminLimitPerHour == null || adminLimitPerHour <= 0
+                ? 100
+                : adminLimitPerHour;
     }
 }

@@ -1,16 +1,16 @@
-package ru.safeai.gateway.ai;
+package ru.safeai.gateway.ai.provider;
 
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 
-final class AiRestClientFactory {
+public final class AiRestClientFactory {
 
     private AiRestClientFactory() {
     }
 
-    static RestClient create(
+    public static RestClient create(
             String baseUrl,
             Duration connectTimeout,
             Duration readTimeout

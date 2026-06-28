@@ -6,9 +6,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import ru.safeai.gateway.ai.AiChatRequest;
-import ru.safeai.gateway.ai.AiChatResponse;
-import ru.safeai.gateway.ai.AiProvider;
+import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
@@ -32,8 +32,16 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ChatServiceTest {
@@ -47,11 +55,21 @@ class ChatServiceTest {
     private static final UUID CHAT_ID =
             UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
 
+    private static final UUID USER_MESSAGE_ID =
+            UUID.fromString("11111111-1111-1111-1111-111111111111");
+
     private static final Instant CREATED_AT =
             Instant.parse("2026-06-12T12:00:00Z");
 
     private static final Instant UPDATED_AT =
             Instant.parse("2026-06-12T12:01:00Z");
+
+    private static final ChatLockService.ChatLock CHAT_LOCK =
+            new ChatLockService.ChatLock(
+                    CHAT_ID,
+                    "safeai:local:chat-lock:" + CHAT_ID,
+                    "test-lock-token"
+            );
 
     @Mock
     private ChatSessionRepository chatSessionRepository;
@@ -74,10 +92,10 @@ class ChatServiceTest {
     @Mock
     private RedisRateLimitService rateLimitService;
 
-    private ChatService chatService;
-
     @Mock
     private ChatLockService chatLockService;
+
+    private ChatService chatService;
 
     @BeforeEach
     void setUp() {
@@ -90,7 +108,8 @@ class ChatServiceTest {
                 chatPersistenceService,
                 new ChatMapper(),
                 rateLimitService,
-                chatLockService
+                chatLockService,
+                new ChatProperties(50, 30)
         );
     }
 
@@ -178,11 +197,9 @@ class ChatServiceTest {
                 List.of()
         );
 
-        UUID userMessageId = UUID.fromString("11111111-1111-1111-1111-111111111111");
-
         ChatProcessingContext context = new ChatProcessingContext(
                 CHAT_ID,
-                userMessageId,
+                USER_MESSAGE_ID,
                 aiRequest
         );
 
@@ -202,11 +219,8 @@ class ChatServiceTest {
                 List.of()
         );
 
-        doNothing().when(chatPersistenceService)
-                .assertOwnedChatExists(CHAT_ID, currentUser);
-
-        doNothing().when(rateLimitService)
-                .checkAiMessageAllowed(currentUser);
+        when(chatLockService.lock(CHAT_ID))
+                .thenReturn(CHAT_LOCK);
 
         when(chatPersistenceService.saveUserMessageAndPrepareAiRequest(
                 eq(CHAT_ID),
@@ -219,7 +233,7 @@ class ChatServiceTest {
 
         when(chatPersistenceService.saveAssistantMessageAndReturnChat(
                 CHAT_ID,
-                userMessageId,
+                USER_MESSAGE_ID,
                 aiResponse,
                 currentUser
         )).thenReturn(expectedResponse);
@@ -234,6 +248,7 @@ class ChatServiceTest {
 
         verify(chatPersistenceService).assertOwnedChatExists(CHAT_ID, currentUser);
         verify(rateLimitService).checkAiMessageAllowed(currentUser);
+        verify(chatLockService).lock(CHAT_ID);
 
         verify(chatPersistenceService).saveUserMessageAndPrepareAiRequest(
                 eq(CHAT_ID),
@@ -245,14 +260,16 @@ class ChatServiceTest {
 
         verify(chatPersistenceService).saveAssistantMessageAndReturnChat(
                 CHAT_ID,
-                userMessageId,
+                USER_MESSAGE_ID,
                 aiResponse,
                 currentUser
         );
+
+        verify(chatLockService).unlockQuietly(CHAT_LOCK);
     }
 
     @Test
-    void sendMessage_shouldAuditFailureAndRethrowWhenAiProviderFails() {
+    void sendMessage_shouldSaveFailedAssistantMessageAndRethrowWhenAiProviderFails() {
         SafeAiUserPrincipal currentUser = currentUser();
 
         AiChatRequest aiRequest = new AiChatRequest(
@@ -263,15 +280,16 @@ class ChatServiceTest {
                 List.of()
         );
 
-        UUID userMessageId = UUID.fromString("11111111-1111-1111-1111-111111111111");
-
         ChatProcessingContext context = new ChatProcessingContext(
                 CHAT_ID,
-                userMessageId,
+                USER_MESSAGE_ID,
                 aiRequest
         );
 
         RuntimeException exception = new RuntimeException("AI unavailable");
+
+        when(chatLockService.lock(CHAT_ID))
+                .thenReturn(CHAT_LOCK);
 
         when(chatPersistenceService.saveUserMessageAndPrepareAiRequest(
                 eq(CHAT_ID),
@@ -291,13 +309,21 @@ class ChatServiceTest {
 
         verify(chatPersistenceService).assertOwnedChatExists(CHAT_ID, currentUser);
         verify(rateLimitService).checkAiMessageAllowed(currentUser);
+        verify(chatLockService).lock(CHAT_ID);
+
+        verify(chatPersistenceService).saveUserMessageAndPrepareAiRequest(
+                eq(CHAT_ID),
+                argThat(request -> request.content().equals("Привет")),
+                eq(currentUser)
+        );
+
         verify(aiProvider).sendMessage(aiRequest);
 
-        verify(auditEventService).record(
-                eq(USER_ID),
-                eq(ORGANIZATION_ID),
-                eq(AuditEventType.AI_RESPONSE_FAILED),
-                anyMap()
+        verify(chatPersistenceService).saveFailedAssistantMessage(
+                eq(CHAT_ID),
+                eq(USER_MESSAGE_ID),
+                same(exception),
+                eq(currentUser)
         );
 
         verify(chatPersistenceService, never()).saveAssistantMessageAndReturnChat(
@@ -307,12 +333,7 @@ class ChatServiceTest {
                 any()
         );
 
-        verify(chatLockService).lock(CHAT_ID);
-        verify(chatLockService).unlock(CHAT_ID);
-        verify(chatPersistenceService).markUserMessageFailed(
-                userMessageId,
-                currentUser
-        );
+        verify(chatLockService).unlockQuietly(CHAT_LOCK);
     }
 
     @Test
@@ -346,6 +367,7 @@ class ChatServiceTest {
         user.setId(USER_ID);
         user.setEmail("admin@test.com");
         user.setEnabled(true);
+
         return user;
     }
 

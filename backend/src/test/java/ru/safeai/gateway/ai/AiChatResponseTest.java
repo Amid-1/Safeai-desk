@@ -1,6 +1,7 @@
 package ru.safeai.gateway.ai;
 
 import org.junit.jupiter.api.Test;
+import ru.safeai.gateway.ai.dto.AiChatResponse;
 
 import java.math.BigDecimal;
 

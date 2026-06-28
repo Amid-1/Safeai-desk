@@ -1,6 +1,7 @@
 package ru.safeai.gateway.ai;
 
 import org.junit.jupiter.api.Test;
+import ru.safeai.gateway.ai.provider.openai.OpenAiProperties;
 
 import java.time.Duration;
 
@@ -16,6 +17,7 @@ class OpenAiPropertiesTest {
                 null,
                 null,
                 null,
+                null,
                 null
         );
 
@@ -27,6 +29,9 @@ class OpenAiPropertiesTest {
 
         assertThat(properties.maxOutputTokens())
                 .isEqualTo(1024);
+
+        assertThat(properties.maxResponseChars())
+                .isEqualTo(100_000);
 
         assertThat(properties.connectTimeout())
                 .isEqualTo(Duration.ofSeconds(5));
@@ -42,6 +47,7 @@ class OpenAiPropertiesTest {
                 "api-key",
                 "gpt-4o",
                 2048,
+                200_000,
                 Duration.ofSeconds(10),
                 Duration.ofSeconds(120)
         );
@@ -54,6 +60,9 @@ class OpenAiPropertiesTest {
 
         assertThat(properties.maxOutputTokens())
                 .isEqualTo(2048);
+
+        assertThat(properties.maxResponseChars())
+                .isEqualTo(200_000);
 
         assertThat(properties.connectTimeout())
                 .isEqualTo(Duration.ofSeconds(10));
@@ -70,10 +79,43 @@ class OpenAiPropertiesTest {
                 null,
                 -1,
                 null,
+                null,
                 null
         );
 
         assertThat(properties.maxOutputTokens())
                 .isEqualTo(1024);
+    }
+
+    @Test
+    void constructor_shouldNormalizeInvalidMaxResponseChars() {
+        OpenAiProperties properties = new OpenAiProperties(
+                null,
+                "api-key",
+                null,
+                null,
+                -1,
+                null,
+                null
+        );
+
+        assertThat(properties.maxResponseChars())
+                .isEqualTo(100_000);
+    }
+
+    @Test
+    void constructor_shouldCapTooLargeMaxResponseChars() {
+        OpenAiProperties properties = new OpenAiProperties(
+                null,
+                "api-key",
+                null,
+                null,
+                2_000_000,
+                null,
+                null
+        );
+
+        assertThat(properties.maxResponseChars())
+                .isEqualTo(1_000_000);
     }
 }

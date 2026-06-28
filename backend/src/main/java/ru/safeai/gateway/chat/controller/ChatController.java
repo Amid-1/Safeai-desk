@@ -2,13 +2,20 @@ package ru.safeai.gateway.chat.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import ru.safeai.gateway.chat.dto.*;
+import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
+import ru.safeai.gateway.chat.dto.ChatResponse;
+import ru.safeai.gateway.chat.dto.CreateChatRequest;
+import ru.safeai.gateway.chat.dto.MessageResponse;
+import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.service.ChatService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -27,10 +34,15 @@ public class ChatController {
     }
 
     @GetMapping
-    public List<ChatResponse> findAll(
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    public Page<ChatResponse> findAll(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser,
+            @PageableDefault(
+                    size = 20,
+                    sort = "updatedAt",
+                    direction = Sort.Direction.DESC
+            ) Pageable pageable
     ) {
-        return chatService.findAll(currentUser);
+        return chatService.findAll(currentUser, pageable);
     }
 
     @GetMapping("/{id}")
@@ -51,7 +63,7 @@ public class ChatController {
     }
 
     @GetMapping("/{id}/messages")
-    public List<MessageResponse> findMessages(
+    public Page<MessageResponse> findMessages(
             @PathVariable UUID id,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,

@@ -1,4 +1,4 @@
-package ru.safeai.gateway.ai;
+package ru.safeai.gateway.ai.dto;
 
 import java.math.BigDecimal;
 

@@ -18,4 +18,9 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
     );
 
     List<ChatMessageEntity> findTop30BySession_IdOrderByCreatedAtDescIdDesc(UUID sessionId);
+
+    List<ChatMessageEntity> findBySession_IdOrderByCreatedAtDescIdDesc(
+            UUID sessionId,
+            Pageable pageable
+    );
 }

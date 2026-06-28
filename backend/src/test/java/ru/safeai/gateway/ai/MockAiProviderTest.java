@@ -1,116 +1,131 @@
 package ru.safeai.gateway.ai;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.dto.AiMessage;
+import ru.safeai.gateway.ai.provider.mock.MockAiProvider;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MockAiProviderTest {
 
-    private MockAiProvider mockAiProvider;
+    private static final UUID USER_ID =
+            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
-    @BeforeEach
-    void setUp() {
-        mockAiProvider = new MockAiProvider();
-    }
+    private static final UUID ORGANIZATION_ID =
+            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+    private static final UUID CHAT_ID =
+            UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
+
+    private final MockAiProvider provider = new MockAiProvider();
 
     @Test
-    void sendMessage_shouldReturnMockAiResponse() {
+    void sendMessage_shouldReturnMockResponse() {
         AiChatRequest request = new AiChatRequest(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
+                USER_ID,
+                ORGANIZATION_ID,
+                CHAT_ID,
                 "Привет",
                 List.of()
         );
 
-        AiChatResponse response = mockAiProvider.sendMessage(request);
+        AiChatResponse response = provider.sendMessage(request);
 
-        assertThat(response.content()).isEqualTo("Mock AI provider response: Привет");
-        assertThat(response.model()).isEqualTo("mock-safeai");
-        assertThat(response.inputTokens()).isGreaterThan(0);
-        assertThat(response.outputTokens()).isGreaterThan(0);
-        assertThat(response.costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(response.content())
+                .isEqualTo("Mock AI provider response: Привет");
+
+        assertThat(response.model())
+                .isEqualTo("mock-safeai");
+
+        assertThat(response.inputTokens())
+                .isGreaterThanOrEqualTo(1);
+
+        assertThat(response.outputTokens())
+                .isGreaterThanOrEqualTo(1);
+
+        assertThat(response.costUsd())
+                .isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
-    void sendMessage_shouldHandleBlankUserMessage() {
+    void sendMessage_shouldIncludeHistoryTokensInInputTokens() {
         AiChatRequest request = new AiChatRequest(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                "",
-                List.of()
-        );
-
-        AiChatResponse response = mockAiProvider.sendMessage(request);
-
-        assertThat(response.content()).isEqualTo("Mock AI provider response: ");
-        assertThat(response.model()).isEqualTo("mock-safeai");
-        assertThat(response.inputTokens()).isEqualTo(0);
-        assertThat(response.outputTokens()).isGreaterThan(0);
-        assertThat(response.costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
-    }
-
-    @Test
-    void sendMessage_shouldIncludeHistoryInInputTokenCalculation() {
-        AiChatRequest requestWithoutHistory = new AiChatRequest(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                "Новое сообщение",
-                List.of()
-        );
-
-        AiChatRequest requestWithHistory = new AiChatRequest(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
+                USER_ID,
+                ORGANIZATION_ID,
+                CHAT_ID,
                 "Новое сообщение",
                 List.of(
-                        new AiMessage("USER", "Старое сообщение пользователя"),
-                        new AiMessage("ASSISTANT", "Старый ответ ассистента")
+                        new AiMessage("USER", "Старое сообщение"),
+                        new AiMessage("ASSISTANT", "Старый ответ")
                 )
         );
 
-        AiChatResponse responseWithoutHistory = mockAiProvider.sendMessage(requestWithoutHistory);
-        AiChatResponse responseWithHistory = mockAiProvider.sendMessage(requestWithHistory);
+        AiChatResponse response = provider.sendMessage(request);
 
-        assertThat(responseWithHistory.inputTokens())
-                .isGreaterThan(responseWithoutHistory.inputTokens());
+        assertThat(response.inputTokens())
+                .isGreaterThan(estimateTokens("Новое сообщение"));
+
+        assertThat(response.outputTokens())
+                .isEqualTo(estimateTokens(response.content()));
     }
 
     @Test
-    void aiChatRequest_shouldReplaceNullHistoryWithEmptyList() {
+    void sendMessage_shouldHandleNullHistoryAsEmptyHistory() {
         AiChatRequest request = new AiChatRequest(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
+                USER_ID,
+                ORGANIZATION_ID,
+                CHAT_ID,
                 "Привет",
                 null
         );
 
-        assertThat(request.history()).isEmpty();
+        AiChatResponse response = provider.sendMessage(request);
+
+        assertThat(response.content())
+                .isEqualTo("Mock AI provider response: Привет");
+
+        assertThat(response.inputTokens())
+                .isEqualTo(estimateTokens("Привет"));
     }
 
     @Test
-    void aiChatResponse_shouldReplaceNullValuesWithDefaults() {
-        AiChatResponse response = new AiChatResponse(
-                null,
-                null,
-                null,
-                null,
-                null
-        );
+    void aiChatRequest_shouldRejectBlankUserMessage() {
+        assertThatThrownBy(() -> new AiChatRequest(
+                USER_ID,
+                ORGANIZATION_ID,
+                CHAT_ID,
+                "   ",
+                List.of()
+        ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("userMessage не должен быть пустым");
+    }
 
-        assertThat(response.content()).isEmpty();
-        assertThat(response.model()).isEqualTo("unknown");
-        assertThat(response.inputTokens()).isZero();
-        assertThat(response.outputTokens()).isZero();
-        assertThat(response.costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+    @Test
+    void aiChatRequest_shouldRejectNullUserMessage() {
+        assertThatThrownBy(() -> new AiChatRequest(
+                USER_ID,
+                ORGANIZATION_ID,
+                CHAT_ID,
+                null,
+                List.of()
+        ))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("userMessage не должен быть null");
+    }
+
+    private int estimateTokens(String text) {
+        if (text == null || text.isBlank()) {
+            return 0;
+        }
+
+        return Math.max(1, text.length() / 4);
     }
 }

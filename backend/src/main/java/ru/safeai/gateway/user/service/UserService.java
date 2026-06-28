@@ -7,6 +7,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
@@ -117,20 +119,23 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public List<UserResponse> findAll(SafeAiUserPrincipal currentUser) {
+    public Page<UserResponse> findAll(
+            SafeAiUserPrincipal currentUser,
+            Pageable pageable
+    ) {
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(pageable, "pageable не должен быть null");
 
         if (isSuperAdmin(currentUser)) {
-            return userRepository.findAllWithRolesAndOrganization()
-                    .stream()
-                    .map(this::toResponse)
-                    .toList();
+            return userRepository.findAllWithRolesAndOrganization(pageable)
+                    .map(this::toResponse);
         }
 
-        return userRepository.findAllByOrganizationIdWithRoles(currentUser.getOrganizationId())
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        return userRepository.findAllByOrganizationIdWithRoles(
+                        currentUser.getOrganizationId(),
+                        pageable
+                )
+                .map(this::toResponse);
     }
 
     @Transactional(readOnly = true)
@@ -147,6 +152,7 @@ public class UserService {
         UserEntity user = findUserVisibleForCurrentUser(id, currentUser);
         rejectSuperAdminMutation(user);
 
+        boolean oldEnabledValue = user.isEnabled();
         boolean newEnabledValue = Boolean.TRUE.equals(request.enabled());
 
         if (user.getId().equals(currentUser.getId()) && !newEnabledValue) {
@@ -164,7 +170,7 @@ public class UserService {
             }
         }
 
-        boolean changed = user.isEnabled() != newEnabledValue;
+        boolean changed = oldEnabledValue != newEnabledValue;
 
         user.setEnabled(newEnabledValue);
 
@@ -186,7 +192,8 @@ public class UserService {
                         "targetUserId", saved.getId().toString(),
                         "targetUserEmail", saved.getEmail(),
                         "targetOrganizationId", saved.getOrganization().getId().toString(),
-                        "enabled", saved.isEnabled()
+                        "oldEnabled", oldEnabledValue,
+                        "newEnabled", saved.isEnabled()
                 )
         );
 
@@ -206,6 +213,7 @@ public class UserService {
             throw new ForbiddenOperationException("Нельзя менять собственные роли");
         }
 
+        Set<String> oldRoles = roleNames(user);
         Set<String> requestedRoles = normalizeRoles(request.roles());
 
         if (requestedRoles.isEmpty()) {
@@ -242,7 +250,8 @@ public class UserService {
                         "targetUserId", saved.getId().toString(),
                         "targetUserEmail", saved.getEmail(),
                         "targetOrganizationId", saved.getOrganization().getId().toString(),
-                        "roles", requestedRoles
+                        "oldRoles", oldRoles,
+                        "newRoles", roleNames(saved)
                 )
         );
 
@@ -250,7 +259,7 @@ public class UserService {
     }
 
     @Transactional
-    public UserResponse resetPassword(
+    public void resetPassword(
             UUID id,
             ResetUserPasswordRequest request,
             SafeAiUserPrincipal currentUser
@@ -275,8 +284,6 @@ public class UserService {
                         "targetOrganizationId", saved.getOrganization().getId().toString()
                 )
         );
-
-        return toResponse(saved);
     }
 
     private UUID resolveTargetOrganizationId(
@@ -390,7 +397,9 @@ public class UserService {
                 .stream()
                 .map(RoleEntity::getName)
                 .filter(Objects::nonNull)
-                .map(role -> role.replaceFirst("^ROLE_", ""))
+                .map(String::trim)
+                .filter(role -> !role.isBlank())
+                .map(String::toUpperCase)
                 .collect(Collectors.toSet());
     }
 

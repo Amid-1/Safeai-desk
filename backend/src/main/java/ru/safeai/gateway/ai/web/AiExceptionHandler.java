@@ -1,4 +1,4 @@
-package ru.safeai.gateway.ai;
+package ru.safeai.gateway.ai.web;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +9,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
+import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
+import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
 import ru.safeai.gateway.common.exception.ApiErrorResponse;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 
@@ -25,7 +29,14 @@ public class AiExceptionHandler {
             AiProviderTimeoutException exception,
             HttpServletRequest request
     ) {
-        log.warn("AI provider timeout: {}", exception.getMessage());
+        log.warn(
+                "AI provider timeout: provider={}, model={}, requestId={}, retryable={}, message={}",
+                exception.getProvider(),
+                exception.getModel(),
+                exception.getProviderRequestId(),
+                exception.isRetryable(),
+                exception.getMessage()
+        );
 
         return ResponseEntity
                 .status(HttpStatus.GATEWAY_TIMEOUT)
@@ -43,7 +54,15 @@ public class AiExceptionHandler {
             AiProviderRateLimitedException exception,
             HttpServletRequest request
     ) {
-        log.warn("AI provider rate limited: {}", exception.getMessage());
+        log.warn(
+                "AI provider rate limited: provider={}, model={}, statusCode={}, requestId={}, retryable={}, message={}",
+                exception.getProvider(),
+                exception.getModel(),
+                exception.getStatusCode(),
+                exception.getProviderRequestId(),
+                exception.isRetryable(),
+                exception.getMessage()
+        );
 
         return ResponseEntity
                 .status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -56,12 +75,45 @@ public class AiExceptionHandler {
                 ));
     }
 
+    @ExceptionHandler(AiProviderUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleAiProviderUnavailable(
+            AiProviderUnavailableException exception,
+            HttpServletRequest request
+    ) {
+        log.warn(
+                "AI provider unavailable: provider={}, model={}, requestId={}, retryable={}, message={}",
+                exception.getProvider(),
+                exception.getModel(),
+                exception.getProviderRequestId(),
+                exception.isRetryable(),
+                exception.getMessage()
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(errorResponseFactory.create(
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "AI_PROVIDER_UNAVAILABLE",
+                        "AI provider временно недоступен",
+                        request,
+                        null
+                ));
+    }
+
     @ExceptionHandler(AiProviderException.class)
     public ResponseEntity<ApiErrorResponse> handleAiProviderException(
             AiProviderException exception,
             HttpServletRequest request
     ) {
-        log.warn("AI provider error: {}", exception.getMessage());
+        log.warn(
+                "AI provider error: provider={}, model={}, statusCode={}, requestId={}, retryable={}, message={}",
+                exception.getProvider(),
+                exception.getModel(),
+                exception.getStatusCode(),
+                exception.getProviderRequestId(),
+                exception.isRetryable(),
+                exception.getMessage()
+        );
 
         return ResponseEntity
                 .status(HttpStatus.BAD_GATEWAY)

@@ -4,6 +4,12 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
+
 import ru.safeai.gateway.user.dto.CreateUserRequest;
 import ru.safeai.gateway.user.dto.UserResponse;
 import ru.safeai.gateway.user.service.UserService;
@@ -14,7 +20,6 @@ import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
 import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
 import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -34,10 +39,15 @@ public class UserController {
     }
 
     @GetMapping
-    public List<UserResponse> findAll(
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    public Page<UserResponse> findAll(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser,
+            @PageableDefault(
+                    size = 20,
+                    sort = "createdAt",
+                    direction = Sort.Direction.DESC
+            ) Pageable pageable
     ) {
-        return userService.findAll(currentUser);
+        return userService.findAll(currentUser, pageable);
     }
 
     @GetMapping("/{id}")
@@ -67,11 +77,12 @@ public class UserController {
     }
 
     @PostMapping("/{id}/reset-password")
-    public UserResponse resetPassword(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resetPassword(
             @PathVariable UUID id,
             @Valid @RequestBody ResetUserPasswordRequest request,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
-        return userService.resetPassword(id, request, currentUser);
+        userService.resetPassword(id, request, currentUser);
     }
 }

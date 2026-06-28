@@ -1,4 +1,4 @@
-package ru.safeai.gateway.ai;
+package ru.safeai.gateway.ai.provider;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -9,6 +9,8 @@ public record AiProviderProperties(
     public AiProviderProperties {
         if (provider == null || provider.isBlank()) {
             provider = "mock";
+        } else {
+            provider = provider.trim().toLowerCase();
         }
     }
 }
