@@ -15,8 +15,8 @@ export type AuthUser = {
     roles: string[]
 }
 
-export async function login(request: LoginRequest): Promise<AuthUser> {
-    return apiRequest<AuthUser>('/api/auth/login', {
+export async function login(request: LoginRequest): Promise<void> {
+    await apiRequest<unknown>('/api/auth/login', {
         method: 'POST',
         auth: false,
         body: JSON.stringify(request),
@@ -25,13 +25,6 @@ export async function login(request: LoginRequest): Promise<AuthUser> {
 
 export async function getCurrentUser(): Promise<AuthUser> {
     return apiRequest<AuthUser>('/api/auth/me')
-}
-
-export async function refresh(): Promise<void> {
-    return apiRequest<void>('/api/auth/refresh', {
-        method: 'POST',
-        auth: false,
-    })
 }
 
 export async function logout(): Promise<void> {

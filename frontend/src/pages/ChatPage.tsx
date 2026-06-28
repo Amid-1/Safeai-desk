@@ -4,6 +4,7 @@ import type { KeyboardEvent } from 'react'
 import { createChat, getChatById, getChats, sendMessage } from '../api/chatApi'
 import type { Chat, ChatDetails } from '../api/chatApi'
 import { getApiErrorMessage } from '../api/http'
+import { getPageContent } from '../utils/page'
 
 function ChatPage() {
     const [chats, setChats] = useState<Chat[]>([])
@@ -11,16 +12,27 @@ function ChatPage() {
     const [message, setMessage] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
+    const [initialLoading, setInitialLoading] = useState(true)
 
     useEffect(() => {
         async function loadChats() {
             setError('')
+            setInitialLoading(true)
 
             try {
                 const data = await getChats()
-                setChats(data)
+                const content = getPageContent(data)
+
+                setChats(content)
+
+                if (content.length > 0) {
+                    const firstChat = await getChatById(content[0].id)
+                    setActiveChat(normalizeChatDetails(firstChat))
+                }
             } catch (err) {
                 setError(getApiErrorMessage(err, 'Failed to load chats'))
+            } finally {
+                setInitialLoading(false)
             }
         }
 
@@ -43,6 +55,7 @@ function ChatPage() {
                 id: chat.id,
                 title: chat.title,
                 createdAt: chat.createdAt,
+                updatedAt: chat.updatedAt,
                 messages: [],
             })
         } catch (err) {
@@ -65,8 +78,20 @@ function ChatPage() {
         try {
             const updatedChat = await sendMessage(activeChat.id, trimmedMessage)
 
-            setActiveChat(updatedChat)
+            setActiveChat(normalizeChatDetails(updatedChat))
             setMessage('')
+
+            setChats((prev) =>
+                prev.map((chat) =>
+                    chat.id === updatedChat.id
+                        ? {
+                            ...chat,
+                            title: updatedChat.title,
+                            updatedAt: updatedChat.updatedAt,
+                        }
+                        : chat
+                )
+            )
         } catch (err) {
             setError(getApiErrorMessage(err, 'Failed to send message'))
         } finally {
@@ -84,7 +109,7 @@ function ChatPage() {
 
         try {
             const chatDetails = await getChatById(chatId)
-            setActiveChat(chatDetails)
+            setActiveChat(normalizeChatDetails(chatDetails))
         } catch (err) {
             setError(getApiErrorMessage(err, 'Failed to open chat'))
         } finally {
@@ -103,6 +128,7 @@ function ChatPage() {
             <h1>Chat</h1>
 
             {error && <div className="error">{error}</div>}
+            {initialLoading && <p>Loading chats...</p>}
 
             <div className="chat-layout">
                 <aside className="card sidebar">
@@ -112,12 +138,16 @@ function ChatPage() {
 
                     <h3>Chats</h3>
 
-                    {chats.length === 0 && <p>No chats yet.</p>}
+                    {!initialLoading && chats.length === 0 && <p>No chats yet.</p>}
 
                     {chats.map((chat) => (
                         <button
                             key={chat.id}
-                            className="chat-item"
+                            className={
+                                activeChat?.id === chat.id
+                                    ? 'chat-item active'
+                                    : 'chat-item'
+                            }
                             disabled={loading}
                             onClick={() => {
                                 void handleOpenChat(chat.id)
@@ -129,7 +159,7 @@ function ChatPage() {
                 </aside>
 
                 <section className="card chat-panel">
-                    {!activeChat && <p>Create a chat to start.</p>}
+                    {!activeChat && !initialLoading && <p>Create a chat to start.</p>}
 
                     {activeChat && (
                         <>
@@ -143,9 +173,16 @@ function ChatPage() {
                                 {activeChat.messages.map((msg) => (
                                     <div
                                         key={msg.id}
-                                        className={`message ${msg.role.toLowerCase()}`}
+                                        className={`message ${msg.role.toLowerCase()} ${msg.status?.toLowerCase() ?? ''}`}
                                     >
                                         <strong>{msg.role}</strong>
+
+                                        {msg.status === 'FAILED' && (
+                                            <span className="status-badge status-disabled">
+                                                FAILED
+                                            </span>
+                                        )}
+
                                         <p>{msg.content}</p>
 
                                         {msg.role === 'ASSISTANT' && (
@@ -182,6 +219,13 @@ function ChatPage() {
             </div>
         </div>
     )
+}
+
+function normalizeChatDetails(chat: ChatDetails): ChatDetails {
+    return {
+        ...chat,
+        messages: chat.messages ?? [],
+    }
 }
 
 export default ChatPage

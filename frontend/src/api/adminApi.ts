@@ -1,16 +1,6 @@
 // frontend/src/api/adminApi.ts
 import { apiRequest } from './http'
-
-export type PageResponse<T> = {
-    content: T[]
-    totalElements: number
-    totalPages: number
-    size: number
-    number?: number
-    page?: number
-    first?: boolean
-    last?: boolean
-}
+import type { PageResponse } from '../utils/page'
 
 export type AuditEvent = {
     id: string
@@ -69,7 +59,7 @@ export function getAuditEvents(
     page = 0,
     size = 50,
     filter: AuditEventFilter = {}
-) {
+): Promise<PageResponse<AuditEvent>> {
     const params = new URLSearchParams()
 
     params.set('page', String(page))
@@ -100,18 +90,18 @@ export function getAuditEvents(
     )
 }
 
-export function getUsageSummary() {
+export function getUsageSummary(): Promise<UsageSummary[]> {
     return apiRequest<UsageSummary[]>('/api/admin/usage/summary')
 }
 
-export function getUsageByUsers() {
+export function getUsageByUsers(): Promise<UsageUserSummary[]> {
     return apiRequest<UsageUserSummary[]>('/api/admin/usage/users')
 }
 
-export function getUsageByModels() {
+export function getUsageByModels(): Promise<UsageModelSummary[]> {
     return apiRequest<UsageModelSummary[]>('/api/admin/usage/models')
 }
 
-export function getUsageDaily() {
+export function getUsageDaily(): Promise<UsageDailySummary[]> {
     return apiRequest<UsageDailySummary[]>('/api/admin/usage/daily')
 }

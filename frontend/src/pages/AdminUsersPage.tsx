@@ -12,6 +12,7 @@ import type { User } from '../api/userApi'
 import type { AuthUser } from '../api/authApi'
 import { getApiErrorMessage } from '../api/http'
 import { formatDateTime } from '../utils/format'
+import { getPageContent, getPageTotalPages } from '../utils/page'
 
 type Role = 'USER' | 'ADMIN'
 type UserFilter = 'ALL' | 'ADMIN' | 'USER'
@@ -19,6 +20,8 @@ type UserFilter = 'ALL' | 'ADMIN' | 'USER'
 type AdminUsersPageProps = {
     currentUser: AuthUser
 }
+
+const PAGE_SIZE = 50
 
 function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [users, setUsers] = useState<User[]>([])
@@ -28,6 +31,9 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [creating, setCreating] = useState(false)
     const [actionUserId, setActionUserId] = useState<string | null>(null)
 
+    const [page, setPage] = useState(0)
+    const [totalPages, setTotalPages] = useState(1)
+
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [passwordConfirm, setPasswordConfirm] = useState('')
@@ -36,8 +42,8 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [filter, setFilter] = useState<UserFilter>('ALL')
 
     useEffect(() => {
-        void loadUsers()
-    }, [])
+        void loadUsers(page)
+    }, [page])
 
     const filteredUsers = useMemo(() => {
         if (filter === 'ALL') {
@@ -50,13 +56,15 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const adminCount = users.filter((user) => user.roles.includes('ADMIN')).length
     const userCount = users.filter((user) => user.roles.includes('USER')).length
 
-    async function loadUsers() {
+    async function loadUsers(nextPage = page) {
         setError('')
         setLoading(true)
 
         try {
-            const data = await getUsers()
-            setUsers(data)
+            const data = await getUsers(nextPage, PAGE_SIZE)
+
+            setUsers(getPageContent(data))
+            setTotalPages(getPageTotalPages(data))
         } catch (err) {
             setError(getApiErrorMessage(err, 'Failed to load users'))
         } finally {
@@ -67,30 +75,27 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     async function handleCreateUser(event: SyntheticEvent<HTMLFormElement>) {
         event.preventDefault()
 
+        setError('')
+        setSuccess('')
+
         const normalizedEmail = email.trim()
+        const passwordValidationError = validatePassword(password)
 
         if (!normalizedEmail) {
-            setError('Email is required')
+            setError('Введите email пользователя.')
             return
         }
 
-        if (!password.trim()) {
-            setError('Password is required')
-            return
-        }
-
-        if (password.length < 6) {
-            setError('Password must be at least 6 characters')
+        if (passwordValidationError) {
+            setError(passwordValidationError)
             return
         }
 
         if (password !== passwordConfirm) {
-            setError('Passwords do not match')
+            setError('Пароли не совпадают.')
             return
         }
 
-        setError('')
-        setSuccess('')
         setCreating(true)
 
         try {
@@ -102,17 +107,17 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                 roles: [role],
             })
 
-            setUsers((prev) => [createdUser, ...prev])
-
             setEmail('')
             setPassword('')
             setPasswordConfirm('')
             setFullName('')
             setRole('USER')
+            setSuccess(`Пользователь ${createdUser.email} создан.`)
 
-            setSuccess(`User ${createdUser.email} created`)
+            setPage(0)
+            await loadUsers(0)
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Failed to create user'))
+            setError(getApiErrorMessage(err, 'Не удалось создать пользователя.'))
         } finally {
             setCreating(false)
         }
@@ -184,43 +189,44 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
     async function handleResetPassword(user: User) {
         const newPassword = window.prompt(
-            `New password for ${user.email}. Minimum 6 characters:`
+            `Новый пароль для ${user.email}. Минимум 12 символов: строчная буква, заглавная буква, цифра и спецсимвол.`
         )
 
         if (newPassword === null) {
             return
         }
 
-        if (newPassword.length < 6) {
-            setError('Password must be at least 6 characters')
+        setError('')
+        setSuccess('')
+
+        const passwordValidationError = validatePassword(newPassword)
+
+        if (passwordValidationError) {
+            setError(passwordValidationError)
             return
         }
 
-        const confirmPassword = window.prompt('Repeat new password:')
+        const confirmPassword = window.prompt('Повторите новый пароль:')
 
         if (confirmPassword === null) {
             return
         }
 
         if (newPassword !== confirmPassword) {
-            setError('Passwords do not match')
+            setError('Пароли не совпадают.')
             return
         }
 
-        setError('')
-        setSuccess('')
         setActionUserId(user.id)
 
         try {
-            const updatedUser = await resetUserPassword(user.id, {
+            await resetUserPassword(user.id, {
                 password: newPassword,
             })
 
-            replaceUser(updatedUser)
-
-            setSuccess(`Password for ${updatedUser.email} reset`)
+            setSuccess(`Пароль для ${user.email} изменен.`)
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Failed to reset password'))
+            setError(getApiErrorMessage(err, 'Не удалось изменить пароль.'))
         } finally {
             setActionUserId(null)
         }
@@ -263,6 +269,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                             onChange={(event) => setEmail(event.target.value)}
                             placeholder="user@example.com"
                             type="email"
+                            autoComplete="username"
                         />
                     </label>
 
@@ -271,9 +278,11 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                         <input
                             value={password}
                             onChange={(event) => setPassword(event.target.value)}
-                            placeholder="Minimum 6 characters"
+                            placeholder="Минимум 12 символов: A-z, цифра, спецсимвол"
                             type="password"
-                            minLength={6}
+                            minLength={12}
+                            maxLength={72}
+                            autoComplete="new-password"
                         />
                     </label>
 
@@ -282,9 +291,11 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                         <input
                             value={passwordConfirm}
                             onChange={(event) => setPasswordConfirm(event.target.value)}
-                            placeholder="Repeat password"
+                            placeholder="Повторите пароль"
                             type="password"
-                            minLength={6}
+                            minLength={12}
+                            maxLength={72}
+                            autoComplete="new-password"
                         />
                     </label>
 
@@ -338,109 +349,177 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
             </div>
 
             <div className="card">
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Email</th>
-                        <th>Full name</th>
-                        <th>Roles</th>
-                        <th>Enabled</th>
-                        <th>Created at</th>
-                        <th>Actions</th>
-                    </tr>
-                    </thead>
+                {filteredUsers.length === 0 && !loading && (
+                    <p>No users found.</p>
+                )}
 
-                    <tbody>
-                    {filteredUsers.map((user) => {
-                        const isAdmin = user.roles.includes('ADMIN')
-                        const isSuperAdminUser = user.roles.includes('SUPER_ADMIN')
-                        const isBusy = actionUserId === user.id
+                {filteredUsers.length > 0 && (
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Full name</th>
+                            <th>Roles</th>
+                            <th>Enabled</th>
+                            <th>Created at</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
 
-                        return (
-                            <tr key={user.id}>
-                                <td>{user.email}</td>
-                                <td>{user.fullName ?? '-'}</td>
+                        <tbody>
+                        {filteredUsers.map((user) => {
+                            const isAdmin = user.roles.includes('ADMIN')
+                            const isSuperAdminUser = user.roles.includes('SUPER_ADMIN')
+                            const isBusy = actionUserId === user.id
 
-                                <td>
-                                    <div className="role-list">
-                                        {user.roles.map((userRole) => (
-                                            <span
-                                                key={userRole}
-                                                className={getRoleBadgeClass(userRole)}
-                                            >
-                                                {userRole}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </td>
+                            return (
+                                <tr key={user.id}>
+                                    <td>{user.email}</td>
+                                    <td>{user.fullName ?? '-'}</td>
 
-                                <td>
-                                    <span
-                                        className={
-                                            user.enabled
-                                                ? 'status-badge status-enabled'
-                                                : 'status-badge status-disabled'
-                                        }
-                                    >
-                                        {user.enabled ? 'enabled' : 'disabled'}
-                                    </span>
-                                </td>
-
-                                <td>{formatDateTime(user.createdAt)}</td>
-
-                                <td>
-                                    {isSuperAdminUser ? (
-                                        <span className="muted">Platform admin</span>
-                                    ) : (
-                                        <div className="user-actions">
-                                            <button
-                                                className={
-                                                    user.enabled
-                                                        ? 'danger-button'
-                                                        : 'secondary-button'
-                                                }
-                                                disabled={isBusy}
-                                                onClick={() => void handleToggleEnabled(user)}
-                                            >
-                                                {user.enabled ? 'Disable' : 'Enable'}
-                                            </button>
-
-                                            <button
-                                                className="secondary-button"
-                                                disabled={isBusy}
-                                                onClick={() => void handleResetPassword(user)}
-                                            >
-                                                Reset password
-                                            </button>
-
-                                            {isAdmin ? (
-                                                <button
-                                                    className="secondary-button"
-                                                    disabled={isBusy}
-                                                    onClick={() => void handleChangeRole(user, 'USER')}
+                                    <td>
+                                        <div className="role-list">
+                                            {user.roles.map((userRole) => (
+                                                <span
+                                                    key={userRole}
+                                                    className={getRoleBadgeClass(userRole)}
                                                 >
-                                                    Make USER
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    className="secondary-button"
-                                                    disabled={isBusy}
-                                                    onClick={() => void handleChangeRole(user, 'ADMIN')}
-                                                >
-                                                    Make ADMIN
-                                                </button>
-                                            )}
+                                                    {userRole}
+                                                </span>
+                                            ))}
                                         </div>
-                                    )}
-                                </td>
-                            </tr>
-                        )
-                    })}
-                    </tbody>
-                </table>
+                                    </td>
+
+                                    <td>
+                                        <span
+                                            className={
+                                                user.enabled
+                                                    ? 'status-badge status-enabled'
+                                                    : 'status-badge status-disabled'
+                                            }
+                                        >
+                                            {user.enabled ? 'enabled' : 'disabled'}
+                                        </span>
+                                    </td>
+
+                                    <td>{formatDateTime(user.createdAt)}</td>
+
+                                    <td>
+                                        {isSuperAdminUser ? (
+                                            <span className="muted">Platform admin</span>
+                                        ) : (
+                                            <div className="user-actions">
+                                                <button
+                                                    className={
+                                                        user.enabled
+                                                            ? 'danger-button'
+                                                            : 'secondary-button'
+                                                    }
+                                                    disabled={isBusy}
+                                                    onClick={() => void handleToggleEnabled(user)}
+                                                >
+                                                    {user.enabled ? 'Disable' : 'Enable'}
+                                                </button>
+
+                                                <button
+                                                    className="secondary-button"
+                                                    disabled={isBusy}
+                                                    onClick={() => void handleResetPassword(user)}
+                                                >
+                                                    Reset password
+                                                </button>
+
+                                                {isAdmin ? (
+                                                    <button
+                                                        className="secondary-button"
+                                                        disabled={isBusy}
+                                                        onClick={() => void handleChangeRole(user, 'USER')}
+                                                    >
+                                                        Make USER
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        className="secondary-button"
+                                                        disabled={isBusy}
+                                                        onClick={() => void handleChangeRole(user, 'ADMIN')}
+                                                    >
+                                                        Make ADMIN
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </td>
+                                </tr>
+                            )
+                        })}
+                        </tbody>
+                    </table>
+                )}
+
+                <div className="pagination">
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={page === 0 || loading}
+                        onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+                    >
+                        Previous
+                    </button>
+
+                    <span>
+                        Page {page + 1} of {Math.max(totalPages, 1)}
+                    </span>
+
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={page + 1 >= totalPages || loading}
+                        onClick={() => setPage((prev) => prev + 1)}
+                    >
+                        Next
+                    </button>
+                </div>
             </div>
         </div>
     )
+}
+
+function validatePassword(password: string): string | null {
+    const missingRequirements: string[] = []
+
+    if (!password) {
+        return 'Введите пароль.'
+    }
+
+    if (password.length < 12) {
+        missingRequirements.push('минимум 12 символов')
+    }
+
+    if (password.length > 72) {
+        missingRequirements.push('не более 72 символов')
+    }
+
+    if (!/[a-z]/.test(password)) {
+        missingRequirements.push('строчную букву')
+    }
+
+    if (!/[A-Z]/.test(password)) {
+        missingRequirements.push('заглавную букву')
+    }
+
+    if (!/\d/.test(password)) {
+        missingRequirements.push('цифру')
+    }
+
+    if (!/[^A-Za-z0-9]/.test(password)) {
+        missingRequirements.push('спецсимвол')
+    }
+
+    if (missingRequirements.length === 0) {
+        return null
+    }
+
+    return `Пароль должен содержать: ${missingRequirements.join(', ')}.`
 }
 
 export default AdminUsersPage

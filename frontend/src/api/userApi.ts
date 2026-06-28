@@ -1,5 +1,6 @@
 // frontend/src/api/userApi.ts
 import { apiRequest } from './http'
+import type { PageResponse } from '../utils/page'
 
 export type User = {
     id: string
@@ -31,8 +32,11 @@ export type ResetUserPasswordRequest = {
     password: string
 }
 
-export async function getUsers(): Promise<User[]> {
-    return apiRequest<User[]>('/api/users')
+export async function getUsers(
+    page = 0,
+    size = 50
+): Promise<PageResponse<User>> {
+    return apiRequest<PageResponse<User>>(`/api/users?page=${page}&size=${size}`)
 }
 
 export async function createUser(request: CreateUserRequest): Promise<User> {
@@ -65,8 +69,8 @@ export async function updateUserRoles(
 export async function resetUserPassword(
     userId: string,
     request: ResetUserPasswordRequest
-): Promise<User> {
-    return apiRequest<User>(`/api/users/${userId}/reset-password`, {
+): Promise<void> {
+    return apiRequest<void>(`/api/users/${userId}/reset-password`, {
         method: 'POST',
         body: JSON.stringify(request),
     })

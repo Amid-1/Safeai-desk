@@ -44,20 +44,24 @@ password: superadmin123
 
 ## Администраторы
 
-| № | Email | Password | Role | Комментарий                                                      |
-|---|---|---|---|------------------------------------------------------------------|
-| 1 | admin@test.com | admin123 | ADMIN | Demo admin из seed-миграции      Demo Admin полное имя           |
-| 2 | ivan@mail.com | v2F4r1C4@$ | ADMIN | Создан вручную через frontend/admin users Ivan Ivanov полное имя |
+| № | Email            | Password      | Role | Комментарий                                                      |
+|---|------------------|---------------|---|------------------------------------------------------------------|
+| 1 | admin@test.com   | admin123      | ADMIN | Demo admin из seed-миграции      Demo Admin полное имя           |
+| 2 | ivan@mail.com    | v2F4r1C4@$aD  | ADMIN | Создан вручную через frontend/admin users Ivan Ivanov полное имя |
+| 3 | vLAd@mail.ru     | fhgkJFG@3%^&% | ADMIN | Vlad Vladov                                                      |
+| 4 | MiSha@proton.net | bvhgSI*7&@)++ | ADMIN | Misha Michov                                                     |
 
 ---
 
 ## Обычные пользователи
 
-| № | Email | Password   | Role | Комментарий                                                                                                             |
-|---|---|------------|---|-------------------------------------------------------------------------------------------------------------------------|
-| 1 | dimac@mail.com | v2F4r1C4!# | USER | Создан вручную через frontend/admin users  Dima Dmitriev полное имя                                                     |
-| 2 | user1@test.com | user123    | USER | Пароль не сохранён в открытом виде; если нужен — создать нового USER или 
-сделать отдельный reset password  User Userov полное имя |
+| №                                                        | Email               | Password       | Role | Комментарий                                                              |
+|----------------------------------------------------------|---------------------|----------------|---|--------------------------------------------------------------------------|
+| 1                                                        | dimac@mail.com      | v2F4r1C4!#SD   | USER | Создан вручную через frontend/admin users  Dima Dmitriev полное имя      |
+| 2                                                        | user1@test.com      | user12345678   | USER | Пароль не сохранён в открытом виде; если нужен — создать нового USER или 
+ сделать отдельный reset password  User Userov полное имя |
+| 3                                                        | Vasiya@gmail.com    | dfghjGH75!+Sdd | USER | Vasiya Vasilliev                                                         |
+| 4                                                        | PetiyaDF@yandex.com | DGFGFNjghj&*46 | USER | Petiya Petrov
 
 ---
 
@@ -222,9 +226,13 @@ USER_PASSWORD_RESET
 ```
 
 
+### Коммит и пуш с файлом длинного сообщения
+
+```text
 cd /d "D:\Java projects\Safeai-desk"
 git status
 git add .
 git restore --staged backend/.env
 git commit -F commit-message.txt
 git push
+```

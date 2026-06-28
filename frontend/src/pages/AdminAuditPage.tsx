@@ -4,6 +4,7 @@ import { getAuditEvents } from '../api/adminApi'
 import type { AuditEvent, AuditEventFilter } from '../api/adminApi'
 import { getApiErrorMessage } from '../api/http'
 import { formatDateTime } from '../utils/format'
+import { getPageContent, getPageTotalPages } from '../utils/page'
 
 const EVENT_TYPES = [
     'USER_LOGIN_SUCCESS',
@@ -26,7 +27,7 @@ const EVENT_TYPES = [
     'USER_LOGOUT',
 
     'ORGANIZATION_NAME_CHANGED',
-    'ORGANIZATION_ENABLED_CHANGED'
+    'ORGANIZATION_ENABLED_CHANGED',
 ]
 
 function AdminAuditPage() {
@@ -35,7 +36,7 @@ function AdminAuditPage() {
     const [loading, setLoading] = useState(true)
 
     const [page, setPage] = useState(0)
-    const [totalPages, setTotalPages] = useState(0)
+    const [totalPages, setTotalPages] = useState(1)
 
     const [draftEventType, setDraftEventType] = useState('')
     const [draftUserEmail, setDraftUserEmail] = useState('')
@@ -53,8 +54,8 @@ function AdminAuditPage() {
             try {
                 const data = await getAuditEvents(page, 50, appliedFilter)
 
-                setEvents(data.content)
-                setTotalPages(data.totalPages)
+                setEvents(getPageContent(data))
+                setTotalPages(getPageTotalPages(data))
             } catch (err) {
                 setError(getApiErrorMessage(err, 'Failed to load audit events'))
             } finally {

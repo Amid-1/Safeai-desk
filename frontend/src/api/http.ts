@@ -38,13 +38,28 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 const CSRF_COOKIE_NAME = 'XSRF-TOKEN'
 const CSRF_HEADER_NAME = 'X-XSRF-TOKEN'
+const UNAUTHORIZED_EVENT_NAME = 'safeai:unauthorized'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
+export function subscribeUnauthorized(handler: () => void): () => void {
+    window.addEventListener(UNAUTHORIZED_EVENT_NAME, handler)
+
+    return () => {
+        window.removeEventListener(UNAUTHORIZED_EVENT_NAME, handler)
+    }
+}
+
+function notifyUnauthorized() {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT_NAME))
+}
+
 export function getApiErrorMessage(err: unknown, fallback: string): string {
     if (err instanceof ApiError) {
+        const fieldErrorText = formatFieldErrors(err.fieldErrors)
         const requestIdPart = err.requestId ? ` Request ID: ${err.requestId}` : ''
-        return `${err.message}${requestIdPart}`
+
+        return `${fieldErrorText || err.message || fallback}${requestIdPart}`
     }
 
     if (err instanceof Error) {
@@ -52,6 +67,20 @@ export function getApiErrorMessage(err: unknown, fallback: string): string {
     }
 
     return fallback
+}
+
+function formatFieldErrors(
+    fieldErrors?: Record<string, string[]> | null
+): string {
+    if (!fieldErrors) {
+        return ''
+    }
+
+    return Object.entries(fieldErrors)
+        .flatMap(([field, messages]) =>
+            messages.map((message) => `${field}: ${message}`)
+        )
+        .join('; ')
 }
 
 function buildApiUrl(url: string): string {
@@ -101,17 +130,7 @@ export async function ensureCsrfToken(): Promise<void> {
     })
 
     if (!response.ok) {
-        let body: ApiErrorBody
-
-        try {
-            body = await response.json()
-        } catch {
-            body = {
-                status: response.status,
-                error: 'CSRF_ERROR',
-                message: `CSRF request failed with status ${response.status}`,
-            }
-        }
+        const body = await parseErrorBody(response)
 
         throw new ApiError(
             body.message || `CSRF request failed with status ${response.status}`,
@@ -122,7 +141,16 @@ export async function ensureCsrfToken(): Promise<void> {
 }
 
 async function refreshAccessToken(): Promise<boolean> {
-    const csrfToken = getCookie(CSRF_COOKIE_NAME)
+    let csrfToken = getCookie(CSRF_COOKIE_NAME)
+
+    if (!csrfToken) {
+        try {
+            await ensureCsrfToken()
+            csrfToken = getCookie(CSRF_COOKIE_NAME)
+        } catch {
+            return false
+        }
+    }
 
     const headers = new Headers()
 
@@ -151,6 +179,20 @@ async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
     }
 }
 
+async function parseSuccessBody<T>(response: Response): Promise<T> {
+    if (response.status === 204 || response.status === 205) {
+        return undefined as T
+    }
+
+    const text = await response.text()
+
+    if (!text) {
+        return undefined as T
+    }
+
+    return JSON.parse(text) as T
+}
+
 export async function apiRequest<T>(
     url: string,
     options: ApiRequestOptions = {}
@@ -163,7 +205,6 @@ export async function apiRequest<T>(
 
     const method = (fetchOptions.method ?? 'GET').toUpperCase()
     const headers = new Headers(fetchOptions.headers)
-
     const body = fetchOptions.body
 
     if (body && !headers.has('Content-Type') && !isFormDataBody(body)) {
@@ -203,10 +244,26 @@ export async function apiRequest<T>(
                 skipRefresh: true,
             })
         }
+
+        notifyUnauthorized()
+
+        throw new ApiError(
+            'Сессия истекла. Войдите снова.',
+            {
+                status: 401,
+                error: 'UNAUTHORIZED',
+                message: 'Сессия истекла. Войдите снова.',
+            },
+            401
+        )
     }
 
     if (!response.ok) {
         const body = await parseErrorBody(response)
+
+        if (response.status === 401 && !isAuthEndpoint(url)) {
+            notifyUnauthorized()
+        }
 
         throw new ApiError(
             body.message || `Request failed with status ${response.status}`,
@@ -215,9 +272,5 @@ export async function apiRequest<T>(
         )
     }
 
-    if (response.status === 204) {
-        return undefined as T
-    }
-
-    return await response.json() as T
+    return parseSuccessBody<T>(response)
 }

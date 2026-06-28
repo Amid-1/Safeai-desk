@@ -1599,28 +1599,45 @@ ru.safeai.gateway
 ## Frontend-модули
 
 ```text
-frontend/src
-├── api/
-│   ├── adminApi.ts
-│   ├── authApi.ts
-│   ├── chatApi.ts
-│   ├── http.ts
-│   └── userApi.ts
-├── auth/
-│   └──AuthContext.tsx
-├── pages/
-│   ├── AdminAuditPage.tsx
-│   ├── AdminUsagePage.tsx
-│   ├── AdminUsersPage.tsx
-│   ├── ChatPage.tsx
-│   └── LoginPage.tsx
-├── utils/
-│   └── format.ts
-├── App.tsx
-├── global.d.ts
-├── index.css
-├── main.tsx
-└── vite-env.d.ts
+frontend
+├── src
+│   ├── api
+│   │   ├── adminApi.ts
+│   │   ├── authApi.ts
+│   │   ├── chatApi.ts
+│   │   ├── http.ts
+│   │   └── userApi.ts
+│   │
+│   ├── auth
+│   │   └── AuthContext.tsx
+│   │
+│   ├── components
+│   │   └── ErrorBoundary.tsx
+│   │
+│   ├── pages
+│   │   ├── AdminAuditPage.tsx
+│   │   ├── AdminUsagePage.tsx
+│   │   ├── AdminUsersPage.tsx
+│   │   ├── ChatPage.tsx
+│   │   └── LoginPage.tsx
+│   │
+│   ├── utils
+│   │   ├── format.ts
+│   │   └── page.ts
+│   │
+│   ├── App.tsx
+│   ├── global.d.ts
+│   ├── index.css
+│   ├── main.tsx
+│   └── vite-env.d.ts
+│
+├── index.html
+├── package.json
+├── package-lock.json
+├── tsconfig.app.json
+├── tsconfig.json
+├── tsconfig.node.json
+└── vite.config.ts
 ```
 
 ### Назначение frontend-файлов

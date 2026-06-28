@@ -7,6 +7,7 @@ import {
     logout as logoutRequest,
 } from '../api/authApi'
 import type { AuthUser, LoginRequest } from '../api/authApi'
+import { subscribeUnauthorized } from '../api/http'
 
 type AuthContextValue = {
     currentUser: AuthUser | null
@@ -49,6 +50,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         void reloadCurrentUser()
+    }, [])
+
+    useEffect(() => {
+        return subscribeUnauthorized(() => {
+            setCurrentUser(null)
+            setAuthLoading(false)
+        })
     }, [])
 
     const authValue: AuthContextValue = {

@@ -1,5 +1,5 @@
 // frontend/src/pages/LoginPage.tsx
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getApiErrorMessage } from '../api/http'
@@ -7,12 +7,18 @@ import { useAuth } from '../auth/AuthContext'
 
 function LoginPage() {
     const navigate = useNavigate()
-    const { loginUser } = useAuth()
+    const { currentUser, authLoading, loginUser } = useAuth()
 
     const [email, setEmail] = useState('admin@test.com')
     const [password, setPassword] = useState('admin123')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
+
+    useEffect(() => {
+        if (!authLoading && currentUser) {
+            navigate('/chat', { replace: true })
+        }
+    }, [authLoading, currentUser, navigate])
 
     async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
         event.preventDefault()
@@ -26,12 +32,20 @@ function LoginPage() {
                 password,
             })
 
-            navigate('/chat')
+            navigate('/chat', { replace: true })
         } catch (err) {
             setError(getApiErrorMessage(err, 'Login failed'))
         } finally {
             setLoading(false)
         }
+    }
+
+    if (authLoading) {
+        return (
+            <div className="page narrow-page">
+                <p>Checking access...</p>
+            </div>
+        )
     }
 
     return (
@@ -44,6 +58,7 @@ function LoginPage() {
                     <input
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
+                        autoComplete="username"
                     />
                 </label>
 
@@ -53,6 +68,7 @@ function LoginPage() {
                         type="password"
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
+                        autoComplete="current-password"
                     />
                 </label>
 

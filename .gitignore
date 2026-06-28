@@ -89,12 +89,11 @@ frontend/.env.local
 
 backend/.env
 
-
-
 .idea/
 
 Thumbs.db
 
+commit-message.txt
 
 
 

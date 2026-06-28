@@ -17,6 +17,14 @@ import { formatDate, formatUsd } from '../utils/format'
 
 type Tab = 'summary' | 'users' | 'models' | 'daily'
 
+type UsageRow = Record<string, string | number | null | undefined>
+
+type UsageTableColumn<T extends UsageRow> = {
+    key: keyof T
+    title: string
+    render?: (value: T[keyof T], row: T) => string
+}
+
 function AdminUsagePage() {
     const [tab, setTab] = useState<Tab>('summary')
 
@@ -61,16 +69,31 @@ function AdminUsagePage() {
             <h1>Admin Usage</h1>
 
             <div className="user-toolbar">
-                <button className={tab === 'summary' ? 'filter-button active' : 'filter-button'} onClick={() => setTab('summary')}>
+                <button
+                    className={tab === 'summary' ? 'filter-button active' : 'filter-button'}
+                    onClick={() => setTab('summary')}
+                >
                     Summary
                 </button>
-                <button className={tab === 'users' ? 'filter-button active' : 'filter-button'} onClick={() => setTab('users')}>
+
+                <button
+                    className={tab === 'users' ? 'filter-button active' : 'filter-button'}
+                    onClick={() => setTab('users')}
+                >
                     By users
                 </button>
-                <button className={tab === 'models' ? 'filter-button active' : 'filter-button'} onClick={() => setTab('models')}>
+
+                <button
+                    className={tab === 'models' ? 'filter-button active' : 'filter-button'}
+                    onClick={() => setTab('models')}
+                >
                     By models
                 </button>
-                <button className={tab === 'daily' ? 'filter-button active' : 'filter-button'} onClick={() => setTab('daily')}>
+
+                <button
+                    className={tab === 'daily' ? 'filter-button active' : 'filter-button'}
+                    onClick={() => setTab('daily')}
+                >
                     Daily
                 </button>
             </div>
@@ -81,110 +104,149 @@ function AdminUsagePage() {
             {!loading && !error && (
                 <div className="card">
                     {tab === 'summary' && (
-                        <table>
-                            <thead>
-                            <tr>
-                                <th>User</th>
-                                <th>Model</th>
-                                <th>Input tokens</th>
-                                <th>Output tokens</th>
-                                <th>Total tokens</th>
-                                <th>Cost USD</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            {summary.map((item) => (
-                                <tr key={`${item.userId}-${item.model}`}>
-                                    <td>{item.userEmail}</td>
-                                    <td>{item.model}</td>
-                                    <td>{item.inputTokens}</td>
-                                    <td>{item.outputTokens}</td>
-                                    <td>{item.totalTokens}</td>
-                                    <td>{formatUsd(item.costUsd)}</td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
+                        <UsageTable
+                            rows={summary}
+                            columns={[
+                                { key: 'userEmail', title: 'User' },
+                                { key: 'model', title: 'Model' },
+                                { key: 'inputTokens', title: 'Input tokens' },
+                                { key: 'outputTokens', title: 'Output tokens' },
+                                { key: 'totalTokens', title: 'Total tokens' },
+                                {
+                                    key: 'costUsd',
+                                    title: 'Cost USD',
+                                    render: (value) => formatUsd(value as number),
+                                },
+                            ]}
+                            emptyText="No usage summary found."
+                        />
                     )}
 
                     {tab === 'users' && (
-                        <table>
-                            <thead>
-                            <tr>
-                                <th>User</th>
-                                <th>Input tokens</th>
-                                <th>Output tokens</th>
-                                <th>Total tokens</th>
-                                <th>Cost USD</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            {users.map((item) => (
-                                <tr key={item.userId}>
-                                    <td>{item.userEmail}</td>
-                                    <td>{item.inputTokens}</td>
-                                    <td>{item.outputTokens}</td>
-                                    <td>{item.totalTokens}</td>
-                                    <td>{item.costUsd}</td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
+                        <UsageTable
+                            rows={users}
+                            columns={[
+                                { key: 'userEmail', title: 'User' },
+                                { key: 'inputTokens', title: 'Input tokens' },
+                                { key: 'outputTokens', title: 'Output tokens' },
+                                { key: 'totalTokens', title: 'Total tokens' },
+                                {
+                                    key: 'costUsd',
+                                    title: 'Cost USD',
+                                    render: (value) => formatUsd(value as number),
+                                },
+                            ]}
+                            emptyText="No user usage found."
+                        />
                     )}
 
                     {tab === 'models' && (
-                        <table>
-                            <thead>
-                            <tr>
-                                <th>Model</th>
-                                <th>Input tokens</th>
-                                <th>Output tokens</th>
-                                <th>Total tokens</th>
-                                <th>Cost USD</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            {models.map((item) => (
-                                <tr key={item.model}>
-                                    <td>{item.model}</td>
-                                    <td>{item.inputTokens}</td>
-                                    <td>{item.outputTokens}</td>
-                                    <td>{item.totalTokens}</td>
-                                    <td>{item.costUsd}</td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
+                        <UsageTable
+                            rows={models}
+                            columns={[
+                                { key: 'model', title: 'Model' },
+                                { key: 'inputTokens', title: 'Input tokens' },
+                                { key: 'outputTokens', title: 'Output tokens' },
+                                { key: 'totalTokens', title: 'Total tokens' },
+                                {
+                                    key: 'costUsd',
+                                    title: 'Cost USD',
+                                    render: (value) => formatUsd(value as number),
+                                },
+                            ]}
+                            emptyText="No model usage found."
+                        />
                     )}
 
                     {tab === 'daily' && (
-                        <table>
-                            <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Input tokens</th>
-                                <th>Output tokens</th>
-                                <th>Total tokens</th>
-                                <th>Cost USD</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            {daily.map((item) => (
-                                <tr key={item.usageDate}>
-                                    <td>{formatDate(item.usageDate)}</td>
-                                    <td>{item.inputTokens}</td>
-                                    <td>{item.outputTokens}</td>
-                                    <td>{item.totalTokens ?? item.inputTokens + item.outputTokens}</td>
-                                    <td>{item.costUsd}</td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
+                        <UsageTable
+                            rows={daily}
+                            columns={[
+                                {
+                                    key: 'usageDate',
+                                    title: 'Date',
+                                    render: (value) => formatDate(value as string),
+                                },
+                                { key: 'inputTokens', title: 'Input tokens' },
+                                { key: 'outputTokens', title: 'Output tokens' },
+                                { key: 'totalTokens', title: 'Total tokens' },
+                                {
+                                    key: 'costUsd',
+                                    title: 'Cost USD',
+                                    render: (value) => formatUsd(value as number),
+                                },
+                            ]}
+                            emptyText="No daily usage found."
+                        />
                     )}
                 </div>
             )}
         </div>
     )
+}
+
+function UsageTable<T extends UsageRow>({
+                                            rows,
+                                            columns,
+                                            emptyText,
+                                        }: {
+    rows: T[]
+    columns: UsageTableColumn<T>[]
+    emptyText: string
+}) {
+    if (rows.length === 0) {
+        return <p>{emptyText}</p>
+    }
+
+    return (
+        <table>
+            <thead>
+            <tr>
+                {columns.map((column) => (
+                    <th key={String(column.key)}>{column.title}</th>
+                ))}
+            </tr>
+            </thead>
+
+            <tbody>
+            {rows.map((row, index) => (
+                <tr key={getUsageRowKey(row, index)}>
+                    {columns.map((column) => {
+                        const value = row[column.key]
+
+                        return (
+                            <td key={String(column.key)}>
+                                {column.render
+                                    ? column.render(value, row)
+                                    : String(value ?? '-')}
+                            </td>
+                        )
+                    })}
+                </tr>
+            ))}
+            </tbody>
+        </table>
+    )
+}
+
+function getUsageRowKey(row: UsageRow, index: number): string {
+    if (row.userId && row.model) {
+        return `${row.userId}-${row.model}`
+    }
+
+    if (row.userId) {
+        return String(row.userId)
+    }
+
+    if (row.model) {
+        return String(row.model)
+    }
+
+    if (row.usageDate) {
+        return String(row.usageDate)
+    }
+
+    return String(index)
 }
 
 export default AdminUsagePage

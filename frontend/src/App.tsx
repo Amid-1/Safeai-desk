@@ -14,9 +14,18 @@ function hasAnyRole(user: AuthUser | null, roles: string[]): boolean {
 }
 
 function getDisplayRole(user: AuthUser | null): string {
-    if (!user) return ''
-    if (user.roles.includes('SUPER_ADMIN')) return 'SUPER_ADMIN'
-    if (user.roles.includes('ADMIN')) return 'ADMIN'
+    if (!user) {
+        return ''
+    }
+
+    if (user.roles.includes('SUPER_ADMIN')) {
+        return 'SUPER_ADMIN'
+    }
+
+    if (user.roles.includes('ADMIN')) {
+        return 'ADMIN'
+    }
+
     return 'USER'
 }
 
@@ -27,22 +36,51 @@ function getNavLinkClass({ isActive }: { isActive: boolean }): string {
 function RequireAuth({ children }: { children: ReactNode }) {
     const { currentUser, authLoading } = useAuth()
 
-    if (authLoading) return <p>Checking access...</p>
-    if (!currentUser) return <Navigate to="/login" />
+    if (authLoading) {
+        return <p>Checking access...</p>
+    }
+
+    if (!currentUser) {
+        return <Navigate to="/login" replace />
+    }
+
     return children
 }
 
 function RequireAdmin({ children }: { children: ReactNode }) {
     const { currentUser, authLoading } = useAuth()
 
-    if (authLoading) return <p>Checking access...</p>
-    if (!currentUser) return <Navigate to="/login" />
+    if (authLoading) {
+        return <p>Checking access...</p>
+    }
+
+    if (!currentUser) {
+        return <Navigate to="/login" replace />
+    }
 
     if (!hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])) {
-        return <Navigate to="/chat" />
+        return <Navigate to="/chat" replace />
     }
 
     return children
+}
+
+function AdminUsersRoute() {
+    const { currentUser, authLoading } = useAuth()
+
+    if (authLoading) {
+        return <p>Checking access...</p>
+    }
+
+    if (!currentUser) {
+        return <Navigate to="/login" replace />
+    }
+
+    if (!hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])) {
+        return <Navigate to="/chat" replace />
+    }
+
+    return <AdminUsersPage currentUser={currentUser} />
 }
 
 function AppLayout() {
@@ -55,7 +93,7 @@ function AppLayout() {
 
     async function handleLogout() {
         await logoutUser()
-        navigate('/login')
+        navigate('/login', { replace: true })
     }
 
     return (
@@ -90,6 +128,7 @@ function AppLayout() {
                         {currentUser && (
                             <div className="current-user">
                                 <span>{currentUser.email}</span>
+
                                 <span
                                     className={
                                         displayRole === 'SUPER_ADMIN'
@@ -104,7 +143,9 @@ function AppLayout() {
                             </div>
                         )}
 
-                        <button onClick={() => void handleLogout()}>Logout</button>
+                        <button onClick={() => void handleLogout()}>
+                            Logout
+                        </button>
                     </div>
                 </header>
             )}
@@ -113,7 +154,7 @@ function AppLayout() {
                 <Routes>
                     <Route
                         path="/"
-                        element={<Navigate to={isAuthenticated ? '/chat' : '/login'} />}
+                        element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />}
                     />
 
                     <Route path="/login" element={<LoginPage />} />
@@ -127,14 +168,7 @@ function AppLayout() {
                         }
                     />
 
-                    <Route
-                        path="/admin/users"
-                        element={
-                            <RequireAdmin>
-                                <AdminUsersPage currentUser={currentUser!} />
-                            </RequireAdmin>
-                        }
-                    />
+                    <Route path="/admin/users" element={<AdminUsersRoute />} />
 
                     <Route
                         path="/admin/audit"
@@ -154,7 +188,7 @@ function AppLayout() {
                         }
                     />
 
-                    <Route path="*" element={<Navigate to="/" />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </main>
         </div>

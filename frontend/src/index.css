@@ -341,4 +341,28 @@ pre {
     .message-form {
         flex-direction: column;
     }
+
+    .chat-item.active {
+        background: #111827;
+        color: white;
+    }
+
+    .message.failed {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .message strong {
+        margin-right: 8px;
+    }
+
+    .card table {
+        min-width: 760px;
+    }
+
+    button.secondary-button:hover,
+    button.filter-button:hover,
+    button.chat-item:hover {
+        filter: brightness(0.96);
+    }
 }
