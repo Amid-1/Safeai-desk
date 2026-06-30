@@ -249,4 +249,18 @@ public class GlobalExceptionHandler {
                         fieldErrors
                 ));
     }
+
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ApiErrorResponse> handleBadRequest(
+            BadRequestException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "BAD_REQUEST",
+                exception.getMessage(),
+                request,
+                null
+        );
+    }
 }

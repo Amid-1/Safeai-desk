@@ -6,7 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AiMessageRateLimitProperties(
         Boolean enabled,
         Integer userLimitPerHour,
-        Integer adminLimitPerHour
+        Integer adminLimitPerHour,
+        Integer organizationLimitPerHour
 ) {
     public boolean isEnabled() {
         return enabled == null || enabled;
@@ -22,5 +23,11 @@ public record AiMessageRateLimitProperties(
         return adminLimitPerHour == null || adminLimitPerHour <= 0
                 ? 100
                 : adminLimitPerHour;
+    }
+
+    public int effectiveOrganizationLimitPerHour() {
+        return organizationLimitPerHour == null || organizationLimitPerHour <= 0
+                ? 1000
+                : organizationLimitPerHour;
     }
 }

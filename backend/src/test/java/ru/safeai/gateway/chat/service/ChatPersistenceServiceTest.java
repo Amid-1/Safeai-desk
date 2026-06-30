@@ -270,6 +270,98 @@ class ChatPersistenceServiceTest {
         verifyNoInteractions(chatMessageRepository, auditEventService);
     }
 
+    @Test
+    void saveFailedAssistantMessage_shouldSaveFailedAssistantMessageAndAuditEvent() {
+        SafeAiUserPrincipal currentUser = currentUser();
+        ChatSessionEntity session = chatSessionEntity();
+
+        ChatMessageEntity userMessage = messageEntity(
+                ChatMessageRole.USER,
+                "Привет",
+                null,
+                null,
+                null,
+                null
+        );
+
+        RuntimeException exception = new RuntimeException("AI unavailable");
+
+        when(chatSessionRepository.findByIdAndUser_Id(CHAT_ID, USER_ID))
+                .thenReturn(Optional.of(session));
+
+        when(chatMessageRepository.findById(userMessage.getId()))
+                .thenReturn(Optional.of(userMessage));
+
+        when(chatMessageRepository.save(any(ChatMessageEntity.class)))
+                .thenAnswer(invocation -> persistMessage(invocation.getArgument(0)));
+
+        chatPersistenceService.saveFailedAssistantMessage(
+                CHAT_ID,
+                userMessage.getId(),
+                exception,
+                currentUser
+        );
+
+        ArgumentCaptor<ChatMessageEntity> captor =
+                ArgumentCaptor.forClass(ChatMessageEntity.class);
+
+        verify(chatMessageRepository).save(captor.capture());
+
+        ChatMessageEntity saved = captor.getValue();
+
+        assertThat(saved.getRole()).isEqualTo(ChatMessageRole.ASSISTANT);
+        assertThat(saved.getStatus()).isEqualTo(ChatMessageStatus.FAILED);
+        assertThat(saved.getContent()).isEqualTo("Не удалось получить ответ от AI-провайдера");
+
+        verify(auditEventService).record(
+                eq(USER_ID),
+                eq(ORGANIZATION_ID),
+                eq(AuditEventType.AI_RESPONSE_FAILED),
+                anyMap()
+        );
+    }
+
+    @Test
+    void saveAssistantMessageAndReturnChat_shouldThrowWhenUserMessageIsNotUserRole() {
+        SafeAiUserPrincipal currentUser = currentUser();
+        ChatSessionEntity session = chatSessionEntity();
+
+        ChatMessageEntity assistantMessage = messageEntity(
+                ChatMessageRole.ASSISTANT,
+                "Не user message",
+                "mock-safeai",
+                1,
+                1,
+                BigDecimal.ZERO
+        );
+
+        AiChatResponse aiResponse = new AiChatResponse(
+                "Ответ",
+                "mock-safeai",
+                1,
+                1,
+                BigDecimal.ZERO
+        );
+
+        when(chatSessionRepository.findByIdAndUser_Id(CHAT_ID, USER_ID))
+                .thenReturn(Optional.of(session));
+
+        when(chatMessageRepository.findById(assistantMessage.getId()))
+                .thenReturn(Optional.of(assistantMessage));
+
+        assertThatThrownBy(() -> chatPersistenceService.saveAssistantMessageAndReturnChat(
+                CHAT_ID,
+                assistantMessage.getId(),
+                aiResponse,
+                currentUser
+        ))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("Сообщение не найдено");
+
+        verify(chatMessageRepository, never()).save(any());
+        verifyNoInteractions(auditEventService);
+    }
+
     private SafeAiUserPrincipal currentUser() {
         return new SafeAiUserPrincipal(
                 USER_ID,

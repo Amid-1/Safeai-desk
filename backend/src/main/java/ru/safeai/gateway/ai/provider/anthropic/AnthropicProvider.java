@@ -226,14 +226,26 @@ public class AnthropicProvider implements AiProvider {
 
         JsonNode content = response.path("content");
 
-        if (content.isArray()) {
-            for (JsonNode item : content) {
-                if ("text".equals(item.path("type").asText())) {
-                    return item.path("text").asText("");
+        if (!content.isArray()) {
+            return "";
+        }
+
+        StringBuilder result = new StringBuilder();
+
+        for (JsonNode item : content) {
+            if ("text".equals(item.path("type").asText())) {
+                String text = item.path("text").asText("");
+
+                if (!text.isBlank()) {
+                    if (!result.isEmpty()) {
+                        result.append("\n\n");
+                    }
+
+                    result.append(text);
                 }
             }
         }
 
-        return "";
+        return result.toString();
     }
 }

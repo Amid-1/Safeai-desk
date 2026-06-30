@@ -29,6 +29,10 @@ public class RateLimitKeyFactory {
         return withPrefix("rate-limit:ai-message:user:" + sha256(userId.toString()));
     }
 
+    public String aiMessageOrganization(UUID organizationId) {
+        return withPrefix("rate-limit:ai-message:organization:" + sha256(organizationId.toString()));
+    }
+
     private String withPrefix(String key) {
         return properties.effectiveKeyPrefix() + ":" + key;
     }

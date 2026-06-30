@@ -30,7 +30,6 @@ export class ApiError extends Error {
 }
 
 type ApiRequestOptions = RequestInit & {
-    auth?: boolean
     skipRefresh?: boolean
 }
 
@@ -41,6 +40,8 @@ const CSRF_HEADER_NAME = 'X-XSRF-TOKEN'
 const UNAUTHORIZED_EVENT_NAME = 'safeai:unauthorized'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+
+let refreshPromise: Promise<boolean> | null = null
 
 export function subscribeUnauthorized(handler: () => void): () => void {
     window.addEventListener(UNAUTHORIZED_EVENT_NAME, handler)
@@ -140,7 +141,7 @@ export async function ensureCsrfToken(): Promise<void> {
     }
 }
 
-async function refreshAccessToken(): Promise<boolean> {
+async function doRefreshAccessToken(): Promise<boolean> {
     let csrfToken = getCookie(CSRF_COOKIE_NAME)
 
     if (!csrfToken) {
@@ -165,6 +166,17 @@ async function refreshAccessToken(): Promise<boolean> {
     })
 
     return response.ok
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+    if (!refreshPromise) {
+        refreshPromise = doRefreshAccessToken()
+            .finally(() => {
+                refreshPromise = null
+            })
+    }
+
+    return refreshPromise
 }
 
 async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
@@ -199,7 +211,6 @@ export async function apiRequest<T>(
 ): Promise<T> {
     const {
         skipRefresh = false,
-        auth: _auth,
         ...fetchOptions
     } = options
 

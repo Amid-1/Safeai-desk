@@ -27,7 +27,7 @@ class UserStatusCacheServiceTest {
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     private static final String KEY =
-            "user-status:" + USER_ID;
+            "safeai:test:user-status:" + USER_ID;
 
     @Mock
     private UserRepository userRepository;
@@ -139,7 +139,8 @@ class UserStatusCacheServiceTest {
                 redisTemplate,
                 new UserStatusCacheProperties(
                         true,
-                        Duration.ofSeconds(60)
+                        Duration.ofSeconds(60),
+                        "safeai:test:user-status"
                 )
         );
 
@@ -155,7 +156,8 @@ class UserStatusCacheServiceTest {
                 redisTemplate,
                 new UserStatusCacheProperties(
                         false,
-                        Duration.ofSeconds(60)
+                        Duration.ofSeconds(60),
+                        "safeai:test:user-status"
                 )
         );
 
@@ -179,7 +181,8 @@ class UserStatusCacheServiceTest {
                 redisTemplate,
                 new UserStatusCacheProperties(
                         true,
-                        Duration.ofSeconds(60)
+                        Duration.ofSeconds(60),
+                        "safeai:test:user-status"
                 )
         );
     }

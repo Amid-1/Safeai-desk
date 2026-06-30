@@ -4,6 +4,7 @@ create table organizations (
                                name varchar(255) not null,
                                enabled boolean not null default true,
                                created_at timestamptz not null,
+                               updated_at timestamptz not null,
                                version bigint not null default 0
 );
 
@@ -13,7 +14,10 @@ create unique index ux_organizations_name_lower
 
 create table roles (
                        id uuid primary key,
-                       name varchar(100) not null unique
+                       name varchar(100) not null unique,
+
+                       constraint chk_roles_name
+                           check (name in ('SUPER_ADMIN', 'ADMIN', 'USER'))
 );
 
 
@@ -25,6 +29,7 @@ create table users (
                        full_name varchar(255),
                        enabled boolean not null default true,
                        created_at timestamptz not null,
+                       updated_at timestamptz not null,
                        token_version bigint not null default 0,
                        version bigint not null default 0
 );
@@ -34,6 +39,9 @@ create unique index ux_users_email_lower
 
 create index idx_users_organization_id
     on users (organization_id);
+
+create index idx_users_organization_enabled
+    on users (organization_id, enabled);
 
 
 create table user_roles (
@@ -95,11 +103,17 @@ create index idx_chat_messages_session_id_created_at
 create index idx_chat_messages_usage
     on chat_messages (role, status, model, created_at);
 
+create index idx_chat_messages_created_at
+    on chat_messages (created_at desc);
+
 
 create table audit_events (
                               id uuid primary key,
                               user_id uuid references users(id) on delete set null,
-                              organization_id uuid not null references organizations(id),
+
+    -- deliberately no FK: audit is historical and must survive org lifecycle changes
+                              organization_id uuid not null,
+
                               event_type varchar(100) not null,
                               details jsonb,
                               created_at timestamptz not null
@@ -122,11 +136,18 @@ create table refresh_tokens (
                                 id uuid primary key,
                                 user_id uuid not null references users(id) on delete cascade,
                                 token_hash varchar(128) not null unique,
+                                token_family_id uuid not null,
+                                replaced_by_token_id uuid,
                                 expires_at timestamptz not null,
                                 revoked_at timestamptz,
+                                last_used_at timestamptz,
                                 created_at timestamptz not null,
                                 created_by_ip varchar(100),
-                                user_agent text
+                                user_agent varchar(512),
+
+                                constraint fk_refresh_tokens_replaced_by
+                                    foreign key (replaced_by_token_id)
+                                        references refresh_tokens(id)
 );
 
 create index idx_refresh_tokens_user_id
@@ -135,6 +156,16 @@ create index idx_refresh_tokens_user_id
 create index idx_refresh_tokens_expires_at
     on refresh_tokens (expires_at);
 
+create index idx_refresh_tokens_revoked_at
+    on refresh_tokens (revoked_at);
+
+create index idx_refresh_tokens_token_family_id
+    on refresh_tokens (token_family_id);
+
 create index idx_refresh_tokens_active_user
     on refresh_tokens (user_id, expires_at)
+    where revoked_at is null;
+
+create index idx_refresh_tokens_token_family_active
+    on refresh_tokens (token_family_id)
     where revoked_at is null;

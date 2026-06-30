@@ -1271,7 +1271,7 @@ SafeAI Desk можно презентовать так:
 
 По текущей структуре проект выглядит так:
 
-```text
+
 ```text
 Safeai-desk/
 ├── backend/
@@ -1279,45 +1279,57 @@ Safeai-desk/
 │   ├── .mvn/
 │   ├── src/
 │   │   ├── main/
-│   │   │   ├── java/ru/safeai/gateway/
-│   │   │   │   ├── admin/
-│   │   │   │   ├── ai/
-│   │   │   │   ├── audit/
-│   │   │   │   ├── auth/
-│   │   │   │   ├── chat/
-│   │   │   │   ├── common/
-│   │   │   │   ├── organization/
-│   │   │   │   ├── ratelimit/
-│   │   │   │   ├── user/
-│   │   │   │   └── SafeaiBackendApplication.java
+│   │   │   ├── java/
+│   │   │   │   └── ru/
+│   │   │   │       └── safeai/
+│   │   │   │           └── gateway/
+│   │   │   │               ├── admin/
+│   │   │   │               ├── ai/
+│   │   │   │               ├── audit/
+│   │   │   │               ├── auth/
+│   │   │   │               ├── chat/
+│   │   │   │               ├── common/
+│   │   │   │               ├── organization/
+│   │   │   │               ├── ratelimit/
+│   │   │   │               ├── user/
+│   │   │   │               └── SafeaiBackendApplication.java
+│   │   │   │
 │   │   │   └── resources/
 │   │   │       ├── application.yml
 │   │   │       ├── application-local.yml
-│   │   │       ├── application-local-nginx.yml  
-│   │   │       ├── application-prod.yml 
+│   │   │       ├── application-local-nginx.yml
+│   │   │       ├── application-prod.yml
+│   │   │       ├── logback-spring.xml
 │   │   │       ├── static/
 │   │   │       ├── templates/
-│   │   │       └── db/migration/
-│   │   │           ├── V1__init_schema.sql
-│   │   │           ├── V2__seed_reference_data.sql
-│   │   │           ├── V3__seed_local_demo_data.sql
-│   │   │           └── V4__refresh_token_rotation.sql
+│   │   │       └── db/
+│   │   │           ├── migration/
+│   │   │           │   ├── V1__init_schema.sql
+│   │   │           │   ├── V2__seed_reference_data.sql
+│   │   │           │   └── V3__refresh_token_rotation.sql
+│   │   │           └── local-migration/
+│   │   │               └── V1000__seed_local_demo_data.sql
+│   │   │
 │   │   └── test/
-│   │       ├── java/ru/safeai/gateway/
-│   │       │   ├── admin/
-│   │       │   ├── ai/
-│   │       │   ├── audit/
-│   │       │   ├── auth/
-│   │       │   ├── chat/
-│   │       │   ├── common/
-│   │       │   ├── organization/
-│   │       │   ├── ratelimit/
-│   │       │   ├── user/
-│   │       │   ├── PasswordHashGenerator
-│   │       │   └── SafeaiBackendApplicationTests.java
+│   │       ├── java/
+│   │       │   └── ru/
+│   │       │       └── safeai/
+│   │       │           └── gateway/
+│   │       │               ├── admin/
+│   │       │               ├── ai/
+│   │       │               ├── audit/
+│   │       │               ├── auth/
+│   │       │               ├── chat/
+│   │       │               ├── common/
+│   │       │               ├── organization/
+│   │       │               ├── ratelimit/
+│   │       │               ├── user/
+│   │       │               ├── PasswordHashGenerator.java
+│   │       │               └── SafeaiBackendApplicationTests.java
+│   │       │
 │   │       └── resources/
-│   │           ├──
 │   │           └── application-test.yml
+│   │
 │   ├── .env
 │   ├── .env.example
 │   ├── .env.prod
@@ -1329,12 +1341,16 @@ Safeai-desk/
 ├── frontend/
 │   ├── src/
 │   │   ├── api/
+│   │   ├── auth/
+│   │   ├── components/
 │   │   ├── pages/
+│   │   ├── utils/
 │   │   ├── App.tsx
 │   │   ├── global.d.ts
 │   │   ├── index.css
 │   │   ├── main.tsx
 │   │   └── vite-env.d.ts
+│   │
 │   ├── index.html
 │   ├── package.json
 │   ├── package-lock.json
@@ -1355,6 +1371,7 @@ Safeai-desk/
 │   └── stop-infra.bat
 │
 ├── docs/
+│
 ├── .gitignore
 └── README.md
 ```
@@ -1437,14 +1454,11 @@ ru.safeai.gateway
 │   │   ├── AuthController
 │   │   └── CsrfController
 │   ├── dto
-│   │   ├── AuthUserResponse
 │   │   ├── CurrentUserResponse
-│   │   ├── LoginRequest
-│   │   └── LoginResponse
+│   │   └── LoginRequest
+│   │    
 │   ├── entity
 │   │   └── RefreshTokenEntity
-│   ├── mapper
-│   │   └── AuthUserMapper
 │   ├── repository
 │   │   └── RefreshTokenRepository
 │   ├── security
@@ -1458,6 +1472,7 @@ ru.safeai.gateway
 │       ├── AuthCookieService
 │       ├── AuthEventService
 │       ├── AuthService
+│       ├── RefreshTokenCleanupJob
 │       └── RefreshTokenService
 │
 ├── chat
@@ -1496,6 +1511,7 @@ ru.safeai.gateway
 │   ├── exception
 │   │   ├── ApiErrorResponse
 │   │   ├── ApiErrorResponseFactory
+│   │   ├── BadRequestException
 │   │   ├── ConflictException
 │   │   ├── ExpiredRefreshTokenException
 │   │   ├── ForbiddenOperationException
@@ -1570,11 +1586,14 @@ ru.safeai.gateway
     │   ├── RoleRepository
     │   └── UserRepository
     └── service
-        ├── UserSecurityStatus
-        ├── UserService
-        ├── UserStatusCacheInvalidationListener
-        ├── UserStatusCacheProperties
-        └── UserStatusCacheService
+    │    ├── UserSecurityStatus
+    │    ├── UserService
+    │    ├── UserStatusCacheInvalidationListener
+    │    ├── UserStatusCacheProperties
+    │    └── UserStatusCacheService
+    │    
+    └── validation
+        └── PasswordPolicy
 ```
 
 
@@ -1599,29 +1618,35 @@ ru.safeai.gateway
 ## Frontend-модули
 
 ```text
-frontend
-├── src
-│   ├── api
+frontend/
+├── dist/
+├── node_modules/
+├── src/
+│   ├── api/
 │   │   ├── adminApi.ts
 │   │   ├── authApi.ts
 │   │   ├── chatApi.ts
 │   │   ├── http.ts
+│   │   ├── organizationApi.ts
 │   │   └── userApi.ts
 │   │
-│   ├── auth
+│   ├── auth/
 │   │   └── AuthContext.tsx
 │   │
-│   ├── components
-│   │   └── ErrorBoundary.tsx
+│   ├── components/
+│   │   ├── ConfirmDialog.tsx
+│   │   ├── ErrorBoundary.tsx
+│   │   └── Modal.tsx
 │   │
-│   ├── pages
+│   ├── pages/
 │   │   ├── AdminAuditPage.tsx
+│   │   ├── AdminOrganizationsPage.tsx
 │   │   ├── AdminUsagePage.tsx
 │   │   ├── AdminUsersPage.tsx
 │   │   ├── ChatPage.tsx
 │   │   └── LoginPage.tsx
 │   │
-│   ├── utils
+│   ├── utils/
 │   │   ├── format.ts
 │   │   └── page.ts
 │   │
@@ -1657,3 +1682,41 @@ frontend
 | `AdminUsagePage.tsx` | usage summary |
 
 ---
+
+А в application.yml замени pricing на:
+
+safeai:
+ai:
+pricing:
+currency: USD
+mode: estimate
+models:
+- model: mock-safeai
+input-usd-per-1m-tokens: 0
+output-usd-per-1m-tokens: 0
+- model: gpt-4.1
+input-usd-per-1m-tokens: 2.00
+output-usd-per-1m-tokens: 8.00
+- model: claude-opus-4-8
+input-usd-per-1m-tokens: 15.00
+output-usd-per-1m-tokens: 75.00
+
+Но важно: если у тебя ModelPricingProperties сейчас ожидает только models, то поля currency и mode могут сломать binding, если класс строгий. Тогда безопаснее пока так:
+
+safeai:
+ai:
+pricing:
+models:
+- model: mock-safeai
+input-usd-per-1m-tokens: 0
+output-usd-per-1m-tokens: 0
+- model: gpt-4.1
+input-usd-per-1m-tokens: 2.00
+output-usd-per-1m-tokens: 8.00
+- model: claude-opus-4-8
+input-usd-per-1m-tokens: 15.00
+output-usd-per-1m-tokens: 75.00
+
+А в README написать: cost is an estimate based on configured model pricing.
+
+

@@ -129,6 +129,26 @@ class GlobalExceptionHandlerTest {
                 );
     }
 
+    @Test
+    void handleBadRequest_shouldReturn400() {
+        MockHttpServletRequest request = request();
+
+        ResponseEntity<ApiErrorResponse> response = handler.handleBadRequest(
+                new BadRequestException("dateFrom должен быть раньше dateTo"),
+                request
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        ApiErrorResponse body = response.getBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.error()).isEqualTo("BAD_REQUEST");
+        assertThat(body.message()).isEqualTo("dateFrom должен быть раньше dateTo");
+        assertThat(body.path()).isEqualTo("/api/chats");
+        assertThat(body.requestId()).isEqualTo("test-request-id");
+    }
+
     @SuppressWarnings("unused")
     private void validationTarget(Object request) {
     }

@@ -107,7 +107,6 @@ class AdminUsageControllerSecurityTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api/admin/usage-summary",
             "/api/admin/usage/summary",
             "/api/admin/usage/users",
             "/api/admin/usage/models",
@@ -123,7 +122,6 @@ class AdminUsageControllerSecurityTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api/admin/usage-summary",
             "/api/admin/usage/summary",
             "/api/admin/usage/users",
             "/api/admin/usage/models",
@@ -141,7 +139,6 @@ class AdminUsageControllerSecurityTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "/api/admin/usage-summary",
             "/api/admin/usage/summary",
             "/api/admin/usage/users",
             "/api/admin/usage/models",

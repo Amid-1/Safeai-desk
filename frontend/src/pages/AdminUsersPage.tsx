@@ -13,6 +13,8 @@ import type { AuthUser } from '../api/authApi'
 import { getApiErrorMessage } from '../api/http'
 import { formatDateTime } from '../utils/format'
 import { getPageContent, getPageTotalPages } from '../utils/page'
+import Modal from '../components/Modal'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 type Role = 'USER' | 'ADMIN'
 type UserFilter = 'ALL' | 'ADMIN' | 'USER'
@@ -20,6 +22,18 @@ type UserFilter = 'ALL' | 'ADMIN' | 'USER'
 type AdminUsersPageProps = {
     currentUser: AuthUser
 }
+
+type ConfirmState =
+    | {
+    type: 'enabled'
+    user: User
+}
+    | {
+    type: 'role'
+    user: User
+    nextRole: Role
+}
+    | null
 
 const PAGE_SIZE = 50
 
@@ -40,6 +54,11 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [fullName, setFullName] = useState('')
     const [role, setRole] = useState<Role>('USER')
     const [filter, setFilter] = useState<UserFilter>('ALL')
+
+    const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null)
+    const [resetPasswordValue, setResetPasswordValue] = useState('')
+    const [resetPasswordConfirm, setResetPasswordConfirm] = useState('')
+    const [confirmState, setConfirmState] = useState<ConfirmState>(null)
 
     useEffect(() => {
         void loadUsers(page)
@@ -123,21 +142,25 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         }
     }
 
-    async function handleToggleEnabled(user: User) {
-        const nextEnabled = !user.enabled
-
-        const confirmed = window.confirm(
-            nextEnabled
-                ? `Enable user ${user.email}?`
-                : `Disable user ${user.email}?`
-        )
-
-        if (!confirmed) {
+    async function confirmAction() {
+        if (!confirmState) {
             return
         }
 
         setError('')
         setSuccess('')
+
+        if (confirmState.type === 'enabled') {
+            await submitToggleEnabled(confirmState.user)
+            return
+        }
+
+        await submitChangeRole(confirmState.user, confirmState.nextRole)
+    }
+
+    async function submitToggleEnabled(user: User) {
+        const nextEnabled = !user.enabled
+
         setActionUserId(user.id)
 
         try {
@@ -152,6 +175,8 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     ? `User ${updatedUser.email} enabled`
                     : `User ${updatedUser.email} disabled`
             )
+
+            setConfirmState(null)
         } catch (err) {
             setError(getApiErrorMessage(err, 'Failed to update user status'))
         } finally {
@@ -159,17 +184,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         }
     }
 
-    async function handleChangeRole(user: User, nextRole: Role) {
-        const confirmed = window.confirm(
-            `Change role for ${user.email} to ${nextRole}?`
-        )
-
-        if (!confirmed) {
-            return
-        }
-
-        setError('')
-        setSuccess('')
+    async function submitChangeRole(user: User, nextRole: Role) {
         setActionUserId(user.id)
 
         try {
@@ -180,6 +195,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
             replaceUser(updatedUser)
 
             setSuccess(`Role for ${updatedUser.email} changed to ${nextRole}`)
+            setConfirmState(null)
         } catch (err) {
             setError(getApiErrorMessage(err, 'Failed to change user role'))
         } finally {
@@ -187,49 +203,56 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         }
     }
 
-    async function handleResetPassword(user: User) {
-        const newPassword = window.prompt(
-            `Новый пароль для ${user.email}. Минимум 12 символов: строчная буква, заглавная буква, цифра и спецсимвол.`
-        )
+    async function handleSubmitResetPassword(event: SyntheticEvent<HTMLFormElement>) {
+        event.preventDefault()
 
-        if (newPassword === null) {
+        if (!resetPasswordUser) {
             return
         }
 
         setError('')
         setSuccess('')
 
-        const passwordValidationError = validatePassword(newPassword)
+        const passwordValidationError = validatePassword(resetPasswordValue)
 
         if (passwordValidationError) {
             setError(passwordValidationError)
             return
         }
 
-        const confirmPassword = window.prompt('Повторите новый пароль:')
-
-        if (confirmPassword === null) {
-            return
-        }
-
-        if (newPassword !== confirmPassword) {
+        if (resetPasswordValue !== resetPasswordConfirm) {
             setError('Пароли не совпадают.')
             return
         }
 
-        setActionUserId(user.id)
+        setActionUserId(resetPasswordUser.id)
 
         try {
-            await resetUserPassword(user.id, {
-                password: newPassword,
+            await resetUserPassword(resetPasswordUser.id, {
+                password: resetPasswordValue,
             })
 
-            setSuccess(`Пароль для ${user.email} изменен.`)
+            setSuccess(`Пароль для ${resetPasswordUser.email} изменен.`)
+            closeResetPasswordModal()
         } catch (err) {
             setError(getApiErrorMessage(err, 'Не удалось изменить пароль.'))
         } finally {
             setActionUserId(null)
         }
+    }
+
+    function openResetPasswordModal(user: User) {
+        setResetPasswordUser(user)
+        setResetPasswordValue('')
+        setResetPasswordConfirm('')
+        setError('')
+        setSuccess('')
+    }
+
+    function closeResetPasswordModal() {
+        setResetPasswordUser(null)
+        setResetPasswordValue('')
+        setResetPasswordConfirm('')
     }
 
     function replaceUser(updatedUser: User) {
@@ -348,7 +371,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                 </button>
             </div>
 
-            <div className="card">
+            <div className="card table-card">
                 {filteredUsers.length === 0 && !loading && (
                     <p>No users found.</p>
                 )}
@@ -416,7 +439,12 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                                             : 'secondary-button'
                                                     }
                                                     disabled={isBusy}
-                                                    onClick={() => void handleToggleEnabled(user)}
+                                                    onClick={() =>
+                                                        setConfirmState({
+                                                            type: 'enabled',
+                                                            user,
+                                                        })
+                                                    }
                                                 >
                                                     {user.enabled ? 'Disable' : 'Enable'}
                                                 </button>
@@ -424,7 +452,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                                 <button
                                                     className="secondary-button"
                                                     disabled={isBusy}
-                                                    onClick={() => void handleResetPassword(user)}
+                                                    onClick={() => openResetPasswordModal(user)}
                                                 >
                                                     Reset password
                                                 </button>
@@ -433,7 +461,13 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                                     <button
                                                         className="secondary-button"
                                                         disabled={isBusy}
-                                                        onClick={() => void handleChangeRole(user, 'USER')}
+                                                        onClick={() =>
+                                                            setConfirmState({
+                                                                type: 'role',
+                                                                user,
+                                                                nextRole: 'USER',
+                                                            })
+                                                        }
                                                     >
                                                         Make USER
                                                     </button>
@@ -441,7 +475,13 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                                     <button
                                                         className="secondary-button"
                                                         disabled={isBusy}
-                                                        onClick={() => void handleChangeRole(user, 'ADMIN')}
+                                                        onClick={() =>
+                                                            setConfirmState({
+                                                                type: 'role',
+                                                                user,
+                                                                nextRole: 'ADMIN',
+                                                            })
+                                                        }
                                                     >
                                                         Make ADMIN
                                                     </button>
@@ -480,6 +520,93 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     </button>
                 </div>
             </div>
+
+            {resetPasswordUser && (
+                <Modal
+                    title={`Reset password: ${resetPasswordUser.email}`}
+                    onClose={closeResetPasswordModal}
+                >
+                    <form className="form" onSubmit={handleSubmitResetPassword}>
+                        <label>
+                            New password
+                            <input
+                                type="password"
+                                value={resetPasswordValue}
+                                onChange={(event) => setResetPasswordValue(event.target.value)}
+                                minLength={12}
+                                maxLength={72}
+                                autoComplete="new-password"
+                                autoFocus
+                            />
+                        </label>
+
+                        <label>
+                            Confirm password
+                            <input
+                                type="password"
+                                value={resetPasswordConfirm}
+                                onChange={(event) => setResetPasswordConfirm(event.target.value)}
+                                minLength={12}
+                                maxLength={72}
+                                autoComplete="new-password"
+                            />
+                        </label>
+
+                        <div className="modal-actions">
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                disabled={actionUserId === resetPasswordUser.id}
+                                onClick={closeResetPasswordModal}
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                disabled={
+                                    actionUserId === resetPasswordUser.id
+                                    || !resetPasswordValue
+                                    || !resetPasswordConfirm
+                                }
+                            >
+                                {actionUserId === resetPasswordUser.id
+                                    ? 'Resetting...'
+                                    : 'Reset password'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {confirmState && (
+                <ConfirmDialog
+                    title={
+                        confirmState.type === 'enabled'
+                            ? confirmState.user.enabled
+                                ? 'Disable user'
+                                : 'Enable user'
+                            : 'Change user role'
+                    }
+                    message={
+                        confirmState.type === 'enabled'
+                            ? confirmState.user.enabled
+                                ? `Disable user ${confirmState.user.email}?`
+                                : `Enable user ${confirmState.user.email}?`
+                            : `Change role for ${confirmState.user.email} to ${confirmState.nextRole}?`
+                    }
+                    confirmText={
+                        confirmState.type === 'enabled'
+                            ? confirmState.user.enabled
+                                ? 'Disable'
+                                : 'Enable'
+                            : 'Change role'
+                    }
+                    danger={confirmState.type === 'enabled' && confirmState.user.enabled}
+                    loading={actionUserId === confirmState.user.id}
+                    onCancel={() => setConfirmState(null)}
+                    onConfirm={() => void confirmAction()}
+                />
+            )}
         </div>
     )
 }

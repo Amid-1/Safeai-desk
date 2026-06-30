@@ -10,6 +10,7 @@ import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
 import ru.safeai.gateway.chat.dto.UsageUserSummaryResponse;
 import ru.safeai.gateway.chat.repository.UsageDailySummaryProjection;
 import ru.safeai.gateway.chat.repository.UsageQueryRepository;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
@@ -30,18 +31,21 @@ public class AdminUsageService {
             String model,
             SafeAiUserPrincipal currentUser
     ) {
-        Instant from = effectiveDateFrom(dateFrom);
-        Instant to = effectiveDateTo(dateTo);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
         String normalizedModel = normalizeModel(model);
 
         if (isSuperAdmin(currentUser)) {
-            return usageQueryRepository.findUsageSummary(from, to, normalizedModel);
+            return usageQueryRepository.findUsageSummary(
+                    range.from(),
+                    range.to(),
+                    normalizedModel
+            );
         }
 
         return usageQueryRepository.findUsageByOrganizationId(
                 currentUser.getOrganizationId(),
-                from,
-                to,
+                range.from(),
+                range.to(),
                 normalizedModel
         );
     }
@@ -52,17 +56,19 @@ public class AdminUsageService {
             Instant dateTo,
             SafeAiUserPrincipal currentUser
     ) {
-        Instant from = effectiveDateFrom(dateFrom);
-        Instant to = effectiveDateTo(dateTo);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
 
         if (isSuperAdmin(currentUser)) {
-            return usageQueryRepository.findUsageByUsers(from, to);
+            return usageQueryRepository.findUsageByUsers(
+                    range.from(),
+                    range.to()
+            );
         }
 
         return usageQueryRepository.findUsageByUsersByOrganizationId(
                 currentUser.getOrganizationId(),
-                from,
-                to
+                range.from(),
+                range.to()
         );
     }
 
@@ -72,17 +78,19 @@ public class AdminUsageService {
             Instant dateTo,
             SafeAiUserPrincipal currentUser
     ) {
-        Instant from = effectiveDateFrom(dateFrom);
-        Instant to = effectiveDateTo(dateTo);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
 
         if (isSuperAdmin(currentUser)) {
-            return usageQueryRepository.findUsageByModels(from, to);
+            return usageQueryRepository.findUsageByModels(
+                    range.from(),
+                    range.to()
+            );
         }
 
         return usageQueryRepository.findUsageByModelsByOrganizationId(
                 currentUser.getOrganizationId(),
-                from,
-                to
+                range.from(),
+                range.to()
         );
     }
 
@@ -92,15 +100,17 @@ public class AdminUsageService {
             Instant dateTo,
             SafeAiUserPrincipal currentUser
     ) {
-        Instant from = effectiveDateFrom(dateFrom);
-        Instant to = effectiveDateTo(dateTo);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
 
         List<UsageDailySummaryProjection> rows = isSuperAdmin(currentUser)
-                ? usageQueryRepository.findUsageDaily(from, to)
+                ? usageQueryRepository.findUsageDaily(
+                range.from(),
+                range.to()
+        )
                 : usageQueryRepository.findUsageDailyByOrganizationId(
                 currentUser.getOrganizationId(),
-                from,
-                to
+                range.from(),
+                range.to()
         );
 
         return rows.stream()
@@ -121,15 +131,14 @@ public class AdminUsageService {
             String model,
             SafeAiUserPrincipal currentUser
     ) {
-        Instant from = effectiveDateFrom(dateFrom);
-        Instant to = effectiveDateTo(dateTo);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
         String normalizedModel = normalizeModel(model);
 
         if (isSuperAdmin(currentUser)) {
             return usageQueryRepository.findUsageByUserId(
                     userId,
-                    from,
-                    to,
+                    range.from(),
+                    range.to(),
                     normalizedModel
             );
         }
@@ -137,8 +146,8 @@ public class AdminUsageService {
         return usageQueryRepository.findUsageByUserIdAndOrganizationId(
                 userId,
                 currentUser.getOrganizationId(),
-                from,
-                to,
+                range.from(),
+                range.to(),
                 normalizedModel
         );
     }
@@ -158,24 +167,26 @@ public class AdminUsageService {
             );
         }
 
-        Instant from = effectiveDateFrom(dateFrom);
-        Instant to = effectiveDateTo(dateTo);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
         String normalizedModel = normalizeModel(model);
 
         return usageQueryRepository.findUsageByOrganizationId(
                 organizationId,
-                from,
-                to,
+                range.from(),
+                range.to(),
                 normalizedModel
         );
     }
 
-    private Instant effectiveDateFrom(Instant dateFrom) {
-        return dateFrom == null ? Instant.EPOCH : dateFrom;
-    }
+    private UsageDateRange normalizeRange(Instant dateFrom, Instant dateTo) {
+        Instant to = dateTo == null ? Instant.now() : dateTo;
+        Instant from = dateFrom == null ? to.minusSeconds(30L * 24 * 60 * 60) : dateFrom;
 
-    private Instant effectiveDateTo(Instant dateTo) {
-        return dateTo == null ? Instant.now() : dateTo;
+        if (!from.isBefore(to)) {
+            throw new BadRequestException("dateFrom должен быть раньше dateTo");
+        }
+
+        return new UsageDateRange(from, to);
     }
 
     private String normalizeModel(String model) {
@@ -191,5 +202,11 @@ public class AdminUsageService {
                 .stream()
                 .map(GrantedAuthority::getAuthority)
                 .anyMatch("ROLE_SUPER_ADMIN"::equals);
+    }
+
+    private record UsageDateRange(
+            Instant from,
+            Instant to
+    ) {
     }
 }

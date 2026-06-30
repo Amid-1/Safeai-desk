@@ -1,0 +1,50 @@
+// frontend/src/components/ConfirmDialog.tsx
+import Modal from './Modal'
+
+type ConfirmDialogProps = {
+    title: string
+    message: string
+    confirmText?: string
+    danger?: boolean
+    loading?: boolean
+    onConfirm: () => void
+    onCancel: () => void
+}
+
+function ConfirmDialog({
+                           title,
+                           message,
+                           confirmText = 'Confirm',
+                           danger = false,
+                           loading = false,
+                           onConfirm,
+                           onCancel,
+                       }: ConfirmDialogProps) {
+    return (
+        <Modal title={title} onClose={onCancel}>
+            <p>{message}</p>
+
+            <div className="modal-actions">
+                <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={loading}
+                    onClick={onCancel}
+                >
+                    Cancel
+                </button>
+
+                <button
+                    type="button"
+                    className={danger ? 'danger-button' : ''}
+                    disabled={loading}
+                    onClick={onConfirm}
+                >
+                    {loading ? 'Processing...' : confirmText}
+                </button>
+            </div>
+        </Modal>
+    )
+}
+
+export default ConfirmDialog

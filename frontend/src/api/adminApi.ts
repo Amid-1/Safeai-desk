@@ -55,6 +55,26 @@ export type AuditEventFilter = {
     organizationId?: string
 }
 
+export type UsageFilter = {
+    dateFrom?: string
+    dateTo?: string
+    model?: string
+}
+
+function buildQueryParams(values: Record<string, string | undefined>): string {
+    const params = new URLSearchParams()
+
+    Object.entries(values).forEach(([key, value]) => {
+        if (value && value.trim()) {
+            params.set(key, value.trim())
+        }
+    })
+
+    const query = params.toString()
+
+    return query ? `?${query}` : ''
+}
+
 export function getAuditEvents(
     page = 0,
     size = 50,
@@ -90,18 +110,34 @@ export function getAuditEvents(
     )
 }
 
-export function getUsageSummary(): Promise<UsageSummary[]> {
-    return apiRequest<UsageSummary[]>('/api/admin/usage/summary')
+export function getUsageSummary(
+    filter: UsageFilter = {}
+): Promise<UsageSummary[]> {
+    return apiRequest<UsageSummary[]>(
+        `/api/admin/usage/summary${buildQueryParams(filter)}`
+    )
 }
 
-export function getUsageByUsers(): Promise<UsageUserSummary[]> {
-    return apiRequest<UsageUserSummary[]>('/api/admin/usage/users')
+export function getUsageByUsers(
+    filter: Pick<UsageFilter, 'dateFrom' | 'dateTo'> = {}
+): Promise<UsageUserSummary[]> {
+    return apiRequest<UsageUserSummary[]>(
+        `/api/admin/usage/users${buildQueryParams(filter)}`
+    )
 }
 
-export function getUsageByModels(): Promise<UsageModelSummary[]> {
-    return apiRequest<UsageModelSummary[]>('/api/admin/usage/models')
+export function getUsageByModels(
+    filter: Pick<UsageFilter, 'dateFrom' | 'dateTo'> = {}
+): Promise<UsageModelSummary[]> {
+    return apiRequest<UsageModelSummary[]>(
+        `/api/admin/usage/models${buildQueryParams(filter)}`
+    )
 }
 
-export function getUsageDaily(): Promise<UsageDailySummary[]> {
-    return apiRequest<UsageDailySummary[]>('/api/admin/usage/daily')
+export function getUsageDaily(
+    filter: Pick<UsageFilter, 'dateFrom' | 'dateTo'> = {}
+): Promise<UsageDailySummary[]> {
+    return apiRequest<UsageDailySummary[]>(
+        `/api/admin/usage/daily${buildQueryParams(filter)}`
+    )
 }

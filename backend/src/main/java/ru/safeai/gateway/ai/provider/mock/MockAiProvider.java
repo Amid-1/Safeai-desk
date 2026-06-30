@@ -1,5 +1,6 @@
 package ru.safeai.gateway.ai.provider.mock;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
@@ -10,6 +11,7 @@ import ru.safeai.gateway.ai.provider.AiProvider;
 import java.math.BigDecimal;
 import java.util.Objects;
 
+@Slf4j
 @Service
 @ConditionalOnProperty(
         name = "safeai.ai.provider",
@@ -18,22 +20,35 @@ import java.util.Objects;
 )
 public class MockAiProvider implements AiProvider {
 
-    private static final String MOCK_MODEL = "mock-safeai";
+    private static final String MODEL = "mock-safeai";
 
     @Override
     public AiChatResponse sendMessage(AiChatRequest request) {
         String content = "Mock AI provider response: " + request.userMessage();
 
+        int inputTokens = calculateMockInputTokens(request);
+        int outputTokens = estimateTokens(content);
+
+        log.info(
+                "Mock AI response generated: userId={}, organizationId={}, chatId={}, model={}, inputTokens={}, outputTokens={}",
+                request.userId(),
+                request.organizationId(),
+                request.chatId(),
+                MODEL,
+                inputTokens,
+                outputTokens
+        );
+
         return new AiChatResponse(
                 content,
-                MOCK_MODEL,
-                calculateMockInputTokens(request),
-                calculateMockOutputTokens(content),
+                MODEL,
+                inputTokens,
+                outputTokens,
                 BigDecimal.ZERO
         );
     }
 
-    private Integer calculateMockInputTokens(AiChatRequest request) {
+    private int calculateMockInputTokens(AiChatRequest request) {
         int historyTokens = request.history()
                 .stream()
                 .filter(Objects::nonNull)
@@ -42,10 +57,6 @@ public class MockAiProvider implements AiProvider {
                 .sum();
 
         return historyTokens + estimateTokens(request.userMessage());
-    }
-
-    private Integer calculateMockOutputTokens(String content) {
-        return estimateTokens(content);
     }
 
     private int estimateTokens(String text) {

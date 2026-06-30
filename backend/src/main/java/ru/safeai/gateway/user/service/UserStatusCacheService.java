@@ -16,8 +16,6 @@ import java.util.UUID;
 @EnableConfigurationProperties(UserStatusCacheProperties.class)
 public class UserStatusCacheService {
 
-    private static final String KEY_PREFIX = "user-status:";
-
     private final UserRepository userRepository;
     private final StringRedisTemplate redisTemplate;
     private final UserStatusCacheProperties properties;
@@ -121,6 +119,6 @@ public class UserStatusCacheService {
     }
 
     private String key(UUID userId) {
-        return KEY_PREFIX + userId;
+        return properties.effectiveKeyPrefix() + userId;
     }
 }

@@ -58,7 +58,7 @@ password: superadmin123
 | №                                                        | Email               | Password       | Role | Комментарий                                                              |
 |----------------------------------------------------------|---------------------|----------------|---|--------------------------------------------------------------------------|
 | 1                                                        | dimac@mail.com      | v2F4r1C4!#SD   | USER | Создан вручную через frontend/admin users  Dima Dmitriev полное имя      |
-| 2                                                        | user1@test.com      | user12345678   | USER | Пароль не сохранён в открытом виде; если нужен — создать нового USER или 
+| 2                                                        | user1@test.com      | useR12345678%^ | USER | Пароль не сохранён в открытом виде; если нужен — создать нового USER или 
  сделать отдельный reset password  User Userov полное имя |
 | 3                                                        | Vasiya@gmail.com    | dfghjGH75!+Sdd | USER | Vasiya Vasilliev                                                         |
 | 4                                                        | PetiyaDF@yandex.com | DGFGFNjghj&*46 | USER | Petiya Petrov

@@ -14,6 +14,7 @@ import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.user.entity.UserEntity;
+import ru.safeai.gateway.organization.entity.OrganizationEntity;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -54,8 +55,7 @@ class RefreshTokenServiceTest {
 
     @Test
     void create_shouldStoreHashedTokenAndReturnRawToken() {
-        UserEntity user = new UserEntity();
-        user.setId(UUID.randomUUID());
+        UserEntity user = enabledUser();
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("User-Agent", "JUnit");
@@ -87,8 +87,7 @@ class RefreshTokenServiceTest {
 
     @Test
     void rotate_shouldRevokeOldTokenAndCreateNewToken() {
-        UserEntity user = new UserEntity();
-        user.setId(UUID.randomUUID());
+        UserEntity user = enabledUser();
 
         UUID tokenFamilyId = UUID.randomUUID();
 
@@ -154,6 +153,7 @@ class RefreshTokenServiceTest {
     void rotate_shouldThrowWhenTokenIsExpired() {
         RefreshTokenEntity oldToken = new RefreshTokenEntity();
         oldToken.setId(UUID.randomUUID());
+        oldToken.setUser(enabledUser());
         oldToken.setTokenFamilyId(UUID.randomUUID());
         oldToken.setExpiresAt(Instant.now().minusSeconds(1));
         oldToken.setRevokedAt(null);
@@ -181,7 +181,9 @@ class RefreshTokenServiceTest {
 
         UserEntity user = mock(UserEntity.class, RETURNS_DEEP_STUBS);
         when(user.getId()).thenReturn(userId);
+        when(user.isEnabled()).thenReturn(true);
         when(user.getOrganization().getId()).thenReturn(organizationId);
+        when(user.getOrganization().isEnabled()).thenReturn(true);
 
         RefreshTokenEntity oldToken = new RefreshTokenEntity();
         oldToken.setId(UUID.randomUUID());
@@ -222,5 +224,22 @@ class RefreshTokenServiceTest {
         service.revoke(" ");
 
         verifyNoInteractions(refreshTokenRepository);
+    }
+
+    private UserEntity enabledUser() {
+        OrganizationEntity organization = new OrganizationEntity();
+        organization.setId(UUID.randomUUID());
+        organization.setName("Demo Company");
+        organization.setEnabled(true);
+
+        UserEntity user = new UserEntity();
+        user.setId(UUID.randomUUID());
+        user.setOrganization(organization);
+        user.setEmail("admin@test.com");
+        user.setPasswordHash("hash");
+        user.setEnabled(true);
+        user.setTokenVersion(0L);
+
+        return user;
     }
 }

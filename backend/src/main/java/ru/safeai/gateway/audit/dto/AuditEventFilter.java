@@ -1,12 +1,13 @@
 package ru.safeai.gateway.audit.dto;
 
 import org.springframework.format.annotation.DateTimeFormat;
+import ru.safeai.gateway.audit.AuditEventType;
 
 import java.time.Instant;
 import java.util.UUID;
 
 public record AuditEventFilter(
-        String eventType,
+        AuditEventType eventType,
         String userEmail,
         UUID userId,
 

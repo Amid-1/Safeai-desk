@@ -1,4 +1,10 @@
 # "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local-nginx.yml"
+spring:
+  flyway:
+    locations:
+      - classpath:db/migration
+      - classpath:db/local-migration
+
 safeai:
   security:
     client-ip:

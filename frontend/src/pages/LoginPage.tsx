@@ -9,8 +9,8 @@ function LoginPage() {
     const navigate = useNavigate()
     const { currentUser, authLoading, loginUser } = useAuth()
 
-    const [email, setEmail] = useState('admin@test.com')
-    const [password, setPassword] = useState('admin123')
+    const [email, setEmail] = useState(import.meta.env.DEV ? 'admin@test.com' : '')
+    const [password, setPassword] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
 
@@ -74,7 +74,7 @@ function LoginPage() {
 
                 {error && <div className="error">{error}</div>}
 
-                <button disabled={loading}>
+                <button disabled={loading || !email.trim() || !password}>
                     {loading ? 'Logging in...' : 'Login'}
                 </button>
             </form>

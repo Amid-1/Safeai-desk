@@ -41,7 +41,7 @@ public class CustomUserDetailsService implements UserDetailsService {
                 user.getOrganization().getId(),
                 user.getEmail(),
                 user.getPasswordHash(),
-                user.isEnabled(),
+                user.isEnabled() && user.getOrganization().isEnabled(),
                 user.getTokenVersion(),
                 authorities
         );

@@ -42,10 +42,10 @@ public class AuditEventQueryService {
                 predicates.add(cb.equal(root.get("organizationId"), filter.organizationId()));
             }
 
-            if (filter.eventType() != null && !filter.eventType().isBlank()) {
-                predicates.add(cb.like(
-                        cb.lower(root.get("eventType")),
-                        "%" + filter.eventType().trim().toLowerCase() + "%"
+            if (filter.eventType() != null) {
+                predicates.add(cb.equal(
+                        root.get("eventType"),
+                        filter.eventType().name()
                 ));
             }
 

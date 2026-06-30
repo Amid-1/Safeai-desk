@@ -7,7 +7,8 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "safeai.security.user-status-cache")
 public record UserStatusCacheProperties(
         Boolean enabled,
-        Duration ttl
+        Duration ttl,
+        String keyPrefix
 ) {
     public boolean isEnabled() {
         return enabled == null || enabled;
@@ -19,5 +20,17 @@ public record UserStatusCacheProperties(
         }
 
         return ttl;
+    }
+
+    public String effectiveKeyPrefix() {
+        if (keyPrefix == null || keyPrefix.isBlank()) {
+            return "safeai:local:user-status:";
+        }
+
+        String normalized = keyPrefix.trim();
+
+        return normalized.endsWith(":")
+                ? normalized
+                : normalized + ":";
     }
 }

@@ -2,6 +2,7 @@ package ru.safeai.gateway.admin.service;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -410,6 +411,57 @@ class AdminUsageServiceTest {
                 MODEL
         );
         verifyNoMoreInteractions(usageQueryRepository);
+    }
+
+    @Test
+    void getUsageSummary_whenDateRangeInvalid_shouldThrowBadRequest() {
+        assertThatThrownBy(() -> adminUsageService.getUsageSummary(
+                DATE_TO,
+                DATE_FROM,
+                MODEL,
+                adminPrincipal()
+        ))
+                .isInstanceOf(ru.safeai.gateway.common.exception.BadRequestException.class)
+                .hasMessageContaining("dateFrom должен быть раньше dateTo");
+
+        verifyNoInteractions(usageQueryRepository);
+    }
+
+    @Test
+    void getUsageSummary_whenDatesAreNull_shouldUseDefaultLast30DaysRange() {
+        when(usageQueryRepository.findUsageByOrganizationId(
+                eq(ORGANIZATION_ID),
+                any(Instant.class),
+                any(Instant.class),
+                eq(MODEL)
+        )).thenReturn(List.of());
+
+        Instant before = Instant.now();
+
+        adminUsageService.getUsageSummary(
+                null,
+                null,
+                MODEL,
+                adminPrincipal()
+        );
+
+        Instant after = Instant.now();
+
+        ArgumentCaptor<Instant> fromCaptor = ArgumentCaptor.forClass(Instant.class);
+        ArgumentCaptor<Instant> toCaptor = ArgumentCaptor.forClass(Instant.class);
+
+        verify(usageQueryRepository).findUsageByOrganizationId(
+                eq(ORGANIZATION_ID),
+                fromCaptor.capture(),
+                toCaptor.capture(),
+                eq(MODEL)
+        );
+
+        Instant from = fromCaptor.getValue();
+        Instant to = toCaptor.getValue();
+
+        assertThat(to).isBetween(before, after);
+        assertThat(java.time.Duration.between(from, to).toDays()).isEqualTo(30);
     }
 
     private UsageDailySummaryProjection usageDailyProjection() {

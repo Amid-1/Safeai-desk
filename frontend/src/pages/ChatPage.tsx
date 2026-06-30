@@ -13,6 +13,7 @@ function ChatPage() {
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [initialLoading, setInitialLoading] = useState(true)
+    const [assistantPending, setAssistantPending] = useState(false)
 
     useEffect(() => {
         async function loadChats() {
@@ -74,6 +75,7 @@ function ChatPage() {
 
         setError('')
         setLoading(true)
+        setAssistantPending(true)
 
         try {
             const updatedChat = await sendMessage(activeChat.id, trimmedMessage)
@@ -96,6 +98,7 @@ function ChatPage() {
             setError(getApiErrorMessage(err, 'Failed to send message'))
         } finally {
             setLoading(false)
+            setAssistantPending(false)
         }
     }
 
@@ -117,8 +120,9 @@ function ChatPage() {
         }
     }
 
-    function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-        if (event.key === 'Enter' && !loading) {
+    function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+        if (event.key === 'Enter' && event.ctrlKey && !loading) {
+            event.preventDefault()
             void handleSendMessage()
         }
     }
@@ -195,14 +199,22 @@ function ChatPage() {
                                         )}
                                     </div>
                                 ))}
+
+                                {assistantPending && (
+                                    <div className="message assistant pending">
+                                        <strong>ASSISTANT</strong>
+                                        <p>Thinking...</p>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="message-form">
-                                <input
+                                <textarea
+                                    rows={3}
                                     value={message}
                                     onChange={(event) => setMessage(event.target.value)}
-                                    onKeyDown={handleInputKeyDown}
-                                    placeholder="Type message..."
+                                    onKeyDown={handleTextareaKeyDown}
+                                    placeholder="Type message... Ctrl+Enter to send"
                                     disabled={loading}
                                 />
 

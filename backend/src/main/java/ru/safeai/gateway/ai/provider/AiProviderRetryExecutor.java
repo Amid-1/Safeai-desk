@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import java.util.concurrent.ThreadLocalRandom;
 
 import java.time.Duration;
 import java.util.function.Supplier;
@@ -43,7 +44,7 @@ public class AiProviderRetryExecutor {
                         exception.getMessage()
                 );
 
-                sleep(backoff, provider, model, exception);
+                sleep(withJitter(backoff), provider, model, exception);
                 backoff = nextBackoff(backoff);
             }
         }
@@ -96,5 +97,18 @@ public class AiProviderRetryExecutor {
                     exception
             );
         }
+    }
+
+    private Duration withJitter(Duration duration) {
+        long millis = duration.toMillis();
+
+        if (millis <= 1) {
+            return duration;
+        }
+
+        long jitter = ThreadLocalRandom.current()
+                .nextLong(0, Math.max(1, millis / 2));
+
+        return Duration.ofMillis(millis + jitter);
     }
 }

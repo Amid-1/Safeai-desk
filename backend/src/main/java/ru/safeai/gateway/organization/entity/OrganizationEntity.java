@@ -3,6 +3,8 @@ package ru.safeai.gateway.organization.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -20,9 +22,6 @@ public class OrganizationEntity {
     @Column(name = "name", nullable = false, length = 255)
     private String name;
 
-    @Column(name = "created_at", nullable = false)
-    private Instant createdAt;
-
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;
 
@@ -30,14 +29,18 @@ public class OrganizationEntity {
     @Column(name = "version", nullable = false)
     private long version;
 
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
     @PrePersist
     void prePersist() {
         if (id == null) {
             id = UUID.randomUUID();
-        }
-
-        if (createdAt == null) {
-            createdAt = Instant.now();
         }
     }
 }

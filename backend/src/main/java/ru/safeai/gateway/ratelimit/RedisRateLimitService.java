@@ -18,7 +18,8 @@ import java.util.Objects;
 @EnableConfigurationProperties(AiMessageRateLimitProperties.class)
 public class RedisRateLimitService {
 
-    private static final String AI_MESSAGE_LIMIT_TYPE = "AI_MESSAGE";
+    private static final String AI_MESSAGE_USER_LIMIT_TYPE = "AI_MESSAGE_USER";
+    private static final String AI_MESSAGE_ORGANIZATION_LIMIT_TYPE = "AI_MESSAGE_ORGANIZATION";
     private static final String AI_MESSAGE_WINDOW = "1h";
 
     private final RedisFixedWindowRateLimiter rateLimiter;
@@ -26,46 +27,67 @@ public class RedisRateLimitService {
     private final ApplicationEventPublisher eventPublisher;
     private final RateLimitKeyFactory keyFactory;
 
+    /**
+     * Fail-closed strategy:
+     * if Redis is unavailable, AI message sending is blocked.
+
+     * Rationale:
+     * this gateway controls paid external AI-provider usage.
+     * Blocking requests during Redis outage is safer than allowing unlimited traffic.
+     */
     public void checkAiMessageAllowed(SafeAiUserPrincipal user) {
-        Objects.requireNonNull(user, "user не должен быть null");
+        Objects.requireNonNull(user, "user must not be null");
 
         if (!properties.isEnabled()) {
             return;
         }
 
-        int limit = isAdminOrSuperAdmin(user)
+        Duration window = Duration.ofHours(1);
+
+        int userLimit = isAdminOrSuperAdmin(user)
                 ? properties.effectiveAdminLimitPerHour()
                 : properties.effectiveUserLimitPerHour();
 
-        Duration window = Duration.ofHours(1);
+        checkLimit(
+                keyFactory.aiMessageUser(user.getId()),
+                userLimit,
+                window,
+                user,
+                AI_MESSAGE_USER_LIMIT_TYPE,
+                "Превышен лимит AI-запросов пользователя. Лимит: " + userLimit + " в час"
+        );
 
-        String key = keyFactory.aiMessageUser(user.getId());
+        int organizationLimit = properties.effectiveOrganizationLimitPerHour();
 
+        checkLimit(
+                keyFactory.aiMessageOrganization(user.getOrganizationId()),
+                organizationLimit,
+                window,
+                user,
+                AI_MESSAGE_ORGANIZATION_LIMIT_TYPE,
+                "Превышен лимит AI-запросов организации. Лимит: " + organizationLimit + " в час"
+        );
+    }
+
+    private void checkLimit(
+            String key,
+            int limit,
+            Duration window,
+            SafeAiUserPrincipal user,
+            String type,
+            String message
+    ) {
         try {
             RateLimitResult result = rateLimiter.incrementAndGet(key, window);
             long count = result.count();
 
             if (count > limit) {
-                if (count == limit + 1) {
-                    Map<String, Object> details = Map.of(
-                            "type", AI_MESSAGE_LIMIT_TYPE,
-                            "limit", limit,
-                            "window", AI_MESSAGE_WINDOW,
-                            "count", count
-                    );
-
-                    eventPublisher.publishEvent(new RateLimitExceededEvent(
-                            user.getId(),
-                            user.getOrganizationId(),
-                            AI_MESSAGE_LIMIT_TYPE,
-                            limit,
-                            AI_MESSAGE_WINDOW,
-                            details
-                    ));
+                if (count == limit + 1L) {
+                    publishExceededEvent(user, type, limit, count);
                 }
 
                 throw new RateLimitExceededException(
-                        "Превышен лимит AI-запросов. Лимит: " + limit + " в час",
+                        message,
                         Duration.ofSeconds(result.ttlSeconds())
                 );
             }
@@ -73,10 +95,31 @@ public class RedisRateLimitService {
             throw exception;
         } catch (RuntimeException exception) {
             throw new RateLimitUnavailableException(
-                    "Redis rate limit недоступен",
+                    "Redis AI message rate limit недоступен",
                     exception
             );
         }
+    }
+
+    private void publishExceededEvent(
+            SafeAiUserPrincipal user,
+            String type,
+            int limit,
+            long count
+    ) {
+        eventPublisher.publishEvent(new RateLimitExceededEvent(
+                user.getId(),
+                user.getOrganizationId(),
+                type,
+                limit,
+                AI_MESSAGE_WINDOW,
+                Map.of(
+                        "type", type,
+                        "limit", limit,
+                        "window", AI_MESSAGE_WINDOW,
+                        "count", count
+                )
+        ));
     }
 
     private boolean isAdminOrSuperAdmin(SafeAiUserPrincipal user) {

@@ -5,6 +5,9 @@ import lombok.Getter;
 import lombok.Setter;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
@@ -36,16 +39,6 @@ public class UserEntity {
     @Column(name = "enabled", nullable = false)
     private boolean enabled;
 
-    @Column(name = "created_at", nullable = false)
-    private Instant createdAt;
-
-    @Column(name = "token_version", nullable = false)
-    private long tokenVersion;
-
-    @Version
-    @Column(name = "version", nullable = false)
-    private long version;
-
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "user_roles",
@@ -54,14 +47,25 @@ public class UserEntity {
     )
     private Set<RoleEntity> roles = new HashSet<>();
 
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    @Column(name = "token_version", nullable = false)
+    private long tokenVersion;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     @PrePersist
     void prePersist() {
         if (id == null) {
             id = UUID.randomUUID();
-        }
-
-        if (createdAt == null) {
-            createdAt = Instant.now();
         }
     }
 }

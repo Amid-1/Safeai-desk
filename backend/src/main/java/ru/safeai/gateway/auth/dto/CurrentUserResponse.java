@@ -8,7 +8,7 @@ public record CurrentUserResponse(
         UUID organizationId,
         String email,
         String fullName,
-        Boolean enabled,
+        boolean enabled,
         Set<String> roles
 ) {
 }

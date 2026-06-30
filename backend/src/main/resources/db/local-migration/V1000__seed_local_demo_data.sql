@@ -1,15 +1,17 @@
-/* Safeai-desk/backend/src/main/resources/db/migration/V3__seed_local_demo_data.sql */
+/* Safeai-desk/backend/src/main/resources/db/local-migration/V1000__seed_local_demo_data.sql */
 insert into organizations (
     id,
     name,
     enabled,
     created_at,
+    updated_at,
     version
 )
 values (
            'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
            'Demo Company',
            true,
+           now(),
            now(),
            0
        )
@@ -24,6 +26,7 @@ insert into users (
     full_name,
     enabled,
     created_at,
+    updated_at,
     token_version,
     version
 )
@@ -34,6 +37,7 @@ values (
            '$2a$10$qcWB2wkTGlA7MvSoYdPFy.7R7BZzvifDywN4hOUd9ipijInEF7CjG',
            'Demo Admin',
            true,
+           now(),
            now(),
            0,
            0
@@ -49,6 +53,7 @@ insert into users (
     full_name,
     enabled,
     created_at,
+    updated_at,
     token_version,
     version
 )
@@ -59,6 +64,7 @@ values (
            '$2a$10$yJB.CHsf1cPn3lYot0djHuiBE4Dk7o8iFkZdCNLAoaCy5TFvIxS36',
            'SafeAI Platform Admin',
            true,
+           now(),
            now(),
            0,
            0

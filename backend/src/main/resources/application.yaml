@@ -83,11 +83,11 @@ safeai:
           input-usd-per-1m-tokens: 0
           output-usd-per-1m-tokens: 0
         - model: gpt-4.1
-          input-usd-per-1m-tokens: 0
-          output-usd-per-1m-tokens: 0
+          input-usd-per-1m-tokens: 2.00
+          output-usd-per-1m-tokens: 8.00
         - model: claude-opus-4-8
-          input-usd-per-1m-tokens: 0
-          output-usd-per-1m-tokens: 0
+          input-usd-per-1m-tokens: 15.00
+          output-usd-per-1m-tokens: 75.00
 
     openai:
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
@@ -112,6 +112,7 @@ safeai:
     redis:
       key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX:safeai:local}
 
+
     login:
       enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}
       email-limit: ${SAFEAI_RATE_LIMIT_LOGIN_EMAIL_LIMIT:10}
@@ -122,6 +123,7 @@ safeai:
       enabled: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ENABLED:true}
       user-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_USER_LIMIT_PER_HOUR:20}
       admin-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ADMIN_LIMIT_PER_HOUR:100}
+      organization-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ORGANIZATION_LIMIT_PER_HOUR:1000}
 
   cors:
     allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS:http://localhost:5173}
@@ -136,6 +138,12 @@ safeai:
   security:
     client-ip:
       trusted-proxy-cidrs: []
+    user-status-cache:
+      enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:true}
+      ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
+      key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:local:user-status}
 
   platform:
     organization-id: 00000000-0000-0000-0000-000000000001
+
+    # Demo pricing. Replace with real provider pricing before production billing.

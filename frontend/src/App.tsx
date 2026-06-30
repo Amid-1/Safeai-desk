@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import LoginPage from './pages/LoginPage'
 import ChatPage from './pages/ChatPage'
 import AdminUsersPage from './pages/AdminUsersPage'
+import AdminOrganizationsPage from './pages/AdminOrganizationsPage'
 import AdminAuditPage from './pages/AdminAuditPage'
 import AdminUsagePage from './pages/AdminUsagePage'
 import type { AuthUser } from './api/authApi'
@@ -11,6 +12,10 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 
 function hasAnyRole(user: AuthUser | null, roles: string[]): boolean {
     return user?.roles.some((role) => roles.includes(role)) ?? false
+}
+
+function isSuperAdmin(user: AuthUser | null): boolean {
+    return user?.roles.includes('SUPER_ADMIN') ?? false
 }
 
 function getDisplayRole(user: AuthUser | null): string {
@@ -65,6 +70,24 @@ function RequireAdmin({ children }: { children: ReactNode }) {
     return children
 }
 
+function RequireSuperAdmin({ children }: { children: ReactNode }) {
+    const { currentUser, authLoading } = useAuth()
+
+    if (authLoading) {
+        return <p>Checking access...</p>
+    }
+
+    if (!currentUser) {
+        return <Navigate to="/login" replace />
+    }
+
+    if (!isSuperAdmin(currentUser)) {
+        return <Navigate to="/chat" replace />
+    }
+
+    return children
+}
+
 function AdminUsersRoute() {
     const { currentUser, authLoading } = useAuth()
 
@@ -89,6 +112,7 @@ function AppLayout() {
 
     const isAuthenticated = currentUser !== null
     const canAccessAdmin = hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])
+    const canAccessOrganizations = isSuperAdmin(currentUser)
     const displayRole = getDisplayRole(currentUser)
 
     async function handleLogout() {
@@ -112,6 +136,15 @@ function AppLayout() {
                                 <NavLink to="/admin/users" className={getNavLinkClass}>
                                     Users
                                 </NavLink>
+
+                                {canAccessOrganizations && (
+                                    <NavLink
+                                        to="/admin/organizations"
+                                        className={getNavLinkClass}
+                                    >
+                                        Organizations
+                                    </NavLink>
+                                )}
 
                                 <NavLink to="/admin/audit" className={getNavLinkClass}>
                                     Audit
@@ -169,6 +202,15 @@ function AppLayout() {
                     />
 
                     <Route path="/admin/users" element={<AdminUsersRoute />} />
+
+                    <Route
+                        path="/admin/organizations"
+                        element={
+                            <RequireSuperAdmin>
+                                <AdminOrganizationsPage />
+                            </RequireSuperAdmin>
+                        }
+                    />
 
                     <Route
                         path="/admin/audit"

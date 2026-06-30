@@ -1,5 +1,14 @@
 // frontend/src/pages/AdminUsagePage.tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+    Bar,
+    BarChart,
+    CartesianGrid,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
+} from 'recharts'
 import {
     getUsageByModels,
     getUsageByUsers,
@@ -8,6 +17,7 @@ import {
 } from '../api/adminApi'
 import type {
     UsageDailySummary,
+    UsageFilter,
     UsageModelSummary,
     UsageSummary,
     UsageUserSummary,
@@ -36,37 +46,150 @@ function AdminUsagePage() {
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(true)
 
+    const [draftDateFrom, setDraftDateFrom] = useState('')
+    const [draftDateTo, setDraftDateTo] = useState('')
+    const [draftModel, setDraftModel] = useState('')
+
+    const [appliedFilter, setAppliedFilter] = useState<UsageFilter>({})
+
     useEffect(() => {
-        async function loadUsage() {
-            setLoading(true)
-            setError('')
+        void loadUsage(appliedFilter)
+    }, [appliedFilter])
 
-            try {
-                const [summaryData, usersData, modelsData, dailyData] =
-                    await Promise.all([
-                        getUsageSummary(),
-                        getUsageByUsers(),
-                        getUsageByModels(),
-                        getUsageDaily(),
-                    ])
-
-                setSummary(summaryData)
-                setUsers(usersData)
-                setModels(modelsData)
-                setDaily(dailyData)
-            } catch (err) {
-                setError(getApiErrorMessage(err, 'Failed to load usage'))
-            } finally {
-                setLoading(false)
+    const totals = useMemo(() => {
+        return summary.reduce(
+            (acc, row) => ({
+                inputTokens: acc.inputTokens + row.inputTokens,
+                outputTokens: acc.outputTokens + row.outputTokens,
+                totalTokens: acc.totalTokens + row.totalTokens,
+                costUsd: acc.costUsd + row.costUsd,
+            }),
+            {
+                inputTokens: 0,
+                outputTokens: 0,
+                totalTokens: 0,
+                costUsd: 0,
             }
-        }
+        )
+    }, [summary])
 
-        void loadUsage()
-    }, [])
+    async function loadUsage(filter: UsageFilter) {
+        setLoading(true)
+        setError('')
+
+        try {
+            const [summaryData, usersData, modelsData, dailyData] =
+                await Promise.all([
+                    getUsageSummary(filter),
+                    getUsageByUsers(filter),
+                    getUsageByModels(filter),
+                    getUsageDaily(filter),
+                ])
+
+            setSummary(summaryData)
+            setUsers(usersData)
+            setModels(modelsData)
+            setDaily(dailyData)
+        } catch (err) {
+            setError(getApiErrorMessage(err, 'Failed to load usage'))
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    function applyFilters() {
+        setAppliedFilter({
+            dateFrom: draftDateFrom ? `${draftDateFrom}T00:00:00Z` : undefined,
+            dateTo: draftDateTo ? `${draftDateTo}T23:59:59Z` : undefined,
+            model: draftModel.trim() || undefined,
+        })
+    }
+
+    function resetFilters() {
+        setDraftDateFrom('')
+        setDraftDateTo('')
+        setDraftModel('')
+        setAppliedFilter({})
+    }
 
     return (
         <div className="page">
             <h1>Admin Usage</h1>
+
+            <div className="card usage-total-card">
+                <div>
+                    <strong>Total tokens</strong>
+                    <p>{totals.totalTokens}</p>
+                </div>
+
+                <div>
+                    <strong>Input tokens</strong>
+                    <p>{totals.inputTokens}</p>
+                </div>
+
+                <div>
+                    <strong>Output tokens</strong>
+                    <p>{totals.outputTokens}</p>
+                </div>
+
+                <div>
+                    <strong>Cost</strong>
+                    <p>{formatUsd(totals.costUsd)}</p>
+                </div>
+            </div>
+
+            <div className="card form-card">
+                <div className="form">
+                    <label>
+                        Date from
+                        <input
+                            type="date"
+                            value={draftDateFrom}
+                            onChange={(event) => setDraftDateFrom(event.target.value)}
+                        />
+                    </label>
+
+                    <label>
+                        Date to
+                        <input
+                            type="date"
+                            value={draftDateTo}
+                            onChange={(event) => setDraftDateTo(event.target.value)}
+                        />
+                    </label>
+
+                    <label>
+                        Model
+                        <input
+                            value={draftModel}
+                            onChange={(event) => setDraftModel(event.target.value)}
+                            placeholder="mock-safeai"
+                        />
+                    </label>
+
+                    <div className="user-actions">
+                        <button type="button" onClick={applyFilters}>
+                            Apply
+                        </button>
+
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={resetFilters}
+                        >
+                            Reset
+                        </button>
+
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => void loadUsage(appliedFilter)}
+                        >
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
 
             <div className="user-toolbar">
                 <button
@@ -102,83 +225,139 @@ function AdminUsagePage() {
             {error && <div className="error">{error}</div>}
 
             {!loading && !error && (
+                <>
+                    <UsageCharts models={models} daily={daily} />
+
+                    <div className="card table-card">
+                        {tab === 'summary' && (
+                            <UsageTable
+                                rows={summary}
+                                columns={[
+                                    { key: 'userEmail', title: 'User' },
+                                    { key: 'model', title: 'Model' },
+                                    { key: 'inputTokens', title: 'Input tokens' },
+                                    { key: 'outputTokens', title: 'Output tokens' },
+                                    { key: 'totalTokens', title: 'Total tokens' },
+                                    {
+                                        key: 'costUsd',
+                                        title: 'Cost USD',
+                                        render: (value) => formatUsd(value as number),
+                                    },
+                                ]}
+                                emptyText="No usage summary found."
+                            />
+                        )}
+
+                        {tab === 'users' && (
+                            <UsageTable
+                                rows={users}
+                                columns={[
+                                    { key: 'userEmail', title: 'User' },
+                                    { key: 'inputTokens', title: 'Input tokens' },
+                                    { key: 'outputTokens', title: 'Output tokens' },
+                                    { key: 'totalTokens', title: 'Total tokens' },
+                                    {
+                                        key: 'costUsd',
+                                        title: 'Cost USD',
+                                        render: (value) => formatUsd(value as number),
+                                    },
+                                ]}
+                                emptyText="No user usage found."
+                            />
+                        )}
+
+                        {tab === 'models' && (
+                            <UsageTable
+                                rows={models}
+                                columns={[
+                                    { key: 'model', title: 'Model' },
+                                    { key: 'inputTokens', title: 'Input tokens' },
+                                    { key: 'outputTokens', title: 'Output tokens' },
+                                    { key: 'totalTokens', title: 'Total tokens' },
+                                    {
+                                        key: 'costUsd',
+                                        title: 'Cost USD',
+                                        render: (value) => formatUsd(value as number),
+                                    },
+                                ]}
+                                emptyText="No model usage found."
+                            />
+                        )}
+
+                        {tab === 'daily' && (
+                            <UsageTable
+                                rows={daily}
+                                columns={[
+                                    {
+                                        key: 'usageDate',
+                                        title: 'Date',
+                                        render: (value) => formatDate(value as string),
+                                    },
+                                    { key: 'inputTokens', title: 'Input tokens' },
+                                    { key: 'outputTokens', title: 'Output tokens' },
+                                    { key: 'totalTokens', title: 'Total tokens' },
+                                    {
+                                        key: 'costUsd',
+                                        title: 'Cost USD',
+                                        render: (value) => formatUsd(value as number),
+                                    },
+                                ]}
+                                emptyText="No daily usage found."
+                            />
+                        )}
+                    </div>
+                </>
+            )}
+        </div>
+    )
+}
+
+function UsageCharts({
+                         models,
+                         daily,
+                     }: {
+    models: UsageModelSummary[]
+    daily: UsageDailySummary[]
+}) {
+    if (models.length === 0 && daily.length === 0) {
+        return null
+    }
+
+    return (
+        <div className="usage-chart-grid">
+            {daily.length > 0 && (
                 <div className="card">
-                    {tab === 'summary' && (
-                        <UsageTable
-                            rows={summary}
-                            columns={[
-                                { key: 'userEmail', title: 'User' },
-                                { key: 'model', title: 'Model' },
-                                { key: 'inputTokens', title: 'Input tokens' },
-                                { key: 'outputTokens', title: 'Output tokens' },
-                                { key: 'totalTokens', title: 'Total tokens' },
-                                {
-                                    key: 'costUsd',
-                                    title: 'Cost USD',
-                                    render: (value) => formatUsd(value as number),
-                                },
-                            ]}
-                            emptyText="No usage summary found."
-                        />
-                    )}
+                    <h2>Daily usage</h2>
 
-                    {tab === 'users' && (
-                        <UsageTable
-                            rows={users}
-                            columns={[
-                                { key: 'userEmail', title: 'User' },
-                                { key: 'inputTokens', title: 'Input tokens' },
-                                { key: 'outputTokens', title: 'Output tokens' },
-                                { key: 'totalTokens', title: 'Total tokens' },
-                                {
-                                    key: 'costUsd',
-                                    title: 'Cost USD',
-                                    render: (value) => formatUsd(value as number),
-                                },
-                            ]}
-                            emptyText="No user usage found."
-                        />
-                    )}
+                    <div className="chart-box">
+                        <ResponsiveContainer width="100%" height={260}>
+                            <BarChart data={daily}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="usageDate" />
+                                <YAxis />
+                                <Tooltip />
+                                <Bar dataKey="totalTokens" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            )}
 
-                    {tab === 'models' && (
-                        <UsageTable
-                            rows={models}
-                            columns={[
-                                { key: 'model', title: 'Model' },
-                                { key: 'inputTokens', title: 'Input tokens' },
-                                { key: 'outputTokens', title: 'Output tokens' },
-                                { key: 'totalTokens', title: 'Total tokens' },
-                                {
-                                    key: 'costUsd',
-                                    title: 'Cost USD',
-                                    render: (value) => formatUsd(value as number),
-                                },
-                            ]}
-                            emptyText="No model usage found."
-                        />
-                    )}
+            {models.length > 0 && (
+                <div className="card">
+                    <h2>Model usage</h2>
 
-                    {tab === 'daily' && (
-                        <UsageTable
-                            rows={daily}
-                            columns={[
-                                {
-                                    key: 'usageDate',
-                                    title: 'Date',
-                                    render: (value) => formatDate(value as string),
-                                },
-                                { key: 'inputTokens', title: 'Input tokens' },
-                                { key: 'outputTokens', title: 'Output tokens' },
-                                { key: 'totalTokens', title: 'Total tokens' },
-                                {
-                                    key: 'costUsd',
-                                    title: 'Cost USD',
-                                    render: (value) => formatUsd(value as number),
-                                },
-                            ]}
-                            emptyText="No daily usage found."
-                        />
-                    )}
+                    <div className="chart-box">
+                        <ResponsiveContainer width="100%" height={260}>
+                            <BarChart data={models}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="model" />
+                                <YAxis />
+                                <Tooltip />
+                                <Bar dataKey="totalTokens" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
                 </div>
             )}
         </div>

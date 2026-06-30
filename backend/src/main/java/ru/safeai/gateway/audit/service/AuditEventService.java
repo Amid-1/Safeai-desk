@@ -31,6 +31,23 @@ public class AuditEventService {
         record(null, organizationId, eventType, details);
     }
 
+
+    /**
+     * SECURITY NOTICE
+
+     * Audit details must NEVER contain:
+
+     * - passwords
+     * - refresh tokens
+     * - access tokens
+     * - API keys
+     * - Authorization headers
+     * - cookies
+     * - AI prompts
+     * - AI responses
+
+     * Audit is intended only for security metadata.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(
             UUID userId,

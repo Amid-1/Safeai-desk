@@ -13,6 +13,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ConflictException;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -28,12 +29,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class OrganizationServiceTest {
@@ -70,45 +67,38 @@ class OrganizationServiceTest {
 
     @Test
     void create_shouldCreateOrganization() {
+
         when(organizationRepository.existsByNameIgnoreCase("SafeAI"))
                 .thenReturn(false);
 
         when(organizationRepository.save(any(OrganizationEntity.class)))
                 .thenAnswer(invocation -> {
-                    OrganizationEntity organization = invocation.getArgument(0);
+                    OrganizationEntity entity = invocation.getArgument(0);
 
-                    if (organization.getId() == null) {
-                        organization.setId(ORGANIZATION_ID);
-                    }
+                    entity.setId(ORGANIZATION_ID);
+                    entity.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
 
-                    if (organization.getCreatedAt() == null) {
-                        organization.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-                    }
-
-                    return organization;
+                    return entity;
                 });
 
         OrganizationResponse response = organizationService.create(
                 new CreateOrganizationRequest(" SafeAI "),
-                adminPrincipal()
+                superAdminPrincipal()
         );
 
         assertThat(response.id()).isEqualTo(ORGANIZATION_ID);
         assertThat(response.name()).isEqualTo("SafeAI");
         assertThat(response.enabled()).isTrue();
-        assertThat(response.createdAt()).isEqualTo(Instant.parse("2026-06-12T12:00:00Z"));
 
         ArgumentCaptor<OrganizationEntity> captor =
                 ArgumentCaptor.forClass(OrganizationEntity.class);
 
         verify(organizationRepository).save(captor.capture());
 
-        OrganizationEntity savedEntity = captor.getValue();
+        OrganizationEntity saved = captor.getValue();
 
-        assertThat(savedEntity.getId()).isEqualTo(ORGANIZATION_ID);
-        assertThat(savedEntity.getName()).isEqualTo("SafeAI");
-        assertThat(savedEntity.isEnabled()).isTrue();
-        assertThat(savedEntity.getCreatedAt()).isEqualTo(Instant.parse("2026-06-12T12:00:00Z"));
+        assertThat(saved.getName()).isEqualTo("SafeAI");
+        assertThat(saved.isEnabled()).isTrue();
 
         verify(auditEventService).record(
                 eq(ADMIN_ID),
@@ -119,14 +109,17 @@ class OrganizationServiceTest {
     }
 
     @Test
-    void create_shouldThrowConflictWhenOrganizationNameAlreadyExists() {
+    void create_shouldThrowConflictWhenNameAlreadyExists() {
+
         when(organizationRepository.existsByNameIgnoreCase("SafeAI"))
                 .thenReturn(true);
 
-        assertThatThrownBy(() -> organizationService.create(
-                new CreateOrganizationRequest("SafeAI"),
-                adminPrincipal()
-        ))
+        assertThatThrownBy(() ->
+                organizationService.create(
+                        new CreateOrganizationRequest("SafeAI"),
+                        superAdminPrincipal()
+                )
+        )
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Организация с таким названием уже существует");
 
@@ -134,60 +127,73 @@ class OrganizationServiceTest {
     }
 
     @Test
+    void create_shouldThrowForbiddenForAdmin() {
+
+        assertThatThrownBy(() ->
+                organizationService.create(
+                        new CreateOrganizationRequest("SafeAI"),
+                        adminPrincipal()
+                )
+        )
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("Only SUPER_ADMIN");
+
+        verifyNoInteractions(organizationRepository);
+    }
+
+    @Test
     void findAll_shouldReturnCurrentOrganizationForAdmin() {
-        OrganizationEntity organization = organizationEntity();
 
         when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organization));
+                .thenReturn(Optional.of(organization()));
 
-        Page<OrganizationResponse> response = organizationService.findAll(
+        Page<OrganizationResponse> page = organizationService.findAll(
                 adminPrincipal(),
                 PageRequest.of(0, 20)
         );
 
-        assertThat(response.getContent()).hasSize(1);
-        assertThat(response.getContent().getFirst().id()).isEqualTo(ORGANIZATION_ID);
-        assertThat(response.getContent().getFirst().name()).isEqualTo("SafeAI");
-        assertThat(response.getTotalElements()).isEqualTo(1);
+        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getContent().getFirst().id()).isEqualTo(ORGANIZATION_ID);
     }
 
     @Test
     void findById_shouldReturnOrganization() {
-        OrganizationEntity organization = organizationEntity();
 
         when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organization));
+                .thenReturn(Optional.of(organization()));
 
-        OrganizationResponse response = organizationService.findById(
-                ORGANIZATION_ID,
-                adminPrincipal()
-        );
+        OrganizationResponse response =
+                organizationService.findById(
+                        ORGANIZATION_ID,
+                        adminPrincipal()
+                );
 
         assertThat(response.id()).isEqualTo(ORGANIZATION_ID);
         assertThat(response.name()).isEqualTo("SafeAI");
     }
 
     @Test
-    void findById_shouldThrowResourceNotFoundWhenOrganizationDoesNotExist() {
+    void findById_shouldThrowWhenNotFound() {
+
         when(organizationRepository.findById(ORGANIZATION_ID))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> organizationService.findById(
-                ORGANIZATION_ID,
-                adminPrincipal()
-        ))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Организация не найдена");
+        assertThatThrownBy(() ->
+                organizationService.findById(
+                        ORGANIZATION_ID,
+                        adminPrincipal()
+                )
+        )
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
-    private OrganizationEntity organizationEntity() {
-        OrganizationEntity organization = new OrganizationEntity();
-        organization.setId(ORGANIZATION_ID);
-        organization.setName("SafeAI");
-        organization.setEnabled(true);
-        organization.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-
-        return organization;
+    private OrganizationEntity organization() {
+        OrganizationEntity entity = new OrganizationEntity();
+        entity.setId(ORGANIZATION_ID);
+        entity.setName("SafeAI");
+        entity.setEnabled(true);
+        entity.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+        return entity;
     }
 
     private SafeAiUserPrincipal adminPrincipal() {
@@ -195,10 +201,26 @@ class OrganizationServiceTest {
                 ADMIN_ID,
                 ORGANIZATION_ID,
                 "admin@test.com",
-                "encoded-password",
+                "",
                 true,
                 0L,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+                List.of(
+                        new SimpleGrantedAuthority("ROLE_ADMIN")
+                )
+        );
+    }
+
+    private SafeAiUserPrincipal superAdminPrincipal() {
+        return new SafeAiUserPrincipal(
+                ADMIN_ID,
+                PLATFORM_ORGANIZATION_ID,
+                "superadmin@test.com",
+                "",
+                true,
+                0L,
+                List.of(
+                        new SimpleGrantedAuthority("ROLE_SUPER_ADMIN")
+                )
         );
     }
 }

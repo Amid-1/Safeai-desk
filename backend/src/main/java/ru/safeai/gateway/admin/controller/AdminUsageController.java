@@ -25,25 +25,6 @@ public class AdminUsageController {
 
     private final AdminUsageService adminUsageService;
 
-    @Deprecated
-    @GetMapping("/usage-summary")
-    public List<UsageSummaryResponse> getOldUsageSummary(
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            Instant dateFrom,
-
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            Instant dateTo,
-
-            @RequestParam(required = false)
-            String model,
-
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
-    ) {
-        return adminUsageService.getUsageSummary(dateFrom, dateTo, model, currentUser);
-    }
-
     @GetMapping("/usage/summary")
     public List<UsageSummaryResponse> getUsageSummary(
             @RequestParam(required = false)

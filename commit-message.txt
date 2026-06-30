@@ -1,112 +1,14 @@
-feat: усилить auth, users, organizations, chat и AI provider infrastructure
+feat: harden auth/admin UI and add production frontend improvements
 
-Выполнено production-oriented усиление backend-модулей авторизации,
-управления пользователями, организаций, чатов, rate limit и AI provider integration.
-
-Auth / security:
-
-* добавлена ротация refresh token
-* refresh token теперь хранится в БД только в виде hash
-* добавлена token family для refresh token
-* добавлено обнаружение повторного использования отозванного refresh token
-* при reuse detection отзываются активные refresh tokens в рамках token family
-* добавлены поля expires_at, revoked_at, replaced_by_token_id и last_used_at
-* добавлены отдельные исключения для invalid/expired/reused refresh token
-* ошибки refresh token возвращаются как структурированные 401 Unauthorized
-* auth cookies очищаются при ошибках refresh token
-* добавлен audit event для logout
-* logout оставлен под CSRF-защитой
-* настройки CSRF cookie синхронизированы с auth cookie configuration
-* в CORS allowed headers добавлен X-XSRF-TOKEN
-
-Rate limiting:
-
-* добавлен namespace для Redis-ключей
-* добавлен RateLimitKeyFactory с hash-based ключами
-* усилена конфигурация login rate limit
-* усилена конфигурация AI message rate limit
-* добавлен Retry-After header при превышении лимита
-* Redis unavailable для защищенных операций оставлен fail-closed
-* обновлены тесты rate limit под namespaced Redis keys
-
-User management:
-
-* добавлена pagination для списка пользователей
-* усилена password policy validation
-* SUPER_ADMIN исключен из обычного user-management lifecycle
-* reset password теперь возвращает 204 No Content
-* в audit user events добавлены old/new values
-* добавлена валидация размера roles input
-* сохранена case-insensitive уникальность email на уровне БД
-* добавлена инвалидация user security status cache при security-sensitive изменениях
-
-Organization management:
-
-* добавлена pagination для списка организаций
-* добавлен endpoint для rename organization
-* добавлен endpoint для enable/disable organization
-* добавлены audit events для rename и enabled state changes
-* platform organization защищена от обычного rename/disable flow
-* добавлен OrganizationSecurityStateChangedEvent
-* добавлена инвалидация user status cache после изменения organization enabled state
-* добавлены null-safety проверки currentUser и identifiers
-
-Chat:
-
-* добавлена конфигурация chat lock
-* простой Redis lock заменен на token-based lock release
-* unlock сделан безопасным и не маскирует исходные provider exceptions
-* добавлены configurable limits для chat details/history messages
-* список чатов переведен на pagination
-* список сообщений чата переведен на pagination
-* chat details теперь возвращает ограниченное число последних сообщений
-* user message теперь сразу становится COMPLETED после принятия системой
-* при ошибке AI provider создается ASSISTANT / FAILED message
-* user message больше не помечается как FAILED при ошибке provider
-* sensitive chat title убран из audit details
-* обновлены тесты chat flow, lock flow и failed assistant message flow
-
-AI provider infrastructure:
-
-* AI-модуль разложен на config, dto, provider, pricing, exception и web packages
-* добавлены provider-specific packages для OpenAI, Anthropic и mock provider
-* добавлены structured AI provider exceptions с provider/model/status/requestId metadata
-* добавлен AiProviderUnavailableException
-* добавлена конфигурация AI retry
-* добавлен controlled retry executor с exponential backoff
-* retry выполняется только для retryable provider failures
-* timeout отделен от network/provider unavailable errors
-* добавлены ModelPricingProperties и ModelPricingService
-* costUsd теперь рассчитывается по input/output tokens и pricing config
-* добавлена защита по max response size
-* улучшен OpenAI response parsing
-* улучшена обработка Anthropic system prompt
-* добавлено извлечение provider request id из response headers
-* обновлен AI exception handler под structured provider errors
-* обновлены AI tests после package refactoring и fail-fast validation
-
-Audit / API:
-
-* добавлены и обновлены audit event types для auth, organization, user и chat flows
-* audit failures не ломают основной business flow
-* обновлена обработка API errors для rate limit и AI provider failures
-* обновлены tests после изменения DTO, packages и API responses
-
-Configuration:
-
-* добавлена chat lock configuration
-* добавлена AI retry configuration
-* добавлена AI pricing configuration
-* добавлены OpenAI и Anthropic max response size settings
-* исправлена YAML-вложенность safeai.ai
-* обновлены local/prod/example environment variables
-* local Redis/PostgreSQL configuration синхронизирована с Docker Compose
-
-Tests:
-
-* обновлены controller tests под Page responses
-* обновлены service tests после изменения constructors и dependencies
-* обновлены AI tests после package refactoring и fail-fast request validation
-* обновлены chat tests после lock и failed assistant message changes
-* обновлены organization tests после pagination и platform protection changes
-* main source и test source успешно компилируются
+- Added Organizations admin page with list, create, rename, enable and disable actions.
+- Added organization API client and wired Organizations route into admin navigation.
+- Added reusable Modal and ConfirmDialog components.
+- Replaced reset-password window.prompt flow with modal form and password confirmation.
+- Added usage filters for dateFrom, dateTo and model.
+- Added usage charts for daily and model-based usage analytics.
+- Updated Chat page input from single-line input to textarea with Ctrl+Enter submit.
+- Added pending assistant “Thinking...” placeholder while AI response is loading.
+- Removed hardcoded weak demo password from Login page.
+- Improved admin page UX with pagination, status badges and role/action controls.
+- Added safer refresh handling and frontend API cleanup.
+- Updated project structure to include new api, components and organization page files.

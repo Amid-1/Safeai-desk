@@ -33,31 +33,44 @@
 
 ```text
 frontend
+├── src
+│   ├── api
+│   │   ├── adminApi.ts
+│   │   ├── authApi.ts
+│   │   ├── chatApi.ts
+│   │   ├── http.ts
+│   │   └── userApi.ts
+│   │
+│   ├── auth
+│   │   └── AuthContext.tsx
+│   │
+│   ├── components
+│   │   └── ErrorBoundary.tsx
+│   │
+│   ├── pages
+│   │   ├── AdminAuditPage.tsx
+│   │   ├── AdminUsagePage.tsx
+│   │   ├── AdminUsersPage.tsx
+│   │   ├── ChatPage.tsx
+│   │   └── LoginPage.tsx
+│   │
+│   ├── utils
+│   │   ├── format.ts
+│   │   └── page.ts
+│   │
+│   ├── App.tsx
+│   ├── global.d.ts
+│   ├── index.css
+│   ├── main.tsx
+│   └── vite-env.d.ts
+│
 ├── index.html
 ├── package.json
 ├── package-lock.json
-├── tsconfig.json
 ├── tsconfig.app.json
+├── tsconfig.json
 ├── tsconfig.node.json
-├── vite.config.ts
-└── src
-    ├── api
-    │   ├── adminApi.ts
-    │   ├── authApi.ts
-    │   ├── chatApi.ts
-    │   ├── http.ts
-    │   └── userApi.ts
-    ├── pages
-    │   ├── AdminAuditPage.tsx
-    │   ├── AdminUsagePage.tsx
-    │   ├── AdminUsersPage.tsx
-    │   ├── ChatPage.tsx
-    │   └── LoginPage.tsx
-    ├── App.tsx
-    ├── global.d.ts
-    ├── index.css
-    ├── main.tsx
-    └── vite-env.d.ts
+└── vite.config.ts
 ```
 
 ---
@@ -99,7 +112,7 @@ frontend/dist/
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk\infra"
-docker compose up -d postgres redis
+docker compose -f docker-compose.local.yml up -d postgres redis
 ```
 
 Проверка контейнеров:
@@ -124,8 +137,9 @@ safeai-redis
 ```bat
 cd /d "D:\Java projects\Safeai-desk\backend"
 
+set SPRING_PROFILES_ACTIVE=local
 set SAFEAI_JWT_SECRET=safeai-local-development-secret-key-change-this-value-please-123456789
-set SAFEAI_JWT_EXPIRATION_MINUTES=60
+set REDIS_PASSWORD=safeai_redis_password
 
 mvnw.cmd spring-boot:run
 ```
@@ -235,6 +249,22 @@ HTTP/1.1 200
 ```bat
 cd /d "D:\Java projects\Safeai-desk\frontend"
 npm run dev
+```
+
+```text
+Лучше сделать scripts/run-backend-local.bat
+@echo off
+cd /d "%~dp0..\backend"
+
+set SPRING_PROFILES_ACTIVE=local
+set SAFEAI_JWT_SECRET=safeai-local-development-secret-key-change-this-value-please-123456789
+set REDIS_PASSWORD=safeai_redis_password
+
+mvnw.cmd spring-boot:run
+
+И запускать:
+
+scripts\run-backend-local.bat
 ```
 
 Ожидаемый результат:

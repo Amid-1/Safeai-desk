@@ -14,7 +14,9 @@ import ru.safeai.gateway.user.entity.UserEntity;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.UUID;
 
@@ -23,6 +25,8 @@ import java.util.UUID;
 public class RefreshTokenService {
 
     private static final int MAX_USER_AGENT_LENGTH = 512;
+    private static final int REFRESH_TOKEN_BYTES = 64;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final RefreshTokenRepository refreshTokenRepository;
     private final ClientIpResolver clientIpResolver;
@@ -60,6 +64,15 @@ public class RefreshTokenService {
                 .orElseThrow(() -> new InvalidRefreshTokenException("Refresh token не найден"));
 
         UserEntity user = oldToken.getUser();
+
+        if (!user.isEnabled() || !user.getOrganization().isEnabled()) {
+            refreshTokenRepository.revokeAllActiveByTokenFamilyId(
+                    oldToken.getTokenFamilyId(),
+                    now
+            );
+
+            throw new InvalidRefreshTokenException("Пользователь или организация отключены");
+        }
 
         if (oldToken.getRevokedAt() != null) {
             refreshTokenRepository.revokeAllActiveByTokenFamilyId(
@@ -113,7 +126,7 @@ public class RefreshTokenService {
             HttpServletRequest request,
             UUID tokenFamilyId
     ) {
-        String rawToken = UUID.randomUUID() + "." + UUID.randomUUID();
+        String rawToken = generateRawRefreshToken();
         UUID tokenId = UUID.randomUUID();
 
         RefreshTokenEntity entity = new RefreshTokenEntity();
@@ -131,6 +144,15 @@ public class RefreshTokenService {
                 tokenId,
                 rawToken
         );
+    }
+
+    private String generateRawRefreshToken() {
+        byte[] bytes = new byte[REFRESH_TOKEN_BYTES];
+        SECURE_RANDOM.nextBytes(bytes);
+
+        return Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(bytes);
     }
 
     private String hash(String rawToken) {

@@ -181,23 +181,6 @@ public class ChatPersistenceService {
         );
     }
 
-    @Transactional
-    public void markUserMessageFailed(
-            UUID userMessageId,
-            SafeAiUserPrincipal currentUser
-    ) {
-        ChatMessageEntity message = chatMessageRepository.findById(userMessageId)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Сообщение не найдено: " + userMessageId
-                ));
-
-        if (!message.getSession().getUser().getId().equals(currentUser.getId())) {
-            throw new ResourceNotFoundException("Сообщение не найдено: " + userMessageId);
-        }
-
-        message.setStatus(ChatMessageStatus.FAILED);
-    }
-
     private void assertOwnedUserMessageExists(
             UUID userMessageId,
             ChatSessionEntity session,

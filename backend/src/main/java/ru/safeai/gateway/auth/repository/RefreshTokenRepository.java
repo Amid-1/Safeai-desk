@@ -52,4 +52,14 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity
             @Param("tokenFamilyId") UUID tokenFamilyId,
             @Param("revokedAt") Instant revokedAt
     );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+    delete from RefreshTokenEntity token
+    where token.expiresAt < :threshold
+       or token.revokedAt < :threshold
+    """)
+    void deleteExpiredAndRevokedBefore(
+            @Param("threshold") Instant threshold
+    );
 }

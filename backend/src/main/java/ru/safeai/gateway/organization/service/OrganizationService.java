@@ -45,7 +45,8 @@ public class OrganizationService {
             CreateOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser must not be null");
+        requireSuperAdmin(currentUser);
 
         String name = normalizeName(request.name());
 
@@ -127,8 +128,9 @@ public class OrganizationService {
             UpdateOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(id, "id не должен быть null");
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(currentUser, "currentUser must not be null");
+        requireSuperAdmin(currentUser);
 
         rejectPlatformOrganizationMutation(id);
 
@@ -176,8 +178,9 @@ public class OrganizationService {
             UpdateOrganizationEnabledRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(id, "id не должен быть null");
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(currentUser, "currentUser must not be null");
+        requireSuperAdmin(currentUser);
 
         rejectPlatformOrganizationMutation(id);
 
@@ -240,6 +243,14 @@ public class OrganizationService {
         if (platformProperties.organizationId().equals(organizationId)) {
             throw new ForbiddenOperationException(
                     "Платформенную организацию нельзя изменять через обычный organization-management endpoint"
+            );
+        }
+    }
+
+    private void requireSuperAdmin(SafeAiUserPrincipal currentUser) {
+        if (!isSuperAdmin(currentUser)) {
+            throw new ForbiddenOperationException(
+                    "Only SUPER_ADMIN may manage organizations"
             );
         }
     }

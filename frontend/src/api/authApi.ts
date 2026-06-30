@@ -18,7 +18,6 @@ export type AuthUser = {
 export async function login(request: LoginRequest): Promise<void> {
     await apiRequest<unknown>('/api/auth/login', {
         method: 'POST',
-        auth: false,
         body: JSON.stringify(request),
     })
 }
@@ -30,6 +29,5 @@ export async function getCurrentUser(): Promise<AuthUser> {
 export async function logout(): Promise<void> {
     return apiRequest<void>('/api/auth/logout', {
         method: 'POST',
-        auth: false,
     })
 }
