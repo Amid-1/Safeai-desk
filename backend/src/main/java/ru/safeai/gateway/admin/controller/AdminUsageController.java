@@ -1,21 +1,20 @@
 package ru.safeai.gateway.admin.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.format.annotation.DateTimeFormat;
-
-import ru.safeai.gateway.admin.service.AdminUsageService;
-import ru.safeai.gateway.chat.dto.UsageDailySummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageModelSummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageUserSummaryResponse;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
+import ru.safeai.gateway.usage.service.UsageQueryService;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import java.time.Instant;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -23,7 +22,7 @@ import java.time.Instant;
 @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 public class AdminUsageController {
 
-    private final AdminUsageService adminUsageService;
+    private final UsageQueryService usageQueryService;
 
     @GetMapping("/usage/summary")
     public List<UsageSummaryResponse> getUsageSummary(
@@ -40,7 +39,12 @@ public class AdminUsageController {
 
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
-        return adminUsageService.getUsageSummary(dateFrom, dateTo, model, currentUser);
+        return usageQueryService.getUsageSummary(
+                dateFrom,
+                dateTo,
+                model,
+                currentUser
+        );
     }
 
     @GetMapping("/usage/users")
@@ -55,7 +59,7 @@ public class AdminUsageController {
 
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
-        return adminUsageService.getUsageByUsers(
+        return usageQueryService.getUsageByUsers(
                 dateFrom,
                 dateTo,
                 currentUser
@@ -74,7 +78,7 @@ public class AdminUsageController {
 
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
-        return adminUsageService.getUsageByModels(
+        return usageQueryService.getUsageByModels(
                 dateFrom,
                 dateTo,
                 currentUser
@@ -93,7 +97,7 @@ public class AdminUsageController {
 
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
-        return adminUsageService.getUsageDaily(
+        return usageQueryService.getUsageDaily(
                 dateFrom,
                 dateTo,
                 currentUser
@@ -117,7 +121,7 @@ public class AdminUsageController {
 
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
-        return adminUsageService.getUsageByUserId(
+        return usageQueryService.getUsageByUserId(
                 userId,
                 dateFrom,
                 dateTo,
@@ -143,7 +147,7 @@ public class AdminUsageController {
 
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
-        return adminUsageService.getUsageByOrganizationId(
+        return usageQueryService.getUsageByOrganizationId(
                 organizationId,
                 dateFrom,
                 dateTo,

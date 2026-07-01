@@ -21,10 +21,12 @@ public class CustomUserDetailsService implements UserDetailsService {
 
     @Override
     @Transactional(readOnly = true)
-    public @NonNull UserDetails loadUserByUsername(@NonNull String email) throws UsernameNotFoundException {
+    public @NonNull UserDetails loadUserByUsername(
+            @NonNull String email
+    ) throws UsernameNotFoundException {
         String normalizedEmail = email.trim().toLowerCase();
 
-        UserEntity user = userRepository.findByEmail(normalizedEmail)
+        UserEntity user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new UsernameNotFoundException(
                         "Пользователь не найден: " + normalizedEmail
                 ));

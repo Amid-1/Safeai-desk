@@ -16,7 +16,7 @@ export type AuthUser = {
 }
 
 export async function login(request: LoginRequest): Promise<void> {
-    await apiRequest<unknown>('/api/auth/login', {
+    await apiRequest<void>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify(request),
     })

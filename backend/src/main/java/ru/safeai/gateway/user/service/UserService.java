@@ -2,20 +2,26 @@ package ru.safeai.gateway.user.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-
+import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.auth.service.UserSessionRevocationService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
 import ru.safeai.gateway.user.dto.CreateUserRequest;
+import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
+import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
+import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
 import ru.safeai.gateway.user.dto.UserResponse;
 import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
@@ -23,15 +29,11 @@ import ru.safeai.gateway.user.event.UserSecurityStateChangedEvent;
 import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 
-import ru.safeai.gateway.audit.AuditEventType;
-import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
-import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
-import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
-
-import java.util.*;
-
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -45,10 +47,6 @@ public class UserService {
     private static final Set<String> SYSTEM_ROLES =
             Set.of(ROLE_USER, ROLE_ADMIN, ROLE_SUPER_ADMIN);
 
-    /**
-     * В обычном user-management endpoint не даём назначать SUPER_ADMIN.
-     * SUPER_ADMIN лучше создавать через seed/Flyway или отдельный platform-admin endpoint.
-     */
     private static final Set<String> USER_MANAGEMENT_ASSIGNABLE_ROLES =
             Set.of(ROLE_USER, ROLE_ADMIN);
 
@@ -58,9 +56,11 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final AuditEventService auditEventService;
     private final ApplicationEventPublisher eventPublisher;
+    private final UserSessionRevocationService userSessionRevocationService;
 
     @Transactional
     public UserResponse create(CreateUserRequest request, SafeAiUserPrincipal currentUser) {
+        Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
         String email = normalizeEmail(request.email());
@@ -70,7 +70,7 @@ public class UserService {
                 currentUser
         );
 
-        if (userRepository.existsByEmail(email)) {
+        if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new ConflictException("Пользователь с таким email уже существует: " + email);
         }
 
@@ -149,6 +149,8 @@ public class UserService {
             UpdateUserEnabledRequest request,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(request, "request не должен быть null");
+
         UserEntity user = findUserVisibleForCurrentUser(id, currentUser);
         rejectSuperAdminMutation(user);
 
@@ -172,15 +174,18 @@ public class UserService {
 
         boolean changed = oldEnabledValue != newEnabledValue;
 
-        user.setEnabled(newEnabledValue);
-
         if (changed) {
+            user.setEnabled(newEnabledValue);
             user.setTokenVersion(user.getTokenVersion() + 1);
         }
 
         UserEntity saved = userRepository.save(user);
 
         if (changed) {
+            if (!newEnabledValue) {
+                userSessionRevocationService.revokeAllForUser(saved.getId());
+            }
+
             eventPublisher.publishEvent(new UserSecurityStateChangedEvent(saved.getId()));
         }
 
@@ -193,7 +198,8 @@ public class UserService {
                         "targetUserEmail", saved.getEmail(),
                         "targetOrganizationId", saved.getOrganization().getId().toString(),
                         "oldEnabled", oldEnabledValue,
-                        "newEnabled", saved.isEnabled()
+                        "newEnabled", saved.isEnabled(),
+                        "changed", changed
                 )
         );
 
@@ -206,6 +212,8 @@ public class UserService {
             UpdateUserRolesRequest request,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(request, "request не должен быть null");
+
         UserEntity user = findUserVisibleForCurrentUser(id, currentUser);
         rejectSuperAdminMutation(user);
 
@@ -220,7 +228,8 @@ public class UserService {
             throw new ConflictException("У пользователя должна быть хотя бы одна роль");
         }
 
-        boolean removesAdminRole = hasAdminRole(user) && !requestedRoles.contains(ROLE_ADMIN);
+        boolean removesAdminRole = oldRoles.contains(ROLE_ADMIN)
+                && !requestedRoles.contains(ROLE_ADMIN);
 
         if (user.isEnabled() && removesAdminRole) {
             List<UserEntity> enabledAdmins =
@@ -234,13 +243,19 @@ public class UserService {
         }
 
         Set<RoleEntity> roles = resolveUserManagementRoles(requestedRoles);
+        boolean changed = !oldRoles.equals(requestedRoles);
 
-        user.setRoles(roles);
-        user.setTokenVersion(user.getTokenVersion() + 1);
+        if (changed) {
+            user.setRoles(roles);
+            user.setTokenVersion(user.getTokenVersion() + 1);
+        }
 
         UserEntity saved = userRepository.save(user);
 
-        eventPublisher.publishEvent(new UserSecurityStateChangedEvent(saved.getId()));
+        if (changed) {
+            userSessionRevocationService.revokeAllForUser(saved.getId());
+            eventPublisher.publishEvent(new UserSecurityStateChangedEvent(saved.getId()));
+        }
 
         auditEventService.record(
                 currentUser.getId(),
@@ -251,7 +266,8 @@ public class UserService {
                         "targetUserEmail", saved.getEmail(),
                         "targetOrganizationId", saved.getOrganization().getId().toString(),
                         "oldRoles", oldRoles,
-                        "newRoles", roleNames(saved)
+                        "newRoles", roleNames(saved),
+                        "changed", changed
                 )
         );
 
@@ -264,6 +280,8 @@ public class UserService {
             ResetUserPasswordRequest request,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(request, "request не должен быть null");
+
         UserEntity user = findUserVisibleForCurrentUser(id, currentUser);
         rejectSuperAdminMutation(user);
 
@@ -271,6 +289,8 @@ public class UserService {
         user.setTokenVersion(user.getTokenVersion() + 1);
 
         UserEntity saved = userRepository.save(user);
+
+        userSessionRevocationService.revokeAllForUser(saved.getId());
 
         eventPublisher.publishEvent(new UserSecurityStateChangedEvent(saved.getId()));
 
@@ -307,6 +327,9 @@ public class UserService {
             UUID id,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(id, "id не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         if (isSuperAdmin(currentUser)) {
             return userRepository.findByIdWithRolesAndOrganization(id)
                     .orElseThrow(() -> new ResourceNotFoundException(
@@ -343,7 +366,7 @@ public class UserService {
                         .orElseThrow(() -> new ResourceNotFoundException(
                                 "Роль не найдена: " + roleName
                         )))
-                .collect(Collectors.toSet());
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     private Set<String> normalizeRoles(Set<String> roles) {
@@ -356,7 +379,7 @@ public class UserService {
                 .map(String::trim)
                 .filter(role -> !role.isBlank())
                 .map(String::toUpperCase)
-                .collect(Collectors.toSet());
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     private boolean isSuperAdmin(SafeAiUserPrincipal currentUser) {
@@ -400,7 +423,7 @@ public class UserService {
                 .map(String::trim)
                 .filter(role -> !role.isBlank())
                 .map(String::toUpperCase)
-                .collect(Collectors.toSet());
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     private UserResponse toResponse(UserEntity entity) {

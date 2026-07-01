@@ -22,7 +22,8 @@ class AuthCookieServiceTest {
                 false,
                 "Lax",
                 Duration.ofMinutes(15),
-                Duration.ofDays(30)
+                Duration.ofDays(30),
+                null
         );
 
         service = new AuthCookieService(properties);
@@ -46,6 +47,7 @@ class AuthCookieServiceTest {
         assertThat(cookie).contains("HttpOnly");
         assertThat(cookie).contains("SameSite=Lax");
         assertThat(cookie).doesNotContain("Secure");
+        assertThat(cookie).doesNotContain("Domain=");
     }
 
     @Test
@@ -65,6 +67,7 @@ class AuthCookieServiceTest {
         assertThat(cookie).contains("Max-Age=2592000");
         assertThat(cookie).contains("HttpOnly");
         assertThat(cookie).contains("SameSite=Lax");
+        assertThat(cookie).doesNotContain("Domain=");
     }
 
     @Test
@@ -136,7 +139,8 @@ class AuthCookieServiceTest {
                         true,
                         "None",
                         Duration.ofMinutes(15),
-                        Duration.ofDays(30)
+                        Duration.ofDays(30),
+                        null
                 )
         );
 
@@ -148,5 +152,51 @@ class AuthCookieServiceTest {
 
         assertThat(cookie).contains("Secure");
         assertThat(cookie).contains("SameSite=None");
+        assertThat(cookie).doesNotContain("Domain=");
+    }
+
+    @Test
+    void addAccessTokenCookie_shouldUseDomainWhenConfigured() {
+        AuthCookieService domainService = new AuthCookieService(
+                new AuthCookieProperties(
+                        true,
+                        "Lax",
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        "example.com"
+                )
+        );
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        domainService.addAccessTokenCookie(response, "access-token");
+
+        String cookie = response.getHeaders(HttpHeaders.SET_COOKIE).getFirst();
+
+        assertThat(cookie).contains("Domain=example.com");
+    }
+
+    @Test
+    void clearAuthCookies_shouldUseDomainWhenConfigured() {
+        AuthCookieService domainService = new AuthCookieService(
+                new AuthCookieProperties(
+                        true,
+                        "Lax",
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        "example.com"
+                )
+        );
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        domainService.clearAuthCookies(response);
+
+        List<String> cookies = response.getHeaders(HttpHeaders.SET_COOKIE);
+
+        assertThat(cookies).hasSize(3);
+        assertThat(cookies).allSatisfy(cookie ->
+                assertThat(cookie).contains("Domain=example.com")
+        );
     }
 }

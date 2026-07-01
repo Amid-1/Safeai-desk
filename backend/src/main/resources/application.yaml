@@ -56,7 +56,7 @@ app:
   security:
     jwt:
       secret: ${SAFEAI_JWT_SECRET}
-      expiration-minutes: ${SAFEAI_JWT_EXPIRATION_MINUTES:60}
+      expiration-minutes: ${SAFEAI_JWT_EXPIRATION_MINUTES:15}
       issuer: ${SAFEAI_JWT_ISSUER:safeai-desk}
 
 safeai:
@@ -97,6 +97,7 @@ safeai:
       read-timeout: ${OPENAI_READ_TIMEOUT:60s}
       max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS:1024}
       max-response-chars: ${SAFEAI_AI_OPENAI_MAX_RESPONSE_CHARS:100000}
+      store: ${OPENAI_STORE:false}
 
     anthropic:
       base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/v1}

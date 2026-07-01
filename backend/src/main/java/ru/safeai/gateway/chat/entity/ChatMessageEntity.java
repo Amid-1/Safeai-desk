@@ -3,6 +3,7 @@ package ru.safeai.gateway.chat.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import ru.safeai.gateway.organization.entity.OrganizationEntity;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -18,9 +19,13 @@ public class ChatMessageEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "session_id", nullable = false)
     private ChatSessionEntity session;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "organization_id", nullable = false)
+    private OrganizationEntity organization;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 50)
@@ -52,6 +57,10 @@ public class ChatMessageEntity {
     void prePersist() {
         if (id == null) {
             id = UUID.randomUUID();
+        }
+
+        if (organization == null && session != null) {
+            organization = session.getOrganization();
         }
 
         if (createdAt == null) {

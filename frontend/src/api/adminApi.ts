@@ -1,5 +1,6 @@
 // frontend/src/api/adminApi.ts
 import { apiRequest } from './http'
+
 import type { PageResponse } from '../utils/page'
 
 export type AuditEvent = {
@@ -61,12 +62,12 @@ export type UsageFilter = {
     model?: string
 }
 
-function buildQueryParams(values: Record<string, string | undefined>): string {
+function buildQueryParams(values: Record<string, string | number | undefined>): string {
     const params = new URLSearchParams()
 
     Object.entries(values).forEach(([key, value]) => {
-        if (value && value.trim()) {
-            params.set(key, value.trim())
+        if (value !== undefined && value !== '') {
+            params.set(key, String(value))
         }
     })
 
@@ -80,64 +81,92 @@ export function getAuditEvents(
     size = 50,
     filter: AuditEventFilter = {}
 ): Promise<PageResponse<AuditEvent>> {
-    const params = new URLSearchParams()
-
-    params.set('page', String(page))
-    params.set('size', String(size))
-
-    if (filter.eventType) {
-        params.set('eventType', filter.eventType)
-    }
-
-    if (filter.userEmail) {
-        params.set('userEmail', filter.userEmail)
-    }
-
-    if (filter.dateFrom) {
-        params.set('dateFrom', filter.dateFrom)
-    }
-
-    if (filter.dateTo) {
-        params.set('dateTo', filter.dateTo)
-    }
-
-    if (filter.organizationId) {
-        params.set('organizationId', filter.organizationId)
-    }
+    const query = buildQueryParams({
+        page,
+        size,
+        eventType: filter.eventType,
+        userEmail: filter.userEmail,
+        dateFrom: filter.dateFrom,
+        dateTo: filter.dateTo,
+        organizationId: filter.organizationId,
+    })
 
     return apiRequest<PageResponse<AuditEvent>>(
-        `/api/admin/audit-events?${params.toString()}`
+        `/api/admin/audit-events${query}`
     )
 }
 
 export function getUsageSummary(
     filter: UsageFilter = {}
 ): Promise<UsageSummary[]> {
-    return apiRequest<UsageSummary[]>(
-        `/api/admin/usage/summary${buildQueryParams(filter)}`
-    )
+    const query = buildQueryParams({
+        dateFrom: filter.dateFrom,
+        dateTo: filter.dateTo,
+        model: filter.model,
+    })
+
+    return apiRequest<UsageSummary[]>(`/api/admin/usage/summary${query}`)
 }
 
 export function getUsageByUsers(
-    filter: Pick<UsageFilter, 'dateFrom' | 'dateTo'> = {}
+    filter: Omit<UsageFilter, 'model'> = {}
 ): Promise<UsageUserSummary[]> {
-    return apiRequest<UsageUserSummary[]>(
-        `/api/admin/usage/users${buildQueryParams(filter)}`
-    )
+    const query = buildQueryParams({
+        dateFrom: filter.dateFrom,
+        dateTo: filter.dateTo,
+    })
+
+    return apiRequest<UsageUserSummary[]>(`/api/admin/usage/users${query}`)
 }
 
 export function getUsageByModels(
-    filter: Pick<UsageFilter, 'dateFrom' | 'dateTo'> = {}
+    filter: Omit<UsageFilter, 'model'> = {}
 ): Promise<UsageModelSummary[]> {
-    return apiRequest<UsageModelSummary[]>(
-        `/api/admin/usage/models${buildQueryParams(filter)}`
-    )
+    const query = buildQueryParams({
+        dateFrom: filter.dateFrom,
+        dateTo: filter.dateTo,
+    })
+
+    return apiRequest<UsageModelSummary[]>(`/api/admin/usage/models${query}`)
 }
 
 export function getUsageDaily(
-    filter: Pick<UsageFilter, 'dateFrom' | 'dateTo'> = {}
+    filter: Omit<UsageFilter, 'model'> = {}
 ): Promise<UsageDailySummary[]> {
-    return apiRequest<UsageDailySummary[]>(
-        `/api/admin/usage/daily${buildQueryParams(filter)}`
+    const query = buildQueryParams({
+        dateFrom: filter.dateFrom,
+        dateTo: filter.dateTo,
+    })
+
+    return apiRequest<UsageDailySummary[]>(`/api/admin/usage/daily${query}`)
+}
+
+export function getUsageByUserId(
+    userId: string,
+    filter: UsageFilter = {}
+): Promise<UsageSummary[]> {
+    const query = buildQueryParams({
+        dateFrom: filter.dateFrom,
+        dateTo: filter.dateTo,
+        model: filter.model,
+    })
+
+    return apiRequest<UsageSummary[]>(
+        `/api/admin/usage/by-user/${userId}${query}`
+    )
+}
+
+export function getUsageByOrganizationId(
+    organizationId: string,
+    filter: UsageFilter = {}
+): Promise<UsageSummary[]> {
+    const query = buildQueryParams({
+        dateFrom: filter.dateFrom,
+        dateTo: filter.dateTo,
+        model: filter.model,
+    })
+
+    return apiRequest<UsageSummary[]>(
+        `/api/admin/usage/by-organization/${organizationId}${query}`
     )
 }

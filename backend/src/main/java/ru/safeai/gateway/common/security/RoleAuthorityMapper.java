@@ -5,6 +5,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -27,7 +28,7 @@ public final class RoleAuthorityMapper {
                 .filter(role -> !role.isBlank())
                 .map(RoleAuthorityMapper::withRolePrefix)
                 .map(SimpleGrantedAuthority::new)
-                .collect(Collectors.toSet());
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     public static List<String> toRoleNames(Collection<? extends GrantedAuthority> authorities) {
@@ -41,12 +42,15 @@ public final class RoleAuthorityMapper {
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(authority -> !authority.isBlank())
+                .map(authority -> authority.toUpperCase(Locale.ROOT))
+                .filter(authority -> authority.startsWith(ROLE_PREFIX))
                 .map(RoleAuthorityMapper::withoutRolePrefix)
+                .distinct()
                 .toList();
     }
 
     private static String withRolePrefix(String role) {
-        String normalized = role.trim().toUpperCase();
+        String normalized = role.trim().toUpperCase(Locale.ROOT);
 
         return normalized.startsWith(ROLE_PREFIX)
                 ? normalized
@@ -54,7 +58,7 @@ public final class RoleAuthorityMapper {
     }
 
     private static String withoutRolePrefix(String authority) {
-        String normalized = authority.trim().toUpperCase();
+        String normalized = authority.trim().toUpperCase(Locale.ROOT);
 
         return normalized.startsWith(ROLE_PREFIX)
                 ? normalized.substring(ROLE_PREFIX.length())

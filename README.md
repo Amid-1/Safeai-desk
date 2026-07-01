@@ -1305,8 +1305,14 @@ Safeai-desk/
 │   │   │       └── db/
 │   │   │           ├── migration/
 │   │   │           │   ├── V1__init_schema.sql
-│   │   │           │   ├── V2__seed_reference_data.sql
-│   │   │           │   └── V3__refresh_token_rotation.sql
+│   │   │           │   └──V2__seed_reference_data.sql
+│   │   │           │   ├── V3__denormalize_chat_organization.sql
+│   │   │           │   └── 4__schema_hardening.sql
+│   │   │           │   ├── V5__audit_event_types.sql
+│   │   │           │   └── V6__updated_at_triggers.sql
+│   │   │           │   ├── V7__usage_quotas_and_rollups.sql
+│   │   │           │ 
+│   │   │           │    
 │   │   │           └── local-migration/
 │   │   │               └── V1000__seed_local_demo_data.sql
 │   │   │
@@ -1387,9 +1393,8 @@ Safeai-desk/
 ru.safeai.gateway
 ├── admin
 │   ├── controller
-│   │   └── AdminUsageController
-│   └── service
-│       └── AdminUsageService
+│      └── AdminUsageController
+│       
 │
 ├── ai
 │   ├── config
@@ -1473,7 +1478,8 @@ ru.safeai.gateway
 │       ├── AuthEventService
 │       ├── AuthService
 │       ├── RefreshTokenCleanupJob
-│       └── RefreshTokenService
+│       ├── RefreshTokenService
+│       └── UserSessionRevocationService
 │
 ├── chat
 │   ├── controller
@@ -1568,6 +1574,21 @@ ru.safeai.gateway
 │   ├── RedisFixedWindowRateLimiter
 │   └── RedisRateLimitService
 │
+│     ── usage
+│        ├── dto
+│        │   ├── UsageDailySummaryResponse.java
+│        │   ├── UsageModelSummaryResponse.java
+│        │   ├── UsageSummaryResponse.java
+│        │   └── UsageUserSummaryResponse.java
+│        │
+│        ├── repository
+│        │   ├── UsageDailySummaryProjection.java
+│        │   └── UsageQueryRepository.java
+│        │
+│        └── service
+│            └── UsageQueryService.java
+
+
 └── user
     ├── controller
     │   └── UserController
@@ -1718,5 +1739,77 @@ input-usd-per-1m-tokens: 15.00
 output-usd-per-1m-tokens: 75.00
 
 А в README написать: cost is an estimate based on configured model pricing.
+
+
+Как должно быть по ролям
+SUPER_ADMIN
+
+Может:
+
+- видеть все организации;
+- создавать организации;
+- включать/выключать организации;
+- видеть всех пользователей всех организаций;
+- создавать ADMIN/USER в любой организации;
+- смотреть весь audit;
+- смотреть весь usage;
+- фильтровать audit/usage по organizationId;
+- управлять ADMIN внутри организаций.
+
+Не должен:
+
+- создавать еще одного SUPER_ADMIN через обычную форму;
+- случайно создавать пользователей в SafeAI Platform;
+- работать как обычный пользователь клиентской организации.
+  ADMIN
+
+Может:
+
+- видеть пользователей только своей организации;
+- создавать USER внутри своей организации;
+- сбрасывать пароль USER своей организации;
+- включать/выключать USER своей организации;
+- смотреть audit только своей организации;
+- смотреть usage только своей организации;
+- пользоваться чатом.
+
+Спорно, но для безопасного production лучше:
+
+ADMIN не должен создавать других ADMIN.
+
+Назначение ADMIN лучше оставить только SUPER_ADMIN.
+
+USER
+
+Может:
+
+- видеть только свои чаты;
+- создавать свои чаты;
+- отправлять сообщения;
+- видеть только свои сообщения.
+
+Не может:
+
+- видеть Users;
+- видеть Organizations;
+- видеть Audit;
+- видеть Usage;
+- создавать пользователей;
+- менять роли;
+- видеть чужие чаты.
+
+
+Правила должны быть такие:
+
+SUPER_ADMIN:
+- может createUser в любой organizationId;
+- может назначать USER/ADMIN;
+- не может через обычный endpoint назначать SUPER_ADMIN.
+
+ADMIN:
+- может createUser только в своей organizationId;
+- если в request пришел чужой organizationId -> ForbiddenOperationException;
+- может назначать только USER;
+- не может назначать ADMIN/SUPER_ADMIN.
 
 

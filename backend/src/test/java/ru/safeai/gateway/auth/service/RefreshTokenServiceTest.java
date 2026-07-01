@@ -43,7 +43,8 @@ class RefreshTokenServiceTest {
                 false,
                 "Lax",
                 Duration.ofMinutes(15),
-                Duration.ofDays(30)
+                Duration.ofDays(30),
+                null
         );
 
         service = new RefreshTokenService(
@@ -241,5 +242,67 @@ class RefreshTokenServiceTest {
         user.setTokenVersion(0L);
 
         return user;
+    }
+
+    @Test
+    void revokeAndReturnUser_shouldRevokeTokenAndReturnUser() {
+        UserEntity user = enabledUser();
+
+        RefreshTokenEntity token = new RefreshTokenEntity();
+        token.setId(UUID.randomUUID());
+        token.setUser(user);
+        token.setTokenFamilyId(UUID.randomUUID());
+        token.setExpiresAt(Instant.now().plusSeconds(3600));
+        token.setRevokedAt(null);
+
+        when(refreshTokenRepository.findByTokenHashWithUser(anyString()))
+                .thenReturn(Optional.of(token));
+
+        Optional<UserEntity> result = service.revokeAndReturnUser("raw-token");
+
+        assertThat(result).containsSame(user);
+        assertThat(token.getRevokedAt()).isNotNull();
+        assertThat(token.getLastUsedAt()).isNotNull();
+    }
+
+    @Test
+    void revokeAndReturnUser_shouldReturnEmptyWhenTokenIsBlank() {
+        Optional<UserEntity> result = service.revokeAndReturnUser(" ");
+
+        assertThat(result).isEmpty();
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    @Test
+    void revokeAndReturnUser_shouldReturnEmptyWhenTokenNotFound() {
+        when(refreshTokenRepository.findByTokenHashWithUser(anyString()))
+                .thenReturn(Optional.empty());
+
+        Optional<UserEntity> result = service.revokeAndReturnUser("raw-token");
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void revokeAndReturnUser_shouldUpdateLastUsedAtWhenTokenAlreadyRevoked() {
+        UserEntity user = enabledUser();
+
+        Instant revokedAt = Instant.now().minusSeconds(60);
+
+        RefreshTokenEntity token = new RefreshTokenEntity();
+        token.setId(UUID.randomUUID());
+        token.setUser(user);
+        token.setTokenFamilyId(UUID.randomUUID());
+        token.setExpiresAt(Instant.now().plusSeconds(3600));
+        token.setRevokedAt(revokedAt);
+
+        when(refreshTokenRepository.findByTokenHashWithUser(anyString()))
+                .thenReturn(Optional.of(token));
+
+        Optional<UserEntity> result = service.revokeAndReturnUser("raw-token");
+
+        assertThat(result).containsSame(user);
+        assertThat(token.getRevokedAt()).isEqualTo(revokedAt);
+        assertThat(token.getLastUsedAt()).isNotNull();
     }
 }

@@ -21,17 +21,18 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import ru.safeai.gateway.admin.service.AdminUsageService;
 import ru.safeai.gateway.auth.security.UserStatusFilter;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.usage.service.UsageQueryService;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -69,7 +70,7 @@ class AdminUsageControllerSecurityTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private AdminUsageService adminUsageService;
+    private UsageQueryService usageQueryService;
 
     @MockitoBean
     private UserDetailsService userDetailsService;
@@ -155,44 +156,44 @@ class AdminUsageControllerSecurityTest {
     }
 
     private void mockServices() {
-        when(adminUsageService.getUsageSummary(
-                any(Instant.class),
-                any(Instant.class),
-                any(String.class),
+        when(usageQueryService.getUsageSummary(
+                nullable(Instant.class),
+                nullable(Instant.class),
+                nullable(String.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
-        when(adminUsageService.getUsageByUsers(
-                any(Instant.class),
-                any(Instant.class),
+        when(usageQueryService.getUsageByUsers(
+                nullable(Instant.class),
+                nullable(Instant.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
-        when(adminUsageService.getUsageByModels(
-                any(Instant.class),
-                any(Instant.class),
+        when(usageQueryService.getUsageByModels(
+                nullable(Instant.class),
+                nullable(Instant.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
-        when(adminUsageService.getUsageDaily(
-                any(Instant.class),
-                any(Instant.class),
+        when(usageQueryService.getUsageDaily(
+                nullable(Instant.class),
+                nullable(Instant.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
-        when(adminUsageService.getUsageByUserId(
+        when(usageQueryService.getUsageByUserId(
                 any(UUID.class),
-                any(Instant.class),
-                any(Instant.class),
-                any(String.class),
+                nullable(Instant.class),
+                nullable(Instant.class),
+                nullable(String.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
-        when(adminUsageService.getUsageByOrganizationId(
+        when(usageQueryService.getUsageByOrganizationId(
                 any(UUID.class),
-                any(Instant.class),
-                any(Instant.class),
-                any(String.class),
+                nullable(Instant.class),
+                nullable(Instant.class),
+                nullable(String.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
     }

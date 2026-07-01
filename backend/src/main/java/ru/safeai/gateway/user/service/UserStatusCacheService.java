@@ -21,6 +21,10 @@ public class UserStatusCacheService {
     private final UserStatusCacheProperties properties;
 
     public Optional<UserSecurityStatus> getStatus(UUID userId) {
+        if (userId == null) {
+            return Optional.empty();
+        }
+
         if (!properties.isEnabled()) {
             return loadFromDatabase(userId);
         }
@@ -34,6 +38,14 @@ public class UserStatusCacheService {
 
             if (cachedStatus.isPresent()) {
                 return cachedStatus;
+            }
+
+            if (cached != null && !cached.isBlank()) {
+                log.warn(
+                        "Invalid user status cache value ignored: userId={}, key={}",
+                        userId,
+                        key
+                );
             }
         } catch (RuntimeException exception) {
             log.warn(
@@ -51,7 +63,7 @@ public class UserStatusCacheService {
     }
 
     public void evict(UUID userId) {
-        if (!properties.isEnabled()) {
+        if (userId == null || !properties.isEnabled()) {
             return;
         }
 
@@ -94,14 +106,23 @@ public class UserStatusCacheService {
             return Optional.empty();
         }
 
+        Optional<Boolean> userEnabled = parseBooleanStrict(parts[0]);
+        Optional<Boolean> organizationEnabled = parseBooleanStrict(parts[1]);
+
+        if (userEnabled.isEmpty() || organizationEnabled.isEmpty()) {
+            return Optional.empty();
+        }
+
         try {
-            boolean userEnabled = Boolean.parseBoolean(parts[0]);
-            boolean organizationEnabled = Boolean.parseBoolean(parts[1]);
             long tokenVersion = Long.parseLong(parts[2]);
 
+            if (tokenVersion < 0) {
+                return Optional.empty();
+            }
+
             return Optional.of(new UserSecurityStatus(
-                    userEnabled,
-                    organizationEnabled,
+                    userEnabled.get(),
+                    organizationEnabled.get(),
                     tokenVersion
             ));
         } catch (RuntimeException exception) {
@@ -109,8 +130,19 @@ public class UserStatusCacheService {
         }
     }
 
-    private String serialize(UserSecurityStatus status) {
+    private Optional<Boolean> parseBooleanStrict(String value) {
+        if ("true".equalsIgnoreCase(value)) {
+            return Optional.of(true);
+        }
 
+        if ("false".equalsIgnoreCase(value)) {
+            return Optional.of(false);
+        }
+
+        return Optional.empty();
+    }
+
+    private String serialize(UserSecurityStatus status) {
         return status.userEnabled()
                 + ":"
                 + status.organizationEnabled()

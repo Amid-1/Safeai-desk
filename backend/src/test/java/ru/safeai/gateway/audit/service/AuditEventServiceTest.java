@@ -10,8 +10,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.entity.AuditEventEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
+import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -48,7 +50,7 @@ class AuditEventServiceTest {
     void record_shouldSaveAuditEventWithUserAndOrganization() {
         UserEntity user = userEntity();
 
-        when(entityManager.getReference(UserEntity.class, USER_ID))
+        when(entityManager.find(UserEntity.class, USER_ID))
                 .thenReturn(user);
 
         when(auditEventRepository.save(any(AuditEventEntity.class)))
@@ -75,7 +77,41 @@ class AuditEventServiceTest {
         assertThat(savedEvent.getDetails()).containsEntry("email", "admin@test.com");
         assertThat(savedEvent.getCreatedAt()).isNotNull();
 
-        verify(entityManager).getReference(UserEntity.class, USER_ID);
+        verify(entityManager).find(UserEntity.class, USER_ID);
+        verifyNoMoreInteractions(entityManager, auditEventRepository);
+    }
+
+    @Test
+    void record_shouldSaveAuditEventWithoutUserWhenUserNotFound() {
+        when(entityManager.find(UserEntity.class, USER_ID))
+                .thenReturn(null);
+
+        when(auditEventRepository.save(any(AuditEventEntity.class)))
+                .thenAnswer(invocation -> persistAuditEvent(invocation.getArgument(0)));
+
+        auditEventService.record(
+                USER_ID,
+                ORGANIZATION_ID,
+                AuditEventType.USER_LOGIN_FAILED,
+                Map.of("email", "missing@test.com")
+        );
+
+        ArgumentCaptor<AuditEventEntity> captor =
+                ArgumentCaptor.forClass(AuditEventEntity.class);
+
+        verify(auditEventRepository).save(captor.capture());
+
+        AuditEventEntity savedEvent = captor.getValue();
+
+        assertThat(savedEvent.getId()).isNotNull();
+        assertThat(savedEvent.getUser()).isNull();
+        assertThat(savedEvent.getOrganizationId()).isEqualTo(ORGANIZATION_ID);
+        assertThat(savedEvent.getEventType()).isEqualTo(AuditEventType.USER_LOGIN_FAILED.name());
+        assertThat(savedEvent.getDetails()).containsEntry("email", "missing@test.com");
+        assertThat(savedEvent.getCreatedAt()).isNotNull();
+
+        verify(entityManager).find(UserEntity.class, USER_ID);
+        verifyNoMoreInteractions(entityManager, auditEventRepository);
     }
 
     @Test
@@ -104,11 +140,12 @@ class AuditEventServiceTest {
         assertThat(savedEvent.getCreatedAt()).isNotNull();
 
         verifyNoInteractions(entityManager);
+        verifyNoMoreInteractions(auditEventRepository);
     }
 
     @Test
     void record_shouldNotThrowWhenRepositoryFails() {
-        when(entityManager.getReference(UserEntity.class, USER_ID))
+        when(entityManager.find(UserEntity.class, USER_ID))
                 .thenReturn(userEntity());
 
         when(auditEventRepository.save(any(AuditEventEntity.class)))
@@ -121,7 +158,9 @@ class AuditEventServiceTest {
                 Map.of("email", "admin@test.com")
         );
 
+        verify(entityManager).find(UserEntity.class, USER_ID);
         verify(auditEventRepository).save(any(AuditEventEntity.class));
+        verifyNoMoreInteractions(entityManager, auditEventRepository);
     }
 
     @Test
@@ -129,18 +168,38 @@ class AuditEventServiceTest {
         auditEventService.record(
                 USER_ID,
                 null,
-                AuditEventType.USER_LOGIN_SUCCESS,
+                AuditEventType.USER_LOGIN_FAILED,
                 Map.of("email", "admin@test.com")
         );
 
+        verifyNoInteractions(entityManager);
+        verifyNoInteractions(auditEventRepository);
+    }
+
+    @Test
+    void record_shouldNotSaveWhenEventTypeIsNull() {
+        auditEventService.record(
+                USER_ID,
+                ORGANIZATION_ID,
+                null,
+                Map.of("email", "admin@test.com")
+        );
+
+        verifyNoInteractions(entityManager);
         verifyNoInteractions(auditEventRepository);
     }
 
     private UserEntity userEntity() {
+        OrganizationEntity organization = new OrganizationEntity();
+        organization.setId(ORGANIZATION_ID);
+        organization.setName("Demo Company");
+        organization.setEnabled(true);
+
         UserEntity user = new UserEntity();
         user.setId(USER_ID);
         user.setEmail("admin@test.com");
         user.setEnabled(true);
+        user.setOrganization(organization);
 
         return user;
     }
@@ -151,7 +210,7 @@ class AuditEventServiceTest {
         }
 
         if (event.getCreatedAt() == null) {
-            event.setCreatedAt(java.time.Instant.parse("2026-06-12T12:00:00Z"));
+            event.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
         }
 
         return event;

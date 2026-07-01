@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
@@ -16,6 +17,7 @@ import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
 import ru.safeai.gateway.audit.entity.AuditEventEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
 
@@ -25,11 +27,10 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AuditEventQueryServiceTest {
@@ -43,6 +44,9 @@ class AuditEventQueryServiceTest {
     private static final UUID ORGANIZATION_ID =
             UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
+    private static final UUID FOREIGN_ORGANIZATION_ID =
+            UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
+
     private static final UUID SUPER_ADMIN_ID =
             UUID.fromString("00000000-0000-0000-0000-000000000101");
 
@@ -51,6 +55,9 @@ class AuditEventQueryServiceTest {
 
     private static final UUID AUDIT_EVENT_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+    private static final Sort DEFAULT_AUDIT_SORT =
+            Sort.by(Sort.Direction.DESC, "createdAt");
 
     @Mock
     private AuditEventRepository auditEventRepository;
@@ -64,37 +71,51 @@ class AuditEventQueryServiceTest {
 
     @Test
     void findAll_whenAdmin_shouldReturnOrganizationScopedAuditEvents() {
-        Pageable pageable = PageRequest.of(0, 50);
+        Pageable requestedPageable = PageRequest.of(0, 50);
+        Pageable expectedPageable = PageRequest.of(0, 50, DEFAULT_AUDIT_SORT);
+
         AuditEventEntity event = auditEventEntity();
 
-        whenFindAllReturns(pageable, event);
+        whenFindAllReturns(event);
 
         Page<AuditEventResponse> response =
-                auditEventQueryService.findAll(adminPrincipal(), emptyFilter(), pageable);
+                auditEventQueryService.findAll(
+                        adminPrincipal(),
+                        emptyFilter(),
+                        requestedPageable
+                );
 
         assertAuditEvent(response);
 
-        verifyFindAll(pageable);
+        verifyFindAll(expectedPageable);
     }
 
     @Test
     void findAll_whenSuperAdmin_shouldReturnGlobalAuditEvents() {
-        Pageable pageable = PageRequest.of(0, 50);
+        Pageable requestedPageable = PageRequest.of(0, 50);
+        Pageable expectedPageable = PageRequest.of(0, 50, DEFAULT_AUDIT_SORT);
+
         AuditEventEntity event = auditEventEntity();
 
-        whenFindAllReturns(pageable, event);
+        whenFindAllReturns(event);
 
         Page<AuditEventResponse> response =
-                auditEventQueryService.findAll(superAdminPrincipal(), emptyFilter(), pageable);
+                auditEventQueryService.findAll(
+                        superAdminPrincipal(),
+                        emptyFilter(),
+                        requestedPageable
+                );
 
         assertAuditEvent(response);
 
-        verifyFindAll(pageable);
+        verifyFindAll(expectedPageable);
     }
 
     @Test
     void findAll_whenSuperAdminWithOrganizationFilter_shouldReturnOrganizationScopedAuditEvents() {
-        Pageable pageable = PageRequest.of(0, 50);
+        Pageable requestedPageable = PageRequest.of(0, 50);
+        Pageable expectedPageable = PageRequest.of(0, 50, DEFAULT_AUDIT_SORT);
+
         AuditEventEntity event = auditEventEntity();
 
         AuditEventFilter filter = new AuditEventFilter(
@@ -106,64 +127,191 @@ class AuditEventQueryServiceTest {
                 ORGANIZATION_ID
         );
 
-        whenFindAllReturns(pageable, event);
+        whenFindAllReturns(event);
 
         Page<AuditEventResponse> response =
-                auditEventQueryService.findAll(superAdminPrincipal(), filter, pageable);
+                auditEventQueryService.findAll(
+                        superAdminPrincipal(),
+                        filter,
+                        requestedPageable
+                );
 
         assertAuditEvent(response);
 
-        verifyFindAll(pageable);
+        verifyFindAll(expectedPageable);
+    }
+
+    @Test
+    void findAll_whenAdminWithOwnOrganizationFilter_shouldReturnOrganizationScopedAuditEvents() {
+        Pageable requestedPageable = PageRequest.of(0, 50);
+        Pageable expectedPageable = PageRequest.of(0, 50, DEFAULT_AUDIT_SORT);
+
+        AuditEventEntity event = auditEventEntity();
+
+        AuditEventFilter filter = new AuditEventFilter(
+                null,
+                null,
+                null,
+                null,
+                null,
+                ORGANIZATION_ID
+        );
+
+        whenFindAllReturns(event);
+
+        Page<AuditEventResponse> response =
+                auditEventQueryService.findAll(
+                        adminPrincipal(),
+                        filter,
+                        requestedPageable
+                );
+
+        assertAuditEvent(response);
+
+        verifyFindAll(expectedPageable);
+    }
+
+    @Test
+    void findAll_whenAdminWithForeignOrganizationFilter_shouldThrowForbiddenOperationException() {
+        Pageable requestedPageable = PageRequest.of(0, 50);
+
+        AuditEventFilter filter = new AuditEventFilter(
+                null,
+                null,
+                null,
+                null,
+                null,
+                FOREIGN_ORGANIZATION_ID
+        );
+
+        assertThatThrownBy(() -> auditEventQueryService.findAll(
+                adminPrincipal(),
+                filter,
+                requestedPageable
+        )).isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("Нельзя фильтровать audit другой организации");
+
+        verifyNoInteractions(auditEventRepository);
+    }
+
+    @Test
+    void findAll_whenUnsafeSortAndLargePageSize_shouldUseDefaultSortAndCapPageSize() {
+        Pageable requestedPageable = PageRequest.of(
+                0,
+                200,
+                Sort.by("user.passwordHash")
+        );
+
+        Pageable expectedPageable = PageRequest.of(
+                0,
+                100,
+                DEFAULT_AUDIT_SORT
+        );
+
+        AuditEventEntity event = auditEventEntity();
+
+        whenFindAllReturns(event);
+
+        Page<AuditEventResponse> response =
+                auditEventQueryService.findAll(
+                        adminPrincipal(),
+                        emptyFilter(),
+                        requestedPageable
+                );
+
+        assertAuditEvent(response);
+
+        verifyFindAll(expectedPageable);
+    }
+
+    @Test
+    void findAll_whenAllowedSort_shouldKeepAllowedSort() {
+        Pageable requestedPageable = PageRequest.of(
+                0,
+                50,
+                Sort.by(Sort.Direction.ASC, "eventType")
+        );
+
+        Pageable expectedPageable = PageRequest.of(
+                0,
+                50,
+                Sort.by(Sort.Direction.ASC, "eventType")
+        );
+
+        AuditEventEntity event = auditEventEntity();
+
+        whenFindAllReturns(event);
+
+        Page<AuditEventResponse> response =
+                auditEventQueryService.findAll(
+                        adminPrincipal(),
+                        emptyFilter(),
+                        requestedPageable
+                );
+
+        assertAuditEvent(response);
+
+        verifyFindAll(expectedPageable);
     }
 
     @Test
     void findByUserId_whenAdmin_shouldReturnOrganizationScopedUserAuditEvents() {
-        Pageable pageable = PageRequest.of(0, 50);
+        Pageable requestedPageable = PageRequest.of(0, 50);
+        Pageable expectedPageable = PageRequest.of(0, 50, DEFAULT_AUDIT_SORT);
+
         AuditEventEntity event = auditEventEntity();
 
-        whenFindAllReturns(pageable, event);
+        whenFindAllReturns(event);
 
         Page<AuditEventResponse> response =
                 auditEventQueryService.findByUserId(
                         USER_ID,
                         adminPrincipal(),
-                        pageable
+                        requestedPageable
                 );
 
         assertAuditEvent(response);
 
-        verifyFindAll(pageable);
+        verifyFindAll(expectedPageable);
     }
 
     @Test
     void findByUserId_whenSuperAdmin_shouldReturnGlobalUserAuditEvents() {
-        Pageable pageable = PageRequest.of(0, 50);
+        Pageable requestedPageable = PageRequest.of(0, 50);
+        Pageable expectedPageable = PageRequest.of(0, 50, DEFAULT_AUDIT_SORT);
+
         AuditEventEntity event = auditEventEntity();
 
-        whenFindAllReturns(pageable, event);
+        whenFindAllReturns(event);
 
         Page<AuditEventResponse> response =
                 auditEventQueryService.findByUserId(
                         USER_ID,
                         superAdminPrincipal(),
-                        pageable
+                        requestedPageable
                 );
 
         assertAuditEvent(response);
 
-        verifyFindAll(pageable);
+        verifyFindAll(expectedPageable);
     }
 
     @Test
     void findAll_shouldReturnAuditEventWithoutUserWhenUserIsNull() {
-        Pageable pageable = PageRequest.of(0, 50);
+        Pageable requestedPageable = PageRequest.of(0, 50);
+        Pageable expectedPageable = PageRequest.of(0, 50, DEFAULT_AUDIT_SORT);
+
         AuditEventEntity event = auditEventEntity();
         event.setUser(null);
 
-        whenFindAllReturns(pageable, event);
+        whenFindAllReturns(event);
 
         Page<AuditEventResponse> response =
-                auditEventQueryService.findAll(adminPrincipal(), emptyFilter(), pageable);
+                auditEventQueryService.findAll(
+                        adminPrincipal(),
+                        emptyFilter(),
+                        requestedPageable
+                );
 
         assertThat(response.getContent()).hasSize(1);
 
@@ -174,22 +322,22 @@ class AuditEventQueryServiceTest {
         assertThat(item.userEmail()).isNull();
         assertThat(item.organizationId()).isEqualTo(ORGANIZATION_ID);
 
-        verifyFindAll(pageable);
+        verifyFindAll(expectedPageable);
     }
 
     @SuppressWarnings("unchecked")
-    private void whenFindAllReturns(Pageable pageable, AuditEventEntity event) {
+    private void whenFindAllReturns(AuditEventEntity event) {
         when(auditEventRepository.findAll(
                 any(Specification.class),
-                eq(pageable)
+                any(Pageable.class)
         )).thenReturn(new PageImpl<>(List.of(event)));
     }
 
     @SuppressWarnings("unchecked")
-    private void verifyFindAll(Pageable pageable) {
+    private void verifyFindAll(Pageable expectedPageable) {
         verify(auditEventRepository).findAll(
                 any(Specification.class),
-                eq(pageable)
+                eq(expectedPageable)
         );
 
         verifyNoMoreInteractions(auditEventRepository);

@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.auth.service.UserSessionRevocationService;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
@@ -39,13 +41,16 @@ public class OrganizationService {
     private final AuditEventService auditEventService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformProperties platformProperties;
+    private final UserSessionRevocationService userSessionRevocationService;
 
     @Transactional
     public OrganizationResponse create(
             CreateOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(currentUser, "currentUser must not be null");
+        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         requireSuperAdmin(currentUser);
 
         String name = normalizeName(request.name());
@@ -86,8 +91,12 @@ public class OrganizationService {
         Objects.requireNonNull(pageable, "pageable не должен быть null");
 
         if (isSuperAdmin(currentUser)) {
-            return organizationRepository.findAllByOrderByCreatedAtDesc(pageable)
+            return organizationRepository.findAll(pageable)
                     .map(this::toResponse);
+        }
+
+        if (pageable.getOffset() > 0) {
+            return new PageImpl<>(List.of(), pageable, 1);
         }
 
         OrganizationEntity organization = organizationRepository.findById(currentUser.getOrganizationId())
@@ -95,11 +104,11 @@ public class OrganizationService {
                         "Организация не найдена: " + currentUser.getOrganizationId()
                 ));
 
-        List<OrganizationResponse> content = pageable.getOffset() == 0
-                ? List.of(toResponse(organization))
-                : List.of();
-
-        return new PageImpl<>(content, pageable, 1);
+        return new PageImpl<>(
+                List.of(toResponse(organization)),
+                pageable,
+                1
+        );
     }
 
     @Transactional(readOnly = true)
@@ -128,16 +137,9 @@ public class OrganizationService {
             UpdateOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(id, "id must not be null");
-        Objects.requireNonNull(currentUser, "currentUser must not be null");
-        requireSuperAdmin(currentUser);
+        Objects.requireNonNull(request, "request не должен быть null");
 
-        rejectPlatformOrganizationMutation(id);
-
-        OrganizationEntity entity = organizationRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Организация не найдена: " + id
-                ));
+        OrganizationEntity entity = findMutableOrganizationForSuperAdmin(id, currentUser);
 
         String oldName = entity.getName();
         String newName = normalizeName(request.name());
@@ -178,16 +180,9 @@ public class OrganizationService {
             UpdateOrganizationEnabledRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(id, "id must not be null");
-        Objects.requireNonNull(currentUser, "currentUser must not be null");
-        requireSuperAdmin(currentUser);
+        Objects.requireNonNull(request, "request не должен быть null");
 
-        rejectPlatformOrganizationMutation(id);
-
-        OrganizationEntity entity = organizationRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Организация не найдена: " + id
-                ));
+        OrganizationEntity entity = findMutableOrganizationForSuperAdmin(id, currentUser);
 
         boolean oldEnabled = entity.isEnabled();
         boolean newEnabled = Boolean.TRUE.equals(request.enabled());
@@ -199,6 +194,10 @@ public class OrganizationService {
         entity.setEnabled(newEnabled);
 
         OrganizationEntity saved = organizationRepository.save(entity);
+
+        if (!newEnabled) {
+            userSessionRevocationService.revokeAllForOrganization(saved.getId());
+        }
 
         eventPublisher.publishEvent(
                 new OrganizationSecurityStateChangedEvent(saved.getId())
@@ -219,7 +218,27 @@ public class OrganizationService {
         return toResponse(saved);
     }
 
+    private OrganizationEntity findMutableOrganizationForSuperAdmin(
+            UUID id,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(id, "id не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        requireSuperAdmin(currentUser);
+        rejectPlatformOrganizationMutation(id);
+
+        return organizationRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Организация не найдена: " + id
+                ));
+    }
+
     private String normalizeName(String name) {
+        if (name == null || name.isBlank()) {
+            throw new BadRequestException("Название организации не должно быть пустым");
+        }
+
         return name.trim().replaceAll("\\s+", " ");
     }
 
@@ -240,7 +259,7 @@ public class OrganizationService {
     }
 
     private void rejectPlatformOrganizationMutation(UUID organizationId) {
-        if (platformProperties.organizationId().equals(organizationId)) {
+        if (platformProperties.effectiveOrganizationId().equals(organizationId)) {
             throw new ForbiddenOperationException(
                     "Платформенную организацию нельзя изменять через обычный organization-management endpoint"
             );

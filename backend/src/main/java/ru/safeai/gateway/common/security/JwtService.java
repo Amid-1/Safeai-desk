@@ -30,6 +30,10 @@ public class JwtService {
 
         List<String> roles = RoleAuthorityMapper.toRoleNames(user.getAuthorities());
 
+        if (roles.isEmpty()) {
+            throw new IllegalStateException("Нельзя выпустить JWT для пользователя без ролей");
+        }
+
         JwsHeader headers = JwsHeader.with(MacAlgorithm.HS256).build();
 
         JwtClaimsSet claims = JwtClaimsSet.builder()
@@ -37,18 +41,26 @@ public class JwtService {
                 .issuedAt(now)
                 .expiresAt(now.plus(jwtProperties.expirationMinutes(), ChronoUnit.MINUTES))
                 .subject(user.getId().toString())
+                .id(UUID.randomUUID().toString())
                 .claim("email", user.getEmail())
                 .claim("userId", user.getId().toString())
                 .claim("organizationId", user.getOrganizationId().toString())
                 .claim("roles", roles)
                 .claim("tokenVersion", user.getTokenVersion())
-                .claim("jti", UUID.randomUUID().toString())
                 .build();
 
         return jwtEncoder.encode(JwtEncoderParameters.from(headers, claims)).getTokenValue();
     }
 
     public String generateAccessToken(UserEntity user) {
+        Objects.requireNonNull(user, "user не должен быть null");
+        Objects.requireNonNull(user.getId(), "user.id не должен быть null");
+        Objects.requireNonNull(user.getOrganization(), "user.organization не должен быть null");
+        Objects.requireNonNull(user.getOrganization().getId(), "user.organization.id не должен быть null");
+        Objects.requireNonNull(user.getEmail(), "user.email не должен быть null");
+        Objects.requireNonNull(user.getPasswordHash(), "user.passwordHash не должен быть null");
+        Objects.requireNonNull(user.getRoles(), "user.roles не должен быть null");
+
         SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
                 user.getId(),
                 user.getOrganization().getId(),

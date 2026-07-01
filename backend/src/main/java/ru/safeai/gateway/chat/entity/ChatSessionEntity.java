@@ -3,6 +3,7 @@ package ru.safeai.gateway.chat.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 
 import java.time.Instant;
@@ -18,9 +19,13 @@ public class ChatSessionEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     private UserEntity user;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "organization_id", nullable = false)
+    private OrganizationEntity organization;
 
     @Column(name = "title", length = 255)
     private String title;

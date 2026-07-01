@@ -6,6 +6,7 @@ import ru.safeai.gateway.ai.provider.openai.OpenAiProperties;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OpenAiPropertiesTest {
 
@@ -13,7 +14,8 @@ class OpenAiPropertiesTest {
     void constructor_shouldApplyDefaultValues() {
         OpenAiProperties properties = new OpenAiProperties(
                 null,
-                "api-key",
+                "test-api-key",
+                null,
                 null,
                 null,
                 null,
@@ -24,6 +26,9 @@ class OpenAiPropertiesTest {
         assertThat(properties.baseUrl())
                 .isEqualTo("https://api.openai.com/v1");
 
+        assertThat(properties.apiKey())
+                .isEqualTo("test-api-key");
+
         assertThat(properties.model())
                 .isEqualTo("gpt-4.1");
 
@@ -32,6 +37,12 @@ class OpenAiPropertiesTest {
 
         assertThat(properties.maxResponseChars())
                 .isEqualTo(100_000);
+
+        assertThat(properties.store())
+                .isNull();
+
+        assertThat(properties.effectiveStore())
+                .isFalse();
 
         assertThat(properties.connectTimeout())
                 .isEqualTo(Duration.ofSeconds(5));
@@ -48,12 +59,16 @@ class OpenAiPropertiesTest {
                 "gpt-4o",
                 2048,
                 200_000,
+                true,
                 Duration.ofSeconds(10),
                 Duration.ofSeconds(120)
         );
 
         assertThat(properties.baseUrl())
                 .isEqualTo("https://custom-openai.example");
+
+        assertThat(properties.apiKey())
+                .isEqualTo("api-key");
 
         assertThat(properties.model())
                 .isEqualTo("gpt-4o");
@@ -63,6 +78,12 @@ class OpenAiPropertiesTest {
 
         assertThat(properties.maxResponseChars())
                 .isEqualTo(200_000);
+
+        assertThat(properties.store())
+                .isTrue();
+
+        assertThat(properties.effectiveStore())
+                .isTrue();
 
         assertThat(properties.connectTimeout())
                 .isEqualTo(Duration.ofSeconds(10));
@@ -78,6 +99,7 @@ class OpenAiPropertiesTest {
                 "api-key",
                 null,
                 -1,
+                null,
                 null,
                 null,
                 null
@@ -96,6 +118,7 @@ class OpenAiPropertiesTest {
                 null,
                 -1,
                 null,
+                null,
                 null
         );
 
@@ -112,10 +135,62 @@ class OpenAiPropertiesTest {
                 null,
                 2_000_000,
                 null,
+                null,
                 null
         );
 
         assertThat(properties.maxResponseChars())
                 .isEqualTo(1_000_000);
+    }
+
+    @Test
+    void effectiveStore_shouldReturnFalseWhenStoreIsFalse() {
+        OpenAiProperties properties = new OpenAiProperties(
+                null,
+                "api-key",
+                null,
+                null,
+                null,
+                false,
+                null,
+                null
+        );
+
+        assertThat(properties.effectiveStore())
+                .isFalse();
+    }
+
+    @Test
+    void validate_shouldThrowWhenApiKeyIsBlank() {
+        OpenAiProperties properties = new OpenAiProperties(
+                null,
+                " ",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        assertThatThrownBy(properties::validate)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("OPENAI_API_KEY не задан");
+    }
+
+    @Test
+    void validate_shouldNotThrowWhenApiKeyIsPresent() {
+        OpenAiProperties properties = new OpenAiProperties(
+                null,
+                "api-key",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        properties.validate();
     }
 }

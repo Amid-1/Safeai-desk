@@ -1,4 +1,4 @@
-package ru.safeai.gateway.chat.repository;
+package ru.safeai.gateway.usage.repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;

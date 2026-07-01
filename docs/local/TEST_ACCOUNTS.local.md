@@ -38,7 +38,7 @@ Organization ID:   aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
 
 ## Супер админ
 email: superadmin@test.com
-password: superadmin123
+password: Admin_Dev_2026!Strong#91
 
 ---
 
@@ -46,7 +46,7 @@ password: superadmin123
 
 | № | Email            | Password      | Role | Комментарий                                                      |
 |---|------------------|---------------|---|------------------------------------------------------------------|
-| 1 | admin@test.com   | admin123      | ADMIN | Demo admin из seed-миграции      Demo Admin полное имя           |
+| 1 | admin@test.com   | admin123wER!% | ADMIN | Demo admin из seed-миграции      Demo Admin Adminov полное имя   |
 | 2 | ivan@mail.com    | v2F4r1C4@$aD  | ADMIN | Создан вручную через frontend/admin users Ivan Ivanov полное имя |
 | 3 | vLAd@mail.ru     | fhgkJFG@3%^&% | ADMIN | Vlad Vladov                                                      |
 | 4 | MiSha@proton.net | bvhgSI*7&@)++ | ADMIN | Misha Michov                                                     |

@@ -40,6 +40,10 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
 
         long tokenVersion = tokenVersionClaim.longValue();
 
+        if (tokenVersion < 0) {
+            throw new BadJwtException("JWT tokenVersion is invalid");
+        }
+
         List<String> roles = jwt.getClaimAsStringList("roles");
 
         if (roles == null || roles.isEmpty()) {
@@ -47,6 +51,10 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
         }
 
         Set<SimpleGrantedAuthority> authorities = RoleAuthorityMapper.toAuthorities(roles);
+
+        if (authorities.isEmpty()) {
+            throw new BadJwtException("JWT roles are invalid");
+        }
 
         SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
                 parseUuid(userId, "userId"),

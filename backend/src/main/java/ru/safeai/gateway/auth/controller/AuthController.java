@@ -30,6 +30,7 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void refresh(
             HttpServletRequest request,
             HttpServletResponse response

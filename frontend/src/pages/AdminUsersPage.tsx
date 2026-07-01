@@ -36,6 +36,7 @@ type ConfirmState =
     | null
 
 const PAGE_SIZE = 50
+const SUCCESS_MESSAGE_TIMEOUT_MS = 4000
 
 function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [users, setUsers] = useState<User[]>([])
@@ -63,6 +64,20 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     useEffect(() => {
         void loadUsers(page)
     }, [page])
+
+    useEffect(() => {
+        if (!success) {
+            return
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setSuccess('')
+        }, SUCCESS_MESSAGE_TIMEOUT_MS)
+
+        return () => {
+            window.clearTimeout(timeoutId)
+        }
+    }, [success])
 
     const filteredUsers = useMemo(() => {
         if (filter === 'ALL') {

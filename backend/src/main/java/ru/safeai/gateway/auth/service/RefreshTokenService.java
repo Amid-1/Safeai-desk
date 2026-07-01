@@ -18,6 +18,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -49,7 +50,7 @@ public class RefreshTokenService {
         return createToken(user, request, UUID.randomUUID()).rawToken();
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = InvalidRefreshTokenException.class)
     public RefreshTokenRotationResult rotate(
             String rawToken,
             HttpServletRequest request
@@ -119,6 +120,29 @@ public class RefreshTokenService {
         }
 
         refreshTokenRepository.revokeByTokenHash(hash(rawToken), Instant.now());
+    }
+
+    @Transactional
+    public Optional<UserEntity> revokeAndReturnUser(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return Optional.empty();
+        }
+
+        Instant now = Instant.now();
+
+        Optional<RefreshTokenEntity> token = refreshTokenRepository.findByTokenHashWithUser(
+                hash(rawToken)
+        );
+
+        token.ifPresent(refreshToken -> {
+            if (refreshToken.getRevokedAt() == null) {
+                refreshToken.setRevokedAt(now);
+            }
+
+            refreshToken.setLastUsedAt(now);
+        });
+
+        return token.map(RefreshTokenEntity::getUser);
     }
 
     private CreatedRefreshToken createToken(

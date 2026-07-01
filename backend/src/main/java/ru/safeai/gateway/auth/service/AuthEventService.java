@@ -6,11 +6,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.common.exception.RateLimitExceededException;
 import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.RequestIdFilter;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.user.entity.UserEntity;
 
 import java.util.Map;
 
@@ -71,6 +73,33 @@ public class AuthEventService {
         }
     }
 
+    public void loginRateLimitExceeded(
+            String email,
+            HttpServletRequest request,
+            RateLimitExceededException exception
+    ) {
+        try {
+            auditEventService.recordSystem(
+                    platformProperties.effectiveOrganizationId(),
+                    AuditEventType.RATE_LIMIT_EXCEEDED,
+                    Map.of(
+                            "type", "LOGIN",
+                            "email", truncateOrUnknown(email, MAX_EMAIL_LENGTH),
+                            "ip", clientIpResolver.resolve(request),
+                            "userAgent", headerOrUnknown(request, "User-Agent", MAX_USER_AGENT_LENGTH),
+                            "requestId", requestId(request),
+                            "retryAfterSeconds", exception.getRetryAfterSeconds()
+                    )
+            );
+        } catch (RuntimeException auditException) {
+            log.warn(
+                    "Failed to write LOGIN RATE_LIMIT_EXCEEDED audit event for email={}",
+                    email,
+                    auditException
+            );
+        }
+    }
+
     public void refreshReuseDetected(
             RefreshTokenReuseDetectedException exception,
             HttpServletRequest request
@@ -96,15 +125,15 @@ public class AuthEventService {
         }
     }
 
-    public void logout(SafeAiUserPrincipal principal, HttpServletRequest request) {
+    public void logout(UserEntity user, HttpServletRequest request) {
         try {
             auditEventService.record(
-                    principal.getId(),
-                    principal.getOrganizationId(),
+                    user.getId(),
+                    user.getOrganization().getId(),
                     AuditEventType.USER_LOGOUT,
                     Map.of(
-                            "email", truncateOrUnknown(principal.getEmail(), MAX_EMAIL_LENGTH),
-                            "organizationId", principal.getOrganizationId().toString(),
+                            "email", truncateOrUnknown(user.getEmail(), MAX_EMAIL_LENGTH),
+                            "organizationId", user.getOrganization().getId().toString(),
                             "ip", clientIpResolver.resolve(request),
                             "userAgent", headerOrUnknown(request, "User-Agent", MAX_USER_AGENT_LENGTH),
                             "requestId", requestId(request)
@@ -113,7 +142,7 @@ public class AuthEventService {
         } catch (RuntimeException exception) {
             log.warn(
                     "Failed to write USER_LOGOUT audit event for userId={}",
-                    principal.getId(),
+                    user.getId(),
                     exception
             );
         }

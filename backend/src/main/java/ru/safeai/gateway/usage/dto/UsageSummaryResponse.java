@@ -1,19 +1,21 @@
-package ru.safeai.gateway.chat.dto;
+package ru.safeai.gateway.usage.dto;
 
 import java.math.BigDecimal;
 import java.util.UUID;
 
-public record UsageUserSummaryResponse(
+public record UsageSummaryResponse(
         UUID userId,
         String userEmail,
+        String model,
         Long inputTokens,
         Long outputTokens,
         Long totalTokens,
         BigDecimal costUsd
 ) {
-    public UsageUserSummaryResponse(
+    public UsageSummaryResponse(
             UUID userId,
             String userEmail,
+            String model,
             Long inputTokens,
             Long outputTokens,
             BigDecimal costUsd
@@ -21,6 +23,7 @@ public record UsageUserSummaryResponse(
         this(
                 userId,
                 userEmail,
+                model,
                 inputTokens,
                 outputTokens,
                 safeLong(inputTokens) + safeLong(outputTokens),

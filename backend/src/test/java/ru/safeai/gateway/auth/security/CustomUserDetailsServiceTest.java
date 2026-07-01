@@ -44,7 +44,7 @@ class CustomUserDetailsServiceTest {
     void loadUserByUsername_shouldReturnPrincipalWhenUserExists() {
         UserEntity user = userEntity();
 
-        when(userRepository.findByEmail("admin@test.com"))
+        when(userRepository.findByEmailIgnoreCase("admin@test.com"))
                 .thenReturn(Optional.of(user));
 
         SafeAiUserPrincipal principal =
@@ -63,7 +63,7 @@ class CustomUserDetailsServiceTest {
 
     @Test
     void loadUserByUsername_shouldThrowUsernameNotFoundWhenUserDoesNotExist() {
-        when(userRepository.findByEmail("missing@test.com"))
+        when(userRepository.findByEmailIgnoreCase("missing@test.com"))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() ->
@@ -73,10 +73,39 @@ class CustomUserDetailsServiceTest {
                 .hasMessageContaining("Пользователь не найден");
     }
 
+    @Test
+    void loadUserByUsername_shouldReturnDisabledPrincipalWhenOrganizationDisabled() {
+        UserEntity user = userEntity();
+        user.getOrganization().setEnabled(false);
+
+        when(userRepository.findByEmailIgnoreCase("admin@test.com"))
+                .thenReturn(Optional.of(user));
+
+        SafeAiUserPrincipal principal =
+                (SafeAiUserPrincipal) customUserDetailsService.loadUserByUsername("admin@test.com");
+
+        assertThat(principal.isEnabled()).isFalse();
+    }
+
+    @Test
+    void loadUserByUsername_shouldReturnDisabledPrincipalWhenUserDisabled() {
+        UserEntity user = userEntity();
+        user.setEnabled(false);
+
+        when(userRepository.findByEmailIgnoreCase("admin@test.com"))
+                .thenReturn(Optional.of(user));
+
+        SafeAiUserPrincipal principal =
+                (SafeAiUserPrincipal) customUserDetailsService.loadUserByUsername("admin@test.com");
+
+        assertThat(principal.isEnabled()).isFalse();
+    }
+
     private UserEntity userEntity() {
         OrganizationEntity organization = new OrganizationEntity();
         organization.setId(ORGANIZATION_ID);
         organization.setName("Demo Company");
+        organization.setEnabled(true);
         organization.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
 
         RoleEntity role = new RoleEntity();
@@ -92,6 +121,7 @@ class CustomUserDetailsServiceTest {
         user.setEnabled(true);
         user.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
         user.setRoles(Set.of(role));
+        user.setTokenVersion(0L);
 
         return user;
     }

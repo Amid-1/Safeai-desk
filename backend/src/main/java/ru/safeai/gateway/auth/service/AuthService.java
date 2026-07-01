@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
+import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.ClientIpResolver;
@@ -19,7 +20,7 @@ import ru.safeai.gateway.ratelimit.LoginRateLimitService;
 import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
-import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
+import ru.safeai.gateway.common.exception.RateLimitExceededException;
 
 import java.util.Objects;
 import java.util.Set;
@@ -52,7 +53,15 @@ public class AuthService {
                 .trim()
                 .toLowerCase();
 
-        loginRateLimitService.checkAllowed(email, clientIpResolver.resolve(httpRequest));
+        try {
+            loginRateLimitService.checkAllowed(
+                    email,
+                    clientIpResolver.resolve(httpRequest)
+            );
+        } catch (RateLimitExceededException exception) {
+            authEventService.loginRateLimitExceeded(email, httpRequest, exception);
+            throw exception;
+        }
 
         try {
             var authentication = authenticationManager.authenticate(
@@ -79,8 +88,6 @@ public class AuthService {
 
             authEventService.loginSuccess(principal, httpRequest);
 
-            // Сбрасываем только email-limit после успешного входа.
-            // IP-limit не сбрасываем намеренно: он защищает от массового перебора с одного IP.
             loginRateLimitService.resetEmailLimit(email);
 
             return toCurrentUserResponse(user);
@@ -91,7 +98,6 @@ public class AuthService {
         }
     }
 
-    @Transactional
     public void refresh(
             HttpServletRequest request,
             HttpServletResponse response
@@ -127,7 +133,6 @@ public class AuthService {
         }
     }
 
-    @Transactional
     public void logout(
             HttpServletRequest request,
             HttpServletResponse response
@@ -135,19 +140,11 @@ public class AuthService {
         Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(response, "response не должен быть null");
 
-        var authentication = org.springframework.security.core.context.SecurityContextHolder
-                .getContext()
-                .getAuthentication();
-
-        if (authentication != null
-                && authentication.getPrincipal() instanceof SafeAiUserPrincipal principal) {
-            authEventService.logout(principal, request);
-        }
-
         String rawRefreshToken = authCookieService.extractRefreshToken(request);
 
         if (rawRefreshToken != null) {
-            refreshTokenService.revoke(rawRefreshToken);
+            refreshTokenService.revokeAndReturnUser(rawRefreshToken)
+                    .ifPresent(user -> authEventService.logout(user, request));
         }
 
         authCookieService.clearAuthCookies(response);
@@ -169,7 +166,7 @@ public class AuthService {
         Set<String> roles = user.getRoles()
                 .stream()
                 .map(RoleEntity::getName)
-                .collect(Collectors.toSet());
+                .collect(Collectors.toUnmodifiableSet());
 
         return new CurrentUserResponse(
                 user.getId(),

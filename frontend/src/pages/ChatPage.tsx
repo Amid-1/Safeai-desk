@@ -47,6 +47,7 @@ function ChatPage() {
 
         setError('')
         setLoading(true)
+        setAssistantPending(false)
 
         try {
             const chat = await createChat(`Demo chat ${new Date().toLocaleTimeString()}`)
@@ -73,32 +74,39 @@ function ChatPage() {
             return
         }
 
+        const chatId = activeChat.id
+
         setError('')
         setLoading(true)
         setAssistantPending(true)
 
         try {
-            const updatedChat = await sendMessage(activeChat.id, trimmedMessage)
+            const updatedChat = await sendMessage(chatId, trimmedMessage)
+            const normalizedChat = normalizeChatDetails(updatedChat)
 
-            setActiveChat(normalizeChatDetails(updatedChat))
+            setActiveChat(normalizedChat)
             setMessage('')
 
-            setChats((prev) =>
-                prev.map((chat) =>
-                    chat.id === updatedChat.id
-                        ? {
-                            ...chat,
-                            title: updatedChat.title,
-                            updatedAt: updatedChat.updatedAt,
-                        }
-                        : chat
-                )
-            )
+            updateChatListItem(normalizedChat)
         } catch (err) {
             setError(getApiErrorMessage(err, 'Failed to send message'))
+
+            try {
+                const reloadedChat = await getChatById(chatId)
+                const normalizedChat = normalizeChatDetails(reloadedChat)
+
+                setActiveChat(normalizedChat)
+                updateChatListItem(normalizedChat)
+
+                if (hasUserMessage(normalizedChat, trimmedMessage)) {
+                    setMessage('')
+                }
+            } catch {
+                // Не перетираем исходную ошибку отправки ошибкой reload.
+            }
         } finally {
-            setLoading(false)
             setAssistantPending(false)
+            setLoading(false)
         }
     }
 
@@ -109,6 +117,7 @@ function ChatPage() {
 
         setError('')
         setLoading(true)
+        setAssistantPending(false)
 
         try {
             const chatDetails = await getChatById(chatId)
@@ -118,6 +127,20 @@ function ChatPage() {
         } finally {
             setLoading(false)
         }
+    }
+
+    function updateChatListItem(chatDetails: ChatDetails) {
+        setChats((prev) =>
+            prev.map((chat) =>
+                chat.id === chatDetails.id
+                    ? {
+                        ...chat,
+                        title: chatDetails.title,
+                        updatedAt: chatDetails.updatedAt,
+                    }
+                    : chat
+            )
+        )
     }
 
     function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -238,6 +261,13 @@ function normalizeChatDetails(chat: ChatDetails): ChatDetails {
         ...chat,
         messages: chat.messages ?? [],
     }
+}
+
+function hasUserMessage(chat: ChatDetails, content: string): boolean {
+    return chat.messages.some((message) =>
+        message.role === 'USER'
+        && message.content.trim() === content
+    )
 }
 
 export default ChatPage

@@ -43,6 +43,8 @@ public class OpenAiProvider implements AiProvider {
             ModelPricingService pricingService,
             AiProviderRetryExecutor retryExecutor
     ) {
+        properties.validate();
+
         this.properties = properties;
         this.pricingService = pricingService;
         this.retryExecutor = retryExecutor;
@@ -55,8 +57,6 @@ public class OpenAiProvider implements AiProvider {
 
     @Override
     public AiChatResponse sendMessage(AiChatRequest request) {
-        properties.validate();
-
         return retryExecutor.execute(
                 PROVIDER_NAME,
                 properties.model(),
@@ -68,7 +68,8 @@ public class OpenAiProvider implements AiProvider {
         Map<String, Object> payload = Map.of(
                 "model", properties.model(),
                 "input", AiProviderSupport.buildMessages(request, this::normalizeRole),
-                "max_output_tokens", properties.maxOutputTokens()
+                "max_output_tokens", properties.maxOutputTokens(),
+                "store", properties.effectiveStore()
         );
 
         log.info(
@@ -222,22 +223,50 @@ public class OpenAiProvider implements AiProvider {
 
         JsonNode output = response.path("output");
 
-        if (output.isArray()) {
-            for (JsonNode outputItem : output) {
-                JsonNode content = outputItem.path("content");
+        if (!output.isArray()) {
+            return "";
+        }
 
-                if (content.isArray()) {
-                    for (JsonNode contentItem : content) {
-                        String type = contentItem.path("type").asText();
+        StringBuilder result = new StringBuilder();
 
-                        if ("output_text".equals(type)) {
-                            return contentItem.path("text").asText("");
-                        }
-                    }
+        for (JsonNode outputItem : output) {
+            JsonNode content = outputItem.path("content");
+
+            if (!content.isArray()) {
+                continue;
+            }
+
+            for (JsonNode contentItem : content) {
+                String type = contentItem.path("type").asText("");
+
+                if ("output_text".equals(type)) {
+                    appendIfNotBlank(
+                            result,
+                            contentItem.path("text").asText("")
+                    );
+                }
+
+                if ("refusal".equals(type)) {
+                    appendIfNotBlank(
+                            result,
+                            contentItem.path("refusal").asText("")
+                    );
                 }
             }
         }
 
-        return "";
+        return result.toString();
+    }
+
+    private void appendIfNotBlank(StringBuilder result, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+
+        if (!result.isEmpty()) {
+            result.append("\n\n");
+        }
+
+        result.append(value);
     }
 }

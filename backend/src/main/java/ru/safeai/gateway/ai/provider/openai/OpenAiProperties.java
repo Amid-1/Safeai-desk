@@ -11,6 +11,7 @@ public record OpenAiProperties(
         String model,
         Integer maxOutputTokens,
         Integer maxResponseChars,
+        Boolean store,
         Duration connectTimeout,
         Duration readTimeout
 ) {
@@ -39,6 +40,10 @@ public record OpenAiProperties(
         readTimeout = readTimeout == null
                 ? Duration.ofSeconds(60)
                 : readTimeout;
+    }
+
+    public boolean effectiveStore() {
+        return store != null && store;
     }
 
     public void validate() {

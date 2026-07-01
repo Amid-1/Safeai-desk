@@ -37,7 +37,7 @@ public class RefreshTokenEntity {
     @Column(name = "created_by_ip", length = 100)
     private String createdByIp;
 
-    @Column(name = "user_agent", length = 512)
+    @Column(name = "user_agent", columnDefinition = "text")
     private String userAgent;
 
     @Column(name = "token_family_id", nullable = false)
@@ -49,7 +49,6 @@ public class RefreshTokenEntity {
     @Column(name = "last_used_at")
     private Instant lastUsedAt;
 
-
     @PrePersist
     void prePersist() {
         if (id == null) {
@@ -59,9 +58,5 @@ public class RefreshTokenEntity {
         if (createdAt == null) {
             createdAt = Instant.now();
         }
-    }
-
-    public boolean isActive() {
-        return revokedAt == null && expiresAt.isAfter(Instant.now());
     }
 }

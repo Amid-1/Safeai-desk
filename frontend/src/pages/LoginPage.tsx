@@ -1,15 +1,19 @@
 // frontend/src/pages/LoginPage.tsx
 import { useEffect, useState } from 'react'
+
 import type { SyntheticEvent } from 'react'
+
 import { useNavigate } from 'react-router-dom'
+
 import { getApiErrorMessage } from '../api/http'
+
 import { useAuth } from '../auth/AuthContext'
 
 function LoginPage() {
     const navigate = useNavigate()
     const { currentUser, authLoading, loginUser } = useAuth()
 
-    const [email, setEmail] = useState(import.meta.env.DEV ? 'admin@test.com' : '')
+    const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
@@ -23,12 +27,25 @@ function LoginPage() {
     async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
         event.preventDefault()
 
+        const normalizedEmail = email.trim()
+
         setError('')
+
+        if (!normalizedEmail) {
+            setError('Введите email.')
+            return
+        }
+
+        if (!password) {
+            setError('Введите пароль.')
+            return
+        }
+
         setLoading(true)
 
         try {
             await loginUser({
-                email: email.trim(),
+                email: normalizedEmail,
                 password,
             })
 
@@ -58,6 +75,7 @@ function LoginPage() {
                     <input
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
+                        type="email"
                         autoComplete="username"
                     />
                 </label>
@@ -74,7 +92,7 @@ function LoginPage() {
 
                 {error && <div className="error">{error}</div>}
 
-                <button disabled={loading || !email.trim() || !password}>
+                <button disabled={loading}>
                     {loading ? 'Logging in...' : 'Login'}
                 </button>
             </form>

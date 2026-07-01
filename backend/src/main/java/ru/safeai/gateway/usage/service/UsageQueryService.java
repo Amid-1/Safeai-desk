@@ -1,26 +1,31 @@
-package ru.safeai.gateway.admin.service;
+package ru.safeai.gateway.usage.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.safeai.gateway.chat.dto.UsageDailySummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageModelSummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageUserSummaryResponse;
-import ru.safeai.gateway.chat.repository.UsageDailySummaryProjection;
-import ru.safeai.gateway.chat.repository.UsageQueryRepository;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
+import ru.safeai.gateway.usage.repository.UsageDailySummaryProjection;
+import ru.safeai.gateway.usage.repository.UsageQueryRepository;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class AdminUsageService {
+public class UsageQueryService {
+
+    private static final Duration DEFAULT_RANGE = Duration.ofDays(30);
+    private static final Duration MAX_RANGE = Duration.ofDays(366);
 
     private final UsageQueryRepository usageQueryRepository;
 
@@ -31,6 +36,8 @@ public class AdminUsageService {
             String model,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         UsageDateRange range = normalizeRange(dateFrom, dateTo);
         String normalizedModel = normalizeModel(model);
 
@@ -56,6 +63,8 @@ public class AdminUsageService {
             Instant dateTo,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         UsageDateRange range = normalizeRange(dateFrom, dateTo);
 
         if (isSuperAdmin(currentUser)) {
@@ -78,6 +87,8 @@ public class AdminUsageService {
             Instant dateTo,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         UsageDateRange range = normalizeRange(dateFrom, dateTo);
 
         if (isSuperAdmin(currentUser)) {
@@ -100,6 +111,8 @@ public class AdminUsageService {
             Instant dateTo,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         UsageDateRange range = normalizeRange(dateFrom, dateTo);
 
         List<UsageDailySummaryProjection> rows = isSuperAdmin(currentUser)
@@ -131,6 +144,9 @@ public class AdminUsageService {
             String model,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(userId, "userId не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         UsageDateRange range = normalizeRange(dateFrom, dateTo);
         String normalizedModel = normalizeModel(model);
 
@@ -160,6 +176,9 @@ public class AdminUsageService {
             String model,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(organizationId, "organizationId не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         if (!isSuperAdmin(currentUser)
                 && !currentUser.getOrganizationId().equals(organizationId)) {
             throw new ForbiddenOperationException(
@@ -180,10 +199,14 @@ public class AdminUsageService {
 
     private UsageDateRange normalizeRange(Instant dateFrom, Instant dateTo) {
         Instant to = dateTo == null ? Instant.now() : dateTo;
-        Instant from = dateFrom == null ? to.minusSeconds(30L * 24 * 60 * 60) : dateFrom;
+        Instant from = dateFrom == null ? to.minus(DEFAULT_RANGE) : dateFrom;
 
         if (!from.isBefore(to)) {
             throw new BadRequestException("dateFrom должен быть раньше dateTo");
+        }
+
+        if (Duration.between(from, to).compareTo(MAX_RANGE) > 0) {
+            throw new BadRequestException("Период usage не должен превышать 366 дней");
         }
 
         return new UsageDateRange(from, to);

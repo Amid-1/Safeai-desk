@@ -1,29 +1,23 @@
-package ru.safeai.gateway.chat.dto;
+package ru.safeai.gateway.usage.dto;
 
 import java.math.BigDecimal;
-import java.util.UUID;
+import java.time.LocalDate;
 
-public record UsageSummaryResponse(
-        UUID userId,
-        String userEmail,
-        String model,
+public record UsageDailySummaryResponse(
+        LocalDate usageDate,
         Long inputTokens,
         Long outputTokens,
         Long totalTokens,
         BigDecimal costUsd
 ) {
-    public UsageSummaryResponse(
-            UUID userId,
-            String userEmail,
-            String model,
+    public UsageDailySummaryResponse(
+            LocalDate usageDate,
             Long inputTokens,
             Long outputTokens,
             BigDecimal costUsd
     ) {
         this(
-                userId,
-                userEmail,
-                model,
+                usageDate,
                 inputTokens,
                 outputTokens,
                 safeLong(inputTokens) + safeLong(outputTokens),

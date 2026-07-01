@@ -10,8 +10,21 @@ import AdminUsagePage from './pages/AdminUsagePage'
 import type { AuthUser } from './api/authApi'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 
+type ProtectedRouteProps = {
+    roles?: string[]
+    children: ReactNode | ((currentUser: AuthUser) => ReactNode)
+}
+
 function hasAnyRole(user: AuthUser | null, roles: string[]): boolean {
     return user?.roles.some((role) => roles.includes(role)) ?? false
+}
+
+function hasRequiredRole(user: AuthUser, roles?: string[]): boolean {
+    if (!roles || roles.length === 0) {
+        return true
+    }
+
+    return user.roles.some((role) => roles.includes(role))
 }
 
 function isSuperAdmin(user: AuthUser | null): boolean {
@@ -38,7 +51,7 @@ function getNavLinkClass({ isActive }: { isActive: boolean }): string {
     return isActive ? 'nav-link active' : 'nav-link'
 }
 
-function RequireAuth({ children }: { children: ReactNode }) {
+function ProtectedRoute({ roles, children }: ProtectedRouteProps) {
     const { currentUser, authLoading } = useAuth()
 
     if (authLoading) {
@@ -49,61 +62,39 @@ function RequireAuth({ children }: { children: ReactNode }) {
         return <Navigate to="/login" replace />
     }
 
-    return children
-}
-
-function RequireAdmin({ children }: { children: ReactNode }) {
-    const { currentUser, authLoading } = useAuth()
-
-    if (authLoading) {
-        return <p>Checking access...</p>
-    }
-
-    if (!currentUser) {
-        return <Navigate to="/login" replace />
-    }
-
-    if (!hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])) {
+    if (!hasRequiredRole(currentUser, roles)) {
         return <Navigate to="/chat" replace />
     }
 
-    return children
+    if (typeof children === 'function') {
+        return <>{children(currentUser)}</>
+    }
+
+    return <>{children}</>
 }
 
-function RequireSuperAdmin({ children }: { children: ReactNode }) {
+function RootRedirect() {
     const { currentUser, authLoading } = useAuth()
 
     if (authLoading) {
         return <p>Checking access...</p>
     }
 
-    if (!currentUser) {
-        return <Navigate to="/login" replace />
-    }
-
-    if (!isSuperAdmin(currentUser)) {
-        return <Navigate to="/chat" replace />
-    }
-
-    return children
+    return <Navigate to={currentUser ? '/chat' : '/login'} replace />
 }
 
-function AdminUsersRoute() {
+function LoginRoute() {
     const { currentUser, authLoading } = useAuth()
 
     if (authLoading) {
         return <p>Checking access...</p>
     }
 
-    if (!currentUser) {
-        return <Navigate to="/login" replace />
-    }
-
-    if (!hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])) {
+    if (currentUser) {
         return <Navigate to="/chat" replace />
     }
 
-    return <AdminUsersPage currentUser={currentUser} />
+    return <LoginPage />
 }
 
 function AppLayout() {
@@ -185,48 +176,54 @@ function AppLayout() {
 
             <main className="content">
                 <Routes>
-                    <Route
-                        path="/"
-                        element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />}
-                    />
+                    <Route path="/" element={<RootRedirect />} />
 
-                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/login" element={<LoginRoute />} />
 
                     <Route
                         path="/chat"
                         element={
-                            <RequireAuth>
+                            <ProtectedRoute>
                                 <ChatPage />
-                            </RequireAuth>
+                            </ProtectedRoute>
                         }
                     />
 
-                    <Route path="/admin/users" element={<AdminUsersRoute />} />
+                    <Route
+                        path="/admin/users"
+                        element={
+                            <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
+                                {(currentUser) => (
+                                    <AdminUsersPage currentUser={currentUser} />
+                                )}
+                            </ProtectedRoute>
+                        }
+                    />
 
                     <Route
                         path="/admin/organizations"
                         element={
-                            <RequireSuperAdmin>
+                            <ProtectedRoute roles={['SUPER_ADMIN']}>
                                 <AdminOrganizationsPage />
-                            </RequireSuperAdmin>
+                            </ProtectedRoute>
                         }
                     />
 
                     <Route
                         path="/admin/audit"
                         element={
-                            <RequireAdmin>
+                            <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
                                 <AdminAuditPage />
-                            </RequireAdmin>
+                            </ProtectedRoute>
                         }
                     />
 
                     <Route
                         path="/admin/usage"
                         element={
-                            <RequireAdmin>
+                            <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
                                 <AdminUsagePage />
-                            </RequireAdmin>
+                            </ProtectedRoute>
                         }
                     />
 

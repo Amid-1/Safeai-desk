@@ -13,6 +13,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
+import ru.safeai.gateway.common.exception.RateLimitExceededException;
 import ru.safeai.gateway.common.security.ClientIpProperties;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
@@ -23,6 +24,7 @@ import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -31,8 +33,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -116,9 +117,6 @@ class AuthServiceTest {
         when(jwtService.generateAccessToken(user))
                 .thenReturn("access-token");
 
-        when(jwtService.generateAccessToken(user))
-                .thenReturn("access-token");
-
         when(refreshTokenService.create(
                 eq(user),
                 any(MockHttpServletRequest.class)
@@ -151,14 +149,17 @@ class AuthServiceTest {
 
         verify(authEventService).loginSuccess(
                 eq(principal),
-                any(MockHttpServletRequest.class)
+                same(httpRequest)
         );
 
         verify(loginRateLimitService).resetEmailLimit("admin@test.com");
+
+        verify(authEventService, never()).loginFailed(anyString(), any());
+        verify(authEventService, never()).loginRateLimitExceeded(anyString(), any(), any());
     }
 
     @Test
-    void loginWhenCredentialsAreInvalidThrowsBadCredentialsException() {
+    void loginWhenCredentialsAreInvalidThrowsBadCredentialsExceptionAndAuditsLoginFailed() {
         LoginRequest request = new LoginRequest(
                 " Admin@Test.COM ",
                 "wrong-password"
@@ -179,14 +180,64 @@ class AuthServiceTest {
 
         verify(authEventService).loginFailed(
                 eq("admin@test.com"),
-                any(MockHttpServletRequest.class)
+                same(httpRequest)
         );
+
+        verify(authEventService, never()).loginSuccess(any(), any());
+        verify(authEventService, never()).loginRateLimitExceeded(anyString(), any(), any());
+        verify(loginRateLimitService, never()).resetEmailLimit(anyString());
+        verifyNoInteractions(jwtService);
+        verifyNoInteractions(refreshTokenService);
+        verifyNoInteractions(authCookieService);
+    }
+
+    @Test
+    void loginWhenRateLimitExceededThrowsRateLimitExceededAndAuditsRateLimit() {
+        LoginRequest request = new LoginRequest(
+                " Admin@Test.COM ",
+                "admin123"
+        );
+
+        RateLimitExceededException exception = new RateLimitExceededException(
+                "Слишком много попыток входа для этого email. Попробуйте позже",
+                Duration.ofSeconds(60)
+        );
+
+        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        httpRequest.setRemoteAddr("127.0.0.1");
+
+        MockHttpServletResponse httpResponse = new MockHttpServletResponse();
+
+        doThrow(exception)
+                .when(loginRateLimitService)
+                .checkAllowed("admin@test.com", "127.0.0.1");
+
+        assertThatThrownBy(() -> authService.login(request, httpRequest, httpResponse))
+                .isSameAs(exception);
+
+        verify(loginRateLimitService).checkAllowed("admin@test.com", "127.0.0.1");
+
+        verify(authEventService).loginRateLimitExceeded(
+                eq("admin@test.com"),
+                same(httpRequest),
+                same(exception)
+        );
+
+        verify(authenticationManager, never()).authenticate(any());
+        verify(authEventService, never()).loginSuccess(any(), any());
+        verify(authEventService, never()).loginFailed(anyString(), any());
+        verify(loginRateLimitService, never()).resetEmailLimit(anyString());
+        verifyNoInteractions(jwtService);
+        verifyNoInteractions(refreshTokenService);
+        verifyNoInteractions(authCookieService);
+        verifyNoInteractions(userRepository);
     }
 
     private UserEntity userEntity(UUID userId, UUID organizationId) {
         OrganizationEntity organization = new OrganizationEntity();
         organization.setId(organizationId);
         organization.setName("Test Org");
+        organization.setEnabled(true);
 
         RoleEntity role = new RoleEntity();
         role.setId(UUID.randomUUID());

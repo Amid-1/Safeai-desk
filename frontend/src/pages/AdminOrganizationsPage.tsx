@@ -14,6 +14,8 @@ import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 const PAGE_SIZE = 50
+const SUCCESS_MESSAGE_TIMEOUT_MS = 4000
+const PLATFORM_ORGANIZATION_ID = '00000000-0000-0000-0000-000000000001'
 
 type ConfirmState = {
     organization: Organization
@@ -39,6 +41,20 @@ function AdminOrganizationsPage() {
         void loadOrganizations(page)
     }, [page])
 
+    useEffect(() => {
+        if (!success) {
+            return
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setSuccess('')
+        }, SUCCESS_MESSAGE_TIMEOUT_MS)
+
+        return () => {
+            window.clearTimeout(timeoutId)
+        }
+    }, [success])
+
     async function loadOrganizations(nextPage = page) {
         setError('')
         setLoading(true)
@@ -56,6 +72,10 @@ function AdminOrganizationsPage() {
     }
 
     function openRenameModal(organization: Organization) {
+        if (isPlatformOrganization(organization)) {
+            return
+        }
+
         setRenameOrganization(organization)
         setRenameValue(organization.name)
         setError('')
@@ -101,6 +121,12 @@ function AdminOrganizationsPage() {
             return
         }
 
+        if (isPlatformOrganization(renameOrganization)) {
+            setError('Платформенную организацию нельзя переименовывать.')
+            closeRenameModal()
+            return
+        }
+
         const normalizedName = renameValue.trim()
 
         if (!normalizedName) {
@@ -131,6 +157,13 @@ function AdminOrganizationsPage() {
         }
 
         const organization = confirmState.organization
+
+        if (isPlatformOrganization(organization)) {
+            setError('Платформенную организацию нельзя отключать.')
+            setConfirmState(null)
+            return
+        }
+
         const nextEnabled = !organization.enabled
 
         setActionOrganizationId(organization.id)
@@ -220,6 +253,7 @@ function AdminOrganizationsPage() {
                         <tbody>
                         {organizations.map((organization) => {
                             const isBusy = actionOrganizationId === organization.id
+                            const platformOrganization = isPlatformOrganization(organization)
 
                             return (
                                 <tr key={organization.id}>
@@ -238,29 +272,35 @@ function AdminOrganizationsPage() {
                                     </td>
                                     <td>{formatDateTime(organization.createdAt)}</td>
                                     <td>
-                                        <div className="user-actions">
-                                            <button
-                                                type="button"
-                                                className="secondary-button"
-                                                disabled={isBusy}
-                                                onClick={() => openRenameModal(organization)}
-                                            >
-                                                Rename
-                                            </button>
+                                        {platformOrganization ? (
+                                            <span className="muted">
+                                                Platform organization
+                                            </span>
+                                        ) : (
+                                            <div className="user-actions">
+                                                <button
+                                                    type="button"
+                                                    className="secondary-button"
+                                                    disabled={isBusy}
+                                                    onClick={() => openRenameModal(organization)}
+                                                >
+                                                    Rename
+                                                </button>
 
-                                            <button
-                                                type="button"
-                                                className={
-                                                    organization.enabled
-                                                        ? 'danger-button'
-                                                        : 'secondary-button'
-                                                }
-                                                disabled={isBusy}
-                                                onClick={() => setConfirmState({ organization })}
-                                            >
-                                                {organization.enabled ? 'Disable' : 'Enable'}
-                                            </button>
-                                        </div>
+                                                <button
+                                                    type="button"
+                                                    className={
+                                                        organization.enabled
+                                                            ? 'danger-button'
+                                                            : 'secondary-button'
+                                                    }
+                                                    disabled={isBusy}
+                                                    onClick={() => setConfirmState({ organization })}
+                                                >
+                                                    {organization.enabled ? 'Disable' : 'Enable'}
+                                                </button>
+                                            </div>
+                                        )}
                                     </td>
                                 </tr>
                             )
@@ -362,6 +402,10 @@ function AdminOrganizationsPage() {
             )}
         </div>
     )
+}
+
+function isPlatformOrganization(organization: Organization): boolean {
+    return organization.id === PLATFORM_ORGANIZATION_ID
 }
 
 export default AdminOrganizationsPage

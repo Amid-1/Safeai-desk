@@ -4,6 +4,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
+import ru.safeai.gateway.chat.entity.ChatMessageRole;
 
 import java.util.List;
 import java.util.UUID;
@@ -17,10 +18,15 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
             Pageable pageable
     );
 
-    List<ChatMessageEntity> findTop30BySession_IdOrderByCreatedAtDescIdDesc(UUID sessionId);
-
     List<ChatMessageEntity> findBySession_IdOrderByCreatedAtDescIdDesc(
             UUID sessionId,
             Pageable pageable
+    );
+
+    boolean existsByIdAndSession_IdAndSession_User_IdAndRole(
+            UUID id,
+            UUID sessionId,
+            UUID userId,
+            ChatMessageRole role
     );
 }

@@ -17,6 +17,7 @@ public record CorsProperties(
         return Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
                 .filter(value -> !value.isBlank())
+                .distinct()
                 .toList();
     }
 }

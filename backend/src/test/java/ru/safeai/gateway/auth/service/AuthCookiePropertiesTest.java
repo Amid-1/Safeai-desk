@@ -15,6 +15,7 @@ class AuthCookiePropertiesTest {
                 false,
                 null,
                 null,
+                null,
                 null
         );
 
@@ -22,6 +23,8 @@ class AuthCookiePropertiesTest {
         assertThat(properties.sameSite()).isEqualTo("Lax");
         assertThat(properties.accessTokenMaxAge()).isEqualTo(Duration.ofMinutes(15));
         assertThat(properties.refreshTokenMaxAge()).isEqualTo(Duration.ofDays(30));
+        assertThat(properties.domain()).isNull();
+        assertThat(properties.hasDomain()).isFalse();
     }
 
     @Test
@@ -30,7 +33,8 @@ class AuthCookiePropertiesTest {
                 true,
                 "none",
                 Duration.ofMinutes(10),
-                Duration.ofDays(7)
+                Duration.ofDays(7),
+                null
         );
 
         assertThat(properties.sameSite()).isEqualTo("None");
@@ -42,7 +46,8 @@ class AuthCookiePropertiesTest {
                 false,
                 "Invalid",
                 Duration.ofMinutes(15),
-                Duration.ofDays(30)
+                Duration.ofDays(30),
+                null
         ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("same-site");
@@ -54,7 +59,8 @@ class AuthCookiePropertiesTest {
                 false,
                 "None",
                 Duration.ofMinutes(15),
-                Duration.ofDays(30)
+                Duration.ofDays(30),
+                null
         ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Secure=true");
@@ -66,7 +72,8 @@ class AuthCookiePropertiesTest {
                 false,
                 "Lax",
                 Duration.ofDays(30),
-                Duration.ofMinutes(15)
+                Duration.ofMinutes(15),
+                null
         ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("refresh-token-max-age");
@@ -78,10 +85,64 @@ class AuthCookiePropertiesTest {
                 false,
                 "Lax",
                 Duration.ZERO,
-                Duration.ofSeconds(-1)
+                Duration.ofSeconds(-1),
+                null
         );
 
         assertThat(properties.accessTokenMaxAge()).isEqualTo(Duration.ofMinutes(15));
         assertThat(properties.refreshTokenMaxAge()).isEqualTo(Duration.ofDays(30));
+    }
+
+    @Test
+    void constructor_shouldNormalizeCookieDomain() {
+        AuthCookieProperties properties = new AuthCookieProperties(
+                true,
+                "Lax",
+                Duration.ofMinutes(15),
+                Duration.ofDays(30),
+                ".Example.COM"
+        );
+
+        assertThat(properties.domain()).isEqualTo("example.com");
+        assertThat(properties.hasDomain()).isTrue();
+    }
+
+    @Test
+    void constructor_shouldRejectCookieDomainWithScheme() {
+        assertThatThrownBy(() -> new AuthCookieProperties(
+                true,
+                "Lax",
+                Duration.ofMinutes(15),
+                Duration.ofDays(30),
+                "https://example.com"
+        ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("domain-only");
+    }
+
+    @Test
+    void constructor_shouldRejectCookieDomainWithPort() {
+        assertThatThrownBy(() -> new AuthCookieProperties(
+                true,
+                "Lax",
+                Duration.ofMinutes(15),
+                Duration.ofDays(30),
+                "example.com:8080"
+        ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("domain-only");
+    }
+
+    @Test
+    void constructor_shouldRejectInvalidCookieDomain() {
+        assertThatThrownBy(() -> new AuthCookieProperties(
+                true,
+                "Lax",
+                Duration.ofMinutes(15),
+                Duration.ofDays(30),
+                "-example.com"
+        ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cookies.domain");
     }
 }

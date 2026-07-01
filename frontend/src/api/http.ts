@@ -33,7 +33,8 @@ type ApiRequestOptions = RequestInit & {
     skipRefresh?: boolean
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+const API_BASE_URL = RAW_API_BASE_URL.replace(/\/+$/, '')
 
 const CSRF_COOKIE_NAME = 'XSRF-TOKEN'
 const CSRF_HEADER_NAME = 'X-XSRF-TOKEN'
@@ -91,6 +92,10 @@ function buildApiUrl(url: string): string {
         throw new Error('Absolute API URLs are not allowed. Use relative /api/... paths')
     }
 
+    if (!url.startsWith('/')) {
+        throw new Error('API URL must start with /')
+    }
+
     return `${API_BASE_URL}${url}`
 }
 
@@ -106,7 +111,11 @@ function getCookie(name: string): string | null {
         return null
     }
 
-    return decodeURIComponent(cookie.substring(prefix.length))
+    try {
+        return decodeURIComponent(cookie.substring(prefix.length))
+    } catch {
+        return null
+    }
 }
 
 function isUnsafeMethod(method: string): boolean {

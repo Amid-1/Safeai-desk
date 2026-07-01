@@ -21,6 +21,7 @@ import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 
 import java.math.BigDecimal;
@@ -129,6 +130,7 @@ class ChatPersistenceServiceTest {
         assertThat(savedMessage.getRole()).isEqualTo(ChatMessageRole.USER);
         assertThat(savedMessage.getContent()).isEqualTo("Новое сообщение");
         assertThat(savedMessage.getStatus()).isEqualTo(ChatMessageStatus.COMPLETED);
+        assertThat(savedMessage.getOrganization().getId()).isEqualTo(ORGANIZATION_ID);
         assertThat(savedMessage.getCreatedAt()).isNotNull();
 
         verify(auditEventService).record(
@@ -173,8 +175,12 @@ class ChatPersistenceServiceTest {
         when(chatSessionRepository.findByIdAndUser_Id(CHAT_ID, USER_ID))
                 .thenReturn(Optional.of(session));
 
-        when(chatMessageRepository.findById(userMessage.getId()))
-                .thenReturn(Optional.of(userMessage));
+        when(chatMessageRepository.existsByIdAndSession_IdAndSession_User_IdAndRole(
+                userMessage.getId(),
+                CHAT_ID,
+                USER_ID,
+                ChatMessageRole.USER
+        )).thenReturn(true);
 
         when(chatMessageRepository.save(any(ChatMessageEntity.class)))
                 .thenAnswer(invocation -> persistMessage(invocation.getArgument(0)));
@@ -207,6 +213,7 @@ class ChatPersistenceServiceTest {
         assertThat(savedMessage.getOutputTokens()).isEqualTo(8);
         assertThat(savedMessage.getCostUsd()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(savedMessage.getStatus()).isEqualTo(ChatMessageStatus.COMPLETED);
+        assertThat(savedMessage.getOrganization().getId()).isEqualTo(ORGANIZATION_ID);
         assertThat(savedMessage.getCreatedAt()).isNotNull();
 
         verify(auditEventService).record(
@@ -289,8 +296,12 @@ class ChatPersistenceServiceTest {
         when(chatSessionRepository.findByIdAndUser_Id(CHAT_ID, USER_ID))
                 .thenReturn(Optional.of(session));
 
-        when(chatMessageRepository.findById(userMessage.getId()))
-                .thenReturn(Optional.of(userMessage));
+        when(chatMessageRepository.existsByIdAndSession_IdAndSession_User_IdAndRole(
+                userMessage.getId(),
+                CHAT_ID,
+                USER_ID,
+                ChatMessageRole.USER
+        )).thenReturn(true);
 
         when(chatMessageRepository.save(any(ChatMessageEntity.class)))
                 .thenAnswer(invocation -> persistMessage(invocation.getArgument(0)));
@@ -312,6 +323,7 @@ class ChatPersistenceServiceTest {
         assertThat(saved.getRole()).isEqualTo(ChatMessageRole.ASSISTANT);
         assertThat(saved.getStatus()).isEqualTo(ChatMessageStatus.FAILED);
         assertThat(saved.getContent()).isEqualTo("Не удалось получить ответ от AI-провайдера");
+        assertThat(saved.getOrganization().getId()).isEqualTo(ORGANIZATION_ID);
 
         verify(auditEventService).record(
                 eq(USER_ID),
@@ -346,8 +358,12 @@ class ChatPersistenceServiceTest {
         when(chatSessionRepository.findByIdAndUser_Id(CHAT_ID, USER_ID))
                 .thenReturn(Optional.of(session));
 
-        when(chatMessageRepository.findById(assistantMessage.getId()))
-                .thenReturn(Optional.of(assistantMessage));
+        when(chatMessageRepository.existsByIdAndSession_IdAndSession_User_IdAndRole(
+                assistantMessage.getId(),
+                CHAT_ID,
+                USER_ID,
+                ChatMessageRole.USER
+        )).thenReturn(false);
 
         assertThatThrownBy(() -> chatPersistenceService.saveAssistantMessageAndReturnChat(
                 CHAT_ID,
@@ -374,19 +390,32 @@ class ChatPersistenceServiceTest {
         );
     }
 
+    private OrganizationEntity organizationEntity() {
+        OrganizationEntity organization = new OrganizationEntity();
+        organization.setId(ORGANIZATION_ID);
+        organization.setName("Demo Company");
+        organization.setEnabled(true);
+
+        return organization;
+    }
+
     private UserEntity userEntity() {
         UserEntity user = new UserEntity();
         user.setId(USER_ID);
         user.setEmail("admin@test.com");
         user.setEnabled(true);
+        user.setOrganization(organizationEntity());
 
         return user;
     }
 
     private ChatSessionEntity chatSessionEntity() {
+        UserEntity user = userEntity();
+
         ChatSessionEntity session = new ChatSessionEntity();
         session.setId(CHAT_ID);
-        session.setUser(userEntity());
+        session.setUser(user);
+        session.setOrganization(user.getOrganization());
         session.setTitle("Первый тестовый чат");
         session.setCreatedAt(CREATED_AT);
         session.setUpdatedAt(CREATED_AT);
@@ -402,9 +431,12 @@ class ChatPersistenceServiceTest {
             Integer outputTokens,
             BigDecimal costUsd
     ) {
+        ChatSessionEntity session = chatSessionEntity();
+
         ChatMessageEntity message = new ChatMessageEntity();
         message.setId(UUID.randomUUID());
-        message.setSession(chatSessionEntity());
+        message.setSession(session);
+        message.setOrganization(session.getOrganization());
         message.setRole(role);
         message.setContent(content);
         message.setModel(model);
@@ -420,6 +452,10 @@ class ChatPersistenceServiceTest {
     private ChatMessageEntity persistMessage(ChatMessageEntity message) {
         if (message.getId() == null) {
             message.setId(UUID.randomUUID());
+        }
+
+        if (message.getOrganization() == null && message.getSession() != null) {
+            message.setOrganization(message.getSession().getOrganization());
         }
 
         if (message.getCreatedAt() == null) {

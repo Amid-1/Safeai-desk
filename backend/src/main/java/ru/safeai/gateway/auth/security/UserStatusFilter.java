@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import ru.safeai.gateway.common.security.JsonSecurityErrorWriter;
@@ -29,7 +30,7 @@ public class UserStatusFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-        Authentication authentication = org.springframework.security.core.context.SecurityContextHolder
+        Authentication authentication = SecurityContextHolder
                 .getContext()
                 .getAuthentication();
 
@@ -47,6 +48,8 @@ public class UserStatusFilter extends OncePerRequestFilter {
                 .orElse(false);
 
         if (!valid) {
+            SecurityContextHolder.clearContext();
+
             errorWriter.write(
                     request,
                     response,

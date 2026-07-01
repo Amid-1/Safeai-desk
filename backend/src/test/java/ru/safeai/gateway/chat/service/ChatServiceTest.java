@@ -23,6 +23,7 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.organization.entity.OrganizationEntity;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -363,10 +364,16 @@ class ChatServiceTest {
     }
 
     private UserEntity userEntity() {
+        OrganizationEntity organization = new OrganizationEntity();
+        organization.setId(ORGANIZATION_ID);
+        organization.setName("Demo Company");
+        organization.setEnabled(true);
+
         UserEntity user = new UserEntity();
         user.setId(USER_ID);
         user.setEmail("admin@test.com");
         user.setEnabled(true);
+        user.setOrganization(organization);
 
         return user;
     }

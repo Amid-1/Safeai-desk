@@ -1,4 +1,4 @@
-package ru.safeai.gateway.admin.service;
+package ru.safeai.gateway.usage;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -7,16 +7,19 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import ru.safeai.gateway.chat.dto.UsageDailySummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageModelSummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageUserSummaryResponse;
-import ru.safeai.gateway.chat.repository.UsageDailySummaryProjection;
-import ru.safeai.gateway.chat.repository.UsageQueryRepository;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
+import ru.safeai.gateway.usage.repository.UsageDailySummaryProjection;
+import ru.safeai.gateway.usage.repository.UsageQueryRepository;
+import ru.safeai.gateway.usage.service.UsageQueryService;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -27,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class AdminUsageServiceTest {
+class UsageQueryServiceTest {
 
     private static final UUID ADMIN_ID =
             UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
@@ -56,7 +59,7 @@ class AdminUsageServiceTest {
     private UsageQueryRepository usageQueryRepository;
 
     @InjectMocks
-    private AdminUsageService adminUsageService;
+    private UsageQueryService usageQueryService;
 
     @Test
     void getUsageSummary_whenAdmin_shouldReturnOrganizationScopedResult() {
@@ -74,7 +77,7 @@ class AdminUsageServiceTest {
         )).thenReturn(expected);
 
         List<UsageSummaryResponse> result =
-                adminUsageService.getUsageSummary(DATE_FROM, DATE_TO, MODEL, adminPrincipal());
+                usageQueryService.getUsageSummary(DATE_FROM, DATE_TO, MODEL, adminPrincipal());
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().userId()).isEqualTo(userId);
@@ -101,7 +104,7 @@ class AdminUsageServiceTest {
                 .thenReturn(expected);
 
         List<UsageSummaryResponse> result =
-                adminUsageService.getUsageSummary(DATE_FROM, DATE_TO, MODEL, superAdminPrincipal());
+                usageQueryService.getUsageSummary(DATE_FROM, DATE_TO, MODEL, superAdminPrincipal());
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().userId()).isEqualTo(userId);
@@ -126,7 +129,7 @@ class AdminUsageServiceTest {
         )).thenReturn(expected);
 
         List<UsageUserSummaryResponse> result =
-                adminUsageService.getUsageByUsers(DATE_FROM, DATE_TO, adminPrincipal());
+                usageQueryService.getUsageByUsers(DATE_FROM, DATE_TO, adminPrincipal());
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().userId()).isEqualTo(userId);
@@ -152,7 +155,7 @@ class AdminUsageServiceTest {
                 .thenReturn(expected);
 
         List<UsageUserSummaryResponse> result =
-                adminUsageService.getUsageByUsers(DATE_FROM, DATE_TO, superAdminPrincipal());
+                usageQueryService.getUsageByUsers(DATE_FROM, DATE_TO, superAdminPrincipal());
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().userId()).isEqualTo(userId);
@@ -175,7 +178,7 @@ class AdminUsageServiceTest {
         )).thenReturn(expected);
 
         List<UsageModelSummaryResponse> result =
-                adminUsageService.getUsageByModels(DATE_FROM, DATE_TO, adminPrincipal());
+                usageQueryService.getUsageByModels(DATE_FROM, DATE_TO, adminPrincipal());
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().model()).isEqualTo(MODEL);
@@ -199,7 +202,7 @@ class AdminUsageServiceTest {
                 .thenReturn(expected);
 
         List<UsageModelSummaryResponse> result =
-                adminUsageService.getUsageByModels(DATE_FROM, DATE_TO, superAdminPrincipal());
+                usageQueryService.getUsageByModels(DATE_FROM, DATE_TO, superAdminPrincipal());
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().model()).isEqualTo(MODEL);
@@ -218,7 +221,7 @@ class AdminUsageServiceTest {
         )).thenReturn(List.of(usageDailyProjection()));
 
         List<UsageDailySummaryResponse> result =
-                adminUsageService.getUsageDaily(DATE_FROM, DATE_TO, adminPrincipal());
+                usageQueryService.getUsageDaily(DATE_FROM, DATE_TO, adminPrincipal());
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().usageDate()).isEqualTo(LocalDate.of(2026, 6, 12));
@@ -238,7 +241,7 @@ class AdminUsageServiceTest {
                 .thenReturn(List.of(usageDailyProjection()));
 
         List<UsageDailySummaryResponse> result =
-                adminUsageService.getUsageDaily(DATE_FROM, DATE_TO, superAdminPrincipal());
+                usageQueryService.getUsageDaily(DATE_FROM, DATE_TO, superAdminPrincipal());
 
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().usageDate()).isEqualTo(LocalDate.of(2026, 6, 12));
@@ -265,7 +268,7 @@ class AdminUsageServiceTest {
         )).thenReturn(expected);
 
         List<UsageSummaryResponse> result =
-                adminUsageService.getUsageByUserId(
+                usageQueryService.getUsageByUserId(
                         userId,
                         DATE_FROM,
                         DATE_TO,
@@ -303,7 +306,7 @@ class AdminUsageServiceTest {
         )).thenReturn(expected);
 
         List<UsageSummaryResponse> result =
-                adminUsageService.getUsageByUserId(
+                usageQueryService.getUsageByUserId(
                         userId,
                         DATE_FROM,
                         DATE_TO,
@@ -340,7 +343,7 @@ class AdminUsageServiceTest {
         )).thenReturn(expected);
 
         List<UsageSummaryResponse> result =
-                adminUsageService.getUsageByOrganizationId(
+                usageQueryService.getUsageByOrganizationId(
                         ORGANIZATION_ID,
                         DATE_FROM,
                         DATE_TO,
@@ -363,7 +366,7 @@ class AdminUsageServiceTest {
 
     @Test
     void getUsageByOrganizationId_whenAdminRequestsOtherOrganization_shouldThrowForbidden() {
-        assertThatThrownBy(() -> adminUsageService.getUsageByOrganizationId(
+        assertThatThrownBy(() -> usageQueryService.getUsageByOrganizationId(
                 OTHER_ORGANIZATION_ID,
                 DATE_FROM,
                 DATE_TO,
@@ -373,7 +376,7 @@ class AdminUsageServiceTest {
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessage("Нельзя смотреть usage другой организации");
 
-        verifyNoMoreInteractions(usageQueryRepository);
+        verifyNoInteractions(usageQueryRepository);
     }
 
     @Test
@@ -392,7 +395,7 @@ class AdminUsageServiceTest {
         )).thenReturn(expected);
 
         List<UsageSummaryResponse> result =
-                adminUsageService.getUsageByOrganizationId(
+                usageQueryService.getUsageByOrganizationId(
                         OTHER_ORGANIZATION_ID,
                         DATE_FROM,
                         DATE_TO,
@@ -415,14 +418,28 @@ class AdminUsageServiceTest {
 
     @Test
     void getUsageSummary_whenDateRangeInvalid_shouldThrowBadRequest() {
-        assertThatThrownBy(() -> adminUsageService.getUsageSummary(
+        assertThatThrownBy(() -> usageQueryService.getUsageSummary(
                 DATE_TO,
                 DATE_FROM,
                 MODEL,
                 adminPrincipal()
         ))
-                .isInstanceOf(ru.safeai.gateway.common.exception.BadRequestException.class)
+                .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("dateFrom должен быть раньше dateTo");
+
+        verifyNoInteractions(usageQueryRepository);
+    }
+
+    @Test
+    void getUsageSummary_whenDateRangeTooLarge_shouldThrowBadRequest() {
+        assertThatThrownBy(() -> usageQueryService.getUsageSummary(
+                DATE_FROM,
+                DATE_FROM.plus(Duration.ofDays(367)),
+                MODEL,
+                adminPrincipal()
+        ))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Период usage не должен превышать 366 дней");
 
         verifyNoInteractions(usageQueryRepository);
     }
@@ -438,7 +455,7 @@ class AdminUsageServiceTest {
 
         Instant before = Instant.now();
 
-        adminUsageService.getUsageSummary(
+        usageQueryService.getUsageSummary(
                 null,
                 null,
                 MODEL,
@@ -461,7 +478,7 @@ class AdminUsageServiceTest {
         Instant to = toCaptor.getValue();
 
         assertThat(to).isBetween(before, after);
-        assertThat(java.time.Duration.between(from, to).toDays()).isEqualTo(30);
+        assertThat(Duration.between(from, to).toDays()).isEqualTo(30);
     }
 
     private UsageDailySummaryProjection usageDailyProjection() {

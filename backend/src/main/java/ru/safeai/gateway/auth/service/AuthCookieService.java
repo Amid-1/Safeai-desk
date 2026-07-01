@@ -60,9 +60,6 @@ public class AuthCookieService {
     public void clearAuthCookies(HttpServletResponse response) {
         clearCookie(response, ACCESS_TOKEN_COOKIE, true);
         clearCookie(response, REFRESH_TOKEN_COOKIE, true);
-
-        // XSRF-TOKEN создается Spring Security CSRF-механизмом.
-        // Он должен быть readable для frontend, поэтому HttpOnly=false.
         clearCookie(response, CSRF_TOKEN_COOKIE, false);
     }
 
@@ -78,15 +75,18 @@ public class AuthCookieService {
             throw new IllegalArgumentException("cookie value не должен быть пустым: " + name);
         }
 
-        ResponseCookie cookie = ResponseCookie.from(name, value)
+        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(name, value)
                 .httpOnly(true)
                 .secure(properties.secure())
                 .sameSite(properties.sameSite())
                 .path(COOKIE_PATH)
-                .maxAge(maxAge)
-                .build();
+                .maxAge(maxAge);
 
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        if (properties.hasDomain()) {
+            builder.domain(properties.domain());
+        }
+
+        response.addHeader(HttpHeaders.SET_COOKIE, builder.build().toString());
     }
 
     private void clearCookie(
@@ -96,14 +96,17 @@ public class AuthCookieService {
     ) {
         Objects.requireNonNull(response, "response не должен быть null");
 
-        ResponseCookie cookie = ResponseCookie.from(name, "")
+        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(name, "")
                 .httpOnly(httpOnly)
                 .secure(properties.secure())
                 .sameSite(properties.sameSite())
                 .path(COOKIE_PATH)
-                .maxAge(Duration.ZERO)
-                .build();
+                .maxAge(Duration.ZERO);
 
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        if (properties.hasDomain()) {
+            builder.domain(properties.domain());
+        }
+
+        response.addHeader(HttpHeaders.SET_COOKIE, builder.build().toString());
     }
 }

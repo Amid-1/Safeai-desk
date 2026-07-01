@@ -45,6 +45,8 @@ public class AnthropicProvider implements AiProvider {
             ModelPricingService pricingService,
             AiProviderRetryExecutor retryExecutor
     ) {
+        properties.validate();
+
         this.properties = properties;
         this.pricingService = pricingService;
         this.retryExecutor = retryExecutor;
@@ -57,8 +59,6 @@ public class AnthropicProvider implements AiProvider {
 
     @Override
     public AiChatResponse sendMessage(AiChatRequest request) {
-        properties.validate();
-
         return retryExecutor.execute(
                 PROVIDER_NAME,
                 properties.model(),

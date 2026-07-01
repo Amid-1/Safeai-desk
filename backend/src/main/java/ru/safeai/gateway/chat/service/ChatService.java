@@ -56,20 +56,19 @@ public class ChatService {
                         "Пользователь не найден: " + currentUser.getId()
                 ));
 
-        ChatSessionEntity session = new ChatSessionEntity();
-        session.setUser(user);
-        session.setTitle(normalizeTitle(request.title()));
-
-        ChatSessionEntity saved = chatSessionRepository.save(session);
-
         String normalizedTitle = normalizeTitle(request.title());
         boolean defaultTitle = request.title() == null || request.title().isBlank();
 
+        ChatSessionEntity session = new ChatSessionEntity();
+        session.setUser(user);
+        session.setOrganization(user.getOrganization());
         session.setTitle(normalizedTitle);
+
+        ChatSessionEntity saved = chatSessionRepository.save(session);
 
         auditEventService.record(
                 currentUser.getId(),
-                currentUser.getOrganizationId(),
+                saved.getOrganization().getId(),
                 AuditEventType.CHAT_CREATED,
                 Map.of(
                         "chatId", saved.getId().toString(),
@@ -128,11 +127,12 @@ public class ChatService {
         String normalizedContent = normalizeMessageContent(request.content());
 
         chatPersistenceService.assertOwnedChatExists(chatId, currentUser);
-        rateLimitService.checkAiMessageAllowed(currentUser);
 
         ChatLockService.ChatLock lock = chatLockService.lock(chatId);
 
         try {
+            rateLimitService.checkAiMessageAllowed(currentUser);
+
             ChatProcessingContext context =
                     chatPersistenceService.saveUserMessageAndPrepareAiRequest(
                             chatId,

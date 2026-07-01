@@ -1,6 +1,8 @@
 package ru.safeai.gateway.common.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Path;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -8,21 +10,31 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.validation.BindException;
+import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
+import org.springframework.validation.ObjectError;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Slf4j
 @RestControllerAdvice
 @RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private static final String GLOBAL_ERROR_KEY = "_global";
 
     private final ApiErrorResponseFactory errorResponseFactory;
 
@@ -31,7 +43,13 @@ public class GlobalExceptionHandler {
             ResourceNotFoundException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(HttpStatus.NOT_FOUND, "NOT_FOUND", exception.getMessage(), request, null);
+        return buildResponse(
+                HttpStatus.NOT_FOUND,
+                "NOT_FOUND",
+                safeMessage(exception.getMessage(), "Ресурс не найден"),
+                request,
+                null
+        );
     }
 
     @ExceptionHandler(ConflictException.class)
@@ -39,7 +57,13 @@ public class GlobalExceptionHandler {
             ConflictException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(HttpStatus.CONFLICT, "CONFLICT", exception.getMessage(), request, null);
+        return buildResponse(
+                HttpStatus.CONFLICT,
+                "CONFLICT",
+                safeMessage(exception.getMessage(), "Конфликт данных"),
+                request,
+                null
+        );
     }
 
     @ExceptionHandler(ForbiddenOperationException.class)
@@ -47,7 +71,27 @@ public class GlobalExceptionHandler {
             ForbiddenOperationException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(HttpStatus.FORBIDDEN, "FORBIDDEN", exception.getMessage(), request, null);
+        return buildResponse(
+                HttpStatus.FORBIDDEN,
+                "FORBIDDEN",
+                safeMessage(exception.getMessage(), "Операция запрещена"),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ApiErrorResponse> handleBadRequest(
+            BadRequestException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "BAD_REQUEST",
+                safeMessage(exception.getMessage(), "Некорректный запрос"),
+                request,
+                null
+        );
     }
 
     @ExceptionHandler(RateLimitExceededException.class)
@@ -68,7 +112,7 @@ public class GlobalExceptionHandler {
         return builder.body(errorResponseFactory.create(
                 HttpStatus.TOO_MANY_REQUESTS,
                 "RATE_LIMIT_EXCEEDED",
-                exception.getMessage(),
+                safeMessage(exception.getMessage(), "Превышен лимит запросов"),
                 request,
                 null
         ));
@@ -95,18 +139,43 @@ public class GlobalExceptionHandler {
             MethodArgumentNotValidException exception,
             HttpServletRequest request
     ) {
-        Map<String, List<String>> fieldErrors = exception.getBindingResult()
-                .getFieldErrors()
-                .stream()
-                .collect(Collectors.groupingBy(
-                        FieldError::getField,
-                        Collectors.mapping(
-                                fieldError -> fieldError.getDefaultMessage() == null
-                                        ? "Некорректное значение"
-                                        : fieldError.getDefaultMessage(),
-                                Collectors.toList()
-                        )
-                ));
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "VALIDATION_ERROR",
+                "Ошибка валидации запроса",
+                request,
+                bindingErrors(exception.getBindingResult())
+        );
+    }
+
+    @ExceptionHandler(BindException.class)
+    public ResponseEntity<ApiErrorResponse> handleBindException(
+            BindException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "VALIDATION_ERROR",
+                "Ошибка валидации запроса",
+                request,
+                bindingErrors(exception.getBindingResult())
+        );
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleConstraintViolation(
+            ConstraintViolationException exception,
+            HttpServletRequest request
+    ) {
+        Map<String, List<String>> fieldErrors = new LinkedHashMap<>();
+
+        exception.getConstraintViolations().forEach(violation -> {
+            String field = normalizeConstraintPath(violation.getPropertyPath());
+            String message = safeMessage(violation.getMessage(), "Некорректное значение");
+
+            fieldErrors.computeIfAbsent(field, ignored -> new ArrayList<>())
+                    .add(message);
+        });
 
         return buildResponse(
                 HttpStatus.BAD_REQUEST,
@@ -122,10 +191,40 @@ public class GlobalExceptionHandler {
             MethodArgumentTypeMismatchException exception,
             HttpServletRequest request
     ) {
+        String parameterName = safeMessage(exception.getName(), "unknown");
+
         return buildResponse(
                 HttpStatus.BAD_REQUEST,
                 "BAD_REQUEST",
-                "Некорректный параметр запроса: " + exception.getName(),
+                "Некорректный параметр запроса: " + parameterName,
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingParameter(
+            MissingServletRequestParameterException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "BAD_REQUEST",
+                "Не указан обязательный параметр запроса: " + exception.getParameterName(),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingHeader(
+            MissingRequestHeaderException exception,
+            HttpServletRequest request
+    ) {
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "BAD_REQUEST",
+                "Не указан обязательный заголовок запроса: " + exception.getHeaderName(),
                 request,
                 null
         );
@@ -147,14 +246,33 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(AuthenticationException.class)
-    public ResponseEntity<ApiErrorResponse> handleAuthenticationException(
+    @ExceptionHandler({
+            NoHandlerFoundException.class,
+            NoResourceFoundException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleNoHandlerFound(
             HttpServletRequest request
     ) {
         return buildResponse(
+                HttpStatus.NOT_FOUND,
+                "NOT_FOUND",
+                "Ресурс не найден",
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiErrorResponse> handleAuthenticationException(
+            AuthenticationException exception,
+            HttpServletRequest request
+    ) {
+        log.debug("Authentication error for request {}", request.getRequestURI(), exception);
+
+        return buildResponse(
                 HttpStatus.UNAUTHORIZED,
                 "UNAUTHORIZED",
-                "Неверный email или пароль",
+                "Требуется авторизация",
                 request,
                 null
         );
@@ -162,8 +280,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AuthorizationDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAuthorizationDeniedException(
+            AuthorizationDeniedException exception,
             HttpServletRequest request
     ) {
+        log.debug("Authorization denied for request {}", request.getRequestURI(), exception);
+
         return buildResponse(
                 HttpStatus.FORBIDDEN,
                 "FORBIDDEN",
@@ -178,31 +299,25 @@ public class GlobalExceptionHandler {
             ResponseStatusException exception,
             HttpServletRequest request
     ) {
-        HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
+        int statusCode = exception.getStatusCode().value();
+
+        HttpStatus status = HttpStatus.resolve(statusCode);
+        HttpStatus responseStatus = status == null
+                ? HttpStatus.INTERNAL_SERVER_ERROR
+                : status;
 
         String message = exception.getReason() == null || exception.getReason().isBlank()
-                ? status.getReasonPhrase()
+                ? responseStatus.getReasonPhrase()
                 : exception.getReason();
 
-        return buildResponse(status, status.name(), message, request, null);
-    }
-
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiErrorResponse> handleUnexpected(
-            Exception exception,
-            HttpServletRequest request
-    ) {
-        log.error("Неожиданная ошибка при обработке запроса {}", request.getRequestURI(), exception);
-
         return buildResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "INTERNAL_SERVER_ERROR",
-                "Внутренняя ошибка сервера",
+                responseStatus,
+                responseStatus.name(),
+                message,
                 request,
                 null
         );
     }
-
 
     @ExceptionHandler(ExpiredRefreshTokenException.class)
     public ResponseEntity<ApiErrorResponse> handleExpiredRefreshToken(
@@ -212,7 +327,28 @@ public class GlobalExceptionHandler {
         return buildResponse(
                 HttpStatus.UNAUTHORIZED,
                 "EXPIRED_REFRESH_TOKEN",
-                exception.getMessage(),
+                safeMessage(exception.getMessage(), "Refresh token истёк"),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(RefreshTokenReuseDetectedException.class)
+    public ResponseEntity<ApiErrorResponse> handleRefreshTokenReuseDetected(
+            RefreshTokenReuseDetectedException exception,
+            HttpServletRequest request
+    ) {
+        log.warn(
+                "Refresh token reuse detected: userId={}, organizationId={}, tokenFamilyId={}",
+                exception.getUserId(),
+                exception.getOrganizationId(),
+                exception.getTokenFamilyId()
+        );
+
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
+                "INVALID_REFRESH_TOKEN",
+                "Недействительный refresh token",
                 request,
                 null
         );
@@ -226,7 +362,23 @@ public class GlobalExceptionHandler {
         return buildResponse(
                 HttpStatus.UNAUTHORIZED,
                 "INVALID_REFRESH_TOKEN",
-                exception.getMessage(),
+                safeMessage(exception.getMessage(), "Недействительный refresh token"),
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiErrorResponse> handleUnexpected(
+            Exception exception,
+            HttpServletRequest request
+    ) {
+        log.error("Неожиданная ошибка при обработке запроса {}", request.getRequestURI(), exception);
+
+        return buildResponse(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "INTERNAL_SERVER_ERROR",
+                "Внутренняя ошибка сервера",
                 request,
                 null
         );
@@ -250,17 +402,45 @@ public class GlobalExceptionHandler {
                 ));
     }
 
-    @ExceptionHandler(BadRequestException.class)
-    public ResponseEntity<ApiErrorResponse> handleBadRequest(
-            BadRequestException exception,
-            HttpServletRequest request
-    ) {
-        return buildResponse(
-                HttpStatus.BAD_REQUEST,
-                "BAD_REQUEST",
-                exception.getMessage(),
-                request,
-                null
-        );
+    private Map<String, List<String>> bindingErrors(BindingResult bindingResult) {
+        Map<String, List<String>> errors = new LinkedHashMap<>();
+
+        for (FieldError fieldError : bindingResult.getFieldErrors()) {
+            errors.computeIfAbsent(fieldError.getField(), ignored -> new ArrayList<>())
+                    .add(safeMessage(fieldError.getDefaultMessage(), "Некорректное значение"));
+        }
+
+        for (ObjectError globalError : bindingResult.getGlobalErrors()) {
+            errors.computeIfAbsent(GLOBAL_ERROR_KEY, ignored -> new ArrayList<>())
+                    .add(safeMessage(globalError.getDefaultMessage(), "Некорректное значение"));
+        }
+
+        return errors;
+    }
+
+    private String normalizeConstraintPath(Path propertyPath) {
+        if (propertyPath == null) {
+            return "request";
+        }
+
+        String rawPath = propertyPath.toString();
+
+        if (rawPath == null || rawPath.isBlank()) {
+            return "request";
+        }
+
+        int lastDotIndex = rawPath.lastIndexOf('.');
+
+        if (lastDotIndex >= 0 && lastDotIndex < rawPath.length() - 1) {
+            return rawPath.substring(lastDotIndex + 1);
+        }
+
+        return rawPath;
+    }
+
+    private String safeMessage(String message, String fallback) {
+        return message == null || message.isBlank()
+                ? fallback
+                : message;
     }
 }

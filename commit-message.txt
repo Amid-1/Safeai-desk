@@ -1,14 +1,104 @@
-feat: harden auth/admin UI and add production frontend improvements
+feat: усилить безопасность auth, usage, организаций и frontend-потоков
 
-- Added Organizations admin page with list, create, rename, enable and disable actions.
-- Added organization API client and wired Organizations route into admin navigation.
-- Added reusable Modal and ConfirmDialog components.
-- Replaced reset-password window.prompt flow with modal form and password confirmation.
-- Added usage filters for dateFrom, dateTo and model.
-- Added usage charts for daily and model-based usage analytics.
-- Updated Chat page input from single-line input to textarea with Ctrl+Enter submit.
-- Added pending assistant “Thinking...” placeholder while AI response is loading.
-- Removed hardcoded weak demo password from Login page.
-- Improved admin page UX with pagination, status badges and role/action controls.
-- Added safer refresh handling and frontend API cleanup.
-- Updated project structure to include new api, components and organization page files.
+Backend:
+- Добавлена production-oriented логика отзыва refresh-сессий при изменениях безопасности пользователя и организации.
+- Активные refresh-сессии отзываются после сброса пароля, отключения пользователя, изменения ролей и отключения организации.
+- Расширен RefreshTokenRepository bulk-методами отзыва refresh-токенов по пользователю и организации.
+- Добавлен UserSessionRevocationService для транзакционного отзыва пользовательских сессий.
+- Добавлен аудит превышения login rate-limit через событие LOGIN RATE_LIMIT_EXCEEDED.
+- Улучшена запись audit events:
+  - убрано небезопасное использование EntityManager#getReference для отсутствующих пользователей;
+  - добавлена санитарная обработка audit details перед записью JSONB;
+  - audit-записи выполняются в отдельной транзакции REQUIRES_NEW;
+  - ошибки аудита не ломают основной бизнес-flow.
+- Усилена изоляция audit-запросов:
+  - ADMIN видит audit только своей организации;
+  - SUPER_ADMIN может смотреть audit глобально;
+  - фильтрация по чужой organizationId запрещена для обычного ADMIN;
+  - pageable/sort параметры проходят whitelist/sanitization.
+- Usage-аналитика вынесена в отдельный модуль usage:
+  - usage DTO перенесены в ru.safeai.gateway.usage.dto;
+  - usage repository/projection перенесены в ru.safeai.gateway.usage.repository;
+  - usage business logic перенесена в UsageQueryService;
+  - AdminUsageController оставлен как admin API entry point.
+- Улучшена tenant isolation для usage:
+  - organization-scoped usage queries используют organization snapshot сообщения;
+  - ADMIN видит usage только своей организации;
+  - SUPER_ADMIN может смотреть global usage.
+- Добавлена валидация периода usage:
+  - по умолчанию используется последние 30 дней;
+  - максимальный период ограничен 366 днями.
+- Исправлены JPQL DTO constructor mappings для usage summary, user и model aggregations.
+- Добавлена поддержка organization snapshot для chat sessions/messages.
+- Исправлены тесты chat persistence после денормализации organization.
+- Проверка принадлежности user message переведена на repository exists query вместо загрузки сообщения.
+- Исправлены тесты chat lock и удалены лишние Mockito stubbing.
+- Усилено управление организациями:
+  - только SUPER_ADMIN может управлять организациями;
+  - platform organization нельзя переименовать или отключить через organization-management endpoints;
+  - отключение организации отзывает активные refresh-сессии ее пользователей;
+  - изменения security-состояния организации публикуют events и пишутся в audit.
+- Удалены устаревшие ссылки на AdminUsageService, тесты обновлены под UsageQueryService.
+- Обновлены controller/service тесты под новую структуру usage package.
+
+Frontend:
+- Улучшен API client:
+  - централизован cookie-based request flow;
+  - добавлена обработка CSRF для unsafe methods;
+  - добавлен refresh-token retry при 401;
+  - добавлена single-flight защита refresh-запроса;
+  - усилена сборка API URL;
+  - улучшено отображение ошибок с requestId.
+- Удалена неиспользуемая auth option из API request options.
+- Добавлена поддержка usage filters в admin API calls.
+- Улучшен AuthContext:
+  - callback-функции стабилизированы через useCallback;
+  - context value мемоизирован через useMemo;
+  - logout теперь корректно очищает loading state;
+  - unauthorized events сбрасывают auth state.
+- Refactor route guards в App.tsx:
+  - единый ProtectedRoute;
+  - role-based access для ADMIN и SUPER_ADMIN зон;
+  - авторизованный пользователь перенаправляется с login на chat.
+- Улучшена AdminUsagePage:
+  - добавлены фильтры по датам и модели;
+  - добавлена пометка, что daily usage группируется по UTC date;
+  - улучшен table rendering.
+- Улучшена ChatPage:
+  - textarea input с отправкой по Ctrl+Enter;
+  - assistant pending indicator;
+  - после failed AI send чат перечитывается, чтобы показать сохраненное FAILED assistant message;
+  - loading/pending state корректно очищаются во внешнем finally.
+- Улучшена LoginPage:
+  - удалены hardcoded demo credentials из UI;
+  - добавлена базовая валидация пустого email/password.
+- Улучшена AdminUsersPage:
+  - сброс пароля переведен на modal;
+  - действия изменения статуса и роли переведены на confirmation dialogs;
+  - success-сообщения автоматически исчезают через 4 секунды.
+- Улучшена AdminOrganizationsPage:
+  - rename переведен на modal;
+  - enable/disable переведен на confirmation dialog;
+  - success-сообщения автоматически исчезают через 4 секунды;
+  - действия Rename/Disable скрыты для SafeAI Platform organization.
+- Улучшены utilities форматирования:
+  - безопасное форматирование date/time;
+  - стабильное форматирование date-only без timezone-сдвига;
+  - безопасное форматирование USD.
+- Добавлены/обновлены frontend verification notes и документация по local test accounts.
+
+Database/Flyway:
+- Local demo seed оставлен в db/local-migration.
+- Проверено, что V1000 local seed применяется только в local profile.
+- Добавлены/используются денормализованные organization fields для корректного usage accounting.
+- Добавлены schema hardening, update triggers, quotas/rollup-related migrations.
+- Проверен local SUPER_ADMIN seed:
+  - superadmin@test.com;
+  - role SUPER_ADMIN;
+  - SafeAI Platform organization.
+
+Security model:
+- SUPER_ADMIN управляет организациями, пользователями, audit и usage по всей платформе.
+- ADMIN ограничен своей организацией.
+- USER имеет доступ только к своим chat data.
+- Platform organization и platform admin защищены от обычных organization/user management actions.

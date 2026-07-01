@@ -1,5 +1,5 @@
 // frontend/src/auth/AuthContext.tsx
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
     getCurrentUser,
@@ -14,6 +14,7 @@ type AuthContextValue = {
     authLoading: boolean
     loginUser: (request: LoginRequest) => Promise<void>
     logoutUser: () => Promise<void>
+    reloadCurrentUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -22,7 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
     const [authLoading, setAuthLoading] = useState(true)
 
-    async function reloadCurrentUser() {
+    const reloadCurrentUser = useCallback(async () => {
         setAuthLoading(true)
 
         try {
@@ -33,24 +34,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } finally {
             setAuthLoading(false)
         }
-    }
+    }, [])
 
-    async function loginUser(request: LoginRequest) {
+    const loginUser = useCallback(async (request: LoginRequest) => {
         await loginRequest(request)
         await reloadCurrentUser()
-    }
+    }, [reloadCurrentUser])
 
-    async function logoutUser() {
+    const logoutUser = useCallback(async () => {
+        setAuthLoading(true)
+
         try {
             await logoutRequest()
         } finally {
             setCurrentUser(null)
+            setAuthLoading(false)
         }
-    }
+    }, [])
 
     useEffect(() => {
         void reloadCurrentUser()
-    }, [])
+    }, [reloadCurrentUser])
 
     useEffect(() => {
         return subscribeUnauthorized(() => {
@@ -59,12 +63,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })
     }, [])
 
-    const authValue: AuthContextValue = {
+    const authValue = useMemo<AuthContextValue>(() => ({
         currentUser,
         authLoading,
         loginUser,
         logoutUser,
-    }
+        reloadCurrentUser,
+    }), [
+        currentUser,
+        authLoading,
+        loginUser,
+        logoutUser,
+        reloadCurrentUser,
+    ])
 
     return (
         <AuthContext.Provider value={authValue}>

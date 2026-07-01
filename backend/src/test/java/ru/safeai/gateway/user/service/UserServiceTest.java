@@ -11,6 +11,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.auth.service.UserSessionRevocationService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
@@ -69,6 +70,9 @@ class UserServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private UserSessionRevocationService userSessionRevocationService;
+
     private UserService userService;
 
     @BeforeEach
@@ -79,7 +83,8 @@ class UserServiceTest {
                 organizationRepository,
                 passwordEncoder,
                 auditEventService,
-                eventPublisher
+                eventPublisher,
+                userSessionRevocationService
         );
     }
 
@@ -93,7 +98,7 @@ class UserServiceTest {
                 Set.of("ADMIN")
         );
 
-        when(userRepository.existsByEmail("admin@test.com")).thenReturn(true);
+        when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(true);
 
         assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
                 .isInstanceOf(ConflictException.class)
@@ -112,7 +117,7 @@ class UserServiceTest {
                 Set.of("ADMIN")
         );
 
-        when(userRepository.existsByEmail("admin@test.com")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
         when(organizationRepository.findById(ORGANIZATION_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
@@ -134,7 +139,7 @@ class UserServiceTest {
 
         OrganizationEntity organization = organizationEntity();
 
-        when(userRepository.existsByEmail("admin@test.com")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
         when(organizationRepository.findById(ORGANIZATION_ID)).thenReturn(Optional.of(organization));
         when(roleRepository.findByName("ADMIN")).thenReturn(Optional.empty());
 
@@ -157,7 +162,7 @@ class UserServiceTest {
                 Set.of("ADMIN")
         );
 
-        when(userRepository.existsByEmail("admin@test.com")).thenReturn(false);
+        when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
         when(organizationRepository.findById(ORGANIZATION_ID)).thenReturn(Optional.of(organizationEntity()));
         when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
         when(passwordEncoder.encode("admin123")).thenReturn("encoded-password");
@@ -200,10 +205,12 @@ class UserServiceTest {
                 eq(AuditEventType.USER_CREATED),
                 anyMap()
         );
+
+        verifyNoInteractions(userSessionRevocationService);
     }
 
     @Test
-    void updateEnabledShouldDisableUser() {
+    void updateEnabledShouldDisableUserAndRevokeRefreshSessions() {
         UserEntity user = userEntity(
                 USER_ID,
                 "user@test.com",
@@ -224,8 +231,10 @@ class UserServiceTest {
         );
 
         assertThat(response.enabled()).isFalse();
+        assertThat(user.getTokenVersion()).isEqualTo(1L);
 
         verify(userRepository).save(user);
+        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
         verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
@@ -237,7 +246,7 @@ class UserServiceTest {
     }
 
     @Test
-    void updateEnabledShouldEnableUser() {
+    void updateEnabledShouldEnableUserWithoutRevokingRefreshSessions() {
         UserEntity user = userEntity(
                 USER_ID,
                 "user@test.com",
@@ -258,6 +267,10 @@ class UserServiceTest {
         );
 
         assertThat(response.enabled()).isTrue();
+        assertThat(user.getTokenVersion()).isEqualTo(1L);
+
+        verify(userSessionRevocationService, never()).revokeAllForUser(any());
+        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
                 eq(ADMIN_ID),
@@ -289,6 +302,7 @@ class UserServiceTest {
 
         verify(userRepository, never()).save(any());
         verifyNoInteractions(auditEventService);
+        verifyNoInteractions(userSessionRevocationService);
     }
 
     @Test
@@ -318,10 +332,11 @@ class UserServiceTest {
 
         verify(userRepository, never()).save(any());
         verifyNoInteractions(auditEventService);
+        verifyNoInteractions(userSessionRevocationService);
     }
 
     @Test
-    void updateRolesShouldChangeUserRoleToAdmin() {
+    void updateRolesShouldChangeUserRoleToAdminAndRevokeRefreshSessions() {
         UserEntity user = userEntity(
                 USER_ID,
                 "user@test.com",
@@ -347,6 +362,50 @@ class UserServiceTest {
         );
 
         assertThat(response.roles()).containsExactly("ADMIN");
+        assertThat(user.getTokenVersion()).isEqualTo(1L);
+
+        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
+        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
+
+        verify(auditEventService).record(
+                eq(ADMIN_ID),
+                eq(ORGANIZATION_ID),
+                eq(AuditEventType.USER_ROLES_CHANGED),
+                anyMap()
+        );
+    }
+
+    @Test
+    void updateRolesShouldNotChangeTokenVersionWhenRolesAreSame() {
+        UserEntity user = userEntity(
+                USER_ID,
+                "user@test.com",
+                true,
+                Set.of(roleEntity("USER"))
+        );
+
+        RoleEntity userRole = roleEntity("USER");
+
+        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
+                .thenReturn(Optional.of(user));
+
+        when(roleRepository.findByName("USER"))
+                .thenReturn(Optional.of(userRole));
+
+        when(userRepository.save(any(UserEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserResponse response = userService.updateRoles(
+                USER_ID,
+                new UpdateUserRolesRequest(Set.of("USER")),
+                adminPrincipal()
+        );
+
+        assertThat(response.roles()).containsExactly("USER");
+        assertThat(user.getTokenVersion()).isZero();
+
+        verify(userSessionRevocationService, never()).revokeAllForUser(any());
+        verify(eventPublisher, never()).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
                 eq(ADMIN_ID),
@@ -378,6 +437,7 @@ class UserServiceTest {
 
         verify(userRepository, never()).save(any());
         verifyNoInteractions(auditEventService);
+        verifyNoInteractions(userSessionRevocationService);
     }
 
     @Test
@@ -407,10 +467,11 @@ class UserServiceTest {
 
         verify(userRepository, never()).save(any());
         verifyNoInteractions(auditEventService);
+        verifyNoInteractions(userSessionRevocationService);
     }
 
     @Test
-    void resetPasswordShouldUpdatePasswordHash() {
+    void resetPasswordShouldUpdatePasswordHashAndRevokeRefreshSessions() {
         UserEntity user = userEntity(
                 USER_ID,
                 "user@test.com",
@@ -437,6 +498,7 @@ class UserServiceTest {
         assertThat(user.getTokenVersion()).isEqualTo(1L);
 
         verify(userRepository).save(user);
+        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
         verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
@@ -452,6 +514,7 @@ class UserServiceTest {
         organization.setId(ORGANIZATION_ID);
         organization.setName("Demo Company");
         organization.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+        organization.setEnabled(true);
         return organization;
     }
 
@@ -477,6 +540,7 @@ class UserServiceTest {
         user.setEnabled(enabled);
         user.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
         user.setRoles(roles);
+        user.setTokenVersion(0L);
         return user;
     }
 

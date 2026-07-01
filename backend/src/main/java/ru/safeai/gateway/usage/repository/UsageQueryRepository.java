@@ -1,12 +1,12 @@
-package ru.safeai.gateway.chat.repository;
+package ru.safeai.gateway.usage.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import ru.safeai.gateway.chat.dto.UsageModelSummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageSummaryResponse;
-import ru.safeai.gateway.chat.dto.UsageUserSummaryResponse;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
+import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
 
 import java.time.Instant;
 import java.util.List;
@@ -15,7 +15,7 @@ import java.util.UUID;
 public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, UUID> {
 
     @Query("""
-            select new ru.safeai.gateway.chat.dto.UsageSummaryResponse(
+            select new ru.safeai.gateway.usage.dto.UsageSummaryResponse(
                 u.id,
                 u.email,
                 m.model,
@@ -42,7 +42,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
     );
 
     @Query("""
-            select new ru.safeai.gateway.chat.dto.UsageUserSummaryResponse(
+            select new ru.safeai.gateway.usage.dto.UsageUserSummaryResponse(
                 u.id,
                 u.email,
                 sum(coalesce(m.inputTokens, 0)),
@@ -66,7 +66,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
     );
 
     @Query("""
-            select new ru.safeai.gateway.chat.dto.UsageModelSummaryResponse(
+            select new ru.safeai.gateway.usage.dto.UsageModelSummaryResponse(
                 m.model,
                 sum(coalesce(m.inputTokens, 0)),
                 sum(coalesce(m.outputTokens, 0)),
@@ -87,7 +87,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
     );
 
     @Query("""
-            select new ru.safeai.gateway.chat.dto.UsageSummaryResponse(
+            select new ru.safeai.gateway.usage.dto.UsageSummaryResponse(
                 u.id,
                 u.email,
                 m.model,
@@ -116,7 +116,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
     );
 
     @Query("""
-            select new ru.safeai.gateway.chat.dto.UsageSummaryResponse(
+            select new ru.safeai.gateway.usage.dto.UsageSummaryResponse(
                 u.id,
                 u.email,
                 m.model,
@@ -129,7 +129,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             join s.user u
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
               and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
-              and u.organization.id = :organizationId
+              and m.organization.id = :organizationId
               and m.model is not null
               and m.createdAt >= :dateFrom
               and m.createdAt < :dateTo
@@ -165,7 +165,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
     );
 
     @Query("""
-            select new ru.safeai.gateway.chat.dto.UsageUserSummaryResponse(
+            select new ru.safeai.gateway.usage.dto.UsageUserSummaryResponse(
                 u.id,
                 u.email,
                 sum(coalesce(m.inputTokens, 0)),
@@ -177,7 +177,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             join s.user u
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
               and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
-              and u.organization.id = :organizationId
+              and m.organization.id = :organizationId
               and m.model is not null
               and m.createdAt >= :dateFrom
               and m.createdAt < :dateTo
@@ -191,18 +191,16 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
     );
 
     @Query("""
-            select new ru.safeai.gateway.chat.dto.UsageModelSummaryResponse(
+            select new ru.safeai.gateway.usage.dto.UsageModelSummaryResponse(
                 m.model,
                 sum(coalesce(m.inputTokens, 0)),
                 sum(coalesce(m.outputTokens, 0)),
                 sum(m.costUsd)
             )
             from ChatMessageEntity m
-            join m.session s
-            join s.user u
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
               and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
-              and u.organization.id = :organizationId
+              and m.organization.id = :organizationId
               and m.model is not null
               and m.createdAt >= :dateFrom
               and m.createdAt < :dateTo
@@ -222,12 +220,10 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
                 cast(coalesce(sum(m.output_tokens), 0) as bigint) as "outputTokens",
                 coalesce(sum(m.cost_usd), 0) as "costUsd"
             from chat_messages m
-            join chat_sessions s on s.id = m.session_id
-            join users u on u.id = s.user_id
             where m.role = 'ASSISTANT'
               and m.status = 'COMPLETED'
               and m.model is not null
-              and u.organization_id = :organizationId
+              and m.organization_id = :organizationId
               and m.created_at >= :dateFrom
               and m.created_at < :dateTo
             group by date(m.created_at at time zone 'UTC')
@@ -240,7 +236,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
     );
 
     @Query("""
-            select new ru.safeai.gateway.chat.dto.UsageSummaryResponse(
+            select new ru.safeai.gateway.usage.dto.UsageSummaryResponse(
                 u.id,
                 u.email,
                 m.model,
@@ -254,7 +250,7 @@ public interface UsageQueryRepository extends JpaRepository<ChatMessageEntity, U
             where m.role = ru.safeai.gateway.chat.entity.ChatMessageRole.ASSISTANT
               and m.status = ru.safeai.gateway.chat.entity.ChatMessageStatus.COMPLETED
               and u.id = :userId
-              and u.organization.id = :organizationId
+              and m.organization.id = :organizationId
               and m.model is not null
               and m.createdAt >= :dateFrom
               and m.createdAt < :dateTo

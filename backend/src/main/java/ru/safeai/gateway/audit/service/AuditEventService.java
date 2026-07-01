@@ -11,6 +11,12 @@ import ru.safeai.gateway.audit.entity.AuditEventEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
 import ru.safeai.gateway.user.entity.UserEntity;
 
+import java.lang.reflect.Array;
+import java.time.temporal.TemporalAccessor;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -18,6 +24,11 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class AuditEventService {
+
+    private static final int MAX_DETAILS_DEPTH = 4;
+    private static final int MAX_DETAILS_ENTRIES = 100;
+    private static final int MAX_COLLECTION_ITEMS = 100;
+    private static final int MAX_STRING_LENGTH = 2_000;
 
     private final AuditEventRepository auditEventRepository;
     private final EntityManager entityManager;
@@ -30,7 +41,6 @@ public class AuditEventService {
     ) {
         record(null, organizationId, eventType, details);
     }
-
 
     /**
      * SECURITY NOTICE
@@ -60,17 +70,21 @@ public class AuditEventService {
                 throw new IllegalArgumentException("organizationId не должен быть null для audit event");
             }
 
-            UserEntity user = null;
-
-            if (userId != null) {
-                user = entityManager.getReference(UserEntity.class, userId);
+            if (eventType == null) {
+                throw new IllegalArgumentException("eventType не должен быть null для audit event");
             }
+
+            UserEntity user = findUserReferenceIfExists(
+                    userId,
+                    organizationId,
+                    eventType
+            );
 
             AuditEventEntity event = new AuditEventEntity();
             event.setUser(user);
             event.setOrganizationId(organizationId);
             event.setEventType(eventType.name());
-            event.setDetails(details == null ? Map.of() : Map.copyOf(details));
+            event.setDetails(sanitizeDetails(details));
 
             auditEventRepository.save(event);
         } catch (Exception exception) {
@@ -82,5 +96,188 @@ public class AuditEventService {
                     exception
             );
         }
+    }
+
+    private UserEntity findUserReferenceIfExists(
+            UUID userId,
+            UUID organizationId,
+            AuditEventType eventType
+    ) {
+        if (userId == null) {
+            return null;
+        }
+
+        UserEntity user = entityManager.find(UserEntity.class, userId);
+
+        if (user == null) {
+            log.warn(
+                    "Audit user reference not found, writing audit event without user FK: userId={}, organizationId={}, eventType={}",
+                    userId,
+                    organizationId,
+                    eventType
+            );
+        }
+
+        return user;
+    }
+
+    private Map<String, Object> sanitizeDetails(Map<String, Object> details) {
+        if (details == null || details.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, Object> sanitized = new LinkedHashMap<>();
+
+        int count = 0;
+
+        for (Map.Entry<String, Object> entry : details.entrySet()) {
+            if (count >= MAX_DETAILS_ENTRIES) {
+                sanitized.put("_truncated", true);
+                break;
+            }
+
+            String key = sanitizeKey(entry.getKey());
+
+            if (key == null) {
+                continue;
+            }
+
+            Object value = sanitizeValue(entry.getValue(), 0);
+
+            if (value != null) {
+                sanitized.put(key, value);
+                count++;
+            }
+        }
+
+        return Collections.unmodifiableMap(sanitized);
+    }
+
+    private String sanitizeKey(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+
+        return truncate(key.trim());
+    }
+
+    private Object sanitizeValue(Object value, int depth) {
+        if (value == null) {
+            return null;
+        }
+
+        if (depth >= MAX_DETAILS_DEPTH) {
+            return truncate(String.valueOf(value));
+        }
+
+        return switch (value) {
+            case String stringValue -> truncate(stringValue);
+            case Number numberValue -> numberValue;
+            case Boolean booleanValue -> booleanValue;
+            case Character characterValue -> characterValue.toString();
+            case UUID uuid -> uuid.toString();
+            case Enum<?> enumValue -> enumValue.name();
+            case TemporalAccessor temporalAccessor -> temporalAccessor.toString();
+            case Map<?, ?> mapValue -> sanitizeMapValue(mapValue, depth + 1);
+            case Iterable<?> iterableValue -> sanitizeIterableValue(iterableValue, depth + 1);
+            default -> {
+                if (value.getClass().isArray()) {
+                    yield sanitizeArrayValue(value, depth + 1);
+                }
+
+                yield truncate(String.valueOf(value));
+            }
+        };
+    }
+
+    private Map<String, Object> sanitizeMapValue(Map<?, ?> mapValue, int depth) {
+        Map<String, Object> sanitized = new LinkedHashMap<>();
+
+        int count = 0;
+
+        for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
+            if (count >= MAX_DETAILS_ENTRIES) {
+                sanitized.put("_truncated", true);
+                break;
+            }
+
+            Object rawKey = entry.getKey();
+
+            if (rawKey == null) {
+                continue;
+            }
+
+            String key = sanitizeKey(String.valueOf(rawKey));
+
+            if (key == null) {
+                continue;
+            }
+
+            Object value = sanitizeValue(entry.getValue(), depth);
+
+            if (value != null) {
+                sanitized.put(key, value);
+                count++;
+            }
+        }
+
+        return sanitized;
+    }
+
+    private List<Object> sanitizeIterableValue(Iterable<?> iterableValue, int depth) {
+        List<Object> sanitized = new ArrayList<>();
+
+        int count = 0;
+
+        for (Object item : iterableValue) {
+            if (count >= MAX_COLLECTION_ITEMS) {
+                sanitized.add("_truncated");
+                break;
+            }
+
+            Object value = sanitizeValue(item, depth);
+
+            if (value != null) {
+                sanitized.add(value);
+                count++;
+            }
+        }
+
+        return sanitized;
+    }
+
+    private List<Object> sanitizeArrayValue(Object arrayValue, int depth) {
+        List<Object> sanitized = new ArrayList<>();
+
+        int length = Array.getLength(arrayValue);
+        int limit = Math.min(length, MAX_COLLECTION_ITEMS);
+
+        for (int index = 0; index < limit; index++) {
+            Object value = sanitizeValue(Array.get(arrayValue, index), depth);
+
+            if (value != null) {
+                sanitized.add(value);
+            }
+        }
+
+        if (length > MAX_COLLECTION_ITEMS) {
+            sanitized.add("_truncated");
+        }
+
+        return sanitized;
+    }
+
+    private String truncate(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+
+        if (trimmed.length() <= MAX_STRING_LENGTH) {
+            return trimmed;
+        }
+
+        return trimmed.substring(0, MAX_STRING_LENGTH);
     }
 }

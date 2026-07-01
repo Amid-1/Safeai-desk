@@ -2,6 +2,7 @@ package ru.safeai.gateway.auth.security;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,18 +24,23 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
-import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
-import org.springframework.web.cors.*;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import ru.safeai.gateway.auth.service.AuthCookieProperties;
 import ru.safeai.gateway.auth.service.AuthCookieService;
-import ru.safeai.gateway.common.security.*;
-
 import ru.safeai.gateway.common.security.ClientIpProperties;
+import ru.safeai.gateway.common.security.CorsProperties;
+import ru.safeai.gateway.common.security.JsonAccessDeniedHandler;
+import ru.safeai.gateway.common.security.JsonAuthenticationEntryPoint;
+import ru.safeai.gateway.common.security.JwtProperties;
+import ru.safeai.gateway.common.security.SafeAiJwtAuthenticationConverter;
 
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
@@ -59,6 +65,9 @@ public class SecurityConfig {
     private final CorsProperties corsProperties;
     private final AuthCookieProperties authCookieProperties;
 
+    @Value("${safeai.security.hsts.enabled:false}")
+    private boolean hstsEnabled;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) {
         return http
@@ -67,18 +76,24 @@ public class SecurityConfig {
                         .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
                 )
                 .cors(Customizer.withDefaults())
-                .headers(headers -> headers
-                        .contentSecurityPolicy(csp -> csp
-                                .policyDirectives("default-src 'self'; frame-ancestors 'none'; object-src 'none'")
-                        )
-                        .frameOptions(HeadersConfigurer.FrameOptionsConfig::deny)
-                        .contentTypeOptions(Customizer.withDefaults())
-                        .httpStrictTransportSecurity(hsts -> hsts
-                                .includeSubDomains(true)
-                                .preload(true)
-                                .maxAgeInSeconds(31536000)
-                        )
-                )
+                .headers(headers -> {
+                    headers
+                            .contentSecurityPolicy(csp -> csp
+                                    .policyDirectives("default-src 'self'; frame-ancestors 'none'; object-src 'none'")
+                            )
+                            .frameOptions(HeadersConfigurer.FrameOptionsConfig::deny)
+                            .contentTypeOptions(Customizer.withDefaults());
+
+                    headers.httpStrictTransportSecurity(hsts -> {
+                        if (hstsEnabled) {
+                            hsts.includeSubDomains(true)
+                                    .preload(true)
+                                    .maxAgeInSeconds(31536000);
+                        } else {
+                            hsts.disable();
+                        }
+                    });
+                })
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
@@ -99,6 +114,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/me").authenticated()
 
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers("/actuator/prometheus").permitAll()
                         .requestMatchers("/actuator/**").hasRole("SUPER_ADMIN")
 
                         .requestMatchers(HttpMethod.POST, "/api/organizations").hasRole("SUPER_ADMIN")
@@ -183,8 +199,7 @@ public class SecurityConfig {
         return request -> {
             String servletPath = request.getServletPath();
 
-            if ("/api/auth/login".equals(servletPath)
-                    || "/api/auth/refresh".equals(servletPath)) {
+            if (isPublicAuthEndpoint(servletPath)) {
                 return null;
             }
 
@@ -210,6 +225,13 @@ public class SecurityConfig {
 
             return null;
         };
+    }
+
+    private boolean isPublicAuthEndpoint(String servletPath) {
+        return "/api/auth/login".equals(servletPath)
+                || "/api/auth/refresh".equals(servletPath)
+                || "/api/auth/logout".equals(servletPath)
+                || "/api/auth/csrf".equals(servletPath);
     }
 
     @Bean
@@ -256,8 +278,6 @@ public class SecurityConfig {
     }
 
     private SecretKeySpec jwtSecretKey() {
-        jwtProperties.validateSecret();
-
         byte[] secret = jwtProperties.secret().getBytes(StandardCharsets.UTF_8);
 
         return new SecretKeySpec(secret, "HmacSHA256");
