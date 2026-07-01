@@ -1,379 +1,459 @@
 # SafeAI Desk Roadmap
 
-Этот roadmap описывает развитие SafeAI Desk: от текущего production-oriented MVP к полноценной корпоративной AI Gateway платформе.
+Roadmap описывает развитие **SafeAI Desk** от текущего production-oriented MVP к полноценной корпоративной AI Gateway платформе.
 
-Roadmap разбит на фазы. Каждая фаза добавляет business value, technical depth и portfolio/interview value.
+SafeAI Desk развивается не как «чат с AI», а как внутренняя корпоративная платформа доступа к AI: с multi-tenancy, RBAC, audit logging, usage analytics, rate limits, cost controls, policy controls, RAG и production deployment.
 
 ---
 
-## Roadmap Philosophy
+## 1. Принцип развития
 
-SafeAI Desk должен развиваться в таком порядке:
+Главный порядок развития проекта:
 
 ```text
-1. Stabilize existing MVP
-2. Improve admin visibility and tenant management
-3. Connect real AI provider
-4. Add cost control and budgets
-5. Add RAG / Knowledge Base
-6. Add AI safety and policy controls
-7. Add production deployment and CI/CD
-8. Add enterprise-level capabilities
+1. Зафиксировать текущий MVP как стабильную базу.
+2. Довести tenant/user/admin management до безопасного production-like состояния.
+3. Подключить и проверить реальные AI providers.
+4. Добавить финансовый контроль: usage, pricing, budgets, quotas.
+5. Добавить RAG / Knowledge Base.
+6. Добавить AI Safety / Policy Engine.
+7. Добавить observability, testing, CI/CD и deployment.
+8. Расширить до enterprise-функций.
 ```
 
-Не стоит прыгать сразу в RAG, пока не вычищены текущие security/admin/tenant foundations.
+Ключевой принцип: сначала надежная security/multi-tenant основа, потом RAG и enterprise-функции.
 
 ---
 
-## Phase 0 — MVP Stabilization
+## 2. Текущий статус проекта
 
-Цель: сделать текущий проект чистым, воспроизводимым и portfolio-ready.
+### Уже реализовано
 
-Приоритет: highest.
+```text
+Backend:
+- Java 21 + Spring Boot backend.
+- PostgreSQL + Flyway migrations.
+- Redis-backed rate limiting.
+- Cookie-based auth через HttpOnly access_token / refresh_token.
+- CSRF protection для unsafe methods.
+- Refresh token rotation.
+- Refresh token reuse detection.
+- tokenVersion-based access JWT invalidation.
+- Bulk refresh-session revocation при password reset / role change / user disable / organization disable.
+- SUPER_ADMIN / ADMIN / USER roles.
+- Organization-based multi-tenancy.
+- Platform organization protection.
+- User management.
+- Organization management.
+- Chat sessions/messages.
+- AI provider abstraction: mock / OpenAI / Anthropic.
+- Audit logging.
+- Usage analytics.
+- Usage module вынесен отдельно от chat.
+- Organization snapshot в chat messages для корректного historical usage.
+- Login rate limiting.
+- AI message rate limiting.
+- RequestId support.
+- JSON API error format.
 
-### 0.1 Очистка database migrations
+Frontend:
+- React + TypeScript + Vite.
+- Login flow.
+- Cookie-auth через fetch credentials include.
+- CSRF integration.
+- 401 refresh retry.
+- Single-flight refresh protection.
+- Protected routes.
+- Role-based navigation.
+- Chat UI.
+- Admin Users UI.
+- Admin Organizations UI.
+- Admin Audit UI.
+- Admin Usage UI.
+- Modals / confirmation dialogs.
+- Success auto-dismiss.
+- SafeAI Platform actions hidden in UI.
+```
+
+### Текущая модель ролей
+
+```text
+SUPER_ADMIN:
+- global/platform scope;
+- видит все организации;
+- создает организации;
+- управляет пользователями разных организаций;
+- видит global audit;
+- видит global usage;
+- не создается через обычный user-management endpoint;
+- не должен случайно создавать пользователей в SafeAI Platform.
+
+ADMIN:
+- organization scope;
+- видит только свою организацию;
+- видит пользователей только своей организации;
+- видит audit только своей организации;
+- видит usage только своей организации;
+- может пользоваться chat;
+- не должен видеть данные чужих организаций.
+
+USER:
+- own-resource scope;
+- видит только свои чаты;
+- отправляет сообщения в свои чаты;
+- не видит admin-разделы.
+```
+
+---
+
+## 3. Статусы roadmap
+
+```text
+DONE        — уже реализовано.
+IN PROGRESS — частично реализовано, требуется доводка.
+NEXT        — ближайший приоритет.
+LATER       — запланировано на будущие фазы.
+OPTIONAL    — полезно, но не критично.
+```
+
+---
+
+# Phase 0 — MVP Stabilization
+
+**Статус:** IN PROGRESS  
+**Цель:** закрепить текущий MVP как стабильную, воспроизводимую, portfolio-ready систему.
+
+## 0.1 Database / Flyway stabilization
+
+**Статус:** IN PROGRESS
 
 Задачи:
 
 ```text
-- Проверить Flyway migration history.
-- Убедиться, что миграция audit organization_id применена.
-- Добавить check constraints для chat_messages.
-- Исправить BCrypt password для platform superadmin.
-- Убрать redundant users.email unique constraint, если используется lower(email) unique index.
-- Убрать unique=true из UserEntity.email.
-- Проверить, что Hibernate ddl-auto validate проходит.
+- Проверить flyway_schema_history.
+- Убедиться, что V1000 local seed применяется только в local profile.
+- Зафиксировать, что production profile не использует local demo seed.
+- Проверить ddl-auto validate.
+- Проверить indexes под users, organizations, refresh_tokens, audit_events, chat_messages, usage queries.
+- Проверить constraints для chat_messages:
+  - role;
+  - status;
+  - non-negative token values;
+  - non-negative cost.
+- Убедиться, что users.email уникален case-insensitive.
 ```
 
 Acceptance criteria:
 
 ```text
-- Backend стартует без ошибок.
-- flyway_schema_history показывает successful migrations.
-- superadmin@test.com может залогиниться.
-- users.email уникален case-insensitive.
-- chat_messages отклоняет invalid roles и negative token/cost values.
+- Backend стартует на чистой БД.
+- Backend стартует на уже мигрированной БД.
+- Flyway history success=true для всех актуальных миграций.
+- superadmin@test.com создается только в local profile.
+- Hibernate validate проходит.
 ```
 
-### 0.2 Frontend package hygiene
+## 0.2 Test baseline
+
+**Статус:** IN PROGRESS
 
 Задачи:
 
 ```text
-- Перенести vite, typescript и @vitejs/plugin-react в devDependencies.
-- Перегенерировать package-lock.json.
-- Проверить npm run build.
-- Проверить реальные имена файлов LoginPage.tsx и AdminAuditPage.tsx.
-- Исправить API typings для fieldErrors.
-- Добавить organizationId в AuditEvent type.
+- Прогнать mvnw.cmd test.
+- Исправить все failing tests после рефакторинга usage.
+- Проверить security controller tests.
+- Проверить service tests:
+  - AuthService;
+  - RefreshTokenService;
+  - UserService;
+  - OrganizationService;
+  - ChatService;
+  - ChatPersistenceService;
+  - AuditEventService;
+  - AuditEventQueryService;
+  - UsageQueryService;
+  - RateLimitService.
 ```
 
 Acceptance criteria:
 
 ```text
-- npm install создает корректный lock file.
+- Все backend tests проходят.
+- Нет obsolete references на AdminUsageService.
+- Tests соответствуют текущей архитектуре usage.service.
+```
+
+## 0.3 Frontend build baseline
+
+**Статус:** NEXT
+
+Задачи:
+
+```text
+- Прогнать npm run build.
+- Убрать unused imports.
+- Проверить строгую типизацию API DTO.
+- Убедиться, что frontend не использует localStorage для JWT.
+- Проверить production-safe login form без demo password.
+```
+
+Acceptance criteria:
+
+```text
 - npm run build проходит.
+- Нет TypeScript compile errors.
 - Нет broken imports.
-- Frontend API types соответствуют backend DTO.
-```
-
-### 0.3 Documentation
-
-Задачи:
-
-```text
-- Добавить README.md.
-- Добавить ROADMAP.md.
-- Добавить architecture overview.
-- Добавить local development instructions.
-- Добавить default demo flow.
-- Добавить production gaps section.
-```
-
-Acceptance criteria:
-
-```text
-- Новый разработчик понимает проект по README.
-- Interviewer видит architecture и roadmap.
-- Project positioning сформулирован явно.
 ```
 
 ---
 
-## Phase 1 — Organization Management UI
+# Phase 1 — Tenant Onboarding and User Management Hardening
 
-Цель: показать multi-tenant organization model во frontend.
+**Статус:** NEXT  
+**Цель:** сделать безопасный tenant onboarding: организация → первый admin → пользователи.
 
-Приоритет: high.
+## 1.1 Organization-aware user creation
 
-### 1.1 Organization API client
+**Статус:** NEXT
 
-Добавить frontend API module:
+Проблема текущего состояния:
 
 ```text
-frontend/src/api/organizationApi.ts
+AdminUsersPage создает пользователя с organizationId = currentUser.organizationId.
+Для ADMIN это правильно.
+Для SUPER_ADMIN это опасно, потому SUPER_ADMIN находится в SafeAI Platform organization.
 ```
 
-Functions:
+Нужно сделать:
 
 ```text
-getOrganizations()
-getOrganizationById(id)
-createOrganization(request)
-```
+SUPER_ADMIN:
+- видит select организации при создании пользователя;
+- обязан выбрать client organization;
+- не может случайно создать обычного USER/ADMIN в SafeAI Platform.
 
-Types:
-
-```text
-Organization
-CreateOrganizationRequest
-```
-
-### 1.2 Organizations page
-
-Добавить страницу:
-
-```text
-frontend/src/pages/AdminOrganizationsPage.tsx
-```
-
-Route:
-
-```text
-/admin/organizations
-```
-
-Navigation:
-
-```text
-Topbar -> Organizations
-```
-
-Visibility:
-
-```text
-SUPER_ADMIN only для create/list all
-ADMIN может видеть только свою organization, если страница переиспользуется
-```
-
-UI:
-
-```text
-- organization list
-- organization name
-- createdAt
-- create organization form
-- organization details link
-```
-
-Acceptance criteria:
-
-```text
-- SUPER_ADMIN создает organizations из UI.
-- SUPER_ADMIN видит все organizations.
-- ADMIN не может создавать organizations.
-- ADMIN не получает global organization list.
-```
-
-### 1.3 Organization details page
-
-Опционально, но полезно:
-
-```text
-/admin/organizations/{id}
-```
-
-Показывать:
-
-```text
-- organization info
-- users in organization
-- usage by organization
-- audit events for organization
-```
-
-Эта страница визуально усилит multi-tenant модель.
-
----
-
-## Phase 2 — Improved Admin Usage Dashboard
-
-Цель: превратить usage из простой таблицы в полноценный admin dashboard.
-
-Приоритет: high.
-
-### 2.1 Frontend usage tabs
-
-Текущая страница показывает только summary.
-
-Добавить вкладки:
-
-```text
-Summary
-By Users
-By Models
-Daily
-By Organization
-```
-
-Backend уже имеет часть endpoints.
-
-Frontend API additions:
-
-```text
-getUsageByUsers()
-getUsageByModels()
-getUsageDaily()
-getUsageByOrganizationId(organizationId)
-getUsageByUserId(userId)
-```
-
-Acceptance criteria:
-
-```text
-- ADMIN видит только organization-scoped usage.
-- SUPER_ADMIN видит global usage.
-- Данные сгруппированы понятно.
-```
-
-### 2.2 Date filters
-
-Backend enhancement:
-
-```text
-dateFrom
-dateTo
-```
-
-Применить к:
-
-```text
-usage summary
-usage by users
-usage by models
-usage daily
-usage by user
-usage by organization
+ADMIN:
+- не видит select организации;
+- создает пользователей только в своей organizationId.
 ```
 
 Frontend:
 
 ```text
-- date input/date picker
-- Apply filters button
-- Reset filters button
+- Добавить загрузку organizations на AdminUsersPage только для SUPER_ADMIN.
+- Добавить organization select.
+- Заблокировать submit, если SUPER_ADMIN не выбрал organization.
+- Исключить SafeAI Platform из списка организаций для создания обычных пользователей.
+```
+
+Backend:
+
+```text
+- Проверить, что SUPER_ADMIN может createUser в любой non-platform organization.
+- Проверить, что ADMIN может createUser только в своей organization.
+- Проверить, что ADMIN не может создать пользователя в чужой organization.
+- Проверить, что обычный endpoint не позволяет назначить SUPER_ADMIN.
 ```
 
 Acceptance criteria:
 
 ```text
-- Admin видит usage за выбранный date range.
-- Queries сохраняют tenant scope.
+- SUPER_ADMIN создает ADMIN/USER в выбранной client organization.
+- ADMIN создает USER только в своей organization.
+- Попытка создать USER/ADMIN в SafeAI Platform отклоняется.
+- Попытка назначить SUPER_ADMIN через обычный endpoint отклоняется.
 ```
 
-### 2.3 Charts
+## 1.2 Role assignment hardening
 
-Возможные charts:
+**Статус:** NEXT
 
-```text
-daily total tokens
-daily cost
-tokens by model
-tokens by user
-cost by user
-```
-
-Library options:
+Желаемая production-модель:
 
 ```text
-Recharts
-Nivo
-Chart.js
-```
+SUPER_ADMIN:
+- может назначать USER и ADMIN;
+- не может назначать SUPER_ADMIN через обычный user-management endpoint.
 
-Acceptance criteria:
-
-```text
-- Usage dashboard визуально показывает trends.
-- Tables остаются для details.
-```
-
-### 2.4 CSV export
-
-Endpoint:
-
-```text
-GET /api/admin/usage/export.csv
-```
-
-Scope:
-
-```text
-SUPER_ADMIN -> global export
-ADMIN -> own organization only
+ADMIN:
+- может назначать только USER;
+- не может повышать пользователя до ADMIN;
+- не может назначать SUPER_ADMIN.
 ```
 
 Acceptance criteria:
 
 ```text
-- Admin может экспортировать usage data.
-- Export respects tenant boundaries.
+- ADMIN не может создать ADMIN.
+- ADMIN не может сделать Make ADMIN.
+- SUPER_ADMIN может назначить ADMIN внутри client organization.
+- Platform admin защищен от обычных user actions.
+```
+
+## 1.3 First admin onboarding
+
+**Статус:** LATER
+
+Flow:
+
+```text
+Create organization
+↓
+Create first admin
+↓
+Temporary password / invite
+↓
+Admin login
+↓
+Admin creates users
+```
+
+Acceptance criteria:
+
+```text
+- SUPER_ADMIN может быстро onboard-ить новую организацию.
+- У организации есть минимум один ADMIN.
+- Нет ручного SQL для базового onboarding.
 ```
 
 ---
 
-## Phase 3 — Real AI Provider Hardening
+# Phase 2 — Admin Visibility and Dashboards
 
-Цель: перейти от mock-first MVP к проверенной real provider integration.
+**Статус:** IN PROGRESS  
+**Цель:** сделать админские экраны полезными не только для проверки, но и для эксплуатации.
 
-Приоритет: high.
+## 2.1 Usage dashboard improvements
 
-### 3.1 Live verification OpenAI provider
+**Статус:** IN PROGRESS
+
+Уже есть:
+
+```text
+- Summary
+- By users
+- By models
+- Daily
+- date filters
+- model filter для summary
+- tenant scope
+```
+
+Добавить:
+
+```text
+- By organization tab для SUPER_ADMIN.
+- User details drill-down.
+- Organization details drill-down.
+- Period presets:
+  - last 24h;
+  - last 7 days;
+  - last 30 days;
+  - current month;
+  - custom range.
+```
+
+Acceptance criteria:
+
+```text
+- ADMIN видит только usage своей организации.
+- SUPER_ADMIN видит global usage и может фильтровать по organization.
+- UI явно показывает выбранный период.
+```
+
+## 2.2 Usage charts
+
+**Статус:** LATER
+
+Charts:
+
+```text
+- daily total tokens;
+- daily cost;
+- tokens by model;
+- cost by model;
+- top users by cost;
+- top organizations by cost for SUPER_ADMIN.
+```
+
+Recommended library:
+
+```text
+Recharts
+```
+
+Acceptance criteria:
+
+```text
+- Usage dashboard показывает trends.
+- Tables остаются как detailed view.
+```
+
+## 2.3 CSV export
+
+**Статус:** LATER
+
+Endpoints:
+
+```http
+GET /api/admin/usage/export.csv
+GET /api/admin/audit-events/export.csv
+```
+
+Rules:
+
+```text
+SUPER_ADMIN -> global export or organization-filtered export.
+ADMIN -> own organization only.
+```
+
+Acceptance criteria:
+
+```text
+- Export respects tenant boundaries.
+- Export includes date range and filters.
+```
+
+---
+
+# Phase 3 — Real AI Provider Verification and Hardening
+
+**Статус:** NEXT  
+**Цель:** перейти от mock-first MVP к проверенной integration с реальными AI providers.
+
+## 3.1 OpenAI live verification
+
+**Статус:** NEXT
 
 Задачи:
 
 ```text
 - Настроить OPENAI_API_KEY.
 - Настроить OPENAI_MODEL.
-- Отправить live request.
-- Проверить request payload.
+- Запустить backend с safeai.ai.provider=openai.
+- Отправить реальный chat message.
 - Проверить response parsing.
+- Проверить output_text extraction.
 - Проверить usage token extraction.
-- Проверить error handling.
+- Проверить cost calculation.
+- Проверить audit event.
+- Проверить usage dashboard.
 ```
 
 Acceptance criteria:
 
 ```text
-- User может отправить message через OpenAI provider.
-- Assistant response сохраняется.
+- User получает реальный assistant response.
+- Assistant message сохраняется.
 - Tokens сохраняются.
-- Audit event пишется.
-- Usage page показывает real token usage.
+- Cost считается по configured pricing.
+- Usage dashboard показывает реальные данные.
 ```
 
-### 3.2 OpenAI max output tokens
+## 3.2 Anthropic live verification
 
-Backend config:
-
-```text
-safeai.ai.openai.max-output-tokens
-```
-
-Provider payload:
-
-```text
-max_output_tokens
-```
-
-Acceptance criteria:
-
-```text
-- Response length контролируется через config.
-- Default безопасен для local/demo usage.
-```
-
-### 3.3 Live verification Anthropic provider
+**Статус:** LATER
 
 Задачи:
 
@@ -383,198 +463,153 @@ Acceptance criteria:
 - Проверить messages payload.
 - Проверить content block parsing.
 - Проверить token usage extraction.
+- Проверить provider errors.
 ```
 
 Acceptance criteria:
 
 ```text
-- Anthropic provider работает с real API key.
-- Provider выбирается через configuration.
+- Anthropic provider работает через тот же AiProvider interface.
+- Provider выбирается конфигурацией.
 ```
 
-### 3.4 Provider-specific error classification
+## 3.3 Provider error classification
 
-Текущее состояние:
+**Статус:** IN PROGRESS
 
-```text
-AiProviderException -> 502
-AiProviderTimeoutException -> 504
-```
-
-Добавить:
+Уже есть:
 
 ```text
+AiProviderException
 AiProviderRateLimitedException
-AiProviderUnauthorizedException
-AiProviderBadRequestException
+AiProviderTimeoutException
+AiProviderUnavailableException
 ```
 
-Mapping:
+Довести mapping:
 
 ```text
-429 -> AI_PROVIDER_RATE_LIMITED
-401/403 -> AI_PROVIDER_AUTH_ERROR
 400 -> AI_PROVIDER_BAD_REQUEST
-5xx -> AI_PROVIDER_ERROR
+401/403 -> AI_PROVIDER_AUTH_ERROR
+429 -> AI_PROVIDER_RATE_LIMITED
+5xx -> AI_PROVIDER_ERROR / AI_PROVIDER_UNAVAILABLE
 timeout -> AI_PROVIDER_TIMEOUT
 ```
 
 Acceptance criteria:
 
 ```text
-- Provider rate limit отличается от provider failure.
-- Frontend может показать более точное сообщение.
-- Audit может записать provider failure type.
+- Ошибки provider классифицируются понятно.
+- Frontend показывает точные сообщения.
+- Audit может хранить provider failure type без prompt content.
 ```
 
-### 3.5 Retry and backoff
+## 3.4 Retry-After support
 
-Добавить retry только для transient failures:
+**Статус:** LATER
 
-```text
-429
-500
-502
-503
-504
-network timeout
-```
-
-Не retry:
+Добавить:
 
 ```text
-400
-401
-403
-validation errors
-```
-
-Implementation options:
-
-```text
-Spring Retry
-Resilience4j
-manual retry wrapper
+- чтение Retry-After header для 429;
+- backoff с jitter;
+- max attempts;
+- не retry 400/401/403.
 ```
 
 Acceptance criteria:
 
 ```text
-- Transient provider failure может восстановиться.
-- Request не ретраится бесконечно.
-- Retry attempts логируются.
+- Transient failures ретраятся ограниченно.
+- Provider auth/config errors не ретраятся.
 ```
 
 ---
 
-## Phase 4 — AI Cost Calculation
+# Phase 4 — Pricing, Budgets and Quotas
 
-Цель: сделать usage analytics финансово осмысленной.
+**Статус:** IN PROGRESS  
+**Цель:** превратить usage analytics в управляемый финансовый контур.
 
-Приоритет: high.
+## 4.1 Pricing configuration
 
-### 4.1 Pricing configuration
+**Статус:** DONE / IN PROGRESS
 
-Добавить config:
+Текущее направление:
 
 ```yaml
 safeai:
   ai:
     pricing:
       models:
-        gpt-4.1:
-          input-usd-per-1m-tokens: 0.00
-          output-usd-per-1m-tokens: 0.00
-        claude-sonnet:
-          input-usd-per-1m-tokens: 0.00
-          output-usd-per-1m-tokens: 0.00
+        - model: mock-safeai
+          input-usd-per-1m-tokens: 0
+          output-usd-per-1m-tokens: 0
+        - model: gpt-4.1
+          input-usd-per-1m-tokens: 2.00
+          output-usd-per-1m-tokens: 8.00
+        - model: claude-opus-4-8
+          input-usd-per-1m-tokens: 15.00
+          output-usd-per-1m-tokens: 75.00
 ```
 
-Не hardcode цены прямо в provider classes.
-
-### 4.2 AiCostCalculator
-
-Новый component:
+README note:
 
 ```text
-AiCostCalculator
-AiPricingProperties
-```
-
-Input:
-
-```text
-model
-inputTokens
-outputTokens
-```
-
-Output:
-
-```text
-BigDecimal costUsd
+Cost is an estimate based on configured model pricing.
 ```
 
 Acceptance criteria:
 
 ```text
-- Cost считается одинаково для всех providers.
-- Usage dashboard показывает non-zero costs, если pricing configured.
+- Cost не hardcoded в providers.
+- Unknown model не ломает chat flow.
+- Missing pricing логируется.
 ```
 
-### 4.3 Unknown model fallback
+## 4.2 Organization budgets
 
-Если цена модели отсутствует:
+**Статус:** LATER
 
-```text
-cost = 0
-details contains pricingMissing=true
-log warning
-```
-
-Acceptance criteria:
-
-```text
-- Unknown models не ломают chat flow.
-- Missing pricing видно в logs/audit.
-```
-
----
-
-## Phase 5 — Organization Budgets and Quotas
-
-Цель: добавить financial и operational controls.
-
-Приоритет: medium-high.
-
-### 5.1 Organization-level AI budget
-
-Добавить table:
+Новые сущности:
 
 ```text
 organization_ai_budgets
 ```
 
-Possible fields:
+Поля:
 
 ```text
 id
 organization_id
 monthly_budget_usd
+warning_threshold_percent
 enabled
 created_at
 updated_at
 ```
 
-Behavior:
+Поведение:
 
 ```text
-if estimated monthly cost >= budget -> block or warn
+- при 80% бюджета — warning;
+- при 100% бюджета — block или require approval;
+- все события пишутся в audit.
 ```
 
-### 5.2 Per-user quotas
+Acceptance criteria:
 
-Добавить поддержку:
+```text
+- ADMIN видит бюджет своей организации.
+- SUPER_ADMIN видит бюджеты всех организаций.
+- Budget exceeded блокирует или ограничивает AI usage.
+```
+
+## 4.3 Per-user quotas
+
+**Статус:** LATER
+
+Поддержать:
 
 ```text
 messages per hour
@@ -583,7 +618,7 @@ tokens per day
 cost per month
 ```
 
-Configuration levels:
+Уровни настройки:
 
 ```text
 global default
@@ -591,33 +626,22 @@ organization override
 user override
 ```
 
-### 5.3 Budget exceeded audit events
-
-Добавить event types:
-
-```text
-ORGANIZATION_BUDGET_WARNING
-ORGANIZATION_BUDGET_EXCEEDED
-USER_QUOTA_EXCEEDED
-```
-
 Acceptance criteria:
 
 ```text
-- Admin видит budget/quota violations.
+- Quotas tenant-scoped.
+- Violations пишутся в audit.
 - User получает понятную ошибку.
-- Audit записывает событие.
 ```
 
 ---
 
-## Phase 6 — Streaming AI Responses
+# Phase 5 — Chat UX and Streaming
 
-Цель: улучшить chat UX и сделать AI interaction современнее.
+**Статус:** LATER  
+**Цель:** сделать AI interaction современным и удобным.
 
-Приоритет: medium.
-
-### 6.1 Backend streaming endpoint
+## 5.1 Streaming endpoint
 
 Endpoint:
 
@@ -625,86 +649,105 @@ Endpoint:
 POST /api/chats/{id}/messages/stream
 ```
 
-Options:
+Варианты:
 
 ```text
-Server-Sent Events
+SSE
+Streaming HTTP response
 WebSocket
-Streaming fetch response
 ```
 
-Recommended MVP:
+Рекомендуемый MVP:
 
 ```text
-SSE или streaming HTTP response
+SSE или streaming fetch response
 ```
-
-### 6.2 Frontend streaming UI
-
-Behavior:
-
-```text
-- user sends message
-- assistant message appears as pending
-- text streams token by token/chunk by chunk
-- final token usage saved after completion
-```
-
-### 6.3 Message status
-
-Добавить message status:
-
-```text
-PENDING
-COMPLETED
-FAILED
-```
-
-Это также решит текущую ситуацию, когда AI failure оставляет user message без структурированного failed assistant response.
 
 Acceptance criteria:
 
 ```text
-- User видит, как assistant text появляется постепенно.
-- Failed generations отображаются как failed messages.
-- Usage сохраняется после completion.
+- Assistant response появляется постепенно.
+- Failed streaming completion сохраняет FAILED message.
+- Usage сохраняется после финализации.
+```
+
+## 5.2 Message lifecycle
+
+Уже есть/используется:
+
+```text
+COMPLETED
+FAILED
+```
+
+Дальше добавить:
+
+```text
+PENDING
+CANCELLED
+```
+
+Acceptance criteria:
+
+```text
+- UI показывает pending generation.
+- User может отменить generation.
+- Backend корректно закрывает pending state.
+```
+
+## 5.3 Chat management
+
+Добавить:
+
+```text
+rename chat
+delete/archive chat
+search chats
+pagination load more
+copy message
+regenerate assistant response
+```
+
+Acceptance criteria:
+
+```text
+- Chat UI становится пригодным для повседневного использования.
 ```
 
 ---
 
-## Phase 7 — RAG Knowledge Base
+# Phase 6 — RAG / Knowledge Base
 
-Цель: превратить SafeAI Desk из chat gateway в company knowledge assistant.
+**Статус:** LATER  
+**Цель:** превратить SafeAI Desk в корпоративного knowledge assistant.
 
-Приоритет: high после core MVP hardening.
+## 6.1 Knowledge module
 
-### 7.1 Knowledge base domain
-
-Новый module:
+Новый backend module:
 
 ```text
 knowledge
 ```
 
-Entities:
+Сущности:
 
 ```text
 KnowledgeBase
-Document
+KnowledgeDocument
 DocumentChunk
-Embedding
+DocumentEmbedding
 ```
 
-Possible tables:
+Таблицы:
 
 ```text
 knowledge_bases
-documents
-document_chunks
-document_embeddings
+knowledge_documents
+knowledge_document_chunks
+knowledge_document_embeddings
 ```
 
-### 7.2 Document upload
+## 6.2 Document upload
 
 MVP formats:
 
@@ -727,100 +770,86 @@ Flow:
 
 ```text
 ADMIN uploads document
+↓
 backend stores metadata
-backend extracts text
-backend splits into chunks
-backend creates embeddings
-backend stores chunks and vectors
+↓
+extract text
+↓
+split into chunks
+↓
+create embeddings
+↓
+store chunks and vectors
 ```
 
-### 7.3 Vector search
+## 6.3 Vector search
 
-Recommended database:
+Recommended MVP:
 
 ```text
 PostgreSQL + pgvector
-```
-
-Почему:
-
-```text
-- стек остается простым
-- хорошо для portfolio
-- не нужен отдельный vector database на первом этапе
 ```
 
 Search flow:
 
 ```text
 user question
--> embedding
--> vector similarity search
--> top N chunks
--> build context
--> send to AI provider
+↓
+embedding
+↓
+top N vector search
+↓
+build context
+↓
+send to AI provider
+↓
+answer with citations
 ```
 
-### 7.4 RAG chat mode
+## 6.4 RAG tenant isolation
 
-Добавить chat mode:
-
-```text
-general chat
-knowledge-based chat
-```
-
-Или выбор knowledge base для конкретного чата.
-
-### 7.5 Citations
-
-Assistant responses должны содержать references:
+Rules:
 
 ```text
-document title
-chunk number
-source file
+SUPER_ADMIN:
+- может управлять global/platform knowledge bases;
+- может видеть knowledge всех organizations при необходимости.
+
+ADMIN:
+- управляет knowledge bases только своей organization.
+
+USER:
+- query только knowledge bases своей organization.
 ```
 
 Acceptance criteria:
 
 ```text
-- Admin загружает documents.
-- User задает вопросы по uploaded knowledge.
-- Assistant отвечает с citations.
+- Document upload работает.
+- RAG answers содержат citations.
 - Tenant isolation сохраняется.
-```
-
-### 7.6 RAG tenant isolation
-
-Critical rules:
-
-```text
-ADMIN управляет knowledge bases только внутри своей organization.
-USER query только knowledge bases своей organization.
-SUPER_ADMIN управляет platform/global knowledge bases.
+- Prompt/audit не сохраняют raw sensitive content.
 ```
 
 ---
 
-## Phase 8 — AI Safety and Policy Engine
+# Phase 7 — AI Safety and Policy Engine
 
-Цель: сделать название SafeAI осмысленным.
+**Статус:** LATER  
+**Цель:** сделать SafeAI действительно безопасным AI gateway.
 
-Приоритет: high после RAG или параллельно.
+## 7.1 Sensitive data detection
 
-### 8.1 Sensitive data detection
-
-Detect and optionally mask:
+Detect:
 
 ```text
 emails
-phone numbers
+phones
+password-like strings
 API keys
 JWT tokens
-password-like strings
-credit card-like patterns
-personal data
+credit-card-like strings
+personal data patterns
 ```
 
 Actions:
@@ -832,37 +861,30 @@ block
 audit only
 ```
 
-### 8.2 Prompt policy rules
+## 7.2 Policy rules
 
-Добавить configurable policies:
-
-```text
-block secrets
-block harmful content
-block source code exfiltration
-block private customer data
-block uploading confidential docs to external providers
-```
-
-Possible entity:
+Новая сущность:
 
 ```text
 ai_policy_rules
 ```
 
-Fields:
+Поля:
 
 ```text
 id
 organization_id
 name
+description
 pattern
+category
 action
 enabled
 created_at
+updated_at
 ```
 
-### 8.3 Policy violation audit
+## 7.3 Policy audit
 
 Event types:
 
@@ -882,11 +904,15 @@ chatId
 messageLength
 ```
 
-Raw sensitive prompt content в audit не сохранять.
+Правило:
 
-### 8.4 Frontend policy management
+```text
+Raw prompt content в audit не сохранять.
+```
 
-Admin page:
+## 7.4 Frontend policy management
+
+Страница:
 
 ```text
 /admin/policies
@@ -899,308 +925,77 @@ list rules
 create rule
 enable/disable rule
 view violations
+test prompt against policies
 ```
 
 Acceptance criteria:
 
 ```text
-- Policy engine блокирует или маскирует risky prompts.
-- Violations записываются в audit.
-- Rules tenant-scoped.
+- Risky prompt блокируется или маскируется.
+- Violation пишется в audit.
+- Policies tenant-scoped.
 ```
 
 ---
 
-## Phase 9 — Frontend Hardening
+# Phase 8 — Observability
 
-Цель: сделать frontend менее prototype-like.
+**Статус:** LATER  
+**Цель:** подготовить систему к эксплуатации.
 
-Приоритет: medium.
+## 8.1 Structured logs
 
-### 9.1 Component structure
+Добавить JSON logs для prod profile.
 
-Refactor into:
-
-```text
-components/layout
-components/forms
-components/tables
-components/errors
-components/admin
-components/chat
-```
-
-### 9.2 Data fetching library
-
-Добавить:
-
-```text
-TanStack Query
-```
-
-Benefits:
-
-```text
-cache
-loading states
-refetch
-error handling
-mutation handling
-optimistic updates
-```
-
-### 9.3 Form validation
-
-Добавить:
-
-```text
-react-hook-form
-zod
-```
-
-Использовать для:
-
-```text
-login
-create user
-reset password
-create organization
-policy forms
-document upload
-```
-
-### 9.4 Better UX
-
-Добавить:
-
-```text
-toasts
-modals
-confirmation dialogs
-empty states
-date formatting
-relative time
-active nav item
-responsive tables
-```
-
-### 9.5 Replace prompt-based password reset
-
-Current:
-
-```text
-window.prompt
-```
-
-Planned:
-
-```text
-modal form with password confirmation
-validation
-success/error toast
-```
-
-Acceptance criteria:
-
-```text
-- Admin UI выглядит осознанно.
-- User actions имеют consistent feedback.
-- Forms валидируются до submit.
-```
-
----
-
-## Phase 10 — Authentication Hardening
-
-Цель: приблизиться к production-grade browser security.
-
-Приоритет: medium.
-
-### 10.1 Move away from localStorage token
-
-Current:
-
-```text
-JWT stored in localStorage
-```
-
-Production risk:
-
-```text
-XSS can steal token
-```
-
-Planned:
-
-```text
-HttpOnly Secure SameSite cookie
-```
-
-### 10.2 Refresh token flow
-
-Добавить:
-
-```text
-short-lived access token
-longer-lived refresh token
-refresh token rotation
-refresh token reuse detection
-```
-
-### 10.3 Logout endpoint
-
-Добавить:
-
-```http
-POST /api/auth/logout
-```
-
-Behavior:
-
-```text
-invalidate refresh token
-optionally bump tokenVersion for forced logout
-```
-
-### 10.4 Login device/session tracking
-
-Добавить:
-
-```text
-user_sessions
-```
-
-Fields:
-
-```text
-id
-user_id
-refresh_token_hash
-user_agent
-ip
-created_at
-expires_at
-revoked_at
-```
-
-Acceptance criteria:
-
-```text
-- Tokens безопаснее в browser context.
-- User sessions можно revokе.
-- Security audit получает session visibility.
-```
-
----
-
-## Phase 11 — Organization Lifecycle
-
-Цель: поддержать реальные tenant operations.
-
-Приоритет: medium.
-
-### 11.1 Organization status
-
-Добавить:
-
-```text
-enabled
-archived
-```
-
-Behavior:
-
-```text
-disabled organization -> users cannot login/use AI
-archived organization -> read-only historical data
-```
-
-### 11.2 Organization settings
-
-Possible settings:
-
-```text
-default AI provider
-allowed models
-monthly budget
-rate limits
-policy rules
-knowledge base settings
-```
-
-### 11.3 Organization admin assignment
-
-Улучшить onboarding:
-
-```text
-Create organization
--> create first admin
--> send temporary password/invite
-```
-
-Acceptance criteria:
-
-```text
-- SUPER_ADMIN может корректно onboarding a new tenant.
-- Disabled organization blocks access.
-```
-
----
-
-## Phase 12 — Observability
-
-Цель: облегчить эксплуатацию системы.
-
-Приоритет: medium.
-
-### 12.1 Structured logs
-
-Добавить JSON logging для production profile.
-
-Include:
+Поля:
 
 ```text
 requestId
 userId
 organizationId
-path
 method
+path
 status
 durationMs
+exception
 ```
 
-### 12.2 Metrics
+## 8.2 Metrics
 
-Expose через Actuator/Micrometer:
+Через Actuator/Micrometer:
 
 ```text
+http requests
+login success/failure
+rate limit exceeded
 AI request count
 AI request latency
-AI errors by provider
-rate limit exceeded count
-login success/failure count
-usage tokens
+AI provider errors
+tokens used
+estimated cost
+refresh token reuse detected
 ```
 
-### 12.3 Health checks
+## 8.3 Health checks
 
-Добавить health indicators:
+Проверять:
 
 ```text
 PostgreSQL
 Redis
 AI provider configuration
+Flyway status
 ```
 
-### 12.4 Admin system status page
+## 8.4 Admin System page
 
-Frontend page:
+Frontend route:
 
 ```text
 /admin/system
 ```
 
-Show:
+Показывать:
 
 ```text
 backend health
@@ -1208,71 +1003,65 @@ database status
 redis status
 active provider
 build version
+last migration
 ```
 
 Acceptance criteria:
 
 ```text
-- Operator видит system health.
-- Logs and metrics помогают diagnose issues.
+- Operator понимает состояние системы.
+- requestId связывает frontend error и backend logs.
 ```
 
 ---
 
-## Phase 13 — Testing Strategy
+# Phase 9 — Testing Strategy
 
-Цель: повысить confidence и показать engineering maturity.
+**Статус:** IN PROGRESS  
+**Цель:** повысить уверенность в security boundaries.
 
-Приоритет: medium-high.
-
-### 13.1 Backend unit tests
+## 9.1 Backend security tests
 
 Покрыть:
 
 ```text
-UserService
-OrganizationService
-AuditEventQueryService
-AdminUsageService
-RateLimitService
-AiCostCalculator
-PolicyEngine
-```
-
-### 13.2 Security tests
-
-Проверить:
-
-```text
 ADMIN cannot access another organization users
-ADMIN cannot access another organization audit
-ADMIN cannot access another organization usage
+ADMIN cannot create user in another organization
+ADMIN cannot assign ADMIN/SUPER_ADMIN if policy forbids it
 USER cannot access admin endpoints
 USER cannot access another user's chat
+ADMIN cannot access another organization audit
+ADMIN cannot access another organization usage
+SUPER_ADMIN can access global audit/usage
+platform organization cannot be renamed/disabled
 old JWT rejected after tokenVersion change
-disabled user rejected
+refresh token reuse revokes token family
+disabled organization blocks users
 ```
 
-### 13.3 Integration tests
+## 9.2 Integration tests
 
-Использовать Testcontainers:
+Использовать:
 
 ```text
-PostgreSQL
-Redis
+Testcontainers PostgreSQL
+Testcontainers Redis
 ```
 
 Проверить:
 
 ```text
 Flyway migrations
-JWT login flow
+login flow
+refresh rotation
+logout
 chat flow
 rate limit flow
 audit persistence
+usage aggregation
 ```
 
-### 13.4 Frontend tests
+## 9.3 Frontend tests
 
 Possible stack:
 
@@ -1288,45 +1077,123 @@ Playwright
 login flow
 protected routes
 admin navigation
-create user form
+create organization
+create user
 chat send flow
+usage filters
+audit filters
 ```
 
 Acceptance criteria:
 
 ```text
-- Critical security boundaries покрыты tests.
+- Критичные security boundaries покрыты тестами.
 - CI может запускать tests автоматически.
 ```
 
 ---
 
-## Phase 14 — CI/CD and Deployment
+# Phase 10 — Frontend Architecture Hardening
 
-Цель: сделать проект deployable.
+**Статус:** LATER  
+**Цель:** сделать frontend менее prototype-like и удобным для развития.
 
-Приоритет: medium.
+## 10.1 Component structure
 
-### 14.1 GitHub Actions
-
-Pipeline:
-
-```text
-backend test
-frontend build
-docker build
-migration validation
-```
-
-Example jobs:
+Refactor:
 
 ```text
-backend-ci
-frontend-ci
-docker-ci
+components/layout
+components/forms
+components/tables
+components/errors
+components/admin
+components/chat
 ```
 
-### 14.2 Docker Compose production profile
+## 10.2 TanStack Query
+
+Добавить:
+
+```text
+@tanstack/react-query
+```
+
+Плюсы:
+
+```text
+cache
+deduplication
+loading states
+refetch
+mutation handling
+optimistic updates
+```
+
+## 10.3 Forms
+
+Добавить:
+
+```text
+react-hook-form
+zod
+```
+
+Использовать для:
+
+```text
+login
+create user
+reset password
+create organization
+usage filters
+audit filters
+policy forms
+document upload
+```
+
+## 10.4 UX improvements
+
+Добавить:
+
+```text
+toasts
+responsive tables
+empty states
+skeleton loaders
+better date formatting
+copy buttons
+keyboard shortcuts
+dark/light mode toggle
+```
+
+Acceptance criteria:
+
+```text
+- UI проще поддерживать.
+- Forms имеют единый validation style.
+- API states управляются единообразно.
+```
+
+---
+
+# Phase 11 — CI/CD and Deployment
+
+**Статус:** LATER  
+**Цель:** сделать проект deployable.
+
+## 11.1 GitHub Actions
+
+Jobs:
+
+```text
+backend-test
+frontend-build
+docker-build
+migration-validation
+```
+
+## 11.2 Docker Compose full stack
 
 Services:
 
@@ -1338,20 +1205,20 @@ redis
 nginx
 ```
 
-### 14.3 Nginx reverse proxy
+## 11.3 Nginx reverse proxy
 
 Responsibilities:
 
 ```text
 serve frontend static files
 proxy /api to backend
-proxy /actuator health if needed
 SPA fallback
-gzip/brotli
 TLS termination
+gzip/brotli
+security headers
 ```
 
-### 14.4 Environment profiles
+## 11.4 Environment profiles
 
 Profiles:
 
@@ -1365,120 +1232,124 @@ prod
 Acceptance criteria:
 
 ```text
-- One command запускает full stack locally.
+- One command запускает full stack.
 - CI проверяет backend и frontend.
 - Deployment configuration документирована.
 ```
 
 ---
 
-## Phase 15 — Enterprise Features
+# Phase 12 — Enterprise Features
 
-Цель: приблизиться к реальной internal AI platform.
+**Статус:** LATER
 
-Приоритет: later.
-
-Possible features:
+Будущие функции:
 
 ```text
 SSO / OAuth2 login
 SCIM user provisioning
 organization invitations
 email notifications
+temporary password flow
 admin approval workflows
 model allowlists
+provider failover
+multi-provider routing
 department-level budgets
-chat sharing
 team workspaces
+chat sharing
 conversation export
 data retention policies
 legal hold
 audit export
 knowledge base permissions
-provider failover
-multi-provider routing
+DLP integrations
+SIEM export
 ```
 
 ---
 
-## Suggested Immediate Implementation Order
+# Immediate Implementation Order
 
-Следующие 10 практических шагов:
+Ближайшие практические шаги:
 
 ```text
-1. Finish migration cleanup.
-2. Fix frontend package hygiene and API typings.
-3. Add Organizations frontend page.
-4. Add Usage dashboard tabs.
-5. Add date filters for usage.
+1. Прогнать backend tests и frontend build.
+2. Доделать organization-aware user creation для SUPER_ADMIN.
+3. Запретить ADMIN создавать/назначать ADMIN, если выбираем strict production модель.
+4. Добавить tests для platform organization protection.
+5. Добавить tests для SUPER_ADMIN/ADMIN user creation boundaries.
 6. Live-verify OpenAI provider.
-7. Add maxOutputTokens for OpenAI.
-8. Add AiCostCalculator.
-9. Add backend security tests for tenant isolation.
-10. Add README screenshots and demo flow.
+7. Проверить pricing для real model usage.
+8. Добавить By Organization usage tab для SUPER_ADMIN.
+9. Добавить базовые usage charts.
+10. Подготовить CI pipeline.
 ```
 
 ---
 
-## Feature Priority Matrix
+# Feature Priority Matrix
 
-### High impact / low complexity
+## High impact / low complexity
 
 ```text
-Organizations UI
-Usage dashboard tabs
-Frontend type fixes
-Migration cleanup
-OpenAI maxOutputTokens
-AiCostCalculator basic version
-README and architecture docs
+organization-aware user creation
+role assignment hardening
+platform organization protection tests
+usage by organization tab
+OpenAI live verification
+frontend build cleanup
+README/ROADMAP screenshots
 ```
 
-### High impact / medium complexity
+## High impact / medium complexity
 
 ```text
-date filters for usage
-real OpenAI provider verification
 security integration tests
+usage charts
+CSV export
 organization budgets
-policy violation audit
-streaming responses
+provider-specific error mapping
+Retry-After support
+CI pipeline
 ```
 
-### High impact / high complexity
+## High impact / high complexity
 
 ```text
 RAG Knowledge Base
 pgvector integration
-document upload and parsing
-HttpOnly cookie + refresh token flow
-CI/CD deployment
-policy engine
+document parsing
+AI policy engine
+streaming responses
+production deployment
+SSO
+SCIM
 ```
 
-### Nice to have
+## Nice to have
 
 ```text
-charts
-CSV export
 toasts
-modal forms
-dark theme
-active nav item
+skeleton loading
+dark mode
 admin system status page
+chat search
+message copy
+conversation export
 ```
 
 ---
 
-## Long-Term Vision
+# Long-Term Vision
 
-SafeAI Desk может развиться в:
+SafeAI Desk должен развиться в:
 
 ```text
-Secure internal AI Gateway для организаций с RBAC, tenant isolation, audit, budgets, safety policies, document-based RAG и provider abstraction.
+Secure corporate AI Gateway для организаций с RBAC, tenant isolation, audit, usage analytics, budgets, quotas, policy engine, RAG knowledge base, provider abstraction и production deployment.
 ```
 
-В финальном виде система должна поддерживать:
+Финальная платформа должна поддерживать:
 
 ```text
 multiple organizations
@@ -1486,14 +1357,16 @@ multiple AI providers
 organization-specific policies
 organization-specific budgets
 document knowledge bases
+RAG chat
 admin analytics
 security audit
 safe prompt processing
 streaming chat
-production deployment
 CI/CD
+observability
+enterprise integrations
 ```
 
-Самое сильное portfolio positioning:
+Portfolio positioning:
 
-> SafeAI Desk is a corporate AI Gateway that demonstrates backend security architecture, multi-tenant access control, operational auditability, usage analytics, and extensible AI provider integration.
+> SafeAI Desk demonstrates production-oriented backend security architecture for a multi-tenant corporate AI Gateway: RBAC, JWT lifecycle management, refresh rotation, auditability, usage analytics, cost estimation, provider abstraction and a clear path toward RAG and AI safety.
