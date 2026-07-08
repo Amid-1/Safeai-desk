@@ -46,6 +46,21 @@ export async function createUser(request: CreateUserRequest): Promise<User> {
     })
 }
 
+export type UpdateUserRequest = {
+    email: string
+    fullName: string | null
+}
+
+export async function updateUser(
+    userId: string,
+    request: UpdateUserRequest
+): Promise<User> {
+    return apiRequest<User>(`/api/users/${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(request),
+    })
+}
+
 export async function updateUserEnabled(
     userId: string,
     request: UpdateUserEnabledRequest

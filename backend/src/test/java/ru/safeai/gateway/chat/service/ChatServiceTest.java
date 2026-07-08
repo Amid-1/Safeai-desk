@@ -6,6 +6,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.provider.AiProvider;
@@ -38,11 +41,7 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ChatServiceTest {
@@ -338,17 +337,89 @@ class ChatServiceTest {
     }
 
     @Test
-    void findById_shouldThrowResourceNotFoundWhenChatDoesNotBelongToCurrentUser() {
+    void findById_shouldThrowResourceNotFoundWhenChatDoesNotBelongToCurrentUserAndOrganization() {
         SafeAiUserPrincipal currentUser = currentUser();
 
-        when(chatSessionRepository.findByIdAndUser_Id(CHAT_ID, USER_ID))
-                .thenReturn(Optional.empty());
+        when(chatSessionRepository.findByIdAndUser_IdAndOrganization_Id(
+                CHAT_ID,
+                USER_ID,
+                ORGANIZATION_ID
+        )).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> chatService.findById(CHAT_ID, currentUser))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Чат не найден");
 
-        verify(chatSessionRepository).findByIdAndUser_Id(CHAT_ID, USER_ID);
+        verify(chatSessionRepository).findByIdAndUser_IdAndOrganization_Id(
+                CHAT_ID,
+                USER_ID,
+                ORGANIZATION_ID
+        );
+    }
+
+    @Test
+    void findAll_shouldReturnOnlyCurrentUserOrganizationChats() {
+        SafeAiUserPrincipal currentUser = currentUser();
+
+        ChatSessionEntity session = new ChatSessionEntity();
+        session.setId(CHAT_ID);
+        session.setUser(userEntity());
+        session.setOrganization(userEntity().getOrganization());
+        session.setTitle("Чат");
+        session.setCreatedAt(CREATED_AT);
+        session.setUpdatedAt(UPDATED_AT);
+
+        PageRequest pageable = PageRequest.of(0, 20);
+
+        when(chatSessionRepository.findByUser_IdAndOrganization_IdOrderByUpdatedAtDesc(
+                USER_ID,
+                ORGANIZATION_ID,
+                pageable
+        )).thenReturn(new PageImpl<>(List.of(session), pageable, 1));
+
+        var result = chatService.findAll(currentUser, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().getFirst().id()).isEqualTo(CHAT_ID);
+
+        verify(chatSessionRepository).findByUser_IdAndOrganization_IdOrderByUpdatedAtDesc(
+                USER_ID,
+                ORGANIZATION_ID,
+                pageable
+        );
+    }
+
+    @Test
+    void sendMessage_whenRateLimitExceeded_shouldNotSaveUserMessage() {
+        SafeAiUserPrincipal currentUser = currentUser();
+
+        RuntimeException exception = new RuntimeException("rate limit exceeded");
+
+        when(chatLockService.lock(CHAT_ID))
+                .thenReturn(CHAT_LOCK);
+
+        doThrow(exception)
+                .when(rateLimitService)
+                .checkAiMessageAllowed(currentUser);
+
+        assertThatThrownBy(() -> chatService.sendMessage(
+                CHAT_ID,
+                new SendMessageRequest("Привет"),
+                currentUser
+        ))
+                .isSameAs(exception);
+
+        verify(chatPersistenceService).assertOwnedChatExists(CHAT_ID, currentUser);
+        verify(rateLimitService).checkAiMessageAllowed(currentUser);
+
+        verify(chatPersistenceService, never()).saveUserMessageAndPrepareAiRequest(
+                any(),
+                any(),
+                any()
+        );
+
+        verify(aiProvider, never()).sendMessage(any());
+        verify(chatLockService).unlockQuietly(CHAT_LOCK);
     }
 
     private SafeAiUserPrincipal currentUser() {

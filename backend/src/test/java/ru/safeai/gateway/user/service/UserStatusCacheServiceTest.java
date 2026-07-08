@@ -43,11 +43,16 @@ class UserStatusCacheServiceTest {
         UserStatusCacheService service = enabledService();
 
         when(valueOperations.get(KEY))
-                .thenReturn("true:true:5");
+                .thenReturn(ORGANIZATION_ID + ":true:true:5");
 
         Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
 
-        assertThat(status).contains(new UserSecurityStatus(true, true, 5L));
+        assertThat(status).contains(new UserSecurityStatus(
+                ORGANIZATION_ID,
+                true,
+                true,
+                5L
+        ));
 
         verifyNoInteractions(userRepository);
         verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
@@ -65,12 +70,17 @@ class UserStatusCacheServiceTest {
 
         Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
 
-        assertThat(status).contains(new UserSecurityStatus(true, true, 3L));
+        assertThat(status).contains(new UserSecurityStatus(
+                ORGANIZATION_ID,
+                true,
+                true,
+                3L
+        ));
 
         verify(userRepository).findByIdWithOrganization(USER_ID);
         verify(valueOperations).set(
                 KEY,
-                "true:true:3",
+                ORGANIZATION_ID + ":true:true:3",
                 Duration.ofSeconds(60)
         );
     }
@@ -87,7 +97,12 @@ class UserStatusCacheServiceTest {
 
         Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
 
-        assertThat(status).contains(new UserSecurityStatus(false, true, 9L));
+        assertThat(status).contains(new UserSecurityStatus(
+                ORGANIZATION_ID,
+                false,
+                true,
+                9L
+        ));
 
         verify(userRepository).findByIdWithOrganization(USER_ID);
     }
@@ -122,12 +137,17 @@ class UserStatusCacheServiceTest {
 
         Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
 
-        assertThat(status).contains(new UserSecurityStatus(true, false, 7L));
+        assertThat(status).contains(new UserSecurityStatus(
+                ORGANIZATION_ID,
+                true,
+                false,
+                7L
+        ));
 
         verify(userRepository).findByIdWithOrganization(USER_ID);
         verify(valueOperations).set(
                 KEY,
-                "true:false:7",
+                ORGANIZATION_ID + ":true:false:7",
                 Duration.ofSeconds(60)
         );
     }
@@ -137,11 +157,7 @@ class UserStatusCacheServiceTest {
         UserStatusCacheService service = new UserStatusCacheService(
                 userRepository,
                 redisTemplate,
-                new UserStatusCacheProperties(
-                        true,
-                        Duration.ofSeconds(60),
-                        "safeai:test:user-status"
-                )
+                properties(true)
         );
 
         service.evict(USER_ID);
@@ -154,11 +170,7 @@ class UserStatusCacheServiceTest {
         UserStatusCacheService service = new UserStatusCacheService(
                 userRepository,
                 redisTemplate,
-                new UserStatusCacheProperties(
-                        false,
-                        Duration.ofSeconds(60),
-                        "safeai:test:user-status"
-                )
+                properties(false)
         );
 
         when(userRepository.findByIdWithOrganization(USER_ID))
@@ -166,7 +178,12 @@ class UserStatusCacheServiceTest {
 
         Optional<UserSecurityStatus> status = service.getStatus(USER_ID);
 
-        assertThat(status).contains(new UserSecurityStatus(true, true, 1L));
+        assertThat(status).contains(new UserSecurityStatus(
+                ORGANIZATION_ID,
+                true,
+                true,
+                1L
+        ));
 
         verify(userRepository).findByIdWithOrganization(USER_ID);
         verifyNoInteractions(redisTemplate);
@@ -179,11 +196,15 @@ class UserStatusCacheServiceTest {
         return new UserStatusCacheService(
                 userRepository,
                 redisTemplate,
-                new UserStatusCacheProperties(
-                        true,
-                        Duration.ofSeconds(60),
-                        "safeai:test:user-status"
-                )
+                properties(true)
+        );
+    }
+
+    private UserStatusCacheProperties properties(boolean enabled) {
+        return new UserStatusCacheProperties(
+                enabled,
+                Duration.ofSeconds(60),
+                "safeai:test:user-status"
         );
     }
 

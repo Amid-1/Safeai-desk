@@ -15,6 +15,7 @@ import ru.safeai.gateway.auth.service.UserSessionRevocationService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
@@ -52,6 +53,18 @@ class UserServiceTest {
     private static final UUID USER_ID =
             UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
+    private static final UUID TARGET_ADMIN_ID =
+            UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
+
+    private static final UUID SUPER_ADMIN_ID =
+            UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+
+    private static final UUID PLATFORM_ORGANIZATION_ID =
+            UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    private static final String VALID_PASSWORD = "Admin123!456";
+    private static final String NEW_VALID_PASSWORD = "NewPass123!45";
+
     @Mock
     private UserRepository userRepository;
 
@@ -84,19 +97,14 @@ class UserServiceTest {
                 passwordEncoder,
                 auditEventService,
                 eventPublisher,
-                userSessionRevocationService
+                userSessionRevocationService,
+                new PlatformProperties(PLATFORM_ORGANIZATION_ID)
         );
     }
 
     @Test
     void createWhenEmailAlreadyExistsThrowsConflictException() {
-        CreateUserRequest request = new CreateUserRequest(
-                ORGANIZATION_ID,
-                "admin@test.com",
-                "admin123",
-                "Demo Admin",
-                Set.of("ADMIN")
-        );
+        CreateUserRequest request = createUserRequest(Set.of("USER"));
 
         when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(true);
 
@@ -109,13 +117,7 @@ class UserServiceTest {
 
     @Test
     void createWhenOrganizationNotFoundThrowsResourceNotFoundException() {
-        CreateUserRequest request = new CreateUserRequest(
-                ORGANIZATION_ID,
-                "admin@test.com",
-                "admin123",
-                "Demo Admin",
-                Set.of("ADMIN")
-        );
+        CreateUserRequest request = createUserRequest(Set.of("USER"));
 
         when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
         when(organizationRepository.findById(ORGANIZATION_ID)).thenReturn(Optional.empty());
@@ -129,19 +131,12 @@ class UserServiceTest {
 
     @Test
     void createWhenRoleNotFoundThrowsResourceNotFoundException() {
-        CreateUserRequest request = new CreateUserRequest(
-                ORGANIZATION_ID,
-                "admin@test.com",
-                "admin123",
-                "Demo Admin",
-                Set.of("ADMIN")
-        );
-
-        OrganizationEntity organization = organizationEntity();
+        CreateUserRequest request = createUserRequest(Set.of("USER"));
 
         when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
-        when(organizationRepository.findById(ORGANIZATION_ID)).thenReturn(Optional.of(organization));
-        when(roleRepository.findByName("ADMIN")).thenReturn(Optional.empty());
+        when(organizationRepository.findById(ORGANIZATION_ID))
+                .thenReturn(Optional.of(organizationEntity()));
+        when(roleRepository.findByName("USER")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -151,21 +146,32 @@ class UserServiceTest {
     }
 
     @Test
-    void createWhenRequestIsValidSavesUserWithEncodedPasswordAndRoles() {
-        RoleEntity adminRole = roleEntity("ADMIN");
-
-        CreateUserRequest request = new CreateUserRequest(
-                ORGANIZATION_ID,
-                "admin@test.com",
-                "admin123",
-                "Demo Admin",
-                Set.of("ADMIN")
-        );
+    void createWhenAdminAssignsAdminRoleThrowsForbiddenOperationException() {
+        CreateUserRequest request = createUserRequest(Set.of("ADMIN"));
 
         when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
-        when(organizationRepository.findById(ORGANIZATION_ID)).thenReturn(Optional.of(organizationEntity()));
+        when(organizationRepository.findById(ORGANIZATION_ID))
+                .thenReturn(Optional.of(organizationEntity()));
+
+        assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("ADMIN может назначать только роль USER");
+
+        verify(roleRepository, never()).findByName(anyString());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void createWhenSuperAdminCreatesAdminSavesUserWithEncodedPasswordAndRoles() {
+        RoleEntity adminRole = roleEntity("ADMIN");
+
+        CreateUserRequest request = createUserRequest(Set.of("ADMIN"));
+
+        when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
+        when(organizationRepository.findById(ORGANIZATION_ID))
+                .thenReturn(Optional.of(organizationEntity()));
         when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
-        when(passwordEncoder.encode("admin123")).thenReturn("encoded-password");
+        when(passwordEncoder.encode(VALID_PASSWORD)).thenReturn("encoded-password");
         when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> {
             UserEntity user = invocation.getArgument(0);
 
@@ -180,7 +186,7 @@ class UserServiceTest {
             return user;
         });
 
-        UserResponse response = userService.create(request, adminPrincipal());
+        UserResponse response = userService.create(request, superAdminPrincipal());
 
         ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
         verify(userRepository).save(captor.capture());
@@ -193,14 +199,16 @@ class UserServiceTest {
         assertThat(savedEntity.getPasswordHash()).isEqualTo("encoded-password");
         assertThat(savedEntity.getFullName()).isEqualTo("Demo Admin");
         assertThat(savedEntity.isEnabled()).isTrue();
-        assertThat(savedEntity.getRoles()).extracting(RoleEntity::getName).containsExactly("ADMIN");
+        assertThat(savedEntity.getRoles())
+                .extracting(RoleEntity::getName)
+                .containsExactly("ADMIN");
 
         assertThat(response.email()).isEqualTo("admin@test.com");
         assertThat(response.organizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(response.roles()).containsExactly("ADMIN");
 
         verify(auditEventService).record(
-                eq(ADMIN_ID),
+                eq(SUPER_ADMIN_ID),
                 eq(ORGANIZATION_ID),
                 eq(AuditEventType.USER_CREATED),
                 anyMap()
@@ -281,7 +289,7 @@ class UserServiceTest {
     }
 
     @Test
-    void updateEnabledShouldThrowConflictWhenAdminDisablesSelf() {
+    void updateEnabledShouldThrowForbiddenOperationExceptionWhenAdminDisablesSelf() {
         UserEntity admin = userEntity(
                 ADMIN_ID,
                 "admin@test.com",
@@ -306,26 +314,49 @@ class UserServiceTest {
     }
 
     @Test
-    void updateEnabledShouldThrowConflictWhenDisablingLastActiveAdmin() {
-        UUID targetAdminId = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
-
+    void updateEnabledShouldThrowForbiddenOperationExceptionWhenAdminManagesAnotherAdmin() {
         UserEntity targetAdmin = userEntity(
-                targetAdminId,
+                TARGET_ADMIN_ID,
                 "second-admin@test.com",
                 true,
                 Set.of(roleEntity("ADMIN"))
         );
 
-        when(userRepository.findByIdAndOrganizationId(targetAdminId, ORGANIZATION_ID))
+        when(userRepository.findByIdAndOrganizationId(TARGET_ADMIN_ID, ORGANIZATION_ID))
+                .thenReturn(Optional.of(targetAdmin));
+
+        assertThatThrownBy(() -> userService.updateEnabled(
+                TARGET_ADMIN_ID,
+                new UpdateUserEnabledRequest(false),
+                adminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("ADMIN не может управлять другим ADMIN");
+
+        verify(userRepository, never()).save(any());
+        verifyNoInteractions(auditEventService);
+        verifyNoInteractions(userSessionRevocationService);
+    }
+
+    @Test
+    void updateEnabledShouldThrowForbiddenOperationExceptionWhenSuperAdminDisablesLastActiveAdmin() {
+        UserEntity targetAdmin = userEntity(
+                TARGET_ADMIN_ID,
+                "second-admin@test.com",
+                true,
+                Set.of(roleEntity("ADMIN"))
+        );
+
+        when(userRepository.findByIdWithRolesAndOrganization(TARGET_ADMIN_ID))
                 .thenReturn(Optional.of(targetAdmin));
 
         when(userRepository.findEnabledAdminsForUpdate(ORGANIZATION_ID))
                 .thenReturn(List.of(targetAdmin));
 
         assertThatThrownBy(() -> userService.updateEnabled(
-                targetAdminId,
+                TARGET_ADMIN_ID,
                 new UpdateUserEnabledRequest(false),
-                adminPrincipal()
+                superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("последнего активного администратора");
@@ -336,7 +367,7 @@ class UserServiceTest {
     }
 
     @Test
-    void updateRolesShouldChangeUserRoleToAdminAndRevokeRefreshSessions() {
+    void updateRolesShouldChangeUserRoleToAdminAndRevokeRefreshSessionsWhenCurrentUserIsSuperAdmin() {
         UserEntity user = userEntity(
                 USER_ID,
                 "user@test.com",
@@ -346,7 +377,7 @@ class UserServiceTest {
 
         RoleEntity adminRole = roleEntity("ADMIN");
 
-        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
+        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
                 .thenReturn(Optional.of(user));
 
         when(roleRepository.findByName("ADMIN"))
@@ -358,7 +389,7 @@ class UserServiceTest {
         UserResponse response = userService.updateRoles(
                 USER_ID,
                 new UpdateUserRolesRequest(Set.of("ADMIN")),
-                adminPrincipal()
+                superAdminPrincipal()
         );
 
         assertThat(response.roles()).containsExactly("ADMIN");
@@ -368,11 +399,36 @@ class UserServiceTest {
         verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
-                eq(ADMIN_ID),
+                eq(SUPER_ADMIN_ID),
                 eq(ORGANIZATION_ID),
                 eq(AuditEventType.USER_ROLES_CHANGED),
                 anyMap()
         );
+    }
+
+    @Test
+    void updateRolesShouldThrowForbiddenOperationExceptionWhenAdminAssignsAdminRole() {
+        UserEntity user = userEntity(
+                USER_ID,
+                "user@test.com",
+                true,
+                Set.of(roleEntity("USER"))
+        );
+
+        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
+                .thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> userService.updateRoles(
+                USER_ID,
+                new UpdateUserRolesRequest(Set.of("ADMIN")),
+                adminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("ADMIN может назначать только роль USER");
+
+        verify(userRepository, never()).save(any());
+        verifyNoInteractions(auditEventService);
+        verifyNoInteractions(userSessionRevocationService);
     }
 
     @Test
@@ -416,7 +472,7 @@ class UserServiceTest {
     }
 
     @Test
-    void updateRolesShouldThrowConflictWhenAdminRemovesOwnAdminRole() {
+    void updateRolesShouldThrowForbiddenOperationExceptionWhenAdminRemovesOwnAdminRole() {
         UserEntity admin = userEntity(
                 ADMIN_ID,
                 "admin@test.com",
@@ -441,26 +497,49 @@ class UserServiceTest {
     }
 
     @Test
-    void updateRolesShouldThrowConflictWhenRemovingAdminRoleFromLastActiveAdmin() {
-        UUID targetAdminId = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
-
+    void updateRolesShouldThrowForbiddenOperationExceptionWhenAdminManagesAnotherAdmin() {
         UserEntity targetAdmin = userEntity(
-                targetAdminId,
+                TARGET_ADMIN_ID,
                 "second-admin@test.com",
                 true,
                 Set.of(roleEntity("ADMIN"))
         );
 
-        when(userRepository.findByIdAndOrganizationId(targetAdminId, ORGANIZATION_ID))
+        when(userRepository.findByIdAndOrganizationId(TARGET_ADMIN_ID, ORGANIZATION_ID))
+                .thenReturn(Optional.of(targetAdmin));
+
+        assertThatThrownBy(() -> userService.updateRoles(
+                TARGET_ADMIN_ID,
+                new UpdateUserRolesRequest(Set.of("USER")),
+                adminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("ADMIN не может управлять другим ADMIN");
+
+        verify(userRepository, never()).save(any());
+        verifyNoInteractions(auditEventService);
+        verifyNoInteractions(userSessionRevocationService);
+    }
+
+    @Test
+    void updateRolesShouldThrowForbiddenOperationExceptionWhenSuperAdminRemovesAdminRoleFromLastActiveAdmin() {
+        UserEntity targetAdmin = userEntity(
+                TARGET_ADMIN_ID,
+                "second-admin@test.com",
+                true,
+                Set.of(roleEntity("ADMIN"))
+        );
+
+        when(userRepository.findByIdWithRolesAndOrganization(TARGET_ADMIN_ID))
                 .thenReturn(Optional.of(targetAdmin));
 
         when(userRepository.findEnabledAdminsForUpdate(ORGANIZATION_ID))
                 .thenReturn(List.of(targetAdmin));
 
         assertThatThrownBy(() -> userService.updateRoles(
-                targetAdminId,
+                TARGET_ADMIN_ID,
                 new UpdateUserRolesRequest(Set.of("USER")),
-                adminPrincipal()
+                superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Нельзя снять роль ADMIN с последнего активного администратора");
@@ -482,7 +561,7 @@ class UserServiceTest {
         when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
                 .thenReturn(Optional.of(user));
 
-        when(passwordEncoder.encode("NewPass123!45"))
+        when(passwordEncoder.encode(NEW_VALID_PASSWORD))
                 .thenReturn("new-encoded-password");
 
         when(userRepository.save(any(UserEntity.class)))
@@ -490,7 +569,7 @@ class UserServiceTest {
 
         userService.resetPassword(
                 USER_ID,
-                new ResetUserPasswordRequest("NewPass123!45"),
+                new ResetUserPasswordRequest(NEW_VALID_PASSWORD),
                 adminPrincipal()
         );
 
@@ -506,6 +585,16 @@ class UserServiceTest {
                 eq(ORGANIZATION_ID),
                 eq(AuditEventType.USER_PASSWORD_RESET),
                 anyMap()
+        );
+    }
+
+    private CreateUserRequest createUserRequest(Set<String> roles) {
+        return new CreateUserRequest(
+                ORGANIZATION_ID,
+                "admin@test.com",
+                VALID_PASSWORD,
+                "Demo Admin",
+                roles
         );
     }
 
@@ -553,6 +642,18 @@ class UserServiceTest {
                 true,
                 0L,
                 List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
+    }
+
+    private SafeAiUserPrincipal superAdminPrincipal() {
+        return new SafeAiUserPrincipal(
+                SUPER_ADMIN_ID,
+                PLATFORM_ORGANIZATION_ID,
+                "super-admin@test.com",
+                "encoded-password",
+                true,
+                0L,
+                List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
         );
     }
 }

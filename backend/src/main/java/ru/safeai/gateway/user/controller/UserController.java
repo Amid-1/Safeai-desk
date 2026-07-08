@@ -1,24 +1,24 @@
+// Safeai-desk/backend/src/main/java/ru/safeai/gateway/user/controller/UserController.java
 package ru.safeai.gateway.user.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
-
-import ru.safeai.gateway.user.dto.CreateUserRequest;
-import ru.safeai.gateway.user.dto.UserResponse;
-import ru.safeai.gateway.user.service.UserService;
-
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.user.dto.CreateUserRequest;
 import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
 import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
+import ru.safeai.gateway.user.dto.UpdateUserRequest;
 import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
+import ru.safeai.gateway.user.dto.UserResponse;
+import ru.safeai.gateway.user.service.UserService;
 
 import java.util.UUID;
 
@@ -56,6 +56,15 @@ public class UserController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return userService.findById(id, currentUser);
+    }
+
+    @PatchMapping("/{id}")
+    public UserResponse updateUser(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateUserRequest request,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return userService.updateUser(id, request, currentUser);
     }
 
     @PatchMapping("/{id}/enabled")

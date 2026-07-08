@@ -166,6 +166,20 @@ class RedisRateLimitServiceTest {
                 .thenReturn(AI_ORGANIZATION_MESSAGE_KEY);
     }
 
+    @Test
+    void checkAiMessageAllowed_whenSuperAdminAboveUserLimitButWithinAdminLimit_shouldPass() {
+        mockUserAndOrganizationKeys();
+
+        when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
+                .thenReturn(new RateLimitResult(80L, 3600L))
+                .thenReturn(new RateLimitResult(200L, 3600L));
+
+        assertThatCode(() -> service.checkAiMessageAllowed(superAdminPrincipal()))
+                .doesNotThrowAnyException();
+
+        verifyNoInteractions(eventPublisher);
+    }
+
     private SafeAiUserPrincipal userPrincipal() {
         return principal("ROLE_USER");
     }
@@ -184,5 +198,9 @@ class RedisRateLimitServiceTest {
                 0L,
                 List.of(new SimpleGrantedAuthority(role))
         );
+    }
+
+    private SafeAiUserPrincipal superAdminPrincipal() {
+        return principal("ROLE_SUPER_ADMIN");
     }
 }

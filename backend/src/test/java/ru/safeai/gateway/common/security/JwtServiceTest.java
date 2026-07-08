@@ -41,7 +41,8 @@ class JwtServiceTest {
         JwtProperties jwtProperties = new JwtProperties(
                 "1234567890123456789012345678901212345678901234567890123456789012",
                 60,
-                "safeai-test"
+                "safeai-test",
+                "safeai-desk-api"
         );
 
         jwtService = new JwtService(jwtEncoder, jwtProperties);
@@ -85,6 +86,7 @@ class JwtServiceTest {
         JwtClaimsSet claims = captor.getValue().getClaims();
 
         assertThat(claims.getClaimAsString("iss")).isEqualTo("safeai-test");
+        assertThat(claims.getAudience()).containsExactly("safeai-desk-api");
         assertThat(claims.getSubject()).isEqualTo(USER_ID.toString());
 
         assertThat(claims.getIssuedAt()).isNotNull();
@@ -104,7 +106,7 @@ class JwtServiceTest {
         assertThat(tokenVersion.longValue()).isEqualTo(7L);
 
         List<String> roles = claims.getClaim("roles");
-        assertThat(roles).containsExactlyInAnyOrder("ADMIN", "USER");
+        assertThat(roles).containsExactly("ADMIN", "USER");
 
         String jti = claims.getClaimAsString("jti");
 

@@ -481,6 +481,39 @@ class UsageQueryServiceTest {
         assertThat(Duration.between(from, to).toDays()).isEqualTo(30);
     }
 
+    @Test
+    void getUsageByUserId_whenAdminRequestsForeignUser_shouldReturnEmptyOrganizationScopedResult() {
+        UUID foreignUserId = UUID.randomUUID();
+
+        when(usageQueryRepository.findUsageByUserIdAndOrganizationId(
+                foreignUserId,
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
+        )).thenReturn(List.of());
+
+        List<UsageSummaryResponse> result =
+                usageQueryService.getUsageByUserId(
+                        foreignUserId,
+                        DATE_FROM,
+                        DATE_TO,
+                        MODEL,
+                        adminPrincipal()
+                );
+
+        assertThat(result).isEmpty();
+
+        verify(usageQueryRepository).findUsageByUserIdAndOrganizationId(
+                foreignUserId,
+                ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                MODEL
+        );
+        verifyNoMoreInteractions(usageQueryRepository);
+    }
+
     private UsageDailySummaryProjection usageDailyProjection() {
         return new UsageDailySummaryProjection() {
             @Override

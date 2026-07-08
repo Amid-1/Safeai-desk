@@ -27,9 +27,11 @@ public record ChatLockProperties(
 
     public Duration effectiveTtl() {
         if (ttl == null || ttl.isZero() || ttl.isNegative()) {
-            return Duration.ofSeconds(120);
+            return Duration.ofSeconds(240);
         }
 
         return ttl;
     }
+
+
 }

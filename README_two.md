@@ -1,69 +1,58 @@
 # SafeAI Desk
 
-**SafeAI Desk** — это production-oriented full-stack MVP корпоративного AI Gateway: внутренней AI-платформы для организаций с аутентификацией, ролевой моделью, multi-tenancy, audit logging, usage analytics, Redis rate limiting и подключаемыми AI providers.
+**SafeAI Desk** — production-oriented full-stack MVP корпоративного AI Gateway для организаций.  
+Проект показывает не просто чат с AI, а полноценную платформенную архитектуру вокруг безопасного 
+корпоративного доступа к AI: аутентификация, роли, multi-tenancy, аудит, usage analytics, rate limiting, 
+управление организациями и пользователями, а также подключаемые AI-провайдеры.
 
-Проект задуман как portfolio/interview-ready система, которая показывает не просто чат с AI, а полноценную backend-архитектуру вокруг корпоративного доступа к AI: безопасность, разграничение прав, учет расходов, аудит действий и подготовку к дальнейшему развитию в сторону RAG, политик безопасности и production deployment.
+Проект можно использовать как портфолио/собеседовательный пример backend/frontend-системы уровня enterprise 
+MVP.
 
 ---
 
-## 1. Цель проекта
+## 1. Что решает проект
 
-SafeAI Desk — это не просто UI поверх AI API. Цель проекта — смоделировать инфраструктуру, которая нужна компании перед тем, как дать сотрудникам доступ к AI-инструментам.
+SafeAI Desk моделирует внутреннюю AI-платформу компании, где важно контролировать:
 
-Система отвечает на практические вопросы:
-
-- кто имеет право пользоваться AI-ассистентом;
+- кто имеет доступ к AI;
 - к какой организации относится пользователь;
-- кто может создавать и администрировать пользователей;
-- кто может видеть usage и audit;
-- сколько AI-запросов делает каждый пользователь;
-- какая модель сколько потребила токенов;
-- сколько потенциально стоит использование AI;
-- какие действия выполняли администраторы;
-- как отозвать старые JWT после смены ролей или сброса пароля;
-- как защитить login от brute-force атак;
-- как не дать администратору одной организации увидеть данные другой организации;
-- как переключаться между mock, OpenAI и Anthropic providers.
+- кто может создавать пользователей и организации;
+- кто может видеть аудит и usage;
+- сколько токенов потребляет пользователь, организация и модель;
+- как отозвать старые сессии после смены роли, отключения пользователя или сброса пароля;
+- как защитить login от brute-force;
+- как не дать администратору одной организации увидеть данные другой;
+- как безопасно подключать mock/OpenAI/Anthropic providers.
 
 ---
 
-## 2. Архитектура верхнего уровня
-
-SafeAI Desk построен как модульный монолит с четкими границами пакетов.
+## 2. Высокоуровневая архитектура
 
 ```text
-React Frontend
-        |
-        | HTTP / JSON
-        v
-Spring Boot Backend
-        |
-        |-- Auth / JWT / RBAC
-        |-- User Management
-        |-- Organization Management
-        |-- Chat Management
-        |-- AI Provider Abstraction
-        |-- Audit Logging
-        |-- Usage Analytics
-        |-- Redis Rate Limiting
-        |
-        +--> PostgreSQL
-        +--> Redis
-        +--> External AI Provider
+┌──────────────────────────────┐
+│        React Frontend         │
+│ TypeScript + Vite + Router    │
+└───────────────┬──────────────┘
+                │
+                │ HTTP / JSON
+                │ Cookie Auth + CSRF
+                ▼
+┌──────────────────────────────┐
+│      Spring Boot Backend      │
+│ Java 21 + Security + JPA      │
+└───────────────┬──────────────┘
+                │
+        ┌───────┼──────────────────────────────────────┐
+        │       │                                      │
+        ▼       ▼                                      ▼
+┌──────────┐ ┌──────────┐                    ┌─────────────────┐
+│PostgreSQL│ │  Redis   │                    │ External AI API  │
+│Flyway DB │ │RateLimit │                    │OpenAI/Anthropic  │
+└──────────┘ └──────────┘                    └─────────────────┘
 ```
 
-Текущий стек разработки и запуска:
-
-```text
-React + TypeScript + Vite
-Spring Boot + Java 21
-PostgreSQL
-Redis
-Docker Compose
-Flyway
-JWT
-Spring Security
-```
+Backend построен как модульный монолит.  
+Каждый домен выделен в отдельный package: `auth`, `user`, `organization`, `chat`, `usage`, `audit`, `ai`, `ratelimit`, `common`.
 
 ---
 
@@ -75,7 +64,6 @@ Spring Security
 - Spring Boot
 - Spring Web MVC
 - Spring Security
-- Spring OAuth2 Resource Server JWT
 - Spring Data JPA / Hibernate
 - PostgreSQL
 - Flyway
@@ -84,7 +72,7 @@ Spring Security
 - Lombok
 - Bean Validation
 - Docker / Docker Compose
-- подготовленная база для Testcontainers
+- JUnit 5 / Mockito / Spring MVC tests
 
 ### Frontend
 
@@ -92,22 +80,22 @@ Spring Security
 - TypeScript
 - Vite
 - React Router
-- общий Fetch API wrapper
-- простая CSS-стилизация для MVP
+- Fetch API wrapper
+- Cookie-based auth
+- CSRF handling
+- Простая MVP-стилизация
 
 ### Infrastructure
 
 - PostgreSQL container
 - Redis container
-- Backend Dockerfile
-- Docker Compose для локальной разработки
-- конфигурация через environment variables
+- Docker Compose
+- Environment-based configuration
+- Local seed через отдельные Flyway local migrations
 
 ---
 
-## 4. Основные доменные сущности
-
-Проект построен вокруг нескольких ключевых доменов:
+## 4. Основные домены
 
 ```text
 Organization
@@ -116,73 +104,17 @@ Role
 ChatSession
 ChatMessage
 AuditEvent
-UsageSummary
+Usage
 RateLimit
 AIProvider
+RefreshToken
 ```
 
-### Organization
+---
 
-`Organization` представляет tenant — отдельную организацию/компанию.
+## 5. Ролевая модель
 
-Каждый пользователь относится ровно к одной организации.
-
-Текущая модель:
-
-```text
-id
-name
-createdAt
-version
-```
-
-```text
-organization.enabled изменился
-↓
-публикуем OrganizationSecurityStateChangedEvent
-↓
-после commit находим всех пользователей организации
-↓
-удаляем их user-status cache из Redis
-↓
-следующий запрос пользователя пойдет в БД и увидит organization.enabled = false
-```
-
-Граница организации используется для:
-
-- ограничения видимости пользователей;
-- фильтрации audit events;
-- фильтрации usage analytics;
-- будущих organization-level quotas и budgets.
-
-### User
-
-Пользователь принадлежит организации и имеет одну или несколько ролей.
-
-Текущая модель:
-
-```text
-id
-organization
-email
-passwordHash
-fullName
-enabled
-createdAt
-tokenVersion
-version
-roles
-```
-
-Важные security-поля:
-
-- `enabled` — активна ли учетная запись;
-- `tokenVersion` — версия security-состояния пользователя для отзыва старых JWT;
-- `version` — optimistic locking.
-
-### Role
-
-Поддерживаемые роли:
+В системе используются три роли:
 
 ```text
 SUPER_ADMIN
@@ -190,204 +122,164 @@ ADMIN
 USER
 ```
 
-Семантика ролей:
+create:
+SUPER_ADMIN -> может создавать USER/ADMIN в обычных организациях
+ADMIN       -> может создавать только USER в своей организации
+
+updateRoles:
+SUPER_ADMIN -> может менять USER/ADMIN, но не SUPER_ADMIN
+ADMIN       -> не может менять роли ADMIN, может управлять только USER
+
+updateEnabled:
+SUPER_ADMIN -> может включать/отключать USER/ADMIN, но не SUPER_ADMIN
+ADMIN       -> может включать/отключать только USER своей организации
+
+resetPassword:
+SUPER_ADMIN -> может reset USER/ADMIN, но не SUPER_ADMIN
+ADMIN       -> может reset только USER своей организации
+
+
+### SUPER_ADMIN
+
+Платформенный администратор.
+
+Может:
+
+- видеть все организации;
+- создавать организации;
+- включать/выключать организации;
+- видеть всех пользователей всех организаций;
+- создавать `ADMIN` и `USER` в организациях;
+- смотреть весь audit;
+- смотреть весь usage;
+- фильтровать audit/usage по organizationId;
+- управлять администраторами внутри организаций.
+
+Не должен:
+
+- создавать еще одного `SUPER_ADMIN` через обычную форму пользователей;
+- случайно создавать пользователей в `SafeAI Platform`;
+- работать как обычный пользователь клиентской организации.
+
+`SUPER_ADMIN` создается через local seed/Flyway или отдельный platform-admin flow.
+
+### ADMIN
+
+Администратор внутри одной организации.
+
+Может:
+
+- видеть пользователей только своей организации;
+- создавать `USER` внутри своей организации;
+- сбрасывать пароль `USER` своей организации;
+- включать/выключать `USER` своей организации;
+- смотреть audit только своей организации;
+- смотреть usage только своей организации;
+- пользоваться чатом.
+
+Безопасное production-правило:
 
 ```text
-SUPER_ADMIN:
-- platform/global scope
-- может создавать организации
-- видит global usage
-- видит global audit
-- может управлять пользователями в любых организациях
-
-ADMIN:
-- organization scope
-- управляет пользователями только своей организации
-- видит audit и usage только своей организации
-
-USER:
-- обычный пользователь
-- может использовать chat
-- имеет доступ только к собственным чатам
+ADMIN не должен создавать других ADMIN.
+Назначение ADMIN лучше оставить только SUPER_ADMIN.
 ```
 
-```text
-### SUPER_ADMIN lifecycle
+### USER
 
-Пользователи с ролью SUPER_ADMIN не изменяются через обычные `/api/users/**` endpoints.
+Обычный пользователь.
 
-Обычный user-management flow предназначен для ролей:
+Может:
 
-- USER
-- ADMIN
+- видеть только свои чаты;
+- создавать свои чаты;
+- отправлять сообщения;
+- видеть только свои сообщения.
 
-Создание, изменение и удаление SUPER_ADMIN должно выполняться отдельно:
-через seed/Flyway, административную консоль платформы или отдельный platform-admin endpoint.
+Не может:
 
-### ChatSession
-
-Сессия чата, принадлежащая конкретному пользователю.
-```
-
-```text
-id
-user
-title
-createdAt
-```
-
-### ChatMessage
-
-Сообщение в чате.
-
-```text
-id
-session
-role
-content
-model
-inputTokens
-outputTokens
-costUsd
-createdAt
-```
-
-Поддерживаемые роли сообщений:
-
-```text
-USER
-ASSISTANT
-SYSTEM
-```
-
-### AuditEvent
-
-Событие аудита.
-
-```text
-id
-user
-organizationId
-eventType
-details
-createdAt
-```
-
-`organizationId` хранится прямо в audit event, чтобы можно было безопасно и быстро фильтровать события по tenant-границе.
+- видеть Users;
+- видеть Organizations;
+- видеть Audit;
+- видеть Usage;
+- создавать пользователей;
+- менять роли;
+- видеть чужие чаты.
 
 ---
 
-## 5. Security Architecture
+## 6. Multi-tenancy модель
 
-Безопасность — один из центральных элементов проекта.
-
-Backend использует stateless JWT authentication на Spring Security.
-
-### Auth / CSRF
-```text
-Frontend использует cookie-based authentication.
-
-Перед небезопасными методами `POST`, `PUT`, `PATCH`, `DELETE` frontend должен получить CSRF token через:
-
-GET /api/auth/csrf
-
-После этого значение token нужно отправлять в header:
-
-X-XSRF-TOKEN: <token>
-
-Endpoint `POST /api/auth/logout` доступен без авторизации на уровне permitAll, но остается под CSRF-защитой. 
-Поэтому logout также должен отправляться с `X-XSRF-TOKEN`.
-
-Authorization Bearer header поддерживается дополнительно для API-клиентов и тестов. Основной browser
- flow использует cookies.
- ```
+SafeAI Desk использует organization-based multi-tenancy на уровне приложения.
 
 ```text
-JWT uses HS256.
-
-In production SAFEAI_JWT_SECRET must be provided through environment variables
-or external secret manager. It must not be committed to git.
-
-Minimum secret length: 32 bytes.
- ```
-
-```text
-Frontend browser flow uses cookie authentication.
-
-Access token is stored in HttpOnly cookie:
-
-access_token
-
-Authorization Bearer header is also supported for API clients,
-integration tests, Postman and non-browser consumers.
-
-When both Authorization header and access_token cookie are present,
-Authorization header has priority.
- ```
-
-```text
-Итоговый refresh flow
-
-POST /api/auth/refresh
-↓
-read refresh_token from HttpOnly cookie
-↓
-hash refresh_token
-↓
-find token by hash with PESSIMISTIC_WRITE lock
-↓
-if not found:
-    clear cookies
-    401 INVALID_REFRESH_TOKEN
-↓
-if expired:
-    mark revoked_at
-    clear cookies
-    401 EXPIRED_REFRESH_TOKEN
-↓
-if revoked:
-    revoke all active tokens in same token_family_id
-    audit SECURITY_REFRESH_REUSE_DETECTED
-    clear cookies
-    401 INVALID_REFRESH_TOKEN
-↓
-mark old token:
-    last_used_at = now
-    revoked_at = now
-↓
-create new refresh token:
-    same token_family_id
-    new token_hash
-    new expires_at
-    created_by_ip
-    user_agent
-↓
-old.replaced_by_token_id = new.id
-↓
-issue new access token
-↓
-set access_token HttpOnly cookie
-↓
-set refresh_token HttpOnly cookie
- ```
-
-
-
-### Login Flow
-
-```text
-1. Пользователь отправляет email/password на /api/auth/login
-2. Проверяется login rate limit по email и IP
-3. AuthenticationManager проверяет credentials
-4. CustomUserDetailsService загружает пользователя, роли, organization и tokenVersion
-5. JwtService генерирует JWT
-6. Успешный login пишется в audit
-7. Токен возвращается frontend-у
+SUPER_ADMIN -> global/platform scope
+ADMIN       -> organization scope
+USER        -> own resources only
 ```
 
-### JWT Claims
+Tenant isolation реализована на уровне service-логики, а не только через URL security.
 
-JWT содержит:
+Изоляция применяется для:
+
+- пользователей;
+- организаций;
+- чатов;
+- сообщений;
+- audit events;
+- usage analytics;
+- rate-limit событий;
+- security-state invalidation.
+
+---
+
+## 7. Security Architecture
+
+Пароль ограничен 72 символами из-за особенностей BCrypt. Для строгого production-режима рекомендуется добавить проверку
+UTF-8 byte length или перейти на Argon2.
+
+
+### Browser auth flow
+
+Frontend использует cookie-based authentication:
+
+```text
+access_token  -> HttpOnly cookie
+refresh_token -> HttpOnly cookie
+XSRF-TOKEN    -> readable cookie для frontend
+```
+
+Frontend не хранит JWT в `localStorage`.
+
+Для authenticated requests frontend делает:
+
+```ts
+fetch('/api/...', {
+  credentials: 'include'
+})
+```
+
+Для unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`) frontend отправляет CSRF header:
+
+```text
+X-XSRF-TOKEN: <value from XSRF-TOKEN cookie>
+```
+
+### Auth endpoints
+
+```http
+GET  /api/auth/csrf
+POST /api/auth/login
+POST /api/auth/refresh
+POST /api/auth/logout
+GET  /api/auth/me
+```
+
+`/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/csrf` должны быть доступны без 
+access-token на уровне Spring Security, но unsafe методы остаются под CSRF-защитой.
+
+### JWT claims
+
+Access JWT содержит:
 
 ```text
 sub
@@ -402,880 +294,203 @@ exp
 iss
 ```
 
+Backend не полагается только на email.  
+Для tenant isolation и security checks используются `userId`, `organizationId`, `roles`, `tokenVersion`.
+
+### Refresh token rotation
+
+Refresh tokens хранятся в БД в виде hash.
+
+Refresh flow:
+
 ```text
-Login:
-POST /api/auth/login
-backend проверяет пароль
-backend ставит access_token cookie
-backend ставит refresh_token cookie
-frontend НЕ получает JWT в body и НЕ кладет его в localStorage
-
-Authenticated requests:
-frontend делает fetch(..., { credentials: "include" })
-браузер сам прикладывает cookie
-backend достает access token из cookie через BearerTokenResolver
-
-Refresh:
 POST /api/auth/refresh
-backend читает refresh_token cookie
-выдает новый access_token cookie
-
-Logout:
-POST /api/auth/logout
-backend удаляет cookies
-backend отзывает refresh token в БД
+↓
+read refresh_token cookie
+↓
+hash token
+↓
+find token by hash with PESSIMISTIC_WRITE lock
+↓
+validate revoked/expired/reuse
+↓
+revoke old refresh token
+↓
+create new refresh token in same token_family_id
+↓
+issue new access token
+↓
+set new cookies
 ```
+
+При reuse revoked refresh token:
 
 ```text
-Prodaction:
-
-
-refresh-token rotation
-revokedByIp / revokedReason
-device/session management
-отдельный UnauthorizedException вместо ResourceNotFoundException для refresh
-тесты на ClientIpResolver с X-Forwarded-For spoofing
+revoke all active tokens in same token family
+audit SECURITY_REFRESH_REUSE_DETECTED
+clear cookies
+return 401
 ```
 
+### Token invalidation через tokenVersion
 
-```text
-Вариант 1 — frontend через Authorization header
-fetch("/api/chats", {
-headers: {
-Authorization: `Bearer ${token}`,
-"Content-Type": "application/json",
-},
-});
-Вариант 2 — frontend через cookie
-fetch("/api/chats", {
-credentials: "include",
-headers: {
-"Content-Type": "application/json",
-},
-});
-
-access token в HttpOnly Secure SameSite cookie
-refresh token в HttpOnly Secure SameSite cookie
-CSRF protection для unsafe methods
-frontend не хранит JWT в localStorage
-BearerTokenResolver из cookie — нормально
-```
-
-```text
-POST /api/auth/logout не требует авторизации на уровне Spring Security,
-но остается под CSRF-защитой.
-
-Перед logout frontend должен получить CSRF token через:
-
-GET /api/auth/csrf
-
-И отправить его в header:
-
-X-XSRF-TOKEN: <token>
-
-Иначе logout может вернуть 403 Forbidden.
-
-```
-
-
-```text
-access_token  -> HttpOnly Secure SameSite cookie
-refresh_token -> HttpOnly Secure SameSite cookie
-XSRF-TOKEN    -> НЕ HttpOnly cookie, только для чтения frontend-ом
-frontend      -> отправляет X-XSRF-TOKEN header на POST/PATCH/PUT/DELETE
-backend       -> включает csrf(), а не disable()
-
-access_token  -> HttpOnly=true
-refresh_token -> HttpOnly=true
-XSRF-TOKEN    -> HttpOnly=false, но его лучше создает Spring CSRF, а AuthCookieService только очищает
-secure        -> через application.yml/env
-sameSite      -> через application.yml/env
-maxAge        -> через Duration, не руками в секундах
-```
-
-
-Backend не полагается только на email. В токене явно присутствуют `userId`, `organizationId`, `roles` и `tokenVersion`.
-
-### Token Revocation через tokenVersion
-
-В проекте используется `tokenVersion` для инвалидирования старых JWT.
-
-Когда меняется критичное security-состояние пользователя, backend увеличивает `tokenVersion`.
+При критичных изменениях security-состояния пользователя backend увеличивает `tokenVersion`.
 
 Примеры:
 
-```text
-user disabled
-user roles changed
-password reset
-force logout scenario
-```
+- password reset;
+- role change;
+- user disabled;
+- force logout scenario.
 
-На каждом authenticated request `UserStatusFilter` проверяет:
+`UserStatusFilter` проверяет на каждом authenticated request:
 
 ```text
 user.enabled == true
-AND current tokenVersion == latest tokenVersion
+organization.enabled == true
+tokenVersion из JWT == актуальный tokenVersion пользователя
 ```
 
-Если токен устарел, backend возвращает:
+Если токен устарел, backend возвращает `401`.
 
-```text
-401 TOKEN_REVOKED
-```
+### Refresh session revocation
 
-### User Status Cache
+Кроме access-token invalidation через `tokenVersion`, backend отзывает активные refresh-сессии:
 
-Чтобы не ходить в PostgreSQL на каждый запрос, security-состояние пользователя кешируется в Redis.
+- после сброса пароля;
+- после отключения пользователя;
+- после изменения ролей;
+- после отключения организации.
 
-Кешируемые значения:
-
-```text
-enabled
-tokenVersion
-```
-
-Инвалидация кеша event-driven:
-
-```text
-UserService меняет security-состояние
-        |
-        v
-UserSecurityStateChangedEvent
-        |
-        v
-TransactionalEventListener(AFTER_COMMIT)
-        |
-        v
-UserStatusCacheService.evict(userId)
-```
-
-Кеш очищается только после успешного commit транзакции.
-
-### RBAC Boundaries
-
-В системе два слоя authorization.
-
-#### 1. Route-level security
-
-Настроено в `SecurityConfig`.
-
-Примеры:
-
-```text
-/api/auth/login            public
-/api/auth/me               authenticated
-/api/chats/**              authenticated
-/api/users/**              ADMIN or SUPER_ADMIN
-/api/admin/**              ADMIN or SUPER_ADMIN
-POST /api/organizations    SUPER_ADMIN
-```
-
-#### 2. Service-level tenant isolation
-
-Бизнес-логика дополнительно проверяет tenant boundaries.
-
-Примеры:
-
-```text
-ADMIN может управлять пользователями только своей организации
-ADMIN может видеть audit только своей организации
-ADMIN может видеть usage только своей организации
-USER может работать только со своими чатами
-SUPER_ADMIN имеет global/platform scope
-```
-
-Это важно, потому что одной проверки ролей на уровне route недостаточно для multi-tenant системы.
-
----
-
-## 6. Multi-Tenancy Model
-
-SafeAI Desk использует organization-based multi-tenancy.
-
-Текущая модель — application-level tenant isolation, а не PostgreSQL Row Level Security.
-
-Основные правила:
-
-```text
-SUPER_ADMIN:
-- global/platform visibility
-
-ADMIN:
-- organization-scoped visibility
-
-USER:
-- own resources only
-```
-
-Tenant isolation реализована для:
-
-- списка пользователей;
-- просмотра пользователя;
-- создания пользователя;
-- изменения ролей пользователя;
-- включения/отключения пользователя;
-- сброса пароля;
-- audit queries;
-- usage analytics;
-- доступа к чатам;
-- отправки сообщений.
-
----
-
-## 7. Rate Limiting
-
-В проекте используется Redis-backed fixed-window rate limiting.
-
-### Login Rate Limit
-
-Login защищен двумя счетчиками:
-
-```text
-email-based limit
-IP-based limit
-```
-
-Назначение:
-
-```text
-email limit защищает конкретный аккаунт
-IP limit защищает систему от массового перебора
-```
-
-Ключи хэшируются перед записью в Redis.
-
-Пример:
-
-```text
-rate-limit:login:email:{sha256(email)}
-rate-limit:login:ip:{sha256(ip)}
-```
-
-### AI Message Rate Limit
-
-AI-сообщения ограничиваются на уровне пользователя.
-
-Текущая логика:
-
-```text
-USER        -> меньший hourly limit
-ADMIN       -> больший hourly limit
-SUPER_ADMIN -> пока обрабатывается как admin-level
-```
-
-Превышение лимита публикует событие и записывается в audit.
-
-### Redis Lua Script
-
-Limiter использует Lua script для атомарного `INCR + TTL`.
-
-Это лучше, чем раздельные команды:
-
-```text
-INCR
-EXPIRE
-```
-
-Потому что между ними может произойти сбой.
-
----
-
-## 8. Audit Logging
-
-Audit реализован отдельным сервисом.
-
-Текущие event types:
-
-```text
-USER_LOGIN_SUCCESS
-USER_LOGIN_FAILED
-
-CHAT_CREATED
-CHAT_MESSAGE_SENT
-AI_RESPONSE_RECEIVED
-AI_RESPONSE_FAILED
-
-USER_CREATED
-ORGANIZATION_CREATED
-
-USER_ENABLED_CHANGED
-USER_ROLES_CHANGED
-USER_PASSWORD_RESET
-
-RATE_LIMIT_EXCEEDED
-```
-
-### Принципы audit
-
-```text
-1. Audit не должен хранить полный prompt content.
-2. Audit должен содержать organizationId там, где это возможно.
-3. Ошибка записи audit обычно не должна ломать core business flow.
-4. ADMIN не должен видеть audit других организаций.
-5. SUPER_ADMIN может видеть global audit.
-```
-
-Пример details для сообщения в чат:
-
-```json
-{
-  "chatId": "...",
-  "messageId": "...",
-  "messageLength": 120
-}
-```
-
-Текст prompt не сохраняется в audit details.
-
----
-
-## 9. Chat Flow
-
-Chat module отвечает за:
-
-- создание chat sessions;
-- список чатов пользователя;
-- загрузку деталей чата;
-- отправку user messages;
-- подготовку AI request context;
-- сохранение assistant responses;
-- сохранение usage data;
-- запись audit events.
-
-### Send Message Flow
-
-```text
-1. User отправляет message на /api/chats/{id}/messages
-2. Backend валидирует тело запроса
-3. Backend проверяет ownership чата
-4. Backend проверяет AI rate limit
-5. Backend сохраняет USER message
-6. Backend загружает recent chat history
-7. Backend вызывает AiProvider вне DB-транзакции
-8. Backend сохраняет ASSISTANT message
-9. Backend записывает usage и audit event
-10. Backend возвращает обновленные chat details
-```
-
-Ключевое архитектурное решение: внешний AI request не выполняется внутри длинной DB-транзакции.
-
-Это не держит PostgreSQL connection, пока backend ожидает внешний AI provider.
-
-### Chat Ownership
-
-Пользователь имеет доступ только к собственным чатам.
-
-Это обеспечивается repository methods:
-
-```text
-findByIdAndUser_Id(...)
-existsByIdAndUser_Id(...)
-```
-
----
-
-## 10. AI Provider Abstraction
-
-SafeAI Desk использует provider abstraction:
-
-```java
-public interface AiProvider {
-    AiChatResponse sendMessage(AiChatRequest request);
-}
-```
-
-Текущие implementations:
-
-```text
-MockAiProvider
-OpenAiProvider
-AnthropicProvider
-```
-
-### Mock Provider
-
-Используется для local development, тестов, демо и offline-режима.
-
-Преимущества:
-
-- не нужен внешний API key;
-- нет расходов;
-- можно тестировать chat/audit/usage flow;
-- удобно для portfolio demo.
-
-### OpenAI Provider
-
-Реализован как scaffold реальной integration.
-
-Задачи provider:
-
-- собрать request payload;
-- отправить запрос в OpenAI API;
-- распарсить output text;
-- распарсить usage tokens;
-- преобразовать ошибки provider в application exceptions.
-
-### Anthropic Provider
-
-Реализован как scaffold реальной integration.
-
-Задачи provider:
-
-- собрать Anthropic Messages API payload;
-- нормализовать roles;
-- распарсить content blocks;
-- распарсить usage tokens;
-- преобразовать ошибки provider в application exceptions.
-
-### AI Error Mapping
-
-Ошибки AI provider преобразуются в стабильные API errors:
-
-```text
-AiProviderTimeoutException -> 504 AI_PROVIDER_TIMEOUT
-AiProviderException        -> 502 AI_PROVIDER_ERROR
-```
-
----
-
-## 11. Usage Analytics
-
-Usage analytics считаются по assistant messages.
-
-Система отслеживает:
-
-```text
-model
-inputTokens
-outputTokens
-totalTokens
-costUsd
-user
-organization
-date
-```
-
-Текущие admin usage views:
-
-```text
-usage summary
-usage by users
-usage by models
-daily usage
-usage by user
-usage by organization
-```
-
-Scope rules:
-
-```text
-SUPER_ADMIN -> global usage
-ADMIN       -> organization-scoped usage
-```
-
-Usage analytics сейчас вычисляются из таблицы chat messages через aggregation queries.
-
----
-
-## 12. User Management
-
-Admin users могут управлять пользователями.
-
-Реализованные операции:
-
-```text
-create user
-list users
-get user by id
-enable / disable user
-change user roles
-reset user password
-```
-
-Важные protections:
-
-```text
-ADMIN не может создать пользователя в другой организации
-ADMIN не может видеть пользователей другой организации
-ADMIN не может отключить самого себя
-ADMIN не может удалить/отключить последнего активного ADMIN организации
-role changes increment tokenVersion
-password reset increments tokenVersion
-enabled/disabled change increments tokenVersion
-```
-
-Обычный user-management endpoint не разрешает назначать `SUPER_ADMIN`.
-
-`SUPER_ADMIN` создается через seed/migration или отдельный platform-admin flow.
-
----
-
-## 13. Organization Management
-
-Organization management является platform-scoped.
-
-Реализованные операции:
-
-```text
-SUPER_ADMIN может создать organization
-SUPER_ADMIN может видеть все organizations
-ADMIN может видеть только свою organization
-SUPER_ADMIN может получить любую organization by id
-ADMIN может получить только свою organization by id
-```
-
-Organizations — основа tenant isolation.
-
----
-
-## 14. Frontend Overview
-
-Frontend предоставляет минимальный, но рабочий UI.
-
-Страницы:
-
-```text
-LoginPage
-ChatPage
-AdminUsersPage
-AdminAuditPage
-AdminUsagePage
-```
-
-### Login Page
-
-Позволяет залогиниться и сохраняет JWT token в localStorage.
-
-### Chat Page
-
-Поддерживает:
-
-- создание чата;
-- список чатов;
-- открытие чата;
-- отправку сообщений;
-- отображение assistant response metadata.
-
-### Admin Users Page
-
-Поддерживает:
-
-- список пользователей;
-- создание пользователя;
-- фильтр по роли;
-- enable/disable пользователя;
-- изменение роли;
-- reset password;
-- визуальную защиту platform admins от обычных admin-actions.
-
-### Admin Audit Page
-
-Поддерживает:
-
-- paginated audit events;
-- отображение event type;
-- отображение user email;
-- отображение JSON details.
-
-### Admin Usage Page
-
-Сейчас поддерживает:
-
-- usage summary by user and model.
-
-Планируемые улучшения:
-
-- вкладки users/models/daily;
-- filters;
-- charts;
-- date range.
-
----
-
-## 15. API Overview
-
-### Auth
-
-```http
-POST /api/auth/login
-GET  /api/auth/me
-```
-
-### Chats
-
-```http
-POST /api/chats
-GET  /api/chats
-GET  /api/chats/{id}
-POST /api/chats/{id}/messages
-```
-
-### Users
-
-```http
-POST  /api/users
-GET   /api/users
-GET   /api/users/{id}
-PATCH /api/users/{id}/enabled
-PATCH /api/users/{id}/roles
-POST  /api/users/{id}/reset-password
-```
-
-### Organizations
-
-```http
-POST /api/organizations
-GET  /api/organizations
-GET  /api/organizations/{id}
-```
-
-### Admin Audit
-
-```http
-GET /api/admin/audit-events
-GET /api/admin/audit-events/users/{userId}
-```
-
-### Admin Usage
-
-```http
-GET /api/admin/usage/summary
-GET /api/admin/usage/users
-GET /api/admin/usage/models
-GET /api/admin/usage/daily
-GET /api/admin/usage/by-user/{userId}
-GET /api/admin/usage/by-organization/{organizationId}
-```
-
----
-
-## 16. Error Response Format
-
-Backend возвращает единый формат ошибок:
-
-```json
-{
-  "timestamp": "2026-01-01T12:00:00Z",
-  "status": 400,
-  "error": "VALIDATION_ERROR",
-  "message": "Ошибка валидации запроса",
-  "path": "/api/users",
-  "requestId": "abc-123",
-  "fieldErrors": {
-    "email": [
-      "must be a well-formed email address"
-    ]
-  }
-}
-```
-
-Поддерживаемые категории ошибок:
-
-```text
-NOT_FOUND
-CONFLICT
-FORBIDDEN
-VALIDATION_ERROR
-BAD_REQUEST
-UNAUTHORIZED
-RATE_LIMIT_EXCEEDED
-RATE_LIMIT_UNAVAILABLE
-AI_PROVIDER_TIMEOUT
-AI_PROVIDER_ERROR
-INTERNAL_SERVER_ERROR
-```
-
----
-
-## 17. Request ID
-
-Backend поддерживает request correlation через `X-Request-Id`.
-
-Поведение:
-
-```text
-если клиент передал валидный X-Request-Id -> использовать его
-иначе -> сгенерировать UUID
-```
-
-Request id:
-
-- сохраняется в request attribute;
-- добавляется в response header;
-- добавляется в MDC logging context;
-- включается в API error response.
-
-Это помогает связывать frontend errors с backend logs.
-
----
-
-## 18. Database Migrations
-
-Backend использует Flyway.
-
-Задачи миграций:
-
-```text
-initial schema
-seed roles
-seed demo admin
-created_at timestamptz conversion
-indexes
-unique organization name
-user tokenVersion/version
-audit event type index
-SUPER_ADMIN role
-case-insensitive user email index
-organization version
-platform super admin
-audit event organization_id
-chat message check constraints
-super admin password fix
-email unique constraint cleanup
-```
-
-Принципы:
-
-```text
-1. Уже примененные миграции не редактируются.
-2. Новые изменения схемы делаются новыми versioned migrations.
-3. Hibernate ddl-auto должен валидировать схему, а не создавать ее.
-4. Критичные constraints должны жить в PostgreSQL, а не только в Java.
-```
-
----
-
-## 19. Local Development
-
-### Необходимые инструменты
-
-```text
-Java 21
-Maven
-Node.js
-npm
-Docker
-Docker Compose
-```
-
-### Запуск infrastructure
-
-```bash
-docker compose up -d postgres redis
-```
-
-### Запуск backend
-
-```bash
-cd backend
-mvn spring-boot:run
-```
-
-### Запуск frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Default local URLs
-
-```text
-Frontend: http://localhost:5173
-Backend:  http://localhost:8080
-Postgres: localhost:5432
-Redis:    localhost:6379
-```
-
----
-
-## 20. Demo Accounts
-
-Примеры local/demo аккаунтов:
-
-```text
-admin@test.com
-superadmin@test.com
-```
-
-Фактический пароль зависит от BCrypt hash, записанного в Flyway migrations.
-
-Demo credentials не должны использоваться в production.
-
----
-
-## 21. Configuration
-
-Приложение конфигурируется через environment variables и `application.yml`.
-
-Основные группы конфигурации:
-
-```text
-Database
-Redis
-JWT
-CORS
-Rate limits
-AI provider
-OpenAI settings
-Anthropic settings
-User status cache
-```
-
-Пример выбора AI provider:
-
-```text
-safeai.ai.provider=mock
-safeai.ai.provider=openai
-safeai.ai.provider=anthropic
-```
----
-
-## 24. Interview Positioning
-
-SafeAI Desk можно презентовать так:
-
-> Production-oriented full-stack MVP корпоративного AI Gateway с multi-tenancy, RBAC, audit logging, usage analytics, Redis rate limits, JWT token invalidation и подключаемыми AI providers.
-
-Ключевые engineering decisions:
-
-```text
-1. JWT содержит userId, organizationId, roles и tokenVersion.
-2. tokenVersion инвалидирует старые токены после изменения ролей/пароля/account state.
-3. UserStatusFilter проверяет enabled/tokenVersion на каждом authenticated request.
-4. Redis кеширует user security status с after-commit invalidation.
-5. ADMIN organization-scoped, SUPER_ADMIN platform-scoped.
-6. Audit events содержат organizationId для tenant-safe audit queries.
-7. Usage analytics scoped by organization для ADMIN.
-8. Chat ownership проверяется до rate limit и message processing.
-9. External AI calls выполняются вне длинных database transactions.
-10. AiProvider interface позволяет переключать mock/OpenAI/Anthropic.
-```
+Это защищает от ситуации, когда старый refresh token может получить новый access token после изменения прав.
 
 ---
 
 
-Рекомендуемая следующая фаза:
+1. При disable организации:
+    - revoke refresh sessions;
+    - bulk increment tokenVersion всем пользователям организации;
+    - publish cache invalidation event;
+    - audit пишет requiresRelogin=true.
+
+2. При enable организации:
+    - refresh tokens НЕ восстанавливаются;
+    - пользователи должны войти заново.
+
+3. Добавлен /api/organizations/me для ADMIN/SUPER_ADMIN.
+
+4. Listener cache invalidation сделан fail-safe с логированием.
+
+5. OrganizationRepository оставлен как есть.
+
+6. UserRepository дополнен bulk increment методом.
+
+
+Когда организация отключается:
+
+все активные refresh-токены пользователей этой организации отзываются;
+tokenVersion увеличивается для всех пользователей этой организации;
+существующие access-токены становятся недействительными после обновления/инвалидации кэша статуса
+пользователя;
+после повторного включения организации пользователям нужно войти заново.
+
+
+## 8. Backend-модули
 
 ```text
-1. Clean migrations and frontend hygiene
-2. Add Organizations UI
-3. Improve Usage dashboard
-4. Live-verify OpenAI provider
-5. Add RAG Knowledge Base
+ru.safeai.gateway
+├── admin
+│   └── controller
+│       └── AdminUsageController
+│
+├── ai
+│   ├── config
+│   ├── dto
+│   ├── exception
+│   ├── pricing
+│   ├── provider
+│   │   ├── anthropic
+│   │   ├── mock
+│   │   └── openai
+│   └── web
+│
+├── audit
+│   ├── controller
+│   ├── dto
+│   ├── entity
+│   ├── listener
+│   ├── repository
+│   ├── service
+│   └── AuditEventType
+│
+├── auth
+│   ├── controller
+│   ├── dto
+│   ├── entity
+│   ├── repository
+│   ├── security
+│   └── service
+│
+├── chat
+│   ├── controller
+│   ├── dto
+│   ├── entity
+│   ├── repository
+│   └── service
+│
+├── common
+│   ├── exception
+│   ├── platform
+│   └── security
+│
+├── organization
+│   ├── controller
+│   ├── dto
+│   ├── entity
+│   ├── event
+│   ├── repository
+│   └── service
+│
+├── ratelimit
+│
+├── usage
+│   ├── dto
+│   ├── repository
+│   └── service
+│
+└── user
+    ├── controller
+    ├── dto
+    ├── entity
+    ├── event
+    ├── repository
+    ├── service
+    └── validation
 ```
 
-## Структура проекта
+### Назначение backend-модулей
 
-По текущей структуре проект выглядит так:
+| Модуль | Назначение |
+|---|---|
+| `auth` | login, logout, refresh rotation, текущий пользователь, cookies, auth audit |
+| `common.security` | JWT, Spring Security, principal, CORS, requestId, JSON 401/403 |
+| `common.exception` | единый формат API ошибок |
+| `common.platform` | platform organization settings |
+| `ratelimit` | Redis-backed login/AI rate limiting |
+| `organization` | организации, platform-level управление, org security events |
+| `user` | пользователи, роли, enable/disable, reset password, password policy |
+| `chat` | chat sessions/messages, ownership, message processing |
+| `ai` | provider abstraction, mock/OpenAI/Anthropic, pricing |
+| `audit` | запись и чтение audit events |
+| `usage` | usage analytics и aggregation queries |
+| `admin` | admin API entry points, например usage endpoints |
 
+---
 
 ```text
-Safeai-desk/
+
+safeai-desk/
 ├── backend/
-│   ├── .idea/
 │   ├── .mvn/
 │   ├── src/
 │   │   ├── main/
@@ -1291,6 +506,7 @@ Safeai-desk/
 │   │   │   │               ├── common/
 │   │   │   │               ├── organization/
 │   │   │   │               ├── ratelimit/
+│   │   │   │               ├── usage/
 │   │   │   │               ├── user/
 │   │   │   │               └── SafeaiBackendApplication.java
 │   │   │   │
@@ -1300,19 +516,20 @@ Safeai-desk/
 │   │   │       ├── application-local-nginx.yml
 │   │   │       ├── application-prod.yml
 │   │   │       ├── logback-spring.xml
-│   │   │       ├── static/
-│   │   │       ├── templates/
 │   │   │       └── db/
 │   │   │           ├── migration/
 │   │   │           │   ├── V1__init_schema.sql
-│   │   │           │   └──V2__seed_reference_data.sql
+│   │   │           │   ├── V2__seed_reference_data.sql
 │   │   │           │   ├── V3__denormalize_chat_organization.sql
-│   │   │           │   └── 4__schema_hardening.sql
+│   │   │           │   ├── V4__schema_hardening.sql
 │   │   │           │   ├── V5__audit_event_types.sql
-│   │   │           │   └── V6__updated_at_triggers.sql
+│   │   │           │   ├── V6__updated_at_triggers.sql
 │   │   │           │   ├── V7__usage_quotas_and_rollups.sql
-│   │   │           │ 
-│   │   │           │    
+│   │   │           │   ├── V8__usage_chat_messages_indexes.sql
+│   │   │           │   ├── V9__audit_events_indexes.sql
+│   │   │           │   ├── V10__schema_hardening_timestamps_audit_rollups.sql
+│   │   │           │   └── V11__add_user_updated_audit_event_type.sql
+│   │   │           │
 │   │   │           └── local-migration/
 │   │   │               └── V1000__seed_local_demo_data.sql
 │   │   │
@@ -1329,6 +546,7 @@ Safeai-desk/
 │   │       │               ├── common/
 │   │       │               ├── organization/
 │   │       │               ├── ratelimit/
+│   │       │               ├── usage/
 │   │       │               ├── user/
 │   │       │               ├── PasswordHashGenerator.java
 │   │       │               └── SafeaiBackendApplicationTests.java
@@ -1336,7 +554,6 @@ Safeai-desk/
 │   │       └── resources/
 │   │           └── application-test.yml
 │   │
-│   ├── .env
 │   ├── .env.example
 │   ├── .env.prod
 │   ├── Dockerfile
@@ -1347,10 +564,33 @@ Safeai-desk/
 ├── frontend/
 │   ├── src/
 │   │   ├── api/
+│   │   │   ├── adminApi.ts
+│   │   │   ├── authApi.ts
+│   │   │   ├── chatApi.ts
+│   │   │   ├── http.ts
+│   │   │   ├── organizationApi.ts
+│   │   │   └── userApi.ts
+│   │   │
 │   │   ├── auth/
+│   │   │   └── AuthContext.tsx
+│   │   │
 │   │   ├── components/
+│   │   │   ├── ConfirmDialog.tsx
+│   │   │   ├── ErrorBoundary.tsx
+│   │   │   └── Modal.tsx
+│   │   │
 │   │   ├── pages/
+│   │   │   ├── AdminAuditPage.tsx
+│   │   │   ├── AdminOrganizationsPage.tsx
+│   │   │   ├── AdminUsagePage.tsx
+│   │   │   ├── AdminUsersPage.tsx
+│   │   │   ├── ChatPage.tsx
+│   │   │   └── LoginPage.tsx
+│   │   │
 │   │   ├── utils/
+│   │   │   ├── format.ts
+│   │   │   └── page.ts
+│   │   │
 │   │   ├── App.tsx
 │   │   ├── global.d.ts
 │   │   ├── index.css
@@ -1377,24 +617,19 @@ Safeai-desk/
 │   └── stop-infra.bat
 │
 ├── docs/
-│
-├── .gitignore
-└── README.md
+├── README.md
+├── ROADMAP.md
+└── .gitignore
+
 ```
 
 
-
----
-
-## Backend-модули
-
-
 ```text
+
 ru.safeai.gateway
 ├── admin
-│   ├── controller
-│      └── AdminUsageController
-│       
+│   └── controller
+│       └── AdminUsageController
 │
 ├── ai
 │   ├── config
@@ -1440,38 +675,48 @@ ru.safeai.gateway
 ├── audit
 │   ├── controller
 │   │   └── AuditController
+│   │
 │   ├── dto
 │   │   ├── AuditEventFilter
 │   │   └── AuditEventResponse
+│   │
 │   ├── entity
 │   │   └── AuditEventEntity
+│   │
 │   ├── listener
 │   │   └── RateLimitAuditListener
+│   │
 │   ├── repository
 │   │   └── AuditEventRepository
+│   │
 │   ├── service
 │   │   ├── AuditEventQueryService
 │   │   └── AuditEventService
+│   │
 │   └── AuditEventType
 │
 ├── auth
 │   ├── controller
 │   │   ├── AuthController
 │   │   └── CsrfController
+│   │
 │   ├── dto
 │   │   ├── CurrentUserResponse
 │   │   └── LoginRequest
-│   │    
+│   │
 │   ├── entity
 │   │   └── RefreshTokenEntity
+│   │
 │   ├── repository
 │   │   └── RefreshTokenRepository
+│   │
 │   ├── security
 │   │   ├── CsrfCookieFilter
 │   │   ├── CustomUserDetailsService
 │   │   ├── SecurityConfig
 │   │   ├── SpaCsrfTokenRequestHandler
 │   │   └── UserStatusFilter
+│   │
 │   └── service
 │       ├── AuthCookieProperties
 │       ├── AuthCookieService
@@ -1484,26 +729,24 @@ ru.safeai.gateway
 ├── chat
 │   ├── controller
 │   │   └── ChatController
+│   │
 │   ├── dto
 │   │   ├── ChatDetailsResponse
 │   │   ├── ChatResponse
 │   │   ├── CreateChatRequest
 │   │   ├── MessageResponse
-│   │   ├── SendMessageRequest
-│   │   ├── UsageDailySummaryResponse
-│   │   ├── UsageModelSummaryResponse
-│   │   ├── UsageSummaryResponse
-│   │   └── UsageUserSummaryResponse
+│   │   └── SendMessageRequest
+│   │
 │   ├── entity
 │   │   ├── ChatMessageEntity
 │   │   ├── ChatMessageRole
 │   │   ├── ChatMessageStatus
 │   │   └── ChatSessionEntity
+│   │
 │   ├── repository
 │   │   ├── ChatMessageRepository
-│   │   ├── ChatSessionRepository
-│   │   ├── UsageDailySummaryProjection
-│   │   └── UsageQueryRepository
+│   │   └── ChatSessionRepository
+│   │
 │   └── service
 │       ├── ChatLockProperties
 │       ├── ChatLockService
@@ -1548,17 +791,22 @@ ru.safeai.gateway
 ├── organization
 │   ├── controller
 │   │   └── OrganizationController
+│   │
 │   ├── dto
 │   │   ├── CreateOrganizationRequest
 │   │   ├── OrganizationResponse
 │   │   ├── UpdateOrganizationEnabledRequest
 │   │   └── UpdateOrganizationRequest
+│   │
 │   ├── entity
 │   │   └── OrganizationEntity
+│   │
 │   ├── event
 │   │   └── OrganizationSecurityStateChangedEvent
+│   │
 │   ├── repository
 │   │   └── OrganizationRepository
+│   │
 │   └── service
 │       ├── OrganizationService
 │       └── OrganizationStatusCacheInvalidationListener
@@ -1574,74 +822,61 @@ ru.safeai.gateway
 │   ├── RedisFixedWindowRateLimiter
 │   └── RedisRateLimitService
 │
-│     ── usage
-│        ├── dto
-│        │   ├── UsageDailySummaryResponse.java
-│        │   ├── UsageModelSummaryResponse.java
-│        │   ├── UsageSummaryResponse.java
-│        │   └── UsageUserSummaryResponse.java
-│        │
-│        ├── repository
-│        │   ├── UsageDailySummaryProjection.java
-│        │   └── UsageQueryRepository.java
-│        │
-│        └── service
-│            └── UsageQueryService.java
-
-
+├── usage
+│   ├── dto
+│   │   ├── UsageDailySummaryResponse
+│   │   ├── UsageModelSummaryResponse
+│   │   ├── UsageSummaryResponse
+│   │   └── UsageUserSummaryResponse
+│   │
+│   ├── repository
+│   │   ├── UsageDailySummaryProjection
+│   │   └── UsageQueryRepository
+│   │
+│   └── service
+│       └── UsageQueryService
+│
 └── user
     ├── controller
     │   └── UserController
+    │
     ├── dto
     │   ├── CreateUserRequest
     │   ├── ResetUserPasswordRequest
     │   ├── UpdateUserEnabledRequest
+    │   ├── UpdateUserRequest
     │   ├── UpdateUserRolesRequest
     │   └── UserResponse
+    │
     ├── entity
     │   ├── RoleEntity
     │   └── UserEntity
+    │
     ├── event
     │   └── UserSecurityStateChangedEvent
+    │
     ├── repository
     │   ├── RoleRepository
     │   └── UserRepository
-    └── service
-    │    ├── UserSecurityStatus
-    │    ├── UserService
-    │    ├── UserStatusCacheInvalidationListener
-    │    ├── UserStatusCacheProperties
-    │    └── UserStatusCacheService
-    │    
+    │
+    ├── service
+    │   ├── UserSecurityStatus
+    │   ├── UserService
+    │   ├── UserStatusCacheInvalidationListener
+    │   ├── UserStatusCacheProperties
+    │   └── UserStatusCacheService
+    │
     └── validation
         └── PasswordPolicy
+
 ```
-
-
-
-### Назначение модулей
-
-| Модуль | Назначение |
-|---|---|
-| `auth` | login, текущий пользователь, JWT выдача, audit login events |
-| `common.security` | SecurityConfig, JWT, principal, requestId, JSON 401/403, UserStatusFilter |
-| `common.exception` | единый формат API ошибок |
-| `common.ratelimit` | Redis login/AI-message rate limits |
-| `organization` | организации, platform-level управление |
-| `user` | пользователи, роли, enable/disable, reset password |
-| `chat` | chat sessions/messages, сохранение usage |
-| `ai` | AI provider abstraction и реализации |
-| `audit` | запись и чтение audit events |
-| `admin` | usage dashboards/aggregation endpoints |
 
 ---
 
-## Frontend-модули
+## 9. Frontend-модули
 
 ```text
 frontend/
-├── dist/
-├── node_modules/
 ├── src/
 │   ├── api/
 │   │   ├── adminApi.ts
@@ -1657,7 +892,8 @@ frontend/
 │   ├── components/
 │   │   ├── ConfirmDialog.tsx
 │   │   ├── ErrorBoundary.tsx
-│   │   └── Modal.tsx
+│   │   ├── Modal.tsx
+│   │   └── StateBlock.tsx
 │   │
 │   ├── pages/
 │   │   ├── AdminAuditPage.tsx
@@ -1668,148 +904,1137 @@ frontend/
 │   │   └── LoginPage.tsx
 │   │
 │   ├── utils/
+│   │   ├── date.ts
 │   │   ├── format.ts
 │   │   └── page.ts
 │   │
 │   ├── App.tsx
-│   ├── global.d.ts
 │   ├── index.css
-│   ├── main.tsx
-│   └── vite-env.d.ts
-│
-├── index.html
-├── package.json
-├── package-lock.json
-├── tsconfig.app.json
-├── tsconfig.json
-├── tsconfig.node.json
-└── vite.config.ts
+│   └── main.tsx
 ```
 
 ### Назначение frontend-файлов
 
 | Файл | Назначение |
 |---|---|
-| `api/http.ts` | общий `apiRequest`, token handling, ApiError |
-| `api/authApi.ts` | login и `/api/auth/me` |
-| `api/chatApi.ts` | CRUD чатов и отправка сообщений |
-| `api/userApi.ts` | admin user-management actions |
-| `api/adminApi.ts` | audit и usage APIs |
+| `api/http.ts` | общий `apiRequest`, cookies, CSRF, refresh retry, `ApiError` |
+| `api/authApi.ts` | login/logout/me |
+| `api/chatApi.ts` | chats API |
+| `api/userApi.ts` | user-management API |
+| `api/organizationApi.ts` | organization-management API |
+| `api/adminApi.ts` | audit и usage API |
+| `auth/AuthContext.tsx` | состояние текущего пользователя, login/logout, unauthorized events |
 | `App.tsx` | routes, protected routes, topbar |
-| `LoginPage.tsx` | login form |
-| `ChatPage.tsx` | список чатов и сообщения |
-| `AdminUsersPage.tsx` | пользователи, роли, enable/disable, reset password |
+| `LoginPage.tsx` | форма входа |
+| `ChatPage.tsx` | чат, сообщения, pending/failed состояния |
+| `AdminUsersPage.tsx` | управление пользователями |
+| `AdminOrganizationsPage.tsx` | управление организациями |
 | `AdminAuditPage.tsx` | audit events |
-| `AdminUsagePage.tsx` | usage summary |
+| `AdminUsagePage.tsx` | usage analytics |
+| `components/Modal.tsx` | общий modal |
+| `components/ConfirmDialog.tsx` | confirmation dialog |
+| `components/ErrorBoundary.tsx` | fallback для frontend runtime errors |
 
 ---
 
-А в application.yml замени pricing на:
+## 10. User Management
 
-safeai:
-ai:
-pricing:
-currency: USD
-mode: estimate
-models:
-- model: mock-safeai
-input-usd-per-1m-tokens: 0
-output-usd-per-1m-tokens: 0
-- model: gpt-4.1
-input-usd-per-1m-tokens: 2.00
-output-usd-per-1m-tokens: 8.00
-- model: claude-opus-4-8
-input-usd-per-1m-tokens: 15.00
-output-usd-per-1m-tokens: 75.00
+Реализованные операции:
 
-Но важно: если у тебя ModelPricingProperties сейчас ожидает только models, то поля currency и mode могут сломать binding, если класс строгий. Тогда безопаснее пока так:
+```http
+POST  /api/users
+GET   /api/users
+GET   /api/users/{id}
+PATCH /api/users/{id}/enabled
+PATCH /api/users/{id}/roles
+POST  /api/users/{id}/reset-password
+```
 
-safeai:
-ai:
-pricing:
-models:
-- model: mock-safeai
-input-usd-per-1m-tokens: 0
-output-usd-per-1m-tokens: 0
-- model: gpt-4.1
-input-usd-per-1m-tokens: 2.00
-output-usd-per-1m-tokens: 8.00
-- model: claude-opus-4-8
-input-usd-per-1m-tokens: 15.00
-output-usd-per-1m-tokens: 75.00
+Security rules:
 
-А в README написать: cost is an estimate based on configured model pricing.
-
-
-Как должно быть по ролям
-SUPER_ADMIN
-
-Может:
-
-- видеть все организации;
-- создавать организации;
-- включать/выключать организации;
-- видеть всех пользователей всех организаций;
-- создавать ADMIN/USER в любой организации;
-- смотреть весь audit;
-- смотреть весь usage;
-- фильтровать audit/usage по organizationId;
-- управлять ADMIN внутри организаций.
-
-Не должен:
-
-- создавать еще одного SUPER_ADMIN через обычную форму;
-- случайно создавать пользователей в SafeAI Platform;
-- работать как обычный пользователь клиентской организации.
-  ADMIN
-
-Может:
-
-- видеть пользователей только своей организации;
-- создавать USER внутри своей организации;
-- сбрасывать пароль USER своей организации;
-- включать/выключать USER своей организации;
-- смотреть audit только своей организации;
-- смотреть usage только своей организации;
-- пользоваться чатом.
-
-Спорно, но для безопасного production лучше:
-
-ADMIN не должен создавать других ADMIN.
-
-Назначение ADMIN лучше оставить только SUPER_ADMIN.
-
-USER
-
-Может:
-
-- видеть только свои чаты;
-- создавать свои чаты;
-- отправлять сообщения;
-- видеть только свои сообщения.
-
-Не может:
-
-- видеть Users;
-- видеть Organizations;
-- видеть Audit;
-- видеть Usage;
-- создавать пользователей;
-- менять роли;
-- видеть чужие чаты.
-
-
-Правила должны быть такие:
-
+```text
 SUPER_ADMIN:
-- может createUser в любой organizationId;
-- может назначать USER/ADMIN;
-- не может через обычный endpoint назначать SUPER_ADMIN.
+- может создавать USER/ADMIN в любой организации;
+- не может создавать SUPER_ADMIN через обычный endpoint.
 
 ADMIN:
-- может createUser только в своей organizationId;
-- если в request пришел чужой organizationId -> ForbiddenOperationException;
-- может назначать только USER;
-- не может назначать ADMIN/SUPER_ADMIN.
+- может видеть пользователей только своей организации;
+- может создавать USER только в своей организации;
+- не должен создавать ADMIN/SUPER_ADMIN;
+- не может управлять SUPER_ADMIN.
+```
+
+Дополнительные protections:
+
+- нельзя отключить самого себя;
+- нельзя отключить platform admin через обычный user-management flow;
+- role/password/enabled changes отзывают refresh-сессии;
+- password policy ограничивает слабые пароли.
+
+---
+
+## 11. Organization Management
+
+Реализованные операции:
+
+```http
+POST  /api/organizations
+GET   /api/organizations
+GET   /api/organizations/{id}
+PATCH /api/organizations/{id}
+PATCH /api/organizations/{id}/enabled
+```
+
+Security rules:
+
+```text
+SUPER_ADMIN:
+- может создавать организации;
+- может видеть все организации;
+- может переименовывать/включать/отключать обычные организации.
+
+ADMIN:
+- может видеть только свою организацию.
+
+USER:
+- не имеет доступа к organization-management.
+```
+
+`SafeAI Platform` organization защищена:
+
+```text
+- нельзя отключить;
+- нельзя переименовать;
+- frontend скрывает Rename/Disable;
+- backend запрещает mutation даже при прямом API-запросе.
+```
+
+---
+
+## 12. Chat Flow
+
+Chat module отвечает за:
+
+- создание чатов;
+- список чатов пользователя;
+- загрузку деталей чата;
+- отправку сообщений;
+- сохранение user message;
+- вызов AI provider;
+- сохранение assistant response;
+- сохранение failed assistant message при ошибке provider;
+- audit и usage side effects.
+
+Send message flow:
+
+```text
+POST /api/chats/{chatId}/messages
+↓
+validate request
+↓
+check chat ownership
+↓
+acquire Redis chat lock
+↓
+check AI message rate limit
+↓
+save USER message and prepare AI request
+↓
+call AI provider outside long DB transaction
+↓
+save ASSISTANT message or FAILED assistant message
+↓
+return updated chat details
+```
+
+Важно: внешний AI request не выполняется внутри длинной DB-транзакции.
+
+Frontend после failed AI send перечитывает чат, чтобы показать сохраненное `FAILED` assistant message.
+
+---
+
+## 13. AI Provider Abstraction
+
+Backend использует общий интерфейс:
+
+```java
+public interface AiProvider {
+    AiChatResponse sendMessage(AiChatRequest request);
+}
+```
+
+Реализации:
+
+```text
+MockAiProvider
+OpenAiProvider
+AnthropicProvider
+```
+
+### Mock provider
+
+Используется для local development и demo:
+
+- не требует API key;
+- не тратит деньги;
+- позволяет тестировать chat/audit/usage.
+
+### OpenAI provider
+
+Поддерживает request через Responses API scaffold:
+
+- request payload;
+- `store=false` по умолчанию;
+- parsing output text;
+- usage tokens;
+- provider request id;
+- timeout/rate-limit/unavailable mapping.
+
+### Anthropic provider
+
+Поддерживает Messages API scaffold:
+
+- system prompt отдельно;
+- normalized messages;
+- content blocks parsing;
+- usage tokens;
+- error mapping.
+
+### Pricing
+
+Usage cost — это estimate, основанный на конфиге pricing:
+
+```yaml
+safeai:
+  ai:
+    pricing:
+      models:
+        - model: mock-safeai
+          input-usd-per-1m-tokens: 0
+          output-usd-per-1m-tokens: 0
+        - model: gpt-4.1
+          input-usd-per-1m-tokens: 2.00
+          output-usd-per-1m-tokens: 8.00
+        - model: claude-opus-4-8
+          input-usd-per-1m-tokens: 15.00
+          output-usd-per-1m-tokens: 75.00
+```
+
+Если модель не найдена в pricing config, cost считается `0`.
+
+---
+
+## 14. Rate Limiting
+
+Rate limiting работает через Redis.
+
+### Login rate limit
+
+Используются два лимита:
+
+```text
+email-based limit
+IP-based limit
+```
+
+Назначение:
+
+```text
+email limit -> защита конкретного аккаунта
+IP limit    -> защита от массового перебора
+```
+
+При превышении:
+
+- возвращается `429`;
+- событие пишется в audit как `RATE_LIMIT_EXCEEDED`;
+- frontend показывает ошибку с requestId.
+
+### AI message rate limit
+
+AI-запросы ограничиваются по пользователю/организации в зависимости от текущей конфигурации.
+
+При превышении:
+
+- запрос блокируется;
+- событие публикуется;
+- audit фиксирует rate limit event.
+
+### Redis atomicity
+
+Limiter использует Lua script для атомарного `INCR + TTL`.
+
+---
+
+## 15. Audit Logging
+
+Audit events пишутся в PostgreSQL.
+
+Audit principles:
+
+```text
+- audit не должен хранить полный prompt content;
+- audit должен содержать organizationId;
+- audit write не должен ломать основной business flow;
+- ADMIN видит audit только своей организации;
+- SUPER_ADMIN видит global audit;
+- details проходят sanitization перед JSONB storage.
+```
+
+Примеры event types:
+
+```text
+USER_LOGIN_SUCCESS
+USER_LOGIN_FAILED
+USER_LOGOUT
+SECURITY_REFRESH_REUSE_DETECTED
+CHAT_CREATED
+CHAT_MESSAGE_SENT
+AI_RESPONSE_RECEIVED
+AI_RESPONSE_FAILED
+USER_CREATED
+USER_ENABLED_CHANGED
+USER_ROLES_CHANGED
+USER_PASSWORD_RESET
+ORGANIZATION_CREATED
+ORGANIZATION_NAME_CHANGED
+ORGANIZATION_ENABLED_CHANGED
+RATE_LIMIT_EXCEEDED
+```
+
+Admin audit endpoints:
+
+```http
+GET /api/admin/audit-events
+GET /api/admin/audit-events/users/{userId}
+```
+
+---
+
+## 16. Usage Analytics
+
+Usage вынесен в отдельный backend-модуль `usage`.
+
+Usage считается по assistant messages:
+
+```text
+role = ASSISTANT
+status = COMPLETED
+model is not null
+```
+
+Отслеживается:
+
+```text
+userId
+userEmail
+organizationId
+model
+inputTokens
+outputTokens
+totalTokens
+costUsd
+date
+```
+
+Usage views:
+
+```http
+GET /api/admin/usage/summary
+GET /api/admin/usage/users
+GET /api/admin/usage/models
+GET /api/admin/usage/daily
+GET /api/admin/usage/by-user/{userId}
+GET /api/admin/usage/by-organization/{organizationId}
+```
+
+Scope rules:
+
+```text
+SUPER_ADMIN -> global usage
+ADMIN       -> organization-scoped usage
+```
+
+Для organization-scoped usage используются denormalized organization snapshots на `chat_messages`, чтобы исторический usage не "переехал" при переносе пользователя в другую организацию.
+
+Default range:
+
+```text
+last 30 days
+```
+
+Max range:
+
+```text
+366 days
+```
+
+Daily usage группируется по UTC date.
+
+---
+
+## 17. Frontend функциональность
+
+SafeAI Platform organization
+└── superadmin@test.com
+
+Demo Company
+├── admin@test.com
+└── user@test.com
+
+
+ООО "Клевер"
+├── admin@klever.ru     ROLE_ADMIN
+├── user1@klever.ru     ROLE_USER
+└── user2@klever.ru     ROLE_USER
+
+
+SUPER_ADMIN
+- создает организации
+- создает первого ADMIN в организации
+- видит всех пользователей всех организаций
+- может управлять USER и ADMIN
+- не создает/не редактирует SUPER_ADMIN через обычный UI
+
+ADMIN
+- видит только свою организацию
+- создает только USER
+- управляет только USER своей организации
+- не создает ADMIN
+- не управляет ADMIN
+- не видит чужие организации
+
+USER
+- видит только Chat
+- видит только свои чаты
+- не видит Users / Organizations / Audit / Usage
+- 
+### Login
+
+- login через email/password;
+- JWT не хранится в localStorage;
+- auth state загружается через `/api/auth/me`;
+- при 401 frontend пытается refresh;
+- при refresh failure сбрасывает пользователя и отправляет на login.
+
+### Chat
+
+- создание чатов;
+- список чатов;
+- открытие чата;
+- textarea input;
+- Ctrl+Enter для отправки;
+- assistant pending indicator;
+- отображение failed assistant messages;
+- отображение model/tokens/cost для assistant response.
+
+### Users
+
+- список пользователей;
+- фильтр по ролям;
+- создание пользователя;
+- enable/disable;
+- смена роли;
+- reset password через modal;
+- confirmation dialogs;
+- auto-dismiss success message.
+
+### Organizations
+
+- создание организаций;
+- список организаций;
+- rename через modal;
+- enable/disable через confirmation dialog;
+- protection для SafeAI Platform;
+- auto-dismiss success message.
+
+### Audit
+
+- фильтр по event type;
+- фильтр по user email;
+- фильтр по date range;
+- фильтр по organizationId для SUPER_ADMIN;
+- pagination;
+- отображение JSON details.
+
+### Usage
+
+- tabs: summary/users/models/daily;
+- фильтр по date range;
+- фильтр по model для summary;
+- cost display;
+- daily UTC note.
+
+---
+
+## 18. API Overview
+
+### Auth
+
+```http
+GET  /api/auth/csrf
+POST /api/auth/login
+POST /api/auth/refresh
+POST /api/auth/logout
+GET  /api/auth/me
+```
+
+### Chats
+
+```http
+POST /api/chats
+GET  /api/chats
+GET  /api/chats/{id}
+POST /api/chats/{id}/messages
+```
+
+### Users
+
+```http
+POST  /api/users
+GET   /api/users
+GET   /api/users/{id}
+PATCH /api/users/{id}/enabled
+PATCH /api/users/{id}/roles
+POST  /api/users/{id}/reset-password
+```
+
+### Organizations
+
+```http
+POST  /api/organizations
+GET   /api/organizations
+GET   /api/organizations/{id}
+PATCH /api/organizations/{id}
+PATCH /api/organizations/{id}/enabled
+```
+
+### Admin Audit
+
+```http
+GET /api/admin/audit-events
+GET /api/admin/audit-events/users/{userId}
+```
+
+### Admin Usage
+
+```http
+GET /api/admin/usage/summary
+GET /api/admin/usage/users
+GET /api/admin/usage/models
+GET /api/admin/usage/daily
+GET /api/admin/usage/by-user/{userId}
+GET /api/admin/usage/by-organization/{organizationId}
+```
+
+---
+
+## 19. Error Response Format
+
+Backend возвращает единый формат ошибок:
+
+```json
+{
+  "timestamp": "2026-01-01T12:00:00Z",
+  "status": 400,
+  "error": "VALIDATION_ERROR",
+  "message": "Ошибка валидации запроса",
+  "path": "/api/users",
+  "requestId": "abc-123",
+  "fieldErrors": {
+    "email": [
+      "must be a well-formed email address"
+    ]
+  }
+}
+```
+
+Типовые error codes:
+
+```text
+BAD_REQUEST
+VALIDATION_ERROR
+UNAUTHORIZED
+FORBIDDEN
+NOT_FOUND
+CONFLICT
+RATE_LIMIT_EXCEEDED
+RATE_LIMIT_UNAVAILABLE
+AI_PROVIDER_TIMEOUT
+AI_PROVIDER_RATE_LIMITED
+AI_PROVIDER_UNAVAILABLE
+AI_PROVIDER_ERROR
+INTERNAL_SERVER_ERROR
+```
+
+---
+
+## 20. Request ID
+
+Backend поддерживает request correlation через `X-Request-Id`.
+
+Поведение:
+
+```text
+если клиент передал валидный X-Request-Id -> использовать его
+иначе -> сгенерировать UUID
+```
+
+RequestId:
+
+- добавляется в response header;
+- добавляется в MDC logging context;
+- включается в API error response;
+- помогает связывать frontend error и backend logs.
+
+---
+
+## 21. Database / Flyway
+
+Backend использует Flyway.
+
+```text
+db/migration          -> обязательные production migrations
+db/local-migration    -> local-only seed/demo data
+```
+
+Принципы:
+
+```text
+- уже примененные миграции не редактируются;
+- изменения схемы добавляются новыми versioned migrations;
+- Hibernate ddl-auto должен валидировать схему, а не создавать ее;
+- критичные constraints должны жить в PostgreSQL;
+- local seed не должен запускаться в production.
+```
+
+Текущие основные направления миграций:
+
+```text
+V1  init schema
+V2  seed reference data
+V3  denormalize chat organization
+V4  schema hardening
+V6  updated_at triggers
+V7  usage quotas and rollups
+V1000 local demo data
+```
+
+`V1000__seed_local_demo_data.sql` применяется только при local profile.
+
+---
+
+## 22. Local Development
+
+### Требования
+
+```text
+Java 21
+Maven
+Node.js
+npm
+Docker
+Docker Compose
+```
+
+### Запуск инфраструктуры
+
+Из корня проекта:
+
+```bash
+docker compose -f infra/docker-compose.yml up -d
+```
+
+Или через scripts:
+
+```bat
+scripts\run-infra.bat
+```
+
+### Запуск backend
+
+```bat
+cd backend
+mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+Или:
+
+```bat
+scripts\run-backend-local.bat
+```
+
+### Запуск frontend
+
+```bat
+cd frontend
+npm install
+npm run dev
+```
+
+### URL
+
+```text
+Frontend: http://localhost:5173
+Backend:  http://localhost:8080
+Postgres: localhost:5432
+Redis:    localhost:6379
+```
+
+---
+
+## 23. Local demo account
+
+Local seed создает платформенного пользователя:
+
+```text
+email:    superadmin@test.com
+role:     SUPER_ADMIN
+org:      SafeAI Platform
+password: зависит от bcrypt hash в V1000__seed_local_demo_data.sql
+```
+
+В текущей local-сборке пароль использовался:
+
+```text
+Admin_Dev_2026!Strong#91
+```
+
+Demo credentials нельзя использовать в production.
+
+---
+
+## 24. Проверка проекта
+
+### Backend tests
+
+```bat
+cd backend
+mvnw.cmd test
+```
+
+### Frontend build
+
+```bat
+cd frontend
+npm run build
+```
+
+### Проверка Docker services
+
+```bat
+docker ps
+```
+
+### Проверка Flyway local seed
+
+```sql
+select version, description, success
+from flyway_schema_history
+order by installed_rank;
+```
+
+### Проверка local SUPER_ADMIN
+
+```sql
+select
+    u.email,
+    r.name as role
+from users u
+join user_roles ur on ur.user_id = u.id
+join roles r on r.id = ur.role_id
+where lower(u.email) = lower('superadmin@test.com');
+```
+
+---
+
+## 25. Configuration
+
+Основные группы конфигурации:
+
+```text
+spring.datasource.*
+spring.flyway.*
+safeai.jwt.*
+safeai.auth.cookies.*
+safeai.platform.*
+safeai.cors.*
+safeai.ratelimit.*
+safeai.ai.*
+safeai.ai.openai.*
+safeai.ai.anthropic.*
+safeai.ai.pricing.*
+```
+
+Пример выбора AI provider:
+
+```yaml
+safeai:
+  ai:
+    provider: mock
+```
+
+Варианты:
+
+```text
+mock
+openai
+anthropic
+```
+
+Production secrets должны задаваться через environment variables или secret manager:
+
+```text
+JWT secret
+DB password
+Redis password
+OpenAI API key
+Anthropic API key
+```
+
+---
+
+## 26. Security notes
+
+- JWT не хранится в localStorage.
+- Browser auth использует HttpOnly cookies.
+- Unsafe methods защищены CSRF.
+- Refresh tokens хранятся в БД только как hash.
+- Refresh rotation защищает от token reuse.
+- tokenVersion отзывает старые access JWT.
+- Role/user/org changes отзывают refresh-сессии.
+- ADMIN tenant-scoped.
+- SUPER_ADMIN platform-scoped.
+- Platform organization защищена от изменения.
+- Audit details не должны содержать passwords/tokens/prompts/responses/API keys/cookies.
+
+---
+
+## 27. Interview positioning
+
+SafeAI Desk можно описывать так:
+
+> Production-oriented full-stack MVP корпоративного AI Gateway с multi-tenancy, RBAC, cookie-based JWT auth,
+> refresh-token rotation, CSRF, audit logging, usage analytics, Redis rate limits, session revocation и 
+> подключаемыми AI providers.
+
+Ключевые engineering decisions:
+
+```text
+1. Cookie-based auth вместо localStorage JWT.
+2. CSRF для unsafe browser requests.
+3. Refresh-token rotation с reuse detection.
+4. tokenVersion для отзыва старых access JWT.
+5. Refresh session revocation при security changes.
+6. Organization-based tenant isolation.
+7. ADMIN ограничен своей организацией.
+8. SUPER_ADMIN имеет platform/global scope.
+9. Audit events tenant-aware через organizationId.
+10. Usage считается через organization snapshot сообщений.
+11. Chat ownership проверяется до обработки сообщения.
+12. Chat lock защищает от параллельной отправки в один чат.
+13. AI provider abstraction отделяет бизнес-логику от внешнего API.
+14. Mock provider позволяет demo без внешних ключей.
+15. External AI calls выполняются вне длинных DB transactions.
+```
+
+---
+
+## 28. Возможное дальнейшее развитие
+
+```text
+1. Organization selector при создании пользователя SUPER_ADMIN.
+2. Запрет ADMIN создавать ADMIN на backend и frontend.
+3. Session/device management UI.
+4. Monthly organization budgets.
+5. Model allowlist per organization.
+6. Usage charts.
+7. RAG knowledge base.
+8. Document upload and indexing.
+9. Policy engine для AI prompts.
+10. SSO/OIDC.
+11. Testcontainers integration tests.
+12. Production deployment profile with Nginx/TLS.
+```
+
+## Production HTTPS model
+
+Current production compose expects TLS termination before the Nginx container.
+
+Example:
+
+Client HTTPS
+-> external load balancer / reverse proxy / Cloudflare
+-> SafeAI Nginx container over internal HTTP port 80
+-> backend:8080
+
+Because authentication cookies use `Secure=true` in production, the public entrypoint must be 
+HTTPS.
+
+The Nginx container forwards:
+
+- `X-Forwarded-For`
+- `X-Real-IP`
+- `X-Forwarded-Proto=https`
+
+If this compose is used without an external TLS terminator, add native Nginx TLS on port 443, 
+HTTP-to-HTTPS redirect and HSTS.
+
+
+Backend не должен публиковаться напрямую в Internet.
+
+Prometheus endpoint защищается уровнем сети.
+
+## Безопасность production-развертывания
+
+### HTTPS и публикация backend
+
+Контейнер backend не должен быть доступен напрямую из Интернета.
+
+Весь внешний трафик должен проходить через Nginx, reverse proxy или балансировщик нагрузки, который 
+выполняет TLS-терминацию (HTTPS).
+
+### Prometheus
+
+Эндпоинт `/actuator/prometheus` предназначен для использования только внутри доверенной сети.
+
+Он должен быть защищен на уровне сети или reverse proxy и не должен быть доступен из публичного Интернета.
+
+### JWT и время жизни cookie
+
+Время жизни access JWT и cookie с access token должно совпадать.
+
+При изменении одного параметра необходимо изменить и второй:
+
+```properties
+SAFEAI_JWT_EXPIRATION_MINUTES=15
+SAFEAI_AUTH_ACCESS_TOKEN_MAX_AGE=15m
+
+
+В текущей RBAC-модели пользователь может иметь одну или две роли.
+
+Допустимые роли для user-management endpoint:
+
+- SUPER_ADMIN может назначать USER и ADMIN.
+- ADMIN может назначать только USER.
+- SUPER_ADMIN не назначается через обычный user-management endpoint.
+- ADMIN не может управлять другими ADMIN.
+```
+
+
+## Запланированные улучшения
+
+Ниже перечислены возможные улучшения, которые были рассмотрены, но сознательно отложены на будущие версии 
+проекта. Текущая реализация считается достаточной для MVP и обеспечивает необходимый уровень безопасности, 
+производительности и надежности.
+
+### Атомарный AI Rate Limiter (Redis Lua Script)
+
+В текущей реализации проверка лимитов AI выполняется последовательно:
+
+```text
+увеличить счетчик пользователя
+        ↓
+увеличить счетчик организации
+        ↓
+отклонить запрос, если превышен лимит организации
+```
+
+В результате возможна ситуация, когда счетчик пользователя увеличится, хотя запрос будет отклонен из-за 
+превышения лимита организации.
+
+Текущее поведение:
+
+- не является уязвимостью безопасности;
+- не создает race condition;
+- не позволяет обойти настроенные лимиты.
+
+Единственный недостаток — небольшая неточность учета запросов.
+
+В будущем возможен переход на Redis Lua Script, который будет атомарно проверять и увеличивать оба счетчика 
+за одну операцию.
+
+---
+
+### Дополнительный лимит по связке Email + IP
+
+Сейчас защита авторизации использует два независимых лимита:
+
+- по email;
+- по IP-адресу.
+
+Этого достаточно для защиты от большинства brute-force атак.
+
+В дальнейшем можно добавить дополнительный лимит по комбинации:
+
+```text
+(email + IP)
+```
+
+Это позволит точнее ограничивать попытки входа с конкретного IP для конкретного пользователя.
+
+---
+
+### Использование HMAC вместо SHA-256
+
+Сейчас Redis-ключи формируются следующим образом:
+
+```text
+SHA-256(email)
+```
+
+Более защищенный вариант:
+
+```text
+HMAC-SHA256(secret, email)
+```
+
+Использование секретного ключа предотвращает возможность подбора email-адресов при компрометации дампа 
+Redis.
+
+Данное улучшение отложено, поскольку:
+
+- записи имеют небольшой TTL;
+- Redis работает во внутренней сети;
+- ключи быстро удаляются автоматически.
+
+Для текущей архитектуры использование SHA-256 является приемлемым компромиссом между безопасностью и 
+простотой реализации.
+
+---
+
+### Sliding Window / Token Bucket
+
+Сейчас используется алгоритм **Fixed Window**.
+
+Несмотря на то, что Fixed Window допускает кратковременные всплески запросов на границе двух окон, данный 
+алгоритм обладает рядом преимуществ:
+
+- простая реализация;
+- высокая производительность;
+- предсказуемое поведение;
+- полностью удовлетворяет требованиям текущего проекта.
+
+В будущем при необходимости возможно использование более совершенных алгоритмов:
+
+- Sliding Window;
+- Token Bucket;
+- Leaky Bucket;
+- GCRA.
+
+Для MVP переход на них не планируется.
+
+---
+
+### Отдельные лимиты для AI-провайдеров и моделей
+
+В текущей реализации лимиты применяются на уровне:
+
+- пользователя;
+- организации.
+
+Архитектура спроектирована таким образом, что в дальнейшем можно добавить более детализированные лимиты без 
+изменения 
+существующей структуры.
+
+Возможные дополнительные уровни:
+
+- AI-провайдер;
+- AI-модель;
+- организация;
+- пользователь.
+
+Это позволит задавать различные квоты для разных AI-моделей (например, более строгие ограничения для 
+дорогих моделей и более мягкие — для дешевых) без переработки существующей архитектуры.
+
+
+
+### Integration tests
+
+Юнит-тесты используют Mockito и не требуют Redis.
+
+При необходимости можно добавить отдельный набор интеграционных тестов на основе Testcontainers Redis для проверки:
+
+- корректной работы Lua Script;
+- TTL;
+- истечения ключей;
+- атомарности операций Redis.
+
+Для MVP используются только unit-тесты.
+
+
+### Chat lock TTL
+
+Для защиты от параллельной отправки сообщений в один чат используется Redis-lock.
+
+Текущий TTL:
+
+```properties
+SAFEAI_CHAT_LOCK_TTL=240s
+```
+
+
+### Usage reports
+
+Usage endpoints aggregate data from `chat_messages`.
+
+Current implementation uses `chat_messages` as the source of truth. Rollup tables are already present for 
+future 
+optimization, but usage endpoints may still aggregate live message history.
+
+Important details:
+
+- `dateFrom` is inclusive.
+- `dateTo` is exclusive.
+- ADMIN can see usage only for their own organization.
+- SUPER_ADMIN can see global usage and filter by organization.
+- Usage includes only `ASSISTANT` messages with `COMPLETED` status and non-null model.
+- User email is read from the current `users` table, not from a historical snapshot.
+
+For production-scale reporting, usage endpoints should eventually read from daily/monthly rollup tables 
+instead of aggregating `chat_messages` directly.
+
+
+
+### AI usage cost estimation
+
+Стоимость AI-запросов рассчитывается приблизительно на основе локального pricing config.
+
+Этот расчет не является billing-grade источником истины. Перед production billing конфигурацию цен 
+необходимо 
+обновлять вручную и версионировать.
+
+Для полноценного billing необходимо хранить историю цен и применять цену, актуальную на момент выполнения 
+запроса.
+AiChatResponse с provider/providerRequestId/durationMs — полезно, но потянет изменения в 
+ChatPersistenceService, chat_messages, mapper, тесты и миграцию. Для MVP можно оставить текущий вариант.
+
+Anthropic SYSTEM handling — оставить. Если у тебя system prompt будет один глобальный, текущий top-level 
+system нормален.
+
+token budget/preflight — оставить на будущее. Сейчас есть лимит @Size(max = 10000) и history limit, этого 
+достаточно для MVP.
+
+OpenAI safety_identifier — можно добавить позже. Не критично.
+
+
+### Usage API date range
+
+Usage endpoints accept optional `dateFrom` and `dateTo` query parameters as ISO-8601 `Instant` values.
+
+Rules:
+
+- `dateFrom` is inclusive.
+- `dateTo` is exclusive.
+- timestamps are interpreted as UTC instants.
+- if both dates are omitted, the default range is the last 30 days.
+- maximum allowed range is 366 days.
+- ADMIN users see only their own organization usage.
+- SUPER_ADMIN users can access global usage and organization-specific usage.
+- `model` filter is optional and limited to 100 characters.
+
+
+При добавлении нового AuditEventType нужно добавить Flyway migration с insert в audit_event_types. Иначе audit event 
+не будет сохранен из-за FK.
 
 

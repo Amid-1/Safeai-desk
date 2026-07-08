@@ -43,18 +43,24 @@ export async function updateOrganizationName(
     organizationId: string,
     request: UpdateOrganizationNameRequest
 ): Promise<Organization> {
-    return apiRequest<Organization>(`/api/organizations/${organizationId}/name`, {
-        method: 'PATCH',
-        body: JSON.stringify(request),
-    })
+    return apiRequest<Organization>(
+        `/api/organizations/${encodeURIComponent(organizationId)}`,
+        {
+            method: 'PATCH',
+            body: JSON.stringify(request),
+        }
+    )
 }
 
 export async function updateOrganizationEnabled(
     organizationId: string,
     request: UpdateOrganizationEnabledRequest
 ): Promise<Organization> {
-    return apiRequest<Organization>(`/api/organizations/${organizationId}/enabled`, {
-        method: 'PATCH',
-        body: JSON.stringify(request),
-    })
+    return apiRequest<Organization>(
+        `/api/organizations/${encodeURIComponent(organizationId)}/enabled`,
+        {
+            method: 'PATCH',
+            body: JSON.stringify(request),
+        }
+    )
 }

@@ -5,6 +5,7 @@ import {
     createUser,
     getUsers,
     resetUserPassword,
+    updateUser,
     updateUserEnabled,
     updateUserRoles,
 } from '../api/userApi'
@@ -15,6 +16,9 @@ import { formatDateTime } from '../utils/format'
 import { getPageContent, getPageTotalPages } from '../utils/page'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { EmptyState, LoadingState } from '../components/StateBlock'
+import { getOrganizations } from '../api/organizationApi'
+import type { Organization } from '../api/organizationApi'
 
 type Role = 'USER' | 'ADMIN'
 type UserFilter = 'ALL' | 'ADMIN' | 'USER'
@@ -37,6 +41,7 @@ type ConfirmState =
 
 const PAGE_SIZE = 50
 const SUCCESS_MESSAGE_TIMEOUT_MS = 4000
+const PLATFORM_ORGANIZATION_ID = '00000000-0000-0000-0000-000000000001'
 
 function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [users, setUsers] = useState<User[]>([])
@@ -44,6 +49,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [success, setSuccess] = useState('')
     const [loading, setLoading] = useState(true)
     const [creating, setCreating] = useState(false)
+    const [organizationsLoading, setOrganizationsLoading] = useState(false)
     const [actionUserId, setActionUserId] = useState<string | null>(null)
 
     const [page, setPage] = useState(0)
@@ -60,6 +66,17 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [resetPasswordValue, setResetPasswordValue] = useState('')
     const [resetPasswordConfirm, setResetPasswordConfirm] = useState('')
     const [confirmState, setConfirmState] = useState<ConfirmState>(null)
+    const [detailsUser, setDetailsUser] = useState<User | null>(null)
+
+    const [editUser, setEditUser] = useState<User | null>(null)
+    const [editEmail, setEditEmail] = useState('')
+    const [editFullName, setEditFullName] = useState('')
+
+    const [organizations, setOrganizations] = useState<Organization[]>([])
+    const [selectedOrganizationId, setSelectedOrganizationId] = useState('')
+
+    const currentUserIsSuperAdmin = currentUser.roles.includes('SUPER_ADMIN')
+    const canAssignAdmin = currentUserIsSuperAdmin
 
     useEffect(() => {
         void loadUsers(page)
@@ -79,6 +96,54 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         }
     }, [success])
 
+    useEffect(() => {
+        if (!canAssignAdmin && role === 'ADMIN') {
+            setRole('USER')
+        }
+    }, [canAssignAdmin, role])
+
+    useEffect(() => {
+        if (!currentUserIsSuperAdmin) {
+            setOrganizations([])
+            setSelectedOrganizationId('')
+            return
+        }
+
+        async function loadOrganizations() {
+            setOrganizationsLoading(true)
+
+            try {
+                const data = await getOrganizations(0, 100)
+                const content = getPageContent(data)
+
+                const customerOrganizations = content.filter(
+                    (organization) => organization.id !== PLATFORM_ORGANIZATION_ID
+                )
+
+                setOrganizations(customerOrganizations)
+
+                setSelectedOrganizationId((currentSelectedOrganizationId) => {
+                    if (
+                        currentSelectedOrganizationId
+                        && customerOrganizations.some(
+                            (organization) => organization.id === currentSelectedOrganizationId
+                        )
+                    ) {
+                        return currentSelectedOrganizationId
+                    }
+
+                    return ''
+                })
+            } catch (err) {
+                setError(getApiErrorMessage(err, 'Failed to load organizations'))
+            } finally {
+                setOrganizationsLoading(false)
+            }
+        }
+
+        void loadOrganizations()
+    }, [currentUserIsSuperAdmin])
+
     const filteredUsers = useMemo(() => {
         if (filter === 'ALL') {
             return users
@@ -89,6 +154,11 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
     const adminCount = users.filter((user) => user.roles.includes('ADMIN')).length
     const userCount = users.filter((user) => user.roles.includes('USER')).length
+
+    const createDisabled =
+        creating
+        || organizationsLoading
+        || (currentUserIsSuperAdmin && !selectedOrganizationId)
 
     async function loadUsers(nextPage = page) {
         setError('')
@@ -130,15 +200,26 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
             return
         }
 
+        const requestedRole: Role = canAssignAdmin ? role : 'USER'
+
+        const targetOrganizationId = currentUserIsSuperAdmin
+            ? selectedOrganizationId
+            : currentUser.organizationId
+
+        if (!targetOrganizationId) {
+            setError('Выберите организацию для пользователя.')
+            return
+        }
+
         setCreating(true)
 
         try {
             const createdUser = await createUser({
-                organizationId: currentUser.organizationId,
+                organizationId: targetOrganizationId,
                 email: normalizedEmail,
                 password,
                 fullName: fullName.trim() || null,
-                roles: [role],
+                roles: [requestedRole],
             })
 
             setEmail('')
@@ -154,6 +235,54 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
             setError(getApiErrorMessage(err, 'Не удалось создать пользователя.'))
         } finally {
             setCreating(false)
+        }
+    }
+
+    function openEditUserModal(user: User) {
+        setEditUser(user)
+        setEditEmail(user.email)
+        setEditFullName(user.fullName ?? '')
+        setError('')
+        setSuccess('')
+    }
+
+    function closeEditUserModal() {
+        setEditUser(null)
+        setEditEmail('')
+        setEditFullName('')
+    }
+
+    async function handleSubmitEditUser(event: SyntheticEvent<HTMLFormElement>) {
+        event.preventDefault()
+
+        if (!editUser) {
+            return
+        }
+
+        const normalizedEmail = editEmail.trim()
+
+        if (!normalizedEmail) {
+            setError('Введите email пользователя.')
+            return
+        }
+
+        setActionUserId(editUser.id)
+        setError('')
+        setSuccess('')
+
+        try {
+            const updatedUser = await updateUser(editUser.id, {
+                email: normalizedEmail,
+                fullName: editFullName.trim() || null,
+            })
+
+            replaceUser(updatedUser)
+            setSuccess(`Пользователь ${updatedUser.email} обновлен.`)
+            closeEditUserModal()
+        } catch (err) {
+            setError(getApiErrorMessage(err, 'Не удалось обновить пользователя.'))
+        } finally {
+            setActionUserId(null)
         }
     }
 
@@ -200,6 +329,12 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     }
 
     async function submitChangeRole(user: User, nextRole: Role) {
+        if (nextRole === 'ADMIN' && !canAssignAdmin) {
+            setError('ADMIN может назначать только роль USER.')
+            setConfirmState(null)
+            return
+        }
+
         setActionUserId(user.id)
 
         try {
@@ -274,6 +409,18 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         setUsers((prev) =>
             prev.map((user) => (user.id === updatedUser.id ? updatedUser : user))
         )
+
+        setDetailsUser((current) =>
+            current?.id === updatedUser.id ? updatedUser : current
+        )
+
+        setEditUser((current) =>
+            current?.id === updatedUser.id ? updatedUser : current
+        )
+
+        setResetPasswordUser((current) =>
+            current?.id === updatedUser.id ? updatedUser : current
+        )
     }
 
     function getRoleBadgeClass(userRole: string): string {
@@ -288,11 +435,137 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         return 'role-badge role-user'
     }
 
+    function getOrganizationName(organizationId: string): string {
+        if (organizationId === PLATFORM_ORGANIZATION_ID) {
+            return 'SafeAI Platform'
+        }
+
+        return organizations.find((organization) => organization.id === organizationId)?.name
+            ?? organizationId
+    }
+
+    function canManageUser(user: User): boolean {
+        const targetIsAdmin = user.roles.includes('ADMIN')
+        const targetIsSuperAdmin = user.roles.includes('SUPER_ADMIN')
+        const isCurrentUser = user.id === currentUser.id
+
+        return !targetIsSuperAdmin
+            && !isCurrentUser
+            && (!targetIsAdmin || currentUserIsSuperAdmin)
+    }
+
+    function renderUserActions(user: User) {
+        const targetIsAdmin = user.roles.includes('ADMIN')
+        const targetIsSuperAdmin = user.roles.includes('SUPER_ADMIN')
+        const isCurrentUser = user.id === currentUser.id
+        const isBusy = actionUserId === user.id
+        const manageable = canManageUser(user)
+
+        return (
+            <div className="user-actions">
+                <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setDetailsUser(user)}
+                >
+                    Details
+                </button>
+
+                {manageable && (
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={isBusy}
+                        onClick={() => openEditUserModal(user)}
+                    >
+                        Edit
+                    </button>
+                )}
+
+                {targetIsSuperAdmin && (
+                    <span className="muted">Platform admin</span>
+                )}
+
+                {!targetIsSuperAdmin && isCurrentUser && (
+                    <span className="muted">Current user</span>
+                )}
+
+                {!targetIsSuperAdmin
+                    && !isCurrentUser
+                    && targetIsAdmin
+                    && !currentUserIsSuperAdmin
+                    && (
+                        <span className="muted">Admin user</span>
+                    )}
+
+                {manageable && (
+                    <>
+                        <button
+                            type="button"
+                            className={user.enabled ? 'danger-button' : 'secondary-button'}
+                            disabled={isBusy}
+                            onClick={() =>
+                                setConfirmState({
+                                    type: 'enabled',
+                                    user,
+                                })
+                            }
+                        >
+                            {user.enabled ? 'Disable' : 'Enable'}
+                        </button>
+
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={isBusy}
+                            onClick={() => openResetPasswordModal(user)}
+                        >
+                            Reset password
+                        </button>
+
+                        {targetIsAdmin && currentUserIsSuperAdmin && (
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                disabled={isBusy}
+                                onClick={() =>
+                                    setConfirmState({
+                                        type: 'role',
+                                        user,
+                                        nextRole: 'USER',
+                                    })
+                                }
+                            >
+                                Make USER
+                            </button>
+                        )}
+
+                        {!targetIsAdmin && currentUserIsSuperAdmin && (
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                disabled={isBusy}
+                                onClick={() =>
+                                    setConfirmState({
+                                        type: 'role',
+                                        user,
+                                        nextRole: 'ADMIN',
+                                    })
+                                }
+                            >
+                                Make ADMIN
+                            </button>
+                        )}
+                    </>
+                )}
+            </div>
+        )
+    }
+
     return (
         <div className="page">
             <h1>Admin Users</h1>
 
-            {loading && <p>Loading...</p>}
             {error && <div className="error">{error}</div>}
             {success && <div className="success">{success}</div>}
 
@@ -346,6 +619,38 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                         />
                     </label>
 
+                    {currentUserIsSuperAdmin && (
+                        <label>
+                            Organization
+                            <select
+                                value={selectedOrganizationId}
+                                onChange={(event) => setSelectedOrganizationId(event.target.value)}
+                                disabled={organizationsLoading || organizations.length === 0}
+                            >
+                                <option value="">
+                                    {organizationsLoading
+                                        ? 'Loading organizations...'
+                                        : 'Select organization'}
+                                </option>
+
+                                {organizations.map((organization) => (
+                                    <option key={organization.id} value={organization.id}>
+                                        {organization.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                    )}
+
+                    {currentUserIsSuperAdmin
+                        && !organizationsLoading
+                        && organizations.length === 0
+                        && (
+                            <p className="muted">
+                                No customer organizations available. Create an organization first.
+                            </p>
+                        )}
+
                     <label>
                         Role
                         <select
@@ -353,11 +658,11 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                             onChange={(event) => setRole(event.target.value as Role)}
                         >
                             <option value="USER">USER</option>
-                            <option value="ADMIN">ADMIN</option>
+                            {canAssignAdmin && <option value="ADMIN">ADMIN</option>}
                         </select>
                     </label>
 
-                    <button disabled={creating}>
+                    <button disabled={createDisabled}>
                         {creating ? 'Creating...' : 'Create user'}
                     </button>
                 </form>
@@ -365,6 +670,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
             <div className="user-toolbar">
                 <button
+                    type="button"
                     className={filter === 'ALL' ? 'filter-button active' : 'filter-button'}
                     onClick={() => setFilter('ALL')}
                 >
@@ -372,6 +678,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                 </button>
 
                 <button
+                    type="button"
                     className={filter === 'ADMIN' ? 'filter-button active' : 'filter-button'}
                     onClick={() => setFilter('ADMIN')}
                 >
@@ -379,6 +686,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                 </button>
 
                 <button
+                    type="button"
                     className={filter === 'USER' ? 'filter-button active' : 'filter-button'}
                     onClick={() => setFilter('USER')}
                 >
@@ -386,17 +694,20 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                 </button>
             </div>
 
-            <div className="card table-card">
-                {filteredUsers.length === 0 && !loading && (
-                    <p>No users found.</p>
-                )}
+            {loading && <LoadingState message="Loading users..." />}
 
-                {filteredUsers.length > 0 && (
+            {!loading && !error && filteredUsers.length === 0 && (
+                <EmptyState message="No users found on this page." />
+            )}
+
+            {!loading && filteredUsers.length > 0 && (
+                <div className="card table-card">
                     <table>
                         <thead>
                         <tr>
                             <th>Email</th>
                             <th>Full name</th>
+                            {currentUserIsSuperAdmin && <th>Organization</th>}
                             <th>Roles</th>
                             <th>Enabled</th>
                             <th>Created at</th>
@@ -405,136 +716,151 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                         </thead>
 
                         <tbody>
-                        {filteredUsers.map((user) => {
-                            const isAdmin = user.roles.includes('ADMIN')
-                            const isSuperAdminUser = user.roles.includes('SUPER_ADMIN')
-                            const isBusy = actionUserId === user.id
+                        {filteredUsers.map((user) => (
+                            <tr key={user.id}>
+                                <td>{user.email}</td>
+                                <td>{user.fullName ?? '-'}</td>
 
-                            return (
-                                <tr key={user.id}>
-                                    <td>{user.email}</td>
-                                    <td>{user.fullName ?? '-'}</td>
+                                {currentUserIsSuperAdmin && (
+                                    <td>{getOrganizationName(user.organizationId)}</td>
+                                )}
 
-                                    <td>
-                                        <div className="role-list">
-                                            {user.roles.map((userRole) => (
-                                                <span
-                                                    key={userRole}
-                                                    className={getRoleBadgeClass(userRole)}
-                                                >
-                                                    {userRole}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </td>
+                                <td>
+                                    <div className="role-list">
+                                        {user.roles.map((userRole) => (
+                                            <span
+                                                key={userRole}
+                                                className={getRoleBadgeClass(userRole)}
+                                            >
+                                                {userRole}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </td>
 
-                                    <td>
-                                        <span
-                                            className={
-                                                user.enabled
-                                                    ? 'status-badge status-enabled'
-                                                    : 'status-badge status-disabled'
-                                            }
-                                        >
-                                            {user.enabled ? 'enabled' : 'disabled'}
-                                        </span>
-                                    </td>
+                                <td>
+                                    <span
+                                        className={
+                                            user.enabled
+                                                ? 'status-badge status-enabled'
+                                                : 'status-badge status-disabled'
+                                        }
+                                    >
+                                        {user.enabled ? 'enabled' : 'disabled'}
+                                    </span>
+                                </td>
 
-                                    <td>{formatDateTime(user.createdAt)}</td>
+                                <td>{formatDateTime(user.createdAt)}</td>
 
-                                    <td>
-                                        {isSuperAdminUser ? (
-                                            <span className="muted">Platform admin</span>
-                                        ) : (
-                                            <div className="user-actions">
-                                                <button
-                                                    className={
-                                                        user.enabled
-                                                            ? 'danger-button'
-                                                            : 'secondary-button'
-                                                    }
-                                                    disabled={isBusy}
-                                                    onClick={() =>
-                                                        setConfirmState({
-                                                            type: 'enabled',
-                                                            user,
-                                                        })
-                                                    }
-                                                >
-                                                    {user.enabled ? 'Disable' : 'Enable'}
-                                                </button>
-
-                                                <button
-                                                    className="secondary-button"
-                                                    disabled={isBusy}
-                                                    onClick={() => openResetPasswordModal(user)}
-                                                >
-                                                    Reset password
-                                                </button>
-
-                                                {isAdmin ? (
-                                                    <button
-                                                        className="secondary-button"
-                                                        disabled={isBusy}
-                                                        onClick={() =>
-                                                            setConfirmState({
-                                                                type: 'role',
-                                                                user,
-                                                                nextRole: 'USER',
-                                                            })
-                                                        }
-                                                    >
-                                                        Make USER
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        className="secondary-button"
-                                                        disabled={isBusy}
-                                                        onClick={() =>
-                                                            setConfirmState({
-                                                                type: 'role',
-                                                                user,
-                                                                nextRole: 'ADMIN',
-                                                            })
-                                                        }
-                                                    >
-                                                        Make ADMIN
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
-                                    </td>
-                                </tr>
-                            )
-                        })}
+                                <td>{renderUserActions(user)}</td>
+                            </tr>
+                        ))}
                         </tbody>
                     </table>
-                )}
 
-                <div className="pagination">
-                    <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={page === 0 || loading}
-                        onClick={() => setPage((prev) => Math.max(0, prev - 1))}
-                    >
-                        Previous
-                    </button>
+                    <div className="pagination">
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={page === 0 || loading}
+                            onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+                        >
+                            Previous
+                        </button>
 
-                    <span>
-                        Page {page + 1} of {Math.max(totalPages, 1)}
-                    </span>
+                        <span>
+                            Page {page + 1} of {Math.max(totalPages, 1)}
+                        </span>
 
-                    <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={page + 1 >= totalPages || loading}
-                        onClick={() => setPage((prev) => prev + 1)}
-                    >
-                        Next
-                    </button>
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={page + 1 >= totalPages || loading}
+                            onClick={() => setPage((prev) => prev + 1)}
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {detailsUser && (
+                <Modal
+                    title={`User details: ${detailsUser.email}`}
+                    onClose={() => setDetailsUser(null)}
+                >
+                    <div className="form">
+                        <p><strong>ID:</strong> {detailsUser.id}</p>
+                        <p><strong>Email:</strong> {detailsUser.email}</p>
+                        <p><strong>Full name:</strong> {detailsUser.fullName ?? '-'}</p>
+                        <p><strong>Organization:</strong> {getOrganizationName(detailsUser.organizationId)}</p>
+                        <p><strong>Enabled:</strong> {detailsUser.enabled ? 'yes' : 'no'}</p>
+                        <p><strong>Roles:</strong> {detailsUser.roles.join(', ')}</p>
+                        <p><strong>Created at:</strong> {formatDateTime(detailsUser.createdAt)}</p>
+
+                        <div className="modal-actions">
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => setDetailsUser(null)}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            {editUser && (
+                <Modal
+                    title={`Edit user: ${editUser.email}`}
+                    onClose={closeEditUserModal}
+                >
+                    <form className="form" onSubmit={handleSubmitEditUser}>
+                        <label>
+                            Email
+                            <input
+                                value={editEmail}
+                                onChange={(event) => setEditEmail(event.target.value)}
+                                type="email"
+                                maxLength={255}
+                                autoComplete="username"
+                                autoFocus
+                            />
+                        </label>
+
+                        <label>
+                            Full name
+                            <input
+                                value={editFullName}
+                                onChange={(event) => setEditFullName(event.target.value)}
+                                maxLength={255}
+                                placeholder="User full name"
+                            />
+                        </label>
+
+                        <div className="modal-actions">
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                disabled={actionUserId === editUser.id}
+                                onClick={closeEditUserModal}
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                disabled={
+                                    actionUserId === editUser.id
+                                    || !editEmail.trim()
+                                }
+                            >
+                                {actionUserId === editUser.id ? 'Saving...' : 'Save'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
 
             {resetPasswordUser && (
                 <Modal

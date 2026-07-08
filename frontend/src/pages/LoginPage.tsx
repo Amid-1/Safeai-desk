@@ -1,13 +1,10 @@
 // frontend/src/pages/LoginPage.tsx
 import { useEffect, useState } from 'react'
-
 import type { SyntheticEvent } from 'react'
-
 import { useNavigate } from 'react-router-dom'
-
 import { getApiErrorMessage } from '../api/http'
-
 import { useAuth } from '../auth/AuthContext'
+import { LoadingState } from '../components/StateBlock'
 
 function LoginPage() {
     const navigate = useNavigate()
@@ -60,7 +57,7 @@ function LoginPage() {
     if (authLoading) {
         return (
             <div className="page narrow-page">
-                <p>Checking access...</p>
+                <LoadingState message="Checking access..." />
             </div>
         )
     }

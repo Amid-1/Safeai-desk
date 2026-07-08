@@ -18,6 +18,8 @@ import type {
 
 import { getApiErrorMessage } from '../api/http'
 import { formatDate, formatUsd } from '../utils/format'
+import { toUtcExclusiveEndOfDayIso, toUtcStartOfDayIso } from '../utils/date'
+import { ErrorState, LoadingState } from '../components/StateBlock'
 
 type Tab = 'summary' | 'users' | 'models' | 'daily'
 
@@ -47,7 +49,7 @@ function AdminUsagePage() {
     const [appliedFilter, setAppliedFilter] = useState<UsageFilter>({})
 
     useEffect(() => {
-        async function loadUsage() {
+        async function loadUsageForActiveTab() {
             setLoading(true)
             setError('')
 
@@ -57,18 +59,22 @@ function AdminUsagePage() {
                     dateTo: appliedFilter.dateTo,
                 }
 
-                const [summaryData, usersData, modelsData, dailyData] =
-                    await Promise.all([
-                        getUsageSummary(appliedFilter),
-                        getUsageByUsers(dateOnlyFilter),
-                        getUsageByModels(dateOnlyFilter),
-                        getUsageDaily(dateOnlyFilter),
-                    ])
+                if (tab === 'summary') {
+                    setSummary(await getUsageSummary(appliedFilter))
+                    return
+                }
 
-                setSummary(summaryData)
-                setUsers(usersData)
-                setModels(modelsData)
-                setDaily(dailyData)
+                if (tab === 'users') {
+                    setUsers(await getUsageByUsers(dateOnlyFilter))
+                    return
+                }
+
+                if (tab === 'models') {
+                    setModels(await getUsageByModels(dateOnlyFilter))
+                    return
+                }
+
+                setDaily(await getUsageDaily(dateOnlyFilter))
             } catch (err) {
                 setError(getApiErrorMessage(err, 'Failed to load usage'))
             } finally {
@@ -76,13 +82,17 @@ function AdminUsagePage() {
             }
         }
 
-        void loadUsage()
-    }, [appliedFilter])
+        void loadUsageForActiveTab()
+    }, [tab, appliedFilter])
 
     function applyFilters() {
         setAppliedFilter({
-            dateFrom: draftDateFrom ? `${draftDateFrom}T00:00:00Z` : undefined,
-            dateTo: draftDateTo ? `${addOneDay(draftDateTo)}T00:00:00Z` : undefined,
+            dateFrom: draftDateFrom
+                ? toUtcStartOfDayIso(draftDateFrom)
+                : undefined,
+            dateTo: draftDateTo
+                ? toUtcExclusiveEndOfDayIso(draftDateTo)
+                : undefined,
             model: draftModel.trim() || undefined,
         })
     }
@@ -124,6 +134,7 @@ function AdminUsagePage() {
                             value={draftModel}
                             onChange={(event) => setDraftModel(event.target.value)}
                             placeholder="mock-safeai"
+                            disabled={tab !== 'summary'}
                         />
                     </label>
 
@@ -143,7 +154,7 @@ function AdminUsagePage() {
                     </div>
 
                     <small className="muted">
-                        Model filter applies to summary endpoint. Daily usage is grouped by UTC date.
+                        Model filter applies only to Summary. Daily usage is grouped by UTC date.
                     </small>
                 </div>
             </div>
@@ -182,11 +193,25 @@ function AdminUsagePage() {
                 </button>
             </div>
 
-            {loading && <p>Loading...</p>}
-            {error && <div className="error">{error}</div>}
+            {loading && <LoadingState message="Loading usage..." />}
+
+            {!loading && error && (
+                <ErrorState
+                    title="Failed to load usage"
+                    message={error}
+                    action={
+                        <button
+                            type="button"
+                            onClick={() => setAppliedFilter({ ...appliedFilter })}
+                        >
+                            Retry
+                        </button>
+                    }
+                />
+            )}
 
             {!loading && !error && (
-                <div className="card">
+                <div className="card table-card">
                     {tab === 'summary' && (
                         <UsageTable
                             rows={summary}
@@ -331,17 +356,6 @@ function getUsageRowKey(row: UsageRow, index: number): string {
     }
 
     return String(index)
-}
-
-function addOneDay(dateValue: string): string {
-    const [year, month, day] = dateValue
-        .split('-')
-        .map((part) => Number(part))
-
-    const date = new Date(Date.UTC(year, month - 1, day))
-    date.setUTCDate(date.getUTCDate() + 1)
-
-    return date.toISOString().slice(0, 10)
 }
 
 export default AdminUsagePage

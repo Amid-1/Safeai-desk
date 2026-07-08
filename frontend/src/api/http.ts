@@ -38,6 +38,7 @@ const API_BASE_URL = RAW_API_BASE_URL.replace(/\/+$/, '')
 
 const CSRF_COOKIE_NAME = 'XSRF-TOKEN'
 const CSRF_HEADER_NAME = 'X-XSRF-TOKEN'
+const REQUEST_ID_HEADER_NAME = 'X-Request-Id'
 const UNAUTHORIZED_EVENT_NAME = 'safeai:unauthorized'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
@@ -126,16 +127,40 @@ function isFormDataBody(body: BodyInit | null | undefined): boolean {
     return typeof FormData !== 'undefined' && body instanceof FormData
 }
 
+function getRequestPath(url: string): string {
+    return url.split('?')[0]
+}
+
 function isAuthEndpoint(url: string): boolean {
-    return url.includes('/api/auth/login')
-        || url.includes('/api/auth/refresh')
-        || url.includes('/api/auth/logout')
-        || url.includes('/api/auth/csrf')
+    const path = getRequestPath(url)
+
+    return path === '/api/auth/login'
+        || path === '/api/auth/refresh'
+        || path === '/api/auth/logout'
+        || path === '/api/auth/csrf'
+}
+
+function createRequestId(): string {
+    if (typeof crypto !== 'undefined') {
+        const randomUUID = (crypto as Crypto & {
+            randomUUID?: () => string
+        }).randomUUID
+
+        if (typeof randomUUID === 'function') {
+            return randomUUID.call(crypto)
+        }
+    }
+
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 export async function ensureCsrfToken(): Promise<void> {
+    const headers = new Headers()
+    headers.set(REQUEST_ID_HEADER_NAME, createRequestId())
+
     const response = await fetch(buildApiUrl('/api/auth/csrf'), {
         method: 'GET',
+        headers,
         credentials: 'include',
     })
 
@@ -163,6 +188,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
     }
 
     const headers = new Headers()
+    headers.set(REQUEST_ID_HEADER_NAME, createRequestId())
 
     if (csrfToken) {
         headers.set(CSRF_HEADER_NAME, csrfToken)
@@ -189,13 +215,21 @@ async function refreshAccessToken(): Promise<boolean> {
 }
 
 async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
+    const responseRequestId = response.headers.get(REQUEST_ID_HEADER_NAME) ?? undefined
+
     try {
-        return await response.json()
+        const body = await response.json() as ApiErrorBody
+
+        return {
+            ...body,
+            requestId: body.requestId ?? responseRequestId,
+        }
     } catch {
         return {
             status: response.status,
             error: 'HTTP_ERROR',
             message: `Request failed with status ${response.status}`,
+            requestId: responseRequestId,
         }
     }
 }
@@ -226,6 +260,8 @@ export async function apiRequest<T>(
     const method = (fetchOptions.method ?? 'GET').toUpperCase()
     const headers = new Headers(fetchOptions.headers)
     const body = fetchOptions.body
+
+    headers.set(REQUEST_ID_HEADER_NAME, createRequestId())
 
     if (body && !headers.has('Content-Type') && !isFormDataBody(body)) {
         headers.set('Content-Type', 'application/json')
@@ -273,6 +309,7 @@ export async function apiRequest<T>(
                 status: 401,
                 error: 'UNAUTHORIZED',
                 message: 'Сессия истекла. Войдите снова.',
+                requestId: response.headers.get(REQUEST_ID_HEADER_NAME) ?? undefined,
             },
             401
         )

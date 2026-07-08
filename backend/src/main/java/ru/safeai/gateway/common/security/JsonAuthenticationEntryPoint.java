@@ -4,7 +4,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -24,8 +23,6 @@ public class JsonAuthenticationEntryPoint implements AuthenticationEntryPoint {
             @NonNull HttpServletResponse response,
             @NonNull AuthenticationException authException
     ) throws IOException {
-        response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-
         errorWriter.write(
                 request,
                 response,

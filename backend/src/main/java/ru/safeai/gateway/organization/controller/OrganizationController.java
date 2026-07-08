@@ -48,6 +48,14 @@ public class OrganizationController {
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @GetMapping("/me")
+    public OrganizationResponse findCurrentOrganization(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return organizationService.findCurrentOrganization(currentUser);
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @GetMapping("/{id}")
     public OrganizationResponse findById(
             @PathVariable UUID id,

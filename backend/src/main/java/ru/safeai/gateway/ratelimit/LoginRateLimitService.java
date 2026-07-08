@@ -19,6 +19,13 @@ public class LoginRateLimitService {
     private final LoginRateLimitProperties properties;
     private final RateLimitKeyFactory keyFactory;
 
+
+    /**
+     * Fail-closed strategy.
+     * Login endpoint is brute-force sensitive.
+     * If Redis becomes unavailable, authentication attempts are blocked
+     * instead of temporarily disabling rate limiting.
+     */
     public void checkAllowed(String email, String ipAddress) {
         if (!properties.isEnabled()) {
             return;

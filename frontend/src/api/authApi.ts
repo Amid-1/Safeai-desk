@@ -15,8 +15,8 @@ export type AuthUser = {
     roles: string[]
 }
 
-export async function login(request: LoginRequest): Promise<void> {
-    await apiRequest<void>('/api/auth/login', {
+export async function login(request: LoginRequest): Promise<AuthUser> {
+    return apiRequest<AuthUser>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify(request),
     })

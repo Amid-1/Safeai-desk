@@ -108,4 +108,62 @@ class ClientIpResolverTest {
 
         assertThat(resolver.resolve(request)).isEqualTo("unknown");
     }
+
+    @Test
+    void resolve_shouldIgnoreXRealIpWhenRemoteAddressIsNotTrustedProxy() {
+        ClientIpResolver resolver = new ClientIpResolver(
+                new ClientIpProperties(List.of())
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("203.0.113.10");
+        request.addHeader("X-Real-IP", "198.51.100.20");
+
+        assertThat(resolver.resolve(request)).isEqualTo("203.0.113.10");
+    }
+
+    @Test
+    void resolve_shouldIgnoreUnknownValueInXForwardedFor() {
+        ClientIpResolver resolver = new ClientIpResolver(
+                new ClientIpProperties(List.of("127.0.0.1/32"))
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("X-Forwarded-For", "unknown");
+
+        assertThat(resolver.resolve(request)).isEqualTo("127.0.0.1");
+    }
+
+    @Test
+    void resolve_shouldIgnoreBlankXForwardedFor() {
+        ClientIpResolver resolver = new ClientIpResolver(
+                new ClientIpProperties(List.of("127.0.0.1/32"))
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("X-Forwarded-For", "   ");
+
+        assertThat(resolver.resolve(request)).isEqualTo("127.0.0.1");
+    }
+
+    @Test
+    void resolve_shouldUseNearestUntrustedAddressWhenMultipleTrustedProxiesExist() {
+        ClientIpResolver resolver = new ClientIpResolver(
+                new ClientIpProperties(List.of(
+                        "127.0.0.1/32",
+                        "10.0.0.0/8"
+                ))
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader(
+                "X-Forwarded-For",
+                "198.51.100.10, 10.0.0.5, 127.0.0.1"
+        );
+
+        assertThat(resolver.resolve(request)).isEqualTo("198.51.100.10");
+    }
 }

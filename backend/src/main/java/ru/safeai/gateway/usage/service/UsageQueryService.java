@@ -217,7 +217,13 @@ public class UsageQueryService {
             return null;
         }
 
-        return model.trim();
+        String normalized = model.trim();
+
+        if (normalized.length() > 100) {
+            throw new BadRequestException("model слишком длинный");
+        }
+
+        return normalized;
     }
 
     private boolean isSuperAdmin(SafeAiUserPrincipal currentUser) {

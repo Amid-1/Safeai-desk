@@ -14,6 +14,12 @@ public final class RoleAuthorityMapper {
 
     private static final String ROLE_PREFIX = "ROLE_";
 
+    private static final Set<String> ALLOWED_ROLES = Set.of(
+            "SUPER_ADMIN",
+            "ADMIN",
+            "USER"
+    );
+
     private RoleAuthorityMapper() {
     }
 
@@ -26,6 +32,8 @@ public final class RoleAuthorityMapper {
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(role -> !role.isBlank())
+                .map(RoleAuthorityMapper::withoutRolePrefix)
+                .map(RoleAuthorityMapper::validateRole)
                 .map(RoleAuthorityMapper::withRolePrefix)
                 .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toUnmodifiableSet());
@@ -42,11 +50,21 @@ public final class RoleAuthorityMapper {
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(authority -> !authority.isBlank())
-                .map(authority -> authority.toUpperCase(Locale.ROOT))
-                .filter(authority -> authority.startsWith(ROLE_PREFIX))
                 .map(RoleAuthorityMapper::withoutRolePrefix)
+                .map(RoleAuthorityMapper::validateRole)
                 .distinct()
+                .sorted()
                 .toList();
+    }
+
+    private static String validateRole(String role) {
+        String normalized = role.trim().toUpperCase(Locale.ROOT);
+
+        if (!ALLOWED_ROLES.contains(normalized)) {
+            throw new IllegalArgumentException("Unknown role: " + role);
+        }
+
+        return normalized;
     }
 
     private static String withRolePrefix(String role) {

@@ -38,6 +38,7 @@ public class JwtService {
 
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(jwtProperties.issuer())
+                .audience(List.of(jwtProperties.audience()))
                 .issuedAt(now)
                 .expiresAt(now.plus(jwtProperties.expirationMinutes(), ChronoUnit.MINUTES))
                 .subject(user.getId().toString())

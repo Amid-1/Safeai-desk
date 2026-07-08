@@ -77,6 +77,7 @@ public class UserStatusCacheService {
     private Optional<UserSecurityStatus> loadFromDatabase(UUID userId) {
         return userRepository.findByIdWithOrganization(userId)
                 .map(user -> new UserSecurityStatus(
+                        user.getOrganization().getId(),
                         user.isEnabled(),
                         user.getOrganization().isEnabled(),
                         user.getTokenVersion()
@@ -102,25 +103,34 @@ public class UserStatusCacheService {
 
         String[] parts = value.split(":", -1);
 
-        if (parts.length != 3) {
+        if (parts.length != 4) {
             return Optional.empty();
         }
 
-        Optional<Boolean> userEnabled = parseBooleanStrict(parts[0]);
-        Optional<Boolean> organizationEnabled = parseBooleanStrict(parts[1]);
+        UUID organizationId;
+
+        try {
+            organizationId = UUID.fromString(parts[0]);
+        } catch (RuntimeException exception) {
+            return Optional.empty();
+        }
+
+        Optional<Boolean> userEnabled = parseBooleanStrict(parts[1]);
+        Optional<Boolean> organizationEnabled = parseBooleanStrict(parts[2]);
 
         if (userEnabled.isEmpty() || organizationEnabled.isEmpty()) {
             return Optional.empty();
         }
 
         try {
-            long tokenVersion = Long.parseLong(parts[2]);
+            long tokenVersion = Long.parseLong(parts[3]);
 
             if (tokenVersion < 0) {
                 return Optional.empty();
             }
 
             return Optional.of(new UserSecurityStatus(
+                    organizationId,
                     userEnabled.get(),
                     organizationEnabled.get(),
                     tokenVersion
@@ -143,7 +153,9 @@ public class UserStatusCacheService {
     }
 
     private String serialize(UserSecurityStatus status) {
-        return status.userEnabled()
+        return status.organizationId()
+                + ":"
+                + status.userEnabled()
                 + ":"
                 + status.organizationEnabled()
                 + ":"

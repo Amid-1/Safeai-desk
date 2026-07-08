@@ -29,6 +29,9 @@ class UserStatusFilterTest {
     private static final UUID ORGANIZATION_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
+    private static final UUID OTHER_ORGANIZATION_ID =
+            UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
     private UserStatusCacheService userStatusCacheService;
     private UserStatusFilter filter;
 
@@ -67,7 +70,12 @@ class UserStatusFilterTest {
         setPrincipal();
 
         when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(new UserSecurityStatus(false, true, 0L)));
+                .thenReturn(Optional.of(new UserSecurityStatus(
+                        ORGANIZATION_ID,
+                        false,
+                        true,
+                        0L
+                )));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -84,7 +92,12 @@ class UserStatusFilterTest {
         setPrincipal();
 
         when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(new UserSecurityStatus(true, false, 0L)));
+                .thenReturn(Optional.of(new UserSecurityStatus(
+                        ORGANIZATION_ID,
+                        true,
+                        false,
+                        0L
+                )));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -101,7 +114,34 @@ class UserStatusFilterTest {
         setPrincipal();
 
         when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(new UserSecurityStatus(true, true, 1L)));
+                .thenReturn(Optional.of(new UserSecurityStatus(
+                        ORGANIZATION_ID,
+                        true,
+                        true,
+                        1L
+                )));
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("TOKEN_REVOKED");
+    }
+
+    @Test
+    void doFilter_shouldReturn401WhenOrganizationIdMismatch() throws Exception {
+        setPrincipal();
+
+        when(userStatusCacheService.getStatus(USER_ID))
+                .thenReturn(Optional.of(new UserSecurityStatus(
+                        OTHER_ORGANIZATION_ID,
+                        true,
+                        true,
+                        0L
+                )));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -135,7 +175,12 @@ class UserStatusFilterTest {
         setPrincipal();
 
         when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(new UserSecurityStatus(true, true, 0L)));
+                .thenReturn(Optional.of(new UserSecurityStatus(
+                        ORGANIZATION_ID,
+                        true,
+                        true,
+                        0L
+                )));
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/chats");
         MockHttpServletResponse response = new MockHttpServletResponse();

@@ -1,12 +1,15 @@
 services:
   backend:
-    image: safeai-backend:latest
+    image: safeai-backend:${SAFEAI_BACKEND_IMAGE_TAG:-0.1.0}
     env_file:
       - ../backend/.env.prod
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/safeai
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     expose:
       - "8080"
     depends_on:
@@ -14,6 +17,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    mem_limit: 768m
+    cpus: 1.0
     restart: unless-stopped
 
   postgres:
@@ -25,10 +30,12 @@ services:
     volumes:
       - safeai_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 10
+    mem_limit: 1g
+    cpus: 1.0
     restart: unless-stopped
 
   redis:
@@ -43,6 +50,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 256m
+    cpus: 0.5
     restart: unless-stopped
 
   nginx:
@@ -53,9 +62,10 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend
+    mem_limit: 128m
+    cpus: 0.25
     restart: unless-stopped
 
 volumes:
   safeai_postgres_data:
   safeai_redis_data:
-

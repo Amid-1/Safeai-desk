@@ -72,9 +72,12 @@ docker-compose/docker-logs/
 **/src/main/resources/twitter4j.properties
 
 # Local secrets
+backend/.env
+backend/.env.prod
 .env
+.env.prod
 *.env
-!*.env.example
+*.env.*
 
 # Build output
 backend/target/
@@ -87,13 +90,11 @@ frontend/.vite/
 frontend/.env
 frontend/.env.local
 
-backend/.env
-
 .idea/
 
 Thumbs.db
 
-commit-message.txt
+commit-messageа.txt
 
 
 

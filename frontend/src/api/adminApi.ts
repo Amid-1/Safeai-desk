@@ -1,6 +1,5 @@
 // frontend/src/api/adminApi.ts
 import { apiRequest } from './http'
-
 import type { PageResponse } from '../utils/page'
 
 export type AuditEvent = {
@@ -62,6 +61,8 @@ export type UsageFilter = {
     model?: string
 }
 
+type UsageDateRangeFilter = Pick<UsageFilter, 'dateFrom' | 'dateTo'>
+
 function buildQueryParams(values: Record<string, string | number | undefined>): string {
     const params = new URLSearchParams()
 
@@ -109,7 +110,7 @@ export function getUsageSummary(
 }
 
 export function getUsageByUsers(
-    filter: Omit<UsageFilter, 'model'> = {}
+    filter: UsageDateRangeFilter = {}
 ): Promise<UsageUserSummary[]> {
     const query = buildQueryParams({
         dateFrom: filter.dateFrom,
@@ -120,7 +121,7 @@ export function getUsageByUsers(
 }
 
 export function getUsageByModels(
-    filter: Omit<UsageFilter, 'model'> = {}
+    filter: UsageDateRangeFilter = {}
 ): Promise<UsageModelSummary[]> {
     const query = buildQueryParams({
         dateFrom: filter.dateFrom,
@@ -131,7 +132,7 @@ export function getUsageByModels(
 }
 
 export function getUsageDaily(
-    filter: Omit<UsageFilter, 'model'> = {}
+    filter: UsageDateRangeFilter = {}
 ): Promise<UsageDailySummary[]> {
     const query = buildQueryParams({
         dateFrom: filter.dateFrom,
@@ -139,34 +140,4 @@ export function getUsageDaily(
     })
 
     return apiRequest<UsageDailySummary[]>(`/api/admin/usage/daily${query}`)
-}
-
-export function getUsageByUserId(
-    userId: string,
-    filter: UsageFilter = {}
-): Promise<UsageSummary[]> {
-    const query = buildQueryParams({
-        dateFrom: filter.dateFrom,
-        dateTo: filter.dateTo,
-        model: filter.model,
-    })
-
-    return apiRequest<UsageSummary[]>(
-        `/api/admin/usage/by-user/${userId}${query}`
-    )
-}
-
-export function getUsageByOrganizationId(
-    organizationId: string,
-    filter: UsageFilter = {}
-): Promise<UsageSummary[]> {
-    const query = buildQueryParams({
-        dateFrom: filter.dateFrom,
-        dateTo: filter.dateTo,
-        model: filter.model,
-    })
-
-    return apiRequest<UsageSummary[]>(
-        `/api/admin/usage/by-organization/${organizationId}${query}`
-    )
 }

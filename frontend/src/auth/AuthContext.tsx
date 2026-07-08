@@ -37,9 +37,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, [])
 
     const loginUser = useCallback(async (request: LoginRequest) => {
-        await loginRequest(request)
-        await reloadCurrentUser()
-    }, [reloadCurrentUser])
+        setAuthLoading(true)
+
+        try {
+            const user = await loginRequest(request)
+            setCurrentUser(user)
+        } finally {
+            setAuthLoading(false)
+        }
+    }, [])
 
     const logoutUser = useCallback(async () => {
         setAuthLoading(true)

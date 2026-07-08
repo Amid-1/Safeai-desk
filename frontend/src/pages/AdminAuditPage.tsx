@@ -5,10 +5,17 @@ import type { AuditEvent, AuditEventFilter } from '../api/adminApi'
 import { getApiErrorMessage } from '../api/http'
 import { formatDateTime } from '../utils/format'
 import { getPageContent, getPageTotalPages } from '../utils/page'
+import { toUtcExclusiveEndOfDayIso, toUtcStartOfDayIso } from '../utils/date'
+import { EmptyState, ErrorState, LoadingState } from '../components/StateBlock'
+
+const PAGE_SIZE = 50
 
 const EVENT_TYPES = [
     'USER_LOGIN_SUCCESS',
     'USER_LOGIN_FAILED',
+    'USER_LOGOUT',
+
+    'SECURITY_REFRESH_REUSE_DETECTED',
 
     'CHAT_CREATED',
     'CHAT_MESSAGE_SENT',
@@ -16,18 +23,15 @@ const EVENT_TYPES = [
     'AI_RESPONSE_FAILED',
 
     'USER_CREATED',
-    'ORGANIZATION_CREATED',
     'USER_ENABLED_CHANGED',
     'USER_ROLES_CHANGED',
     'USER_PASSWORD_RESET',
 
-    'RATE_LIMIT_EXCEEDED',
-
-    'SECURITY_REFRESH_REUSE_DETECTED',
-    'USER_LOGOUT',
-
+    'ORGANIZATION_CREATED',
     'ORGANIZATION_NAME_CHANGED',
     'ORGANIZATION_ENABLED_CHANGED',
+
+    'RATE_LIMIT_EXCEEDED',
 ]
 
 function AdminAuditPage() {
@@ -52,7 +56,7 @@ function AdminAuditPage() {
             setError('')
 
             try {
-                const data = await getAuditEvents(page, 50, appliedFilter)
+                const data = await getAuditEvents(page, PAGE_SIZE, appliedFilter)
 
                 setEvents(getPageContent(data))
                 setTotalPages(getPageTotalPages(data))
@@ -72,8 +76,12 @@ function AdminAuditPage() {
         setAppliedFilter({
             eventType: draftEventType || undefined,
             userEmail: draftUserEmail.trim() || undefined,
-            dateFrom: draftDateFrom ? `${draftDateFrom}T00:00:00Z` : undefined,
-            dateTo: draftDateTo ? `${draftDateTo}T23:59:59Z` : undefined,
+            dateFrom: draftDateFrom
+                ? toUtcStartOfDayIso(draftDateFrom)
+                : undefined,
+            dateTo: draftDateTo
+                ? toUtcExclusiveEndOfDayIso(draftDateTo)
+                : undefined,
             organizationId: draftOrganizationId.trim() || undefined,
         })
     }
@@ -164,17 +172,29 @@ function AdminAuditPage() {
                 </div>
             </div>
 
-            {loading && <p>Loading...</p>}
-            {error && <div className="error">{error}</div>}
+            {loading && <LoadingState message="Loading audit events..." />}
+
+            {!loading && error && (
+                <ErrorState
+                    title="Failed to load audit events"
+                    message={error}
+                    action={
+                        <button
+                            type="button"
+                            onClick={() => setAppliedFilter({ ...appliedFilter })}
+                        >
+                            Retry
+                        </button>
+                    }
+                />
+            )}
 
             {!loading && !error && events.length === 0 && (
-                <div className="card">
-                    <p>No audit events found.</p>
-                </div>
+                <EmptyState message="No audit events found." />
             )}
 
             {!loading && !error && events.length > 0 && (
-                <div className="card">
+                <div className="card table-card">
                     <table>
                         <thead>
                         <tr>
@@ -194,7 +214,7 @@ function AdminAuditPage() {
                                 <td>{event.userEmail ?? '-'}</td>
                                 <td>{event.eventType}</td>
                                 <td>
-                                    <pre>{JSON.stringify(event.details, null, 2)}</pre>
+                                    <pre>{JSON.stringify(event.details ?? {}, null, 2)}</pre>
                                 </td>
                             </tr>
                         ))}

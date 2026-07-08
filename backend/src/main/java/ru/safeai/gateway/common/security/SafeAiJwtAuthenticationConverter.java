@@ -50,12 +50,22 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
             throw new BadJwtException("JWT claim is missing: roles");
         }
 
-        Set<SimpleGrantedAuthority> authorities = RoleAuthorityMapper.toAuthorities(roles);
+        Set<SimpleGrantedAuthority> authorities;
+
+        try {
+            authorities = RoleAuthorityMapper.toAuthorities(roles);
+        } catch (IllegalArgumentException exception) {
+            throw new BadJwtException("JWT roles contain unknown values");
+        }
 
         if (authorities.isEmpty()) {
             throw new BadJwtException("JWT roles are invalid");
         }
 
+        /*
+         * JWT не является источником актуального enabled/status.
+         * Реальный статус пользователя и организации проверяется UserStatusFilter.
+         */
         SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
                 parseUuid(userId, "userId"),
                 parseUuid(organizationId, "organizationId"),

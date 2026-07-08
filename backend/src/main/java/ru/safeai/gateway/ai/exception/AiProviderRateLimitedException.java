@@ -15,7 +15,7 @@ public class AiProviderRateLimitedException extends AiProviderException {
                 model,
                 statusCode,
                 providerRequestId,
-                true,
+                false,
                 message,
                 cause
         );

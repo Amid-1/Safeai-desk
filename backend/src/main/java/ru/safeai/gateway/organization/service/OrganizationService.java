@@ -26,6 +26,7 @@ import ru.safeai.gateway.organization.dto.UpdateOrganizationRequest;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.event.OrganizationSecurityStateChangedEvent;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
+import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,7 @@ import java.util.UUID;
 public class OrganizationService {
 
     private final OrganizationRepository organizationRepository;
+    private final UserRepository userRepository;
     private final AuditEventService auditEventService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformProperties platformProperties;
@@ -99,7 +101,8 @@ public class OrganizationService {
             return new PageImpl<>(List.of(), pageable, 1);
         }
 
-        OrganizationEntity organization = organizationRepository.findById(currentUser.getOrganizationId())
+        OrganizationEntity organization = organizationRepository
+                .findById(currentUser.getOrganizationId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Организация не найдена: " + currentUser.getOrganizationId()
                 ));
@@ -109,6 +112,21 @@ public class OrganizationService {
                 pageable,
                 1
         );
+    }
+
+    @Transactional(readOnly = true)
+    public OrganizationResponse findCurrentOrganization(
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        OrganizationEntity organization = organizationRepository
+                .findById(currentUser.getOrganizationId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Организация не найдена: " + currentUser.getOrganizationId()
+                ));
+
+        return toResponse(organization);
     }
 
     @Transactional(readOnly = true)
@@ -195,8 +213,14 @@ public class OrganizationService {
 
         OrganizationEntity saved = organizationRepository.save(entity);
 
+        boolean sessionsRevoked = false;
+        int affectedUsers = 0;
+
         if (!newEnabled) {
             userSessionRevocationService.revokeAllForOrganization(saved.getId());
+            affectedUsers = userRepository.incrementTokenVersionByOrganizationId(saved.getId());
+
+            sessionsRevoked = true;
         }
 
         eventPublisher.publishEvent(
@@ -211,7 +235,10 @@ public class OrganizationService {
                         "organizationId", saved.getId().toString(),
                         "organizationName", saved.getName(),
                         "oldEnabled", oldEnabled,
-                        "newEnabled", saved.isEnabled()
+                        "newEnabled", saved.isEnabled(),
+                        "sessionsRevoked", sessionsRevoked,
+                        "affectedUsers", affectedUsers,
+                        "requiresRelogin", !newEnabled
                 )
         );
 

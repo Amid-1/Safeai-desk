@@ -5,9 +5,11 @@ import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Path;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.BindException;
@@ -294,6 +296,22 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAccessDenied(
+            AccessDeniedException exception,
+            HttpServletRequest request
+    ) {
+        log.debug("Access denied for request {}", request.getRequestURI(), exception);
+
+        return buildResponse(
+                HttpStatus.FORBIDDEN,
+                "FORBIDDEN",
+                "Доступ запрещён",
+                request,
+                null
+        );
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiErrorResponse> handleResponseStatusException(
             ResponseStatusException exception,
@@ -306,9 +324,15 @@ public class GlobalExceptionHandler {
                 ? HttpStatus.INTERNAL_SERVER_ERROR
                 : status;
 
-        String message = exception.getReason() == null || exception.getReason().isBlank()
-                ? responseStatus.getReasonPhrase()
-                : exception.getReason();
+        String message = responseStatus.is5xxServerError()
+                ? "Внутренняя ошибка сервера"
+                : safeMessage(exception.getReason(), responseStatus.getReasonPhrase());
+
+        if (responseStatus.is5xxServerError()) {
+            log.error("ResponseStatusException for request {}", request.getRequestURI(), exception);
+        } else {
+            log.debug("ResponseStatusException for request {}", request.getRequestURI(), exception);
+        }
 
         return buildResponse(
                 responseStatus,
@@ -318,16 +342,17 @@ public class GlobalExceptionHandler {
                 null
         );
     }
-
     @ExceptionHandler(ExpiredRefreshTokenException.class)
     public ResponseEntity<ApiErrorResponse> handleExpiredRefreshToken(
             ExpiredRefreshTokenException exception,
             HttpServletRequest request
     ) {
+        log.debug("Expired refresh token for request {}", request.getRequestURI(), exception);
+
         return buildResponse(
                 HttpStatus.UNAUTHORIZED,
                 "EXPIRED_REFRESH_TOKEN",
-                safeMessage(exception.getMessage(), "Refresh token истёк"),
+                "Refresh token истёк",
                 request,
                 null
         );
@@ -359,10 +384,12 @@ public class GlobalExceptionHandler {
             InvalidRefreshTokenException exception,
             HttpServletRequest request
     ) {
+        log.debug("Invalid refresh token for request {}", request.getRequestURI(), exception);
+
         return buildResponse(
                 HttpStatus.UNAUTHORIZED,
                 "INVALID_REFRESH_TOKEN",
-                safeMessage(exception.getMessage(), "Недействительный refresh token"),
+                "Недействительный refresh token",
                 request,
                 null
         );
@@ -379,6 +406,22 @@ public class GlobalExceptionHandler {
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "INTERNAL_SERVER_ERROR",
                 "Внутренняя ошибка сервера",
+                request,
+                null
+        );
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(
+            DataIntegrityViolationException exception,
+            HttpServletRequest request
+    ) {
+        log.warn("Data integrity violation for request {}", request.getRequestURI(), exception);
+
+        return buildResponse(
+                HttpStatus.CONFLICT,
+                "CONFLICT",
+                "Конфликт данных",
                 request,
                 null
         );

@@ -40,9 +40,10 @@ public class ChatPersistenceService {
 
     @Transactional(readOnly = true)
     public void assertOwnedChatExists(UUID chatId, SafeAiUserPrincipal currentUser) {
-        boolean exists = chatSessionRepository.existsByIdAndUser_Id(
+        boolean exists = chatSessionRepository.existsByIdAndUser_IdAndOrganization_Id(
                 chatId,
-                currentUser.getId()
+                currentUser.getId(),
+                currentUser.getOrganizationId()
         );
 
         if (!exists) {
@@ -137,8 +138,15 @@ public class ChatPersistenceService {
         );
 
         List<MessageResponse> messages = chatMessageRepository
-                .findBySession_IdOrderByCreatedAtAscIdAsc(session.getId())
+                .findBySession_IdOrderByCreatedAtDescIdDesc(
+                        session.getId(),
+                        PageRequest.of(0, chatProperties.effectiveDetailsMessageLimit())
+                )
                 .stream()
+                .sorted(
+                        Comparator.comparing(ChatMessageEntity::getCreatedAt)
+                                .thenComparing(ChatMessageEntity::getId)
+                )
                 .map(chatMapper::toMessageResponse)
                 .toList();
 
@@ -188,10 +196,11 @@ public class ChatPersistenceService {
             ChatSessionEntity session,
             SafeAiUserPrincipal currentUser
     ) {
-        boolean exists = chatMessageRepository.existsByIdAndSession_IdAndSession_User_IdAndRole(
+        boolean exists = chatMessageRepository.existsByIdAndSession_IdAndSession_User_IdAndSession_Organization_IdAndRole(
                 userMessageId,
                 session.getId(),
                 currentUser.getId(),
+                currentUser.getOrganizationId(),
                 ChatMessageRole.USER
         );
 
@@ -235,7 +244,11 @@ public class ChatPersistenceService {
     }
 
     private ChatSessionEntity findOwnedSession(UUID chatId, SafeAiUserPrincipal currentUser) {
-        return chatSessionRepository.findByIdAndUser_Id(chatId, currentUser.getId())
+        return chatSessionRepository.findByIdAndUser_IdAndOrganization_Id(
+                        chatId,
+                        currentUser.getId(),
+                        currentUser.getOrganizationId()
+                )
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Чат не найден: " + chatId
                 ));

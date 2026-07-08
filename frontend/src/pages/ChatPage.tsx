@@ -1,24 +1,33 @@
 // frontend/src/pages/ChatPage.tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { createChat, getChatById, getChats, sendMessage } from '../api/chatApi'
-import type { Chat, ChatDetails } from '../api/chatApi'
+import type { Chat, ChatDetails, ChatMessage } from '../api/chatApi'
 import { getApiErrorMessage } from '../api/http'
 import { getPageContent } from '../utils/page'
+import { formatUsd } from '../utils/format'
+import { EmptyState, LoadingState } from '../components/StateBlock'
 
 function ChatPage() {
     const [chats, setChats] = useState<Chat[]>([])
     const [activeChat, setActiveChat] = useState<ChatDetails | null>(null)
     const [message, setMessage] = useState('')
     const [error, setError] = useState('')
-    const [loading, setLoading] = useState(false)
-    const [initialLoading, setInitialLoading] = useState(true)
-    const [assistantPending, setAssistantPending] = useState(false)
+
+    const [chatsLoading, setChatsLoading] = useState(true)
+    const [chatCreating, setChatCreating] = useState(false)
+    const [openingChatId, setOpeningChatId] = useState<string | null>(null)
+    const [messageSendingChatId, setMessageSendingChatId] = useState<string | null>(null)
+
+    const messagesEndRef = useRef<HTMLDivElement | null>(null)
+
+    const activeChatSending =
+        activeChat !== null && messageSendingChatId === activeChat.id
 
     useEffect(() => {
         async function loadChats() {
             setError('')
-            setInitialLoading(true)
+            setChatsLoading(true)
 
             try {
                 const data = await getChats()
@@ -33,21 +42,30 @@ function ChatPage() {
             } catch (err) {
                 setError(getApiErrorMessage(err, 'Failed to load chats'))
             } finally {
-                setInitialLoading(false)
+                setChatsLoading(false)
             }
         }
 
         void loadChats()
     }, [])
 
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({
+            block: 'end',
+        })
+    }, [
+        activeChat?.id,
+        activeChat?.messages.length,
+        messageSendingChatId,
+    ])
+
     async function handleCreateChat() {
-        if (loading) {
+        if (chatCreating) {
             return
         }
 
         setError('')
-        setLoading(true)
-        setAssistantPending(false)
+        setChatCreating(true)
 
         try {
             const chat = await createChat(`Demo chat ${new Date().toLocaleTimeString()}`)
@@ -63,29 +81,45 @@ function ChatPage() {
         } catch (err) {
             setError(getApiErrorMessage(err, 'Failed to create chat'))
         } finally {
-            setLoading(false)
+            setChatCreating(false)
         }
     }
 
     async function handleSendMessage() {
         const trimmedMessage = message.trim()
 
-        if (loading || !activeChat || !trimmedMessage) {
+        if (!activeChat || !trimmedMessage || messageSendingChatId) {
             return
         }
 
         const chatId = activeChat.id
+        const optimisticMessage = createOptimisticUserMessage(trimmedMessage)
 
         setError('')
-        setLoading(true)
-        setAssistantPending(true)
+        setMessage('')
+        setMessageSendingChatId(chatId)
+
+        setActiveChat((current) => {
+            if (!current || current.id !== chatId) {
+                return current
+            }
+
+            return {
+                ...current,
+                messages: [
+                    ...current.messages,
+                    optimisticMessage,
+                ],
+            }
+        })
 
         try {
             const updatedChat = await sendMessage(chatId, trimmedMessage)
             const normalizedChat = normalizeChatDetails(updatedChat)
 
-            setActiveChat(normalizedChat)
-            setMessage('')
+            setActiveChat((current) =>
+                current?.id === chatId ? normalizedChat : current
+            )
 
             updateChatListItem(normalizedChat)
         } catch (err) {
@@ -95,29 +129,26 @@ function ChatPage() {
                 const reloadedChat = await getChatById(chatId)
                 const normalizedChat = normalizeChatDetails(reloadedChat)
 
-                setActiveChat(normalizedChat)
-                updateChatListItem(normalizedChat)
+                setActiveChat((current) =>
+                    current?.id === chatId ? normalizedChat : current
+                )
 
-                if (hasUserMessage(normalizedChat, trimmedMessage)) {
-                    setMessage('')
-                }
+                updateChatListItem(normalizedChat)
             } catch {
                 // Не перетираем исходную ошибку отправки ошибкой reload.
             }
         } finally {
-            setAssistantPending(false)
-            setLoading(false)
+            setMessageSendingChatId(null)
         }
     }
 
     async function handleOpenChat(chatId: string) {
-        if (loading) {
+        if (openingChatId === chatId) {
             return
         }
 
         setError('')
-        setLoading(true)
-        setAssistantPending(false)
+        setOpeningChatId(chatId)
 
         try {
             const chatDetails = await getChatById(chatId)
@@ -125,7 +156,7 @@ function ChatPage() {
         } catch (err) {
             setError(getApiErrorMessage(err, 'Failed to open chat'))
         } finally {
-            setLoading(false)
+            setOpeningChatId(null)
         }
     }
 
@@ -144,7 +175,7 @@ function ChatPage() {
     }
 
     function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-        if (event.key === 'Enter' && event.ctrlKey && !loading) {
+        if (event.key === 'Enter' && event.ctrlKey && !activeChatSending) {
             event.preventDefault()
             void handleSendMessage()
         }
@@ -155,45 +186,57 @@ function ChatPage() {
             <h1>Chat</h1>
 
             {error && <div className="error">{error}</div>}
-            {initialLoading && <p>Loading chats...</p>}
 
             <div className="chat-layout">
                 <aside className="card sidebar">
-                    <button onClick={() => void handleCreateChat()} disabled={loading}>
-                        {loading ? 'Loading...' : 'Create chat'}
+                    <button
+                        type="button"
+                        onClick={() => void handleCreateChat()}
+                        disabled={chatCreating}
+                    >
+                        {chatCreating ? 'Creating...' : 'Create chat'}
                     </button>
 
                     <h3>Chats</h3>
 
-                    {!initialLoading && chats.length === 0 && <p>No chats yet.</p>}
+                    {chatsLoading && <p className="muted">Loading chats...</p>}
+
+                    {!chatsLoading && chats.length === 0 && (
+                        <p>No chats yet.</p>
+                    )}
 
                     {chats.map((chat) => (
                         <button
                             key={chat.id}
+                            type="button"
                             className={
                                 activeChat?.id === chat.id
                                     ? 'chat-item active'
                                     : 'chat-item'
                             }
-                            disabled={loading}
+                            disabled={openingChatId === chat.id}
                             onClick={() => {
                                 void handleOpenChat(chat.id)
                             }}
                         >
-                            {chat.title}
+                            {openingChatId === chat.id ? 'Opening...' : chat.title}
                         </button>
                     ))}
                 </aside>
 
                 <section className="card chat-panel">
-                    {!activeChat && !initialLoading && <p>Create a chat to start.</p>}
+                    {chatsLoading && <LoadingState message="Loading chat..." />}
+
+                    {!chatsLoading && !activeChat && (
+                        <EmptyState message="Create a chat to start." />
+                    )}
 
                     {activeChat && (
                         <>
                             <h2>{activeChat.title}</h2>
 
                             <div className="messages">
-                                {activeChat.messages.length === 0 && (
+                                {activeChat.messages.length === 0 && !activeChatSending && (
                                     <p>No messages yet.</p>
                                 )}
 
@@ -217,18 +260,20 @@ function ChatPage() {
                                                 model: {msg.model ?? '-'} | input:{' '}
                                                 {msg.inputTokens ?? 0} | output:{' '}
                                                 {msg.outputTokens ?? 0} | cost:{' '}
-                                                {msg.costUsd ?? 0}
+                                                {formatUsd(msg.costUsd)}
                                             </small>
                                         )}
                                     </div>
                                 ))}
 
-                                {assistantPending && (
+                                {activeChatSending && (
                                     <div className="message assistant pending">
                                         <strong>ASSISTANT</strong>
                                         <p>Thinking...</p>
                                     </div>
                                 )}
+
+                                <div ref={messagesEndRef} />
                             </div>
 
                             <div className="message-form">
@@ -238,14 +283,15 @@ function ChatPage() {
                                     onChange={(event) => setMessage(event.target.value)}
                                     onKeyDown={handleTextareaKeyDown}
                                     placeholder="Type message... Ctrl+Enter to send"
-                                    disabled={loading}
+                                    disabled={activeChatSending}
                                 />
 
                                 <button
+                                    type="button"
                                     onClick={() => void handleSendMessage()}
-                                    disabled={loading || !message.trim()}
+                                    disabled={activeChatSending || !message.trim()}
                                 >
-                                    {loading ? 'Sending...' : 'Send'}
+                                    {activeChatSending ? 'Sending...' : 'Send'}
                                 </button>
                             </div>
                         </>
@@ -263,11 +309,18 @@ function normalizeChatDetails(chat: ChatDetails): ChatDetails {
     }
 }
 
-function hasUserMessage(chat: ChatDetails, content: string): boolean {
-    return chat.messages.some((message) =>
-        message.role === 'USER'
-        && message.content.trim() === content
-    )
+function createOptimisticUserMessage(content: string): ChatMessage {
+    return {
+        id: `temp-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        role: 'USER',
+        content,
+        model: null,
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        createdAt: new Date().toISOString(),
+        status: 'COMPLETED',
+    }
 }
 
 export default ChatPage

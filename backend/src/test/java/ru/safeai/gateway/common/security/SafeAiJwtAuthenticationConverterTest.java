@@ -140,6 +140,22 @@ class SafeAiJwtAuthenticationConverterTest {
                 .hasMessageContaining("subject");
     }
 
+    @Test
+    void convert_shouldThrowBadJwtExceptionWhenRoleIsUnknown() {
+        Jwt jwt = jwt(Map.of(
+                "sub", USER_ID.toString(),
+                "email", "admin@test.com",
+                "userId", USER_ID.toString(),
+                "organizationId", ORGANIZATION_ID.toString(),
+                "tokenVersion", 0L,
+                "roles", List.of("ROOT")
+        ));
+
+        assertThatThrownBy(() -> converter.convert(jwt))
+                .isInstanceOf(BadJwtException.class)
+                .hasMessageContaining("roles");
+    }
+
     private Jwt jwt(Map<String, Object> claims) {
         return new Jwt(
                 "token",

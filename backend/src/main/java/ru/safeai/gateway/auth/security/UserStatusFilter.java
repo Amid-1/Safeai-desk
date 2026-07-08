@@ -44,6 +44,7 @@ public class UserStatusFilter extends OncePerRequestFilter {
                         status.userEnabled()
                                 && status.organizationEnabled()
                                 && status.tokenVersion() == principal.getTokenVersion()
+                                && status.organizationId().equals(principal.getOrganizationId())
                 )
                 .orElse(false);
 

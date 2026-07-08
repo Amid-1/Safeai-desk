@@ -12,6 +12,7 @@ import { formatDateTime } from '../utils/format'
 import { getPageContent, getPageTotalPages } from '../utils/page'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { EmptyState, ErrorState, LoadingState } from '../components/StateBlock'
 
 const PAGE_SIZE = 50
 const SUCCESS_MESSAGE_TIMEOUT_MS = 4000
@@ -203,7 +204,6 @@ function AdminOrganizationsPage() {
         <div className="page">
             <h1>Admin Organizations</h1>
 
-            {loading && <p>Loading...</p>}
             {error && <div className="error">{error}</div>}
             {success && <div className="success">{success}</div>}
 
@@ -233,12 +233,26 @@ function AdminOrganizationsPage() {
                 </form>
             </div>
 
-            <div className="card table-card">
-                {!loading && organizations.length === 0 && (
-                    <p>No organizations found.</p>
-                )}
+            {loading && <LoadingState message="Loading organizations..." />}
 
-                {organizations.length > 0 && (
+            {!loading && error && organizations.length === 0 && (
+                <ErrorState
+                    title="Failed to load organizations"
+                    message={error}
+                    action={
+                        <button type="button" onClick={() => void loadOrganizations(page)}>
+                            Retry
+                        </button>
+                    }
+                />
+            )}
+
+            {!loading && organizations.length === 0 && (
+                <EmptyState message="No organizations found." />
+            )}
+
+            {!loading && organizations.length > 0 && (
+                <div className="card table-card">
                     <table>
                         <thead>
                         <tr>
@@ -307,32 +321,32 @@ function AdminOrganizationsPage() {
                         })}
                         </tbody>
                     </table>
-                )}
 
-                <div className="pagination">
-                    <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={page === 0 || loading}
-                        onClick={() => setPage((prev) => Math.max(0, prev - 1))}
-                    >
-                        Previous
-                    </button>
+                    <div className="pagination">
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={page === 0 || loading}
+                            onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+                        >
+                            Previous
+                        </button>
 
-                    <span>
-                        Page {page + 1} of {Math.max(totalPages, 1)}
-                    </span>
+                        <span>
+                            Page {page + 1} of {Math.max(totalPages, 1)}
+                        </span>
 
-                    <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={page + 1 >= totalPages || loading}
-                        onClick={() => setPage((prev) => prev + 1)}
-                    >
-                        Next
-                    </button>
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={page + 1 >= totalPages || loading}
+                            onClick={() => setPage((prev) => prev + 1)}
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
-            </div>
+            )}
 
             {renameOrganization && (
                 <Modal

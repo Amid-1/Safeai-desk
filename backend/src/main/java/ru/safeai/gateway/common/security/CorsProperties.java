@@ -11,7 +11,7 @@ public record CorsProperties(
 ) {
     public List<String> allowedOriginList() {
         if (allowedOrigins == null || allowedOrigins.isBlank()) {
-            return List.of("http://localhost:5173");
+            return List.of();
         }
 
         return Arrays.stream(allowedOrigins.split(","))

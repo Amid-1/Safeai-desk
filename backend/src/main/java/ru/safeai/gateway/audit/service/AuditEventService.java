@@ -13,12 +13,7 @@ import ru.safeai.gateway.user.entity.UserEntity;
 
 import java.lang.reflect.Array;
 import java.time.temporal.TemporalAccessor;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -29,6 +24,19 @@ public class AuditEventService {
     private static final int MAX_DETAILS_ENTRIES = 100;
     private static final int MAX_COLLECTION_ITEMS = 100;
     private static final int MAX_STRING_LENGTH = 2_000;
+
+    private static final String REDACTED_VALUE = "[REDACTED]";
+
+    private static final Set<String> SENSITIVE_KEY_PARTS = Set.of(
+            "password",
+            "token",
+            "secret",
+            "apikey",
+            "authorization",
+            "cookie",
+            "prompt",
+            "response"
+    );
 
     private final AuditEventRepository auditEventRepository;
     private final EntityManager entityManager;
@@ -142,7 +150,9 @@ public class AuditEventService {
                 continue;
             }
 
-            Object value = sanitizeValue(entry.getValue(), 0);
+            Object value = isSensitiveKey(key)
+                    ? REDACTED_VALUE
+                    : sanitizeValue(entry.getValue(), 0);
 
             if (value != null) {
                 sanitized.put(key, value);
@@ -213,7 +223,9 @@ public class AuditEventService {
                 continue;
             }
 
-            Object value = sanitizeValue(entry.getValue(), depth);
+            Object value = isSensitiveKey(key)
+                    ? REDACTED_VALUE
+                    : sanitizeValue(entry.getValue(), depth);
 
             if (value != null) {
                 sanitized.put(key, value);
@@ -279,5 +291,20 @@ public class AuditEventService {
         }
 
         return trimmed.substring(0, MAX_STRING_LENGTH);
+    }
+
+    private boolean isSensitiveKey(String key) {
+        if (key == null || key.isBlank()) {
+            return false;
+        }
+
+        String normalized = key
+                .toLowerCase(Locale.ROOT)
+                .replace("-", "")
+                .replace("_", "")
+                .replace(".", "");
+
+        return SENSITIVE_KEY_PARTS.stream()
+                .anyMatch(normalized::contains);
     }
 }

@@ -39,8 +39,8 @@ public class AuditEventEntity {
     private String eventType;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "details", columnDefinition = "jsonb")
-    private Map<String, Object> details;
+    @Column(name = "details", nullable = false, columnDefinition = "jsonb")
+    private Map<String, Object> details = Map.of();
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -53,6 +53,10 @@ public class AuditEventEntity {
 
         if (createdAt == null) {
             createdAt = Instant.now();
+        }
+
+        if (details == null) {
+            details = Map.of();
         }
     }
 }

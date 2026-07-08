@@ -11,8 +11,6 @@ import java.util.UUID;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, UUID> {
 
-    List<ChatMessageEntity> findBySession_IdOrderByCreatedAtAscIdAsc(UUID sessionId);
-
     Page<ChatMessageEntity> findBySession_IdOrderByCreatedAtAscIdAsc(
             UUID sessionId,
             Pageable pageable
@@ -23,10 +21,11 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessageEntity, 
             Pageable pageable
     );
 
-    boolean existsByIdAndSession_IdAndSession_User_IdAndRole(
+    boolean existsByIdAndSession_IdAndSession_User_IdAndSession_Organization_IdAndRole(
             UUID id,
             UUID sessionId,
             UUID userId,
+            UUID organizationId,
             ChatMessageRole role
     );
 }

@@ -89,7 +89,11 @@ public class ChatService {
         Objects.requireNonNull(pageable, "pageable не должен быть null");
 
         return chatSessionRepository
-                .findByUser_IdOrderByUpdatedAtDesc(currentUser.getId(), pageable)
+                .findByUser_IdAndOrganization_IdOrderByUpdatedAtDesc(
+                        currentUser.getId(),
+                        currentUser.getOrganizationId(),
+                        pageable
+                )
                 .map(chatMapper::toChatResponse);
     }
 
@@ -188,7 +192,11 @@ public class ChatService {
     }
 
     private ChatSessionEntity findOwnedSession(UUID chatId, SafeAiUserPrincipal currentUser) {
-        return chatSessionRepository.findByIdAndUser_Id(chatId, currentUser.getId())
+        return chatSessionRepository.findByIdAndUser_IdAndOrganization_Id(
+                        chatId,
+                        currentUser.getId(),
+                        currentUser.getOrganizationId()
+                )
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Чат не найден: " + chatId
                 ));

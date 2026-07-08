@@ -30,23 +30,19 @@ public class AiExceptionHandler {
             HttpServletRequest request
     ) {
         log.warn(
-                "AI provider timeout: provider={}, model={}, requestId={}, retryable={}, message={}",
+                "AI provider timeout: provider={}, model={}, path={}",
                 exception.getProvider(),
                 exception.getModel(),
-                exception.getProviderRequestId(),
-                exception.isRetryable(),
-                exception.getMessage()
+                request.getRequestURI(),
+                exception
         );
 
-        return ResponseEntity
-                .status(HttpStatus.GATEWAY_TIMEOUT)
-                .body(errorResponseFactory.create(
-                        HttpStatus.GATEWAY_TIMEOUT,
-                        "AI_PROVIDER_TIMEOUT",
-                        "AI provider не ответил вовремя",
-                        request,
-                        null
-                ));
+        return buildResponse(
+                HttpStatus.GATEWAY_TIMEOUT,
+                "AI_PROVIDER_TIMEOUT",
+                "AI-провайдер не ответил вовремя",
+                request
+        );
     }
 
     @ExceptionHandler(AiProviderRateLimitedException.class)
@@ -55,24 +51,21 @@ public class AiExceptionHandler {
             HttpServletRequest request
     ) {
         log.warn(
-                "AI provider rate limited: provider={}, model={}, statusCode={}, requestId={}, retryable={}, message={}",
+                "AI provider rate limited: provider={}, model={}, statusCode={}, providerRequestId={}, path={}",
                 exception.getProvider(),
                 exception.getModel(),
                 exception.getStatusCode(),
                 exception.getProviderRequestId(),
-                exception.isRetryable(),
-                exception.getMessage()
+                request.getRequestURI(),
+                exception
         );
 
-        return ResponseEntity
-                .status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(errorResponseFactory.create(
-                        HttpStatus.SERVICE_UNAVAILABLE,
-                        "AI_PROVIDER_RATE_LIMITED",
-                        "AI provider временно ограничил запросы",
-                        request,
-                        null
-                ));
+        return buildResponse(
+                HttpStatus.TOO_MANY_REQUESTS,
+                "AI_PROVIDER_RATE_LIMITED",
+                "AI-провайдер временно ограничил количество запросов",
+                request
+        );
     }
 
     @ExceptionHandler(AiProviderUnavailableException.class)
@@ -81,23 +74,19 @@ public class AiExceptionHandler {
             HttpServletRequest request
     ) {
         log.warn(
-                "AI provider unavailable: provider={}, model={}, requestId={}, retryable={}, message={}",
+                "AI provider unavailable: provider={}, model={}, path={}",
                 exception.getProvider(),
                 exception.getModel(),
-                exception.getProviderRequestId(),
-                exception.isRetryable(),
-                exception.getMessage()
+                request.getRequestURI(),
+                exception
         );
 
-        return ResponseEntity
-                .status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(errorResponseFactory.create(
-                        HttpStatus.SERVICE_UNAVAILABLE,
-                        "AI_PROVIDER_UNAVAILABLE",
-                        "AI provider временно недоступен",
-                        request,
-                        null
-                ));
+        return buildResponse(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "AI_PROVIDER_UNAVAILABLE",
+                "AI-провайдер временно недоступен",
+                request
+        );
     }
 
     @ExceptionHandler(AiProviderException.class)
@@ -106,21 +95,36 @@ public class AiExceptionHandler {
             HttpServletRequest request
     ) {
         log.warn(
-                "AI provider error: provider={}, model={}, statusCode={}, requestId={}, retryable={}, message={}",
+                "AI provider error: provider={}, model={}, statusCode={}, providerRequestId={}, retryable={}, path={}",
                 exception.getProvider(),
                 exception.getModel(),
                 exception.getStatusCode(),
                 exception.getProviderRequestId(),
                 exception.isRetryable(),
-                exception.getMessage()
+                request.getRequestURI(),
+                exception
         );
 
+        return buildResponse(
+                HttpStatus.BAD_GATEWAY,
+                "AI_PROVIDER_ERROR",
+                "Ошибка при обращении к AI-провайдеру",
+                request
+        );
+    }
+
+    private ResponseEntity<ApiErrorResponse> buildResponse(
+            HttpStatus status,
+            String error,
+            String message,
+            HttpServletRequest request
+    ) {
         return ResponseEntity
-                .status(HttpStatus.BAD_GATEWAY)
+                .status(status)
                 .body(errorResponseFactory.create(
-                        HttpStatus.BAD_GATEWAY,
-                        "AI_PROVIDER_ERROR",
-                        "Ошибка AI provider",
+                        status,
+                        error,
+                        message,
                         request,
                         null
                 ));

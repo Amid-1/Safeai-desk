@@ -8,10 +8,12 @@ import java.nio.charset.StandardCharsets;
 public record JwtProperties(
         String secret,
         long expirationMinutes,
-        String issuer
+        String issuer,
+        String audience
 ) {
     private static final long DEFAULT_EXPIRATION_MINUTES = 15;
     private static final String DEFAULT_ISSUER = "safeai-desk";
+    private static final String DEFAULT_AUDIENCE = "safeai-desk-api";
     private static final int MIN_HS256_SECRET_BYTES = 32;
 
     public JwtProperties {
@@ -29,6 +31,10 @@ public record JwtProperties(
 
         if (issuer == null || issuer.isBlank()) {
             issuer = DEFAULT_ISSUER;
+        }
+
+        if (audience == null || audience.isBlank()) {
+            audience = DEFAULT_AUDIENCE;
         }
     }
 }

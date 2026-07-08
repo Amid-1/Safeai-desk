@@ -1,6 +1,13 @@
-FROM eclipse-temurin:21-jdk AS build
+FROM eclipse-temurin:21-jre
 
 WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --system safeai \
+    && useradd --system --gid safeai --home-dir /app --shell /usr/sbin/nologin safeai
 
 COPY .mvn .mvn
 COPY mvnw pom.xml ./

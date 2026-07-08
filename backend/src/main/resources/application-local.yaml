@@ -4,6 +4,7 @@ spring:
     locations:
       - classpath:db/migration
       - classpath:db/local-migration
+    validate-migration-naming: true
 
 safeai:
   security:

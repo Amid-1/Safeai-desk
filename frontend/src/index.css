@@ -30,13 +30,19 @@ button:disabled {
 }
 
 input,
-select {
+select,
+textarea {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid #ccd1d9;
     border-radius: 8px;
     font-size: 14px;
     background: white;
+}
+
+textarea {
+    resize: vertical;
+    font-family: inherit;
 }
 
 table {
@@ -191,6 +197,11 @@ pre {
     text-align: left;
 }
 
+.chat-item.active {
+    background: #111827;
+    color: white;
+}
+
 .chat-panel {
     min-height: 500px;
     display: flex;
@@ -218,6 +229,19 @@ pre {
     background: #dcfce7;
 }
 
+.message.failed {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.message.pending {
+    opacity: 0.7;
+}
+
+.message strong {
+    margin-right: 8px;
+}
+
 .message p {
     margin: 8px 0;
 }
@@ -225,6 +249,11 @@ pre {
 .message-form {
     display: flex;
     gap: 10px;
+}
+
+.message-form textarea {
+    width: 100%;
+    resize: vertical;
 }
 
 .user-toolbar {
@@ -301,6 +330,12 @@ pre {
     color: white;
 }
 
+button.secondary-button:hover,
+button.filter-button:hover,
+button.chat-item:hover {
+    filter: brightness(0.96);
+}
+
 .pagination {
     display: flex;
     align-items: center;
@@ -312,6 +347,89 @@ pre {
     color: #6b7280;
     font-size: 13px;
     font-weight: 600;
+}
+
+.table-card {
+    overflow-x: auto;
+}
+
+.card table {
+    min-width: 760px;
+}
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.modal-card {
+    width: min(520px, 100%);
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    background: #fff;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.3);
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.usage-total-card {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.usage-total-card p {
+    margin: 8px 0 0;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.usage-chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.chart-box {
+    width: 100%;
+    height: 260px;
+}
+
+@media (max-width: 900px) {
+    .usage-total-card,
+    .usage-chart-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .chat-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .topbar {
+        flex-wrap: wrap;
+    }
 }
 
 @media (max-width: 768px) {
@@ -342,115 +460,15 @@ pre {
         flex-direction: column;
     }
 
-    .chat-item.active {
-        background: #111827;
-        color: white;
-    }
-
-    .message.failed {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-
-    .message strong {
-        margin-right: 8px;
-    }
-
-    .card table {
-        min-width: 760px;
-    }
-
-    button.secondary-button:hover,
-    button.filter-button:hover,
-    button.chat-item:hover {
-        filter: brightness(0.96);
-    }
-
     .modal-backdrop {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-        background: rgba(15, 23, 42, 0.55);
-    }
-
-    .modal-card {
-        width: min(520px, 100%);
-        max-height: calc(100vh - 48px);
-        overflow: auto;
-        background: #fff;
-        border-radius: 16px;
-        padding: 20px;
-        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.3);
-    }
-
-    .modal-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 16px;
+        padding: 16px;
     }
 
     .modal-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 12px;
-        margin-top: 16px;
+        flex-direction: column-reverse;
     }
 
-    .table-card {
-        overflow-x: auto;
-    }
-
-    .usage-total-card {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 16px;
-    }
-
-    .usage-total-card p {
-        margin: 8px 0 0;
-        font-size: 24px;
-        font-weight: 700;
-    }
-
-    .usage-chart-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 16px;
-        margin-bottom: 16px;
-    }
-
-    .chart-box {
+    .modal-actions button {
         width: 100%;
-        height: 260px;
-    }
-
-    .message-form textarea {
-        width: 100%;
-        resize: vertical;
-    }
-
-    .message.pending {
-        opacity: 0.7;
-    }
-
-    @media (max-width: 900px) {
-        .usage-total-card,
-        .usage-chart-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .chat-layout {
-            grid-template-columns: 1fr;
-        }
-
-        .topbar {
-            flex-wrap: wrap;
-        }
     }
 }
