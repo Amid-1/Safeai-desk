@@ -1,8 +1,8 @@
 // frontend/src/pages/LoginPage.tsx
 import { useEffect, useState } from 'react'
-import type { SyntheticEvent } from 'react'
+import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getApiErrorMessage } from '../api/http'
+import { ApiError, getApiErrorMessage } from '../api/http'
 import { useAuth } from '../auth/AuthContext'
 import { LoadingState } from '../components/StateBlock'
 
@@ -21,20 +21,15 @@ function LoginPage() {
         }
     }, [authLoading, currentUser, navigate])
 
-    async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
+    async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault()
-
-        const normalizedEmail = email.trim()
 
         setError('')
 
-        if (!normalizedEmail) {
-            setError('Введите email.')
-            return
-        }
+        const normalizedEmail = email.trim()
 
-        if (!password) {
-            setError('Введите пароль.')
+        if (!normalizedEmail || !password) {
+            setError('Введите email и пароль.')
             return
         }
 
@@ -48,7 +43,12 @@ function LoginPage() {
 
             navigate('/chat', { replace: true })
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Login failed'))
+            if (err instanceof ApiError && err.status === 401) {
+                setError('Неверный email или пароль.')
+                return
+            }
+
+            setError(getApiErrorMessage(err, 'Не удалось выполнить вход.'))
         } finally {
             setLoading(false)
         }
@@ -74,6 +74,7 @@ function LoginPage() {
                         onChange={(event) => setEmail(event.target.value)}
                         type="email"
                         autoComplete="username"
+                        disabled={loading}
                     />
                 </label>
 
@@ -84,6 +85,7 @@ function LoginPage() {
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
                         autoComplete="current-password"
+                        disabled={loading}
                     />
                 </label>
 
