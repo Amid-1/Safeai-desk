@@ -18,14 +18,13 @@ import type {
 
 import { getApiErrorMessage } from '../api/http'
 import { formatDate, formatUsd } from '../utils/format'
-import { toUtcExclusiveEndOfDayIso, toUtcStartOfDayIso } from '../utils/date'
-import { ErrorState, LoadingState } from '../components/StateBlock'
+import { EmptyState, LoadingState } from '../components/StateBlock'
 
 type Tab = 'summary' | 'users' | 'models' | 'daily'
 
 type UsageRow = Record<string, string | number | null | undefined>
 
-type UsageTableColumn<T extends UsageRow> = {
+type UsageTableColumn<T extends object> = {
     key: keyof T
     title: string
     render?: (value: T[keyof T], row: T) => string
@@ -49,7 +48,7 @@ function AdminUsagePage() {
     const [appliedFilter, setAppliedFilter] = useState<UsageFilter>({})
 
     useEffect(() => {
-        async function loadUsageForActiveTab() {
+        async function loadUsage() {
             setLoading(true)
             setError('')
 
@@ -59,40 +58,32 @@ function AdminUsagePage() {
                     dateTo: appliedFilter.dateTo,
                 }
 
-                if (tab === 'summary') {
-                    setSummary(await getUsageSummary(appliedFilter))
-                    return
-                }
+                const [summaryData, usersData, modelsData, dailyData] =
+                    await Promise.all([
+                        getUsageSummary(appliedFilter),
+                        getUsageByUsers(dateOnlyFilter),
+                        getUsageByModels(dateOnlyFilter),
+                        getUsageDaily(dateOnlyFilter),
+                    ])
 
-                if (tab === 'users') {
-                    setUsers(await getUsageByUsers(dateOnlyFilter))
-                    return
-                }
-
-                if (tab === 'models') {
-                    setModels(await getUsageByModels(dateOnlyFilter))
-                    return
-                }
-
-                setDaily(await getUsageDaily(dateOnlyFilter))
+                setSummary(summaryData)
+                setUsers(usersData)
+                setModels(modelsData)
+                setDaily(dailyData)
             } catch (err) {
-                setError(getApiErrorMessage(err, 'Failed to load usage'))
+                setError(getApiErrorMessage(err, 'Не удалось загрузить статистику использования.'))
             } finally {
                 setLoading(false)
             }
         }
 
-        void loadUsageForActiveTab()
-    }, [tab, appliedFilter])
+        void loadUsage()
+    }, [appliedFilter])
 
     function applyFilters() {
         setAppliedFilter({
-            dateFrom: draftDateFrom
-                ? toUtcStartOfDayIso(draftDateFrom)
-                : undefined,
-            dateTo: draftDateTo
-                ? toUtcExclusiveEndOfDayIso(draftDateTo)
-                : undefined,
+            dateFrom: draftDateFrom ? `${draftDateFrom}T00:00:00Z` : undefined,
+            dateTo: draftDateTo ? `${addOneDay(draftDateTo)}T00:00:00Z` : undefined,
             model: draftModel.trim() || undefined,
         })
     }
@@ -106,12 +97,12 @@ function AdminUsagePage() {
 
     return (
         <div className="page">
-            <h1>Admin Usage</h1>
+            <h1>Использование AI</h1>
 
             <div className="card form-card">
                 <div className="form">
                     <label>
-                        Date from
+                        Дата с
                         <input
                             type="date"
                             value={draftDateFrom}
@@ -120,7 +111,7 @@ function AdminUsagePage() {
                     </label>
 
                     <label>
-                        Date to
+                        Дата по
                         <input
                             type="date"
                             value={draftDateTo}
@@ -129,18 +120,17 @@ function AdminUsagePage() {
                     </label>
 
                     <label>
-                        Model
+                        Модель
                         <input
                             value={draftModel}
                             onChange={(event) => setDraftModel(event.target.value)}
                             placeholder="mock-safeai"
-                            disabled={tab !== 'summary'}
                         />
                     </label>
 
-                    <div className="user-actions">
+                    <div className="filter-actions">
                         <button type="button" disabled={loading} onClick={applyFilters}>
-                            Apply filters
+                            Применить фильтры
                         </button>
 
                         <button
@@ -149,12 +139,12 @@ function AdminUsagePage() {
                             disabled={loading}
                             onClick={resetFilters}
                         >
-                            Reset filters
+                            Сбросить фильтры
                         </button>
                     </div>
 
                     <small className="muted">
-                        Model filter applies only to Summary. Daily usage is grouped by UTC date.
+                        Фильтр по модели применяется только к сводке. Дневная статистика группируется по UTC.
                     </small>
                 </div>
             </div>
@@ -165,7 +155,7 @@ function AdminUsagePage() {
                     className={tab === 'summary' ? 'filter-button active' : 'filter-button'}
                     onClick={() => setTab('summary')}
                 >
-                    Summary
+                    Сводка
                 </button>
 
                 <button
@@ -173,7 +163,7 @@ function AdminUsagePage() {
                     className={tab === 'users' ? 'filter-button active' : 'filter-button'}
                     onClick={() => setTab('users')}
                 >
-                    By users
+                    По пользователям
                 </button>
 
                 <button
@@ -181,7 +171,7 @@ function AdminUsagePage() {
                     className={tab === 'models' ? 'filter-button active' : 'filter-button'}
                     onClick={() => setTab('models')}
                 >
-                    By models
+                    По моделям
                 </button>
 
                 <button
@@ -189,26 +179,12 @@ function AdminUsagePage() {
                     className={tab === 'daily' ? 'filter-button active' : 'filter-button'}
                     onClick={() => setTab('daily')}
                 >
-                    Daily
+                    По дням
                 </button>
             </div>
 
-            {loading && <LoadingState message="Loading usage..." />}
-
-            {!loading && error && (
-                <ErrorState
-                    title="Failed to load usage"
-                    message={error}
-                    action={
-                        <button
-                            type="button"
-                            onClick={() => setAppliedFilter({ ...appliedFilter })}
-                        >
-                            Retry
-                        </button>
-                    }
-                />
-            )}
+            {loading && <LoadingState message="Загрузка статистики использования..." />}
+            {error && <div className="error">{error}</div>}
 
             {!loading && !error && (
                 <div className="card table-card">
@@ -216,18 +192,18 @@ function AdminUsagePage() {
                         <UsageTable
                             rows={summary}
                             columns={[
-                                { key: 'userEmail', title: 'User' },
-                                { key: 'model', title: 'Model' },
-                                { key: 'inputTokens', title: 'Input tokens' },
-                                { key: 'outputTokens', title: 'Output tokens' },
-                                { key: 'totalTokens', title: 'Total tokens' },
+                                { key: 'userEmail', title: 'Пользователь' },
+                                { key: 'model', title: 'Модель' },
+                                { key: 'inputTokens', title: 'Входные токены' },
+                                { key: 'outputTokens', title: 'Выходные токены' },
+                                { key: 'totalTokens', title: 'Всего токенов' },
                                 {
                                     key: 'costUsd',
-                                    title: 'Cost USD',
+                                    title: 'Стоимость USD',
                                     render: (value) => formatUsd(value as number),
                                 },
                             ]}
-                            emptyText="No usage summary found."
+                            emptyText="Сводка использования не найдена."
                         />
                     )}
 
@@ -235,17 +211,17 @@ function AdminUsagePage() {
                         <UsageTable
                             rows={users}
                             columns={[
-                                { key: 'userEmail', title: 'User' },
-                                { key: 'inputTokens', title: 'Input tokens' },
-                                { key: 'outputTokens', title: 'Output tokens' },
-                                { key: 'totalTokens', title: 'Total tokens' },
+                                { key: 'userEmail', title: 'Пользователь' },
+                                { key: 'inputTokens', title: 'Входные токены' },
+                                { key: 'outputTokens', title: 'Выходные токены' },
+                                { key: 'totalTokens', title: 'Всего токенов' },
                                 {
                                     key: 'costUsd',
-                                    title: 'Cost USD',
+                                    title: 'Стоимость USD',
                                     render: (value) => formatUsd(value as number),
                                 },
                             ]}
-                            emptyText="No user usage found."
+                            emptyText="Статистика по пользователям не найдена."
                         />
                     )}
 
@@ -253,17 +229,17 @@ function AdminUsagePage() {
                         <UsageTable
                             rows={models}
                             columns={[
-                                { key: 'model', title: 'Model' },
-                                { key: 'inputTokens', title: 'Input tokens' },
-                                { key: 'outputTokens', title: 'Output tokens' },
-                                { key: 'totalTokens', title: 'Total tokens' },
+                                { key: 'model', title: 'Модель' },
+                                { key: 'inputTokens', title: 'Входные токены' },
+                                { key: 'outputTokens', title: 'Выходные токены' },
+                                { key: 'totalTokens', title: 'Всего токенов' },
                                 {
                                     key: 'costUsd',
-                                    title: 'Cost USD',
+                                    title: 'Стоимость USD',
                                     render: (value) => formatUsd(value as number),
                                 },
                             ]}
-                            emptyText="No model usage found."
+                            emptyText="Статистика по моделям не найдена."
                         />
                     )}
 
@@ -273,19 +249,19 @@ function AdminUsagePage() {
                             columns={[
                                 {
                                     key: 'usageDate',
-                                    title: 'Date',
+                                    title: 'Дата',
                                     render: (value) => formatDate(value as string),
                                 },
-                                { key: 'inputTokens', title: 'Input tokens' },
-                                { key: 'outputTokens', title: 'Output tokens' },
-                                { key: 'totalTokens', title: 'Total tokens' },
+                                { key: 'inputTokens', title: 'Входные токены' },
+                                { key: 'outputTokens', title: 'Выходные токены' },
+                                { key: 'totalTokens', title: 'Всего токенов' },
                                 {
                                     key: 'costUsd',
-                                    title: 'Cost USD',
+                                    title: 'Стоимость USD',
                                     render: (value) => formatUsd(value as number),
                                 },
                             ]}
-                            emptyText="No daily usage found."
+                            emptyText="Дневная статистика не найдена."
                         />
                     )}
                 </div>
@@ -294,21 +270,26 @@ function AdminUsagePage() {
     )
 }
 
-function UsageTable<T extends UsageRow>({
-                                            rows,
-                                            columns,
-                                            emptyText,
-                                        }: {
+function UsageTable<T extends object>({
+                                          rows,
+                                          columns,
+                                          emptyText,
+                                      }: {
     rows: T[]
     columns: UsageTableColumn<T>[]
     emptyText: string
 }) {
     if (rows.length === 0) {
-        return <p>{emptyText}</p>
+        return (
+            <EmptyState
+                title="Нет данных"
+                message={emptyText}
+            />
+        )
     }
 
     return (
-        <table>
+        <table className="admin-table usage-table">
             <thead>
             <tr>
                 {columns.map((column) => (
@@ -338,24 +319,37 @@ function UsageTable<T extends UsageRow>({
     )
 }
 
-function getUsageRowKey(row: UsageRow, index: number): string {
-    if (row.userId && row.model) {
-        return `${row.userId}-${row.model}`
+function getUsageRowKey(row: object, index: number): string {
+    const usageRow = row as UsageRow
+
+    if (usageRow.userId && usageRow.model) {
+        return `${usageRow.userId}-${usageRow.model}`
     }
 
-    if (row.userId) {
-        return String(row.userId)
+    if (usageRow.userId) {
+        return String(usageRow.userId)
     }
 
-    if (row.model) {
-        return String(row.model)
+    if (usageRow.model) {
+        return String(usageRow.model)
     }
 
-    if (row.usageDate) {
-        return String(row.usageDate)
+    if (usageRow.usageDate) {
+        return String(usageRow.usageDate)
     }
 
     return String(index)
+}
+
+function addOneDay(dateValue: string): string {
+    const [year, month, day] = dateValue
+        .split('-')
+        .map((part) => Number(part))
+
+    const date = new Date(Date.UTC(year, month - 1, day))
+    date.setUTCDate(date.getUTCDate() + 1)
+
+    return date.toISOString().slice(0, 10)
 }
 
 export default AdminUsagePage

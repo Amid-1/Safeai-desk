@@ -5,6 +5,7 @@ import type { PageResponse } from '../utils/page'
 export type AuditEvent = {
     id: string
     organizationId: string | null
+    organizationName?: string | null
     userId: string | null
     userEmail: string | null
     eventType: string

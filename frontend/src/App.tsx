@@ -55,7 +55,7 @@ function ProtectedRoute({ roles, children }: ProtectedRouteProps) {
     const { currentUser, authLoading } = useAuth()
 
     if (authLoading) {
-        return <p>Checking access...</p>
+        return <p>Проверка доступа...</p>
     }
 
     if (!currentUser) {
@@ -77,7 +77,7 @@ function RootRedirect() {
     const { currentUser, authLoading } = useAuth()
 
     if (authLoading) {
-        return <p>Checking access...</p>
+        return <p>Проверка доступа...</p>
     }
 
     return <Navigate to={currentUser ? '/chat' : '/login'} replace />
@@ -87,7 +87,7 @@ function LoginRoute() {
     const { currentUser, authLoading } = useAuth()
 
     if (authLoading) {
-        return <p>Checking access...</p>
+        return <p>Проверка доступа...</p>
     }
 
     if (currentUser) {
@@ -119,13 +119,13 @@ function AppLayout() {
 
                     <nav>
                         <NavLink to="/chat" className={getNavLinkClass}>
-                            Chat
+                            Чат
                         </NavLink>
 
                         {canAccessAdmin && (
                             <>
                                 <NavLink to="/admin/users" className={getNavLinkClass}>
-                                    Users
+                                    Пользователи
                                 </NavLink>
 
                                 {canAccessOrganizations && (
@@ -133,16 +133,16 @@ function AppLayout() {
                                         to="/admin/organizations"
                                         className={getNavLinkClass}
                                     >
-                                        Organizations
+                                        Организации
                                     </NavLink>
                                 )}
 
                                 <NavLink to="/admin/audit" className={getNavLinkClass}>
-                                    Audit
+                                    Аудит
                                 </NavLink>
 
                                 <NavLink to="/admin/usage" className={getNavLinkClass}>
-                                    Usage
+                                    Использование
                                 </NavLink>
                             </>
                         )}
@@ -168,7 +168,7 @@ function AppLayout() {
                         )}
 
                         <button onClick={() => void handleLogout()}>
-                            Logout
+                            Выйти
                         </button>
                     </div>
                 </header>

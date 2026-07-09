@@ -135,7 +135,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     return ''
                 })
             } catch (err) {
-                setError(getApiErrorMessage(err, 'Failed to load organizations'))
+                setError(getApiErrorMessage(err, 'Не удалось загрузить организации.'))
             } finally {
                 setOrganizationsLoading(false)
             }
@@ -170,7 +170,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
             setUsers(getPageContent(data))
             setTotalPages(getPageTotalPages(data))
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Failed to load users'))
+            setError(getApiErrorMessage(err, 'Не удалось загрузить пользователей.'))
         } finally {
             setLoading(false)
         }
@@ -316,13 +316,13 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
             setSuccess(
                 nextEnabled
-                    ? `User ${updatedUser.email} enabled`
-                    : `User ${updatedUser.email} disabled`
+                    ? `Пользователь ${updatedUser.email} включен.`
+                    : `Пользователь ${updatedUser.email} отключен.`
             )
 
             setConfirmState(null)
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Failed to update user status'))
+            setError(getApiErrorMessage(err, 'Не удалось изменить статус пользователя.'))
         } finally {
             setActionUserId(null)
         }
@@ -344,10 +344,10 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
             replaceUser(updatedUser)
 
-            setSuccess(`Role for ${updatedUser.email} changed to ${nextRole}`)
+            setSuccess(`Роль пользователя ${updatedUser.email} изменена на ${nextRole}.`)
             setConfirmState(null)
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Failed to change user role'))
+            setError(getApiErrorMessage(err, 'Не удалось изменить роль пользователя.'))
         } finally {
             setActionUserId(null)
         }
@@ -462,32 +462,34 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         const manageable = canManageUser(user)
 
         return (
-            <div className="user-actions">
+            <div className="table-actions table-actions-compact">
                 <button
                     type="button"
                     className="secondary-button"
+                    title="Открыть детали пользователя"
                     onClick={() => setDetailsUser(user)}
                 >
-                    Details
+                    Детали
                 </button>
 
                 {manageable && (
                     <button
                         type="button"
                         className="secondary-button"
+                        title="Изменить email и полное имя"
                         disabled={isBusy}
                         onClick={() => openEditUserModal(user)}
                     >
-                        Edit
+                        Изменить
                     </button>
                 )}
 
                 {targetIsSuperAdmin && (
-                    <span className="muted">Platform admin</span>
+                    <span className="muted">Платформенный администратор</span>
                 )}
 
                 {!targetIsSuperAdmin && isCurrentUser && (
-                    <span className="muted">Current user</span>
+                    <span className="muted">Текущий пользователь</span>
                 )}
 
                 {!targetIsSuperAdmin
@@ -495,7 +497,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     && targetIsAdmin
                     && !currentUserIsSuperAdmin
                     && (
-                        <span className="muted">Admin user</span>
+                        <span className="muted">Администратор</span>
                     )}
 
                 {manageable && (
@@ -503,6 +505,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                         <button
                             type="button"
                             className={user.enabled ? 'danger-button' : 'secondary-button'}
+                            title={user.enabled ? 'Отключить пользователя' : 'Включить пользователя'}
                             disabled={isBusy}
                             onClick={() =>
                                 setConfirmState({
@@ -511,22 +514,24 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                 })
                             }
                         >
-                            {user.enabled ? 'Disable' : 'Enable'}
+                            {user.enabled ? 'Откл.' : 'Вкл.'}
                         </button>
 
                         <button
                             type="button"
                             className="secondary-button"
+                            title="Сбросить пароль пользователя"
                             disabled={isBusy}
                             onClick={() => openResetPasswordModal(user)}
                         >
-                            Reset password
+                            Пароль
                         </button>
 
                         {targetIsAdmin && currentUserIsSuperAdmin && (
                             <button
                                 type="button"
                                 className="secondary-button"
+                                title="Оставить только роль USER"
                                 disabled={isBusy}
                                 onClick={() =>
                                     setConfirmState({
@@ -536,7 +541,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                     })
                                 }
                             >
-                                Make USER
+                                В USER
                             </button>
                         )}
 
@@ -544,6 +549,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                             <button
                                 type="button"
                                 className="secondary-button"
+                                title="Назначить роль ADMIN"
                                 disabled={isBusy}
                                 onClick={() =>
                                     setConfirmState({
@@ -553,7 +559,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                     })
                                 }
                             >
-                                Make ADMIN
+                                В ADMIN
                             </button>
                         )}
                     </>
@@ -564,13 +570,13 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
     return (
         <div className="page">
-            <h1>Admin Users</h1>
+            <h1>Пользователи</h1>
 
             {error && <div className="error">{error}</div>}
             {success && <div className="success">{success}</div>}
 
             <div className="card form-card">
-                <h2>Create user</h2>
+                <h2>Создать пользователя</h2>
 
                 <form className="form" onSubmit={handleCreateUser}>
                     <label>
@@ -585,7 +591,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     </label>
 
                     <label>
-                        Password
+                        Пароль
                         <input
                             value={password}
                             onChange={(event) => setPassword(event.target.value)}
@@ -598,7 +604,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     </label>
 
                     <label>
-                        Confirm password
+                        Повторите пароль
                         <input
                             value={passwordConfirm}
                             onChange={(event) => setPasswordConfirm(event.target.value)}
@@ -611,17 +617,17 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     </label>
 
                     <label>
-                        Full name
+                        Полное имя
                         <input
                             value={fullName}
                             onChange={(event) => setFullName(event.target.value)}
-                            placeholder="User full name"
+                            placeholder="Иван Иванов"
                         />
                     </label>
 
                     {currentUserIsSuperAdmin && (
                         <label>
-                            Organization
+                            Организация
                             <select
                                 value={selectedOrganizationId}
                                 onChange={(event) => setSelectedOrganizationId(event.target.value)}
@@ -629,8 +635,8 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                             >
                                 <option value="">
                                     {organizationsLoading
-                                        ? 'Loading organizations...'
-                                        : 'Select organization'}
+                                        ? 'Загрузка организаций...'
+                                        : 'Выберите организацию'}
                                 </option>
 
                                 {organizations.map((organization) => (
@@ -647,12 +653,12 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                         && organizations.length === 0
                         && (
                             <p className="muted">
-                                No customer organizations available. Create an organization first.
+                                Нет доступных клиентских организаций. Сначала создайте организацию.
                             </p>
                         )}
 
                     <label>
-                        Role
+                        Роль
                         <select
                             value={role}
                             onChange={(event) => setRole(event.target.value as Role)}
@@ -663,7 +669,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     </label>
 
                     <button disabled={createDisabled}>
-                        {creating ? 'Creating...' : 'Create user'}
+                        {creating ? 'Создание...' : 'Создать пользователя'}
                     </button>
                 </form>
             </div>
@@ -674,7 +680,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     className={filter === 'ALL' ? 'filter-button active' : 'filter-button'}
                     onClick={() => setFilter('ALL')}
                 >
-                    All ({users.length})
+                    Все ({users.length})
                 </button>
 
                 <button
@@ -682,7 +688,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     className={filter === 'ADMIN' ? 'filter-button active' : 'filter-button'}
                     onClick={() => setFilter('ADMIN')}
                 >
-                    Admins ({adminCount})
+                    Администраторы ({adminCount})
                 </button>
 
                 <button
@@ -690,14 +696,14 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     className={filter === 'USER' ? 'filter-button active' : 'filter-button'}
                     onClick={() => setFilter('USER')}
                 >
-                    Users ({userCount})
+                    Пользователи ({userCount})
                 </button>
             </div>
 
-            {loading && <LoadingState message="Loading users..." />}
+            {loading && <LoadingState message="Загрузка пользователей..." />}
 
             {!loading && !error && filteredUsers.length === 0 && (
-                <EmptyState message="No users found on this page." />
+                <EmptyState message="Пользователи не найдены на этой странице." />
             )}
 
             {!loading && filteredUsers.length > 0 && (
@@ -705,13 +711,13 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     <table>
                         <thead>
                         <tr>
-                            <th>Email</th>
-                            <th>Full name</th>
-                            {currentUserIsSuperAdmin && <th>Organization</th>}
-                            <th>Roles</th>
-                            <th>Enabled</th>
-                            <th>Created at</th>
-                            <th>Actions</th>
+                            <th>EMAIL</th>
+                            <th>ПОЛНОЕ ИМЯ</th>
+                            {currentUserIsSuperAdmin && <th>ОРГАНИЗАЦИЯ</th>}
+                            <th>РОЛИ</th>
+                            <th>СТАТУС</th>
+                            <th>СОЗДАН</th>
+                            <th>ДЕЙСТВИЯ</th>
                         </tr>
                         </thead>
 
@@ -746,13 +752,13 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                                 : 'status-badge status-disabled'
                                         }
                                     >
-                                        {user.enabled ? 'enabled' : 'disabled'}
+                                        {user.enabled ? 'включен' : 'отключен'}
                                     </span>
                                 </td>
 
                                 <td>{formatDateTime(user.createdAt)}</td>
 
-                                <td>{renderUserActions(user)}</td>
+                                <td className="actions-cell">{renderUserActions(user)}</td>
                             </tr>
                         ))}
                         </tbody>
@@ -765,11 +771,11 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                             disabled={page === 0 || loading}
                             onClick={() => setPage((prev) => Math.max(0, prev - 1))}
                         >
-                            Previous
+                            Назад
                         </button>
 
                         <span>
-                            Page {page + 1} of {Math.max(totalPages, 1)}
+                            Страница {page + 1} из {Math.max(totalPages, 1)}
                         </span>
 
                         <button
@@ -778,7 +784,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                             disabled={page + 1 >= totalPages || loading}
                             onClick={() => setPage((prev) => prev + 1)}
                         >
-                            Next
+                            Вперед
                         </button>
                     </div>
                 </div>
@@ -786,17 +792,17 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
             {detailsUser && (
                 <Modal
-                    title={`User details: ${detailsUser.email}`}
+                    title={`Детали пользователя: ${detailsUser.email}`}
                     onClose={() => setDetailsUser(null)}
                 >
                     <div className="form">
                         <p><strong>ID:</strong> {detailsUser.id}</p>
                         <p><strong>Email:</strong> {detailsUser.email}</p>
-                        <p><strong>Full name:</strong> {detailsUser.fullName ?? '-'}</p>
-                        <p><strong>Organization:</strong> {getOrganizationName(detailsUser.organizationId)}</p>
-                        <p><strong>Enabled:</strong> {detailsUser.enabled ? 'yes' : 'no'}</p>
-                        <p><strong>Roles:</strong> {detailsUser.roles.join(', ')}</p>
-                        <p><strong>Created at:</strong> {formatDateTime(detailsUser.createdAt)}</p>
+                        <p><strong>Полное имя:</strong> {detailsUser.fullName ?? '-'}</p>
+                        <p><strong>Организация:</strong> {getOrganizationName(detailsUser.organizationId)}</p>
+                        <p><strong>Статус:</strong> {detailsUser.enabled ? 'включен' : 'отключен'}</p>
+                        <p><strong>Роли:</strong> {detailsUser.roles.join(', ')}</p>
+                        <p><strong>Создан:</strong> {formatDateTime(detailsUser.createdAt)}</p>
 
                         <div className="modal-actions">
                             <button
@@ -804,7 +810,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                 className="secondary-button"
                                 onClick={() => setDetailsUser(null)}
                             >
-                                Close
+                                Закрыть
                             </button>
                         </div>
                     </div>
@@ -813,7 +819,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
             {editUser && (
                 <Modal
-                    title={`Edit user: ${editUser.email}`}
+                    title={`Изменить пользователя: ${editUser.email}`}
                     onClose={closeEditUserModal}
                 >
                     <form className="form" onSubmit={handleSubmitEditUser}>
@@ -830,12 +836,12 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                         </label>
 
                         <label>
-                            Full name
+                            Полное имя
                             <input
                                 value={editFullName}
                                 onChange={(event) => setEditFullName(event.target.value)}
                                 maxLength={255}
-                                placeholder="User full name"
+                                placeholder="Иван Иванов"
                             />
                         </label>
 
@@ -846,7 +852,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                 disabled={actionUserId === editUser.id}
                                 onClick={closeEditUserModal}
                             >
-                                Cancel
+                                Отмена
                             </button>
 
                             <button
@@ -855,7 +861,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                     || !editEmail.trim()
                                 }
                             >
-                                {actionUserId === editUser.id ? 'Saving...' : 'Save'}
+                                {actionUserId === editUser.id ? 'Сохранение...' : 'Сохранить'}
                             </button>
                         </div>
                     </form>
@@ -864,12 +870,12 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
             {resetPasswordUser && (
                 <Modal
-                    title={`Reset password: ${resetPasswordUser.email}`}
+                    title={`Сброс пароля: ${resetPasswordUser.email}`}
                     onClose={closeResetPasswordModal}
                 >
                     <form className="form" onSubmit={handleSubmitResetPassword}>
                         <label>
-                            New password
+                            Новый пароль
                             <input
                                 type="password"
                                 value={resetPasswordValue}
@@ -882,7 +888,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                         </label>
 
                         <label>
-                            Confirm password
+                            Повторите пароль
                             <input
                                 type="password"
                                 value={resetPasswordConfirm}
@@ -900,7 +906,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                 disabled={actionUserId === resetPasswordUser.id}
                                 onClick={closeResetPasswordModal}
                             >
-                                Cancel
+                                Отмена
                             </button>
 
                             <button
@@ -911,8 +917,8 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                                 }
                             >
                                 {actionUserId === resetPasswordUser.id
-                                    ? 'Resetting...'
-                                    : 'Reset password'}
+                                    ? 'Сброс...'
+                                    : 'Сбросить пароль'}
                             </button>
                         </div>
                     </form>
@@ -924,23 +930,23 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     title={
                         confirmState.type === 'enabled'
                             ? confirmState.user.enabled
-                                ? 'Disable user'
-                                : 'Enable user'
-                            : 'Change user role'
+                                ? 'Отключить пользователя'
+                                : 'Включить пользователя'
+                            : 'Изменить роль пользователя'
                     }
                     message={
                         confirmState.type === 'enabled'
                             ? confirmState.user.enabled
-                                ? `Disable user ${confirmState.user.email}?`
-                                : `Enable user ${confirmState.user.email}?`
-                            : `Change role for ${confirmState.user.email} to ${confirmState.nextRole}?`
+                                ? `Отключить пользователя ${confirmState.user.email}?`
+                                : `Включить пользователя ${confirmState.user.email}?`
+                            : `Изменить роль пользователя ${confirmState.user.email} на ${confirmState.nextRole}?`
                     }
                     confirmText={
                         confirmState.type === 'enabled'
                             ? confirmState.user.enabled
-                                ? 'Disable'
-                                : 'Enable'
-                            : 'Change role'
+                                ? 'Отключить'
+                                : 'Включить'
+                            : 'Изменить роль'
                     }
                     danger={confirmState.type === 'enabled' && confirmState.user.enabled}
                     loading={actionUserId === confirmState.user.id}

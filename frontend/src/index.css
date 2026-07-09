@@ -179,6 +179,8 @@ pre {
     color: #166534;
 }
 
+/* Chat */
+
 .chat-layout {
     display: grid;
     grid-template-columns: 280px 1fr;
@@ -256,6 +258,8 @@ pre {
     resize: vertical;
 }
 
+/* Toolbars */
+
 .user-toolbar {
     display: flex;
     gap: 10px;
@@ -272,6 +276,8 @@ pre {
     background: #111827;
     color: white;
 }
+
+/* Badges */
 
 .role-list {
     display: flex;
@@ -314,12 +320,6 @@ pre {
     color: #4b5563;
 }
 
-.user-actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
 .secondary-button {
     background: #e5e7eb;
     color: #111827;
@@ -349,6 +349,8 @@ button.chat-item:hover {
     font-weight: 600;
 }
 
+/* Tables */
+
 .table-card {
     overflow-x: auto;
 }
@@ -356,6 +358,183 @@ button.chat-item:hover {
 .card table {
     min-width: 760px;
 }
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.admin-table th,
+.admin-table td {
+    vertical-align: top;
+}
+
+.actions-cell {
+    width: 1%;
+    min-width: 230px;
+}
+
+.users-table .actions-cell {
+    min-width: 300px;
+}
+
+.table-actions,
+.user-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.table-actions-nowrap {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+}
+
+.table-actions-compact {
+    max-width: 300px;
+}
+
+.table-actions button,
+.user-actions button {
+    min-height: 32px;
+    padding: 7px 10px;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
+.table-actions .danger-button,
+.table-actions .secondary-button {
+    margin: 0;
+}
+
+.table-actions .muted,
+.user-actions .muted {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    white-space: nowrap;
+}
+
+/* Audit */
+
+.audit-table th:nth-child(1),
+.audit-table td:nth-child(1) {
+    width: 150px;
+}
+
+.audit-table th:nth-child(2),
+.audit-table td:nth-child(2) {
+    width: 220px;
+}
+
+.audit-table th:nth-child(3),
+.audit-table td:nth-child(3) {
+    width: 220px;
+}
+
+.audit-table th:nth-child(4),
+.audit-table td:nth-child(4) {
+    width: 220px;
+}
+
+.audit-details-cell {
+    min-width: 280px;
+    max-width: 520px;
+}
+
+.event-type-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #1e3a8a;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.json-details {
+    max-width: 100%;
+}
+
+.json-details summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #eef2f7;
+    color: #111827;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+}
+
+.json-details summary:hover {
+    background: #e5e7eb;
+}
+
+.json-details pre {
+    max-width: 100%;
+    max-height: 360px;
+    overflow: auto;
+    margin: 10px 0 0;
+    padding: 12px;
+    border-radius: 10px;
+    background: #0f172a;
+    color: #e5e7eb;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Usage */
+
+.usage-total-card {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.usage-total-card p {
+    margin: 8px 0 0;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.usage-chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.chart-box {
+    width: 100%;
+    height: 260px;
+}
+
+.usage-table th,
+.usage-table td {
+    white-space: nowrap;
+}
+
+/* Filters */
+
+.filter-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* Modal */
 
 .modal-backdrop {
     position: fixed;
@@ -393,28 +572,24 @@ button.chat-item:hover {
     margin-top: 16px;
 }
 
-.usage-total-card {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 16px;
+/* Responsive */
+
+@media (min-width: 1400px) {
+    .table-actions-compact {
+        max-width: 340px;
+    }
 }
 
-.usage-total-card p {
-    margin: 8px 0 0;
-    font-size: 24px;
-    font-weight: 700;
-}
+@media (max-width: 1200px) {
+    .users-table .actions-cell {
+        min-width: 260px;
+    }
 
-.usage-chart-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
-    margin-bottom: 16px;
-}
-
-.chart-box {
-    width: 100%;
-    height: 260px;
+    .table-actions button,
+    .user-actions button {
+        padding: 6px 8px;
+        font-size: 13px;
+    }
 }
 
 @media (max-width: 900px) {
@@ -429,6 +604,19 @@ button.chat-item:hover {
 
     .topbar {
         flex-wrap: wrap;
+    }
+
+    .actions-cell {
+        min-width: 220px;
+    }
+
+    .table-actions,
+    .user-actions {
+        gap: 6px;
+    }
+
+    .audit-details-cell {
+        min-width: 240px;
     }
 }
 
@@ -452,10 +640,6 @@ button.chat-item:hover {
         padding: 16px;
     }
 
-    .chat-layout {
-        grid-template-columns: 1fr;
-    }
-
     .message-form {
         flex-direction: column;
     }
@@ -470,5 +654,14 @@ button.chat-item:hover {
 
     .modal-actions button {
         width: 100%;
+    }
+
+    .table-actions-nowrap {
+        flex-wrap: wrap;
+        overflow-x: visible;
+    }
+
+    .actions-cell {
+        min-width: 200px;
     }
 }

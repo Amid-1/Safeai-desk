@@ -66,7 +66,7 @@ function AdminOrganizationsPage() {
             setOrganizations(getPageContent(data))
             setTotalPages(getPageTotalPages(data))
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Failed to load organizations'))
+            setError(getApiErrorMessage(err, 'Не удалось загрузить организации.'))
         } finally {
             setLoading(false)
         }
@@ -105,13 +105,13 @@ function AdminOrganizationsPage() {
                 name: normalizedName,
             })
 
-            setSuccess(`Organization ${created.name} created.`)
+            setSuccess(`Организация ${created.name} создана.`)
             setName('')
             setPage(0)
 
             await loadOrganizations(0)
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Failed to create organization'))
+            setError(getApiErrorMessage(err, 'Не удалось создать организацию.'))
         } finally {
             setCreating(false)
         }
@@ -143,10 +143,10 @@ function AdminOrganizationsPage() {
             })
 
             replaceOrganization(updated)
-            setSuccess(`Organization renamed to ${updated.name}.`)
+            setSuccess(`Организация переименована в ${updated.name}.`)
             closeRenameModal()
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Failed to rename organization'))
+            setError(getApiErrorMessage(err, 'Не удалось переименовать организацию.'))
         } finally {
             setActionOrganizationId(null)
         }
@@ -180,13 +180,13 @@ function AdminOrganizationsPage() {
 
             setSuccess(
                 updated.enabled
-                    ? `Organization ${updated.name} enabled.`
-                    : `Organization ${updated.name} disabled.`
+                    ? `Организация ${updated.name} включена.`
+                    : `Организация ${updated.name} отключена.`
             )
 
             setConfirmState(null)
         } catch (err) {
-            setError(getApiErrorMessage(err, 'Failed to update organization status'))
+            setError(getApiErrorMessage(err, 'Не удалось изменить статус организации.'))
         } finally {
             setActionOrganizationId(null)
         }
@@ -202,13 +202,13 @@ function AdminOrganizationsPage() {
 
     return (
         <div className="page">
-            <h1>Admin Organizations</h1>
+            <h1>Организации</h1>
 
             {error && <div className="error">{error}</div>}
             {success && <div className="success">{success}</div>}
 
             <div className="card form-card">
-                <h2>Create organization</h2>
+                <h2>Создать организацию</h2>
 
                 <form
                     className="form"
@@ -218,7 +218,7 @@ function AdminOrganizationsPage() {
                     }}
                 >
                     <label>
-                        Organization name
+                        Название организации
                         <input
                             value={name}
                             onChange={(event) => setName(event.target.value)}
@@ -228,16 +228,16 @@ function AdminOrganizationsPage() {
                     </label>
 
                     <button disabled={creating || !name.trim()}>
-                        {creating ? 'Creating...' : 'Create organization'}
+                        {creating ? 'Создание...' : 'Создать организацию'}
                     </button>
                 </form>
             </div>
 
-            {loading && <LoadingState message="Loading organizations..." />}
+            {loading && <LoadingState message="Загрузка организаций..." />}
 
             {!loading && error && organizations.length === 0 && (
                 <ErrorState
-                    title="Failed to load organizations"
+                    title="Ошибка загрузки организаций"
                     message={error}
                     action={
                         <button type="button" onClick={() => void loadOrganizations(page)}>
@@ -248,7 +248,7 @@ function AdminOrganizationsPage() {
             )}
 
             {!loading && organizations.length === 0 && (
-                <EmptyState message="No organizations found." />
+                <EmptyState message="Организации не найдены." />
             )}
 
             {!loading && organizations.length > 0 && (
@@ -256,11 +256,11 @@ function AdminOrganizationsPage() {
                     <table>
                         <thead>
                         <tr>
-                            <th>Name</th>
+                            <th>НАЗВАНИЕ</th>
                             <th>ID</th>
-                            <th>Enabled</th>
-                            <th>Created at</th>
-                            <th>Actions</th>
+                            <th>СТАТУС</th>
+                            <th>СОЗДАНА</th>
+                            <th>ДЕЙСТВИЯ</th>
                         </tr>
                         </thead>
 
@@ -281,24 +281,24 @@ function AdminOrganizationsPage() {
                                                     : 'status-badge status-disabled'
                                             }
                                         >
-                                            {organization.enabled ? 'enabled' : 'disabled'}
+                                            {organization.enabled ? 'включена' : 'отключена'}
                                         </span>
                                     </td>
                                     <td>{formatDateTime(organization.createdAt)}</td>
-                                    <td>
+                                    <td className="actions-cell">
                                         {platformOrganization ? (
                                             <span className="muted">
-                                                Platform organization
+                                                Платформенная организация
                                             </span>
                                         ) : (
-                                            <div className="user-actions">
+                                            <div className="table-actions">
                                                 <button
                                                     type="button"
                                                     className="secondary-button"
                                                     disabled={isBusy}
                                                     onClick={() => openRenameModal(organization)}
                                                 >
-                                                    Rename
+                                                    Переименовать
                                                 </button>
 
                                                 <button
@@ -311,7 +311,7 @@ function AdminOrganizationsPage() {
                                                     disabled={isBusy}
                                                     onClick={() => setConfirmState({ organization })}
                                                 >
-                                                    {organization.enabled ? 'Disable' : 'Enable'}
+                                                    {organization.enabled ? 'Отключить' : 'Включить'}
                                                 </button>
                                             </div>
                                         )}
@@ -329,11 +329,11 @@ function AdminOrganizationsPage() {
                             disabled={page === 0 || loading}
                             onClick={() => setPage((prev) => Math.max(0, prev - 1))}
                         >
-                            Previous
+                            Назад
                         </button>
 
                         <span>
-                            Page {page + 1} of {Math.max(totalPages, 1)}
+                            Страница {page + 1} из {Math.max(totalPages, 1)}
                         </span>
 
                         <button
@@ -342,7 +342,7 @@ function AdminOrganizationsPage() {
                             disabled={page + 1 >= totalPages || loading}
                             onClick={() => setPage((prev) => prev + 1)}
                         >
-                            Next
+                            Вперед
                         </button>
                     </div>
                 </div>
@@ -350,7 +350,7 @@ function AdminOrganizationsPage() {
 
             {renameOrganization && (
                 <Modal
-                    title={`Rename organization: ${renameOrganization.name}`}
+                    title={`Переименовать организацию: ${renameOrganization.name}`}
                     onClose={closeRenameModal}
                 >
                     <form
@@ -361,7 +361,7 @@ function AdminOrganizationsPage() {
                         }}
                     >
                         <label>
-                            New name
+                            Новое название
                             <input
                                 value={renameValue}
                                 onChange={(event) => setRenameValue(event.target.value)}
@@ -377,7 +377,7 @@ function AdminOrganizationsPage() {
                                 disabled={actionOrganizationId === renameOrganization.id}
                                 onClick={closeRenameModal}
                             >
-                                Cancel
+                                Отмена
                             </button>
 
                             <button
@@ -386,7 +386,7 @@ function AdminOrganizationsPage() {
                                     || !renameValue.trim()
                                 }
                             >
-                                Save
+                                Сохранить
                             </button>
                         </div>
                     </form>
@@ -397,16 +397,16 @@ function AdminOrganizationsPage() {
                 <ConfirmDialog
                     title={
                         confirmState.organization.enabled
-                            ? 'Disable organization'
-                            : 'Enable organization'
+                            ? 'Отключить организацию'
+                            : 'Включить организацию'
                     }
                     message={
                         confirmState.organization.enabled
-                            ? `Disable organization ${confirmState.organization.name}? Users from this organization will lose access.`
-                            : `Enable organization ${confirmState.organization.name}?`
+                            ? `Отключить организацию ${confirmState.organization.name}? Пользователи этой организации потеряют доступ.`
+                            : `Включить организацию ${confirmState.organization.name}?`
                     }
                     confirmText={
-                        confirmState.organization.enabled ? 'Disable' : 'Enable'
+                        confirmState.organization.enabled ? 'Отключить' : 'Включить'
                     }
                     danger={confirmState.organization.enabled}
                     loading={actionOrganizationId === confirmState.organization.id}

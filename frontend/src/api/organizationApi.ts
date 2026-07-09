@@ -1,6 +1,6 @@
 // frontend/src/api/organizationApi.ts
-import { apiRequest } from './http'
-import type { PageResponse } from '../utils/page'
+import {apiRequest} from './http'
+import type {PageResponse} from '../utils/page'
 
 export type Organization = {
     id: string
@@ -63,4 +63,8 @@ export async function updateOrganizationEnabled(
             body: JSON.stringify(request),
         }
     )
+}
+
+export async function getCurrentOrganization(): Promise<Organization> {
+    return apiRequest<Organization>('/api/organizations/me')
 }
