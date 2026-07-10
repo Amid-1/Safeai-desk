@@ -24,7 +24,7 @@
 		<java.version>21</java.version>
 		<testcontainers.version>1.21.3</testcontainers.version>
 		<commons-compress.version>1.28.0</commons-compress.version>
-		<logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
+		<logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
 	</properties>
 
 	<dependencyManagement>
@@ -216,17 +216,26 @@
 
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-compiler-plugin</artifactId>
-
-				<configuration>
-					<annotationProcessorPaths>
-						<path>
-							<groupId>org.projectlombok</groupId>
-							<artifactId>lombok</artifactId>
-							<version>${lombok.version}</version>
-						</path>
-					</annotationProcessorPaths>
-				</configuration>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>enforce-build-environment</id>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<requireJavaVersion>
+									<version>[21,22)</version>
+								</requireJavaVersion>
+								<requireMavenVersion>
+									<version>[3.9,)</version>
+								</requireMavenVersion>
+								<dependencyConvergence/>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

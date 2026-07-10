@@ -92,7 +92,8 @@ Demo Company
 └──────────┘ └──────────┘                    └─────────────────┘
 ```
 
-Backend построен как модульный монолит. Домены разделены по package-структуре: `auth`, `user`, `organization`, `chat`, `usage`, `audit`, `ai`, `ratelimit`, `common`, `admin`.
+Backend построен как модульный монолит. Домены разделены по package-структуре: `auth`, `user`, `organization`, 
+`chat`,`usage`, `audit`, `ai`, `ratelimit`, `common`, `admin`.
 
 ---
 
@@ -316,7 +317,8 @@ POST /api/auth/logout
 GET  /api/auth/me
 ```
 
-`/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/csrf` доступны без access-token на уровне Spring Security, но unsafe methods остаются под CSRF-защитой.
+`/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/csrf` доступны без access-token на уровне 
+Spring Security, но unsafe methods остаются под CSRF-защитой.
 
 ### JWT claims
 
@@ -335,7 +337,8 @@ exp
 iss
 ```
 
-Backend не полагается только на email. Для tenant isolation и security checks используются `userId`, `organizationId`, `roles`, `tokenVersion`.
+Backend не полагается только на email. Для tenant isolation и security checks используются `userId`, 
+`organizationId`, `roles`, `tokenVersion`.
 
 ### Refresh token rotation
 
@@ -419,7 +422,8 @@ Backend отзывает активные refresh-сессии:
 
 ### Пароли
 
-Пароль ограничен 72 символами из-за BCrypt. Для более строгого production-режима можно добавить проверку UTF-8 byte length или перейти на Argon2.
+Пароль ограничен 72 символами из-за BCrypt. Для более строгого production-режима можно добавить проверку UTF-8 
+byte length или перейти на Argon2.
 
 ---
 
@@ -518,12 +522,12 @@ safeai-desk/
 │   │       │               ├── ratelimit/
 │   │       │               ├── usage/
 │   │       │               ├── user/
-│   │       │               ├── PasswordHashGenerator.java
 │   │       │               └── SafeaiBackendApplicationTests.java
 │   │       │
 │   │       └── resources/
 │   │           └── application-test.yml
 │   │
+│   ├── .env
 │   ├── .env.example
 │   ├── .env.prod
 │   ├── Dockerfile
@@ -547,7 +551,8 @@ safeai-desk/
 │   │   ├── components/
 │   │   │   ├── ConfirmDialog.tsx
 │   │   │   ├── ErrorBoundary.tsx
-│   │   │   └── Modal.tsx
+│   │   │   ├── Modal.tsx
+│   │   │   └── StateBlock.tsx
 │   │   │
 │   │   ├── pages/
 │   │   │   ├── AdminAuditPage.tsx
@@ -558,6 +563,7 @@ safeai-desk/
 │   │   │   └── LoginPage.tsx
 │   │   │
 │   │   ├── utils/
+│   │   │   ├── date.ts
 │   │   │   ├── format.ts
 │   │   │   └── page.ts
 │   │   │
@@ -576,6 +582,9 @@ safeai-desk/
 │   └── vite.config.ts
 │
 ├── infra/
+│   ├── nginx/
+│   │   └── nginx.conf
+│   ├── docker-compose.local.yml
 │   └── docker-compose.yml
 │
 ├── scripts/
@@ -596,31 +605,31 @@ safeai-desk/
 
 ```text
 
-ru.safeai.gateway
-├── admin
-│   └── controller
+ru.safeai.gateway/
+├── admin/
+│   └── controller/
 │       └── AdminUsageController
 │
-├── ai
-│   ├── config
+├── ai/
+│   ├── config/
 │   │   └── AiConfiguration
 │   │
-│   ├── dto
+│   ├── dto/
 │   │   ├── AiChatRequest
 │   │   ├── AiChatResponse
 │   │   └── AiMessage
 │   │
-│   ├── exception
+│   ├── exception/
 │   │   ├── AiProviderException
 │   │   ├── AiProviderRateLimitedException
 │   │   ├── AiProviderTimeoutException
 │   │   └── AiProviderUnavailableException
 │   │
-│   ├── pricing
+│   ├── pricing/
 │   │   ├── ModelPricingProperties
 │   │   └── ModelPricingService
 │   │
-│   ├── provider
+│   ├── provider/
 │   │   ├── AiProvider
 │   │   ├── AiProviderProperties
 │   │   ├── AiProviderRetryExecutor
@@ -628,66 +637,66 @@ ru.safeai.gateway
 │   │   ├── AiRestClientFactory
 │   │   ├── AiRetryProperties
 │   │   │
-│   │   ├── anthropic
+│   │   ├── anthropic/
 │   │   │   ├── AnthropicProperties
 │   │   │   └── AnthropicProvider
 │   │   │
-│   │   ├── mock
+│   │   ├── mock/
 │   │   │   └── MockAiProvider
 │   │   │
-│   │   └── openai
+│   │   └── openai/
 │   │       ├── OpenAiProperties
 │   │       └── OpenAiProvider
 │   │
-│   └── web
+│   └── web/
 │       └── AiExceptionHandler
 │
-├── audit
-│   ├── controller
+├── audit/
+│   ├── controller/
 │   │   └── AuditController
 │   │
-│   ├── dto
+│   ├── dto/
 │   │   ├── AuditEventFilter
 │   │   └── AuditEventResponse
 │   │
-│   ├── entity
+│   ├── entity/
 │   │   └── AuditEventEntity
 │   │
-│   ├── listener
+│   ├── listener/
 │   │   └── RateLimitAuditListener
 │   │
-│   ├── repository
+│   ├── repository/
 │   │   └── AuditEventRepository
 │   │
-│   ├── service
+│   ├── service/
 │   │   ├── AuditEventQueryService
 │   │   └── AuditEventService
 │   │
 │   └── AuditEventType
 │
-├── auth
-│   ├── controller
+├── auth/
+│   ├── controller/
 │   │   ├── AuthController
 │   │   └── CsrfController
 │   │
-│   ├── dto
+│   ├── dto/
 │   │   ├── CurrentUserResponse
 │   │   └── LoginRequest
 │   │
-│   ├── entity
+│   ├── entity/
 │   │   └── RefreshTokenEntity
 │   │
-│   ├── repository
+│   ├── repository/
 │   │   └── RefreshTokenRepository
 │   │
-│   ├── security
+│   ├── security/
 │   │   ├── CsrfCookieFilter
 │   │   ├── CustomUserDetailsService
 │   │   ├── SecurityConfig
 │   │   ├── SpaCsrfTokenRequestHandler
 │   │   └── UserStatusFilter
 │   │
-│   └── service
+│   └── service/
 │       ├── AuthCookieProperties
 │       ├── AuthCookieService
 │       ├── AuthEventService
@@ -696,28 +705,28 @@ ru.safeai.gateway
 │       ├── RefreshTokenService
 │       └── UserSessionRevocationService
 │
-├── chat
-│   ├── controller
+├── chat/
+│   ├── controller/
 │   │   └── ChatController
 │   │
-│   ├── dto
+│   ├── dto/
 │   │   ├── ChatDetailsResponse
 │   │   ├── ChatResponse
 │   │   ├── CreateChatRequest
 │   │   ├── MessageResponse
 │   │   └── SendMessageRequest
 │   │
-│   ├── entity
+│   ├── entity/
 │   │   ├── ChatMessageEntity
 │   │   ├── ChatMessageRole
 │   │   ├── ChatMessageStatus
 │   │   └── ChatSessionEntity
 │   │
-│   ├── repository
+│   ├── repository/
 │   │   ├── ChatMessageRepository
 │   │   └── ChatSessionRepository
 │   │
-│   └── service
+│   └── service/
 │       ├── ChatLockProperties
 │       ├── ChatLockService
 │       ├── ChatMapper
@@ -726,8 +735,8 @@ ru.safeai.gateway
 │       ├── ChatProperties
 │       └── ChatService
 │
-├── common
-│   ├── exception
+├── common/
+│   ├── exception/
 │   │   ├── ApiErrorResponse
 │   │   ├── ApiErrorResponseFactory
 │   │   ├── BadRequestException
@@ -741,28 +750,31 @@ ru.safeai.gateway
 │   │   ├── RefreshTokenReuseDetectedException
 │   │   └── ResourceNotFoundException
 │   │
-│   ├── platform
+│   ├── platform/
 │   │   └── PlatformProperties
 │   │
-│   └── security
-│       ├── ClientIpProperties
-│       ├── ClientIpResolver
-│       ├── CorsProperties
-│       ├── JsonAccessDeniedHandler
-│       ├── JsonAuthenticationEntryPoint
-│       ├── JsonSecurityErrorWriter
-│       ├── JwtProperties
-│       ├── JwtService
-│       ├── RequestIdFilter
-│       ├── RoleAuthorityMapper
-│       ├── SafeAiJwtAuthenticationConverter
-│       └── SafeAiUserPrincipal
+│   ├── security/
+│   │   ├── ClientIpProperties
+│   │   ├── ClientIpResolver
+│   │   ├── CorsProperties
+│   │   ├── JsonAccessDeniedHandler
+│   │   ├── JsonAuthenticationEntryPoint
+│   │   ├── JsonSecurityErrorWriter
+│   │   ├── JwtProperties
+│   │   ├── JwtService
+│   │   ├── RequestIdFilter
+│   │   ├── RoleAuthorityMapper
+│   │   ├── SafeAiJwtAuthenticationConverter
+│   │   └── SafeAiUserPrincipal
+│   │
+│   └── web/
+│       └── ApiFallbackController
 │
-├── organization
-│   ├── controller
+├── organization/
+│   ├── controller/
 │   │   └── OrganizationController
 │   │
-│   ├── dto
+│   ├── dto/
 │   │   ├── CreateOrganizationRequest
 │   │   ├── OrganizationResponse
 │   │   ├── UpdateOrganizationEnabledRequest
@@ -771,17 +783,17 @@ ru.safeai.gateway
 │   ├── entity
 │   │   └── OrganizationEntity
 │   │
-│   ├── event
+│   ├── event/
 │   │   └── OrganizationSecurityStateChangedEvent
 │   │
-│   ├── repository
+│   ├── repository/
 │   │   └── OrganizationRepository
 │   │
-│   └── service
+│   └── service/
 │       ├── OrganizationService
 │       └── OrganizationStatusCacheInvalidationListener
 │
-├── ratelimit
+├── ratelimit/
 │   ├── AiMessageRateLimitProperties
 │   ├── LoginRateLimitProperties
 │   ├── LoginRateLimitService
@@ -792,53 +804,55 @@ ru.safeai.gateway
 │   ├── RedisFixedWindowRateLimiter
 │   └── RedisRateLimitService
 │
-├── usage
-│   ├── dto
+├── usage/
+│   ├── dto/
 │   │   ├── UsageDailySummaryResponse
 │   │   ├── UsageModelSummaryResponse
 │   │   ├── UsageSummaryResponse
 │   │   └── UsageUserSummaryResponse
 │   │
-│   ├── repository
+│   ├── repositor/y
 │   │   ├── UsageDailySummaryProjection
 │   │   └── UsageQueryRepository
 │   │
-│   └── service
+│   └── service/
 │       └── UsageQueryService
 │
-└── user
-    ├── controller
-    │   └── UserController
-    │
-    ├── dto
-    │   ├── CreateUserRequest
-    │   ├── ResetUserPasswordRequest
-    │   ├── UpdateUserEnabledRequest
-    │   ├── UpdateUserRequest
-    │   ├── UpdateUserRolesRequest
-    │   └── UserResponse
-    │
-    ├── entity
-    │   ├── RoleEntity
-    │   └── UserEntity
-    │
-    ├── event
-    │   └── UserSecurityStateChangedEvent
-    │
-    ├── repository
-    │   ├── RoleRepository
-    │   └── UserRepository
-    │
-    ├── service
-    │   ├── UserSecurityStatus
-    │   ├── UserService
-    │   ├── UserStatusCacheInvalidationListener
-    │   ├── UserStatusCacheProperties
-    │   └── UserStatusCacheService
-    │
-    └── validation
-        └── PasswordPolicy
-
+├── user/
+│   ├── controller/
+│   │   └── UserController
+│   │
+│   ├── dto/
+│   │   ├── CreateUserRequest
+│   │   ├── ResetUserPasswordRequest
+│   │   ├── UpdateUserEnabledRequest
+│   │   ├── UpdateUserRequest
+│   │   ├── UpdateUserRolesRequest
+│   │   └── UserResponse
+│   │
+│   ├── entity/
+│   │   ├── RoleEntity
+│   │   └── UserEntity
+│   │
+│   ├── event/
+│   │   └── UserSecurityStateChangedEvent
+│   │
+│   ├── repository/
+│   │   ├── RoleRepository
+│   │   └── UserRepository
+│   │
+│   ├── service/
+│   │   ├── UserSecurityStatus
+│   │   ├── UserService
+│   │   ├── UserStatusCacheInvalidationListener
+│   │   ├── UserStatusCacheProperties
+│   │   └── UserStatusCacheService
+│   │
+│   └── validation/
+│        └── PasswordPolicy
+│
+├── PasswordHashGenerator.java
+└── SafeaiBackendApplication
 ```
 
 | Модуль | Назначение |
@@ -856,6 +870,102 @@ ru.safeai.gateway
 | `usage` | usage analytics и aggregation queries |
 | `admin` | admin API entry points, например usage endpoints |
 
+---
+
+---
+
+```text
+safeai-desk/
+├── backend/
+│   ├── .mvn/
+│   ├── src/
+│   │   ├── main/
+│   │   └── test/
+│   │       ├── java/
+│   │       │   └── ru/
+│   │       │       └── safeai/
+│   │       │           └── gateway/
+│   │       │               └── admin/
+│   │       │               │   └── controller/
+│   │       │               │      └── AdminUsageControllerSecurityTest
+│   │       │               │
+│   │       │               ├── ai/
+│   │       │               │   ├── AiChatResponseTest
+│   │       │               │   ├── AiExceptionHandlerTest
+│   │       │               │   ├── MockAiProviderTest
+│   │       │               │   └── OpenAiPropertiesTest
+│   │       │               │
+│   │       │               ├── audit/
+│   │       │               │   ├── controller/
+│   │       │               │   │  └── AuditControllerSecurityTest
+│   │       │               │   │
+│   │       │               │   └── service/
+│   │       │               │      ├── AuditEventQueryServiceTest 
+│   │       │               │      └── AuditEventServiceTest
+│   │       │               │
+│   │       │               ├── auth/
+│   │       │               │   ├── controller/
+│   │       │               │   │  └── AuthControllerSecurityTest
+│   │       │               │   ├── security/
+│   │       │               │   │  ├── CustomUserDetailsServiceTest 
+│   │       │               │   │  └── UserStatusFilterTest
+│   │       │               │   └── service/
+│   │       │               │      ├── AuthCookiePropertiesTest 
+│   │       │               │      ├── AuthCookieServiceTest 
+│   │       │               │      ├── AuthServiceTest 
+│   │       │               │      └── RefreshTokenServiceTest
+│   │       │               │
+│   │       │               ├── chat/
+│   │       │               │   ├── controller/
+│   │       │               │   │  └── ChatControllerSecurityTest
+│   │       │               │   └── service/
+│   │       │               │      ├── ChatLockServiceTest
+│   │       │               │      ├── ChatPersistenceServiceTest  
+│   │       │               │      └── ChatServiceTest
+│   │       │               │
+│   │       │               ├── common/
+│   │       │               │   ├── exeption/
+│   │       │               │   │  └── GlobalExceptionHandlerTest
+│   │       │               │   └── security/
+│   │       │               │      ├── ClientIpResolverTest
+│   │       │               │      ├── CorsPropertiesTest
+│   │       │               │      ├── JwtPropertiesTest
+│   │       │               │      ├── JwtServiceTest
+│   │       │               │      ├── RequestIdFilterTest
+│   │       │               │      ├── RoleAuthorityMapperTest  
+│   │       │               │      └── SafeAiJwtAuthenticationConverterTest
+│   │       │               │
+│   │       │               ├── organization/
+│   │       │               │   ├── controller/
+│   │       │               │   │  └── OrganizationControllerSecurityTest
+│   │       │               │   └── service/
+│   │       │               │      └── OrganizationServiceTest
+│   │       │               │
+│   │       │               ├── ratelimit/
+│   │       │               │   ├── LoginRateLimitServiceTest
+│   │       │               │   └── RedisRateLimitServiceTest
+│   │       │               │
+│   │       │               ├── usage/
+│   │       │               │   ├── repository/
+│   │       │               │   │  └── UsageQueryRepositoryTest
+│   │       │               │   └── UsageQueryServiceTest
+│   │       │               │
+│   │       │               ├── user/
+│   │       │               │   ├── controller/
+│   │       │               │   │  └── UserControllerSecurityTest
+│   │       │               │   └── service/
+│   │       │               │      ├── UserServiceSecurityTest
+│   │       │               │      ├── UserServiceTest  
+│   │       │               │      └── UserStatusCacheServiceTest
+│   │       │               │
+│   │       │               ├── PasswordHashGenerator.java
+│   │       │               └── SafeaiBackendApplicationTests.java
+│   │       │
+│   │       └── resources/
+│   │           └── application-test.yml
+
+
+```
 ---
 
 ## Frontend-модули

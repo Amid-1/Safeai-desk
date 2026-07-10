@@ -71,13 +71,13 @@ docker-compose/docker-logs/
 
 **/src/main/resources/twitter4j.properties
 
-# Local secrets
-backend/.env
-backend/.env.prod
+### Environment and secrets ###
 .env
-.env.prod
-*.env
-*.env.*
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
 
 # Build output
 backend/target/
