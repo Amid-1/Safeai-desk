@@ -24,6 +24,7 @@
 		<java.version>21</java.version>
 		<testcontainers.version>1.21.3</testcontainers.version>
 		<commons-compress.version>1.28.0</commons-compress.version>
+		<logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
 	</properties>
 
 	<dependencyManagement>
@@ -65,7 +66,7 @@
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
 
-		<!-- OAuth2 Resource Server: JWT validation for Bearer tokens -->
+		<!-- OAuth2 Resource Server: JWT decoding and authentication infrastructure -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
@@ -133,18 +134,18 @@
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
 
-		<!--  -->
+		<!-- Metadata generation for @ConfigurationProperties -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-configuration-processor</artifactId>
 			<optional>true</optional>
 		</dependency>
 
-		<!--  -->
+		<!-- Structured JSON logging for production -->
 		<dependency>
 			<groupId>net.logstash.logback</groupId>
 			<artifactId>logstash-logback-encoder</artifactId>
-			<version>8.0</version>
+			<version>${logstash-logback-encoder.version}</version>
 		</dependency>
 
 		<!-- Spring Boot tests: JUnit, AssertJ, Mockito, test utilities -->
@@ -199,10 +200,10 @@
 
 	<build>
 		<plugins>
-			<!-- Spring Boot plugin: builds executable boot jar -->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+
 				<configuration>
 					<excludes>
 						<exclude>
@@ -213,10 +214,10 @@
 				</configuration>
 			</plugin>
 
-			<!-- Compiler plugin: Java 21 and Lombok annotation processing -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
+
 				<configuration>
 					<annotationProcessorPaths>
 						<path>

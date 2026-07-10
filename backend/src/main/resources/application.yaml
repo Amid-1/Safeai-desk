@@ -4,16 +4,29 @@ spring:
     name: safeai-backend
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/safeai}
-    username: ${SPRING_DATASOURCE_USERNAME:safeai}
-    password: ${SPRING_DATASOURCE_PASSWORD:safeai_password}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
+
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:5000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT:3000}
+      max-lifetime: ${DB_MAX_LIFETIME:1800000}
+      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
 
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:2s}
+      timeout: ${REDIS_COMMAND_TIMEOUT:2s}
+      repositories:
+        enabled: false
+
     web:
       pageable:
         max-page-size: 200
@@ -28,7 +41,8 @@ spring:
 
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    locations:
+      - classpath:db/migration
     validate-migration-naming: true
 
   jackson:
@@ -62,16 +76,16 @@ app:
       audience: ${SAFEAI_JWT_AUDIENCE:safeai-desk-api}
 
 safeai:
-
   chat:
     lock:
       key-prefix: ${SAFEAI_CHAT_LOCK_KEY_PREFIX:safeai:local:chat-lock}
       ttl: ${SAFEAI_CHAT_LOCK_TTL:240s}
+
     details-message-limit: ${SAFEAI_CHAT_DETAILS_MESSAGE_LIMIT:50}
     history-message-limit: ${SAFEAI_CHAT_HISTORY_MESSAGE_LIMIT:30}
 
   ai:
-    provider: ${SAFEAI_AI_PROVIDER:mock}
+    provider: ${SAFEAI_AI_PROVIDER}
 
     retry:
       enabled: ${SAFEAI_AI_RETRY_ENABLED:true}
@@ -84,9 +98,11 @@ safeai:
         - model: mock-safeai
           input-usd-per-1m-tokens: 0
           output-usd-per-1m-tokens: 0
+
         - model: gpt-4.1
           input-usd-per-1m-tokens: 2.00
           output-usd-per-1m-tokens: 8.00
+
         - model: claude-opus-4-8
           input-usd-per-1m-tokens: 15.00
           output-usd-per-1m-tokens: 75.00
@@ -115,7 +131,6 @@ safeai:
     redis:
       key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX:safeai:local}
 
-
     login:
       enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}
       email-limit: ${SAFEAI_RATE_LIMIT_LOGIN_EMAIL_LIMIT:10}
@@ -129,7 +144,7 @@ safeai:
       organization-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ORGANIZATION_LIMIT_PER_HOUR:1000}
 
   cors:
-    allowed-origins: http://localhost:5173
+    allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS:http://localhost:5173}
 
   auth:
     cookies:
@@ -140,7 +155,8 @@ safeai:
 
   security:
     client-ip:
-      trusted-proxy-cidrs: []
+      trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:}
+
     user-status-cache:
       enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:true}
       ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
@@ -149,4 +165,5 @@ safeai:
   platform:
     organization-id: 00000000-0000-0000-0000-000000000001
 
-    # Demo pricing. Replace with real provider pricing before production billing.
+# Demo pricing only.
+# Replace local static pricing with versioned pricing before production billing.

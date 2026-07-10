@@ -1,17 +1,19 @@
 # "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local.yml"
+### `application-local.yml`
 spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/safeai}
+    username: ${SPRING_DATASOURCE_USERNAME:safeai}
+    password: ${SPRING_DATASOURCE_PASSWORD:safeai_password}
+
   flyway:
     locations:
       - classpath:db/migration
       - classpath:db/local-migration
-    validate-migration-naming: true
 
 safeai:
-  security:
-    client-ip:
-      trusted-proxy-cidrs:
-        - 127.0.0.1/32
-        - ::1/128
+  ai:
+    provider: ${SAFEAI_AI_PROVIDER:mock}
 
   auth:
     cookies:
@@ -21,3 +23,10 @@ safeai:
   rate-limit:
     redis:
       key-prefix: safeai:local
+
+  security:
+    client-ip:
+      trusted-proxy-cidrs:
+        - 127.0.0.1/32
+        - ::1/128
+
