@@ -54,13 +54,17 @@ public class AuthEventService {
     public void loginFailed(String email, HttpServletRequest request) {
         try {
             auditEventService.recordSystem(
-                    platformProperties.effectiveOrganizationId(),
+                    platformProperties.organizationId(),
                     AuditEventType.USER_LOGIN_FAILED,
                     Map.of(
                             "email", truncateOrUnknown(email, MAX_EMAIL_LENGTH),
                             "reason", "BAD_CREDENTIALS_OR_DISABLED",
                             "ip", clientIpResolver.resolve(request),
-                            "userAgent", headerOrUnknown(request, "User-Agent", MAX_USER_AGENT_LENGTH),
+                            "userAgent", headerOrUnknown(
+                                    request,
+                                    "User-Agent",
+                                    MAX_USER_AGENT_LENGTH
+                            ),
                             "requestId", requestId(request)
                     )
             );
@@ -80,13 +84,17 @@ public class AuthEventService {
     ) {
         try {
             auditEventService.recordSystem(
-                    platformProperties.effectiveOrganizationId(),
+                    platformProperties.organizationId(),
                     AuditEventType.RATE_LIMIT_EXCEEDED,
                     Map.of(
                             "type", "LOGIN",
                             "email", truncateOrUnknown(email, MAX_EMAIL_LENGTH),
                             "ip", clientIpResolver.resolve(request),
-                            "userAgent", headerOrUnknown(request, "User-Agent", MAX_USER_AGENT_LENGTH),
+                            "userAgent", headerOrUnknown(
+                                    request,
+                                    "User-Agent",
+                                    MAX_USER_AGENT_LENGTH
+                            ),
                             "requestId", requestId(request),
                             "retryAfterSeconds", exception.getRetryAfterSeconds()
                     )

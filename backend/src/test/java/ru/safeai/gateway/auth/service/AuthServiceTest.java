@@ -14,6 +14,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.common.exception.RateLimitExceededException;
+import ru.safeai.gateway.common.security.AccessTokenSubject;
 import ru.safeai.gateway.common.security.ClientIpProperties;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
@@ -25,6 +26,7 @@ import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -32,8 +34,16 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.same;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -63,9 +73,10 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        ClientIpResolver clientIpResolver = new ClientIpResolver(
-                new ClientIpProperties(List.of())
-        );
+        ClientIpResolver clientIpResolver =
+                new ClientIpResolver(
+                        new ClientIpProperties(List.of())
+                );
 
         authService = new AuthService(
                 authenticationManager,
@@ -89,15 +100,20 @@ class AuthServiceTest {
                 "admin123"
         );
 
-        SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
-                userId,
-                organizationId,
-                "admin@test.com",
-                "encoded-password",
-                true,
-                0L,
-                Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
-        );
+        SafeAiUserPrincipal principal =
+                new SafeAiUserPrincipal(
+                        userId,
+                        organizationId,
+                        "admin@test.com",
+                        "encoded-password",
+                        true,
+                        0L,
+                        Set.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_ADMIN"
+                                )
+                        )
+                );
 
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(
@@ -106,56 +122,142 @@ class AuthServiceTest {
                         principal.getAuthorities()
                 );
 
-        UserEntity user = userEntity(userId, organizationId);
+        UserEntity user = userEntity(
+                userId,
+                organizationId
+        );
 
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenReturn(authentication);
+        AccessTokenSubject expectedTokenSubject =
+                new AccessTokenSubject(
+                        userId,
+                        organizationId,
+                        "admin@test.com",
+                        0L,
+                        Set.of("ADMIN")
+                );
 
-        when(userRepository.findByIdWithRolesAndOrganization(userId))
-                .thenReturn(Optional.of(user));
+        when(authenticationManager.authenticate(
+                any(UsernamePasswordAuthenticationToken.class)
+        )).thenReturn(authentication);
 
-        when(jwtService.generateAccessToken(user))
-                .thenReturn("access-token");
+        when(userRepository.findByIdWithRolesAndOrganization(
+                userId
+        )).thenReturn(Optional.of(user));
+
+        /*
+         * Используется конкретная переменная типа AccessTokenSubject.
+         * Это исключает неоднозначность между перегрузками
+         * generateToken(SafeAiUserPrincipal) и
+         * generateToken(AccessTokenSubject).
+         */
+        when(jwtService.generateToken(
+                expectedTokenSubject
+        )).thenReturn("access-token");
 
         when(refreshTokenService.create(
-                eq(user),
+                same(user),
                 any(MockHttpServletRequest.class)
         )).thenReturn("refresh-token");
 
-        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        MockHttpServletRequest httpRequest =
+                new MockHttpServletRequest();
+
         httpRequest.setRemoteAddr("127.0.0.1");
 
-        MockHttpServletResponse httpResponse = new MockHttpServletResponse();
+        MockHttpServletResponse httpResponse =
+                new MockHttpServletResponse();
 
-        CurrentUserResponse response = authService.login(request, httpRequest, httpResponse);
+        CurrentUserResponse response =
+                authService.login(
+                        request,
+                        httpRequest,
+                        httpResponse
+                );
 
-        assertThat(response.id()).isEqualTo(userId);
-        assertThat(response.organizationId()).isEqualTo(organizationId);
-        assertThat(response.email()).isEqualTo("admin@test.com");
-        assertThat(response.fullName()).isEqualTo("Demo Admin");
-        assertThat(response.enabled()).isTrue();
-        assertThat(response.roles()).containsExactly("ADMIN");
+        assertThat(response.id())
+                .isEqualTo(userId);
 
-        verify(loginRateLimitService).checkAllowed("admin@test.com", "127.0.0.1");
+        assertThat(response.organizationId())
+                .isEqualTo(organizationId);
 
-        verify(authenticationManager).authenticate(argThat(auth ->
-                auth instanceof UsernamePasswordAuthenticationToken
-                        && "admin@test.com".equals(auth.getPrincipal())
-                        && "admin123".equals(auth.getCredentials())
-        ));
+        assertThat(response.email())
+                .isEqualTo("admin@test.com");
 
-        verify(authCookieService).addAccessTokenCookie(httpResponse, "access-token");
-        verify(authCookieService).addRefreshTokenCookie(httpResponse, "refresh-token");
+        assertThat(response.fullName())
+                .isEqualTo("Demo Admin");
+
+        assertThat(response.enabled())
+                .isTrue();
+
+        assertThat(response.roles())
+                .containsExactly("ADMIN");
+
+        verify(loginRateLimitService).checkAllowed(
+                "admin@test.com",
+                "127.0.0.1"
+        );
+
+        verify(authenticationManager).authenticate(
+                argThat(authenticationRequest ->
+                        authenticationRequest
+                                instanceof UsernamePasswordAuthenticationToken
+                                && "admin@test.com".equals(
+                                authenticationRequest.getPrincipal()
+                        )
+                                && "admin123".equals(
+                                authenticationRequest.getCredentials()
+                        )
+                )
+        );
+
+        verify(userRepository)
+                .findByIdWithRolesAndOrganization(
+                        userId
+                );
+
+        verify(jwtService).generateToken(
+                expectedTokenSubject
+        );
+
+        verify(refreshTokenService).create(
+                same(user),
+                same(httpRequest)
+        );
+
+        verify(authCookieService)
+                .addAccessTokenCookie(
+                        same(httpResponse),
+                        eq("access-token")
+                );
+
+        verify(authCookieService)
+                .addRefreshTokenCookie(
+                        same(httpResponse),
+                        eq("refresh-token")
+                );
 
         verify(authEventService).loginSuccess(
                 eq(principal),
                 same(httpRequest)
         );
 
-        verify(loginRateLimitService).resetEmailLimit("admin@test.com");
+        verify(loginRateLimitService)
+                .resetEmailLimit(
+                        "admin@test.com"
+                );
 
-        verify(authEventService, never()).loginFailed(anyString(), any());
-        verify(authEventService, never()).loginRateLimitExceeded(anyString(), any(), any());
+        verify(authEventService, never())
+                .loginFailed(
+                        anyString(),
+                        any()
+                );
+
+        verify(authEventService, never())
+                .loginRateLimitExceeded(
+                        anyString(),
+                        any(),
+                        any()
+                );
     }
 
     @Test
@@ -165,30 +267,64 @@ class AuthServiceTest {
                 "wrong-password"
         );
 
-        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
-                .thenThrow(new BadCredentialsException("Bad credentials"));
+        when(authenticationManager.authenticate(
+                any(UsernamePasswordAuthenticationToken.class)
+        )).thenThrow(
+                new BadCredentialsException(
+                        "Bad credentials"
+                )
+        );
 
-        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        MockHttpServletRequest httpRequest =
+                new MockHttpServletRequest();
+
         httpRequest.setRemoteAddr("127.0.0.1");
 
-        MockHttpServletResponse httpResponse = new MockHttpServletResponse();
+        MockHttpServletResponse httpResponse =
+                new MockHttpServletResponse();
 
-        assertThatThrownBy(() -> authService.login(request, httpRequest, httpResponse))
-                .isInstanceOf(BadCredentialsException.class);
+        assertThatThrownBy(() ->
+                authService.login(
+                        request,
+                        httpRequest,
+                        httpResponse
+                )
+        ).isInstanceOf(
+                BadCredentialsException.class
+        );
 
-        verify(loginRateLimitService).checkAllowed("admin@test.com", "127.0.0.1");
+        verify(loginRateLimitService).checkAllowed(
+                "admin@test.com",
+                "127.0.0.1"
+        );
 
         verify(authEventService).loginFailed(
                 eq("admin@test.com"),
                 same(httpRequest)
         );
 
-        verify(authEventService, never()).loginSuccess(any(), any());
-        verify(authEventService, never()).loginRateLimitExceeded(anyString(), any(), any());
-        verify(loginRateLimitService, never()).resetEmailLimit(anyString());
+        verify(authEventService, never())
+                .loginSuccess(
+                        any(),
+                        any()
+                );
+
+        verify(authEventService, never())
+                .loginRateLimitExceeded(
+                        anyString(),
+                        any(),
+                        any()
+                );
+
+        verify(loginRateLimitService, never())
+                .resetEmailLimit(
+                        anyString()
+                );
+
         verifyNoInteractions(jwtService);
         verifyNoInteractions(refreshTokenService);
         verifyNoInteractions(authCookieService);
+        verifyNoInteractions(userRepository);
     }
 
     @Test
@@ -198,43 +334,81 @@ class AuthServiceTest {
                 "admin123"
         );
 
-        RateLimitExceededException exception = new RateLimitExceededException(
-                "Слишком много попыток входа для этого email. Попробуйте позже",
-                Duration.ofSeconds(60)
-        );
+        RateLimitExceededException exception =
+                new RateLimitExceededException(
+                        "Слишком много попыток входа для этого email. "
+                                + "Попробуйте позже",
+                        Duration.ofSeconds(60)
+                );
 
-        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        MockHttpServletRequest httpRequest =
+                new MockHttpServletRequest();
+
         httpRequest.setRemoteAddr("127.0.0.1");
 
-        MockHttpServletResponse httpResponse = new MockHttpServletResponse();
+        MockHttpServletResponse httpResponse =
+                new MockHttpServletResponse();
 
         doThrow(exception)
                 .when(loginRateLimitService)
-                .checkAllowed("admin@test.com", "127.0.0.1");
+                .checkAllowed(
+                        "admin@test.com",
+                        "127.0.0.1"
+                );
 
-        assertThatThrownBy(() -> authService.login(request, httpRequest, httpResponse))
-                .isSameAs(exception);
+        assertThatThrownBy(() ->
+                authService.login(
+                        request,
+                        httpRequest,
+                        httpResponse
+                )
+        ).isSameAs(exception);
 
-        verify(loginRateLimitService).checkAllowed("admin@test.com", "127.0.0.1");
-
-        verify(authEventService).loginRateLimitExceeded(
-                eq("admin@test.com"),
-                same(httpRequest),
-                same(exception)
+        verify(loginRateLimitService).checkAllowed(
+                "admin@test.com",
+                "127.0.0.1"
         );
 
-        verify(authenticationManager, never()).authenticate(any());
-        verify(authEventService, never()).loginSuccess(any(), any());
-        verify(authEventService, never()).loginFailed(anyString(), any());
-        verify(loginRateLimitService, never()).resetEmailLimit(anyString());
+        verify(authEventService)
+                .loginRateLimitExceeded(
+                        eq("admin@test.com"),
+                        same(httpRequest),
+                        same(exception)
+                );
+
+        verify(authenticationManager, never())
+                .authenticate(any());
+
+        verify(authEventService, never())
+                .loginSuccess(
+                        any(),
+                        any()
+                );
+
+        verify(authEventService, never())
+                .loginFailed(
+                        anyString(),
+                        any()
+                );
+
+        verify(loginRateLimitService, never())
+                .resetEmailLimit(
+                        anyString()
+                );
+
         verifyNoInteractions(jwtService);
         verifyNoInteractions(refreshTokenService);
         verifyNoInteractions(authCookieService);
         verifyNoInteractions(userRepository);
     }
 
-    private UserEntity userEntity(UUID userId, UUID organizationId) {
-        OrganizationEntity organization = new OrganizationEntity();
+    private UserEntity userEntity(
+            UUID userId,
+            UUID organizationId
+    ) {
+        OrganizationEntity organization =
+                new OrganizationEntity();
+
         organization.setId(organizationId);
         organization.setName("Test Org");
         organization.setEnabled(true);
@@ -244,14 +418,19 @@ class AuthServiceTest {
         role.setName("ADMIN");
 
         UserEntity user = new UserEntity();
+
         user.setId(userId);
         user.setOrganization(organization);
         user.setEmail("admin@test.com");
-        user.setPasswordHash("encoded-password");
+        user.setPasswordHash(
+                "encoded-password"
+        );
         user.setFullName("Demo Admin");
         user.setEnabled(true);
         user.setTokenVersion(0L);
-        user.setRoles(Set.of(role));
+        user.setRoles(
+                new HashSet<>(Set.of(role))
+        );
 
         return user;
     }

@@ -1,16 +1,16 @@
 package ru.safeai.gateway.common.security;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.List;
-
-import jakarta.servlet.http.HttpServletRequest;
-
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ClientIpResolverTest {
 
@@ -49,13 +49,31 @@ class ClientIpResolverTest {
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("127.0.0.1");
-
         request.addHeader(
                 "X-Forwarded-For",
                 "1.2.3.4, 198.51.100.10, 127.0.0.1"
         );
 
         assertThat(resolver.resolve(request)).isEqualTo("198.51.100.10");
+    }
+
+    @Test
+    void resolve_shouldReturnRealClientWhenAllControlledProxiesAreTrusted() {
+        ClientIpResolver resolver = new ClientIpResolver(
+                new ClientIpProperties(List.of(
+                        "172.28.0.0/24",
+                        "198.51.100.0/24"
+                ))
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("172.28.0.10");
+        request.addHeader(
+                "X-Forwarded-For",
+                "203.0.113.10, 198.51.100.20"
+        );
+
+        assertThat(resolver.resolve(request)).isEqualTo("203.0.113.10");
     }
 
     @Test
@@ -85,6 +103,32 @@ class ClientIpResolverTest {
     }
 
     @Test
+    void resolve_shouldRejectHostnameWithoutDnsLookup() {
+        ClientIpResolver resolver = new ClientIpResolver(
+                new ClientIpProperties(List.of("127.0.0.1/32"))
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("X-Forwarded-For", "attacker.example.com");
+
+        assertThat(resolver.resolve(request)).isEqualTo("127.0.0.1");
+    }
+
+    @Test
+    void resolve_shouldRejectHexLookingHostnameWithoutDnsLookup() {
+        ClientIpResolver resolver = new ClientIpResolver(
+                new ClientIpProperties(List.of("127.0.0.1/32"))
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("X-Forwarded-For", "dead.beef");
+
+        assertThat(resolver.resolve(request)).isEqualTo("127.0.0.1");
+    }
+
+    @Test
     void resolve_shouldStripIpv4Port() {
         ClientIpResolver resolver = new ClientIpResolver(
                 new ClientIpProperties(List.of())
@@ -97,13 +141,26 @@ class ClientIpResolverTest {
     }
 
     @Test
+    void resolve_shouldSupportBracketedIpv6WithPort() {
+        ClientIpResolver resolver = new ClientIpResolver(
+                new ClientIpProperties(List.of("2001:db8:ffff::/48"))
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("2001:db8:ffff::1");
+        request.addHeader("X-Forwarded-For", "[2001:db8::1]:12345");
+
+        assertThat(resolver.resolve(request))
+                .isEqualTo("2001:db8:0:0:0:0:0:1");
+    }
+
+    @Test
     void resolve_shouldReturnUnknownWhenRemoteAddressIsMissing() {
         ClientIpResolver resolver = new ClientIpResolver(
                 new ClientIpProperties(List.of())
         );
 
         HttpServletRequest request = mock(HttpServletRequest.class);
-
         when(request.getRemoteAddr()).thenReturn(null);
 
         assertThat(resolver.resolve(request)).isEqualTo("unknown");
@@ -149,21 +206,35 @@ class ClientIpResolverTest {
     }
 
     @Test
-    void resolve_shouldUseNearestUntrustedAddressWhenMultipleTrustedProxiesExist() {
+    void resolve_shouldIgnoreForwardedHeaderWithMoreThan32Hops() {
         ClientIpResolver resolver = new ClientIpResolver(
-                new ClientIpProperties(List.of(
-                        "127.0.0.1/32",
-                        "10.0.0.0/8"
-                ))
+                new ClientIpProperties(List.of("172.28.0.0/24"))
+        );
+
+        String xff = IntStream.range(0, 33)
+                .mapToObj(index -> "192.0.2." + ((index % 200) + 1))
+                .collect(Collectors.joining(","));
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("172.28.0.10");
+        request.addHeader("X-Forwarded-For", xff);
+
+        assertThat(resolver.resolve(request)).isEqualTo("172.28.0.10");
+    }
+
+    @Test
+    void resolve_shouldRejectEntireChainWhenOneHopIsInvalid() {
+        ClientIpResolver resolver = new ClientIpResolver(
+                new ClientIpProperties(List.of("127.0.0.1/32"))
         );
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("127.0.0.1");
         request.addHeader(
                 "X-Forwarded-For",
-                "198.51.100.10, 10.0.0.5, 127.0.0.1"
+                "198.51.100.10, attacker.example.com, 127.0.0.1"
         );
 
-        assertThat(resolver.resolve(request)).isEqualTo("198.51.100.10");
+        assertThat(resolver.resolve(request)).isEqualTo("127.0.0.1");
     }
 }

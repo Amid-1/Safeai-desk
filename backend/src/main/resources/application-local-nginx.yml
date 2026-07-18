@@ -1,5 +1,4 @@
 # "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local-nginx.yml"
-## `application-local-nginx.yml`
 spring:
   flyway:
     locations:
@@ -14,6 +13,11 @@ safeai:
         - ::1/128
         - 172.16.0.0/12
 
+    user-status-cache:
+      enabled: true
+      ttl: 60s
+      key-prefix: safeai:local:user-status
+
   auth:
     cookies:
       secure: false
@@ -22,6 +26,16 @@ safeai:
   rate-limit:
     redis:
       key-prefix: safeai:local
+
+  audit:
+    retention:
+      enabled: false
+
+  ai:
+    provider: mock
+
+    retry:
+      enabled: false
 
 server:
   forward-headers-strategy: framework

@@ -6,6 +6,7 @@ import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -46,17 +47,22 @@ class SafeAiJwtAuthenticationConverterTest {
 
         assertThat(authentication.isAuthenticated()).isTrue();
 
-        Object principalObject = authentication.getPrincipal();
+        Object principalObject = Objects.requireNonNull(
+                authentication.getPrincipal(),
+                "Authentication principal не должен быть null"
+        );
 
-        if (!(principalObject instanceof SafeAiUserPrincipal principal)) {
-            throw new AssertionError("Principal должен быть SafeAiUserPrincipal");
-        }
+        assertThat(principalObject)
+                .isInstanceOf(SafeAiUserPrincipal.class);
+
+        SafeAiUserPrincipal principal =
+                (SafeAiUserPrincipal) principalObject;
 
         assertThat(principal.getId()).isEqualTo(USER_ID);
         assertThat(principal.getOrganizationId()).isEqualTo(ORGANIZATION_ID);
         assertThat(principal.getEmail()).isEqualTo("admin@test.com");
         assertThat(principal.isEnabled()).isTrue();
-        assertThat(principal.getTokenVersion()).isEqualTo(0L);
+        assertThat(principal.getTokenVersion()).isZero();
 
         assertThat(authentication.getAuthorities())
                 .extracting("authority")
@@ -64,96 +70,127 @@ class SafeAiJwtAuthenticationConverterTest {
     }
 
     @Test
-    void convert_shouldThrowBadJwtExceptionWhenUserIdIsMissing() {
-        Jwt jwt = jwt(Map.of(
+    void convert_shouldThrowWhenRequiredClaimsAreMissing() {
+        assertThatThrownBy(() -> converter.convert(jwt(Map.of(
                 "sub", USER_ID.toString(),
                 "email", "admin@test.com",
                 "organizationId", ORGANIZATION_ID.toString(),
                 "tokenVersion", 0L,
                 "roles", List.of("ADMIN")
-        ));
-
-        assertThatThrownBy(() -> converter.convert(jwt))
+        ))))
                 .isInstanceOf(BadJwtException.class)
                 .hasMessageContaining("userId");
-    }
 
-    @Test
-    void convert_shouldThrowBadJwtExceptionWhenEmailIsMissing() {
-        Jwt jwt = jwt(Map.of(
+        assertThatThrownBy(() -> converter.convert(jwt(Map.of(
                 "sub", USER_ID.toString(),
                 "userId", USER_ID.toString(),
                 "organizationId", ORGANIZATION_ID.toString(),
                 "tokenVersion", 0L,
                 "roles", List.of("ADMIN")
-        ));
-
-        assertThatThrownBy(() -> converter.convert(jwt))
+        ))))
                 .isInstanceOf(BadJwtException.class)
                 .hasMessageContaining("email");
-    }
 
-    @Test
-    void convert_shouldThrowBadJwtExceptionWhenTokenVersionIsMissing() {
-        Jwt jwt = jwt(Map.of(
+        assertThatThrownBy(() -> converter.convert(jwt(Map.of(
                 "sub", USER_ID.toString(),
                 "email", "admin@test.com",
                 "userId", USER_ID.toString(),
                 "organizationId", ORGANIZATION_ID.toString(),
                 "roles", List.of("ADMIN")
-        ));
-
-        assertThatThrownBy(() -> converter.convert(jwt))
+        ))))
                 .isInstanceOf(BadJwtException.class)
                 .hasMessageContaining("tokenVersion");
     }
 
     @Test
-    void convert_shouldThrowBadJwtExceptionWhenOrganizationIdIsInvalid() {
-        Jwt jwt = jwt(Map.of(
+    void convert_shouldRejectInvalidUuidAndSubjectMismatch() {
+        assertThatThrownBy(() -> converter.convert(jwt(Map.of(
                 "sub", USER_ID.toString(),
                 "email", "admin@test.com",
                 "userId", USER_ID.toString(),
                 "organizationId", "not-uuid",
                 "tokenVersion", 0L,
                 "roles", List.of("ADMIN")
-        ));
-
-        assertThatThrownBy(() -> converter.convert(jwt))
+        ))))
                 .isInstanceOf(BadJwtException.class)
                 .hasMessageContaining("organizationId");
-    }
 
-    @Test
-    void convert_shouldThrowBadJwtExceptionWhenSubjectDoesNotMatchUserId() {
-        Jwt jwt = jwt(Map.of(
+        assertThatThrownBy(() -> converter.convert(jwt(Map.of(
                 "sub", UUID.randomUUID().toString(),
                 "email", "admin@test.com",
                 "userId", USER_ID.toString(),
                 "organizationId", ORGANIZATION_ID.toString(),
                 "tokenVersion", 0L,
                 "roles", List.of("ADMIN")
-        ));
-
-        assertThatThrownBy(() -> converter.convert(jwt))
+        ))))
                 .isInstanceOf(BadJwtException.class)
                 .hasMessageContaining("subject");
     }
 
     @Test
-    void convert_shouldThrowBadJwtExceptionWhenRoleIsUnknown() {
-        Jwt jwt = jwt(Map.of(
+    void convert_shouldRejectUnknownRole() {
+        assertThatThrownBy(() -> converter.convert(jwt(Map.of(
                 "sub", USER_ID.toString(),
                 "email", "admin@test.com",
                 "userId", USER_ID.toString(),
                 "organizationId", ORGANIZATION_ID.toString(),
                 "tokenVersion", 0L,
                 "roles", List.of("ROOT")
-        ));
-
-        assertThatThrownBy(() -> converter.convert(jwt))
+        ))))
                 .isInstanceOf(BadJwtException.class)
                 .hasMessageContaining("roles");
+    }
+
+    @Test
+    void convert_shouldRejectFractionalNegativeAndNonNumericTokenVersion() {
+        assertThatThrownBy(() -> converter.convert(
+                jwtWithTokenVersion(1.9d)
+        ))
+                .isInstanceOf(BadJwtException.class)
+                .hasMessageContaining("integral");
+
+        assertThatThrownBy(() -> converter.convert(
+                jwtWithTokenVersion(new BigDecimal("1.1"))
+        ))
+                .isInstanceOf(BadJwtException.class)
+                .hasMessageContaining("integral");
+
+        assertThatThrownBy(() -> converter.convert(
+                jwtWithTokenVersion(-1)
+        ))
+                .isInstanceOf(BadJwtException.class)
+                .hasMessageContaining("negative");
+
+        assertThatThrownBy(() -> converter.convert(
+                jwtWithTokenVersion("1")
+        ))
+                .isInstanceOf(BadJwtException.class)
+                .hasMessageContaining("numeric");
+    }
+
+    @Test
+    void convert_shouldRejectNonCanonicalEmail() {
+        assertThatThrownBy(() -> converter.convert(jwt(Map.of(
+                "sub", USER_ID.toString(),
+                "email", " Admin@Test.com ",
+                "userId", USER_ID.toString(),
+                "organizationId", ORGANIZATION_ID.toString(),
+                "tokenVersion", 0L,
+                "roles", List.of("ADMIN")
+        ))))
+                .isInstanceOf(BadJwtException.class)
+                .hasMessageContaining("email");
+    }
+
+    private Jwt jwtWithTokenVersion(Object tokenVersion) {
+        return jwt(Map.of(
+                "sub", USER_ID.toString(),
+                "userId", USER_ID.toString(),
+                "organizationId", ORGANIZATION_ID.toString(),
+                "email", "admin@test.com",
+                "roles", List.of("ADMIN"),
+                "tokenVersion", tokenVersion
+        ));
     }
 
     private Jwt jwt(Map<String, Object> claims) {

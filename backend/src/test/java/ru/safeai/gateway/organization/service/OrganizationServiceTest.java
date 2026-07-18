@@ -55,6 +55,12 @@ class OrganizationServiceTest {
     private static final UUID SUPER_ADMIN_ID =
             UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
+    private static final UUID SAVED_ORGANIZATION_ID =
+            UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+
+    private static final Instant SAVED_AT =
+            Instant.parse("2026-06-12T12:00:00Z");
+
     @Mock
     private OrganizationRepository organizationRepository;
 
@@ -89,15 +95,14 @@ class OrganizationServiceTest {
         when(organizationRepository.existsByNameIgnoreCase("SafeAI"))
                 .thenReturn(false);
 
-        when(organizationRepository.save(any(OrganizationEntity.class)))
-                .thenAnswer(invocation -> {
-                    OrganizationEntity entity = invocation.getArgument(0);
-
-                    entity.setId(ORGANIZATION_ID);
-                    entity.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-
-                    return entity;
-                });
+        when(organizationRepository.saveAndFlush(
+                any(OrganizationEntity.class)
+        )).thenAnswer(invocation -> {
+            OrganizationEntity entity = invocation.getArgument(0);
+            entity.setId(ORGANIZATION_ID);
+            entity.setCreatedAt(SAVED_AT);
+            return entity;
+        });
 
         OrganizationResponse response = organizationService.create(
                 new CreateOrganizationRequest(" SafeAI "),
@@ -111,7 +116,7 @@ class OrganizationServiceTest {
         ArgumentCaptor<OrganizationEntity> captor =
                 ArgumentCaptor.forClass(OrganizationEntity.class);
 
-        verify(organizationRepository).save(captor.capture());
+        verify(organizationRepository).saveAndFlush(captor.capture());
 
         OrganizationEntity saved = captor.getValue();
 
@@ -159,7 +164,7 @@ class OrganizationServiceTest {
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Организация с таким названием уже существует");
 
-        verify(organizationRepository, never()).save(any());
+        verify(organizationRepository, never()).saveAndFlush(any());
         verifyNoInteractions(userRepository);
         verifyNoInteractions(userSessionRevocationService);
     }
@@ -178,7 +183,7 @@ class OrganizationServiceTest {
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Организация с таким названием уже существует");
 
-        verify(organizationRepository, never()).save(any());
+        verify(organizationRepository, never()).saveAndFlush(any());
         verifyNoInteractions(userRepository);
     }
 
@@ -295,8 +300,7 @@ class OrganizationServiceTest {
         when(organizationRepository.existsByNameIgnoreCaseAndIdNot("New SafeAI", ORGANIZATION_ID))
                 .thenReturn(false);
 
-        when(organizationRepository.save(any(OrganizationEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubOrganizationSaveAndFlush();
 
         OrganizationResponse response = organizationService.updateName(
                 ORGANIZATION_ID,
@@ -336,7 +340,7 @@ class OrganizationServiceTest {
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Организация с таким названием уже существует");
 
-        verify(organizationRepository, never()).save(any());
+        verify(organizationRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -376,8 +380,7 @@ class OrganizationServiceTest {
         when(organizationRepository.findById(ORGANIZATION_ID))
                 .thenReturn(Optional.of(organization));
 
-        when(organizationRepository.save(any(OrganizationEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubOrganizationSaveAndFlush();
 
         when(userRepository.incrementTokenVersionByOrganizationId(ORGANIZATION_ID))
                 .thenReturn(5);
@@ -414,8 +417,7 @@ class OrganizationServiceTest {
         when(organizationRepository.findById(ORGANIZATION_ID))
                 .thenReturn(Optional.of(organization));
 
-        when(organizationRepository.save(any(OrganizationEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubOrganizationSaveAndFlush();
 
         OrganizationResponse response = organizationService.updateEnabled(
                 ORGANIZATION_ID,
@@ -453,7 +455,7 @@ class OrganizationServiceTest {
 
         assertThat(response.enabled()).isTrue();
 
-        verify(organizationRepository, never()).save(any());
+        verify(organizationRepository, never()).saveAndFlush(any());
         verifyNoInteractions(userSessionRevocationService);
         verifyNoInteractions(userRepository);
         verifyNoInteractions(eventPublisher);
@@ -492,6 +494,25 @@ class OrganizationServiceTest {
         verifyNoInteractions(organizationRepository);
         verifyNoInteractions(userSessionRevocationService);
         verifyNoInteractions(userRepository);
+    }
+
+
+    private void stubOrganizationSaveAndFlush() {
+        when(organizationRepository.saveAndFlush(
+                any(OrganizationEntity.class)
+        )).thenAnswer(invocation -> {
+            OrganizationEntity entity = invocation.getArgument(0);
+
+            if (entity.getId() == null) {
+                entity.setId(SAVED_ORGANIZATION_ID);
+            }
+
+            if (entity.getCreatedAt() == null) {
+                entity.setCreatedAt(SAVED_AT);
+            }
+
+            return entity;
+        });
     }
 
     private OrganizationEntity organization() {

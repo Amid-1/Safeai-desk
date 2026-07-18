@@ -1,4 +1,7 @@
-// frontend/src/components/ConfirmDialog.tsx
+// ============================================================
+// frontend/src/components/admin/ConfirmDialog.tsx
+// ============================================================
+
 import Modal from './Modal'
 
 type ConfirmDialogProps = {
@@ -14,14 +17,18 @@ type ConfirmDialogProps = {
 function ConfirmDialog({
                            title,
                            message,
-                           confirmText = 'Confirm',
+                           confirmText = 'Подтвердить',
                            danger = false,
                            loading = false,
                            onConfirm,
                            onCancel,
                        }: ConfirmDialogProps) {
     return (
-        <Modal title={title} onClose={onCancel}>
+        <Modal
+            title={title}
+            onClose={onCancel}
+            closeDisabled={loading}
+        >
             <p>{message}</p>
 
             <div className="modal-actions">
@@ -31,16 +38,16 @@ function ConfirmDialog({
                     disabled={loading}
                     onClick={onCancel}
                 >
-                    Cancel
+                    Отмена
                 </button>
 
                 <button
                     type="button"
-                    className={danger ? 'danger-button' : ''}
+                    className={danger ? 'danger-button' : undefined}
                     disabled={loading}
                     onClick={onConfirm}
                 >
-                    {loading ? 'Processing...' : confirmText}
+                    {loading ? 'Выполнение...' : confirmText}
                 </button>
             </div>
         </Modal>
@@ -48,3 +55,4 @@ function ConfirmDialog({
 }
 
 export default ConfirmDialog
+

@@ -1,5 +1,4 @@
 # "D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod.yml"
-### `application-prod.yml`
 spring:
   flyway:
     locations:
@@ -35,7 +34,7 @@ safeai:
 
   rate-limit:
     redis:
-      key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX:safeai:prod}
+      key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX}
 
     login:
       enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}
@@ -49,7 +48,7 @@ safeai:
 
     user-status-cache:
       enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:true}
-      ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
+      ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:15s}
       key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status}
 
     hsts:
@@ -57,3 +56,18 @@ safeai:
 
   cors:
     allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS}
+
+  audit:
+    retention:
+      cron: ${SAFEAI_AUDIT_RETENTION_CRON:0 30 3 * * *}
+      zone: ${SAFEAI_AUDIT_RETENTION_ZONE:UTC}
+
+  ai:
+    provider: ${SAFEAI_AI_PROVIDER}
+
+    retry:
+      enabled: ${SAFEAI_AI_RETRY_ENABLED:true}
+      max-attempts: ${SAFEAI_AI_RETRY_MAX_ATTEMPTS:2}
+      initial-backoff: ${SAFEAI_AI_RETRY_INITIAL_BACKOFF:250ms}
+      max-backoff: ${SAFEAI_AI_RETRY_MAX_BACKOFF:2s}
+      max-retry-after: ${SAFEAI_AI_RETRY_MAX_RETRY_AFTER:10s}

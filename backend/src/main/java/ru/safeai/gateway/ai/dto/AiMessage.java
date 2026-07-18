@@ -1,12 +1,32 @@
 package ru.safeai.gateway.ai.dto;
 
+import java.util.Objects;
+
 public record AiMessage(
-        String role,
+        AiMessageRole role,
         String content
 ) {
 
     public AiMessage {
-        role = role == null ? "" : role.trim().toUpperCase();
-        content = content == null ? "" : content;
+        Objects.requireNonNull(
+                role,
+                "role не должен быть null"
+        );
+
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException(
+                    "AI message content не должен быть пустым"
+            );
+        }
+    }
+
+    public AiMessage(
+            String role,
+            String content
+    ) {
+        this(
+                AiMessageRole.parse(role),
+                content
+        );
     }
 }

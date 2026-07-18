@@ -1,4 +1,7 @@
-// frontend/src/components/Modal.tsx
+// ============================================================
+// frontend/src/components/admin/Modal.tsx
+// ============================================================
+
 import { useEffect, useId, useRef } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 
@@ -6,6 +9,7 @@ type ModalProps = {
     title: string
     children: ReactNode
     onClose: () => void
+    closeDisabled?: boolean
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -17,7 +21,12 @@ const FOCUSABLE_SELECTOR = [
     '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
-function Modal({ title, children, onClose }: ModalProps) {
+function Modal({
+                   title,
+                   children,
+                   onClose,
+                   closeDisabled = false,
+               }: ModalProps) {
     const titleId = useId()
     const modalRef = useRef<HTMLDivElement | null>(null)
     const previousActiveElementRef = useRef<Element | null>(null)
@@ -25,14 +34,24 @@ function Modal({ title, children, onClose }: ModalProps) {
     useEffect(() => {
         previousActiveElementRef.current = document.activeElement
 
-        const focusableElements = modalRef.current?.querySelectorAll<HTMLElement>(
-            FOCUSABLE_SELECTOR
-        )
+        const previousOverflow = document.body.style.overflow
+        document.body.style.overflow = 'hidden'
 
-        focusableElements?.[0]?.focus()
+        const focusableElements =
+            modalRef.current?.querySelectorAll<HTMLElement>(
+                FOCUSABLE_SELECTOR
+            )
+
+        const firstFocusableElement = focusableElements?.[0]
+
+        if (firstFocusableElement) {
+            firstFocusableElement.focus()
+        } else {
+            modalRef.current?.focus()
+        }
 
         function handleKeyDown(event: globalThis.KeyboardEvent) {
-            if (event.key === 'Escape') {
+            if (event.key === 'Escape' && !closeDisabled) {
                 event.preventDefault()
                 onClose()
             }
@@ -42,50 +61,79 @@ function Modal({ title, children, onClose }: ModalProps) {
 
         return () => {
             document.removeEventListener('keydown', handleKeyDown)
+            document.body.style.overflow = previousOverflow
 
-            if (previousActiveElementRef.current instanceof HTMLElement) {
+            if (
+                previousActiveElementRef.current instanceof HTMLElement
+                && document.contains(previousActiveElementRef.current)
+            ) {
                 previousActiveElementRef.current.focus()
             }
         }
-    }, [onClose])
+    }, [closeDisabled, onClose])
 
-    function handleModalKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    function handleBackdropMouseDown() {
+        if (!closeDisabled) {
+            onClose()
+        }
+    }
+
+    function handleModalKeyDown(
+        event: KeyboardEvent<HTMLDivElement>
+    ) {
         if (event.key !== 'Tab') {
             return
         }
 
         const focusableElements = Array.from(
-            modalRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []
+            modalRef.current?.querySelectorAll<HTMLElement>(
+                FOCUSABLE_SELECTOR
+            ) ?? []
         )
 
         if (focusableElements.length === 0) {
             event.preventDefault()
+            modalRef.current?.focus()
             return
         }
 
         const firstElement = focusableElements[0]
-        const lastElement = focusableElements[focusableElements.length - 1]
+        const lastElement =
+            focusableElements[focusableElements.length - 1]
 
-        if (event.shiftKey && document.activeElement === firstElement) {
+        if (
+            event.shiftKey
+            && (
+                document.activeElement === firstElement
+                || document.activeElement === modalRef.current
+            )
+        ) {
             event.preventDefault()
             lastElement.focus()
             return
         }
 
-        if (!event.shiftKey && document.activeElement === lastElement) {
+        if (
+            !event.shiftKey
+            && document.activeElement === lastElement
+        ) {
             event.preventDefault()
             firstElement.focus()
         }
     }
 
     return (
-        <div className="modal-backdrop" onMouseDown={onClose}>
+        <div
+            className="modal-backdrop"
+            onMouseDown={handleBackdropMouseDown}
+        >
             <div
                 ref={modalRef}
                 className="modal-card"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={titleId}
+                aria-busy={closeDisabled}
                 tabIndex={-1}
                 onKeyDown={handleModalKeyDown}
                 onMouseDown={(event) => event.stopPropagation()}
@@ -95,9 +143,10 @@ function Modal({ title, children, onClose }: ModalProps) {
 
                     <button
                         type="button"
-                        className="secondary-button"
+                        className="secondary-button modal-close-button"
                         onClick={onClose}
-                        aria-label="Close modal"
+                        aria-label="Закрыть окно"
+                        disabled={closeDisabled}
                     >
                         ×
                     </button>
@@ -110,3 +159,4 @@ function Modal({ title, children, onClose }: ModalProps) {
 }
 
 export default Modal
+

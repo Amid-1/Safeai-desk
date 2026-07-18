@@ -17,6 +17,7 @@ import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
 import ru.safeai.gateway.audit.entity.AuditEventEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
@@ -56,8 +57,10 @@ class AuditEventQueryServiceTest {
     private static final UUID AUDIT_EVENT_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
-    private static final Sort DEFAULT_AUDIT_SORT =
-            Sort.by(Sort.Direction.DESC, "createdAt");
+    private static final Sort DEFAULT_AUDIT_SORT = Sort.by(
+            Sort.Order.desc("createdAt"),
+            Sort.Order.desc("id")
+    );
 
     @Mock
     private AuditEventRepository auditEventRepository;
@@ -189,7 +192,7 @@ class AuditEventQueryServiceTest {
                 filter,
                 requestedPageable
         )).isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Нельзя фильтровать audit другой организации");
+                .hasMessageContaining("Нельзя фильтровать аудит другой организации");
 
         verifyNoInteractions(auditEventRepository);
     }
@@ -235,7 +238,10 @@ class AuditEventQueryServiceTest {
         Pageable expectedPageable = PageRequest.of(
                 0,
                 50,
-                Sort.by(Sort.Direction.ASC, "eventType")
+                Sort.by(
+                        Sort.Order.asc("eventType"),
+                        Sort.Order.desc("id")
+                )
         );
 
         AuditEventEntity event = auditEventEntity();
@@ -252,6 +258,31 @@ class AuditEventQueryServiceTest {
         assertAuditEvent(response);
 
         verifyFindAll(expectedPageable);
+    }
+
+
+    @Test
+    void findAll_whenDateRangeIsInvalid_shouldThrowBadRequestException() {
+        assertThatThrownBy(() -> {
+            AuditEventFilter filter = new AuditEventFilter(
+                    null,
+                    null,
+                    null,
+                    Instant.parse("2026-07-12T12:00:00Z"),
+                    Instant.parse("2026-07-12T12:00:00Z"),
+                    null
+            );
+
+            auditEventQueryService.findAll(
+                    adminPrincipal(),
+                    filter,
+                    PageRequest.of(0, 50)
+            );
+        })
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("dateFrom должен быть раньше dateTo");
+
+        verifyNoInteractions(auditEventRepository);
     }
 
     @Test
@@ -303,6 +334,9 @@ class AuditEventQueryServiceTest {
 
         AuditEventEntity event = auditEventEntity();
         event.setUser(null);
+        event.setActorUserId(null);
+        event.setActorEmail(null);
+        event.setActorDisplayName(null);
 
         whenFindAllReturns(event);
 
@@ -372,6 +406,9 @@ class AuditEventQueryServiceTest {
         AuditEventEntity event = new AuditEventEntity();
         event.setId(AUDIT_EVENT_ID);
         event.setUser(userEntity());
+        event.setActorUserId(USER_ID);
+        event.setActorEmail("admin@test.com");
+        event.setActorDisplayName("Admin");
         event.setOrganizationId(ORGANIZATION_ID);
         event.setEventType(AuditEventType.USER_LOGIN_SUCCESS.name());
         event.setDetails(Map.of("email", "admin@test.com"));

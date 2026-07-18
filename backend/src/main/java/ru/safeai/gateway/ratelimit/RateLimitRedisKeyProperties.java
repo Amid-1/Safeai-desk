@@ -6,17 +6,30 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record RateLimitRedisKeyProperties(
         String keyPrefix
 ) {
-    public String effectiveKeyPrefix() {
+    public RateLimitRedisKeyProperties {
         if (keyPrefix == null || keyPrefix.isBlank()) {
-            return "safeai:local";
+            throw new IllegalStateException(
+                    "safeai.rate-limit.redis.key-prefix не задан"
+            );
         }
 
-        String normalized = keyPrefix.trim();
+        keyPrefix = keyPrefix.trim();
 
-        while (normalized.endsWith(":")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
+        while (keyPrefix.endsWith(":")) {
+            keyPrefix = keyPrefix.substring(
+                    0,
+                    keyPrefix.length() - 1
+            );
         }
 
-        return normalized.isBlank() ? "safeai:local" : normalized;
+        if (keyPrefix.isBlank()) {
+            throw new IllegalStateException(
+                    "safeai.rate-limit.redis.key-prefix не задан"
+            );
+        }
+    }
+
+    public String effectiveKeyPrefix() {
+        return keyPrefix;
     }
 }

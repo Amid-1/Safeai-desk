@@ -10,138 +10,214 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AuthCookiePropertiesTest {
 
     @Test
-    void constructor_shouldUseDefaultsWhenValuesAreMissing() {
-        AuthCookieProperties properties = new AuthCookieProperties(
-                false,
-                null,
-                null,
-                null,
-                null
-        );
+    void constructorPreservesValidValues() {
+        AuthCookieProperties properties =
+                new AuthCookieProperties(
+                        false,
+                        "Lax",
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        null
+                );
 
         assertThat(properties.secure()).isFalse();
-        assertThat(properties.sameSite()).isEqualTo("Lax");
-        assertThat(properties.accessTokenMaxAge()).isEqualTo(Duration.ofMinutes(15));
-        assertThat(properties.refreshTokenMaxAge()).isEqualTo(Duration.ofDays(30));
+        assertThat(properties.sameSite())
+                .isEqualTo("Lax");
+        assertThat(properties.accessTokenMaxAge())
+                .isEqualTo(Duration.ofMinutes(15));
+        assertThat(properties.refreshTokenMaxAge())
+                .isEqualTo(Duration.ofDays(30));
         assertThat(properties.domain()).isNull();
         assertThat(properties.hasDomain()).isFalse();
     }
 
     @Test
-    void constructor_shouldNormalizeSameSiteValue() {
-        AuthCookieProperties properties = new AuthCookieProperties(
-                true,
-                "none",
-                Duration.ofMinutes(10),
-                Duration.ofDays(7),
-                null
-        );
+    void constructorNormalizesSameSiteValue() {
+        AuthCookieProperties properties =
+                new AuthCookieProperties(
+                        true,
+                        "none",
+                        Duration.ofMinutes(10),
+                        Duration.ofDays(7),
+                        null
+                );
 
-        assertThat(properties.sameSite()).isEqualTo("None");
+        assertThat(properties.sameSite())
+                .isEqualTo("None");
     }
 
     @Test
-    void constructor_shouldRejectInvalidSameSiteValue() {
-        assertThatThrownBy(() -> new AuthCookieProperties(
-                false,
-                "Invalid",
-                Duration.ofMinutes(15),
-                Duration.ofDays(30),
-                null
-        ))
+    void constructorRejectsMissingSameSite() {
+        assertThatThrownBy(() ->
+                new AuthCookieProperties(
+                        false,
+                        null,
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        null
+                )
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(
+                        "same-site не задан"
+                );
+    }
+
+    @Test
+    void constructorRejectsInvalidSameSiteValue() {
+        assertThatThrownBy(() ->
+                new AuthCookieProperties(
+                        false,
+                        "Invalid",
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        null
+                )
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("same-site");
     }
 
     @Test
-    void constructor_shouldRejectSameSiteNoneWithoutSecure() {
-        assertThatThrownBy(() -> new AuthCookieProperties(
-                false,
-                "None",
-                Duration.ofMinutes(15),
-                Duration.ofDays(30),
-                null
-        ))
+    void constructorRejectsSameSiteNoneWithoutSecure() {
+        assertThatThrownBy(() ->
+                new AuthCookieProperties(
+                        false,
+                        "None",
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        null
+                )
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Secure=true");
     }
 
     @Test
-    void constructor_shouldRejectRefreshMaxAgeLessThanAccessMaxAge() {
-        assertThatThrownBy(() -> new AuthCookieProperties(
-                false,
-                "Lax",
-                Duration.ofDays(30),
-                Duration.ofMinutes(15),
-                null
-        ))
+    void constructorRejectsNonPositiveAccessMaxAge() {
+        assertThatThrownBy(() ->
+                new AuthCookieProperties(
+                        false,
+                        "Lax",
+                        Duration.ZERO,
+                        Duration.ofDays(30),
+                        null
+                )
+        )
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("refresh-token-max-age");
+                .hasMessageContaining(
+                        "access-token-max-age должен быть положительным"
+                );
     }
 
     @Test
-    void constructor_shouldReplaceInvalidDurationsWithDefaults() {
-        AuthCookieProperties properties = new AuthCookieProperties(
-                false,
-                "Lax",
-                Duration.ZERO,
-                Duration.ofSeconds(-1),
-                null
-        );
-
-        assertThat(properties.accessTokenMaxAge()).isEqualTo(Duration.ofMinutes(15));
-        assertThat(properties.refreshTokenMaxAge()).isEqualTo(Duration.ofDays(30));
+    void constructorRejectsNonPositiveRefreshMaxAge() {
+        assertThatThrownBy(() ->
+                new AuthCookieProperties(
+                        false,
+                        "Lax",
+                        Duration.ofMinutes(15),
+                        Duration.ZERO,
+                        null
+                )
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(
+                        "refresh-token-max-age должен быть положительным"
+                );
     }
 
     @Test
-    void constructor_shouldNormalizeCookieDomain() {
-        AuthCookieProperties properties = new AuthCookieProperties(
-                true,
-                "Lax",
-                Duration.ofMinutes(15),
-                Duration.ofDays(30),
-                ".Example.COM"
-        );
+    void constructorRejectsAccessMaxAgeAboveMaximum() {
+        assertThatThrownBy(() ->
+                new AuthCookieProperties(
+                        false,
+                        "Lax",
+                        Duration.ofMinutes(61),
+                        Duration.ofDays(30),
+                        null
+                )
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(
+                        "access-token-max-age не должен превышать 60 минут"
+                );
+    }
 
-        assertThat(properties.domain()).isEqualTo("example.com");
+    @Test
+    void constructorRejectsRefreshMaxAgeLessThanAccessMaxAge() {
+        assertThatThrownBy(() ->
+                new AuthCookieProperties(
+                        false,
+                        "Lax",
+                        Duration.ofMinutes(15),
+                        Duration.ofMinutes(10),
+                        null
+                )
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(
+                        "refresh-token-max-age"
+                );
+    }
+
+    @Test
+    void constructorNormalizesCookieDomain() {
+        AuthCookieProperties properties =
+                new AuthCookieProperties(
+                        true,
+                        "Lax",
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        ".Example.COM"
+                );
+
+        assertThat(properties.domain())
+                .isEqualTo("example.com");
         assertThat(properties.hasDomain()).isTrue();
     }
 
     @Test
-    void constructor_shouldRejectCookieDomainWithScheme() {
-        assertThatThrownBy(() -> new AuthCookieProperties(
-                true,
-                "Lax",
-                Duration.ofMinutes(15),
-                Duration.ofDays(30),
-                "https://example.com"
-        ))
+    void constructorRejectsCookieDomainWithScheme() {
+        assertThatThrownBy(() ->
+                new AuthCookieProperties(
+                        true,
+                        "Lax",
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        "https://example.com"
+                )
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("domain-only");
     }
 
     @Test
-    void constructor_shouldRejectCookieDomainWithPort() {
-        assertThatThrownBy(() -> new AuthCookieProperties(
-                true,
-                "Lax",
-                Duration.ofMinutes(15),
-                Duration.ofDays(30),
-                "example.com:8080"
-        ))
+    void constructorRejectsCookieDomainWithPort() {
+        assertThatThrownBy(() ->
+                new AuthCookieProperties(
+                        true,
+                        "Lax",
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        "example.com:8080"
+                )
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("domain-only");
     }
 
     @Test
-    void constructor_shouldRejectInvalidCookieDomain() {
-        assertThatThrownBy(() -> new AuthCookieProperties(
-                true,
-                "Lax",
-                Duration.ofMinutes(15),
-                Duration.ofDays(30),
-                "-example.com"
-        ))
+    void constructorRejectsInvalidCookieDomain() {
+        assertThatThrownBy(() ->
+                new AuthCookieProperties(
+                        true,
+                        "Lax",
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        "-example.com"
+                )
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cookies.domain");
     }

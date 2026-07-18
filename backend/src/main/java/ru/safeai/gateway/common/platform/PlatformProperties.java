@@ -16,8 +16,4 @@ public record PlatformProperties(
             organizationId = DEFAULT_PLATFORM_ORGANIZATION_ID;
         }
     }
-
-    public UUID effectiveOrganizationId() {
-        return organizationId;
-    }
 }

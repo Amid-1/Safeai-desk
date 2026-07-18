@@ -14,6 +14,9 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.service.UserSecurityStatus;
 import ru.safeai.gateway.user.service.UserStatusCacheService;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,11 +42,20 @@ class UserStatusFilterTest {
     void setUp() {
         userStatusCacheService = mock(UserStatusCacheService.class);
 
-        JsonSecurityErrorWriter errorWriter = new JsonSecurityErrorWriter(
-                new tools.jackson.databind.ObjectMapper()
+        Clock clock = Clock.fixed(
+                Instant.parse("2026-06-12T12:00:00Z"),
+                ZoneOffset.UTC
         );
 
-        filter = new UserStatusFilter(userStatusCacheService, errorWriter);
+        JsonSecurityErrorWriter errorWriter = new JsonSecurityErrorWriter(
+                new tools.jackson.databind.ObjectMapper(),
+                clock
+        );
+
+        filter = new UserStatusFilter(
+                userStatusCacheService,
+                errorWriter
+        );
 
         SecurityContextHolder.clearContext();
     }

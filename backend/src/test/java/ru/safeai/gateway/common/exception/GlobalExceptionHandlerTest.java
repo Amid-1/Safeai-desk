@@ -18,7 +18,10 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.server.ResponseStatusException;
 import ru.safeai.gateway.common.security.RequestIdFilter;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,7 +37,14 @@ class GlobalExceptionHandlerTest {
 
     @BeforeEach
     void setUp() {
-        handler = new GlobalExceptionHandler(new ApiErrorResponseFactory());
+        Clock clock = Clock.fixed(
+                Instant.parse("2026-06-12T12:00:00Z"),
+                ZoneOffset.UTC
+        );
+
+        handler = new GlobalExceptionHandler(
+                new ApiErrorResponseFactory(clock)
+        );
     }
 
     @Test
@@ -351,17 +361,22 @@ class GlobalExceptionHandlerTest {
 
         ResponseEntity<ApiErrorResponse> response =
                 handler.handleExpiredRefreshToken(
-                        new ExpiredRefreshTokenException("Refresh token истек"),
+                        new ExpiredRefreshTokenException(
+                                "Refresh token истек"
+                        ),
                         request
                 );
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
 
         ApiErrorResponse body = response.getBody();
 
         assertThat(body).isNotNull();
-        assertThat(body.error()).isEqualTo("EXPIRED_REFRESH_TOKEN");
-        assertThat(body.message()).isEqualTo("Refresh token истек");
+        assertThat(body.error())
+                .isEqualTo("EXPIRED_REFRESH_TOKEN");
+        assertThat(body.message())
+                .isEqualTo("Refresh token истёк");
     }
 
     @Test
@@ -370,17 +385,22 @@ class GlobalExceptionHandlerTest {
 
         ResponseEntity<ApiErrorResponse> response =
                 handler.handleInvalidRefreshToken(
-                        new InvalidRefreshTokenException("Refresh token не найден"),
+                        new InvalidRefreshTokenException(
+                                "Refresh token не найден"
+                        ),
                         request
                 );
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
 
         ApiErrorResponse body = response.getBody();
 
         assertThat(body).isNotNull();
-        assertThat(body.error()).isEqualTo("INVALID_REFRESH_TOKEN");
-        assertThat(body.message()).isEqualTo("Refresh token не найден");
+        assertThat(body.error())
+                .isEqualTo("INVALID_REFRESH_TOKEN");
+        assertThat(body.message())
+                .isEqualTo("Недействительный refresh token");
     }
 
     @Test
@@ -420,13 +440,16 @@ class GlobalExceptionHandlerTest {
                         request
                 );
 
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(response.getStatusCode())
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
 
         ApiErrorResponse body = response.getBody();
 
         assertThat(body).isNotNull();
-        assertThat(body.error()).isEqualTo("TOO_MANY_REQUESTS");
-        assertThat(body.message()).isEqualTo("Слишком много запросов");
+        assertThat(body.error())
+                .isEqualTo("RATE_LIMIT_EXCEEDED");
+        assertThat(body.message())
+                .isEqualTo("Слишком много запросов");
     }
 
     @Test

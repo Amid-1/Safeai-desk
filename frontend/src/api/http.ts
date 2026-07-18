@@ -1,4 +1,6 @@
+// ============================================================
 // frontend/src/api/http.ts
+// ============================================================
 
 export type ApiErrorBody = {
     timestamp?: string
@@ -11,11 +13,11 @@ export type ApiErrorBody = {
 }
 
 export class ApiError extends Error {
-    status: number
-    errorCode?: string
-    path?: string
-    requestId?: string
-    fieldErrors?: Record<string, string[]> | null
+    readonly status: number
+    readonly errorCode?: string
+    readonly path?: string
+    readonly requestId?: string
+    readonly fieldErrors?: Record<string, string[]> | null
 
     constructor(message: string, body: ApiErrorBody, status: number) {
         super(message)
@@ -29,8 +31,23 @@ export class ApiError extends Error {
     }
 }
 
-type ApiRequestOptions = RequestInit & {
+export type ApiRequestOptions = RequestInit & {
     skipRefresh?: boolean
+    timeoutMs?: number
+}
+
+export type UnauthorizedReason =
+    | 'access-token-refresh-rejected'
+    | 'request-unauthorized'
+
+type RefreshResult =
+    | { kind: 'success' }
+    | { kind: 'unauthorized'; error: ApiError }
+    | { kind: 'temporary-failure'; error: ApiError }
+
+type RequestSignalContext = {
+    signal?: AbortSignal
+    cleanup: () => void
 }
 
 const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -42,31 +59,50 @@ const REQUEST_ID_HEADER_NAME = 'X-Request-Id'
 const UNAUTHORIZED_EVENT_NAME = 'safeai:unauthorized'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+const DEFAULT_TIMEOUT_MS = 30_000
+const REFRESH_TIMEOUT_MS = 20_000
 
-let refreshPromise: Promise<boolean> | null = null
+let refreshPromise: Promise<RefreshResult> | null = null
 
-export function subscribeUnauthorized(handler: () => void): () => void {
-    window.addEventListener(UNAUTHORIZED_EVENT_NAME, handler)
+export function subscribeUnauthorized(
+    handler: (reason: UnauthorizedReason) => void
+): () => void {
+    const listener = (event: Event) => {
+        if (event instanceof CustomEvent) {
+            handler(event.detail?.reason ?? 'request-unauthorized')
+            return
+        }
+
+        handler('request-unauthorized')
+    }
+
+    window.addEventListener(UNAUTHORIZED_EVENT_NAME, listener)
 
     return () => {
-        window.removeEventListener(UNAUTHORIZED_EVENT_NAME, handler)
+        window.removeEventListener(UNAUTHORIZED_EVENT_NAME, listener)
     }
 }
 
-function notifyUnauthorized() {
-    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT_NAME))
+function notifyUnauthorized(reason: UnauthorizedReason) {
+    window.dispatchEvent(
+        new CustomEvent(UNAUTHORIZED_EVENT_NAME, {
+            detail: { reason },
+        })
+    )
 }
 
-export function getApiErrorMessage(err: unknown, fallback: string): string {
-    if (err instanceof ApiError) {
-        const fieldErrorText = formatFieldErrors(err.fieldErrors)
-        const requestIdPart = err.requestId ? ` Request ID: ${err.requestId}` : ''
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+    if (error instanceof ApiError) {
+        const fieldErrorText = formatFieldErrors(error.fieldErrors)
+        const requestIdPart = error.requestId
+            ? ` Request ID: ${error.requestId}`
+            : ''
 
-        return `${fieldErrorText || err.message || fallback}${requestIdPart}`
+        return `${fieldErrorText || error.message || fallback}${requestIdPart}`
     }
 
-    if (err instanceof Error) {
-        return err.message || fallback
+    if (error instanceof Error) {
+        return error.message || fallback
     }
 
     return fallback
@@ -90,11 +126,13 @@ function buildApiUrl(url: string): string {
     const isAbsoluteUrl = /^[a-z][a-z\d+\-.]*:/i.test(url)
 
     if (isAbsoluteUrl) {
-        throw new Error('Absolute API URLs are not allowed. Use relative /api/... paths')
+        throw new Error(
+            'Абсолютные API URL запрещены. Используйте относительный путь /api/...'
+        )
     }
 
     if (!url.startsWith('/')) {
-        throw new Error('API URL must start with /')
+        throw new Error('API URL должен начинаться с /')
     }
 
     return `${API_BASE_URL}${url}`
@@ -154,36 +192,193 @@ function createRequestId(): string {
     return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+function createRequestSignal(
+    externalSignal: AbortSignal | null | undefined,
+    timeoutMs: number | undefined
+): RequestSignalContext {
+    const effectiveTimeoutMs = normalizeTimeout(timeoutMs)
+
+    if (!externalSignal && effectiveTimeoutMs === null) {
+        return {
+            signal: undefined,
+            cleanup: () => undefined,
+        }
+    }
+
+    const controller = new AbortController()
+    let timeoutId: number | undefined
+
+    const abortFromExternal = () => {
+        controller.abort(externalSignal?.reason)
+    }
+
+    if (externalSignal) {
+        if (externalSignal.aborted) {
+            abortFromExternal()
+        } else {
+            externalSignal.addEventListener('abort', abortFromExternal, {
+                once: true,
+            })
+        }
+    }
+
+    if (effectiveTimeoutMs !== null) {
+        timeoutId = window.setTimeout(() => {
+            controller.abort(
+                new DOMException('Request timed out', 'TimeoutError')
+            )
+        }, effectiveTimeoutMs)
+    }
+
+    return {
+        signal: controller.signal,
+        cleanup: () => {
+            if (timeoutId !== undefined) {
+                window.clearTimeout(timeoutId)
+            }
+
+            externalSignal?.removeEventListener('abort', abortFromExternal)
+        },
+    }
+}
+
+function normalizeTimeout(timeoutMs: number | undefined): number | null {
+    if (timeoutMs === 0) {
+        return null
+    }
+
+    if (timeoutMs === undefined) {
+        return DEFAULT_TIMEOUT_MS
+    }
+
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+        throw new Error('timeoutMs должен быть неотрицательным числом')
+    }
+
+    return Math.max(1, Math.trunc(timeoutMs))
+}
+
+function toNetworkApiError(
+    error: unknown,
+    fallbackMessage: string,
+    requestId?: string
+): ApiError {
+    if (error instanceof ApiError) {
+        return error
+    }
+
+    if (error instanceof DOMException && error.name === 'AbortError') {
+        return new ApiError(
+            'Запрос был отменён',
+            {
+                status: 0,
+                error: 'REQUEST_ABORTED',
+                message: 'Запрос был отменён',
+                requestId,
+            },
+            0
+        )
+    }
+
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+        return new ApiError(
+            'Превышено время ожидания ответа сервера',
+            {
+                status: 0,
+                error: 'REQUEST_TIMEOUT',
+                message: 'Превышено время ожидания ответа сервера',
+                requestId,
+            },
+            0
+        )
+    }
+
+    return new ApiError(
+        fallbackMessage,
+        {
+            status: 0,
+            error: 'NETWORK_ERROR',
+            message: fallbackMessage,
+            requestId,
+        },
+        0
+    )
+}
+
+async function fetchWithApiError(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number
+): Promise<Response> {
+    const requestUrl = buildApiUrl(url)
+
+    const requestId =
+        new Headers(init.headers).get(REQUEST_ID_HEADER_NAME)
+        ?? undefined
+
+    const signalContext = createRequestSignal(
+        init.signal,
+        timeoutMs
+    )
+
+    try {
+        return await fetch(requestUrl, {
+            ...init,
+            signal: signalContext.signal,
+        })
+    } catch (error) {
+        throw toNetworkApiError(
+            error,
+            'Не удалось связаться с сервером',
+            requestId
+        )
+    } finally {
+        signalContext.cleanup()
+    }
+}
+
 export async function ensureCsrfToken(): Promise<void> {
     const headers = new Headers()
     headers.set(REQUEST_ID_HEADER_NAME, createRequestId())
 
-    const response = await fetch(buildApiUrl('/api/auth/csrf'), {
-        method: 'GET',
-        headers,
-        credentials: 'include',
-    })
+    const response = await fetchWithApiError(
+        '/api/auth/csrf',
+        {
+            method: 'GET',
+            headers,
+            credentials: 'include',
+        },
+        REFRESH_TIMEOUT_MS
+    )
 
     if (!response.ok) {
-        const body = await parseErrorBody(response)
-
-        throw new ApiError(
-            body.message || `CSRF request failed with status ${response.status}`,
-            body,
-            response.status
+        throw await createApiErrorFromResponse(
+            response,
+            'Не удалось получить CSRF-токен'
         )
     }
+
+    // Читаем тело, чтобы выявить некорректный 2xx-ответ.
+    await parseSuccessBody<unknown>(response)
 }
 
-async function doRefreshAccessToken(): Promise<boolean> {
+async function doRefreshAccessToken(
+    retryAfterCsrfRefresh = true
+): Promise<RefreshResult> {
     let csrfToken = getCookie(CSRF_COOKIE_NAME)
 
     if (!csrfToken) {
         try {
             await ensureCsrfToken()
             csrfToken = getCookie(CSRF_COOKIE_NAME)
-        } catch {
-            return false
+        } catch (error) {
+            return {
+                kind: 'temporary-failure',
+                error: toNetworkApiError(
+                    error,
+                    'Не удалось подготовить обновление сессии'
+                ),
+            }
         }
     }
 
@@ -194,16 +389,67 @@ async function doRefreshAccessToken(): Promise<boolean> {
         headers.set(CSRF_HEADER_NAME, csrfToken)
     }
 
-    const response = await fetch(buildApiUrl('/api/auth/refresh'), {
-        method: 'POST',
-        headers,
-        credentials: 'include',
-    })
+    let response: Response
 
-    return response.ok
+    try {
+        response = await fetchWithApiError(
+            '/api/auth/refresh',
+            {
+                method: 'POST',
+                headers,
+                credentials: 'include',
+            },
+            REFRESH_TIMEOUT_MS
+        )
+    } catch (error) {
+        return {
+            kind: 'temporary-failure',
+            error: toNetworkApiError(
+                error,
+                'Не удалось обновить сессию'
+            ),
+        }
+    }
+
+    if (response.ok) {
+        return { kind: 'success' }
+    }
+
+    if (response.status === 403 && retryAfterCsrfRefresh) {
+        try {
+            await ensureCsrfToken()
+        } catch (error) {
+            return {
+                kind: 'temporary-failure',
+                error: toNetworkApiError(
+                    error,
+                    'Не удалось обновить CSRF-токен'
+                ),
+            }
+        }
+
+        return doRefreshAccessToken(false)
+    }
+
+    const error = await createApiErrorFromResponse(
+        response,
+        'Не удалось обновить сессию'
+    )
+
+    if (response.status === 401) {
+        return {
+            kind: 'unauthorized',
+            error,
+        }
+    }
+
+    return {
+        kind: 'temporary-failure',
+        error,
+    }
 }
 
-async function refreshAccessToken(): Promise<boolean> {
+async function refreshAccessToken(): Promise<RefreshResult> {
     if (!refreshPromise) {
         refreshPromise = doRefreshAccessToken()
             .finally(() => {
@@ -215,20 +461,41 @@ async function refreshAccessToken(): Promise<boolean> {
 }
 
 async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
-    const responseRequestId = response.headers.get(REQUEST_ID_HEADER_NAME) ?? undefined
+    const responseRequestId =
+        response.headers.get(REQUEST_ID_HEADER_NAME) ?? undefined
 
     try {
-        const body = await response.json() as ApiErrorBody
+        const text = await response.text()
+
+        if (!text) {
+            return {
+                status: response.status,
+                error: 'HTTP_ERROR',
+                message: `Запрос завершился с кодом ${response.status}`,
+                requestId: responseRequestId,
+            }
+        }
+
+        const parsed = JSON.parse(text)
+
+        if (!isRecord(parsed)) {
+            throw new Error('Error response is not an object')
+        }
 
         return {
-            ...body,
-            requestId: body.requestId ?? responseRequestId,
+            timestamp: asOptionalString(parsed.timestamp),
+            status: asOptionalNumber(parsed.status) ?? response.status,
+            error: asOptionalString(parsed.error),
+            message: asOptionalString(parsed.message),
+            path: asOptionalString(parsed.path),
+            requestId: asOptionalString(parsed.requestId) ?? responseRequestId,
+            fieldErrors: parseFieldErrors(parsed.fieldErrors),
         }
     } catch {
         return {
             status: response.status,
-            error: 'HTTP_ERROR',
-            message: `Request failed with status ${response.status}`,
+            error: 'INVALID_ERROR_RESPONSE',
+            message: `Сервер вернул некорректный ответ с кодом ${response.status}`,
             requestId: responseRequestId,
         }
     }
@@ -245,7 +512,80 @@ async function parseSuccessBody<T>(response: Response): Promise<T> {
         return undefined as T
     }
 
-    return JSON.parse(text) as T
+    try {
+        return JSON.parse(text) as T
+    } catch {
+        throw new ApiError(
+            'Сервер вернул некорректный JSON-ответ',
+            {
+                status: response.status,
+                error: 'INVALID_RESPONSE',
+                message: 'Сервер вернул некорректный JSON-ответ',
+                requestId:
+                    response.headers.get(REQUEST_ID_HEADER_NAME) ?? undefined,
+            },
+            response.status
+        )
+    }
+}
+
+async function createApiErrorFromResponse(
+    response: Response,
+    fallbackMessage: string
+): Promise<ApiError> {
+    const body = await parseErrorBody(response)
+
+    return new ApiError(
+        body.message || fallbackMessage,
+        body,
+        response.status
+    )
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object'
+        && value !== null
+        && !Array.isArray(value)
+}
+
+function asOptionalString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined
+}
+
+function asOptionalNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value)
+        ? value
+        : undefined
+}
+
+function parseFieldErrors(
+    value: unknown
+): Record<string, string[]> | null | undefined {
+    if (value === null) {
+        return null
+    }
+
+    if (!isRecord(value)) {
+        return undefined
+    }
+
+    const result: Record<string, string[]> = {}
+
+    Object.entries(value).forEach(([field, messages]) => {
+        if (!Array.isArray(messages)) {
+            return
+        }
+
+        const normalizedMessages = messages.filter(
+            (message): message is string => typeof message === 'string'
+        )
+
+        if (normalizedMessages.length > 0) {
+            result[field] = normalizedMessages
+        }
+    })
+
+    return result
 }
 
 export async function apiRequest<T>(
@@ -254,6 +594,7 @@ export async function apiRequest<T>(
 ): Promise<T> {
     const {
         skipRefresh = false,
+        timeoutMs,
         ...fetchOptions
     } = options
 
@@ -280,53 +621,49 @@ export async function apiRequest<T>(
         }
     }
 
-    const response = await fetch(buildApiUrl(url), {
-        ...fetchOptions,
-        method,
-        headers,
-        credentials: 'include',
-    })
+    const response = await fetchWithApiError(
+        url,
+        {
+            ...fetchOptions,
+            method,
+            headers,
+            credentials: 'include',
+        },
+        timeoutMs ?? DEFAULT_TIMEOUT_MS
+    )
 
     if (
         response.status === 401
         && !skipRefresh
         && !isAuthEndpoint(url)
     ) {
-        const refreshed = await refreshAccessToken()
+        const refreshResult = await refreshAccessToken()
 
-        if (refreshed) {
+        if (refreshResult.kind === 'success') {
             return apiRequest<T>(url, {
                 ...options,
                 skipRefresh: true,
             })
         }
 
-        notifyUnauthorized()
+        if (refreshResult.kind === 'unauthorized') {
+            notifyUnauthorized('access-token-refresh-rejected')
+        }
 
-        throw new ApiError(
-            'Сессия истекла. Войдите снова.',
-            {
-                status: 401,
-                error: 'UNAUTHORIZED',
-                message: 'Сессия истекла. Войдите снова.',
-                requestId: response.headers.get(REQUEST_ID_HEADER_NAME) ?? undefined,
-            },
-            401
-        )
+        throw refreshResult.error
     }
 
     if (!response.ok) {
-        const body = await parseErrorBody(response)
+        const error = await createApiErrorFromResponse(
+            response,
+            `Запрос завершился с кодом ${response.status}`
+        )
 
         if (response.status === 401 && !isAuthEndpoint(url)) {
-            notifyUnauthorized()
+            notifyUnauthorized('request-unauthorized')
         }
 
-        throw new ApiError(
-            body.message || `Request failed with status ${response.status}`,
-            body,
-            response.status
-        )
+        throw error
     }
 
     return parseSuccessBody<T>(response)

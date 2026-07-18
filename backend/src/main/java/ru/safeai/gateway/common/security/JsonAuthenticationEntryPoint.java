@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -23,6 +24,12 @@ public class JsonAuthenticationEntryPoint implements AuthenticationEntryPoint {
             @NonNull HttpServletResponse response,
             @NonNull AuthenticationException authException
     ) throws IOException {
+        /*
+         * SecurityConfig поддерживает и Authorization: Bearer, и access-token cookie.
+         * Заголовок корректен для bearer clients и не мешает cookie-based browser flow.
+         */
+        response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+
         errorWriter.write(
                 request,
                 response,

@@ -9,25 +9,55 @@ public record AiMessageRateLimitProperties(
         Integer adminLimitPerHour,
         Integer organizationLimitPerHour
 ) {
+    private static final int MAX_LIMIT = 1_000_000;
+
+    public AiMessageRateLimitProperties {
+        enabled = enabled == null || enabled;
+
+        userLimitPerHour = requireLimit(
+                userLimitPerHour,
+                "safeai.rate-limit.ai-messages.user-limit-per-hour"
+        );
+
+        adminLimitPerHour = requireLimit(
+                adminLimitPerHour,
+                "safeai.rate-limit.ai-messages.admin-limit-per-hour"
+        );
+
+        organizationLimitPerHour = requireLimit(
+                organizationLimitPerHour,
+                "safeai.rate-limit.ai-messages.organization-limit-per-hour"
+        );
+    }
+
     public boolean isEnabled() {
-        return enabled == null || enabled;
+        return enabled;
     }
 
     public int effectiveUserLimitPerHour() {
-        return userLimitPerHour == null || userLimitPerHour <= 0
-                ? 20
-                : userLimitPerHour;
+        return userLimitPerHour;
     }
 
     public int effectiveAdminLimitPerHour() {
-        return adminLimitPerHour == null || adminLimitPerHour <= 0
-                ? 100
-                : adminLimitPerHour;
+        return adminLimitPerHour;
     }
 
     public int effectiveOrganizationLimitPerHour() {
-        return organizationLimitPerHour == null || organizationLimitPerHour <= 0
-                ? 1000
-                : organizationLimitPerHour;
+        return organizationLimitPerHour;
+    }
+
+    private static int requireLimit(
+            Integer value,
+            String propertyName
+    ) {
+        if (value == null || value < 1 || value > MAX_LIMIT) {
+            throw new IllegalStateException(
+                    propertyName
+                            + " должен быть в диапазоне 1–"
+                            + MAX_LIMIT
+            );
+        }
+
+        return value;
     }
 }

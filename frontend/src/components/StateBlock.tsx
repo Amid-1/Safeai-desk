@@ -1,4 +1,7 @@
-// frontend/src/components/StateBlock.tsx
+// ============================================================
+// frontend/src/components/admin/StateBlock.tsx
+// ============================================================
+
 import type { ReactNode } from 'react'
 
 type LoadingStateProps = {
@@ -11,17 +14,23 @@ type StateBlockProps = {
     action?: ReactNode
 }
 
-export function LoadingState({ message = 'Loading...' }: LoadingStateProps) {
+export function LoadingState({
+                                 message = 'Загрузка...',
+                             }: LoadingStateProps) {
     return (
-        <div className="card">
+        <div className="card" role="status" aria-live="polite">
             <p className="muted">{message}</p>
         </div>
     )
 }
 
-export function ErrorState({ title = 'Error', message, action }: StateBlockProps) {
+export function ErrorState({
+                               title = 'Ошибка',
+                               message,
+                               action,
+                           }: StateBlockProps) {
     return (
-        <div className="card">
+        <div className="card" role="alert">
             <h2>{title}</h2>
             <div className="error">{message}</div>
             {action}
@@ -29,7 +38,11 @@ export function ErrorState({ title = 'Error', message, action }: StateBlockProps
     )
 }
 
-export function EmptyState({ title = 'No data', message, action }: StateBlockProps) {
+export function EmptyState({
+                               title = 'Нет данных',
+                               message,
+                               action,
+                           }: StateBlockProps) {
     return (
         <div className="card">
             <h2>{title}</h2>
@@ -38,3 +51,4 @@ export function EmptyState({ title = 'No data', message, action }: StateBlockPro
         </div>
     )
 }
+

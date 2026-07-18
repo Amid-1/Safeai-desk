@@ -11,23 +11,61 @@ public record LoginRateLimitProperties(
         Integer ipLimit,
         Duration window
 ) {
+    private static final int MAX_LIMIT = 10_000;
+    private static final Duration MIN_WINDOW = Duration.ofSeconds(1);
+    private static final Duration MAX_WINDOW = Duration.ofHours(24);
+
+    public LoginRateLimitProperties {
+        enabled = enabled == null || enabled;
+
+        emailLimit = requireLimit(
+                emailLimit,
+                "safeai.rate-limit.login.email-limit"
+        );
+
+        ipLimit = requireLimit(
+                ipLimit,
+                "safeai.rate-limit.login.ip-limit"
+        );
+
+        if (window == null
+                || window.compareTo(MIN_WINDOW) < 0
+                || window.compareTo(MAX_WINDOW) > 0) {
+            throw new IllegalStateException(
+                    "safeai.rate-limit.login.window должен быть "
+                            + "в диапазоне 1s–24h"
+            );
+        }
+    }
+
     public boolean isEnabled() {
-        return enabled == null || enabled;
+        return enabled;
     }
 
     public int effectiveEmailLimit() {
-        return emailLimit == null || emailLimit <= 0 ? 10 : emailLimit;
+        return emailLimit;
     }
 
     public int effectiveIpLimit() {
-        return ipLimit == null || ipLimit <= 0 ? 30 : ipLimit;
+        return ipLimit;
     }
 
     public Duration effectiveWindow() {
-        if (window == null || window.isZero() || window.isNegative()) {
-            return Duration.ofMinutes(10);
+        return window;
+    }
+
+    private static int requireLimit(
+            Integer value,
+            String propertyName
+    ) {
+        if (value == null || value < 1 || value > MAX_LIMIT) {
+            throw new IllegalStateException(
+                    propertyName
+                            + " должен быть в диапазоне 1–"
+                            + MAX_LIMIT
+            );
         }
 
-        return window;
+        return value;
     }
 }

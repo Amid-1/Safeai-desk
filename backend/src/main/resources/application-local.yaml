@@ -1,5 +1,4 @@
 # "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local.yml"
-### `application-local.yml`
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/safeai}
@@ -13,7 +12,10 @@ spring:
 
 safeai:
   ai:
-    provider: ${SAFEAI_AI_PROVIDER:mock}
+    provider: mock
+
+    retry:
+      enabled: false
 
   auth:
     cookies:
@@ -30,3 +32,11 @@ safeai:
         - 127.0.0.1/32
         - ::1/128
 
+    user-status-cache:
+      enabled: true
+      ttl: 60s
+      key-prefix: safeai:local:user-status
+
+  audit:
+    retention:
+      enabled: false

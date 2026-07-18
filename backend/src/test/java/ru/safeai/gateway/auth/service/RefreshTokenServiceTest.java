@@ -13,11 +13,14 @@ import ru.safeai.gateway.common.exception.ExpiredRefreshTokenException;
 import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.security.ClientIpResolver;
+import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,6 +40,9 @@ class RefreshTokenServiceTest {
 
     private RefreshTokenService service;
 
+    private static final Instant NOW =
+            Instant.parse("2026-06-12T12:00:00Z");
+
     @BeforeEach
     void setUp() {
         AuthCookieProperties authCookieProperties = new AuthCookieProperties(
@@ -47,10 +53,13 @@ class RefreshTokenServiceTest {
                 null
         );
 
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+
         service = new RefreshTokenService(
                 refreshTokenRepository,
                 clientIpResolver,
-                authCookieProperties
+                authCookieProperties,
+                clock
         );
     }
 
@@ -81,7 +90,8 @@ class RefreshTokenServiceTest {
         assertThat(saved.getTokenHash()).isNotEqualTo(rawToken);
         assertThat(saved.getTokenHash()).hasSize(64);
         assertThat(saved.getTokenFamilyId()).isNotNull();
-        assertThat(saved.getExpiresAt()).isAfter(Instant.now().plus(Duration.ofDays(29)));
+        assertThat(saved.getExpiresAt())
+                .isEqualTo(NOW.plus(Duration.ofDays(30)));
         assertThat(saved.getCreatedByIp()).isEqualTo("127.0.0.1");
         assertThat(saved.getUserAgent()).isEqualTo("JUnit");
     }
@@ -96,7 +106,7 @@ class RefreshTokenServiceTest {
         oldToken.setId(UUID.randomUUID());
         oldToken.setUser(user);
         oldToken.setTokenFamilyId(tokenFamilyId);
-        oldToken.setExpiresAt(Instant.now().plusSeconds(3600));
+        oldToken.setExpiresAt(NOW.plusSeconds(3600));
         oldToken.setRevokedAt(null);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
@@ -111,7 +121,20 @@ class RefreshTokenServiceTest {
         RefreshTokenService.RefreshTokenRotationResult result =
                 service.rotate("old-raw-token", request);
 
-        assertThat(result.user()).isSameAs(user);
+        assertThat(result.accessTokenSubject().userId())
+                .isEqualTo(user.getId());
+
+        assertThat(result.accessTokenSubject().organizationId())
+                .isEqualTo(user.getOrganization().getId());
+
+        assertThat(result.accessTokenSubject().email())
+                .isEqualTo(user.getEmail());
+
+        assertThat(result.accessTokenSubject().tokenVersion())
+                .isEqualTo(user.getTokenVersion());
+
+        assertThat(result.accessTokenSubject().roles())
+                .containsExactly("ADMIN");
         assertThat(result.rawRefreshToken()).isNotBlank();
         assertThat(result.rawRefreshToken()).isNotEqualTo("old-raw-token");
 
@@ -156,7 +179,7 @@ class RefreshTokenServiceTest {
         oldToken.setId(UUID.randomUUID());
         oldToken.setUser(enabledUser());
         oldToken.setTokenFamilyId(UUID.randomUUID());
-        oldToken.setExpiresAt(Instant.now().minusSeconds(1));
+        oldToken.setExpiresAt(NOW.minusSeconds(1));
         oldToken.setRevokedAt(null);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
@@ -168,8 +191,8 @@ class RefreshTokenServiceTest {
                 .isInstanceOf(ExpiredRefreshTokenException.class)
                 .hasMessageContaining("Refresh token истек");
 
-        assertThat(oldToken.getLastUsedAt()).isNotNull();
-        assertThat(oldToken.getRevokedAt()).isNotNull();
+        assertThat(oldToken.getLastUsedAt()).isEqualTo(NOW);
+        assertThat(oldToken.getRevokedAt()).isEqualTo(NOW);
 
         verify(refreshTokenRepository, never()).save(any());
     }
@@ -191,7 +214,7 @@ class RefreshTokenServiceTest {
         oldToken.setUser(user);
         oldToken.setTokenFamilyId(tokenFamilyId);
         oldToken.setExpiresAt(Instant.now().plusSeconds(3600));
-        oldToken.setRevokedAt(Instant.now());
+        oldToken.setRevokedAt(NOW);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
 
@@ -233,6 +256,10 @@ class RefreshTokenServiceTest {
         organization.setName("Demo Company");
         organization.setEnabled(true);
 
+        RoleEntity role = new RoleEntity();
+        role.setId(UUID.randomUUID());
+        role.setName("ADMIN");
+
         UserEntity user = new UserEntity();
         user.setId(UUID.randomUUID());
         user.setOrganization(organization);
@@ -240,6 +267,7 @@ class RefreshTokenServiceTest {
         user.setPasswordHash("hash");
         user.setEnabled(true);
         user.setTokenVersion(0L);
+        user.getRoles().add(role);
 
         return user;
     }
@@ -252,7 +280,7 @@ class RefreshTokenServiceTest {
         token.setId(UUID.randomUUID());
         token.setUser(user);
         token.setTokenFamilyId(UUID.randomUUID());
-        token.setExpiresAt(Instant.now().plusSeconds(3600));
+        token.setExpiresAt(NOW.plusSeconds(3600));
         token.setRevokedAt(null);
 
         when(refreshTokenRepository.findByTokenHashWithUser(anyString()))
@@ -287,7 +315,7 @@ class RefreshTokenServiceTest {
     void revokeAndReturnUser_shouldUpdateLastUsedAtWhenTokenAlreadyRevoked() {
         UserEntity user = enabledUser();
 
-        Instant revokedAt = Instant.now().minusSeconds(60);
+        Instant revokedAt = NOW.minusSeconds(60);
 
         RefreshTokenEntity token = new RefreshTokenEntity();
         token.setId(UUID.randomUUID());

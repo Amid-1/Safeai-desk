@@ -1,5 +1,14 @@
+// ============================================================
 // frontend/src/App.tsx
-import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+// ============================================================
+
+import {
+    NavLink,
+    Navigate,
+    Route,
+    Routes,
+    useNavigate,
+} from 'react-router-dom'
 import type { ReactNode } from 'react'
 import LoginPage from './pages/LoginPage'
 import ChatPage from './pages/ChatPage'
@@ -8,18 +17,26 @@ import AdminOrganizationsPage from './pages/AdminOrganizationsPage'
 import AdminAuditPage from './pages/AdminAuditPage'
 import AdminUsagePage from './pages/AdminUsagePage'
 import type { AuthUser } from './api/authApi'
+import type { UserRole } from './api/types'
 import { AuthProvider, useAuth } from './auth/AuthContext'
+import { ErrorState, LoadingState } from './components/StateBlock'
 
 type ProtectedRouteProps = {
-    roles?: string[]
+    roles?: UserRole[]
     children: ReactNode | ((currentUser: AuthUser) => ReactNode)
 }
 
-function hasAnyRole(user: AuthUser | null, roles: string[]): boolean {
+function hasAnyRole(
+    user: AuthUser | null,
+    roles: UserRole[]
+): boolean {
     return user?.roles.some((role) => roles.includes(role)) ?? false
 }
 
-function hasRequiredRole(user: AuthUser, roles?: string[]): boolean {
+function hasRequiredRole(
+    user: AuthUser,
+    roles?: UserRole[]
+): boolean {
     if (!roles || roles.length === 0) {
         return true
     }
@@ -31,9 +48,9 @@ function isSuperAdmin(user: AuthUser | null): boolean {
     return user?.roles.includes('SUPER_ADMIN') ?? false
 }
 
-function getDisplayRole(user: AuthUser | null): string {
+function getDisplayRole(user: AuthUser | null): UserRole | null {
     if (!user) {
-        return ''
+        return null
     }
 
     if (user.roles.includes('SUPER_ADMIN')) {
@@ -47,15 +64,53 @@ function getDisplayRole(user: AuthUser | null): string {
     return 'USER'
 }
 
-function getNavLinkClass({ isActive }: { isActive: boolean }): string {
+function getNavLinkClass({
+                             isActive,
+                         }: {
+    isActive: boolean
+}): string {
     return isActive ? 'nav-link active' : 'nav-link'
 }
 
-function ProtectedRoute({ roles, children }: ProtectedRouteProps) {
-    const { currentUser, authLoading } = useAuth()
+function AuthUnavailableState() {
+    const { authError, reloadCurrentUser } = useAuth()
 
-    if (authLoading) {
-        return <p>Проверка доступа...</p>
+    return (
+        <div className="page narrow-page">
+            <ErrorState
+                title="Сервис временно недоступен"
+                message={
+                    authError
+                    ?? 'Не удалось проверить состояние сессии.'
+                }
+                action={
+                    <button
+                        type="button"
+                        onClick={() => void reloadCurrentUser()}
+                    >
+                        Повторить
+                    </button>
+                }
+            />
+        </div>
+    )
+}
+
+function ProtectedRoute({
+                            roles,
+                            children,
+                        }: ProtectedRouteProps) {
+    const {
+        currentUser,
+        authStatus,
+    } = useAuth()
+
+    if (authStatus === 'loading') {
+        return <LoadingState message="Проверка доступа..." />
+    }
+
+    if (authStatus === 'temporarily-unavailable') {
+        return <AuthUnavailableState />
     }
 
     if (!currentUser) {
@@ -74,20 +129,39 @@ function ProtectedRoute({ roles, children }: ProtectedRouteProps) {
 }
 
 function RootRedirect() {
-    const { currentUser, authLoading } = useAuth()
+    const {
+        currentUser,
+        authStatus,
+    } = useAuth()
 
-    if (authLoading) {
-        return <p>Проверка доступа...</p>
+    if (authStatus === 'loading') {
+        return <LoadingState message="Проверка доступа..." />
     }
 
-    return <Navigate to={currentUser ? '/chat' : '/login'} replace />
+    if (authStatus === 'temporarily-unavailable') {
+        return <AuthUnavailableState />
+    }
+
+    return (
+        <Navigate
+            to={currentUser ? '/chat' : '/login'}
+            replace
+        />
+    )
 }
 
 function LoginRoute() {
-    const { currentUser, authLoading } = useAuth()
+    const {
+        currentUser,
+        authStatus,
+    } = useAuth()
 
-    if (authLoading) {
-        return <p>Проверка доступа...</p>
+    if (authStatus === 'loading') {
+        return <LoadingState message="Проверка доступа..." />
+    }
+
+    if (authStatus === 'temporarily-unavailable') {
+        return <AuthUnavailableState />
     }
 
     if (currentUser) {
@@ -99,10 +173,16 @@ function LoginRoute() {
 
 function AppLayout() {
     const navigate = useNavigate()
-    const { currentUser, logoutUser } = useAuth()
+    const {
+        currentUser,
+        logoutUser,
+    } = useAuth()
 
     const isAuthenticated = currentUser !== null
-    const canAccessAdmin = hasAnyRole(currentUser, ['ADMIN', 'SUPER_ADMIN'])
+    const canAccessAdmin = hasAnyRole(
+        currentUser,
+        ['ADMIN', 'SUPER_ADMIN']
+    )
     const canAccessOrganizations = isSuperAdmin(currentUser)
     const displayRole = getDisplayRole(currentUser)
 
@@ -117,14 +197,20 @@ function AppLayout() {
                 <header className="topbar">
                     <div className="logo">SafeAI Desk</div>
 
-                    <nav>
-                        <NavLink to="/chat" className={getNavLinkClass}>
+                    <nav aria-label="Основная навигация">
+                        <NavLink
+                            to="/chat"
+                            className={getNavLinkClass}
+                        >
                             Чат
                         </NavLink>
 
                         {canAccessAdmin && (
                             <>
-                                <NavLink to="/admin/users" className={getNavLinkClass}>
+                                <NavLink
+                                    to="/admin/users"
+                                    className={getNavLinkClass}
+                                >
                                     Пользователи
                                 </NavLink>
 
@@ -137,11 +223,17 @@ function AppLayout() {
                                     </NavLink>
                                 )}
 
-                                <NavLink to="/admin/audit" className={getNavLinkClass}>
+                                <NavLink
+                                    to="/admin/audit"
+                                    className={getNavLinkClass}
+                                >
                                     Аудит
                                 </NavLink>
 
-                                <NavLink to="/admin/usage" className={getNavLinkClass}>
+                                <NavLink
+                                    to="/admin/usage"
+                                    className={getNavLinkClass}
+                                >
                                     Использование
                                 </NavLink>
                             </>
@@ -149,7 +241,7 @@ function AppLayout() {
                     </nav>
 
                     <div className="topbar-user">
-                        {currentUser && (
+                        {currentUser && displayRole && (
                             <div className="current-user">
                                 <span>{currentUser.email}</span>
 
@@ -167,7 +259,10 @@ function AppLayout() {
                             </div>
                         )}
 
-                        <button onClick={() => void handleLogout()}>
+                        <button
+                            type="button"
+                            onClick={() => void handleLogout()}
+                        >
                             Выйти
                         </button>
                     </div>
@@ -176,9 +271,15 @@ function AppLayout() {
 
             <main className="content">
                 <Routes>
-                    <Route path="/" element={<RootRedirect />} />
+                    <Route
+                        path="/"
+                        element={<RootRedirect />}
+                    />
 
-                    <Route path="/login" element={<LoginRoute />} />
+                    <Route
+                        path="/login"
+                        element={<LoginRoute />}
+                    />
 
                     <Route
                         path="/chat"
@@ -192,9 +293,13 @@ function AppLayout() {
                     <Route
                         path="/admin/users"
                         element={
-                            <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
-                                {(currentUser) => (
-                                    <AdminUsersPage currentUser={currentUser} />
+                            <ProtectedRoute
+                                roles={['ADMIN', 'SUPER_ADMIN']}
+                            >
+                                {(user) => (
+                                    <AdminUsersPage
+                                        currentUser={user}
+                                    />
                                 )}
                             </ProtectedRoute>
                         }
@@ -203,7 +308,9 @@ function AppLayout() {
                     <Route
                         path="/admin/organizations"
                         element={
-                            <ProtectedRoute roles={['SUPER_ADMIN']}>
+                            <ProtectedRoute
+                                roles={['SUPER_ADMIN']}
+                            >
                                 <AdminOrganizationsPage />
                             </ProtectedRoute>
                         }
@@ -212,7 +319,9 @@ function AppLayout() {
                     <Route
                         path="/admin/audit"
                         element={
-                            <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
+                            <ProtectedRoute
+                                roles={['ADMIN', 'SUPER_ADMIN']}
+                            >
                                 <AdminAuditPage />
                             </ProtectedRoute>
                         }
@@ -221,13 +330,18 @@ function AppLayout() {
                     <Route
                         path="/admin/usage"
                         element={
-                            <ProtectedRoute roles={['ADMIN', 'SUPER_ADMIN']}>
+                            <ProtectedRoute
+                                roles={['ADMIN', 'SUPER_ADMIN']}
+                            >
                                 <AdminUsagePage />
                             </ProtectedRoute>
                         }
                     />
 
-                    <Route path="*" element={<Navigate to="/" replace />} />
+                    <Route
+                        path="*"
+                        element={<Navigate to="/" replace />}
+                    />
                 </Routes>
             </main>
         </div>
@@ -243,3 +357,4 @@ function App() {
 }
 
 export default App
+

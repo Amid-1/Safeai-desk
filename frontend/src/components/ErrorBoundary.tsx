@@ -1,4 +1,7 @@
-// frontend/src/components/ErrorBoundary.tsx
+// ============================================================
+// frontend/src/components/admin/ErrorBoundary.tsx
+// ============================================================
+
 import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 
@@ -8,24 +11,28 @@ type ErrorBoundaryProps = {
 
 type ErrorBoundaryState = {
     hasError: boolean
-    message: string
 }
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends Component<
+    ErrorBoundaryProps,
+    ErrorBoundaryState
+> {
     state: ErrorBoundaryState = {
         hasError: false,
-        message: '',
     }
 
-    static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    static getDerivedStateFromError(): ErrorBoundaryState {
         return {
             hasError: true,
-            message: error.message,
         }
     }
 
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-        console.error('React error boundary caught error', error, errorInfo)
+        console.error(
+            'React error boundary caught error',
+            error,
+            errorInfo
+        )
     }
 
     render() {
@@ -33,17 +40,17 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
             return (
                 <div className="page">
                     <div className="card">
-                        <h1>Frontend error</h1>
+                        <h1>Произошла ошибка интерфейса</h1>
 
                         <div className="error">
-                            {this.state.message || 'Unexpected frontend error'}
+                            Не удалось отобразить страницу. Перезагрузите приложение.
                         </div>
 
                         <button
                             type="button"
                             onClick={() => window.location.reload()}
                         >
-                            Reload page
+                            Перезагрузить страницу
                         </button>
                     </div>
                 </div>
@@ -55,3 +62,4 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 export default ErrorBoundary
+

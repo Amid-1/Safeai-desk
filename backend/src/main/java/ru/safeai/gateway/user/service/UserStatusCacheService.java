@@ -7,6 +7,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -42,20 +44,23 @@ public class UserStatusCacheService {
 
             if (cached != null && !cached.isBlank()) {
                 log.warn(
-                        "Invalid user status cache value ignored: userId={}, key={}",
+                        "Invalid user status cache value ignored: "
+                                + "userId={}, key={}",
                         userId,
                         key
                 );
             }
         } catch (RuntimeException exception) {
             log.warn(
-                    "User status cache unavailable, fallback to PostgreSQL: userId={}",
+                    "User status cache unavailable, fallback to PostgreSQL: "
+                            + "userId={}",
                     userId,
                     exception
             );
         }
 
-        Optional<UserSecurityStatus> status = loadFromDatabase(userId);
+        Optional<UserSecurityStatus> status =
+                loadFromDatabase(userId);
 
         status.ifPresent(value -> cache(userId, value));
 
@@ -70,7 +75,38 @@ public class UserStatusCacheService {
         try {
             redisTemplate.delete(key(userId));
         } catch (RuntimeException exception) {
-            log.warn("Failed to evict user status cache: userId={}", userId, exception);
+            log.warn(
+                    "Failed to evict user status cache: userId={}",
+                    userId,
+                    exception
+            );
+        }
+    }
+
+    public void evictAll(Collection<UUID> userIds) {
+        if (userIds == null
+                || userIds.isEmpty()
+                || !properties.isEnabled()) {
+            return;
+        }
+
+        List<String> keys = userIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(this::key)
+                .toList();
+
+        if (keys.isEmpty()) {
+            return;
+        }
+
+        try {
+            redisTemplate.delete(keys);
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "Failed to bulk-evict user status cache: count={}",
+                    keys.size(),
+                    exception
+            );
         }
     }
 
@@ -92,7 +128,11 @@ public class UserStatusCacheService {
                     properties.effectiveTtl()
             );
         } catch (RuntimeException exception) {
-            log.warn("Failed to cache user status: userId={}", userId, exception);
+            log.warn(
+                    "Failed to cache user status: userId={}",
+                    userId,
+                    exception
+            );
         }
     }
 
@@ -115,10 +155,14 @@ public class UserStatusCacheService {
             return Optional.empty();
         }
 
-        Optional<Boolean> userEnabled = parseBooleanStrict(parts[1]);
-        Optional<Boolean> organizationEnabled = parseBooleanStrict(parts[2]);
+        Optional<Boolean> userEnabled =
+                parseBooleanStrict(parts[1]);
 
-        if (userEnabled.isEmpty() || organizationEnabled.isEmpty()) {
+        Optional<Boolean> organizationEnabled =
+                parseBooleanStrict(parts[2]);
+
+        if (userEnabled.isEmpty()
+                || organizationEnabled.isEmpty()) {
             return Optional.empty();
         }
 

@@ -11,8 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
+import ru.safeai.gateway.common.exception.RateLimitExceededException;
 import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.security.AccessTokenSubject;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -20,8 +22,8 @@ import ru.safeai.gateway.ratelimit.LoginRateLimitService;
 import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
-import ru.safeai.gateway.common.exception.RateLimitExceededException;
 
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -39,7 +41,6 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final AuthCookieService authCookieService;
 
-    @Transactional
     public CurrentUserResponse login(
             LoginRequest request,
             HttpServletRequest httpRequest,
@@ -51,7 +52,12 @@ public class AuthService {
 
         String email = Objects.requireNonNull(request.email(), "email не должен быть null")
                 .trim()
-                .toLowerCase();
+                .toLowerCase(Locale.ROOT);
+
+        String password = Objects.requireNonNull(
+                request.password(),
+                "password не должен быть null"
+        );
 
         try {
             loginRateLimitService.checkAllowed(
@@ -65,14 +71,13 @@ public class AuthService {
 
         try {
             var authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(
-                            email,
-                            request.password()
-                    )
+                    new UsernamePasswordAuthenticationToken(email, password)
             );
 
             if (!(authentication.getPrincipal() instanceof SafeAiUserPrincipal principal)) {
-                throw new IllegalStateException("Некорректный тип principal после авторизации");
+                throw new IllegalStateException(
+                        "Некорректный тип principal после авторизации"
+                );
             }
 
             UserEntity user = userRepository.findByIdWithRolesAndOrganization(principal.getId())
@@ -80,14 +85,15 @@ public class AuthService {
                             "Пользователь не найден: " + principal.getId()
                     ));
 
-            String accessToken = jwtService.generateAccessToken(user);
+            AccessTokenSubject accessTokenSubject = toAccessTokenSubject(user);
+            String accessToken = jwtService.generateToken(accessTokenSubject);
+
             String refreshToken = refreshTokenService.create(user, httpRequest);
 
             authCookieService.addAccessTokenCookie(response, accessToken);
             authCookieService.addRefreshTokenCookie(response, refreshToken);
 
             authEventService.loginSuccess(principal, httpRequest);
-
             loginRateLimitService.resetEmailLimit(email);
 
             return toCurrentUserResponse(user);
@@ -113,14 +119,18 @@ public class AuthService {
         }
 
         try {
-            var rotationResult = refreshTokenService.rotate(rawRefreshToken, request);
+            RefreshTokenService.RefreshTokenRotationResult rotationResult =
+                    refreshTokenService.rotate(rawRefreshToken, request);
 
-            UserEntity user = rotationResult.user();
-
-            String newAccessToken = jwtService.generateAccessToken(user);
+            String newAccessToken = jwtService.generateToken(
+                    rotationResult.accessTokenSubject()
+            );
 
             authCookieService.addAccessTokenCookie(response, newAccessToken);
-            authCookieService.addRefreshTokenCookie(response, rotationResult.rawRefreshToken());
+            authCookieService.addRefreshTokenCookie(
+                    response,
+                    rotationResult.rawRefreshToken()
+            );
 
         } catch (RefreshTokenReuseDetectedException exception) {
             authEventService.refreshReuseDetected(exception, request);
@@ -160,6 +170,21 @@ public class AuthService {
                 ));
 
         return toCurrentUserResponse(user);
+    }
+
+    private AccessTokenSubject toAccessTokenSubject(UserEntity user) {
+        Set<String> roles = user.getRoles()
+                .stream()
+                .map(RoleEntity::getName)
+                .collect(Collectors.toUnmodifiableSet());
+
+        return new AccessTokenSubject(
+                user.getId(),
+                user.getOrganization().getId(),
+                user.getEmail(),
+                user.getTokenVersion(),
+                roles
+        );
     }
 
     private CurrentUserResponse toCurrentUserResponse(UserEntity user) {

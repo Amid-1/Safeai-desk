@@ -5,16 +5,21 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.exception.AiProviderOverloadedException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
 import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
 import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
 import ru.safeai.gateway.common.exception.ApiErrorResponse;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
+
+import java.time.Duration;
 
 @Slf4j
 @RestControllerAdvice
@@ -25,108 +30,157 @@ public class AiExceptionHandler {
     private final ApiErrorResponseFactory errorResponseFactory;
 
     @ExceptionHandler(AiProviderTimeoutException.class)
-    public ResponseEntity<ApiErrorResponse> handleAiProviderTimeout(
+    public ResponseEntity<ApiErrorResponse> handleTimeout(
             AiProviderTimeoutException exception,
             HttpServletRequest request
     ) {
-        log.warn(
-                "AI provider timeout: provider={}, model={}, path={}",
-                exception.getProvider(),
-                exception.getModel(),
-                request.getRequestURI(),
-                exception
-        );
+        logProviderError(exception, request);
 
         return buildResponse(
                 HttpStatus.GATEWAY_TIMEOUT,
                 "AI_PROVIDER_TIMEOUT",
                 "AI-провайдер не ответил вовремя",
-                request
+                request,
+                null
         );
     }
 
     @ExceptionHandler(AiProviderRateLimitedException.class)
-    public ResponseEntity<ApiErrorResponse> handleAiProviderRateLimited(
+    public ResponseEntity<ApiErrorResponse> handleRateLimited(
             AiProviderRateLimitedException exception,
             HttpServletRequest request
     ) {
-        log.warn(
-                "AI provider rate limited: provider={}, model={}, statusCode={}, providerRequestId={}, path={}",
-                exception.getProvider(),
-                exception.getModel(),
-                exception.getStatusCode(),
-                exception.getProviderRequestId(),
-                request.getRequestURI(),
-                exception
-        );
+        logProviderError(exception, request);
 
         return buildResponse(
                 HttpStatus.TOO_MANY_REQUESTS,
                 "AI_PROVIDER_RATE_LIMITED",
                 "AI-провайдер временно ограничил количество запросов",
-                request
+                request,
+                exception.getRetryAfter()
+        );
+    }
+
+    @ExceptionHandler(AiProviderOverloadedException.class)
+    public ResponseEntity<ApiErrorResponse> handleOverloaded(
+            AiProviderOverloadedException exception,
+            HttpServletRequest request
+    ) {
+        logProviderError(exception, request);
+
+        return buildResponse(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "AI_PROVIDER_OVERLOADED",
+                "AI-провайдер временно перегружен",
+                request,
+                exception.getRetryAfter()
         );
     }
 
     @ExceptionHandler(AiProviderUnavailableException.class)
-    public ResponseEntity<ApiErrorResponse> handleAiProviderUnavailable(
+    public ResponseEntity<ApiErrorResponse> handleUnavailable(
             AiProviderUnavailableException exception,
             HttpServletRequest request
     ) {
-        log.warn(
-                "AI provider unavailable: provider={}, model={}, path={}",
-                exception.getProvider(),
-                exception.getModel(),
-                request.getRequestURI(),
-                exception
-        );
+        logProviderError(exception, request);
 
         return buildResponse(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "AI_PROVIDER_UNAVAILABLE",
                 "AI-провайдер временно недоступен",
-                request
+                request,
+                null
         );
     }
 
     @ExceptionHandler(AiProviderException.class)
-    public ResponseEntity<ApiErrorResponse> handleAiProviderException(
+    public ResponseEntity<ApiErrorResponse> handleProvider(
             AiProviderException exception,
             HttpServletRequest request
     ) {
-        log.warn(
-                "AI provider error: provider={}, model={}, statusCode={}, providerRequestId={}, retryable={}, path={}",
-                exception.getProvider(),
-                exception.getModel(),
-                exception.getStatusCode(),
-                exception.getProviderRequestId(),
-                exception.isRetryable(),
-                request.getRequestURI(),
-                exception
-        );
+        logProviderError(exception, request);
 
         return buildResponse(
                 HttpStatus.BAD_GATEWAY,
                 "AI_PROVIDER_ERROR",
                 "Ошибка при обращении к AI-провайдеру",
-                request
+                request,
+                null
         );
+    }
+
+    private void logProviderError(
+            AiProviderException exception,
+            HttpServletRequest request
+    ) {
+        String message =
+                "AI provider error: provider={}, model={}, "
+                        + "errorType={}, statusCode={}, "
+                        + "providerRequestId={}, retryRecommended={}, "
+                        + "outcomeAmbiguous={}, path={}";
+
+        if (exception.getErrorType()
+                == AiProviderErrorType.AUTHENTICATION) {
+            log.error(
+                    message,
+                    exception.getProvider(),
+                    exception.getModel(),
+                    exception.getErrorType(),
+                    exception.getStatusCode(),
+                    exception.getProviderRequestId(),
+                    exception.isRetryRecommended(),
+                    exception.isOutcomeAmbiguous(),
+                    request.getRequestURI(),
+                    exception
+            );
+        } else {
+            log.warn(
+                    message,
+                    exception.getProvider(),
+                    exception.getModel(),
+                    exception.getErrorType(),
+                    exception.getStatusCode(),
+                    exception.getProviderRequestId(),
+                    exception.isRetryRecommended(),
+                    exception.isOutcomeAmbiguous(),
+                    request.getRequestURI(),
+                    exception
+            );
+        }
     }
 
     private ResponseEntity<ApiErrorResponse> buildResponse(
             HttpStatus status,
             String error,
             String message,
-            HttpServletRequest request
+            HttpServletRequest request,
+            Duration retryAfter
     ) {
-        return ResponseEntity
-                .status(status)
-                .body(errorResponseFactory.create(
+        ResponseEntity.BodyBuilder builder =
+                ResponseEntity.status(status);
+
+        if (retryAfter != null) {
+            long seconds = Math.max(
+                    1L,
+                    (long) Math.ceil(
+                            retryAfter.toMillis() / 1000.0
+                    )
+            );
+
+            builder.header(
+                    HttpHeaders.RETRY_AFTER,
+                    Long.toString(seconds)
+            );
+        }
+
+        return builder.body(
+                errorResponseFactory.create(
                         status,
                         error,
                         message,
                         request,
                         null
-                ));
+                )
+        );
     }
 }

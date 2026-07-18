@@ -12,7 +12,9 @@ import java.util.List;
 @Component
 public class ChatMapper {
 
-    public ChatResponse toChatResponse(ChatSessionEntity entity) {
+    public ChatResponse toChatResponse(
+            ChatSessionEntity entity
+    ) {
         return new ChatResponse(
                 entity.getId(),
                 entity.getTitle(),
@@ -21,7 +23,9 @@ public class ChatMapper {
         );
     }
 
-    public MessageResponse toMessageResponse(ChatMessageEntity entity) {
+    public MessageResponse toMessageResponse(
+            ChatMessageEntity entity
+    ) {
         return new MessageResponse(
                 entity.getId(),
                 entity.getRole().name(),
@@ -29,21 +33,26 @@ public class ChatMapper {
                 entity.getModel(),
                 entity.getInputTokens(),
                 entity.getOutputTokens(),
+                entity.getUsageStatus().name(),
                 entity.getCostUsd(),
+                entity.getPricingStatus().name(),
+                entity.getCurrency(),
+                entity.getPricingVersion(),
+                entity.getPricingCalculatedAt(),
                 entity.getCreatedAt(),
                 entity.getStatus().name()
         );
     }
 
     public ChatDetailsResponse toChatDetailsResponse(
-            ChatSessionEntity session,
+            ChatSessionEntity entity,
             List<MessageResponse> messages
     ) {
         return new ChatDetailsResponse(
-                session.getId(),
-                session.getTitle(),
-                session.getCreatedAt(),
-                session.getUpdatedAt(),
+                entity.getId(),
+                entity.getTitle(),
+                entity.getCreatedAt(),
+                entity.getUpdatedAt(),
                 messages
         );
     }

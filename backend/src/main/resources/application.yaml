@@ -85,27 +85,34 @@ safeai:
     history-message-limit: ${SAFEAI_CHAT_HISTORY_MESSAGE_LIMIT:30}
 
   ai:
-    provider: ${SAFEAI_AI_PROVIDER}
+    provider: ${SAFEAI_AI_PROVIDER:mock}
 
     retry:
       enabled: ${SAFEAI_AI_RETRY_ENABLED:true}
       max-attempts: ${SAFEAI_AI_RETRY_MAX_ATTEMPTS:2}
       initial-backoff: ${SAFEAI_AI_RETRY_INITIAL_BACKOFF:250ms}
       max-backoff: ${SAFEAI_AI_RETRY_MAX_BACKOFF:2s}
+      max-retry-after: ${SAFEAI_AI_RETRY_MAX_RETRY_AFTER:10s}
 
     pricing:
       models:
         - model: mock-safeai
           input-usd-per-1m-tokens: 0
           output-usd-per-1m-tokens: 0
+          currency: USD
+          version: mock-2026-01
 
         - model: gpt-4.1
           input-usd-per-1m-tokens: 2.00
           output-usd-per-1m-tokens: 8.00
+          currency: USD
+          version: openai-2026-07
 
         - model: claude-opus-4-8
           input-usd-per-1m-tokens: 15.00
           output-usd-per-1m-tokens: 75.00
+          currency: USD
+          version: anthropic-2026-07
 
     openai:
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
@@ -164,6 +171,13 @@ safeai:
 
   platform:
     organization-id: 00000000-0000-0000-0000-000000000001
+
+  audit:
+    retention:
+      enabled: ${SAFEAI_AUDIT_RETENTION_ENABLED:true}
+      period: ${SAFEAI_AUDIT_RETENTION_PERIOD:1095d}
+      batch-size: ${SAFEAI_AUDIT_RETENTION_BATCH_SIZE:10000}
+      max-batches-per-run: ${SAFEAI_AUDIT_RETENTION_MAX_BATCHES_PER_RUN:10}
 
 # Demo pricing only.
 # Replace local static pricing with versioned pricing before production billing.

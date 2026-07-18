@@ -13,6 +13,8 @@ import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.util.Locale;
+
 @Service
 @RequiredArgsConstructor
 public class CustomUserDetailsService implements UserDetailsService {
@@ -24,18 +26,15 @@ public class CustomUserDetailsService implements UserDetailsService {
     public @NonNull UserDetails loadUserByUsername(
             @NonNull String email
     ) throws UsernameNotFoundException {
-        String normalizedEmail = email.trim().toLowerCase();
+        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
 
         UserEntity user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new UsernameNotFoundException(
-                        "Пользователь не найден: " + normalizedEmail
+                        "Пользователь не найден"
                 ));
 
         var authorities = RoleAuthorityMapper.toAuthorities(
-                user.getRoles()
-                        .stream()
-                        .map(RoleEntity::getName)
-                        .toList()
+                user.getRoles().stream().map(RoleEntity::getName).toList()
         );
 
         return new SafeAiUserPrincipal(

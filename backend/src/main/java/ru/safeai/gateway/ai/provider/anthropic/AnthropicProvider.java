@@ -1,6 +1,5 @@
 package ru.safeai.gateway.ai.provider.anthropic;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
@@ -10,20 +9,29 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.dto.AiMessageRole;
+import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.exception.AiProviderOverloadedException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
-import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
-import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
-import ru.safeai.gateway.ai.pricing.ModelPricingService;
+import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
 import ru.safeai.gateway.ai.provider.AiProviderSupport;
 import ru.safeai.gateway.ai.provider.AiRestClientFactory;
+import ru.safeai.gateway.ai.provider.AiResponseMetadataService;
+import tools.jackson.databind.JsonNode;
 
-import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+
+import static ru.safeai.gateway.ai.provider.AiJsonNodeSupport.textOrNull;
+import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.fromResourceAccess;
+import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.parsingFailure;
+import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.unknownFailure;
 
 @Slf4j
 @Service
@@ -34,22 +42,24 @@ import java.util.Set;
 public class AnthropicProvider implements AiProvider {
 
     private static final String PROVIDER_NAME = "anthropic";
+    private static final String PROVIDER_DISPLAY_NAME = "Anthropic";
 
     private final AnthropicProperties properties;
     private final RestClient client;
-    private final ModelPricingService pricingService;
     private final AiProviderRetryExecutor retryExecutor;
+    private final Clock clock;
+    private final AiResponseMetadataService responseMetadataService;
 
     public AnthropicProvider(
             AnthropicProperties properties,
-            ModelPricingService pricingService,
-            AiProviderRetryExecutor retryExecutor
+            AiResponseMetadataService responseMetadataService,
+            AiProviderRetryExecutor retryExecutor,
+            Clock clock
     ) {
-        properties.validate();
-
         this.properties = properties;
-        this.pricingService = pricingService;
+        this.responseMetadataService = responseMetadataService;
         this.retryExecutor = retryExecutor;
+        this.clock = clock;
         this.client = AiRestClientFactory.create(
                 properties.baseUrl(),
                 properties.connectTimeout(),
@@ -67,6 +77,57 @@ public class AnthropicProvider implements AiProvider {
     }
 
     private AiChatResponse doSendMessage(AiChatRequest request) {
+        Map<String, Object> payload = createPayload(request);
+        long startedAt = System.nanoTime();
+
+        try {
+            JsonNode response = client.post()
+                    .uri("/messages")
+                    .header("x-api-key", properties.apiKey())
+                    .header(
+                            "anthropic-version",
+                            properties.version()
+                    )
+                    .header(
+                            HttpHeaders.CONTENT_TYPE,
+                            "application/json"
+                    )
+                    .header(
+                            "X-Client-Request-Id",
+                            request.providerOperationId().toString()
+                    )
+                    .body(payload)
+                    .retrieve()
+                    .body(JsonNode.class);
+
+            return createResponse(
+                    response,
+                    startedAt
+            );
+        } catch (ResourceAccessException exception) {
+            throw fromResourceAccess(
+                    PROVIDER_NAME,
+                    PROVIDER_DISPLAY_NAME,
+                    properties.model(),
+                    exception
+            );
+        } catch (RestClientResponseException exception) {
+            throw mapHttpException(exception);
+        } catch (AiProviderException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw unknownFailure(
+                    PROVIDER_NAME,
+                    PROVIDER_DISPLAY_NAME,
+                    properties.model(),
+                    exception
+            );
+        }
+    }
+
+    private Map<String, Object> createPayload(
+            AiChatRequest request
+    ) {
         Map<String, Object> payload = new LinkedHashMap<>();
 
         payload.put("model", properties.model());
@@ -76,111 +137,79 @@ public class AnthropicProvider implements AiProvider {
                 AiProviderSupport.buildMessages(
                         request,
                         this::normalizeRole,
-                        Set.of("SYSTEM")
+                        Set.of(
+                                AiMessageRole.SYSTEM,
+                                AiMessageRole.DEVELOPER
+                        )
                 )
         );
 
-        String systemPrompt = AiProviderSupport.extractSystemPrompt(request);
+        String systemPrompt =
+                AiProviderSupport.extractSystemPrompt(request);
 
         if (!systemPrompt.isBlank()) {
             payload.put("system", systemPrompt);
         }
 
-        log.info(
-                "Sending request to Anthropic: userId={}, organizationId={}, chatId={}, model={}, messageLength={}",
-                request.userId(),
-                request.organizationId(),
-                request.chatId(),
-                properties.model(),
-                request.userMessage().length()
-        );
-
-        long startedAt = System.nanoTime();
-
-        try {
-            JsonNode response = client.post()
-                    .uri("/messages")
-                    .header("x-api-key", properties.apiKey())
-                    .header("anthropic-version", properties.version())
-                    .header(HttpHeaders.CONTENT_TYPE, "application/json")
-                    .body(payload)
-                    .retrieve()
-                    .body(JsonNode.class);
-
-            int inputTokens = AiProviderSupport.extractInputTokens(response);
-            int outputTokens = AiProviderSupport.extractOutputTokens(response);
-            long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
-
-            String content = AiProviderSupport.requireValidContent(
-                    PROVIDER_NAME,
-                    properties.model(),
-                    extractText(response),
-                    properties.maxResponseChars()
-            );
-
-            BigDecimal costUsd = pricingService.calculateCostUsd(
-                    properties.model(),
-                    inputTokens,
-                    outputTokens
-            );
-
-            log.info(
-                    "Anthropic response received: userId={}, organizationId={}, chatId={}, model={}, durationMs={}, inputTokens={}, outputTokens={}, costUsd={}",
-                    request.userId(),
-                    request.organizationId(),
-                    request.chatId(),
-                    properties.model(),
-                    durationMs,
-                    inputTokens,
-                    outputTokens,
-                    costUsd
-            );
-
-            return new AiChatResponse(
-                    content,
-                    properties.model(),
-                    inputTokens,
-                    outputTokens,
-                    costUsd
-            );
-        } catch (ResourceAccessException exception) {
-            if (AiProviderSupport.isTimeout(exception)) {
-                throw new AiProviderTimeoutException(
-                        PROVIDER_NAME,
-                        properties.model(),
-                        "Anthropic provider timeout",
-                        exception
-                );
-            }
-
-            throw new AiProviderUnavailableException(
-                    PROVIDER_NAME,
-                    properties.model(),
-                    "Anthropic provider unavailable",
-                    exception
-            );
-        } catch (RestClientResponseException exception) {
-            throw mapAnthropicHttpException(exception);
-        } catch (AiProviderException exception) {
-            throw exception;
-        } catch (RuntimeException exception) {
-            throw new AiProviderException(
-                    PROVIDER_NAME,
-                    properties.model(),
-                    null,
-                    null,
-                    false,
-                    "Anthropic provider request failed",
-                    exception
-            );
-        }
+        return payload;
     }
 
-    private AiProviderException mapAnthropicHttpException(
+    private AiChatResponse createResponse(
+            JsonNode response,
+            long startedAt
+    ) {
+        ParsedAnthropicResponse parsed =
+                parseResponse(response);
+
+        AiResponseMetadataService.AiResponseMetadata metadata =
+                responseMetadataService.extract(
+                        response,
+                        properties.model()
+                );
+
+        long durationMs =
+                (System.nanoTime() - startedAt) / 1_000_000;
+
+        log.debug(
+                "Anthropic response: model={}, outcome={}, stopReason={}, "
+                        + "durationMs={}, inputTokens={}, outputTokens={}, "
+                        + "pricingStatus={}",
+                properties.model(),
+                parsed.status(),
+                parsed.stopReason(),
+                durationMs,
+                metadata.inputTokens(),
+                metadata.outputTokens(),
+                metadata.pricing().status()
+        );
+
+        return AiChatResponse.fromProvider(
+                parsed.content(),
+                properties.model(),
+                parsed.messageId(),
+                parsed.status(),
+                parsed.stopReason(),
+                metadata.inputTokens(),
+                metadata.outputTokens(),
+                metadata.pricing()
+        );
+    }
+
+    private AiProviderException mapHttpException(
             RestClientResponseException exception
     ) {
         int status = exception.getStatusCode().value();
-        String requestId = AiProviderSupport.extractProviderRequestId(exception);
+
+        String requestId =
+                AiProviderSupport.extractProviderRequestId(
+                        exception
+                );
+
+        Duration retryAfter =
+                AiProviderSupport.extractRetryAfter(
+                        exception,
+                        clock
+                );
 
         if (status == 429) {
             return new AiProviderRateLimitedException(
@@ -188,64 +217,133 @@ public class AnthropicProvider implements AiProvider {
                     properties.model(),
                     status,
                     requestId,
-                    "Anthropic API rate limited: status=" + status,
+                    retryAfter,
+                    retryAfter != null,
+                    "Anthropic API rate limited",
                     exception
             );
         }
 
-        boolean retryable = status == 500
-                || status == 502
-                || status == 503
-                || status == 504;
+        if (status == 529) {
+            return new AiProviderOverloadedException(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    status,
+                    requestId,
+                    retryAfter,
+                    "Anthropic API overloaded",
+                    exception
+            );
+        }
+
+        AiProviderErrorType type = switch (status) {
+            case 401, 403 ->
+                    AiProviderErrorType.AUTHENTICATION;
+
+            case 400, 404, 413 ->
+                    AiProviderErrorType.INVALID_REQUEST;
+
+            default -> status >= 500
+                    ? AiProviderErrorType.SERVER_ERROR
+                    : AiProviderErrorType.UNKNOWN;
+        };
 
         return new AiProviderException(
                 PROVIDER_NAME,
                 properties.model(),
                 status,
                 requestId,
-                retryable,
+                type,
+                false,
+                status >= 500,
+                retryAfter,
                 "Anthropic API error: status=" + status,
                 exception
         );
     }
 
-    private String normalizeRole(String role) {
-        if (role == null || role.isBlank()) {
-            return "user";
-        }
-
-        String normalized = role.trim().toLowerCase();
-
-        return "assistant".equals(normalized) ? "assistant" : "user";
-    }
-
-    private String extractText(JsonNode response) {
+    private ParsedAnthropicResponse parseResponse(
+            JsonNode response
+    ) {
         if (response == null) {
-            return "";
+            throw parsingFailure(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    "Anthropic returned null response"
+            );
         }
 
-        JsonNode content = response.path("content");
+        String messageId =
+                textOrNull(response.get("id"));
 
-        if (!content.isArray()) {
-            return "";
+        String stopReason =
+                textOrNull(response.get("stop_reason"));
+
+        JsonNode content = response.get("content");
+
+        if (content == null || !content.isArray()) {
+            throw parsingFailure(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    "Anthropic returned invalid content"
+            );
         }
 
-        StringBuilder result = new StringBuilder();
+        StringBuilder text = new StringBuilder();
 
         for (JsonNode item : content) {
-            if ("text".equals(item.path("type").asText())) {
-                String text = item.path("text").asText("");
-
-                if (!text.isBlank()) {
-                    if (!result.isEmpty()) {
-                        result.append("\n\n");
-                    }
-
-                    result.append(text);
-                }
+            if (!"text".equals(
+                    textOrNull(item.get("type"))
+            )) {
+                continue;
             }
+
+            String value =
+                    textOrNull(item.get("text"));
+
+            if (value == null) {
+                continue;
+            }
+
+            if (!text.isEmpty()) {
+                text.append("\n\n");
+            }
+
+            text.append(value);
         }
 
-        return result.toString();
+        String validContent =
+                AiProviderSupport.requireValidContent(
+                        PROVIDER_NAME,
+                        properties.model(),
+                        text.toString(),
+                        properties.maxResponseChars()
+                );
+
+        AiResponseStatus status =
+                "max_tokens".equals(stopReason)
+                        ? AiResponseStatus.INCOMPLETE
+                        : AiResponseStatus.COMPLETED;
+
+        return new ParsedAnthropicResponse(
+                validContent,
+                messageId,
+                status,
+                stopReason
+        );
+    }
+
+    private String normalizeRole(AiMessageRole role) {
+        return role == AiMessageRole.ASSISTANT
+                ? "assistant"
+                : "user";
+    }
+
+    private record ParsedAnthropicResponse(
+            String content,
+            String messageId,
+            AiResponseStatus status,
+            String stopReason
+    ) {
     }
 }

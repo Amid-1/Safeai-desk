@@ -28,9 +28,35 @@ public class AuditEventEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
+    /**
+     * Текущая ссылка на пользователя.
+
+     * Может стать null при удалении пользователя.
+     * Не должна использоваться как исторический источник email/имени.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     private UserEntity user;
+
+    /**
+     * Неизменяемый UUID действующего пользователя на момент события.
+     
+     * Намеренно не имеет внешнего ключа.
+     */
+    @Column(name = "actor_user_id")
+    private UUID actorUserId;
+
+    /**
+     * Неизменяемый email пользователя на момент события.
+     */
+    @Column(name = "actor_email", length = 255)
+    private String actorEmail;
+
+    /**
+     * Неизменяемое отображаемое имя пользователя на момент события.
+     */
+    @Column(name = "actor_display_name", length = 255)
+    private String actorDisplayName;
 
     @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
@@ -39,7 +65,11 @@ public class AuditEventEntity {
     private String eventType;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "details", nullable = false, columnDefinition = "jsonb")
+    @Column(
+            name = "details",
+            nullable = false,
+            columnDefinition = "jsonb"
+    )
     private Map<String, Object> details = Map.of();
 
     @Column(name = "created_at", nullable = false)

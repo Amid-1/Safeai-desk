@@ -5,9 +5,6 @@ import lombok.Getter;
 import lombok.Setter;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
-
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
@@ -47,12 +44,20 @@ public class UserEntity {
     )
     private Set<RoleEntity> roles = new HashSet<>();
 
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(
+            name = "created_at",
+            nullable = false,
+            insertable = false,
+            updatable = false
+    )
     private Instant createdAt;
 
-    @UpdateTimestamp
-    @Column(name = "updated_at", nullable = false)
+    @Column(
+            name = "updated_at",
+            nullable = false,
+            insertable = false,
+            updatable = false
+    )
     private Instant updatedAt;
 
     @Column(name = "token_version", nullable = false)

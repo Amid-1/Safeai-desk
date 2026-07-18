@@ -1,403 +1,481 @@
-// frontend/src/pages/AdminAuditPage.tsx
-import { useEffect, useMemo, useState } from 'react'
-import { getAuditEvents } from '../api/adminApi'
-import type { AuditEvent, AuditEventFilter } from '../api/adminApi'
-import { getCurrentOrganization, getOrganizations } from '../api/organizationApi'
-import type { Organization } from '../api/organizationApi'
-import { getApiErrorMessage } from '../api/http'
-import { formatDateTime } from '../utils/format'
-import { getPageContent, getPageTotalPages } from '../utils/page'
-import { EmptyState, ErrorState, LoadingState } from '../components/StateBlock'
+import {
+    useCallback,
+    useMemo,
+    useState,
+} from 'react'
 
-const PAGE_SIZE = 50
+import type {
+    AuditEvent,
+    AuditEventFilter,
+} from '../api/adminApi'
 
-const EVENT_TYPES = [
-    'USER_LOGIN_SUCCESS',
-    'USER_LOGIN_FAILED',
-    'USER_LOGOUT',
+import {
+    useAuth,
+} from '../auth/AuthContext'
 
-    'CHAT_CREATED',
-    'CHAT_MESSAGE_SENT',
-    'AI_RESPONSE_RECEIVED',
-    'AI_RESPONSE_FAILED',
+import {
+    toUtcExclusiveEndOfDayIso,
+    toUtcStartOfDayIso,
+} from '../utils/date'
 
-    'USER_CREATED',
-    'USER_UPDATED',
-    'USER_ENABLED_CHANGED',
-    'USER_ROLES_CHANGED',
-    'USER_PASSWORD_RESET',
+import {
+    EmptyState,
+    ErrorState,
+    LoadingState,
+} from '../components/StateBlock'
 
-    'ORGANIZATION_CREATED',
-    'ORGANIZATION_NAME_CHANGED',
-    'ORGANIZATION_ENABLED_CHANGED',
+import AuditDetailsModal
+    from '../components/admin/audit/AuditDetailsModal'
 
-    'RATE_LIMIT_EXCEEDED',
-    'SECURITY_REFRESH_REUSE_DETECTED',
-]
+import AuditFilters
+    from '../components/admin/audit/AuditFilters'
 
-const EVENT_TYPE_LABELS: Record<string, string> = {
-    USER_LOGIN_SUCCESS: 'Успешный вход',
-    USER_LOGIN_FAILED: 'Ошибка входа',
-    USER_LOGOUT: 'Выход из системы',
+import AuditTable
+    from '../components/admin/audit/AuditTable'
 
-    CHAT_CREATED: 'Чат создан',
-    CHAT_MESSAGE_SENT: 'Сообщение отправлено',
-    AI_RESPONSE_RECEIVED: 'Ответ AI получен',
-    AI_RESPONSE_FAILED: 'Ошибка AI-ответа',
+import {
+    EMPTY_AUDIT_DRAFT_FILTER,
+} from '../components/admin/audit/types'
 
-    USER_CREATED: 'Пользователь создан',
-    USER_UPDATED: 'Пользователь изменен',
-    USER_ENABLED_CHANGED: 'Статус пользователя изменен',
-    USER_ROLES_CHANGED: 'Роли пользователя изменены',
-    USER_PASSWORD_RESET: 'Пароль пользователя сброшен',
+import type {
+    AuditDraftFilter,
+    DatePreset,
+} from '../components/admin/audit/types'
 
-    ORGANIZATION_CREATED: 'Организация создана',
-    ORGANIZATION_NAME_CHANGED: 'Название организации изменено',
-    ORGANIZATION_ENABLED_CHANGED: 'Статус организации изменен',
+import useAuditDirectories
+    from '../hooks/admin/useAuditDirectories'
 
-    RATE_LIMIT_EXCEEDED: 'Превышен лимит',
-    SECURITY_REFRESH_REUSE_DETECTED: 'Повторное использование refresh token',
-}
+import useAuditEvents
+    from '../hooks/admin/useAuditEvents'
 
 function AdminAuditPage() {
-    const [events, setEvents] = useState<AuditEvent[]>([])
-    const [organizations, setOrganizations] = useState<Organization[]>([])
+    const { currentUser } = useAuth()
 
-    const [error, setError] = useState('')
-    const [loading, setLoading] = useState(true)
+    const superAdmin =
+        currentUser?.roles.includes(
+            'SUPER_ADMIN',
+        ) ?? false
 
-    const [page, setPage] = useState(0)
-    const [totalPages, setTotalPages] = useState(1)
+    const [selectedEvent, setSelectedEvent] =
+        useState<AuditEvent | null>(null)
 
-    const [draftEventType, setDraftEventType] = useState('')
-    const [draftUserEmail, setDraftUserEmail] = useState('')
-    const [draftDateFrom, setDraftDateFrom] = useState('')
-    const [draftDateTo, setDraftDateTo] = useState('')
-    const [draftOrganizationId, setDraftOrganizationId] = useState('')
+    const [page, setPage] =
+        useState(0)
 
-    const [appliedFilter, setAppliedFilter] = useState<AuditEventFilter>({})
+    const [reloadToken, setReloadToken] =
+        useState(0)
 
-    const organizationNameById = useMemo(() => {
-        const map = new Map<string, string>()
+    const [filterError, setFilterError] =
+        useState('')
 
-        organizations.forEach((organization) => {
-            map.set(organization.id, organization.name)
-        })
+    const [draftFilter, setDraftFilter] =
+        useState<AuditDraftFilter>(
+            EMPTY_AUDIT_DRAFT_FILTER,
+        )
 
-        return map
-    }, [organizations])
+    const [
+        appliedDraftFilter,
+        setAppliedDraftFilter,
+    ] = useState<AuditDraftFilter>(
+        EMPTY_AUDIT_DRAFT_FILTER,
+    )
 
-    useEffect(() => {
-        async function loadOrganizationsForLabels() {
-            try {
-                const data = await getOrganizations(0, 500)
-                setOrganizations(getPageContent(data))
-                return
-            } catch {
-                // ADMIN не обязан иметь доступ к списку всех организаций.
-                // Для него пробуем получить только текущую организацию.
-            }
+    const [appliedFilter, setAppliedFilter] =
+        useState<AuditEventFilter>({})
 
-            try {
-                const currentOrganization = await getCurrentOrganization()
-                setOrganizations([currentOrganization])
-            } catch {
-                setOrganizations([])
-            }
+    const {
+        organizations,
+        users,
+        loading: directoriesLoading,
+        error: directoriesError,
+    } = useAuditDirectories(superAdmin)
+
+    const handlePageOutOfRange =
+        useCallback((correctedPage: number) => {
+            setPage(correctedPage)
+        }, [])
+
+    const {
+        events,
+        totalPages,
+        loading,
+        error: loadError,
+    } = useAuditEvents({
+        page,
+        filter: appliedFilter,
+        reloadToken,
+        onPageOutOfRange:
+        handlePageOutOfRange,
+    })
+
+    const closeDetailsModal =
+        useCallback(() => {
+            setSelectedEvent(null)
+        }, [])
+
+    const filtersDirty = useMemo(() => {
+        return (
+            draftFilter.eventType !==
+            appliedDraftFilter.eventType ||
+            draftFilter.userId !==
+            appliedDraftFilter.userId ||
+            draftFilter.dateFrom !==
+            appliedDraftFilter.dateFrom ||
+            draftFilter.dateTo !==
+            appliedDraftFilter.dateTo ||
+            draftFilter.organizationId !==
+            appliedDraftFilter.organizationId
+        )
+    }, [
+        draftFilter,
+        appliedDraftFilter,
+    ])
+
+    const organizationNameById =
+        useMemo(() => {
+            return new Map(
+                organizations.map(
+                    (organization) => [
+                        organization.id,
+                        organization.name,
+                    ],
+                ),
+            )
+        }, [organizations])
+
+    const visibleUsers = useMemo(() => {
+        const effectiveOrganizationId =
+            superAdmin
+                ? draftFilter.organizationId
+                : currentUser?.organizationId ?? ''
+
+        return users
+            .filter((user) => {
+                if (!effectiveOrganizationId) {
+                    return true
+                }
+
+                return (
+                    user.organizationId ===
+                    effectiveOrganizationId
+                )
+            })
+            .sort((left, right) =>
+                left.email.localeCompare(
+                    right.email,
+                    'ru',
+                    {
+                        sensitivity: 'base',
+                    },
+                ),
+            )
+    }, [
+        users,
+        superAdmin,
+        draftFilter.organizationId,
+        currentUser?.organizationId,
+    ])
+
+    function applyFilters(): void {
+        setFilterError('')
+
+        if (
+            draftFilter.dateFrom &&
+            draftFilter.dateTo &&
+            draftFilter.dateFrom >
+            draftFilter.dateTo
+        ) {
+            setFilterError(
+                'Дата начала периода не может быть позже даты окончания.',
+            )
+            return
         }
 
-        void loadOrganizationsForLabels()
-    }, [])
-
-    useEffect(() => {
-        async function loadAuditEvents() {
-            setLoading(true)
-            setError('')
-
-            try {
-                const data = await getAuditEvents(page, PAGE_SIZE, appliedFilter)
-
-                setEvents(getPageContent(data))
-                setTotalPages(getPageTotalPages(data))
-            } catch (err) {
-                setError(getApiErrorMessage(err, 'Не удалось загрузить аудит.'))
-            } finally {
-                setLoading(false)
-            }
+        if (
+            draftFilter.userId &&
+            !visibleUsers.some(
+                (user) =>
+                    user.id ===
+                    draftFilter.userId,
+            )
+        ) {
+            setFilterError(
+                'Выбранный пользователь не относится к выбранной организации.',
+            )
+            return
         }
 
-        void loadAuditEvents()
-    }, [page, appliedFilter])
+        try {
+            const nextFilter:
+                AuditEventFilter = {
+                eventType:
+                    draftFilter.eventType ||
+                    undefined,
 
-    function applyFilters() {
-        setPage(0)
+                userId:
+                    draftFilter.userId ||
+                    undefined,
 
-        setAppliedFilter({
-            eventType: draftEventType || undefined,
-            userEmail: draftUserEmail.trim() || undefined,
-            dateFrom: draftDateFrom ? toUtcStartOfDayIso(draftDateFrom) : undefined,
-            dateTo: draftDateTo ? toUtcExclusiveEndOfDayIso(draftDateTo) : undefined,
-            organizationId: draftOrganizationId.trim() || undefined,
-        })
+                dateFrom:
+                    draftFilter.dateFrom
+                        ? toUtcStartOfDayIso(
+                            draftFilter.dateFrom,
+                        )
+                        : undefined,
+
+                dateTo:
+                    draftFilter.dateTo
+                        ? toUtcExclusiveEndOfDayIso(
+                            draftFilter.dateTo,
+                        )
+                        : undefined,
+
+                organizationId:
+                    superAdmin
+                        ? draftFilter
+                            .organizationId ||
+                        undefined
+                        : undefined,
+            }
+
+            setPage(0)
+            setAppliedDraftFilter({
+                ...draftFilter,
+            })
+            setAppliedFilter(nextFilter)
+        } catch (error) {
+            setFilterError(
+                error instanceof Error
+                    ? error.message
+                    : 'Некорректный диапазон дат.',
+            )
+        }
     }
 
-    function resetFilters() {
-        setPage(0)
-
-        setDraftEventType('')
-        setDraftUserEmail('')
-        setDraftDateFrom('')
-        setDraftDateTo('')
-        setDraftOrganizationId('')
-
+    function resetFilters(): void {
+        setDraftFilter(
+            EMPTY_AUDIT_DRAFT_FILTER,
+        )
+        setAppliedDraftFilter(
+            EMPTY_AUDIT_DRAFT_FILTER,
+        )
         setAppliedFilter({})
+        setFilterError('')
+        setPage(0)
+    }
+
+    function changeOrganization(
+        organizationId: string,
+    ): void {
+        setDraftFilter((current) => ({
+            ...current,
+            organizationId,
+            userId: '',
+        }))
+    }
+
+    function applyDatePreset(
+        preset: DatePreset,
+    ): void {
+        setFilterError('')
+
+        if (preset === 'all') {
+            setDraftFilter((current) => ({
+                ...current,
+                dateFrom: '',
+                dateTo: '',
+            }))
+            return
+        }
+
+        const today =
+            startOfLocalDay(new Date())
+
+        if (preset === 'today') {
+            const value =
+                toDateInputValue(today)
+
+            setDraftFilter((current) => ({
+                ...current,
+                dateFrom: value,
+                dateTo: value,
+            }))
+            return
+        }
+
+        if (preset === 'yesterday') {
+            const yesterday =
+                addDays(today, -1)
+
+            const value =
+                toDateInputValue(yesterday)
+
+            setDraftFilter((current) => ({
+                ...current,
+                dateFrom: value,
+                dateTo: value,
+            }))
+            return
+        }
+
+        const daysBack =
+            preset === 'last7Days'
+                ? 6
+                : 29
+
+        setDraftFilter((current) => ({
+            ...current,
+            dateFrom:
+                toDateInputValue(
+                    addDays(
+                        today,
+                        -daysBack,
+                    ),
+                ),
+            dateTo:
+                toDateInputValue(today),
+        }))
     }
 
     return (
         <div className="page">
             <h1>Аудит событий</h1>
 
-            <div className="card form-card">
-                <div className="form">
-                    <label>
-                        Тип события
-                        <select
-                            value={draftEventType}
-                            onChange={(event) => setDraftEventType(event.target.value)}
-                        >
-                            <option value="">Все события</option>
+            <AuditFilters
+                draftFilter={draftFilter}
+                organizations={organizations}
+                visibleUsers={visibleUsers}
+                organizationNameById={
+                    organizationNameById
+                }
+                superAdmin={superAdmin}
+                loading={loading}
+                directoriesLoading={
+                    directoriesLoading
+                }
+                directoriesError={
+                    directoriesError
+                }
+                filterError={filterError}
+                filtersDirty={filtersDirty}
+                onFilterChange={
+                    setDraftFilter
+                }
+                onOrganizationChange={
+                    changeOrganization
+                }
+                onDatePreset={
+                    applyDatePreset
+                }
+                onApply={applyFilters}
+                onReset={resetFilters}
+            />
 
-                            {EVENT_TYPES.map((eventType) => (
-                                <option key={eventType} value={eventType}>
-                                    {getEventTypeLabel(eventType)}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
+            {loading && (
+                <LoadingState message="Загрузка событий аудита..." />
+            )}
 
-                    <label>
-                        Email пользователя
-                        <input
-                            value={draftUserEmail}
-                            onChange={(event) => setDraftUserEmail(event.target.value)}
-                            placeholder="admin@test.com"
-                        />
-                    </label>
-
-                    <label>
-                        Дата с
-                        <input
-                            type="date"
-                            value={draftDateFrom}
-                            onChange={(event) => setDraftDateFrom(event.target.value)}
-                        />
-                    </label>
-
-                    <label>
-                        Дата по
-                        <input
-                            type="date"
-                            value={draftDateTo}
-                            onChange={(event) => setDraftDateTo(event.target.value)}
-                        />
-                    </label>
-
-                    {organizations.length > 1 ? (
-                        <label>
-                            Организация
-                            <select
-                                value={draftOrganizationId}
-                                onChange={(event) => setDraftOrganizationId(event.target.value)}
-                            >
-                                <option value="">Все организации</option>
-
-                                {organizations.map((organization) => (
-                                    <option key={organization.id} value={organization.id}>
-                                        {organization.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                    ) : (
-                        <label>
-                            ID организации
-                            <input
-                                value={draftOrganizationId}
-                                onChange={(event) => setDraftOrganizationId(event.target.value)}
-                                placeholder="Только для SUPER_ADMIN"
-                            />
-                        </label>
-                    )}
-
-                    <div className="filter-actions">
-                        <button type="button" onClick={applyFilters}>
-                            Применить фильтры
-                        </button>
-
-                        <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={resetFilters}
-                        >
-                            Сбросить фильтры
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {loading && <LoadingState message="Загрузка событий аудита..." />}
-
-            {!loading && error && (
+            {!loading && loadError && (
                 <ErrorState
                     title="Ошибка загрузки"
-                    message={error}
+                    message={loadError}
                     action={
-                        <button type="button" onClick={() => setAppliedFilter({ ...appliedFilter })}>
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setReloadToken(
+                                    (value) =>
+                                        value + 1,
+                                )
+                            }
+                        >
                             Повторить
                         </button>
                     }
                 />
             )}
 
-            {!loading && !error && events.length === 0 && (
-                <EmptyState
-                    title="Нет данных"
-                    message="События аудита не найдены."
+            {!loading &&
+                !loadError &&
+                events.length === 0 && (
+                    <EmptyState message="События аудита не найдены." />
+                )}
+
+            {!loading &&
+                !loadError &&
+                events.length > 0 && (
+                    <AuditTable
+                        events={events}
+                        organizationNameById={
+                            organizationNameById
+                        }
+                        page={page}
+                        totalPages={totalPages}
+                        loading={loading}
+                        onOpenDetails={
+                            setSelectedEvent
+                        }
+                        onPageChange={setPage}
+                    />
+                )}
+
+            {selectedEvent && (
+                <AuditDetailsModal
+                    event={selectedEvent}
+                    organizationName={
+                        organizationNameById.get(
+                            selectedEvent
+                                .organizationId,
+                        ) ??
+                        selectedEvent
+                            .organizationId
+                    }
+                    onClose={
+                        closeDetailsModal
+                    }
                 />
-            )}
-
-            {!loading && !error && events.length > 0 && (
-                <div className="card table-card">
-                    <table className="admin-table audit-table">
-                        <thead>
-                        <tr>
-                            <th>Создано</th>
-                            <th>Организация</th>
-                            <th>Пользователь</th>
-                            <th>Тип события</th>
-                            <th>Детали</th>
-                        </tr>
-                        </thead>
-
-                        <tbody>
-                        {events.map((event) => (
-                            <tr key={event.id}>
-                                <td>{formatDateTime(event.createdAt)}</td>
-
-                                <td>
-                                    <OrganizationCell
-                                        organizationId={event.organizationId}
-                                        organizationNameById={organizationNameById}
-                                    />
-                                </td>
-
-                                <td>{event.userEmail ?? '—'}</td>
-
-                                <td>
-                                    <span className="event-type-badge">
-                                        {getEventTypeLabel(event.eventType)}
-                                    </span>
-                                </td>
-
-                                <td className="audit-details-cell">
-                                    <JsonDetails details={event.details} />
-                                </td>
-                            </tr>
-                        ))}
-                        </tbody>
-                    </table>
-
-                    <div className="pagination">
-                        <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={page === 0 || loading}
-                            onClick={() => setPage((prev) => Math.max(0, prev - 1))}
-                        >
-                            Назад
-                        </button>
-
-                        <span>
-                            Страница {page + 1} из {Math.max(totalPages, 1)}
-                        </span>
-
-                        <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={page + 1 >= totalPages || loading}
-                            onClick={() => setPage((prev) => prev + 1)}
-                        >
-                            Вперед
-                        </button>
-                    </div>
-                </div>
             )}
         </div>
     )
 }
 
-function OrganizationCell({
-                              organizationId,
-                              organizationNameById,
-                          }: {
-    organizationId: string | null
-    organizationNameById: Map<string, string>
-}) {
-    if (!organizationId) {
-        return <span className="muted">—</span>
-    }
-
-    const organizationName = organizationNameById.get(organizationId)
-
-    if (organizationName) {
-        return (
-            <span title={organizationId}>
-                {organizationName}
-            </span>
-        )
-    }
-
-    return (
-        <span className="muted" title={organizationId}>
-            Неизвестная организация
-        </span>
+function startOfLocalDay(
+    date: Date,
+): Date {
+    return new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
     )
 }
 
-function JsonDetails({
-                         details,
-                     }: {
-    details: Record<string, unknown> | null
-}) {
-    if (!details || Object.keys(details).length === 0) {
-        return <span className="muted">—</span>
-    }
+function addDays(
+    date: Date,
+    days: number,
+): Date {
+    const result = new Date(date)
 
-    return (
-        <details className="json-details">
-            <summary>Показать детали</summary>
-            <pre>{JSON.stringify(details, null, 2)}</pre>
-        </details>
+    result.setDate(
+        result.getDate() + days,
     )
+
+    return result
 }
 
-function getEventTypeLabel(eventType: string): string {
-    return EVENT_TYPE_LABELS[eventType] ?? eventType
-}
+function toDateInputValue(
+    date: Date,
+): string {
+    const year = date.getFullYear()
 
-function toUtcStartOfDayIso(dateValue: string): string {
-    return `${dateValue}T00:00:00Z`
-}
+    const month = String(
+        date.getMonth() + 1,
+    ).padStart(2, '0')
 
-function toUtcExclusiveEndOfDayIso(dateValue: string): string {
-    const [year, month, day] = dateValue
-        .split('-')
-        .map((part) => Number(part))
+    const day = String(
+        date.getDate(),
+    ).padStart(2, '0')
 
-    const date = new Date(Date.UTC(year, month - 1, day))
-    date.setUTCDate(date.getUTCDate() + 1)
-
-    return `${date.toISOString().slice(0, 10)}T00:00:00Z`
+    return `${year}-${month}-${day}`
 }
 
 export default AdminAuditPage

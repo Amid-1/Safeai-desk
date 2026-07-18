@@ -12,16 +12,18 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity, UUID> {
+public interface RefreshTokenRepository
+        extends JpaRepository<RefreshTokenEntity, UUID> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-        select token
-        from RefreshTokenEntity token
-        join fetch token.user user
-        join fetch user.organization
-        where token.tokenHash = :tokenHash
-        """)
+            select distinct token
+            from RefreshTokenEntity token
+            join fetch token.user user
+            join fetch user.organization
+            left join fetch user.roles
+            where token.tokenHash = :tokenHash
+            """)
     Optional<RefreshTokenEntity> findByTokenHashForUpdate(
             @Param("tokenHash") String tokenHash
     );
@@ -40,11 +42,11 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
-            update RefreshTokenEntity token
-            set token.revokedAt = :revokedAt
-            where token.tokenHash = :tokenHash
-              and token.revokedAt is null
-            """)
+        update RefreshTokenEntity token
+        set token.revokedAt = :revokedAt
+        where token.tokenHash = :tokenHash
+          and token.revokedAt is null
+        """)
     void revokeByTokenHash(
             @Param("tokenHash") String tokenHash,
             @Param("revokedAt") Instant revokedAt
@@ -52,23 +54,16 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
-            update RefreshTokenEntity token
-            set token.revokedAt = :revokedAt
-            where token.tokenFamilyId = :tokenFamilyId
-              and token.revokedAt is null
-            """)
+        update RefreshTokenEntity token
+        set token.revokedAt = :revokedAt
+        where token.tokenFamilyId = :tokenFamilyId
+          and token.revokedAt is null
+        """)
     void revokeAllActiveByTokenFamilyId(
             @Param("tokenFamilyId") UUID tokenFamilyId,
             @Param("revokedAt") Instant revokedAt
     );
 
-    /**
-     * Вызывается из UserService в той же transaction,
-     * где меняется passwordHash / enabled / roles / tokenVersion.
-
-     * Важно не включать clearAutomatically=true, чтобы bulk update
-     * не очистил persistence context текущей user-management операции.
-     */
     @Modifying(flushAutomatically = true)
     @Query("""
             update RefreshTokenEntity token
@@ -81,13 +76,6 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity
             @Param("revokedAt") Instant revokedAt
     );
 
-    /**
-     * Вызывается из OrganizationService в той же transaction,
-     * где organization.enabled меняется на false.
-
-     * При повторном включении организации refresh tokens не восстанавливаются.
-     * Пользователи должны войти заново.
-     */
     @Modifying(flushAutomatically = true)
     @Query("""
             update RefreshTokenEntity token

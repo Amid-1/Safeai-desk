@@ -2,6 +2,8 @@ package ru.safeai.gateway.ai.exception;
 
 import lombok.Getter;
 
+import java.time.Duration;
+
 @Getter
 public class AiProviderException extends RuntimeException {
 
@@ -9,25 +11,20 @@ public class AiProviderException extends RuntimeException {
     private final String model;
     private final Integer statusCode;
     private final String providerRequestId;
-    private final boolean retryable;
+    private final AiProviderErrorType errorType;
+    private final boolean retryRecommended;
+    private final boolean outcomeAmbiguous;
+    private final Duration retryAfter;
 
     public AiProviderException(
             String provider,
             String model,
             Integer statusCode,
             String providerRequestId,
-            boolean retryable,
-            String message
-    ) {
-        this(provider, model, statusCode, providerRequestId, retryable, message, null);
-    }
-
-    public AiProviderException(
-            String provider,
-            String model,
-            Integer statusCode,
-            String providerRequestId,
-            boolean retryable,
+            AiProviderErrorType errorType,
+            boolean retryRecommended,
+            boolean outcomeAmbiguous,
+            Duration retryAfter,
             String message,
             Throwable cause
     ) {
@@ -36,6 +33,13 @@ public class AiProviderException extends RuntimeException {
         this.model = model;
         this.statusCode = statusCode;
         this.providerRequestId = providerRequestId;
-        this.retryable = retryable;
+        this.errorType = errorType;
+        this.retryRecommended = retryRecommended;
+        this.outcomeAmbiguous = outcomeAmbiguous;
+        this.retryAfter = retryAfter;
+    }
+
+    public boolean isRetryable() {
+        return retryRecommended && !outcomeAmbiguous;
     }
 }

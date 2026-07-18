@@ -12,9 +12,9 @@ import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class LoginRateLimitServiceTest {
@@ -22,8 +22,14 @@ class LoginRateLimitServiceTest {
     private static final String EMAIL = "admin@test.com";
     private static final String IP = "127.0.0.1";
 
-    private static final String EMAIL_KEY = "safeai:local:rate-limit:login:email:test-hash";
-    private static final String IP_KEY = "safeai:local:rate-limit:login:ip:test-hash";
+    private static final String EMAIL_KEY =
+            "safeai:test:rate-limit:login:email";
+
+    private static final String IP_KEY =
+            "safeai:test:rate-limit:login:ip";
+
+    private static final Duration WINDOW =
+            Duration.ofMinutes(10);
 
     @Mock
     private RedisFixedWindowRateLimiter rateLimiter;
@@ -41,104 +47,162 @@ class LoginRateLimitServiceTest {
                         true,
                         10,
                         30,
-                        Duration.ofMinutes(10)
+                        WINDOW
                 ),
                 keyFactory
         );
     }
 
     @Test
-    void checkAllowed_whenWithinLimits_shouldIncrementEmailAndIpKeys() {
-        when(keyFactory.loginEmail(EMAIL)).thenReturn(EMAIL_KEY);
-        when(keyFactory.loginIp(IP)).thenReturn(IP_KEY);
+    void withinLimitsUsesOneAtomicDualIncrement() {
+        stubKeys();
 
-        when(rateLimiter.incrementAndGet(anyString(), any(Duration.class)))
-                .thenReturn(new RateLimitResult(1L, 600L));
+        when(rateLimiter.incrementBothAndCheck(
+                EMAIL_KEY,
+                10,
+                IP_KEY,
+                30,
+                WINDOW
+        )).thenReturn(new DualRateLimitResult(
+                RateLimitDecision.ALLOWED,
+                1,
+                1,
+                600,
+                600,
+                false
+        ));
 
-        service.checkAllowed(" Admin@Test.COM ", IP);
+        assertThatCode(() ->
+                service.checkAllowed(
+                        " Admin@Test.COM ",
+                        IP
+                )
+        ).doesNotThrowAnyException();
 
-        verify(keyFactory).loginEmail(EMAIL);
-        verify(keyFactory).loginIp(IP);
-
-        verify(rateLimiter).incrementAndGet(EMAIL_KEY, Duration.ofMinutes(10));
-        verify(rateLimiter).incrementAndGet(IP_KEY, Duration.ofMinutes(10));
-
-        verifyNoMoreInteractions(rateLimiter);
-    }
-
-    @Test
-    void checkAllowed_whenEmailLimitExceeded_shouldThrowRateLimitExceededException() {
-        when(keyFactory.loginEmail(EMAIL)).thenReturn(EMAIL_KEY);
-
-        when(rateLimiter.incrementAndGet(EMAIL_KEY, Duration.ofMinutes(10)))
-                .thenReturn(new RateLimitResult(11L, 600L));
-
-        assertThatThrownBy(() -> service.checkAllowed(EMAIL, IP))
-                .isInstanceOf(RateLimitExceededException.class)
-                .hasMessageContaining("email");
-
-        verify(keyFactory).loginEmail(EMAIL);
-        verify(keyFactory, never()).loginIp(anyString());
-
-        verify(rateLimiter).incrementAndGet(EMAIL_KEY, Duration.ofMinutes(10));
-        verifyNoMoreInteractions(rateLimiter);
-    }
-
-    @Test
-    void checkAllowed_whenIpLimitExceeded_shouldThrowRateLimitExceededException() {
-        when(keyFactory.loginEmail(EMAIL)).thenReturn(EMAIL_KEY);
-        when(keyFactory.loginIp(IP)).thenReturn(IP_KEY);
-
-        when(rateLimiter.incrementAndGet(EMAIL_KEY, Duration.ofMinutes(10)))
-                .thenReturn(new RateLimitResult(1L, 600L));
-
-        when(rateLimiter.incrementAndGet(IP_KEY, Duration.ofMinutes(10)))
-                .thenReturn(new RateLimitResult(31L, 600L));
-
-        assertThatThrownBy(() -> service.checkAllowed(EMAIL, IP))
-                .isInstanceOf(RateLimitExceededException.class)
-                .hasMessageContaining("IP");
-
-        verify(rateLimiter).incrementAndGet(EMAIL_KEY, Duration.ofMinutes(10));
-        verify(rateLimiter).incrementAndGet(IP_KEY, Duration.ofMinutes(10));
-    }
-
-    @Test
-    void checkAllowed_whenDisabled_shouldDoNothing() {
-        LoginRateLimitService disabledService = new LoginRateLimitService(
-                rateLimiter,
-                new LoginRateLimitProperties(
-                        false,
-                        10,
-                        30,
-                        Duration.ofMinutes(10)
-                ),
-                keyFactory
+        verify(rateLimiter).incrementBothAndCheck(
+                EMAIL_KEY,
+                10,
+                IP_KEY,
+                30,
+                WINDOW
         );
-
-        disabledService.checkAllowed(EMAIL, IP);
-
-        verifyNoInteractions(rateLimiter);
-        verifyNoInteractions(keyFactory);
     }
 
     @Test
-    void checkAllowed_whenRedisFails_shouldThrowRateLimitUnavailableException() {
-        when(keyFactory.loginEmail(EMAIL)).thenReturn(EMAIL_KEY);
+    void emailLimitExceededStillUpdatesBothDimensionsAtomically() {
+        stubKeys();
 
-        when(rateLimiter.incrementAndGet(EMAIL_KEY, Duration.ofMinutes(10)))
-                .thenThrow(new RuntimeException("Redis unavailable"));
+        when(rateLimiter.incrementBothAndCheck(
+                EMAIL_KEY,
+                10,
+                IP_KEY,
+                30,
+                WINDOW
+        )).thenReturn(new DualRateLimitResult(
+                RateLimitDecision.FIRST_EXCEEDED,
+                11,
+                5,
+                600,
+                500,
+                false
+        ));
 
-        assertThatThrownBy(() -> service.checkAllowed(EMAIL, IP))
+        assertThatThrownBy(() ->
+                service.checkAllowed(EMAIL, IP)
+        )
+                .isInstanceOf(RateLimitExceededException.class)
+                .hasMessageContaining(
+                        "Слишком много попыток входа"
+                );
+
+        verify(rateLimiter).incrementBothAndCheck(
+                EMAIL_KEY,
+                10,
+                IP_KEY,
+                30,
+                WINDOW
+        );
+    }
+
+    @Test
+    void ipLimitExceededUsesSamePublicMessage() {
+        stubKeys();
+
+        when(rateLimiter.incrementBothAndCheck(
+                EMAIL_KEY,
+                10,
+                IP_KEY,
+                30,
+                WINDOW
+        )).thenReturn(new DualRateLimitResult(
+                RateLimitDecision.SECOND_EXCEEDED,
+                3,
+                31,
+                400,
+                600,
+                false
+        ));
+
+        assertThatThrownBy(() ->
+                service.checkAllowed(EMAIL, IP)
+        )
+                .isInstanceOf(RateLimitExceededException.class)
+                .hasMessageContaining(
+                        "Слишком много попыток входа"
+                )
+                .hasMessageNotContaining("email")
+                .hasMessageNotContaining("IP");
+    }
+
+    @Test
+    void bothLimitsExceededThrowsRateLimitExceeded() {
+        stubKeys();
+
+        when(rateLimiter.incrementBothAndCheck(
+                EMAIL_KEY,
+                10,
+                IP_KEY,
+                30,
+                WINDOW
+        )).thenReturn(new DualRateLimitResult(
+                RateLimitDecision.BOTH_EXCEEDED,
+                11,
+                31,
+                400,
+                600,
+                false
+        ));
+
+        assertThatThrownBy(() ->
+                service.checkAllowed(EMAIL, IP)
+        ).isInstanceOf(RateLimitExceededException.class);
+    }
+
+    @Test
+    void redisFailureReturnsRateLimitUnavailable() {
+        stubKeys();
+
+        when(rateLimiter.incrementBothAndCheck(
+                EMAIL_KEY,
+                10,
+                IP_KEY,
+                30,
+                WINDOW
+        )).thenThrow(new RuntimeException("Redis unavailable"));
+
+        assertThatThrownBy(() ->
+                service.checkAllowed(EMAIL, IP)
+        )
                 .isInstanceOf(RateLimitUnavailableException.class)
-                .hasMessageContaining("Redis login rate limit недоступен");
-
-        verifyNoInteractionsAfterRedisFailure();
+                .hasMessageContaining(
+                        "Redis login rate limit недоступен"
+                );
     }
 
     @Test
-    void resetEmailLimit_shouldDeleteHashedEmailKey() {
-        when(keyFactory.loginEmail(EMAIL)).thenReturn(EMAIL_KEY);
+    void resetEmailLimitUsesNormalizedEmailKey() {
+        when(keyFactory.loginEmail(EMAIL))
+                .thenReturn(EMAIL_KEY);
 
         service.resetEmailLimit(" Admin@Test.COM ");
 
@@ -147,29 +211,72 @@ class LoginRateLimitServiceTest {
     }
 
     @Test
-    void checkAllowed_whenDisabled_shouldNotRequireKeys() {
-        LoginRateLimitService disabledService = new LoginRateLimitService(
-                rateLimiter,
-                new LoginRateLimitProperties(
-                        false,
-                        10,
-                        30,
-                        Duration.ofMinutes(10)
-                ),
-                keyFactory
-        );
+    void resetEmailFailureIsBestEffort() {
+        when(keyFactory.loginEmail(EMAIL))
+                .thenReturn(EMAIL_KEY);
 
-        assertThatCode(() -> disabledService.checkAllowed(" Admin@Test.COM ", IP))
-                .doesNotThrowAnyException();
+        org.mockito.Mockito.doThrow(
+                new RuntimeException("Redis unavailable")
+        ).when(rateLimiter).reset(EMAIL_KEY);
 
-        verifyNoInteractions(keyFactory);
-        verifyNoInteractions(rateLimiter);
+        assertThatCode(() ->
+                service.resetEmailLimit(EMAIL)
+        ).doesNotThrowAnyException();
     }
 
-    private void verifyNoInteractionsAfterRedisFailure() {
-        verify(keyFactory).loginEmail(EMAIL);
-        verify(keyFactory, never()).loginIp(anyString());
-        verify(rateLimiter).incrementAndGet(EMAIL_KEY, Duration.ofMinutes(10));
-        verifyNoMoreInteractions(rateLimiter);
+    @Test
+    void disabledLimiterDoesNotResolveKeys() {
+        LoginRateLimitService disabledService =
+                new LoginRateLimitService(
+                        rateLimiter,
+                        new LoginRateLimitProperties(
+                                false,
+                                10,
+                                30,
+                                WINDOW
+                        ),
+                        keyFactory
+                );
+
+        disabledService.checkAllowed(EMAIL, IP);
+
+        verifyNoInteractions(rateLimiter, keyFactory);
+    }
+
+    @Test
+    void blankEmailAndIpUseUnknownIdentities() {
+        when(keyFactory.loginEmail("unknown"))
+                .thenReturn(EMAIL_KEY);
+
+        when(keyFactory.loginIp("unknown"))
+                .thenReturn(IP_KEY);
+
+        when(rateLimiter.incrementBothAndCheck(
+                EMAIL_KEY,
+                10,
+                IP_KEY,
+                30,
+                WINDOW
+        )).thenReturn(new DualRateLimitResult(
+                RateLimitDecision.ALLOWED,
+                1,
+                1,
+                600,
+                600,
+                false
+        ));
+
+        service.checkAllowed(" ", null);
+
+        verify(keyFactory).loginEmail("unknown");
+        verify(keyFactory).loginIp("unknown");
+    }
+
+    private void stubKeys() {
+        when(keyFactory.loginEmail(EMAIL))
+                .thenReturn(EMAIL_KEY);
+
+        when(keyFactory.loginIp(IP))
+                .thenReturn(IP_KEY);
     }
 }

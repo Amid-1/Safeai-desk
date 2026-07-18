@@ -27,6 +27,7 @@ import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -60,6 +61,12 @@ class UserServiceSecurityTest {
 
     private static final UUID USER_ID =
             UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
+    private static final UUID SAVED_USER_ID =
+            UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
+
+    private static final Instant SAVED_AT =
+            Instant.parse("2026-06-12T12:00:00Z");
 
     @Mock
     private UserRepository userRepository;
@@ -118,7 +125,7 @@ class UserServiceSecurityTest {
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("ADMIN может назначать только роль USER");
 
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -135,8 +142,7 @@ class UserServiceSecurityTest {
         when(passwordEncoder.encode("Strong_User_123!"))
                 .thenReturn("encoded-password");
 
-        when(userRepository.save(any(UserEntity.class)))
-                .thenAnswer(invocation -> savedUser(invocation.getArgument(0)));
+        stubUserSaveAndFlush();
 
         CreateUserRequest request = new CreateUserRequest(
                 ORGANIZATION_ID,
@@ -151,7 +157,7 @@ class UserServiceSecurityTest {
         assertThat(response.email()).isEqualTo("user@test.com");
         assertThat(response.roles()).containsExactly("USER");
 
-        verify(userRepository).save(any(UserEntity.class));
+        verify(userRepository).saveAndFlush(any(UserEntity.class));
     }
 
     @Test
@@ -169,7 +175,7 @@ class UserServiceSecurityTest {
                 .hasMessageContaining("Нельзя создавать пользователя в другой организации");
 
         verifyNoInteractions(organizationRepository);
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -186,8 +192,7 @@ class UserServiceSecurityTest {
         when(passwordEncoder.encode("Strong_Admin_123!"))
                 .thenReturn("encoded-password");
 
-        when(userRepository.save(any(UserEntity.class)))
-                .thenAnswer(invocation -> savedUser(invocation.getArgument(0)));
+        stubUserSaveAndFlush();
 
         CreateUserRequest request = new CreateUserRequest(
                 ORGANIZATION_ID,
@@ -201,7 +206,7 @@ class UserServiceSecurityTest {
 
         assertThat(response.roles()).containsExactly("ADMIN");
 
-        verify(userRepository).save(any(UserEntity.class));
+        verify(userRepository).saveAndFlush(any(UserEntity.class));
     }
 
     @Test
@@ -224,7 +229,7 @@ class UserServiceSecurityTest {
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("SUPER_ADMIN нельзя назначать");
 
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -242,7 +247,7 @@ class UserServiceSecurityTest {
                 .hasMessageContaining("platform organization");
 
         verifyNoInteractions(organizationRepository);
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -454,21 +459,27 @@ class UserServiceSecurityTest {
         user.setFullName("Test User");
         user.setEnabled(true);
         user.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-        user.setRoles(roles);
+        user.setRoles(new HashSet<>(roles));
         user.setTokenVersion(0L);
         return user;
     }
 
-    private UserEntity savedUser(UserEntity user) {
-        if (user.getId() == null) {
-            user.setId(UUID.randomUUID());
-        }
+    private void stubUserSaveAndFlush() {
+        when(userRepository.saveAndFlush(
+                any(UserEntity.class)
+        )).thenAnswer(invocation -> {
+            UserEntity entity = invocation.getArgument(0);
 
-        if (user.getCreatedAt() == null) {
-            user.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-        }
+            if (entity.getId() == null) {
+                entity.setId(SAVED_USER_ID);
+            }
 
-        return user;
+            if (entity.getCreatedAt() == null) {
+                entity.setCreatedAt(SAVED_AT);
+            }
+
+            return entity;
+        });
     }
 
     private SafeAiUserPrincipal adminPrincipal() {

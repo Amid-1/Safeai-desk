@@ -46,10 +46,9 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             @Param("id") UUID id
     );
 
-    @EntityGraph(attributePaths = {"roles", "organization"})
     @Query(
             value = """
-                    select distinct u
+                    select u.id
                     from UserEntity u
                     """,
             countQuery = """
@@ -57,16 +56,44 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
                     from UserEntity u
                     """
     )
-    Page<UserEntity> findAllWithRolesAndOrganization(Pageable pageable);
+    Page<UUID> findAllIds(Pageable pageable);
+
+    @Query(
+            value = """
+                    select u.id
+                    from UserEntity u
+                    where u.organization.id = :organizationId
+                    """,
+            countQuery = """
+                    select count(u)
+                    from UserEntity u
+                    where u.organization.id = :organizationId
+                    """
+    )
+    Page<UUID> findAllIdsByOrganizationId(
+            @Param("organizationId") UUID organizationId,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = {"roles", "organization"})
+    @Query("""
+            select distinct u
+            from UserEntity u
+            where u.id in :ids
+            """)
+    List<UserEntity> findAllByIdsWithRolesAndOrganization(
+            @Param("ids") List<UUID> ids
+    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-            select distinct u
+            select u
             from UserEntity u
             join u.roles r
             where u.organization.id = :organizationId
               and u.enabled = true
               and r.name = 'ADMIN'
+            order by u.id
             """)
     List<UserEntity> findEnabledAdminsForUpdate(
             @Param("organizationId") UUID organizationId
@@ -82,24 +109,6 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     Optional<UserEntity> findByIdAndOrganizationId(
             @Param("id") UUID id,
             @Param("organizationId") UUID organizationId
-    );
-
-    @EntityGraph(attributePaths = {"roles", "organization"})
-    @Query(
-            value = """
-                    select distinct u
-                    from UserEntity u
-                    where u.organization.id = :organizationId
-                    """,
-            countQuery = """
-                    select count(u)
-                    from UserEntity u
-                    where u.organization.id = :organizationId
-                    """
-    )
-    Page<UserEntity> findAllByOrganizationIdWithRoles(
-            @Param("organizationId") UUID organizationId,
-            Pageable pageable
     );
 
     @EntityGraph(attributePaths = {"organization"})

@@ -1,10 +1,13 @@
 package ru.safeai.gateway.ai.exception;
 
-public class AiProviderUnavailableException extends AiProviderException {
+public class AiProviderUnavailableException
+        extends AiProviderException {
 
     public AiProviderUnavailableException(
             String provider,
             String model,
+            boolean retryRecommended,
+            boolean outcomeAmbiguous,
             String message,
             Throwable cause
     ) {
@@ -13,7 +16,10 @@ public class AiProviderUnavailableException extends AiProviderException {
                 model,
                 null,
                 null,
-                true,
+                AiProviderErrorType.CONNECT_FAILURE,
+                retryRecommended,
+                outcomeAmbiguous,
+                null,
                 message,
                 cause
         );

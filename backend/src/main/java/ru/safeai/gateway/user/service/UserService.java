@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -26,7 +28,11 @@ import ru.safeai.gateway.user.event.UserSecurityStateChangedEvent;
 import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -100,12 +106,11 @@ public class UserService {
         entity.setPasswordHash(passwordEncoder.encode(request.password()));
         entity.setFullName(normalizeFullName(request.fullName()));
         entity.setEnabled(true);
-        entity.setRoles(roles);
-
         UserEntity saved;
 
         try {
-            saved = userRepository.save(entity);
+            entity.setRoles(new HashSet<>(roles));
+            saved = userRepository.saveAndFlush(entity);
         } catch (DataIntegrityViolationException exception) {
             throw new ConflictException(
                     "Пользователь с таким email уже существует: " + email
@@ -135,16 +140,46 @@ public class UserService {
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
         Objects.requireNonNull(pageable, "pageable не должен быть null");
 
-        if (isSuperAdmin(currentUser)) {
-            return userRepository.findAllWithRolesAndOrganization(pageable)
-                    .map(this::toResponse);
+        validatePageableSort(pageable);
+
+        Page<UUID> idPage = isSuperAdmin(currentUser)
+                ? userRepository.findAllIds(pageable)
+                : userRepository.findAllIdsByOrganizationId(
+                currentUser.getOrganizationId(),
+                pageable
+        );
+
+        if (idPage.isEmpty()) {
+            return new PageImpl<>(
+                    List.of(),
+                    pageable,
+                    idPage.getTotalElements()
+            );
         }
 
-        return userRepository.findAllByOrganizationIdWithRoles(
-                        currentUser.getOrganizationId(),
-                        pageable
-                )
-                .map(this::toResponse);
+        List<UserEntity> users =
+                userRepository.findAllByIdsWithRolesAndOrganization(
+                        idPage.getContent()
+                );
+
+        Map<UUID, UserEntity> usersById = new HashMap<>();
+        users.forEach(user -> usersById.put(user.getId(), user));
+
+        List<UserResponse> content = new ArrayList<>(idPage.getSize());
+
+        for (UUID userId : idPage.getContent()) {
+            UserEntity user = usersById.get(userId);
+
+            if (user != null) {
+                content.add(toResponse(user));
+            }
+        }
+
+        return new PageImpl<>(
+                content,
+                pageable,
+                idPage.getTotalElements()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -198,7 +233,15 @@ public class UserService {
             user.setTokenVersion(user.getTokenVersion() + 1);
         }
 
-        UserEntity saved = userRepository.save(user);
+        UserEntity saved;
+
+        try {
+            saved = userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException exception) {
+            throw new ConflictException(
+                    "Пользователь с такими данными уже существует"
+            );
+        }
 
         if (emailChanged) {
             userSessionRevocationService.revokeAllForUser(saved.getId());
@@ -223,7 +266,6 @@ public class UserService {
 
         return toResponse(saved);
     }
-
 
     @Transactional
     public UserResponse updateEnabled(
@@ -332,7 +374,7 @@ public class UserService {
         boolean changed = !oldRoles.equals(requestedRoles);
 
         if (changed) {
-            user.setRoles(roles);
+            user.setRoles(new HashSet<>(roles));
             user.setTokenVersion(user.getTokenVersion() + 1);
         }
 
@@ -476,7 +518,7 @@ public class UserService {
     }
 
     private void rejectPlatformOrganizationCreation(UUID targetOrganizationId) {
-        if (platformProperties.effectiveOrganizationId().equals(targetOrganizationId)) {
+        if (platformProperties.organizationId().equals(targetOrganizationId)) {
             throw new ForbiddenOperationException(
                     "Нельзя создавать пользователей в platform organization через обычный user-management endpoint"
             );
@@ -492,7 +534,7 @@ public class UserService {
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(role -> !role.isBlank())
-                .map(String::toUpperCase)
+                .map(role -> role.toUpperCase(Locale.ROOT))
                 .collect(Collectors.toUnmodifiableSet());
     }
 
@@ -536,7 +578,7 @@ public class UserService {
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(role -> !role.isBlank())
-                .map(String::toUpperCase)
+                .map(role -> role.toUpperCase(Locale.ROOT))
                 .collect(Collectors.toUnmodifiableSet());
     }
 
@@ -552,8 +594,26 @@ public class UserService {
         );
     }
 
+    private void validatePageableSort(Pageable pageable) {
+        Set<String> allowedProperties = Set.of(
+                "createdAt",
+                "email",
+                "fullName",
+                "enabled"
+        );
+
+        for (Sort.Order order : pageable.getSort()) {
+            if (!allowedProperties.contains(order.getProperty())) {
+                throw new ForbiddenOperationException(
+                        "Сортировка по полю не разрешена: "
+                                + order.getProperty()
+                );
+            }
+        }
+    }
+
     private String normalizeEmail(String email) {
-        return email.trim().toLowerCase();
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 
     private String normalizeFullName(String fullName) {

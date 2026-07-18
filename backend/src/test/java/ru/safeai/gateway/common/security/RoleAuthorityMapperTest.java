@@ -48,17 +48,7 @@ class RoleAuthorityMapperTest {
     }
 
     @Test
-    void toAuthorities_shouldIgnoreBlankRoles() {
-        Set<SimpleGrantedAuthority> authorities =
-                RoleAuthorityMapper.toAuthorities(List.of("ADMIN", "   "));
-
-        assertThat(authorities)
-                .extracting(SimpleGrantedAuthority::getAuthority)
-                .containsExactly("ROLE_ADMIN");
-    }
-
-    @Test
-    void toAuthorities_shouldIgnoreNullRoles() {
+    void toAuthorities_shouldIgnoreBlankAndNullRoles() {
         List<String> roles = Arrays.asList("ADMIN", null, "   ");
 
         Set<SimpleGrantedAuthority> authorities =
@@ -71,7 +61,9 @@ class RoleAuthorityMapperTest {
 
     @Test
     void toAuthorities_shouldThrowWhenRoleIsUnknown() {
-        assertThatThrownBy(() -> RoleAuthorityMapper.toAuthorities(List.of("ROOT")))
+        assertThatThrownBy(() ->
+                RoleAuthorityMapper.toAuthorities(List.of("ROOT"))
+        )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown role");
     }
@@ -90,9 +82,11 @@ class RoleAuthorityMapperTest {
 
     @Test
     void toRoleNames_shouldThrowWhenAuthorityContainsUnknownRole() {
-        assertThatThrownBy(() -> RoleAuthorityMapper.toRoleNames(List.of(
-                new SimpleGrantedAuthority("ROLE_ROOT")
-        )))
+        assertThatThrownBy(() ->
+                RoleAuthorityMapper.toRoleNames(List.of(
+                        new SimpleGrantedAuthority("ROLE_ROOT")
+                ))
+        )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown role");
     }

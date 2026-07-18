@@ -12,46 +12,73 @@ class JwtPropertiesTest {
 
     @Test
     void constructor_shouldThrowWhenSecretIsNull() {
-        assertThatThrownBy(() -> new JwtProperties(null, 15, "issuer", "audience"))
+        assertThatThrownBy(() ->
+                new JwtProperties(null, 15, "issuer", "audience")
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("SAFEAI_JWT_SECRET");
     }
 
     @Test
     void constructor_shouldThrowWhenSecretIsBlank() {
-        assertThatThrownBy(() -> new JwtProperties("   ", 15, "issuer", "audience"))
+        assertThatThrownBy(() ->
+                new JwtProperties("   ", 15, "issuer", "audience")
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("SAFEAI_JWT_SECRET");
     }
 
     @Test
     void constructor_shouldThrowWhenSecretIsTooShort() {
-        assertThatThrownBy(() -> new JwtProperties("short-secret", 15, "issuer", "audience"))
+        assertThatThrownBy(() ->
+                new JwtProperties("short-secret", 15, "issuer", "audience")
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("минимум 32 байта");
     }
 
     @Test
-    void constructor_shouldUseDefaultExpirationWhenExpirationIsZeroOrNegative() {
-        JwtProperties zero = new JwtProperties(VALID_SECRET, 0, "issuer", "audience");
-        JwtProperties negative = new JwtProperties(VALID_SECRET, -10, "issuer", "audience");
+    void constructor_shouldRejectZeroNegativeAndTooLargeExpiration() {
+        assertThatThrownBy(() ->
+                new JwtProperties(VALID_SECRET, 0, "issuer", "audience")
+        ).isInstanceOf(IllegalStateException.class);
 
-        assertThat(zero.expirationMinutes()).isEqualTo(15);
-        assertThat(negative.expirationMinutes()).isEqualTo(15);
+        assertThatThrownBy(() ->
+                new JwtProperties(VALID_SECRET, -10, "issuer", "audience")
+        ).isInstanceOf(IllegalStateException.class);
+
+        assertThatThrownBy(() ->
+                new JwtProperties(VALID_SECRET, 61, "issuer", "audience")
+        ).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void constructor_shouldUseDefaultIssuerWhenIssuerIsBlank() {
-        JwtProperties properties = new JwtProperties(VALID_SECRET, 15, "   ", "audience");
-
-        assertThat(properties.issuer()).isEqualTo("safeai-desk");
+    void constructor_shouldRejectBlankIssuer() {
+        assertThatThrownBy(() ->
+                new JwtProperties(VALID_SECRET, 15, "   ", "audience")
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("issuer");
     }
 
     @Test
-    void constructor_shouldUseDefaultAudienceWhenAudienceIsBlank() {
-        JwtProperties properties = new JwtProperties(VALID_SECRET, 15, "issuer", "   ");
+    void constructor_shouldRejectBlankAudience() {
+        assertThatThrownBy(() ->
+                new JwtProperties(VALID_SECRET, 15, "issuer", "   ")
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("audience");
+    }
 
-        assertThat(properties.audience()).isEqualTo("safeai-desk-api");
+    @Test
+    void constructor_shouldRejectExternalSpacesInIssuerAndAudience() {
+        assertThatThrownBy(() ->
+                new JwtProperties(VALID_SECRET, 15, " issuer", "audience")
+        ).isInstanceOf(IllegalStateException.class);
+
+        assertThatThrownBy(() ->
+                new JwtProperties(VALID_SECRET, 15, "issuer", "audience ")
+        ).isInstanceOf(IllegalStateException.class);
     }
 
     @Test

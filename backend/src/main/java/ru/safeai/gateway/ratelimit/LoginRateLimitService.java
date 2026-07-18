@@ -8,6 +8,7 @@ import ru.safeai.gateway.common.exception.RateLimitExceededException;
 import ru.safeai.gateway.common.exception.RateLimitUnavailableException;
 
 import java.time.Duration;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -15,63 +16,46 @@ import java.time.Duration;
 @EnableConfigurationProperties(LoginRateLimitProperties.class)
 public class LoginRateLimitService {
 
+    private static final String PUBLIC_LIMIT_MESSAGE =
+            "Слишком много попыток входа. Попробуйте позже";
+
     private final RedisFixedWindowRateLimiter rateLimiter;
     private final LoginRateLimitProperties properties;
     private final RateLimitKeyFactory keyFactory;
 
-
     /**
      * Fail-closed strategy.
-     * Login endpoint is brute-force sensitive.
-     * If Redis becomes unavailable, authentication attempts are blocked
-     * instead of temporarily disabling rate limiting.
+
+     * Email and IP counters are always incremented atomically by one
+     * Redis Lua script. A failure of Redis blocks the login attempt.
      */
-    public void checkAllowed(String email, String ipAddress) {
+    public void checkAllowed(
+            String email,
+            String ipAddress
+    ) {
         if (!properties.isEnabled()) {
             return;
         }
 
         String normalizedEmail = normalizeEmail(email);
         String normalizedIp = normalizeIp(ipAddress);
-        Duration window = properties.effectiveWindow();
-
-        checkKey(
-                keyFactory.loginEmail(normalizedEmail),
-                properties.effectiveEmailLimit(),
-                window,
-                "Слишком много попыток входа для этого email. Попробуйте позже"
-        );
-
-        checkKey(
-                keyFactory.loginIp(normalizedIp),
-                properties.effectiveIpLimit(),
-                window,
-                "Слишком много попыток входа с этого IP. Попробуйте позже"
-        );
-    }
-
-    public void resetEmailLimit(String email) {
-        if (!properties.isEnabled()) {
-            return;
-        }
-
-        String normalizedEmail = normalizeEmail(email);
 
         try {
-            rateLimiter.reset(keyFactory.loginEmail(normalizedEmail));
-        } catch (RuntimeException exception) {
-            log.warn("Failed to reset login email rate limit for emailHashKey", exception);
-        }
-    }
+            DualRateLimitResult result =
+                    rateLimiter.incrementBothAndCheck(
+                            keyFactory.loginEmail(normalizedEmail),
+                            properties.effectiveEmailLimit(),
+                            keyFactory.loginIp(normalizedIp),
+                            properties.effectiveIpLimit(),
+                            properties.effectiveWindow()
+                    );
 
-    private void checkKey(String key, int limit, Duration window, String message) {
-        try {
-            RateLimitResult result = rateLimiter.incrementAndGet(key, window);
-
-            if (result.count() > limit) {
+            if (!result.allowed()) {
                 throw new RateLimitExceededException(
-                        message,
-                        Duration.ofSeconds(result.ttlSeconds())
+                        PUBLIC_LIMIT_MESSAGE,
+                        Duration.ofSeconds(
+                                result.retryAfterSeconds()
+                        )
                 );
             }
         } catch (RateLimitExceededException exception) {
@@ -84,10 +68,29 @@ public class LoginRateLimitService {
         }
     }
 
+    public void resetEmailLimit(String email) {
+        if (!properties.isEnabled()) {
+            return;
+        }
+
+        String normalizedEmail = normalizeEmail(email);
+
+        try {
+            rateLimiter.reset(
+                    keyFactory.loginEmail(normalizedEmail)
+            );
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "Failed to reset login email rate limit",
+                    exception
+            );
+        }
+    }
+
     private String normalizeEmail(String email) {
         return email == null || email.isBlank()
                 ? "unknown"
-                : email.trim().toLowerCase();
+                : email.trim().toLowerCase(Locale.ROOT);
     }
 
     private String normalizeIp(String ipAddress) {

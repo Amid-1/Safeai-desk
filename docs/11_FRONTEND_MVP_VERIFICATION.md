@@ -137,6 +137,8 @@ safeai-redis
 ```bat
 cd /d "D:\Java projects\Safeai-desk\backend"
 
+mvnw.cmd clean
+
 set SPRING_PROFILES_ACTIVE=local
 set SAFEAI_JWT_SECRET=safeai-local-development-secret-key-change-this-value-please-123456789
 set REDIS_PASSWORD=safeai_redis_password

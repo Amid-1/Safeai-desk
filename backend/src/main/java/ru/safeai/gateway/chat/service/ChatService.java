@@ -1,40 +1,43 @@
 package ru.safeai.gateway.chat.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
-import ru.safeai.gateway.chat.dto.ChatResponse;
-import ru.safeai.gateway.chat.dto.CreateChatRequest;
-import ru.safeai.gateway.chat.dto.MessageResponse;
-import ru.safeai.gateway.chat.dto.SendMessageRequest;
+import ru.safeai.gateway.chat.dto.*;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
-import ru.safeai.gateway.ai.provider.AiProvider;
 
-import java.util.*;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @EnableConfigurationProperties(ChatProperties.class)
 public class ChatService {
+    private static final Set<String> ALLOWED_CHAT_SORT = Set.of("updatedAt", "createdAt", "title", "id");
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -49,119 +52,85 @@ public class ChatService {
 
     @Transactional
     public ChatResponse create(CreateChatRequest request, SafeAiUserPrincipal currentUser) {
+        Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
-
-        UserEntity user = userRepository.findById(currentUser.getId())
+        UserEntity user = userRepository.findByIdAndOrganizationId(
+                        currentUser.getId(), currentUser.getOrganizationId())
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Пользователь не найден: " + currentUser.getId()
-                ));
+                        "Пользователь не найден: " + currentUser.getId()));
 
-        String normalizedTitle = normalizeTitle(request.title());
-        boolean defaultTitle = request.title() == null || request.title().isBlank();
-
+        String title = normalizeTitle(request.title());
         ChatSessionEntity session = new ChatSessionEntity();
         session.setUser(user);
         session.setOrganization(user.getOrganization());
-        session.setTitle(normalizedTitle);
+        session.setTitle(title);
+        ChatSessionEntity saved = chatSessionRepository.saveAndFlush(session);
 
-        ChatSessionEntity saved = chatSessionRepository.save(session);
-
-        auditEventService.record(
-                currentUser.getId(),
-                saved.getOrganization().getId(),
+        auditEventService.record(currentUser.getId(), saved.getOrganization().getId(),
                 AuditEventType.CHAT_CREATED,
-                Map.of(
-                        "chatId", saved.getId().toString(),
-                        "titleLength", saved.getTitle() == null ? 0 : saved.getTitle().length(),
-                        "defaultTitle", defaultTitle
-                )
-        );
-
+                Map.of("chatId", saved.getId().toString(),
+                        "titleLength", title.length(),
+                        "defaultTitle", request.title() == null || request.title().isBlank()));
         return chatMapper.toChatResponse(saved);
     }
 
     @Transactional(readOnly = true)
-    public Page<ChatResponse> findAll(
-            SafeAiUserPrincipal currentUser,
-            Pageable pageable
-    ) {
+    public Page<ChatResponse> findAll(SafeAiUserPrincipal currentUser, Pageable pageable) {
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
-        Objects.requireNonNull(pageable, "pageable не должен быть null");
-
-        return chatSessionRepository
-                .findByUser_IdAndOrganization_IdOrderByUpdatedAtDesc(
-                        currentUser.getId(),
-                        currentUser.getOrganizationId(),
-                        pageable
-                )
+        validateSort(pageable);
+        Pageable deterministic = PageRequest.of(
+                pageable.getPageNumber(), pageable.getPageSize(), normalizeSort(pageable.getSort()));
+        return chatSessionRepository.findByUser_IdAndOrganization_Id(
+                        currentUser.getId(), currentUser.getOrganizationId(), deterministic)
                 .map(chatMapper::toChatResponse);
     }
 
     @Transactional(readOnly = true)
     public ChatDetailsResponse findById(UUID chatId, SafeAiUserPrincipal currentUser) {
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
-
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
-
         List<MessageResponse> messages = chatMessageRepository
-                .findBySession_IdOrderByCreatedAtDescIdDesc(
-                        session.getId(),
-                        PageRequest.of(0, chatProperties.effectiveDetailsMessageLimit())
-                )
-                .stream()
-                .sorted(
-                        Comparator.comparing(ChatMessageEntity::getCreatedAt)
-                                .thenComparing(ChatMessageEntity::getId)
-                )
-                .map(chatMapper::toMessageResponse)
-                .toList();
-
+                .findBySession_IdOrderByCreatedAtDescIdDesc(session.getId(),
+                        PageRequest.of(0, chatProperties.effectiveDetailsMessageLimit()))
+                .stream().sorted(Comparator.comparing(ChatMessageEntity::getCreatedAt)
+                        .thenComparing(ChatMessageEntity::getId))
+                .map(chatMapper::toMessageResponse).toList();
         return chatMapper.toChatDetailsResponse(session, messages);
     }
 
-    public ChatDetailsResponse sendMessage(
-            UUID chatId,
-            SendMessageRequest request,
-            SafeAiUserPrincipal currentUser
-    ) {
+    public ChatDetailsResponse sendMessage(UUID chatId, SendMessageRequest request,
+                                           SafeAiUserPrincipal currentUser) {
         Objects.requireNonNull(chatId, "chatId не должен быть null");
         Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
-        String normalizedContent = normalizeMessageContent(request.content());
-
+        String content = validateAndNormalizeLineEndings(request.content());
         chatPersistenceService.assertOwnedChatExists(chatId, currentUser);
-
         ChatLockService.ChatLock lock = chatLockService.lock(chatId);
-
         try {
             rateLimitService.checkAiMessageAllowed(currentUser);
+            ChatProcessingContext context = chatPersistenceService.saveUserMessageAndPrepareAiRequest(
+                    chatId, new SendMessageRequest(content, request.clientRequestId()), currentUser);
+            if (context.replay()) {
+                return chatPersistenceService.returnExistingResult(
+                        context.chatId(), context.userMessageId(), currentUser);
+            }
 
-            ChatProcessingContext context =
-                    chatPersistenceService.saveUserMessageAndPrepareAiRequest(
-                            chatId,
-                            new SendMessageRequest(normalizedContent),
-                            currentUser
-                    );
-
+            AiChatResponse aiResponse;
             try {
-                AiChatResponse aiResponse = aiProvider.sendMessage(context.aiRequest());
+                aiResponse = aiProvider.sendMessage(context.aiRequest());
+            } catch (RuntimeException providerException) {
+                persistProviderFailure(context, providerException, currentUser);
+                throw providerException;
+            }
 
+            chatLockService.ensureValid(lock);
+            try {
                 return chatPersistenceService.saveAssistantMessageAndReturnChat(
-                        context.chatId(),
-                        context.userMessageId(),
-                        aiResponse,
-                        currentUser
-                );
-            } catch (RuntimeException exception) {
-                chatPersistenceService.saveFailedAssistantMessage(
-                        context.chatId(),
-                        context.userMessageId(),
-                        exception,
-                        currentUser
-                );
-
-                throw exception;
+                        context.chatId(), context.userMessageId(), aiResponse, currentUser);
+            } catch (RuntimeException persistenceException) {
+                log.error("AI response received but could not be persisted: chatId={}, userMessageId={}",
+                        context.chatId(), context.userMessageId(), persistenceException);
+                throw persistenceException;
             }
         } finally {
             chatLockService.unlockQuietly(lock);
@@ -169,55 +138,59 @@ public class ChatService {
     }
 
     @Transactional(readOnly = true)
-    public Page<MessageResponse> findMessages(
-            UUID chatId,
-            int page,
-            int size,
-            SafeAiUserPrincipal currentUser
-    ) {
-        Objects.requireNonNull(chatId, "chatId не должен быть null");
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
-
+    public Page<MessageResponse> findMessages(UUID chatId, int page, int size,
+                                              SafeAiUserPrincipal currentUser) {
         ChatSessionEntity session = findOwnedSession(chatId, currentUser);
-
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
-
-        return chatMessageRepository
-                .findBySession_IdOrderByCreatedAtAscIdAsc(
-                        session.getId(),
-                        PageRequest.of(safePage, safeSize)
-                )
+        return chatMessageRepository.findBySession_IdOrderByCreatedAtDescIdDesc(
+                        session.getId(), PageRequest.of(safePage, safeSize))
                 .map(chatMapper::toMessageResponse);
+    }
+
+    private void persistProviderFailure(ChatProcessingContext context,
+                                        RuntimeException providerException,
+                                        SafeAiUserPrincipal currentUser) {
+        try {
+            chatPersistenceService.saveFailedAssistantMessage(
+                    context.chatId(), context.userMessageId(), providerException, currentUser);
+        } catch (RuntimeException persistenceException) {
+            providerException.addSuppressed(persistenceException);
+            log.error("Failed to persist failed AI response: chatId={}, userMessageId={}",
+                    context.chatId(), context.userMessageId(), persistenceException);
+        }
     }
 
     private ChatSessionEntity findOwnedSession(UUID chatId, SafeAiUserPrincipal currentUser) {
         return chatSessionRepository.findByIdAndUser_IdAndOrganization_Id(
-                        chatId,
-                        currentUser.getId(),
-                        currentUser.getOrganizationId()
-                )
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Чат не найден: " + chatId
-                ));
+                        chatId, currentUser.getId(), currentUser.getOrganizationId())
+                .orElseThrow(() -> new ResourceNotFoundException("Чат не найден: " + chatId));
     }
 
     private String normalizeTitle(String title) {
-        if (title == null || title.isBlank()) {
-            return "Новый чат";
-        }
-
-        return title.trim();
+        return title == null || title.isBlank() ? "Новый чат" : title.trim();
     }
 
-    private String normalizeMessageContent(String content) {
-        if (content == null || content.trim().isBlank()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Сообщение не должно быть пустым"
-            );
+    private String validateAndNormalizeLineEndings(String content) {
+        if (content == null || content.isBlank()) {
+            throw new BadRequestException("Сообщение не должно быть пустым");
         }
+        return content.replace("\r\n", "\n").replace('\r', '\n');
+    }
 
-        return content.trim();
+    private void validateSort(Pageable pageable) {
+        for (Sort.Order order : pageable.getSort()) {
+            if (!ALLOWED_CHAT_SORT.contains(order.getProperty())) {
+                throw new BadRequestException("Сортировка по полю не разрешена: " + order.getProperty());
+            }
+        }
+    }
+
+    private Sort normalizeSort(Sort sort) {
+        Sort effective = sort.isUnsorted()
+                ? Sort.by(Sort.Order.desc("updatedAt"))
+                : sort;
+        boolean hasId = effective.stream().anyMatch(order -> "id".equals(order.getProperty()));
+        return hasId ? effective : effective.and(Sort.by(Sort.Order.desc("id")));
     }
 }

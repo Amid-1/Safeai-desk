@@ -1,4 +1,3 @@
-// Safeai-desk/backend/src/main/java/ru/safeai/gateway/user/controller/UserController.java
 package ru.safeai.gateway.user.controller;
 
 import jakarta.validation.Valid;
@@ -31,6 +30,7 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     public UserResponse create(
             @Valid @RequestBody CreateUserRequest request,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser

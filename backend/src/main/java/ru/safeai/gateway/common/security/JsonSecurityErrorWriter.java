@@ -3,15 +3,16 @@ package ru.safeai.gateway.common.security;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import ru.safeai.gateway.common.exception.ApiErrorResponse;
-
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 
 @Component
@@ -19,6 +20,7 @@ import java.time.Instant;
 public class JsonSecurityErrorWriter {
 
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
     public void write(
             HttpServletRequest request,
@@ -31,10 +33,12 @@ public class JsonSecurityErrorWriter {
             return;
         }
 
+        response.resetBuffer();
+
         String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 
         ApiErrorResponse body = new ApiErrorResponse(
-                Instant.now(),
+                Instant.now(clock),
                 status.value(),
                 error,
                 message,
@@ -44,6 +48,7 @@ public class JsonSecurityErrorWriter {
         );
 
         response.setStatus(status.value());
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
 

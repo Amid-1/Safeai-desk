@@ -2,11 +2,23 @@
     box-sizing: border-box;
 }
 
+html {
+    min-width: 320px;
+}
+
 body {
     margin: 0;
     font-family: Arial, sans-serif;
     background: #f4f6f8;
     color: #17202a;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+    font-family: Arial, sans-serif;
 }
 
 a {
@@ -29,6 +41,17 @@ button:disabled {
     cursor: not-allowed;
 }
 
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+    outline: 3px solid #2563eb;
+    outline-offset: 2px;
+}
+
 input,
 select,
 textarea {
@@ -38,11 +61,11 @@ textarea {
     border-radius: 8px;
     font-size: 14px;
     background: white;
+    color: #17202a;
 }
 
 textarea {
     resize: vertical;
-    font-family: inherit;
 }
 
 table {
@@ -75,7 +98,7 @@ pre {
 }
 
 .topbar {
-    height: 64px;
+    min-height: 64px;
     padding: 0 24px;
     display: flex;
     align-items: center;
@@ -85,18 +108,22 @@ pre {
 }
 
 .logo {
+    flex-shrink: 0;
     font-weight: 800;
     font-size: 18px;
 }
 
 .topbar nav {
     display: flex;
+    align-items: center;
     gap: 16px;
     flex: 1;
+    min-width: 0;
 }
 
 .nav-link {
     opacity: 0.75;
+    white-space: nowrap;
 }
 
 .nav-link:hover {
@@ -114,15 +141,23 @@ pre {
     align-items: center;
     gap: 12px;
     margin-left: auto;
+    min-width: 0;
 }
 
 .current-user {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
     color: white;
     font-size: 14px;
     font-weight: 600;
+}
+
+.current-user > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .content {
@@ -183,7 +218,7 @@ pre {
 
 .chat-layout {
     display: grid;
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 280px minmax(0, 1fr);
     gap: 20px;
 }
 
@@ -197,6 +232,7 @@ pre {
     background: #e5e7eb;
     color: #111827;
     text-align: left;
+    overflow-wrap: anywhere;
 }
 
 .chat-item.active {
@@ -205,6 +241,7 @@ pre {
 }
 
 .chat-panel {
+    min-width: 0;
     min-height: 500px;
     display: flex;
     flex-direction: column;
@@ -221,6 +258,7 @@ pre {
 .message {
     border-radius: 12px;
     padding: 12px;
+    overflow-wrap: anywhere;
 }
 
 .message.user {
@@ -229,6 +267,10 @@ pre {
 
 .message.assistant {
     background: #dcfce7;
+}
+
+.message.system {
+    background: #f3f4f6;
 }
 
 .message.failed {
@@ -246,6 +288,7 @@ pre {
 
 .message p {
     margin: 8px 0;
+    white-space: pre-wrap;
 }
 
 .message-form {
@@ -330,9 +373,9 @@ pre {
     color: white;
 }
 
-button.secondary-button:hover,
-button.filter-button:hover,
-button.chat-item:hover {
+button.secondary-button:hover:not(:disabled),
+button.filter-button:hover:not(:disabled),
+button.chat-item:hover:not(:disabled) {
     filter: brightness(0.96);
 }
 
@@ -549,7 +592,7 @@ button.chat-item:hover {
 
 .modal-card {
     width: min(520px, 100%);
-    max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
     overflow: auto;
     background: #fff;
     border-radius: 16px;
@@ -563,6 +606,20 @@ button.chat-item:hover {
     justify-content: space-between;
     gap: 16px;
     margin-bottom: 16px;
+}
+
+.modal-header h2 {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.modal-close-button {
+    flex: 0 0 auto;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 6px 10px;
+    font-size: 22px;
+    line-height: 1;
 }
 
 .modal-actions {
@@ -603,7 +660,17 @@ button.chat-item:hover {
     }
 
     .topbar {
+        min-height: 64px;
+        height: auto;
+        padding-block: 12px;
         flex-wrap: wrap;
+    }
+
+    .topbar nav {
+        order: 3;
+        flex-basis: 100%;
+        overflow-x: auto;
+        padding-bottom: 2px;
     }
 
     .actions-cell {
@@ -622,18 +689,26 @@ button.chat-item:hover {
 
 @media (max-width: 768px) {
     .topbar {
-        height: auto;
         padding: 16px;
         align-items: flex-start;
         flex-direction: column;
     }
 
     .topbar nav {
+        order: initial;
+        flex-basis: auto;
         flex-wrap: wrap;
+        overflow-x: visible;
     }
 
     .topbar-user {
+        width: 100%;
         margin-left: 0;
+        justify-content: space-between;
+    }
+
+    .current-user {
+        flex-wrap: wrap;
     }
 
     .content {
@@ -645,7 +720,13 @@ button.chat-item:hover {
     }
 
     .modal-backdrop {
+        align-items: flex-start;
         padding: 16px;
+        overflow-y: auto;
+    }
+
+    .modal-card {
+        max-height: calc(100dvh - 32px);
     }
 
     .modal-actions {
@@ -663,5 +744,135 @@ button.chat-item:hover {
 
     .actions-cell {
         min-width: 200px;
+    }
+
+    .pagination {
+        flex-wrap: wrap;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
+
+/* ============================================================
+   Admin audit
+   ============================================================ */
+
+.audit-filter-notice {
+    padding: 10px 12px;
+    border: 1px solid #d7b45a;
+    border-radius: 8px;
+    background: #fff8df;
+    color: #624b0b;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.audit-date-presets {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.audit-date-presets__label {
+    font-weight: 600;
+}
+
+.audit-date-presets__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.audit-date-presets__actions button {
+    width: auto;
+}
+
+.admin-table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.audit-table {
+    min-width: 920px;
+}
+
+.audit-details-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.audit-details-list {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+}
+
+.audit-details-list > div {
+    display: grid;
+    grid-template-columns: minmax(150px, 210px) 1fr;
+    gap: 16px;
+}
+
+.audit-details-list dt {
+    font-weight: 700;
+}
+
+.audit-details-list dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.audit-monospace {
+    font-family:
+            "SFMono-Regular",
+            Consolas,
+            "Liberation Mono",
+            monospace;
+}
+
+.audit-json {
+    max-height: 420px;
+    margin: 0;
+    padding: 16px;
+    overflow: auto;
+    border: 1px solid #d9e0e8;
+    border-radius: 10px;
+    background: #0f1720;
+    color: #f8fafc;
+    font-family:
+            "SFMono-Regular",
+            Consolas,
+            "Liberation Mono",
+            monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+    .audit-date-presets__actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .audit-date-presets__actions button {
+        width: 100%;
+    }
+
+    .audit-details-list > div {
+        grid-template-columns: 1fr;
+        gap: 4px;
     }
 }

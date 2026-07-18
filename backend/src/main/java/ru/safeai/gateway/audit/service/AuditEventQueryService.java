@@ -1,8 +1,6 @@
 package ru.safeai.gateway.audit.service;
 
 import jakarta.persistence.criteria.CriteriaBuilder;
-import jakarta.persistence.criteria.Join;
-import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,12 +16,13 @@ import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
 import ru.safeai.gateway.audit.entity.AuditEventEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.user.entity.UserEntity;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -34,14 +34,17 @@ public class AuditEventQueryService {
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 100;
 
-    private static final Sort DEFAULT_SORT =
-            Sort.by(Sort.Direction.DESC, "createdAt");
+    private static final Sort DEFAULT_SORT = Sort.by(
+            Sort.Order.desc("createdAt"),
+            Sort.Order.desc("id")
+    );
 
     private static final Set<String> ALLOWED_SORT_PROPERTIES =
             Set.of(
                     "createdAt",
                     "eventType",
-                    "organizationId"
+                    "organizationId",
+                    "id"
             );
 
     private final AuditEventRepository auditEventRepository;
@@ -52,14 +55,20 @@ public class AuditEventQueryService {
             AuditEventFilter filter,
             Pageable pageable
     ) {
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
 
-        AuditEventFilter effectiveFilter = filter == null
-                ? emptyFilter()
-                : filter;
+        AuditEventFilter effectiveFilter =
+                filter == null
+                        ? emptyFilter()
+                        : filter;
 
-        Pageable safePageable = sanitizeAuditPageable(pageable);
-        boolean superAdmin = isSuperAdmin(currentUser);
+        validateDateRange(effectiveFilter);
+
+        boolean superAdmin =
+                isSuperAdmin(currentUser);
 
         validateOrganizationFilter(
                 currentUser,
@@ -67,41 +76,22 @@ public class AuditEventQueryService {
                 superAdmin
         );
 
-        return auditEventRepository.findAll((root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
+        Pageable safePageable =
+                sanitizeAuditPageable(pageable);
 
-            addOrganizationPredicate(
-                    root,
-                    cb,
-                    predicates,
-                    currentUser,
-                    effectiveFilter,
-                    superAdmin
-            );
+        Specification<AuditEventEntity> specification =
+                buildSpecification(
+                        currentUser,
+                        effectiveFilter,
+                        superAdmin
+                );
 
-            addEventTypePredicate(
-                    root,
-                    cb,
-                    predicates,
-                    effectiveFilter
-            );
-
-            addUserPredicates(
-                    root,
-                    cb,
-                    predicates,
-                    effectiveFilter
-            );
-
-            addDatePredicates(
-                    root,
-                    cb,
-                    predicates,
-                    effectiveFilter
-            );
-
-            return cb.and(predicates.toArray(new Predicate[0]));
-        }, safePageable).map(this::toResponse);
+        return auditEventRepository
+                .findAll(
+                        specification,
+                        safePageable
+                )
+                .map(this::toResponse);
     }
 
     @Transactional(readOnly = true)
@@ -110,31 +100,80 @@ public class AuditEventQueryService {
             SafeAiUserPrincipal currentUser,
             Pageable pageable
     ) {
-        Objects.requireNonNull(userId, "userId не должен быть null");
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(
+                userId,
+                "userId не должен быть null"
+        );
 
-        Pageable safePageable = sanitizeAuditPageable(pageable);
-        boolean superAdmin = isSuperAdmin(currentUser);
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
 
-        return auditEventRepository.findAll((root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
+        AuditEventFilter filter =
+                new AuditEventFilter(
+                        null,
+                        null,
+                        userId,
+                        null,
+                        null,
+                        null
+                );
 
-            Join<AuditEventEntity, UserEntity> userJoin = root.join("user", JoinType.LEFT);
+        return findAll(
+                currentUser,
+                filter,
+                pageable
+        );
+    }
 
-            predicates.add(cb.equal(
-                    userJoin.get("id"),
-                    userId
-            ));
+    private Specification<AuditEventEntity> buildSpecification(
+            SafeAiUserPrincipal currentUser,
+            AuditEventFilter filter,
+            boolean superAdmin
+    ) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates =
+                    new ArrayList<>();
 
-            if (!superAdmin) {
-                predicates.add(cb.equal(
-                        root.get("organizationId"),
-                        currentUser.getOrganizationId()
-                ));
-            }
+            addOrganizationPredicate(
+                    root,
+                    cb,
+                    predicates,
+                    currentUser,
+                    filter,
+                    superAdmin
+            );
 
-            return cb.and(predicates.toArray(new Predicate[0]));
-        }, safePageable).map(this::toResponse);
+            addEventTypePredicate(
+                    root,
+                    cb,
+                    predicates,
+                    filter
+            );
+
+            addUserPredicates(
+                    root,
+                    cb,
+                    predicates,
+                    filter
+            );
+
+            addDatePredicates(
+                    root,
+                    cb,
+                    predicates,
+                    filter
+            );
+
+            return predicates.isEmpty()
+                    ? cb.conjunction()
+                    : cb.and(
+                    predicates.toArray(
+                            Predicate[]::new
+                    )
+            );
+        };
     }
 
     private void addOrganizationPredicate(
@@ -146,18 +185,23 @@ public class AuditEventQueryService {
             boolean superAdmin
     ) {
         if (!superAdmin) {
-            predicates.add(cb.equal(
-                    root.get("organizationId"),
-                    currentUser.getOrganizationId()
-            ));
+            predicates.add(
+                    cb.equal(
+                            root.get("organizationId"),
+                            currentUser.getOrganizationId()
+                    )
+            );
+
             return;
         }
 
         if (filter.organizationId() != null) {
-            predicates.add(cb.equal(
-                    root.get("organizationId"),
-                    filter.organizationId()
-            ));
+            predicates.add(
+                    cb.equal(
+                            root.get("organizationId"),
+                            filter.organizationId()
+                    )
+            );
         }
     }
 
@@ -171,10 +215,12 @@ public class AuditEventQueryService {
             return;
         }
 
-        predicates.add(cb.equal(
-                root.get("eventType"),
-                filter.eventType().name()
-        ));
+        predicates.add(
+                cb.equal(
+                        root.get("eventType"),
+                        filter.eventType().name()
+                )
+        );
     }
 
     private void addUserPredicates(
@@ -183,33 +229,43 @@ public class AuditEventQueryService {
             List<Predicate> predicates,
             AuditEventFilter filter
     ) {
-        boolean hasUserEmail = filter.userEmail() != null
-                && !filter.userEmail().isBlank();
+        boolean hasUserId =
+                filter.userId() != null;
 
-        boolean hasUserId = filter.userId() != null;
+        boolean hasUserEmail =
+                filter.userEmail() != null
+                        && !filter.userEmail().isBlank();
 
-        if (!hasUserEmail && !hasUserId) {
+        if (!hasUserId && !hasUserEmail) {
             return;
         }
 
-        Join<AuditEventEntity, UserEntity> userJoin = root.join("user", JoinType.LEFT);
-
-        if (hasUserEmail) {
-            String normalizedEmail = filter.userEmail()
-                    .trim()
-                    .toLowerCase();
-
-            predicates.add(cb.like(
-                    cb.lower(userJoin.get("email")),
-                    "%" + normalizedEmail + "%"
-            ));
+        if (hasUserId) {
+            predicates.add(
+                    cb.equal(
+                            root.get("actorUserId"),
+                            filter.userId()
+                    )
+            );
         }
 
-        if (hasUserId) {
-            predicates.add(cb.equal(
-                    userJoin.get("id"),
-                    filter.userId()
-            ));
+        if (hasUserEmail) {
+            String normalizedEmailPrefix =
+                    escapeLike(
+                            filter.userEmail()
+                                    .trim()
+                                    .toLowerCase(Locale.ROOT)
+                    );
+
+            predicates.add(
+                    cb.like(
+                            cb.lower(
+                                    root.get("actorEmail")
+                            ),
+                            normalizedEmailPrefix + "%",
+                            '\\'
+                    )
+            );
         }
     }
 
@@ -220,17 +276,21 @@ public class AuditEventQueryService {
             AuditEventFilter filter
     ) {
         if (filter.dateFrom() != null) {
-            predicates.add(cb.greaterThanOrEqualTo(
-                    root.get("createdAt"),
-                    filter.dateFrom()
-            ));
+            predicates.add(
+                    cb.greaterThanOrEqualTo(
+                            root.get("createdAt"),
+                            filter.dateFrom()
+                    )
+            );
         }
 
         if (filter.dateTo() != null) {
-            predicates.add(cb.lessThan(
-                    root.get("createdAt"),
-                    filter.dateTo()
-            ));
+            predicates.add(
+                    cb.lessThan(
+                            root.get("createdAt"),
+                            filter.dateTo()
+                    )
+            );
         }
     }
 
@@ -239,18 +299,23 @@ public class AuditEventQueryService {
             AuditEventFilter filter,
             boolean superAdmin
     ) {
-        if (superAdmin || filter.organizationId() == null) {
+        if (superAdmin
+                || filter.organizationId() == null) {
             return;
         }
 
-        if (!filter.organizationId().equals(currentUser.getOrganizationId())) {
+        if (!filter.organizationId().equals(
+                currentUser.getOrganizationId()
+        )) {
             throw new ForbiddenOperationException(
-                    "Нельзя фильтровать audit другой организации"
+                    "Нельзя фильтровать аудит другой организации"
             );
         }
     }
 
-    private Pageable sanitizeAuditPageable(Pageable pageable) {
+    private Pageable sanitizeAuditPageable(
+            Pageable pageable
+    ) {
         if (pageable == null || pageable.isUnpaged()) {
             return PageRequest.of(
                     0,
@@ -259,36 +324,101 @@ public class AuditEventQueryService {
             );
         }
 
-        int pageSize = Math.min(pageable.getPageSize(), MAX_PAGE_SIZE);
+        int pageNumber =
+                Math.max(
+                        pageable.getPageNumber(),
+                        0
+                );
 
-        Sort safeSort = sanitizeSort(pageable.getSort());
+        int pageSize =
+                Math.max(
+                        1,
+                        Math.min(
+                                pageable.getPageSize(),
+                                MAX_PAGE_SIZE
+                        )
+                );
 
         return PageRequest.of(
-                pageable.getPageNumber(),
+                pageNumber,
                 pageSize,
-                safeSort
+                sanitizeSort(
+                        pageable.getSort()
+                )
         );
     }
 
-    private Sort sanitizeSort(Sort sort) {
+    private Sort sanitizeSort(
+            Sort sort
+    ) {
         if (sort == null || sort.isUnsorted()) {
             return DEFAULT_SORT;
         }
 
-        List<Sort.Order> allowedOrders = sort.stream()
-                .filter(order -> ALLOWED_SORT_PROPERTIES.contains(order.getProperty()))
-                .map(order -> new Sort.Order(
-                        order.getDirection(),
-                        order.getProperty(),
-                        order.getNullHandling()
-                ))
-                .toList();
+        List<Sort.Order> allowedOrders =
+                sort.stream()
+                        .filter(order ->
+                                ALLOWED_SORT_PROPERTIES
+                                        .contains(
+                                                order.getProperty()
+                                        )
+                        )
+                        .map(order ->
+                                new Sort.Order(
+                                        order.getDirection(),
+                                        order.getProperty(),
+                                        order.getNullHandling()
+                                )
+                        )
+                        .toList();
 
         if (allowedOrders.isEmpty()) {
             return DEFAULT_SORT;
         }
 
-        return Sort.by(allowedOrders);
+        boolean containsId =
+                allowedOrders.stream()
+                        .anyMatch(order ->
+                                "id".equals(
+                                        order.getProperty()
+                                )
+                        );
+
+        if (containsId) {
+            return Sort.by(allowedOrders);
+        }
+
+        List<Sort.Order> deterministic =
+                new ArrayList<>(allowedOrders);
+
+        deterministic.add(
+                Sort.Order.desc("id")
+        );
+
+        return Sort.by(deterministic);
+    }
+
+    private void validateDateRange(
+            AuditEventFilter filter
+    ) {
+        if (filter.dateFrom() != null
+                && filter.dateTo() != null
+                && !filter.dateFrom().isBefore(
+                filter.dateTo()
+        )) {
+            throw new BadRequestException(
+                    "dateFrom должен быть раньше dateTo"
+            );
+        }
+    }
+
+    private String escapeLike(
+            String value
+    ) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     private AuditEventFilter emptyFilter() {
@@ -302,25 +432,32 @@ public class AuditEventQueryService {
         );
     }
 
-    private AuditEventResponse toResponse(AuditEventEntity entity) {
-        UUID userId = entity.getUser() == null ? null : entity.getUser().getId();
-        String userEmail = entity.getUser() == null ? null : entity.getUser().getEmail();
-
+    private AuditEventResponse toResponse(
+            AuditEventEntity entity
+    ) {
         return new AuditEventResponse(
                 entity.getId(),
-                userId,
+                entity.getActorUserId(),
                 entity.getOrganizationId(),
-                userEmail,
+                entity.getActorEmail(),
+                entity.getActorDisplayName(),
                 entity.getEventType(),
                 entity.getDetails(),
                 entity.getCreatedAt()
         );
     }
 
-    private boolean isSuperAdmin(SafeAiUserPrincipal currentUser) {
-        return currentUser.getAuthorities()
+    private boolean isSuperAdmin(
+            SafeAiUserPrincipal currentUser
+    ) {
+        return currentUser
+                .getAuthorities()
                 .stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch("ROLE_SUPER_ADMIN"::equals);
+                .map(
+                        GrantedAuthority::getAuthority
+                )
+                .anyMatch(
+                        "ROLE_SUPER_ADMIN"::equals
+                );
     }
 }

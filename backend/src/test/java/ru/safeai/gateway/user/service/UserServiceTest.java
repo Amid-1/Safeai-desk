@@ -31,6 +31,7 @@ import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -64,6 +65,12 @@ class UserServiceTest {
 
     private static final String VALID_PASSWORD = "Admin123!456";
     private static final String NEW_VALID_PASSWORD = "NewPass123!45";
+
+    private static final UUID SAVED_USER_ID =
+            UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
+
+    private static final Instant SAVED_AT =
+            Instant.parse("2026-06-12T12:00:00Z");
 
     @Mock
     private UserRepository userRepository;
@@ -112,7 +119,7 @@ class UserServiceTest {
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Пользователь с таким email уже существует");
 
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -126,7 +133,7 @@ class UserServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Организация не найдена");
 
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -142,7 +149,7 @@ class UserServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Роль не найдена");
 
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -158,7 +165,7 @@ class UserServiceTest {
                 .hasMessageContaining("ADMIN может назначать только роль USER");
 
         verify(roleRepository, never()).findByName(anyString());
-        verify(userRepository, never()).save(any());
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -172,24 +179,12 @@ class UserServiceTest {
                 .thenReturn(Optional.of(organizationEntity()));
         when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
         when(passwordEncoder.encode(VALID_PASSWORD)).thenReturn("encoded-password");
-        when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> {
-            UserEntity user = invocation.getArgument(0);
-
-            if (user.getId() == null) {
-                user.setId(UUID.randomUUID());
-            }
-
-            if (user.getCreatedAt() == null) {
-                user.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-            }
-
-            return user;
-        });
+        stubUserSaveAndFlush();
 
         UserResponse response = userService.create(request, superAdminPrincipal());
 
         ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
-        verify(userRepository).save(captor.capture());
+        verify(userRepository).saveAndFlush(captor.capture());
 
         UserEntity savedEntity = captor.getValue();
 
@@ -229,8 +224,7 @@ class UserServiceTest {
         when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
                 .thenReturn(Optional.of(user));
 
-        when(userRepository.save(any(UserEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubUserSave();
 
         UserResponse response = userService.updateEnabled(
                 USER_ID,
@@ -265,8 +259,7 @@ class UserServiceTest {
         when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
                 .thenReturn(Optional.of(user));
 
-        when(userRepository.save(any(UserEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubUserSave();
 
         UserResponse response = userService.updateEnabled(
                 USER_ID,
@@ -383,8 +376,7 @@ class UserServiceTest {
         when(roleRepository.findByName("ADMIN"))
                 .thenReturn(Optional.of(adminRole));
 
-        when(userRepository.save(any(UserEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubUserSave();
 
         UserResponse response = userService.updateRoles(
                 USER_ID,
@@ -448,8 +440,7 @@ class UserServiceTest {
         when(roleRepository.findByName("USER"))
                 .thenReturn(Optional.of(userRole));
 
-        when(userRepository.save(any(UserEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubUserSave();
 
         UserResponse response = userService.updateRoles(
                 USER_ID,
@@ -564,8 +555,7 @@ class UserServiceTest {
         when(passwordEncoder.encode(NEW_VALID_PASSWORD))
                 .thenReturn("new-encoded-password");
 
-        when(userRepository.save(any(UserEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubUserSave();
 
         userService.resetPassword(
                 USER_ID,
@@ -586,6 +576,25 @@ class UserServiceTest {
                 eq(AuditEventType.USER_PASSWORD_RESET),
                 anyMap()
         );
+    }
+
+
+    private void stubUserSaveAndFlush() {
+        when(userRepository.saveAndFlush(
+                any(UserEntity.class)
+        )).thenAnswer(invocation -> {
+            UserEntity entity = invocation.getArgument(0);
+
+            if (entity.getId() == null) {
+                entity.setId(SAVED_USER_ID);
+            }
+
+            if (entity.getCreatedAt() == null) {
+                entity.setCreatedAt(SAVED_AT);
+            }
+
+            return entity;
+        });
     }
 
     private CreateUserRequest createUserRequest(Set<String> roles) {
@@ -628,7 +637,7 @@ class UserServiceTest {
         user.setFullName("Test User");
         user.setEnabled(enabled);
         user.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-        user.setRoles(roles);
+        user.setRoles(new HashSet<>(roles));
         user.setTokenVersion(0L);
         return user;
     }
@@ -654,6 +663,14 @@ class UserServiceTest {
                 true,
                 0L,
                 List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
+        );
+    }
+
+    private void stubUserSave() {
+        when(userRepository.save(
+                any(UserEntity.class)
+        )).thenAnswer(invocation ->
+                invocation.getArgument(0)
         );
     }
 }

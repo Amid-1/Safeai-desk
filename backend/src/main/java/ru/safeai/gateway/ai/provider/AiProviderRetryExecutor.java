@@ -5,9 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderException;
-import java.util.concurrent.ThreadLocalRandom;
 
 import java.time.Duration;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -33,29 +33,26 @@ public class AiProviderRetryExecutor {
                     throw exception;
                 }
 
+                Duration delay = retryDelay(exception, backoff);
+
                 log.warn(
-                        "Retrying AI provider request: provider={}, model={}, attempt={}, maxAttempts={}, statusCode={}, requestId={}, error={}",
+                        "Retrying safe AI provider operation: provider={}, model={}, attempt={}, maxAttempts={}, errorType={}, retryAfter={}, delayMs={}",
                         provider,
                         model,
                         attempt,
                         maxAttempts,
-                        exception.getStatusCode(),
-                        exception.getProviderRequestId(),
-                        exception.getMessage()
+                        exception.getErrorType(),
+                        exception.getRetryAfter(),
+                        delay.toMillis()
                 );
 
-                sleep(withJitter(backoff), provider, model, exception);
+                sleep(delay, provider, model, exception);
                 backoff = nextBackoff(backoff);
             }
         }
 
-        throw new AiProviderException(
-                provider,
-                model,
-                null,
-                null,
-                false,
-                "AI provider retry failed unexpectedly"
+        throw new IllegalStateException(
+                "AI retry loop completed unexpectedly"
         );
     }
 
@@ -64,9 +61,29 @@ public class AiProviderRetryExecutor {
             int attempt,
             int maxAttempts
     ) {
-        return properties.isEnabled()
-                && exception.isRetryable()
-                && attempt < maxAttempts;
+        if (!properties.isEnabled()
+                || attempt >= maxAttempts
+                || !exception.isRetryable()) {
+            return false;
+        }
+
+        Duration retryAfter = exception.getRetryAfter();
+
+        return retryAfter == null
+                || retryAfter.compareTo(
+                        properties.effectiveMaxRetryAfter()
+                ) <= 0;
+    }
+
+    private Duration retryDelay(
+            AiProviderException exception,
+            Duration backoff
+    ) {
+        if (exception.getRetryAfter() != null) {
+            return exception.getRetryAfter();
+        }
+
+        return withJitter(backoff);
     }
 
     private Duration nextBackoff(Duration current) {
@@ -92,7 +109,10 @@ public class AiProviderRetryExecutor {
                     model,
                     cause.getStatusCode(),
                     cause.getProviderRequestId(),
+                    cause.getErrorType(),
                     false,
+                    cause.isOutcomeAmbiguous(),
+                    null,
                     "AI provider retry interrupted",
                     exception
             );

@@ -9,12 +9,18 @@ import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
 @Component
-public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, AbstractAuthenticationToken> {
+public class SafeAiJwtAuthenticationConverter
+        implements Converter<Jwt, AbstractAuthenticationToken> {
+
+    private static final int MAX_EMAIL_LENGTH = 255;
 
     @Override
     public @NonNull AbstractAuthenticationToken convert(@NonNull Jwt jwt) {
@@ -26,46 +32,38 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
 
         String userId = requiredClaim(jwt, "userId");
         String organizationId = requiredClaim(jwt, "organizationId");
-        String email = requiredClaim(jwt, "email");
+        String email = requiredCanonicalEmail(jwt);
+        long tokenVersion = requiredNonNegativeTokenVersion(jwt);
 
         if (!subject.equals(userId)) {
-            throw new BadJwtException("JWT subject does not match userId");
-        }
-
-        Number tokenVersionClaim = jwt.getClaim("tokenVersion");
-
-        if (tokenVersionClaim == null) {
-            throw new BadJwtException("JWT claim is missing: tokenVersion");
-        }
-
-        long tokenVersion = tokenVersionClaim.longValue();
-
-        if (tokenVersion < 0) {
-            throw new BadJwtException("JWT tokenVersion is invalid");
+            throw new BadJwtException(
+                    "JWT subject does not match userId"
+            );
         }
 
         List<String> roles = jwt.getClaimAsStringList("roles");
 
         if (roles == null || roles.isEmpty()) {
-            throw new BadJwtException("JWT claim is missing: roles");
+            throw new BadJwtException(
+                    "JWT claim is missing: roles"
+            );
         }
 
         Set<SimpleGrantedAuthority> authorities;
 
         try {
             authorities = RoleAuthorityMapper.toAuthorities(roles);
-        } catch (IllegalArgumentException exception) {
-            throw new BadJwtException("JWT roles contain unknown values");
+        } catch (IllegalArgumentException invalidRoleException) {
+            throw new BadJwtException(
+                    "JWT roles contain unknown values: "
+                            + invalidRoleException.getMessage()
+            );
         }
 
         if (authorities.isEmpty()) {
             throw new BadJwtException("JWT roles are invalid");
         }
 
-        /*
-         * JWT не является источником актуального enabled/status.
-         * Реальный статус пользователя и организации проверяется UserStatusFilter.
-         */
         SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
                 parseUuid(userId, "userId"),
                 parseUuid(organizationId, "organizationId"),
@@ -83,11 +81,82 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
         );
     }
 
+    private long requiredNonNegativeTokenVersion(Jwt jwt) {
+        Object raw = jwt.getClaim("tokenVersion");
+
+        if (!(raw instanceof Number number)) {
+            throw new BadJwtException(
+                    "JWT claim is not numeric: tokenVersion"
+            );
+        }
+
+        long result;
+
+        try {
+            result = switch (number) {
+                case Byte value -> value.longValue();
+                case Short value -> value.longValue();
+                case Integer value -> value.longValue();
+                case Long value -> value;
+                case BigInteger value -> value.longValueExact();
+                case BigDecimal value -> value.longValueExact();
+                case Double value -> {
+                    if (!Double.isFinite(value) || value % 1 != 0) {
+                        throw new ArithmeticException("not integral");
+                    }
+                    yield BigDecimal.valueOf(value).longValueExact();
+                }
+                case Float value -> {
+                    if (!Float.isFinite(value) || value % 1 != 0) {
+                        throw new ArithmeticException("not integral");
+                    }
+                    yield BigDecimal.valueOf(
+                            value.doubleValue()
+                    ).longValueExact();
+                }
+                default -> throw new ArithmeticException(
+                        "unsupported numeric type"
+                );
+            };
+        } catch (ArithmeticException invalidNumberException) {
+            throw new BadJwtException(
+                    "JWT claim is not an integral long: tokenVersion"
+                            + " ("
+                            + invalidNumberException.getMessage()
+                            + ")"
+            );
+        }
+
+        if (result < 0) {
+            throw new BadJwtException(
+                    "JWT claim is negative: tokenVersion"
+            );
+        }
+
+        return result;
+    }
+
+    private String requiredCanonicalEmail(Jwt jwt) {
+        String email = requiredClaim(jwt, "email");
+
+        if (email.length() > MAX_EMAIL_LENGTH
+                || !email.equals(email.trim())
+                || !email.equals(email.toLowerCase(Locale.ROOT))) {
+            throw new BadJwtException(
+                    "JWT email claim is not canonical"
+            );
+        }
+
+        return email;
+    }
+
     private String requiredClaim(Jwt jwt, String claimName) {
         String value = jwt.getClaimAsString(claimName);
 
         if (value == null || value.isBlank()) {
-            throw new BadJwtException("JWT claim is missing: " + claimName);
+            throw new BadJwtException(
+                    "JWT claim is missing: " + claimName
+            );
         }
 
         return value;
@@ -96,8 +165,14 @@ public class SafeAiJwtAuthenticationConverter implements Converter<Jwt, Abstract
     private UUID parseUuid(String value, String claimName) {
         try {
             return UUID.fromString(value);
-        } catch (IllegalArgumentException exception) {
-            throw new BadJwtException("JWT claim is not valid UUID: " + claimName);
+        } catch (IllegalArgumentException invalidUuidException) {
+            throw new BadJwtException(
+                    "JWT claim is not valid UUID: "
+                            + claimName
+                            + " ("
+                            + invalidUuidException.getMessage()
+                            + ")"
+            );
         }
     }
 }

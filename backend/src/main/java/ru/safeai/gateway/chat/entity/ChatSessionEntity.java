@@ -14,7 +14,6 @@ import java.util.UUID;
 @Entity
 @Table(name = "chat_sessions")
 public class ChatSessionEntity {
-
     @Id
     @Column(name = "id", nullable = false)
     private UUID id;
@@ -30,27 +29,22 @@ public class ChatSessionEntity {
     @Column(name = "title", length = 255)
     private String title;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     @PrePersist
     void prePersist() {
-        if (id == null) {
-            id = UUID.randomUUID();
-        }
-
+        if (id == null) id = UUID.randomUUID();
         Instant now = Instant.now();
-
-        if (createdAt == null) {
-            createdAt = now;
-        }
-
-        if (updatedAt == null) {
-            updatedAt = now;
-        }
+        if (createdAt == null) createdAt = now;
+        if (updatedAt == null) updatedAt = now;
     }
 
     public void touch() {

@@ -1,6 +1,5 @@
 package ru.safeai.gateway.ai.provider.openai;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
@@ -10,18 +9,27 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.dto.AiMessageRole;
+import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
-import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
-import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
-import ru.safeai.gateway.ai.pricing.ModelPricingService;
+import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
 import ru.safeai.gateway.ai.provider.AiProviderSupport;
 import ru.safeai.gateway.ai.provider.AiRestClientFactory;
+import ru.safeai.gateway.ai.provider.AiResponseMetadataService;
+import tools.jackson.databind.JsonNode;
 
-import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.Map;
+
+import static ru.safeai.gateway.ai.provider.AiJsonNodeSupport.textOrNull;
+import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.fromResourceAccess;
+import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.parsingFailure;
+import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.unknownFailure;
+
 
 @Slf4j
 @Service
@@ -32,22 +40,24 @@ import java.util.Map;
 public class OpenAiProvider implements AiProvider {
 
     private static final String PROVIDER_NAME = "openai";
+    private static final String PROVIDER_DISPLAY_NAME = "OpenAI";
 
     private final OpenAiProperties properties;
     private final RestClient client;
-    private final ModelPricingService pricingService;
+    private final AiResponseMetadataService responseMetadataService;
     private final AiProviderRetryExecutor retryExecutor;
+    private final Clock clock;
 
     public OpenAiProvider(
             OpenAiProperties properties,
-            ModelPricingService pricingService,
-            AiProviderRetryExecutor retryExecutor
+            AiResponseMetadataService responseMetadataService,
+            AiProviderRetryExecutor retryExecutor,
+            Clock clock
     ) {
-        properties.validate();
-
         this.properties = properties;
-        this.pricingService = pricingService;
+        this.responseMetadataService = responseMetadataService;
         this.retryExecutor = retryExecutor;
+        this.clock = clock;
         this.client = AiRestClientFactory.create(
                 properties.baseUrl(),
                 properties.connectTimeout(),
@@ -66,19 +76,17 @@ public class OpenAiProvider implements AiProvider {
 
     private AiChatResponse doSendMessage(AiChatRequest request) {
         Map<String, Object> payload = Map.of(
-                "model", properties.model(),
-                "input", AiProviderSupport.buildMessages(request, this::normalizeRole),
-                "max_output_tokens", properties.maxOutputTokens(),
-                "store", properties.effectiveStore()
-        );
-
-        log.info(
-                "Sending request to OpenAI: userId={}, organizationId={}, chatId={}, model={}, messageLength={}",
-                request.userId(),
-                request.organizationId(),
-                request.chatId(),
+                "model",
                 properties.model(),
-                request.userMessage().length()
+                "input",
+                AiProviderSupport.buildMessages(
+                        request,
+                        this::normalizeRole
+                ),
+                "max_output_tokens",
+                properties.maxOutputTokens(),
+                "store",
+                properties.effectiveStore()
         );
 
         long startedAt = System.nanoTime();
@@ -86,87 +94,101 @@ public class OpenAiProvider implements AiProvider {
         try {
             JsonNode response = client.post()
                     .uri("/responses")
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiKey())
-                    .header(HttpHeaders.CONTENT_TYPE, "application/json")
+                    .header(
+                            HttpHeaders.AUTHORIZATION,
+                            "Bearer " + properties.apiKey()
+                    )
+                    .header(
+                            HttpHeaders.CONTENT_TYPE,
+                            "application/json"
+                    )
+                    .header(
+                            "X-Client-Request-Id",
+                            request.providerOperationId().toString()
+                    )
                     .body(payload)
                     .retrieve()
                     .body(JsonNode.class);
 
-            int inputTokens = AiProviderSupport.extractInputTokens(response);
-            int outputTokens = AiProviderSupport.extractOutputTokens(response);
-            long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
-
-            String content = AiProviderSupport.requireValidContent(
-                    PROVIDER_NAME,
-                    properties.model(),
-                    extractOutputText(response),
-                    properties.maxResponseChars()
+            return createResponse(
+                    response,
+                    startedAt
             );
-
-            BigDecimal costUsd = pricingService.calculateCostUsd(
-                    properties.model(),
-                    inputTokens,
-                    outputTokens
-            );
-
-            log.info(
-                    "OpenAI response received: userId={}, organizationId={}, chatId={}, model={}, durationMs={}, inputTokens={}, outputTokens={}, costUsd={}",
-                    request.userId(),
-                    request.organizationId(),
-                    request.chatId(),
-                    properties.model(),
-                    durationMs,
-                    inputTokens,
-                    outputTokens,
-                    costUsd
-            );
-
-            return new AiChatResponse(
-                    content,
-                    properties.model(),
-                    inputTokens,
-                    outputTokens,
-                    costUsd
-            );
-
         } catch (ResourceAccessException exception) {
-            if (AiProviderSupport.isTimeout(exception)) {
-                throw new AiProviderTimeoutException(
-                        PROVIDER_NAME,
-                        properties.model(),
-                        "OpenAI provider timeout",
-                        exception
-                );
-            }
-
-            throw new AiProviderUnavailableException(
+            throw fromResourceAccess(
                     PROVIDER_NAME,
+                    PROVIDER_DISPLAY_NAME,
                     properties.model(),
-                    "OpenAI provider unavailable",
                     exception
             );
         } catch (RestClientResponseException exception) {
-            throw mapOpenAiHttpException(exception);
+            throw mapHttpException(exception);
         } catch (AiProviderException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            throw new AiProviderException(
+            throw unknownFailure(
                     PROVIDER_NAME,
+                    PROVIDER_DISPLAY_NAME,
                     properties.model(),
-                    null,
-                    null,
-                    false,
-                    "OpenAI provider request failed",
                     exception
             );
         }
     }
 
-    private AiProviderException mapOpenAiHttpException(
+    private AiChatResponse createResponse(
+            JsonNode response,
+            long startedAt
+    ) {
+        ParsedOpenAiResponse parsed =
+                parseResponse(response);
+
+        AiResponseMetadataService.AiResponseMetadata metadata =
+                responseMetadataService.extract(
+                        response,
+                        properties.model()
+                );
+
+        long durationMs =
+                (System.nanoTime() - startedAt) / 1_000_000;
+
+        log.debug(
+                "OpenAI response: model={}, outcome={}, durationMs={}, "
+                        + "inputTokens={}, outputTokens={}, pricingStatus={}",
+                properties.model(),
+                parsed.status(),
+                durationMs,
+                metadata.inputTokens(),
+                metadata.outputTokens(),
+                metadata.pricing().status()
+        );
+
+        return AiChatResponse.fromProvider(
+                parsed.content(),
+                properties.model(),
+                parsed.providerMessageId(),
+                parsed.status(),
+                parsed.finishReason(),
+                metadata.inputTokens(),
+                metadata.outputTokens(),
+                metadata.pricing()
+        );
+    }
+
+    private AiProviderException mapHttpException(
             RestClientResponseException exception
     ) {
         int status = exception.getStatusCode().value();
-        String requestId = AiProviderSupport.extractProviderRequestId(exception);
+
+        String requestId =
+                AiProviderSupport.extractProviderRequestId(
+                        exception
+                );
+
+        Duration retryAfter =
+                AiProviderSupport.extractRetryAfter(
+                        exception,
+                        clock
+                );
 
         if (status == 429) {
             return new AiProviderRateLimitedException(
@@ -174,99 +196,174 @@ public class OpenAiProvider implements AiProvider {
                     properties.model(),
                     status,
                     requestId,
-                    "OpenAI API rate limited: status=" + status,
+                    retryAfter,
+                    retryAfter != null,
+                    "OpenAI API rate limited",
                     exception
             );
         }
 
-        boolean retryable = status == 500
-                || status == 502
-                || status == 503
-                || status == 504;
+        AiProviderErrorType type = switch (status) {
+            case 401, 403 ->
+                    AiProviderErrorType.AUTHENTICATION;
+
+            case 400, 404, 409, 422 ->
+                    AiProviderErrorType.INVALID_REQUEST;
+
+            default -> status >= 500
+                    ? AiProviderErrorType.SERVER_ERROR
+                    : AiProviderErrorType.UNKNOWN;
+        };
 
         return new AiProviderException(
                 PROVIDER_NAME,
                 properties.model(),
                 status,
                 requestId,
-                retryable,
+                type,
+                false,
+                status >= 500,
+                retryAfter,
                 "OpenAI API error: status=" + status,
                 exception
         );
     }
 
-    private String normalizeRole(String role) {
-        if (role == null || role.isBlank()) {
-            return "user";
+    private ParsedOpenAiResponse parseResponse(
+            JsonNode response
+    ) {
+        if (response == null) {
+            throw parsingFailure(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    "OpenAI returned null response"
+            );
         }
 
-        String normalized = role.trim().toLowerCase();
+        String providerMessageId =
+                textOrNull(response.get("id"));
 
-        return switch (normalized) {
-            case "assistant" -> "assistant";
-            case "system" -> "system";
-            case "developer" -> "developer";
-            default -> "user";
-        };
+        String statusValue =
+                textOrNull(response.get("status"));
+
+        if ("failed".equals(statusValue)
+                || "cancelled".equals(statusValue)) {
+            throw parsingFailure(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    "OpenAI response status=" + statusValue
+            );
+        }
+
+        String normalText =
+                extractOutputText(
+                        response,
+                        "output_text",
+                        "text"
+                );
+
+        String refusalText =
+                extractOutputText(
+                        response,
+                        "refusal",
+                        "refusal"
+                );
+
+        AiResponseStatus status;
+        String content;
+        String finishReason = statusValue;
+
+        if (normalText != null) {
+            content = normalText;
+            status = "incomplete".equals(statusValue)
+                    ? AiResponseStatus.INCOMPLETE
+                    : AiResponseStatus.COMPLETED;
+        } else if (refusalText != null) {
+            content = refusalText;
+            status = AiResponseStatus.REFUSED;
+            finishReason = "refusal";
+        } else {
+            throw parsingFailure(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    "OpenAI returned no output text or refusal"
+            );
+        }
+
+        return new ParsedOpenAiResponse(
+                content,
+                providerMessageId,
+                status,
+                finishReason
+        );
     }
 
-    private String extractOutputText(JsonNode response) {
-        if (response == null) {
-            return "";
+    private String extractOutputText(
+            JsonNode response,
+            String acceptedType,
+            String fieldName
+    ) {
+        if ("output_text".equals(acceptedType)) {
+            String direct =
+                    textOrNull(response.get("output_text"));
+
+            if (direct != null) {
+                return direct;
+            }
         }
 
-        String directOutputText = response.path("output_text").asText(null);
+        JsonNode output = response.get("output");
 
-        if (directOutputText != null && !directOutputText.isBlank()) {
-            return directOutputText;
-        }
-
-        JsonNode output = response.path("output");
-
-        if (!output.isArray()) {
-            return "";
+        if (output == null || !output.isArray()) {
+            return null;
         }
 
         StringBuilder result = new StringBuilder();
 
         for (JsonNode outputItem : output) {
-            JsonNode content = outputItem.path("content");
+            JsonNode content = outputItem.get("content");
 
-            if (!content.isArray()) {
+            if (content == null || !content.isArray()) {
                 continue;
             }
 
             for (JsonNode contentItem : content) {
-                String type = contentItem.path("type").asText("");
+                String type =
+                        textOrNull(contentItem.get("type"));
 
-                if ("output_text".equals(type)) {
-                    appendIfNotBlank(
-                            result,
-                            contentItem.path("text").asText("")
-                    );
+                if (!acceptedType.equals(type)) {
+                    continue;
                 }
 
-                if ("refusal".equals(type)) {
-                    appendIfNotBlank(
-                            result,
-                            contentItem.path("refusal").asText("")
-                    );
+                String value =
+                        textOrNull(contentItem.get(fieldName));
+
+                if (value == null) {
+                    continue;
                 }
+
+                if (!result.isEmpty()) {
+                    result.append("\n\n");
+                }
+
+                result.append(value);
             }
         }
 
-        return result.toString();
+        return result.isEmpty()
+                ? null
+                : result.toString();
     }
 
-    private void appendIfNotBlank(StringBuilder result, String value) {
-        if (value == null || value.isBlank()) {
-            return;
-        }
+    private String normalizeRole(AiMessageRole role) {
+        return role.providerValue();
+    }
 
-        if (!result.isEmpty()) {
-            result.append("\n\n");
-        }
-
-        result.append(value);
+    private record ParsedOpenAiResponse(
+            String content,
+            String providerMessageId,
+            AiResponseStatus status,
+            String finishReason
+    ) {
     }
 }

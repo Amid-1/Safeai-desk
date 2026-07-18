@@ -12,7 +12,10 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -31,6 +34,9 @@ class JwtServiceTest {
     private static final UUID ORGANIZATION_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
+    private static final Instant NOW =
+            Instant.parse("2026-06-12T12:00:00Z");
+
     @Mock
     private JwtEncoder jwtEncoder;
 
@@ -45,15 +51,17 @@ class JwtServiceTest {
                 "safeai-desk-api"
         );
 
-        jwtService = new JwtService(jwtEncoder, jwtProperties);
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+
+        jwtService = new JwtService(jwtEncoder, jwtProperties, clock);
     }
 
     @Test
-    void generateToken_shouldCreateJwtWithExpectedClaims() {
+    void generateToken_shouldCreateJwtWithExpectedClaimsAndExactLifetime() {
         Jwt encodedJwt = new Jwt(
                 "encoded-token",
-                Instant.parse("2026-06-12T12:00:00Z"),
-                Instant.parse("2026-06-12T13:00:00Z"),
+                NOW,
+                NOW.plus(Duration.ofMinutes(60)),
                 Map.of("alg", "HS256"),
                 Map.of("test", "value")
         );
@@ -89,16 +97,18 @@ class JwtServiceTest {
         assertThat(claims.getAudience()).containsExactly("safeai-desk-api");
         assertThat(claims.getSubject()).isEqualTo(USER_ID.toString());
 
-        assertThat(claims.getIssuedAt()).isNotNull();
-        assertThat(claims.getExpiresAt()).isNotNull();
-        assertThat(claims.getExpiresAt()).isAfter(claims.getIssuedAt());
+        assertThat(claims.getIssuedAt()).isEqualTo(NOW);
+        assertThat(claims.getExpiresAt())
+                .isEqualTo(NOW.plus(Duration.ofMinutes(60)));
+        assertThat(Duration.between(
+                claims.getIssuedAt(),
+                claims.getExpiresAt()
+        )).isEqualTo(Duration.ofMinutes(60));
 
         assertThat(claims.getClaimAsString("email"))
                 .isEqualTo("admin@test.com");
-
         assertThat(claims.getClaimAsString("userId"))
                 .isEqualTo(USER_ID.toString());
-
         assertThat(claims.getClaimAsString("organizationId"))
                 .isEqualTo(ORGANIZATION_ID.toString());
 
@@ -108,11 +118,7 @@ class JwtServiceTest {
         List<String> roles = claims.getClaim("roles");
         assertThat(roles).containsExactly("ADMIN", "USER");
 
-        String jti = claims.getClaimAsString("jti");
-
-        assertThat(jti).isNotBlank();
-
-        UUID parsedJti = UUID.fromString(jti);
-        assertThat(parsedJti).isNotNull();
+        assertThat(claims.getClaimAsString("jti")).isNotBlank();
+        assertThat(UUID.fromString(claims.getClaimAsString("jti"))).isNotNull();
     }
 }

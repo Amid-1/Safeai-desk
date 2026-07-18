@@ -1,10 +1,12 @@
 package ru.safeai.gateway.ai.exception;
 
-public class AiProviderTimeoutException extends AiProviderException {
+public class AiProviderTimeoutException
+        extends AiProviderException {
 
     public AiProviderTimeoutException(
             String provider,
             String model,
+            boolean outcomeAmbiguous,
             String message,
             Throwable cause
     ) {
@@ -13,7 +15,10 @@ public class AiProviderTimeoutException extends AiProviderException {
                 model,
                 null,
                 null,
-                true,
+                AiProviderErrorType.TIMEOUT,
+                !outcomeAmbiguous,
+                outcomeAmbiguous,
+                null,
                 message,
                 cause
         );

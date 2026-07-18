@@ -1,8 +1,9 @@
 package ru.safeai.gateway.ai.provider;
 
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
 import java.time.Duration;
 
 public final class AiRestClientFactory {
@@ -15,8 +16,17 @@ public final class AiRestClientFactory {
             Duration connectTimeout,
             Duration readTimeout
     ) {
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(connectTimeout);
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(connectTimeout)
+                .followRedirects(
+                        HttpClient.Redirect.NEVER
+                )
+                .version(HttpClient.Version.HTTP_2)
+                .build();
+
+        JdkClientHttpRequestFactory requestFactory =
+                new JdkClientHttpRequestFactory(httpClient);
+
         requestFactory.setReadTimeout(readTimeout);
 
         return RestClient.builder()

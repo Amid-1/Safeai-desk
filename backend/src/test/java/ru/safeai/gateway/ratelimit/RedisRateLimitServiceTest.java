@@ -3,6 +3,7 @@ package ru.safeai.gateway.ratelimit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -15,10 +16,14 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class RedisRateLimitServiceTest {
@@ -29,8 +34,14 @@ class RedisRateLimitServiceTest {
     private static final UUID ORGANIZATION_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
-    private static final String AI_USER_MESSAGE_KEY = "test-ai-user-message-key";
-    private static final String AI_ORGANIZATION_MESSAGE_KEY = "test-ai-organization-message-key";
+    private static final String USER_KEY =
+            "safeai:test:rate-limit:ai-message:user";
+
+    private static final String ORGANIZATION_KEY =
+            "safeai:test:rate-limit:ai-message:organization";
+
+    private static final Duration WINDOW =
+            Duration.ofHours(1);
 
     @Mock
     private RedisFixedWindowRateLimiter rateLimiter;
@@ -47,137 +58,314 @@ class RedisRateLimitServiceTest {
     void setUp() {
         service = new RedisRateLimitService(
                 rateLimiter,
-                new AiMessageRateLimitProperties(true, 20, 100, 1000),
+                new AiMessageRateLimitProperties(
+                        true,
+                        20,
+                        100,
+                        1_000
+                ),
                 eventPublisher,
                 keyFactory
         );
     }
 
     @Test
-    void checkAiMessageAllowed_whenUserWithinLimit_shouldPass() {
-        mockUserAndOrganizationKeys();
+    void userWithinLimitsPassesWithAtomicDualCheck() {
+        stubKeys();
 
-        when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(new RateLimitResult(20L, 3600L))
-                .thenReturn(new RateLimitResult(200L, 3600L));
+        when(rateLimiter.tryIncrementBoth(
+                USER_KEY,
+                20,
+                ORGANIZATION_KEY,
+                1_000,
+                WINDOW
+        )).thenReturn(allowedResult(20));
 
-        assertThatCode(() -> service.checkAiMessageAllowed(userPrincipal()))
-                .doesNotThrowAnyException();
-
-        verifyNoInteractions(eventPublisher);
-    }
-
-    @Test
-    void checkAiMessageAllowed_whenAdminAboveUserLimitButWithinAdminLimit_shouldPass() {
-        mockUserAndOrganizationKeys();
-
-        when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(new RateLimitResult(80L, 3600L))
-                .thenReturn(new RateLimitResult(200L, 3600L));
-
-        assertThatCode(() -> service.checkAiMessageAllowed(adminPrincipal()))
-                .doesNotThrowAnyException();
+        assertThatCode(() ->
+                service.checkAiMessageAllowed(userPrincipal())
+        ).doesNotThrowAnyException();
 
         verifyNoInteractions(eventPublisher);
     }
 
     @Test
-    void checkAiMessageAllowed_whenUserLimitExceededFirstTime_shouldPublishEventAndThrow() {
-        when(keyFactory.aiMessageUser(USER_ID))
-                .thenReturn(AI_USER_MESSAGE_KEY);
+    void adminUsesAdminLimit() {
+        stubKeys();
 
-        when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(new RateLimitResult(21L, 3600L));
+        when(rateLimiter.tryIncrementBoth(
+                USER_KEY,
+                100,
+                ORGANIZATION_KEY,
+                1_000,
+                WINDOW
+        )).thenReturn(allowedResult(80));
 
-        assertThatThrownBy(() -> service.checkAiMessageAllowed(userPrincipal()))
+        assertThatCode(() ->
+                service.checkAiMessageAllowed(adminPrincipal())
+        ).doesNotThrowAnyException();
+
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void superAdminUsesAdminLimit() {
+        stubKeys();
+
+        when(rateLimiter.tryIncrementBoth(
+                USER_KEY,
+                100,
+                ORGANIZATION_KEY,
+                1_000,
+                WINDOW
+        )).thenReturn(allowedResult(80));
+
+        assertThatCode(() ->
+                service.checkAiMessageAllowed(superAdminPrincipal())
+        ).doesNotThrowAnyException();
+
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void userLimitExceededPublishesEventAndThrows() {
+        stubKeys();
+
+        when(rateLimiter.tryIncrementBoth(
+                USER_KEY,
+                20,
+                ORGANIZATION_KEY,
+                1_000,
+                WINDOW
+        )).thenReturn(new DualRateLimitResult(
+                RateLimitDecision.FIRST_EXCEEDED,
+                20,
+                200,
+                3_600,
+                3_600,
+                true
+        ));
+
+        assertThatThrownBy(() ->
+                service.checkAiMessageAllowed(userPrincipal())
+        )
                 .isInstanceOf(RateLimitExceededException.class)
-                .hasMessageContaining("Превышен лимит AI-запросов пользователя");
+                .hasMessageContaining(
+                        "Превышен лимит AI-запросов пользователя"
+                );
 
-        verify(eventPublisher).publishEvent(any(RateLimitExceededEvent.class));
-        verify(keyFactory, never()).aiMessageOrganization(any(UUID.class));
+        ArgumentCaptor<RateLimitExceededEvent> captor =
+                ArgumentCaptor.forClass(
+                        RateLimitExceededEvent.class
+                );
+
+        verify(eventPublisher)
+                .publishEvent(captor.capture());
+
+        assertThat(captor.getValue().type())
+                .isEqualTo("AI_MESSAGE_USER");
+
+        assertThat(captor.getValue().limit())
+                .isEqualTo(20);
+
+        assertThat(captor.getValue().details())
+                .containsEntry(
+                        "decision",
+                        "FIRST_EXCEEDED"
+                );
     }
 
     @Test
-    void checkAiMessageAllowed_whenUserAlreadyExceededLimit_shouldNotPublishEventAgain() {
-        when(keyFactory.aiMessageUser(USER_ID))
-                .thenReturn(AI_USER_MESSAGE_KEY);
+    void repeatedUserLimitExceededDoesNotPublishAgain() {
+        stubKeys();
 
-        when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(new RateLimitResult(22L, 3600L));
+        when(rateLimiter.tryIncrementBoth(
+                USER_KEY,
+                20,
+                ORGANIZATION_KEY,
+                1_000,
+                WINDOW
+        )).thenReturn(new DualRateLimitResult(
+                RateLimitDecision.FIRST_EXCEEDED,
+                20,
+                200,
+                3_600,
+                3_600,
+                false
+        ));
 
-        assertThatThrownBy(() -> service.checkAiMessageAllowed(userPrincipal()))
-                .isInstanceOf(RateLimitExceededException.class);
+        assertThatThrownBy(() ->
+                service.checkAiMessageAllowed(userPrincipal())
+        ).isInstanceOf(RateLimitExceededException.class);
 
         verifyNoInteractions(eventPublisher);
-        verify(keyFactory, never()).aiMessageOrganization(any(UUID.class));
     }
 
     @Test
-    void checkAiMessageAllowed_whenOrganizationLimitExceededFirstTime_shouldPublishEventAndThrow() {
-        mockUserAndOrganizationKeys();
+    void organizationLimitExceededThrowsOrganizationMessage() {
+        stubKeys();
 
-        when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(new RateLimitResult(20L, 3600L))
-                .thenReturn(new RateLimitResult(1001L, 3600L));
+        when(rateLimiter.tryIncrementBoth(
+                USER_KEY,
+                20,
+                ORGANIZATION_KEY,
+                1_000,
+                WINDOW
+        )).thenReturn(new DualRateLimitResult(
+                RateLimitDecision.SECOND_EXCEEDED,
+                5,
+                1_000,
+                3_600,
+                1_800,
+                false
+        ));
 
-        assertThatThrownBy(() -> service.checkAiMessageAllowed(userPrincipal()))
+        assertThatThrownBy(() ->
+                service.checkAiMessageAllowed(userPrincipal())
+        )
                 .isInstanceOf(RateLimitExceededException.class)
-                .hasMessageContaining("Превышен лимит AI-запросов организации");
+                .hasMessageContaining(
+                        "Превышен лимит AI-запросов организации"
+                );
 
-        verify(eventPublisher).publishEvent(any(RateLimitExceededEvent.class));
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
-    void checkAiMessageAllowed_whenDisabled_shouldDoNothing() {
-        RedisRateLimitService disabledService = new RedisRateLimitService(
+    void bothLimitsExceededReturnsCombinedMessage() {
+        stubKeys();
+
+        when(rateLimiter.tryIncrementBoth(
+                USER_KEY,
+                20,
+                ORGANIZATION_KEY,
+                1_000,
+                WINDOW
+        )).thenReturn(new DualRateLimitResult(
+                RateLimitDecision.BOTH_EXCEEDED,
+                20,
+                1_000,
+                900,
+                1_800,
+                false
+        ));
+
+        assertThatThrownBy(() ->
+                service.checkAiMessageAllowed(userPrincipal())
+        )
+                .isInstanceOf(RateLimitExceededException.class)
+                .hasMessageContaining(
+                        "Превышены лимиты AI-запросов пользователя "
+                                + "и организации"
+                );
+
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void eventPublishingFailureDoesNotChange429Into503() {
+        stubKeys();
+
+        when(rateLimiter.tryIncrementBoth(
+                USER_KEY,
+                20,
+                ORGANIZATION_KEY,
+                1_000,
+                WINDOW
+        )).thenReturn(new DualRateLimitResult(
+                RateLimitDecision.FIRST_EXCEEDED,
+                20,
+                100,
+                3_600,
+                3_600,
+                true
+        ));
+
+        doThrow(new RuntimeException("audit unavailable"))
+                .when(eventPublisher)
+                .publishEvent(any(Object.class));
+
+        assertThatThrownBy(() ->
+                service.checkAiMessageAllowed(userPrincipal())
+        )
+                .isInstanceOf(RateLimitExceededException.class)
+                .isNotInstanceOf(
+                        RateLimitUnavailableException.class
+                );
+    }
+
+    @Test
+    void redisFailureReturnsRateLimitUnavailable() {
+        stubKeys();
+
+        when(rateLimiter.tryIncrementBoth(
+                USER_KEY,
+                20,
+                ORGANIZATION_KEY,
+                1_000,
+                WINDOW
+        )).thenThrow(
+                new RuntimeException("Redis unavailable")
+        );
+
+        assertThatThrownBy(() ->
+                service.checkAiMessageAllowed(userPrincipal())
+        )
+                .isInstanceOf(
+                        RateLimitUnavailableException.class
+                )
+                .hasMessageContaining(
+                        "Redis AI message rate limit недоступен"
+                );
+
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void disabledLimiterDoesNothing() {
+        RedisRateLimitService disabledService =
+                new RedisRateLimitService(
+                        rateLimiter,
+                        new AiMessageRateLimitProperties(
+                                false,
+                                20,
+                                100,
+                                1_000
+                        ),
+                        eventPublisher,
+                        keyFactory
+                );
+
+        disabledService.checkAiMessageAllowed(
+                userPrincipal()
+        );
+
+        verifyNoInteractions(
                 rateLimiter,
-                new AiMessageRateLimitProperties(false, 20, 100, 1000),
                 eventPublisher,
                 keyFactory
         );
-
-        disabledService.checkAiMessageAllowed(userPrincipal());
-
-        verifyNoInteractions(rateLimiter);
-        verifyNoInteractions(eventPublisher);
-        verifyNoInteractions(keyFactory);
     }
 
-    @Test
-    void checkAiMessageAllowed_whenRedisFails_shouldThrowRateLimitUnavailableException() {
+    private DualRateLimitResult allowedResult(
+            long userCount
+    ) {
+        return new DualRateLimitResult(
+                RateLimitDecision.ALLOWED,
+                userCount,
+                200,
+                3_600,
+                3_600,
+                false
+        );
+    }
+
+    private void stubKeys() {
         when(keyFactory.aiMessageUser(USER_ID))
-                .thenReturn(AI_USER_MESSAGE_KEY);
+                .thenReturn(USER_KEY);
 
-        when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenThrow(new RuntimeException("Redis unavailable"));
-
-        assertThatThrownBy(() -> service.checkAiMessageAllowed(userPrincipal()))
-                .isInstanceOf(RateLimitUnavailableException.class)
-                .hasMessageContaining("Redis AI message rate limit недоступен");
-
-        verifyNoInteractions(eventPublisher);
-    }
-
-    private void mockUserAndOrganizationKeys() {
-        when(keyFactory.aiMessageUser(USER_ID))
-                .thenReturn(AI_USER_MESSAGE_KEY);
-
-        when(keyFactory.aiMessageOrganization(ORGANIZATION_ID))
-                .thenReturn(AI_ORGANIZATION_MESSAGE_KEY);
-    }
-
-    @Test
-    void checkAiMessageAllowed_whenSuperAdminAboveUserLimitButWithinAdminLimit_shouldPass() {
-        mockUserAndOrganizationKeys();
-
-        when(rateLimiter.incrementAndGet(any(String.class), any(Duration.class)))
-                .thenReturn(new RateLimitResult(80L, 3600L))
-                .thenReturn(new RateLimitResult(200L, 3600L));
-
-        assertThatCode(() -> service.checkAiMessageAllowed(superAdminPrincipal()))
-                .doesNotThrowAnyException();
-
-        verifyNoInteractions(eventPublisher);
+        when(keyFactory.aiMessageOrganization(
+                ORGANIZATION_ID
+        )).thenReturn(ORGANIZATION_KEY);
     }
 
     private SafeAiUserPrincipal userPrincipal() {
@@ -188,7 +376,13 @@ class RedisRateLimitServiceTest {
         return principal("ROLE_ADMIN");
     }
 
-    private SafeAiUserPrincipal principal(String role) {
+    private SafeAiUserPrincipal superAdminPrincipal() {
+        return principal("ROLE_SUPER_ADMIN");
+    }
+
+    private SafeAiUserPrincipal principal(
+            String role
+    ) {
         return new SafeAiUserPrincipal(
                 USER_ID,
                 ORGANIZATION_ID,
@@ -196,11 +390,10 @@ class RedisRateLimitServiceTest {
                 "",
                 true,
                 0L,
-                List.of(new SimpleGrantedAuthority(role))
+                List.of(
+                        new SimpleGrantedAuthority(role)
+                )
         );
     }
-
-    private SafeAiUserPrincipal superAdminPrincipal() {
-        return principal("ROLE_SUPER_ADMIN");
-    }
 }
+

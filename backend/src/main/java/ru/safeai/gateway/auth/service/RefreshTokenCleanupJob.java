@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.auth.repository.RefreshTokenRepository;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -15,14 +16,21 @@ import java.time.Instant;
 @RequiredArgsConstructor
 public class RefreshTokenCleanupJob {
 
-    private final RefreshTokenRepository refreshTokenRepository;
+    private static final Duration RETENTION = Duration.ofDays(7);
 
-    @Scheduled(cron = "0 0 3 * * *")
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final Clock clock;
+
+    @Scheduled(
+            cron = "${safeai.auth.refresh-cleanup.cron:0 0 3 * * *}",
+            zone = "UTC"
+    )
     @Transactional
     public void cleanupExpiredRefreshTokens() {
-        Instant threshold = Instant.now().minus(Duration.ofDays(7));
+        Instant threshold = clock.instant().minus(RETENTION);
 
-        int deletedCount = refreshTokenRepository.deleteExpiredAndRevokedBefore(threshold);
+        int deletedCount =
+                refreshTokenRepository.deleteExpiredAndRevokedBefore(threshold);
 
         if (deletedCount > 0) {
             log.info("Deleted old refresh tokens: count={}", deletedCount);

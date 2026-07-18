@@ -30,7 +30,9 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
 import ru.safeai.gateway.organization.service.OrganizationService;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -60,10 +62,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OrganizationControllerSecurityTest {
 
     private static final UUID ORGANIZATION_ID =
-            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+            UUID.fromString(
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            );
 
     private static final UUID ADMIN_ID =
-            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+            UUID.fromString(
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            );
+
+    private static final UUID SUPER_ADMIN_ID =
+            UUID.fromString(
+                    "cccccccc-cccc-cccc-cccc-cccccccccccc"
+            );
+
+    private static final UUID PLATFORM_ORGANIZATION_ID =
+            UUID.fromString(
+                    "00000000-0000-0000-0000-000000000001"
+            );
+
+    private static final Instant NOW =
+            Instant.parse("2026-06-12T12:00:00Z");
 
     @Autowired
     private MockMvc mockMvc;
@@ -80,45 +99,68 @@ class OrganizationControllerSecurityTest {
     static class TestSecurityConfig {
 
         @Bean
-        SecurityFilterChain testSecurityFilterChain(HttpSecurity http) {
+        Clock clock() {
+            return Clock.fixed(NOW, ZoneOffset.UTC);
+        }
+
+        @Bean
+        SecurityFilterChain testSecurityFilterChain(
+                HttpSecurity http
+        ) {
             return http
                     .csrf(AbstractHttpConfigurer::disable)
-                    .authorizeHttpRequests(auth -> auth
-                            .anyRequest().authenticated()
+                    .authorizeHttpRequests(authorize ->
+                            authorize.anyRequest().authenticated()
                     )
                     .build();
         }
     }
 
     @Test
-    void findAllWithoutAuthenticationReturns4xx() throws Exception {
+    void findAllWithoutAuthenticationReturns4xx()
+            throws Exception {
         mockMvc.perform(get("/api/organizations"))
                 .andExpect(status().is4xxClientError());
     }
 
     @Test
-    void findAllWithUserRoleReturns403() throws Exception {
-        mockMvc.perform(get("/api/organizations")
-                        .with(user("user@test.com").roles("USER")))
+    void findAllWithUserRoleReturns403()
+            throws Exception {
+        mockMvc.perform(
+                        get("/api/organizations")
+                                .with(
+                                        user("user@test.com")
+                                                .roles("USER")
+                                )
+                )
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    void findAllWithAdminRoleReturns200() throws Exception {
+    void findAllWithAdminRoleReturns200()
+            throws Exception {
         when(organizationService.findAll(
                 any(SafeAiUserPrincipal.class),
                 any(Pageable.class)
-        )).thenReturn(new PageImpl<>(List.of(
-                new OrganizationResponse(
-                        ORGANIZATION_ID,
-                        "SafeAI",
-                        true,
-                        Instant.parse("2026-06-12T12:00:00Z")
+        )).thenReturn(
+                new PageImpl<>(
+                        List.of(
+                                new OrganizationResponse(
+                                        ORGANIZATION_ID,
+                                        "SafeAI",
+                                        true,
+                                        NOW
+                                )
+                        )
                 )
-        )));
+        );
 
-        mockMvc.perform(get("/api/organizations")
-                        .with(authentication(authToken(adminPrincipal()))))
+        mockMvc.perform(
+                        get("/api/organizations")
+                                .with(authentication(
+                                        authToken(adminPrincipal())
+                                ))
+                )
                 .andExpect(status().isOk());
 
         verify(organizationService).findAll(
@@ -128,21 +170,33 @@ class OrganizationControllerSecurityTest {
     }
 
     @Test
-    void createWithBlankNameReturns400() throws Exception {
-        mockMvc.perform(post("/api/organizations")
-                        .with(authentication(authToken(superAdminPrincipal())))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name": ""
-                                }
-                                """))
+    void createWithBlankNameReturns400()
+            throws Exception {
+        mockMvc.perform(
+                        post("/api/organizations")
+                                .with(authentication(
+                                        authToken(
+                                                superAdminPrincipal()
+                                        )
+                                ))
+                                .contentType(
+                                        MediaType.APPLICATION_JSON
+                                )
+                                .content("""
+                                        {
+                                          "name": ""
+                                        }
+                                        """)
+                )
                 .andExpect(status().isBadRequest());
 
-        verify(organizationService, never()).create(any(), any());
+        verify(organizationService, never())
+                .create(any(), any());
     }
 
-    private Authentication authToken(SafeAiUserPrincipal principal) {
+    private Authentication authToken(
+            SafeAiUserPrincipal principal
+    ) {
         return new UsernamePasswordAuthenticationToken(
                 principal,
                 null,
@@ -158,19 +212,27 @@ class OrganizationControllerSecurityTest {
                 "encoded-password",
                 true,
                 0L,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+                List.of(
+                        new SimpleGrantedAuthority(
+                                "ROLE_ADMIN"
+                        )
+                )
         );
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
         return new SafeAiUserPrincipal(
-                ADMIN_ID,
-                ORGANIZATION_ID,
+                SUPER_ADMIN_ID,
+                PLATFORM_ORGANIZATION_ID,
                 "superadmin@test.com",
                 "encoded-password",
                 true,
                 0L,
-                List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
+                List.of(
+                        new SimpleGrantedAuthority(
+                                "ROLE_SUPER_ADMIN"
+                        )
+                )
         );
     }
 }

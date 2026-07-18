@@ -22,11 +22,14 @@ class RequestIdFilterTest {
 
         filter.doFilter(request, response, chain);
 
-        String requestId = response.getHeader(RequestIdFilter.REQUEST_ID_HEADER);
+        String requestId = response.getHeader(
+                RequestIdFilter.REQUEST_ID_HEADER
+        );
 
         assertThat(requestId).isNotBlank();
-        assertThat(request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE))
-                .isEqualTo(requestId);
+        assertThat(request.getAttribute(
+                RequestIdFilter.REQUEST_ID_ATTRIBUTE
+        )).isEqualTo(requestId);
 
         verify(chain).doFilter(request, response);
     }
@@ -34,7 +37,10 @@ class RequestIdFilterTest {
     @Test
     void doFilterInternal_shouldUseValidRequestIdFromHeader() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(RequestIdFilter.REQUEST_ID_HEADER, "request-123_test");
+        request.addHeader(
+                RequestIdFilter.REQUEST_ID_HEADER,
+                "request-123_test"
+        );
 
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
@@ -51,16 +57,21 @@ class RequestIdFilterTest {
     }
 
     @Test
-    void doFilterInternal_shouldGenerateNewRequestIdWhenHeaderContainsInvalidCharacters() throws Exception {
+    void doFilterInternal_shouldGenerateNewRequestIdForInvalidHeader() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(RequestIdFilter.REQUEST_ID_HEADER, "bad request id !!!");
+        request.addHeader(
+                RequestIdFilter.REQUEST_ID_HEADER,
+                "bad request id !!!"
+        );
 
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
         filter.doFilter(request, response, chain);
 
-        String requestId = response.getHeader(RequestIdFilter.REQUEST_ID_HEADER);
+        String requestId = response.getHeader(
+                RequestIdFilter.REQUEST_ID_HEADER
+        );
 
         assertThat(requestId).isNotBlank();
         assertThat(requestId).isNotEqualTo("bad request id !!!");
@@ -71,14 +82,19 @@ class RequestIdFilterTest {
     @Test
     void doFilterInternal_shouldGenerateNewRequestIdWhenHeaderIsTooLong() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(RequestIdFilter.REQUEST_ID_HEADER, "a".repeat(129));
+        request.addHeader(
+                RequestIdFilter.REQUEST_ID_HEADER,
+                "a".repeat(129)
+        );
 
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
         filter.doFilter(request, response, chain);
 
-        String requestId = response.getHeader(RequestIdFilter.REQUEST_ID_HEADER);
+        String requestId = response.getHeader(
+                RequestIdFilter.REQUEST_ID_HEADER
+        );
 
         assertThat(requestId).isNotBlank();
         assertThat(requestId).hasSizeLessThanOrEqualTo(128);
@@ -89,14 +105,19 @@ class RequestIdFilterTest {
     @Test
     void doFilterInternal_shouldClearMdcAfterRequest() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(RequestIdFilter.REQUEST_ID_HEADER, "request-123");
+        request.addHeader(
+                RequestIdFilter.REQUEST_ID_HEADER,
+                "request-123"
+        );
 
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 
         filter.doFilter(request, response, chain);
 
-        assertThat(MDC.get(RequestIdFilter.REQUEST_ID_ATTRIBUTE)).isNull();
+        assertThat(MDC.get(
+                RequestIdFilter.REQUEST_ID_ATTRIBUTE
+        )).isNull();
 
         verify(chain).doFilter(request, response);
     }

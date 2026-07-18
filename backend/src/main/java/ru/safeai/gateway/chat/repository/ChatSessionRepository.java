@@ -9,8 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ChatSessionRepository extends JpaRepository<ChatSessionEntity, UUID> {
-
-    Page<ChatSessionEntity> findByUser_IdAndOrganization_IdOrderByUpdatedAtDesc(
+    Page<ChatSessionEntity> findByUser_IdAndOrganization_Id(
             UUID userId,
             UUID organizationId,
             Pageable pageable

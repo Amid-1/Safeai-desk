@@ -8,24 +8,57 @@ public record AiChatRequest(
         UUID userId,
         UUID organizationId,
         UUID chatId,
+        UUID providerOperationId,
         String userMessage,
         List<AiMessage> history
 ) {
 
     public AiChatRequest {
-        Objects.requireNonNull(userId, "userId не должен быть null");
-        Objects.requireNonNull(organizationId, "organizationId не должен быть null");
-        Objects.requireNonNull(chatId, "chatId не должен быть null");
-        Objects.requireNonNull(userMessage, "userMessage не должен быть null");
+        Objects.requireNonNull(
+                userId,
+                "userId не должен быть null"
+        );
 
-        if (userMessage.isBlank()) {
-            throw new IllegalArgumentException("userMessage не должен быть пустым");
+        Objects.requireNonNull(
+                organizationId,
+                "organizationId не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                chatId,
+                "chatId не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                providerOperationId,
+                "providerOperationId не должен быть null"
+        );
+
+        if (userMessage == null || userMessage.isBlank()) {
+            throw new IllegalArgumentException(
+                    "userMessage не должен быть пустым"
+            );
         }
 
         history = history == null
                 ? List.of()
-                : history.stream()
-                .filter(Objects::nonNull)
-                .toList();
+                : List.copyOf(history);
+    }
+
+    public AiChatRequest(
+            UUID userId,
+            UUID organizationId,
+            UUID chatId,
+            String userMessage,
+            List<AiMessage> history
+    ) {
+        this(
+                userId,
+                organizationId,
+                chatId,
+                UUID.randomUUID(),
+                userMessage,
+                history
+        );
     }
 }

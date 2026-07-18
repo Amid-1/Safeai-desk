@@ -489,6 +489,7 @@ safeai-desk/
 │   │   │       ├── application-local.yml
 │   │   │       ├── application-local-nginx.yml
 │   │   │       ├── application-prod.yml
+│   │   │       ├── application-security-example.yml
 │   │   │       ├── logback-spring.xml
 │   │   │       └── db/
 │   │   │           ├── migration/
@@ -502,7 +503,14 @@ safeai-desk/
 │   │   │           │   ├── V8__usage_chat_messages_indexes.sql
 │   │   │           │   ├── V9__audit_events_indexes.sql
 │   │   │           │   ├── V10__schema_hardening_timestamps_audit_rollups.sql
-│   │   │           │   └── V11__add_user_updated_audit_event_type.sql
+│   │   │           │   ├── V11__add_user_updated_audit_event_type.sql
+│   │   │           │   ├── V12__enforce_tenant_and_refresh_token_integrity.sql
+│   │   │           │   ├── V13__identity_refresh_and_message_integrity.sql
+│   │   │           │   ├── V14__chat_turn_idempotency_and_integrity.sql
+│   │   │           │   ├── V15__audit_query_and_retention_indexes.sql
+│   │   │           │   ├── V16__preserve_usage_history_on_user_delete.sql
+│   │   │           │   ├── V17__ai_usage_and_pricing_metadata.sql
+│   │   │           │   └── V18__audit_actor_snapshots.sql
 │   │   │           │
 │   │   │           └── local-migration/
 │   │   │               └── V1000__seed_local_demo_data.sql
@@ -552,7 +560,21 @@ safeai-desk/
 │   │   │   ├── ConfirmDialog.tsx
 │   │   │   ├── ErrorBoundary.tsx
 │   │   │   ├── Modal.tsx
-│   │   │   └── StateBlock.tsx
+│   │   │   ├── StateBlock.tsx
+│   │   │   └── admin/
+│   │   │          └── audit/
+│   │   │             ├── AuditActor.tsx
+│   │   │             ├── AuditDetailsModal.tsx
+│   │   │             ├── AuditFilters.tsx
+│   │   │             ├── AuditPagination.tsx
+│   │   │             ├── AuditTable.tsx
+│   │   │             └── types.ts
+│   │   │
+│   │   ├── hooks/
+│   │   │   └── admin/
+│   │   │          ├── useAuditDirectories.ts
+│   │   │          └── useAuditEvents.ts
+│   │   │   
 │   │   │
 │   │   ├── pages/
 │   │   │   ├── AdminAuditPage.tsx
@@ -565,6 +587,7 @@ safeai-desk/
 │   │   ├── utils/
 │   │   │   ├── date.ts
 │   │   │   ├── format.ts
+│   │   │   ├── organizations.ts
 │   │   │   └── page.ts
 │   │   │
 │   │   ├── App.tsx
@@ -617,25 +640,38 @@ ru.safeai.gateway/
 │   ├── dto/
 │   │   ├── AiChatRequest
 │   │   ├── AiChatResponse
-│   │   └── AiMessage
+│   │   ├── AiMessage
+│   │   └── AiMessageRole
 │   │
 │   ├── exception/
+│   │   ├── AiProviderErrorType
 │   │   ├── AiProviderException
+│   │   ├── AiProviderOverloadedException
 │   │   ├── AiProviderRateLimitedException
 │   │   ├── AiProviderTimeoutException
 │   │   └── AiProviderUnavailableException
 │   │
+│   ├── metadata/
+│   │   ├── AiResponseStatus
+│   │   ├── PricingStatus
+│   │   └── UsageStatus
+│   │
 │   ├── pricing/
 │   │   ├── ModelPricingProperties
-│   │   └── ModelPricingService
+│   │   ├── ModelPricingService
+│   │   └── PricingResult
 │   │
 │   ├── provider/
+│   │   ├── AiJsonNodeSupport
 │   │   ├── AiProvider
+│   │   ├── AiProviderExceptionFactory
 │   │   ├── AiProviderProperties
 │   │   ├── AiProviderRetryExecutor
 │   │   ├── AiProviderSupport
+│   │   ├── AiResponseMetadataService
 │   │   ├── AiRestClientFactory
 │   │   ├── AiRetryProperties
+│   │   ├──ProviderPropertyValidator 
 │   │   │
 │   │   ├── anthropic/
 │   │   │   ├── AnthropicProperties
@@ -652,6 +688,10 @@ ru.safeai.gateway/
 │       └── AiExceptionHandler
 │
 ├── audit/
+│   ├── config/
+│   │   ├── AuditRetentionConfiguration
+│   │   └── AuditRetentionProperties
+│   │
 │   ├── controller/
 │   │   └── AuditController
 │   │
@@ -670,7 +710,9 @@ ru.safeai.gateway/
 │   │
 │   ├── service/
 │   │   ├── AuditEventQueryService
-│   │   └── AuditEventService
+│   │   ├── AuditEventService
+│   │   ├── AuditRetentionBatchService
+│   │   └── AuditRetentionService
 │   │
 │   └── AuditEventType
 │
@@ -697,6 +739,7 @@ ru.safeai.gateway/
 │   │   └── UserStatusFilter
 │   │
 │   └── service/
+│       ├── AuthCookieConfigurationValidator
 │       ├── AuthCookieProperties
 │       ├── AuthCookieService
 │       ├── AuthEventService
@@ -727,6 +770,7 @@ ru.safeai.gateway/
 │   │   └── ChatSessionRepository
 │   │
 │   └── service/
+│       ├── AiHistoryBuilder
 │       ├── ChatLockProperties
 │       ├── ChatLockService
 │       ├── ChatMapper
@@ -736,15 +780,23 @@ ru.safeai.gateway/
 │       └── ChatService
 │
 ├── common/
+│   ├── config/
+│   │   ├── SchedulingConfiguration
+│   │   └── TimeConfiguration
+│   │
 │   ├── exception/
 │   │   ├── ApiErrorResponse
 │   │   ├── ApiErrorResponseFactory
 │   │   ├── BadRequestException
+│   │   ├── ChatAvailabilityExceptionHandler
+│   │   ├── ChatBusyException
+│   │   ├── ChatLockUnavailableException
 │   │   ├── ConflictException
 │   │   ├── ExpiredRefreshTokenException
 │   │   ├── ForbiddenOperationException
 │   │   ├── GlobalExceptionHandler
 │   │   ├── InvalidRefreshTokenException
+│   │   ├── OptimisticLockExceptionHandler
 │   │   ├── RateLimitExceededException
 │   │   ├── RateLimitUnavailableException
 │   │   ├── RefreshTokenReuseDetectedException
@@ -754,6 +806,7 @@ ru.safeai.gateway/
 │   │   └── PlatformProperties
 │   │
 │   ├── security/
+│   │   ├── AccessTokenSubject
 │   │   ├── ClientIpProperties
 │   │   ├── ClientIpResolver
 │   │   ├── CorsProperties
@@ -795,8 +848,10 @@ ru.safeai.gateway/
 │
 ├── ratelimit/
 │   ├── AiMessageRateLimitProperties
+│   ├── DualRateLimitResult
 │   ├── LoginRateLimitProperties
 │   ├── LoginRateLimitService
+│   ├── RateLimitDecision
 │   ├── RateLimitExceededEvent
 │   ├── RateLimitKeyFactory
 │   ├── RateLimitRedisKeyProperties
@@ -806,8 +861,12 @@ ru.safeai.gateway/
 │
 ├── usage/
 │   ├── dto/
+│   │   ├── PagedResponse
 │   │   ├── UsageDailySummaryResponse
+│   │   ├── UsageDateFilter
+│   │   ├── UsageDateModelFilter
 │   │   ├── UsageModelSummaryResponse
+│   │   ├── UsagePageRequest
 │   │   ├── UsageSummaryResponse
 │   │   └── UsageUserSummaryResponse
 │   │
@@ -849,9 +908,11 @@ ru.safeai.gateway/
 │   │   └── UserStatusCacheService
 │   │
 │   └── validation/
-│        └── PasswordPolicy
+│        ├── PasswordPolicy
+│        ├── PasswordValidator
+│        └── ValidPassword
 │
-├── PasswordHashGenerator.java
+│ 
 └── SafeaiBackendApplication
 ```
 
@@ -892,23 +953,34 @@ safeai-desk/
 │   │       │               ├── ai/
 │   │       │               │   ├── AiChatResponseTest
 │   │       │               │   ├── AiExceptionHandlerTest
+│   │       │               │   ├── AiMessageAndRequestTest
+│   │       │               │   ├── AiProviderPropertiesTest
+│   │       │               │   ├── AiProviderRetryExecutorTest
+│   │       │               │   ├── AiProviderSupportTest
+│   │       │               │   ├── AiRetryPropertiesTest
+│   │       │               │   ├── AnthropicPropertiesTest
 │   │       │               │   ├── MockAiProviderTest
+│   │       │               │   ├── ModelPricingPropertiesTest
+│   │       │               │   ├── ModelPricingServiceTest
 │   │       │               │   └── OpenAiPropertiesTest
 │   │       │               │
 │   │       │               ├── audit/
 │   │       │               │   ├── controller/
-│   │       │               │   │  └── AuditControllerSecurityTest
+│   │       │               │   │  └── AuditControllerSecurityTest 
 │   │       │               │   │
 │   │       │               │   └── service/
 │   │       │               │      ├── AuditEventQueryServiceTest 
-│   │       │               │      └── AuditEventServiceTest
+│   │       │               │      ├── AuditEventServiceTest
+│   │       │               │      └── AuditRetentionBatchServiceTest
 │   │       │               │
 │   │       │               ├── auth/
 │   │       │               │   ├── controller/
 │   │       │               │   │  └── AuthControllerSecurityTest
+│   │       │               │   │
 │   │       │               │   ├── security/
 │   │       │               │   │  ├── CustomUserDetailsServiceTest 
 │   │       │               │   │  └── UserStatusFilterTest
+│   │       │               │   │
 │   │       │               │   └── service/
 │   │       │               │      ├── AuthCookiePropertiesTest 
 │   │       │               │      ├── AuthCookieServiceTest 
@@ -918,22 +990,28 @@ safeai-desk/
 │   │       │               ├── chat/
 │   │       │               │   ├── controller/
 │   │       │               │   │  └── ChatControllerSecurityTest
+│   │       │               │   │
 │   │       │               │   └── service/
+│   │       │               │      ├── AiHistoryBuilderTest
 │   │       │               │      ├── ChatLockServiceTest
 │   │       │               │      ├── ChatPersistenceServiceTest  
 │   │       │               │      └── ChatServiceTest
 │   │       │               │
 │   │       │               ├── common/
 │   │       │               │   ├── exeption/
+│   │       │               │   │  ├── ChatAvailabilityExceptionHandlerTest
 │   │       │               │   │  └── GlobalExceptionHandlerTest
+│   │       │               │   │
 │   │       │               │   └── security/
+│   │       │               │      ├── ClientIpPropertiesTest
 │   │       │               │      ├── ClientIpResolverTest
 │   │       │               │      ├── CorsPropertiesTest
 │   │       │               │      ├── JwtPropertiesTest
 │   │       │               │      ├── JwtServiceTest
 │   │       │               │      ├── RequestIdFilterTest
 │   │       │               │      ├── RoleAuthorityMapperTest  
-│   │       │               │      └── SafeAiJwtAuthenticationConverterTest
+│   │       │               │      ├── SafeAiJwtAuthenticationConverterTest
+│   │       │               │      └── SafeAiUserPrincipalTest
 │   │       │               │
 │   │       │               ├── organization/
 │   │       │               │   ├── controller/
@@ -943,20 +1021,26 @@ safeai-desk/
 │   │       │               │
 │   │       │               ├── ratelimit/
 │   │       │               │   ├── LoginRateLimitServiceTest
+│   │       │               │   ├── RateLimitPropertiesTest
 │   │       │               │   └── RedisRateLimitServiceTest
 │   │       │               │
 │   │       │               ├── usage/
 │   │       │               │   ├── repository/
 │   │       │               │   │  └── UsageQueryRepositoryTest
-│   │       │               │   └── UsageQueryServiceTest
+│   │       │               │   └── service/
+│   │       │               │      └── UsageQueryServiceTest
 │   │       │               │
 │   │       │               ├── user/
 │   │       │               │   ├── controller/
 │   │       │               │   │  └── UserControllerSecurityTest
 │   │       │               │   └── service/
-│   │       │               │      ├── UserServiceSecurityTest
-│   │       │               │      ├── UserServiceTest  
-│   │       │               │      └── UserStatusCacheServiceTest
+│   │       │               │   │   ├── UserServiceSecurityTest
+│   │       │               │   │   ├── UserServiceTest  
+│   │       │               │   │   ├── UserStatusCachePropertiesTest  
+│   │       │               │   │   └── UserStatusCacheServiceTest
+│   │       │               │   │
+│   │       │               │   └── valigation/
+│   │       │               │      └── PasswordValidatorTest
 │   │       │               │
 │   │       │               ├── PasswordHashGenerator.java
 │   │       │               └── SafeaiBackendApplicationTests.java
@@ -971,40 +1055,66 @@ safeai-desk/
 ## Frontend-модули
 
 ```text
-frontend/src
-├── api
-│   ├── adminApi.ts
-│   ├── authApi.ts
-│   ├── chatApi.ts
-│   ├── http.ts
-│   ├── organizationApi.ts
-│   └── userApi.ts
-│
-├── auth
-│   └── AuthContext.tsx
-│
-├── components
-│   ├── ConfirmDialog.tsx
-│   ├── ErrorBoundary.tsx
-│   ├── Modal.tsx
-│   └── StateBlock.tsx
-│
-├── pages
-│   ├── AdminAuditPage.tsx
-│   ├── AdminOrganizationsPage.tsx
-│   ├── AdminUsagePage.tsx
-│   ├── AdminUsersPage.tsx
-│   ├── ChatPage.tsx
-│   └── LoginPage.tsx
-│
-├── utils
-│   ├── date.ts
-│   ├── format.ts
-│   └── page.ts
-│
-├── App.tsx
-├── index.css
-└── main.tsx
+├── frontend/
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── adminApi.ts
+│   │   │   ├── authApi.ts
+│   │   │   ├── chatApi.ts
+│   │   │   ├── http.ts
+│   │   │   ├── organizationApi.ts
+│   │   │   └── userApi.ts
+│   │   │
+│   │   ├── auth/
+│   │   │   └── AuthContext.tsx
+│   │   │
+│   │   ├── components/
+│   │   │   ├── ConfirmDialog.tsx
+│   │   │   ├── ErrorBoundary.tsx
+│   │   │   ├── Modal.tsx
+│   │   │   ├── StateBlock.tsx
+│   │   │   └── admin/
+│   │   │          └── audit/
+│   │   │             ├── AuditActor.tsx
+│   │   │             ├── AuditDetailsModal.tsx
+│   │   │             ├── AuditFilters.tsx
+│   │   │             ├── AuditPagination.tsx
+│   │   │             ├── AuditTable.tsx
+│   │   │             └── types.ts
+│   │   │
+│   │   ├── hooks/
+│   │   │   └── admin/
+│   │   │          ├── useAuditDirectories.ts
+│   │   │          └── useAuditEvents.ts
+│   │   │   
+│   │   │
+│   │   ├── pages/
+│   │   │   ├── AdminAuditPage.tsx
+│   │   │   ├── AdminOrganizationsPage.tsx
+│   │   │   ├── AdminUsagePage.tsx
+│   │   │   ├── AdminUsersPage.tsx
+│   │   │   ├── ChatPage.tsx
+│   │   │   └── LoginPage.tsx
+│   │   │
+│   │   ├── utils/
+│   │   │   ├── date.ts
+│   │   │   ├── format.ts
+│   │   │   ├── organizations.ts
+│   │   │   └── page.ts
+│   │   │
+│   │   ├── App.tsx
+│   │   ├── global.d.ts
+│   │   ├── index.css
+│   │   ├── main.tsx
+│   │   └── vite-env.d.ts
+│   │
+│   ├── index.html
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.app.json
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
+│   └── vite.config.ts
 ```
 
 | Файл | Назначение |

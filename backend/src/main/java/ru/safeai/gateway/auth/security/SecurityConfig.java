@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -20,9 +21,17 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
-import org.springframework.security.oauth2.jwt.*;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
@@ -57,6 +66,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    private static final OAuth2Error INVALID_AUDIENCE_ERROR = new OAuth2Error(
+            "invalid_token",
+            "JWT audience is invalid",
+            null
+    );
+
     private final SafeAiJwtAuthenticationConverter safeAiJwtAuthenticationConverter;
     private final JsonAuthenticationEntryPoint jsonAuthenticationEntryPoint;
     private final JsonAccessDeniedHandler jsonAccessDeniedHandler;
@@ -78,9 +93,9 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .headers(headers -> {
                     headers
-                            .contentSecurityPolicy(csp -> csp
-                                    .policyDirectives("default-src 'self'; frame-ancestors 'none'; object-src 'none'")
-                            )
+                            .contentSecurityPolicy(csp -> csp.policyDirectives(
+                                    "default-src 'self'; frame-ancestors 'none'; object-src 'none'"
+                            ))
                             .frameOptions(HeadersConfigurer.FrameOptionsConfig::deny)
                             .contentTypeOptions(Customizer.withDefaults());
 
@@ -88,7 +103,7 @@ public class SecurityConfig {
                         if (hstsEnabled) {
                             hsts.includeSubDomains(true)
                                     .preload(true)
-                                    .maxAgeInSeconds(31536000);
+                                    .maxAgeInSeconds(31_536_000);
                         } else {
                             hsts.disable();
                         }
@@ -106,33 +121,29 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
                         .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
-
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/actuator/prometheus").permitAll()
                         .requestMatchers("/actuator/**").hasRole("SUPER_ADMIN")
-
                         .requestMatchers(HttpMethod.POST, "/api/organizations").hasRole("SUPER_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/organizations", "/api/organizations/**")
                         .hasAnyRole("ADMIN", "SUPER_ADMIN")
-
                         .requestMatchers("/api/users/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/api/chats/**").authenticated()
-
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(bearerTokenResolver())
                         .authenticationEntryPoint(jsonAuthenticationEntryPoint)
-                        .jwt(jwt ->
-                                jwt.jwtAuthenticationConverter(safeAiJwtAuthenticationConverter)
-                        )
+                        .accessDeniedHandler(jsonAccessDeniedHandler)
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(
+                                safeAiJwtAuthenticationConverter
+                        ))
                 )
                 .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
                 .addFilterAfter(userStatusFilter, BearerTokenAuthenticationFilter.class)
@@ -142,53 +153,45 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-
-        configuration.setAllowedOrigins(corsProperties.allowedOriginList());
-
-        configuration.setAllowedMethods(List.of(
-                "GET",
-                "POST",
-                "PUT",
-                "PATCH",
-                "DELETE",
-                "OPTIONS"
-        ));
-
+        configuration.setAllowedOrigins(corsProperties.allowedOrigins());
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of(
-                "Authorization",
-                "Content-Type",
+                HttpHeaders.AUTHORIZATION,
+                HttpHeaders.CONTENT_TYPE,
                 "X-Request-Id",
                 "X-XSRF-TOKEN"
         ));
-
         configuration.setExposedHeaders(List.of(
                 "X-Request-Id",
-                "Retry-After"
+                HttpHeaders.RETRY_AFTER,
+                HttpHeaders.WWW_AUTHENTICATE
         ));
-
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
-
         return source;
     }
 
     @Bean
     public CsrfTokenRepository csrfTokenRepository() {
-        CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        CookieCsrfTokenRepository repository =
+                CookieCsrfTokenRepository.withHttpOnlyFalse();
 
         repository.setCookieName("XSRF-TOKEN");
         repository.setHeaderName("X-XSRF-TOKEN");
         repository.setCookiePath("/");
+        repository.setCookieCustomizer(cookie -> {
+            cookie.sameSite(authCookieProperties.sameSite())
+                    .secure(authCookieProperties.secure())
+                    .httpOnly(false)
+                    .path("/");
 
-        repository.setCookieCustomizer(cookie -> cookie
-                .sameSite(authCookieProperties.sameSite())
-                .secure(authCookieProperties.secure())
-                .httpOnly(false)
-                .path("/")
-        );
+            if (authCookieProperties.hasDomain()) {
+                cookie.domain(authCookieProperties.domain());
+            }
+        });
 
         return repository;
     }
@@ -217,7 +220,6 @@ public class SecurityConfig {
             for (var cookie : request.getCookies()) {
                 if (AuthCookieService.ACCESS_TOKEN_COOKIE.equals(cookie.getName())) {
                     String cookieToken = cookie.getValue();
-
                     if (cookieToken != null && !cookieToken.isBlank()) {
                         return cookieToken;
                     }
@@ -242,7 +244,6 @@ public class SecurityConfig {
     ) {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
         provider.setPasswordEncoder(passwordEncoder);
-
         return provider;
     }
 
@@ -265,10 +266,19 @@ public class SecurityConfig {
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
 
-        OAuth2TokenValidator<Jwt> validator =
+        OAuth2TokenValidator<Jwt> issuerAndTimestampValidator =
                 JwtValidators.createDefaultWithIssuer(jwtProperties.issuer());
 
-        decoder.setJwtValidator(validator);
+        OAuth2TokenValidator<Jwt> audienceValidator = jwt ->
+                jwt.getAudience() != null
+                        && jwt.getAudience().contains(jwtProperties.audience())
+                        ? OAuth2TokenValidatorResult.success()
+                        : OAuth2TokenValidatorResult.failure(INVALID_AUDIENCE_ERROR);
+
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                issuerAndTimestampValidator,
+                audienceValidator
+        ));
 
         return decoder;
     }
@@ -280,7 +290,6 @@ public class SecurityConfig {
 
     private SecretKeySpec jwtSecretKey() {
         byte[] secret = jwtProperties.secret().getBytes(StandardCharsets.UTF_8);
-
         return new SecretKeySpec(secret, "HmacSHA256");
     }
 }

@@ -23,12 +23,16 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.service.AuditEventQueryService;
 import ru.safeai.gateway.auth.security.UserStatusFilter;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -70,6 +74,9 @@ class AuditControllerSecurityTest {
     private static final UUID PLATFORM_ORGANIZATION_ID =
             UUID.fromString("00000000-0000-0000-0000-000000000001");
 
+    private static final Instant NOW =
+            Instant.parse("2026-06-12T12:00:00Z");
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -85,11 +92,18 @@ class AuditControllerSecurityTest {
     static class TestSecurityConfig {
 
         @Bean
-        SecurityFilterChain testSecurityFilterChain(HttpSecurity http) {
+        Clock clock() {
+            return Clock.fixed(NOW, ZoneOffset.UTC);
+        }
+
+        @Bean
+        SecurityFilterChain testSecurityFilterChain(
+                HttpSecurity http
+        ) {
             return http
                     .csrf(AbstractHttpConfigurer::disable)
-                    .authorizeHttpRequests(auth -> auth
-                            .anyRequest().permitAll()
+                    .authorizeHttpRequests(authorize ->
+                            authorize.anyRequest().authenticated()
                     )
                     .build();
         }
@@ -100,7 +114,9 @@ class AuditControllerSecurityTest {
             "/api/admin/audit-events",
             "/api/admin/audit-events/users/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     })
-    void shouldReturn4xxWhenAnonymous(String url) throws Exception {
+    void shouldReturn4xxWhenAnonymous(
+            String url
+    ) throws Exception {
         mockMvc.perform(get(url))
                 .andExpect(status().is4xxClientError());
     }
@@ -110,9 +126,16 @@ class AuditControllerSecurityTest {
             "/api/admin/audit-events",
             "/api/admin/audit-events/users/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     })
-    void shouldReturnForbiddenWhenUserRole(String url) throws Exception {
-        mockMvc.perform(get(url)
-                        .with(user("user@test.com").roles("USER")))
+    void shouldReturnForbiddenWhenUserRole(
+            String url
+    ) throws Exception {
+        mockMvc.perform(
+                        get(url)
+                                .with(
+                                        user("user@test.com")
+                                                .roles("USER")
+                                )
+                )
                 .andExpect(status().isForbidden());
     }
 
@@ -121,11 +144,17 @@ class AuditControllerSecurityTest {
             "/api/admin/audit-events",
             "/api/admin/audit-events/users/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     })
-    void shouldReturnOkWhenAdminRole(String url) throws Exception {
-        mockServices();
+    void shouldReturnOkWhenAdminRole(
+            String url
+    ) throws Exception {
+        stubServices();
 
-        mockMvc.perform(get(url)
-                        .with(authentication(authToken(adminPrincipal()))))
+        mockMvc.perform(
+                        get(url)
+                                .with(authentication(
+                                        authToken(adminPrincipal())
+                                ))
+                )
                 .andExpect(status().isOk());
     }
 
@@ -134,18 +163,24 @@ class AuditControllerSecurityTest {
             "/api/admin/audit-events",
             "/api/admin/audit-events/users/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     })
-    void shouldReturnOkWhenSuperAdminRole(String url) throws Exception {
-        mockServices();
+    void shouldReturnOkWhenSuperAdminRole(
+            String url
+    ) throws Exception {
+        stubServices();
 
-        mockMvc.perform(get(url)
-                        .with(authentication(authToken(superAdminPrincipal()))))
+        mockMvc.perform(
+                        get(url)
+                                .with(authentication(
+                                        authToken(superAdminPrincipal())
+                                ))
+                )
                 .andExpect(status().isOk());
     }
 
-    private void mockServices() {
+    private void stubServices() {
         when(auditEventQueryService.findAll(
                 any(SafeAiUserPrincipal.class),
-                any(ru.safeai.gateway.audit.dto.AuditEventFilter.class),
+                any(AuditEventFilter.class),
                 any(Pageable.class)
         )).thenReturn(new PageImpl<>(List.of()));
 
@@ -156,7 +191,9 @@ class AuditControllerSecurityTest {
         )).thenReturn(new PageImpl<>(List.of()));
     }
 
-    private Authentication authToken(SafeAiUserPrincipal principal) {
+    private Authentication authToken(
+            SafeAiUserPrincipal principal
+    ) {
         return new UsernamePasswordAuthenticationToken(
                 principal,
                 null,
@@ -172,7 +209,11 @@ class AuditControllerSecurityTest {
                 "",
                 true,
                 0L,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+                List.of(
+                        new SimpleGrantedAuthority(
+                                "ROLE_ADMIN"
+                        )
+                )
         );
     }
 
@@ -184,7 +225,12 @@ class AuditControllerSecurityTest {
                 "",
                 true,
                 0L,
-                List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
+                List.of(
+                        new SimpleGrantedAuthority(
+                                "ROLE_SUPER_ADMIN"
+                        )
+                )
         );
     }
 }
+
