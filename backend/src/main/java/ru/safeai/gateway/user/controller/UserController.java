@@ -11,12 +11,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.user.dto.CreateUserRequest;
-import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
-import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
-import ru.safeai.gateway.user.dto.UpdateUserRequest;
-import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
-import ru.safeai.gateway.user.dto.UserResponse;
+import ru.safeai.gateway.user.dto.*;
 import ru.safeai.gateway.user.service.UserService;
 
 import java.util.UUID;
@@ -41,21 +36,29 @@ public class UserController {
     @GetMapping
     public Page<UserResponse> findAll(
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser,
+            @RequestParam(required = false) String role,
             @PageableDefault(
                     size = 20,
                     sort = "createdAt",
                     direction = Sort.Direction.DESC
             ) Pageable pageable
     ) {
-        return userService.findAll(currentUser, pageable);
+        return userService.findAll(currentUser, role, pageable);
+    }
+
+    @GetMapping("/statistics")
+    public UserStatisticsResponse statistics(
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return userService.statistics(currentUser);
     }
 
     @GetMapping("/{id}")
-    public UserResponse findById(
+    public UserDetailsResponse findById(
             @PathVariable UUID id,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
-        return userService.findById(id, currentUser);
+        return userService.findDetailsById(id, currentUser);
     }
 
     @PatchMapping("/{id}")
@@ -93,5 +96,16 @@ public class UserController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         userService.resetPassword(id, request, currentUser);
+    }
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PostMapping("/{id}/permanent-deletion")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void permanentlyDelete(
+            @PathVariable UUID id,
+            @Valid @RequestBody PermanentDeleteUserRequest request,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        userService.permanentlyDelete(id, request, currentUser);
     }
 }

@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.auth.service.UserSessionRevocationService;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
@@ -55,6 +56,9 @@ public class UserService {
 
     private static final Set<String> ADMIN_ASSIGNABLE_ROLES =
             Set.of(ROLE_USER);
+
+    private static final Set<String> LIST_FILTER_ROLES =
+            Set.of(ROLE_USER, ROLE_ADMIN);
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -135,6 +139,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public Page<UserResponse> findAll(
             SafeAiUserPrincipal currentUser,
+            String role,
             Pageable pageable
     ) {
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
@@ -142,12 +147,26 @@ public class UserService {
 
         validatePageableSort(pageable);
 
-        Page<UUID> idPage = isSuperAdmin(currentUser)
-                ? userRepository.findAllIds(pageable)
-                : userRepository.findAllIdsByOrganizationId(
-                currentUser.getOrganizationId(),
-                pageable
-        );
+        String normalizedRole = normalizeListRole(role);
+
+        Page<UUID> idPage;
+
+        if (isSuperAdmin(currentUser)) {
+            idPage = normalizedRole == null
+                    ? userRepository.findAllIds(pageable)
+                    : userRepository.findAllIdsByRole(normalizedRole, pageable);
+        } else {
+            idPage = normalizedRole == null
+                    ? userRepository.findAllIdsByOrganizationId(
+                    currentUser.getOrganizationId(),
+                    pageable
+            )
+                    : userRepository.findAllIdsByOrganizationIdAndRole(
+                    currentUser.getOrganizationId(),
+                    normalizedRole,
+                    pageable
+            );
+        }
 
         if (idPage.isEmpty()) {
             return new PageImpl<>(
@@ -183,8 +202,48 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public UserResponse findById(UUID id, SafeAiUserPrincipal currentUser) {
-        return toResponse(findUserVisibleForCurrentUser(id, currentUser));
+    public UserDetailsResponse findDetailsById(
+            UUID id,
+            SafeAiUserPrincipal currentUser
+    ) {
+        return toDetailsResponse(findUserVisibleForCurrentUser(id, currentUser));
+    }
+
+    @Transactional(readOnly = true)
+    public UserStatisticsResponse statistics(SafeAiUserPrincipal currentUser) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        if (isSuperAdmin(currentUser)) {
+            return new UserStatisticsResponse(
+                    userRepository.count(),
+                    userRepository.countByRole(ROLE_ADMIN),
+                    userRepository.countByRole(ROLE_USER),
+                    userRepository.countByEnabled(true),
+                    userRepository.countByEnabled(false)
+            );
+        }
+
+        UUID organizationId = currentUser.getOrganizationId();
+
+        return new UserStatisticsResponse(
+                userRepository.countByOrganization_Id(organizationId),
+                userRepository.countByOrganizationIdAndRole(
+                        organizationId,
+                        ROLE_ADMIN
+                ),
+                userRepository.countByOrganizationIdAndRole(
+                        organizationId,
+                        ROLE_USER
+                ),
+                userRepository.countByOrganization_IdAndEnabled(
+                        organizationId,
+                        true
+                ),
+                userRepository.countByOrganization_IdAndEnabled(
+                        organizationId,
+                        false
+                )
+        );
     }
 
     @Transactional
@@ -435,6 +494,85 @@ public class UserService {
         );
     }
 
+    @Transactional
+    public void permanentlyDelete(
+            UUID id,
+            PermanentDeleteUserRequest request,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        if (!isSuperAdmin(currentUser)) {
+            throw new ForbiddenOperationException(
+                    "Только SUPER_ADMIN может удалять пользователей навсегда"
+            );
+        }
+
+        UserEntity user = findUserVisibleForCurrentUser(id, currentUser);
+
+        if (user.getId().equals(currentUser.getId())) {
+            throw new ForbiddenOperationException(
+                    "Нельзя удалить собственную учётную запись"
+            );
+        }
+
+        rejectSuperAdminMutation(user);
+
+        if (platformProperties.organizationId().equals(
+                user.getOrganization().getId()
+        )) {
+            throw new ForbiddenOperationException(
+                    "Нельзя удалить пользователя платформенной организации"
+            );
+        }
+
+        String confirmationEmail = normalizeEmail(request.confirmationEmail());
+
+        if (!user.getEmail().equals(confirmationEmail)) {
+            throw new BadRequestException(
+                    "Email подтверждения не совпадает с email пользователя"
+            );
+        }
+
+        if (userRepository.hasPermanentDeletionDependencies(user.getId())) {
+            throw new ConflictException(
+                    "Пользователя нельзя удалить навсегда, поскольку у него "
+                            + "есть история чатов. Отключите пользователя."
+            );
+        }
+
+        UUID targetUserId = user.getId();
+        UUID targetOrganizationId = user.getOrganization().getId();
+        String targetEmail = user.getEmail();
+        String targetFullName = user.getFullName();
+        Set<String> targetRoles = roleNames(user);
+
+        userSessionRevocationService.revokeAllForUser(targetUserId);
+        userRepository.delete(user);
+        userRepository.flush();
+
+        eventPublisher.publishEvent(
+                new UserSecurityStateChangedEvent(targetUserId)
+        );
+
+        auditEventService.record(
+                currentUser.getId(),
+                targetOrganizationId,
+                AuditEventType.USER_PERMANENTLY_DELETED,
+                Map.of(
+                        "targetUserId", targetUserId.toString(),
+                        "targetUserEmail", targetEmail,
+                        "targetUserFullName",
+                        targetFullName == null ? "" : targetFullName,
+                        "targetOrganizationId", targetOrganizationId.toString(),
+                        "targetRoles", targetRoles,
+                        "hadChatHistory", false,
+                        "sessionsRevoked", true
+                )
+        );
+    }
+
     private UUID resolveTargetOrganizationId(
             UUID requestedOrganizationId,
             SafeAiUserPrincipal currentUser
@@ -525,6 +663,22 @@ public class UserService {
         }
     }
 
+    private String normalizeListRole(String role) {
+        if (role == null || role.isBlank()) {
+            return null;
+        }
+
+        String normalized = role.trim().toUpperCase(Locale.ROOT);
+
+        if (!LIST_FILTER_ROLES.contains(normalized)) {
+            throw new BadRequestException(
+                    "Недопустимый фильтр роли: " + role
+            );
+        }
+
+        return normalized;
+    }
+
     private Set<String> normalizeRoles(Set<String> roles) {
         if (roles == null) {
             return Set.of();
@@ -590,7 +744,23 @@ public class UserService {
                 entity.getFullName(),
                 entity.isEnabled(),
                 roleNames(entity),
-                entity.getCreatedAt()
+                entity.getCreatedAt(),
+                entity.getUpdatedAt(),
+                entity.getLastLoginAt()
+        );
+    }
+
+    private UserDetailsResponse toDetailsResponse(UserEntity entity) {
+        return new UserDetailsResponse(
+                entity.getId(),
+                entity.getOrganization().getId(),
+                entity.getEmail(),
+                entity.getFullName(),
+                entity.isEnabled(),
+                roleNames(entity),
+                entity.getCreatedAt(),
+                entity.getUpdatedAt(),
+                entity.getLastLoginAt()
         );
     }
 
@@ -599,12 +769,13 @@ public class UserService {
                 "createdAt",
                 "email",
                 "fullName",
-                "enabled"
+                "enabled",
+                "lastLoginAt"
         );
 
         for (Sort.Order order : pageable.getSort()) {
             if (!allowedProperties.contains(order.getProperty())) {
-                throw new ForbiddenOperationException(
+                throw new BadRequestException(
                         "Сортировка по полю не разрешена: "
                                 + order.getProperty()
                 );

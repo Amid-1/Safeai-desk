@@ -23,6 +23,7 @@ import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.time.Instant;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -41,6 +42,7 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final AuthCookieService authCookieService;
 
+    @Transactional
     public CurrentUserResponse login(
             LoginRequest request,
             HttpServletRequest httpRequest,
@@ -50,7 +52,10 @@ public class AuthService {
         Objects.requireNonNull(httpRequest, "httpRequest не должен быть null");
         Objects.requireNonNull(response, "response не должен быть null");
 
-        String email = Objects.requireNonNull(request.email(), "email не должен быть null")
+        String email = Objects.requireNonNull(
+                        request.email(),
+                        "email не должен быть null"
+                )
                 .trim()
                 .toLowerCase(Locale.ROOT);
 
@@ -65,36 +70,72 @@ public class AuthService {
                     clientIpResolver.resolve(httpRequest)
             );
         } catch (RateLimitExceededException exception) {
-            authEventService.loginRateLimitExceeded(email, httpRequest, exception);
+            authEventService.loginRateLimitExceeded(
+                    email,
+                    httpRequest,
+                    exception
+            );
             throw exception;
         }
 
         try {
             var authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(email, password)
+                    new UsernamePasswordAuthenticationToken(
+                            email,
+                            password
+                    )
             );
 
-            if (!(authentication.getPrincipal() instanceof SafeAiUserPrincipal principal)) {
+            if (!(authentication.getPrincipal()
+                    instanceof SafeAiUserPrincipal principal)) {
                 throw new IllegalStateException(
                         "Некорректный тип principal после авторизации"
                 );
             }
 
-            UserEntity user = userRepository.findByIdWithRolesAndOrganization(principal.getId())
+            UserEntity user = userRepository
+                    .findByIdWithRolesAndOrganization(principal.getId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Пользователь не найден: " + principal.getId()
                     ));
 
-            AccessTokenSubject accessTokenSubject = toAccessTokenSubject(user);
-            String accessToken = jwtService.generateToken(accessTokenSubject);
+            Instant lastLoginAt = Instant.now();
 
-            String refreshToken = refreshTokenService.create(user, httpRequest);
+            int updatedRows = userRepository.updateLastLoginAt(
+                    user.getId(),
+                    lastLoginAt
+            );
 
-            authCookieService.addAccessTokenCookie(response, accessToken);
-            authCookieService.addRefreshTokenCookie(response, refreshToken);
+            if (updatedRows != 1) {
+                throw new IllegalStateException(
+                        "Не удалось обновить время последнего входа пользователя: "
+                                + user.getId()
+                );
+            }
+
+            user.setLastLoginAt(lastLoginAt);
+
+            AccessTokenSubject accessTokenSubject =
+                    toAccessTokenSubject(user);
+
+            String accessToken =
+                    jwtService.generateToken(accessTokenSubject);
+
+            String refreshToken =
+                    refreshTokenService.create(user, httpRequest);
 
             authEventService.loginSuccess(principal, httpRequest);
             loginRateLimitService.resetEmailLimit(email);
+
+            authCookieService.addAccessTokenCookie(
+                    response,
+                    accessToken
+            );
+
+            authCookieService.addRefreshTokenCookie(
+                    response,
+                    refreshToken
+            );
 
             return toCurrentUserResponse(user);
 
@@ -111,11 +152,14 @@ public class AuthService {
         Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(response, "response не должен быть null");
 
-        String rawRefreshToken = authCookieService.extractRefreshToken(request);
+        String rawRefreshToken =
+                authCookieService.extractRefreshToken(request);
 
         if (rawRefreshToken == null) {
             authCookieService.clearAuthCookies(response);
-            throw new InvalidRefreshTokenException("Refresh token не найден");
+            throw new InvalidRefreshTokenException(
+                    "Refresh token не найден"
+            );
         }
 
         try {
@@ -126,17 +170,18 @@ public class AuthService {
                     rotationResult.accessTokenSubject()
             );
 
-            authCookieService.addAccessTokenCookie(response, newAccessToken);
+            authCookieService.addAccessTokenCookie(
+                    response,
+                    newAccessToken
+            );
             authCookieService.addRefreshTokenCookie(
                     response,
                     rotationResult.rawRefreshToken()
             );
-
         } catch (RefreshTokenReuseDetectedException exception) {
             authEventService.refreshReuseDetected(exception, request);
             authCookieService.clearAuthCookies(response);
             throw exception;
-
         } catch (InvalidRefreshTokenException exception) {
             authCookieService.clearAuthCookies(response);
             throw exception;
@@ -150,21 +195,30 @@ public class AuthService {
         Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(response, "response не должен быть null");
 
-        String rawRefreshToken = authCookieService.extractRefreshToken(request);
+        String rawRefreshToken =
+                authCookieService.extractRefreshToken(request);
 
         if (rawRefreshToken != null) {
             refreshTokenService.revokeAndReturnUser(rawRefreshToken)
-                    .ifPresent(user -> authEventService.logout(user, request));
+                    .ifPresent(user ->
+                            authEventService.logout(user, request)
+                    );
         }
 
         authCookieService.clearAuthCookies(response);
     }
 
     @Transactional(readOnly = true)
-    public CurrentUserResponse getCurrentUser(SafeAiUserPrincipal principal) {
-        Objects.requireNonNull(principal, "principal не должен быть null");
+    public CurrentUserResponse getCurrentUser(
+            SafeAiUserPrincipal principal
+    ) {
+        Objects.requireNonNull(
+                principal,
+                "principal не должен быть null"
+        );
 
-        UserEntity user = userRepository.findByIdWithRolesAndOrganization(principal.getId())
+        UserEntity user = userRepository
+                .findByIdWithRolesAndOrganization(principal.getId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Пользователь не найден: " + principal.getId()
                 ));

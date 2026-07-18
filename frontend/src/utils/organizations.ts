@@ -1,5 +1,6 @@
+// ============================================================
 // frontend/src/utils/organizations.ts
-
+// ============================================================
 import { getOrganizations } from '../api/organizationApi'
 import type { Organization } from '../api/organizationApi'
 import { normalizePageResponse } from './page'

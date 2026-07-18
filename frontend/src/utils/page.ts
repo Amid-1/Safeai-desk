@@ -1,7 +1,6 @@
 // ============================================================
 // frontend/src/utils/page.ts
 // ============================================================
-
 export type PageResponse<T> = {
     content?: T[]
     totalElements?: number
@@ -27,7 +26,7 @@ export type NormalizedPage<T> = {
 export type PageOrArray<T> = T[] | PageResponse<T>
 
 export function normalizePageResponse<T>(
-    response: PageOrArray<T> | null | undefined
+    response: PageOrArray<T> | null | undefined,
 ): NormalizedPage<T> {
     if (!response) {
         return emptyPage()
@@ -49,17 +48,17 @@ export function normalizePageResponse<T>(
 
     const page = nonNegativeInteger(
         response.page?.number ?? response.number,
-        0
+        0,
     )
 
     const size = nonNegativeInteger(
         response.page?.size ?? response.size,
-        content.length
+        content.length,
     )
 
     const totalElements = nonNegativeInteger(
         response.page?.totalElements ?? response.totalElements,
-        content.length
+        content.length,
     )
 
     const inferredTotalPages =
@@ -71,7 +70,7 @@ export function normalizePageResponse<T>(
 
     const totalPages = nonNegativeInteger(
         response.page?.totalPages ?? response.totalPages,
-        inferredTotalPages
+        inferredTotalPages,
     )
 
     return {
@@ -81,18 +80,6 @@ export function normalizePageResponse<T>(
         totalElements,
         totalPages,
     }
-}
-
-export function getPageContent<T>(
-    response: PageOrArray<T> | null | undefined
-): T[] {
-    return normalizePageResponse(response).content
-}
-
-export function getPageTotalPages<T>(
-    response: PageOrArray<T> | null | undefined
-): number {
-    return normalizePageResponse(response).totalPages
 }
 
 function emptyPage<T>(): NormalizedPage<T> {
@@ -107,7 +94,7 @@ function emptyPage<T>(): NormalizedPage<T> {
 
 function nonNegativeInteger(
     value: number | undefined,
-    fallback: number
+    fallback: number,
 ): number {
     if (!Number.isFinite(value)) {
         return fallback
@@ -115,4 +102,3 @@ function nonNegativeInteger(
 
     return Math.max(0, Math.trunc(value as number))
 }
-

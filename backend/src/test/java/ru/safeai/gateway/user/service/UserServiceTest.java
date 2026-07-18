@@ -20,6 +20,7 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
 import ru.safeai.gateway.user.dto.CreateUserRequest;
+import ru.safeai.gateway.user.dto.PermanentDeleteUserRequest;
 import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
 import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
 import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
@@ -576,6 +577,68 @@ class UserServiceTest {
                 eq(AuditEventType.USER_PASSWORD_RESET),
                 anyMap()
         );
+    }
+
+
+    @Test
+    void permanentlyDeleteShouldDeleteEmptyUserAndPreserveAuditMetadata() {
+        UserEntity user = userEntity(
+                USER_ID,
+                "user@test.com",
+                false,
+                Set.of(roleEntity("USER"))
+        );
+
+        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
+                .thenReturn(Optional.of(user));
+        when(userRepository.hasPermanentDeletionDependencies(USER_ID))
+                .thenReturn(false);
+
+        userService.permanentlyDelete(
+                USER_ID,
+                new PermanentDeleteUserRequest("user@test.com"),
+                superAdminPrincipal()
+        );
+
+        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
+        verify(userRepository).delete(user);
+        verify(userRepository).flush();
+        verify(eventPublisher).publishEvent(
+                any(UserSecurityStateChangedEvent.class)
+        );
+        verify(auditEventService).record(
+                eq(SUPER_ADMIN_ID),
+                eq(ORGANIZATION_ID),
+                eq(AuditEventType.USER_PERMANENTLY_DELETED),
+                anyMap()
+        );
+    }
+
+    @Test
+    void permanentlyDeleteShouldRejectUserWithChatHistory() {
+        UserEntity user = userEntity(
+                USER_ID,
+                "user@test.com",
+                false,
+                Set.of(roleEntity("USER"))
+        );
+
+        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
+                .thenReturn(Optional.of(user));
+        when(userRepository.hasPermanentDeletionDependencies(USER_ID))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> userService.permanentlyDelete(
+                USER_ID,
+                new PermanentDeleteUserRequest("user@test.com"),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("есть история чатов");
+
+        verify(userRepository, never()).delete(any());
+        verify(userRepository, never()).flush();
+        verifyNoInteractions(auditEventService);
     }
 
 

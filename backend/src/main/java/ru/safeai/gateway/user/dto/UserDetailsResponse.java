@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 
-public record UserResponse(
+public record UserDetailsResponse(
         UUID id,
         UUID organizationId,
         String email,

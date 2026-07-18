@@ -1,4 +1,4 @@
-// frontend/test/src/setup.ts
+// frontend/src/test/setup.ts
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
@@ -9,3 +9,4 @@ afterEach(() => {
     document.cookie = 'XSRF-TOKEN=; Max-Age=0; Path=/'
     document.body.innerHTML = ''
 })
+

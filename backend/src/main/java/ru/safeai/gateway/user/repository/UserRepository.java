@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.safeai.gateway.user.entity.UserEntity;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,18 +24,14 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             from UserEntity u
             where lower(u.email) = lower(:email)
             """)
-    Optional<UserEntity> findByEmailIgnoreCase(
-            @Param("email") String email
-    );
+    Optional<UserEntity> findByEmailIgnoreCase(@Param("email") String email);
 
     @Query("""
             select count(u) > 0
             from UserEntity u
             where lower(u.email) = lower(:email)
             """)
-    boolean existsByEmailIgnoreCase(
-            @Param("email") String email
-    );
+    boolean existsByEmailIgnoreCase(@Param("email") String email);
 
     @EntityGraph(attributePaths = {"roles", "organization"})
     @Query("""
@@ -42,21 +39,42 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             from UserEntity u
             where u.id = :id
             """)
-    Optional<UserEntity> findByIdWithRolesAndOrganization(
-            @Param("id") UUID id
-    );
+    Optional<UserEntity> findByIdWithRolesAndOrganization(@Param("id") UUID id);
+
+    @Query(
+            value = "select u.id from UserEntity u",
+            countQuery = "select count(u) from UserEntity u"
+    )
+    Page<UUID> findAllIds(Pageable pageable);
 
     @Query(
             value = """
-                    select u.id
-                    from UserEntity u
-                    """,
+                select u.id
+                from UserEntity u
+                where exists (
+                    select 1
+                    from UserEntity matchedUser
+                    join matchedUser.roles role
+                    where matchedUser = u
+                      and role.name = :role
+                )
+                """,
             countQuery = """
-                    select count(u)
-                    from UserEntity u
-                    """
+                select count(u.id)
+                from UserEntity u
+                where exists (
+                    select 1
+                    from UserEntity matchedUser
+                    join matchedUser.roles role
+                    where matchedUser = u
+                      and role.name = :role
+                )
+                """
     )
-    Page<UUID> findAllIds(Pageable pageable);
+    Page<UUID> findAllIdsByRole(
+            @Param("role") String role,
+            Pageable pageable
+    );
 
     @Query(
             value = """
@@ -75,6 +93,38 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             Pageable pageable
     );
 
+    @Query(
+            value = """
+                select u.id
+                from UserEntity u
+                where u.organization.id = :organizationId
+                  and exists (
+                      select 1
+                      from UserEntity matchedUser
+                      join matchedUser.roles role
+                      where matchedUser = u
+                        and role.name = :role
+                  )
+                """,
+            countQuery = """
+                select count(u.id)
+                from UserEntity u
+                where u.organization.id = :organizationId
+                  and exists (
+                      select 1
+                      from UserEntity matchedUser
+                      join matchedUser.roles role
+                      where matchedUser = u
+                        and role.name = :role
+                  )
+                """
+    )
+    Page<UUID> findAllIdsByOrganizationIdAndRole(
+            @Param("organizationId") UUID organizationId,
+            @Param("role") String role,
+            Pageable pageable
+    );
+
     @EntityGraph(attributePaths = {"roles", "organization"})
     @Query("""
             select distinct u
@@ -87,14 +137,19 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-            select u
-            from UserEntity u
-            join u.roles r
-            where u.organization.id = :organizationId
-              and u.enabled = true
-              and r.name = 'ADMIN'
-            order by u.id
-            """)
+        select u
+        from UserEntity u
+        where u.organization.id = :organizationId
+          and u.enabled = true
+          and exists (
+              select 1
+              from UserEntity matchedUser
+              join matchedUser.roles role
+              where matchedUser = u
+                and role.name = 'ADMIN'
+          )
+        order by u.id
+        """)
     List<UserEntity> findEnabledAdminsForUpdate(
             @Param("organizationId") UUID organizationId
     );
@@ -117,9 +172,7 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             from UserEntity u
             where u.id = :id
             """)
-    Optional<UserEntity> findByIdWithOrganization(
-            @Param("id") UUID id
-    );
+    Optional<UserEntity> findByIdWithOrganization(@Param("id") UUID id);
 
     @Query("""
             select u.id
@@ -138,5 +191,65 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             """)
     int incrementTokenVersionByOrganizationId(
             @Param("organizationId") UUID organizationId
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+        update UserEntity u
+        set u.lastLoginAt = :lastLoginAt
+        where u.id = :userId
+        """)
+    int updateLastLoginAt(
+            @Param("userId") UUID userId,
+            @Param("lastLoginAt") Instant lastLoginAt
+    );
+
+    @Query(
+            value = """
+                    select exists (
+                        select 1
+                        from chat_sessions
+                        where user_id = :userId
+
+                        union all
+
+                        select 1
+                        from usage_daily_user_model_rollups
+                        where user_id = :userId
+                    )
+                    """,
+            nativeQuery = true
+    )
+    boolean hasPermanentDeletionDependencies(
+            @Param("userId") UUID userId
+    );
+
+    long countByOrganization_Id(UUID organizationId);
+
+    long countByOrganization_IdAndEnabled(
+            UUID organizationId,
+            boolean enabled
+    );
+
+    long countByEnabled(boolean enabled);
+
+    @Query("""
+            select count(distinct u.id)
+            from UserEntity u
+            join u.roles r
+            where r.name = :role
+            """)
+    long countByRole(@Param("role") String role);
+
+    @Query("""
+            select count(distinct u.id)
+            from UserEntity u
+            join u.roles r
+            where u.organization.id = :organizationId
+              and r.name = :role
+            """)
+    long countByOrganizationIdAndRole(
+            @Param("organizationId") UUID organizationId,
+            @Param("role") String role
     );
 }

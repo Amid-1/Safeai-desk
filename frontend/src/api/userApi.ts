@@ -1,9 +1,13 @@
 // ============================================================
 // frontend/src/api/userApi.ts
 // ============================================================
-
 import { apiRequest } from './http'
-import { buildQueryString, normalizePage, normalizePageSize, pathSegment } from './query'
+import {
+    buildQueryString,
+    normalizePage,
+    normalizePageSize,
+    pathSegment,
+} from './query'
 import type { UserRole } from './types'
 import type { PageResponse } from '../utils/page'
 
@@ -15,7 +19,21 @@ export type User = {
     enabled: boolean
     roles: UserRole[]
     createdAt: string
+    updatedAt: string
+    lastLoginAt: string | null
 }
+
+export type UserDetails = User
+
+export type UserStatistics = {
+    total: number
+    administrators: number
+    users: number
+    enabled: number
+    disabled: number
+}
+
+export type UserListRoleFilter = 'ADMIN' | 'USER'
 
 export type CreateUserRequest = {
     organizationId: string
@@ -42,82 +60,116 @@ export type ResetUserPasswordRequest = {
     password: string
 }
 
+export type PermanentDeleteUserRequest = {
+    confirmationEmail: string
+}
+
+const USER_REQUEST_TIMEOUT_MS = 30_000
+
+function userPath(userId: string, suffix = ''): string {
+    return `/api/users/${pathSegment(userId)}${suffix}`
+}
+
+function get<T>(url: string): Promise<T> {
+    return apiRequest<T>(url, {
+        method: 'GET',
+        timeoutMs: USER_REQUEST_TIMEOUT_MS,
+    })
+}
+
+function sendJson<TResponse, TRequest>(
+    url: string,
+    method: 'POST' | 'PATCH',
+    request: TRequest,
+): Promise<TResponse> {
+    return apiRequest<TResponse>(url, {
+        method,
+        body: JSON.stringify(request),
+        timeoutMs: USER_REQUEST_TIMEOUT_MS,
+    })
+}
+
 export function getUsers(
     page = 0,
-    size = 50
+    size = 50,
+    role?: UserListRoleFilter,
 ): Promise<PageResponse<User>> {
     const query = buildQueryString({
         page: normalizePage(page),
         size: normalizePageSize(size, 50, 200),
+        role,
     })
 
-    return apiRequest<PageResponse<User>>(
-        `/api/users${query}`,
-        { timeoutMs: 30_000 }
-    )
+    return get<PageResponse<User>>(`/api/users${query}`)
+}
+
+export function getUserDetails(userId: string): Promise<UserDetails> {
+    return get<UserDetails>(userPath(userId))
+}
+
+export function getUserStatistics(): Promise<UserStatistics> {
+    return get<UserStatistics>('/api/users/statistics')
 }
 
 export function createUser(request: CreateUserRequest): Promise<User> {
-    return apiRequest<User>('/api/users', {
-        method: 'POST',
-        body: JSON.stringify(request),
-        timeoutMs: 30_000,
-    })
+    return sendJson<User, CreateUserRequest>(
+        '/api/users',
+        'POST',
+        request,
+    )
 }
 
 export function updateUser(
     userId: string,
-    request: UpdateUserRequest
+    request: UpdateUserRequest,
 ): Promise<User> {
-    return apiRequest<User>(
-        `/api/users/${pathSegment(userId)}`,
-        {
-            method: 'PATCH',
-            body: JSON.stringify(request),
-            timeoutMs: 30_000,
-        }
+    return sendJson<User, UpdateUserRequest>(
+        userPath(userId),
+        'PATCH',
+        request,
     )
 }
 
 export function updateUserEnabled(
     userId: string,
-    request: UpdateUserEnabledRequest
+    request: UpdateUserEnabledRequest,
 ): Promise<User> {
-    return apiRequest<User>(
-        `/api/users/${pathSegment(userId)}/enabled`,
-        {
-            method: 'PATCH',
-            body: JSON.stringify(request),
-            timeoutMs: 30_000,
-        }
+    return sendJson<User, UpdateUserEnabledRequest>(
+        userPath(userId, '/enabled'),
+        'PATCH',
+        request,
     )
 }
 
 export function updateUserRoles(
     userId: string,
-    request: UpdateUserRolesRequest
+    request: UpdateUserRolesRequest,
 ): Promise<User> {
-    return apiRequest<User>(
-        `/api/users/${pathSegment(userId)}/roles`,
-        {
-            method: 'PATCH',
-            body: JSON.stringify(request),
-            timeoutMs: 30_000,
-        }
+    return sendJson<User, UpdateUserRolesRequest>(
+        userPath(userId, '/roles'),
+        'PATCH',
+        request,
     )
 }
 
 export function resetUserPassword(
     userId: string,
-    request: ResetUserPasswordRequest
+    request: ResetUserPasswordRequest,
 ): Promise<void> {
-    return apiRequest<void>(
-        `/api/users/${pathSegment(userId)}/reset-password`,
-        {
-            method: 'POST',
-            body: JSON.stringify(request),
-            timeoutMs: 30_000,
-        }
+    return sendJson<void, ResetUserPasswordRequest>(
+        userPath(userId, '/reset-password'),
+        'POST',
+        request,
     )
 }
 
+export function permanentlyDeleteUser(
+    userId: string,
+    request: PermanentDeleteUserRequest,
+): Promise<void> {
+    return sendJson<void, PermanentDeleteUserRequest>(
+        userPath(userId, '/permanent-deletion'),
+        'POST',
+        request,
+    )
+}

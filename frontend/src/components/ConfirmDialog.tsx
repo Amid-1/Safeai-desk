@@ -28,13 +28,14 @@ function ConfirmDialog({
             title={title}
             onClose={onCancel}
             closeDisabled={loading}
+            size="sm"
         >
-            <p>{message}</p>
+            <p className="confirm-dialog__message">{message}</p>
 
             <div className="modal-actions">
                 <button
                     type="button"
-                    className="secondary-button"
+                    className="button button--secondary"
                     disabled={loading}
                     onClick={onCancel}
                 >
@@ -43,11 +44,15 @@ function ConfirmDialog({
 
                 <button
                     type="button"
-                    className={danger ? 'danger-button' : undefined}
+                    className={
+                        danger
+                            ? 'button button--danger'
+                            : 'button button--primary'
+                    }
                     disabled={loading}
                     onClick={onConfirm}
                 >
-                    {loading ? 'Выполнение...' : confirmText}
+                    {loading ? 'Выполняется...' : confirmText}
                 </button>
             </div>
         </Modal>
@@ -55,4 +60,6 @@ function ConfirmDialog({
 }
 
 export default ConfirmDialog
+
+
 

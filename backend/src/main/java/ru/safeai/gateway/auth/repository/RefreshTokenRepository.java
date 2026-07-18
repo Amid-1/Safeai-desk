@@ -17,13 +17,13 @@ public interface RefreshTokenRepository
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-            select distinct token
-            from RefreshTokenEntity token
-            join fetch token.user user
-            join fetch user.organization
-            left join fetch user.roles
-            where token.tokenHash = :tokenHash
-            """)
+        select distinct token
+        from RefreshTokenEntity token
+        join fetch token.user user
+        join fetch user.organization
+        left join fetch user.roles
+        where token.tokenHash = :tokenHash
+        """)
     Optional<RefreshTokenEntity> findByTokenHashForUpdate(
             @Param("tokenHash") String tokenHash
     );

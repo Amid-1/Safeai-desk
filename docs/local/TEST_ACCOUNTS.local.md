@@ -78,10 +78,10 @@ Demo Company — тестовая customer organization для локально�
 
 Организации, созданные вручную через UI, могут отличаться после пересоздания БД.
 
-| Организация      | Комментарий |
-|------------------|---|
-| `"ООО "Клевер"`  | Тестовая customer organization |
-| `"ООО "Ромашка"` | Тестовая customer organization |
+| Организация     | Комментарий |
+|-----------------|---|
+| `ООО "Клевер"`  | Тестовая customer organization |
+| `ООО "Ромашка"` | Тестовая customer organization |
 
 ---
 
@@ -98,13 +98,14 @@ Demo Company — тестовая customer organization для локально�
 > Если для аккаунта выполнялся **Reset password** через UI, актуальным является последний заданный пароль.  
 > Старый пароль из этой таблицы после reset password больше не подойдет.
 
-| № | Email                   | Password | Role | Организация     | Полное имя / комментарий                                               |
-|---:|-------------------------|---|---|-----------------|------------------------------------------------------------------------|
+| № | Email                   | Password             | Role | Организация     | Полное имя / комментарий                                               |
+|---:|-------------------------|----------------------|---|-----------------|------------------------------------------------------------------------|
 | 1 | `admin@test.com`        | `bvhgSI*7&@)++!@$HJ` | `ADMIN` | `Demo Company`  | AdminTest AdminTestov. Seed/local admin.                               |
-| 2 | `admin@klever.ru`       | `bvhgSI*7&@)++!@$` | `ADMIN` | `ООО "Клевер"`  | AdminKlever AdminKleverov. Создан вручную через frontend/admin users.  |
-| 3 | `ivanRomashka@mail.com` | `v2F4r1C4@$aD` | `ADMIN` | `ООО "Ромашка"` | InanRomashka IvanRomashkov. Создан вручную через frontend/admin users. |
-| 4 | `vladSokol@mail.ru`     | `fhgkJFG@3%^&%` | `ADMIN` | `ООО "Сокол"`   | VladSokol VladSokolov. В БД email нормализуется к lower-case.          |
-| 5 | `mishaZil@proton.net`   | `bvhgSI*7&@)++` | `ADMIN` | `ООО "Зил"`     | MishaZil MichaZilov. В БД email нормализуется к lower-case.            |
+| 2 | `admin@klever.ru`       | `bvhgSI*7&@)++!@$`   | `ADMIN` | `ООО "Клевер"`  | AdminKlever AdminKleverov. Создан вручную через frontend/admin users.  |
+| 3 | `ivanRomashka@mail.com` | `v2F4r1C4@$aD`       | `ADMIN` | `ООО "Ромашка"` | InanRomashka IvanRomashkov. Создан вручную через frontend/admin users. |
+| 4 | `vladSokol@mail.ru`     | `fhgkJFG@3%^&%`      | `ADMIN` | `ООО "Сокол"`   | VladSokol VladSokolov. В БД email нормализуется к lower-case.          |
+| 5 | `mishaZil@proton.net`   | `bvhgSI*7&@)++`      | `ADMIN` | `ООО "Зил"`     | MishaZil MichaZilov. В БД email нормализуется к lower-case.            |
+| 5 | `nikitaZil@proton.net`  | `bvhgSI*7&@)=_`      | `ADMIN` | `ООО "Космос"`  | NikitaKosmos NikitaKosmosov. В БД email нормализуется к lower-case.    |
 
 ### 4.3 USER
 
@@ -747,3 +748,42 @@ SafeAI Platform — только для SUPER_ADMIN.
 POST /api/auth/login = 401 означает неверные credentials.
 POST /api/auth/login = 200, затем /api/auth/me = 401/403 означает проблему security-state/cookies/cache.
 ```
+
+
+
+Выполни по порядку:
+
+cd /d "D:\Java projects\Safeai-desk\frontend"
+
+Удалить старые зависимости:
+
+rmdir /s /q node_modules
+
+Удалить старый lock-файл:
+
+del package-lock.json
+
+Установить всё заново:
+
+npm install
+
+После установки проверить Vitest:
+
+npm list vitest
+
+Должно появиться примерно:
+
+safeai-desk-frontend@0.0.1
+└── vitest@4.1.10
+
+Затем:
+
+npm run build
+
+и:
+
+npm test
+
+Также проверь расположение setup.ts:
+
+dir /s setup.ts

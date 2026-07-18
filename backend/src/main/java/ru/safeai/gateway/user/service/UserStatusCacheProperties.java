@@ -19,15 +19,13 @@ public record UserStatusCacheProperties(
 
         if (ttl == null || ttl.isZero() || ttl.isNegative()) {
             throw new IllegalStateException(
-                    "safeai.security.user-status-cache.ttl "
-                            + "должен быть положительным"
+                    "safeai.security.user-status-cache.ttl должен быть положительным"
             );
         }
 
         if (ttl.compareTo(MAX_TTL) > 0) {
             throw new IllegalStateException(
-                    "safeai.security.user-status-cache.ttl "
-                            + "не должен превышать 5 минут"
+                    "safeai.security.user-status-cache.ttl не должен превышать 5 минут"
             );
         }
 
@@ -45,7 +43,7 @@ public record UserStatusCacheProperties(
     }
 
     public boolean isEnabled() {
-        return enabled;
+        return Boolean.TRUE.equals(enabled);
     }
 
     public Duration effectiveTtl() {

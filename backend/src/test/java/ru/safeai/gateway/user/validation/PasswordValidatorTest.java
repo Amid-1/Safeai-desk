@@ -26,25 +26,10 @@ class PasswordValidatorTest {
 
     @Test
     void rejectsPasswordWithoutRequiredCharacterGroups() {
-        assertThat(validator.isValid(
-                "lowercase_123!",
-                null
-        )).isFalse();
-
-        assertThat(validator.isValid(
-                "UPPERCASE_123!",
-                null
-        )).isFalse();
-
-        assertThat(validator.isValid(
-                "NoDigitsHere!",
-                null
-        )).isFalse();
-
-        assertThat(validator.isValid(
-                "NoSpecial1234",
-                null
-        )).isFalse();
+        assertThat(validator.isValid("lowercase_123!", null)).isFalse();
+        assertThat(validator.isValid("UPPERCASE_123!", null)).isFalse();
+        assertThat(validator.isValid("NoDigitsHere!", null)).isFalse();
+        assertThat(validator.isValid("NoSpecial1234", null)).isFalse();
     }
 
     @Test

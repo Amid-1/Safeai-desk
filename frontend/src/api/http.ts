@@ -479,7 +479,12 @@ async function parseErrorBody(response: Response): Promise<ApiErrorBody> {
         const parsed = JSON.parse(text)
 
         if (!isRecord(parsed)) {
-            throw new Error('Error response is not an object')
+            return {
+                status: response.status,
+                error: 'INVALID_ERROR_RESPONSE',
+                message: `Сервер вернул некорректный ответ с кодом ${response.status}`,
+                requestId: responseRequestId,
+            }
         }
 
         return {

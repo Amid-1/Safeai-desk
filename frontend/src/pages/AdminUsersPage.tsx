@@ -1,15 +1,22 @@
 // frontend/src/pages/AdminUsersPage.tsx
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import {
     createUser,
+    getUserDetails,
+    getUserStatistics,
     getUsers,
+    permanentlyDeleteUser,
     resetUserPassword,
     updateUser,
     updateUserEnabled,
     updateUserRoles,
 } from '../api/userApi'
-import type { User } from '../api/userApi'
+import type {
+    User,
+    UserStatistics,
+    UserListRoleFilter,
+} from '../api/userApi'
 import type { AuthUser } from '../api/authApi'
 import type { UserRole } from '../api/types'
 import type { Organization } from '../api/organizationApi'
@@ -17,8 +24,13 @@ import { getApiErrorMessage } from '../api/http'
 import { formatDateTime } from '../utils/format'
 import { loadAllOrganizations } from '../utils/organizations'
 import { normalizePageResponse } from '../utils/page'
+import { useAutoClearMessage } from '../hooks/useAutoClearMessage'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
+import UserActionsMenu from '../components/admin/UserActionsMenu'
+import UserIdentityCell from '../components/admin/UserIdentityCell'
+import UserRoleBadge from '../components/admin/UserRoleBadge'
+import './AdminUsersPage.css'
 import {
     EmptyState,
     ErrorState,
@@ -30,7 +42,7 @@ const SUCCESS_MESSAGE_TIMEOUT_MS = 4000
 const PLATFORM_ORGANIZATION_ID = '00000000-0000-0000-0000-000000000001'
 
 type AssignableRole = Exclude<UserRole, 'SUPER_ADMIN'>
-type UserFilter = 'ALL' | AssignableRole
+type UserFilter = 'ALL' | UserListRoleFilter
 
 type AdminUsersPageProps = {
     currentUser: AuthUser
@@ -43,6 +55,13 @@ type ConfirmState = {
 
 function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [users, setUsers] = useState<User[]>([])
+    const [statistics, setStatistics] = useState<UserStatistics>({
+        total: 0,
+        administrators: 0,
+        users: 0,
+        enabled: 0,
+        disabled: 0,
+    })
     const [organizations, setOrganizations] = useState<Organization[]>([])
     const [loadError, setLoadError] = useState('')
     const [createError, setCreateError] = useState('')
@@ -51,6 +70,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [success, setSuccess] = useState('')
     const [loading, setLoading] = useState(true)
     const [creating, setCreating] = useState(false)
+    const [createModalOpen, setCreateModalOpen] = useState(false)
     const [organizationsLoading, setOrganizationsLoading] = useState(false)
     const [actionUserId, setActionUserId] = useState<string | null>(null)
     const [page, setPage] = useState(0)
@@ -66,6 +86,8 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [filter, setFilter] = useState<UserFilter>('ALL')
 
     const [detailsUser, setDetailsUser] = useState<User | null>(null)
+    const [detailsLoadingUserId, setDetailsLoadingUserId] = useState<string | null>(null)
+    const [detailsError, setDetailsError] = useState('')
     const [editUser, setEditUser] = useState<User | null>(null)
     const [editEmail, setEditEmail] = useState('')
     const [editFullName, setEditFullName] = useState('')
@@ -75,6 +97,8 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
     const [resetPasswordValue, setResetPasswordValue] = useState('')
     const [resetPasswordConfirm, setResetPasswordConfirm] = useState('')
     const [confirmState, setConfirmState] = useState<ConfirmState>(null)
+    const [deleteUser, setDeleteUser] = useState<User | null>(null)
+    const [deleteConfirmationEmail, setDeleteConfirmationEmail] = useState('')
 
     const usersSequenceRef = useRef(0)
     const organizationsSequenceRef = useRef(0)
@@ -88,7 +112,14 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
             setLoadError('')
 
             try {
-                const response = await getUsers(page, PAGE_SIZE)
+                const [response, loadedStatistics] = await Promise.all([
+                    getUsers(
+                        page,
+                        PAGE_SIZE,
+                        filter === 'ALL' ? undefined : filter,
+                    ),
+                    getUserStatistics(),
+                ])
 
                 if (sequence !== usersSequenceRef.current) {
                     return
@@ -97,6 +128,11 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                 const normalized = normalizePageResponse(response)
                 setUsers(normalized.content)
                 setTotalPages(normalized.totalPages)
+                setStatistics(loadedStatistics)
+
+                if (normalized.totalPages > 0 && page >= normalized.totalPages) {
+                    setPage(normalized.totalPages - 1)
+                }
             } catch (error) {
                 if (sequence === usersSequenceRef.current) {
                     setUsers([])
@@ -116,38 +152,46 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         return () => {
             usersSequenceRef.current += 1
         }
-    }, [page, reloadToken])
+    }, [page, reloadToken, filter])
 
     useEffect(() => {
-        if (!currentUserIsSuperAdmin) {
-            setOrganizations([])
-            setSelectedOrganizationId('')
-            return
-        }
-
         const sequence = ++organizationsSequenceRef.current
 
         async function loadOrganizations() {
             setOrganizationsLoading(true)
 
             try {
-                const loaded = (await loadAllOrganizations()).filter(
-                    (organization) => organization.id !== PLATFORM_ORGANIZATION_ID
-                )
+                const allOrganizations = await loadAllOrganizations()
+                const loaded = currentUserIsSuperAdmin
+                    ? allOrganizations.filter(
+                        (organization) =>
+                            organization.id !== PLATFORM_ORGANIZATION_ID
+                    )
+                    : allOrganizations
 
                 if (sequence === organizationsSequenceRef.current) {
                     setOrganizations(loaded)
-                    setSelectedOrganizationId((current) =>
-                        loaded.some((organization) => organization.id === current)
-                            ? current
-                            : ''
-                    )
+
+                    if (currentUserIsSuperAdmin) {
+                        setSelectedOrganizationId((current) =>
+                            loaded.some(
+                                (organization) => organization.id === current
+                            )
+                                ? current
+                                : ''
+                        )
+                    } else {
+                        setSelectedOrganizationId('')
+                    }
                 }
             } catch (error) {
                 if (sequence === organizationsSequenceRef.current) {
                     setOrganizations([])
                     setCreateError(
-                        getApiErrorMessage(error, 'Не удалось загрузить организации.')
+                        getApiErrorMessage(
+                            error,
+                            'Не удалось загрузить организации.'
+                        )
                     )
                 }
             } finally {
@@ -158,27 +202,17 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         }
 
         void loadOrganizations()
+
         return () => {
             organizationsSequenceRef.current += 1
         }
     }, [currentUserIsSuperAdmin])
 
-    useEffect(() => {
-        if (!success) {
-            return
-        }
-        const timeoutId = window.setTimeout(() => setSuccess(''), SUCCESS_MESSAGE_TIMEOUT_MS)
-        return () => window.clearTimeout(timeoutId)
-    }, [success])
-
-    const filteredUsers = useMemo(() => {
-        return filter === 'ALL'
-            ? users
-            : users.filter((user) => user.roles.includes(filter))
-    }, [users, filter])
-
-    const pageAdminCount = users.filter((user) => user.roles.includes('ADMIN')).length
-    const pageUserCount = users.filter((user) => user.roles.includes('USER')).length
+    useAutoClearMessage(
+        success,
+        setSuccess,
+        SUCCESS_MESSAGE_TIMEOUT_MS
+    )
 
     function requestReloadFromFirstPage() {
         if (page === 0) {
@@ -194,6 +228,20 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
     function toggleSelectedRole(role: AssignableRole) {
         setSelectedRoles((current) => toggleRole(current, role))
+    }
+
+    function openCreateModal() {
+        setCreateError('')
+        setCreateModalOpen(true)
+    }
+
+    function closeCreateModal() {
+        if (creating) {
+            return
+        }
+
+        setCreateModalOpen(false)
+        setCreateError('')
     }
 
     async function handleCreateUser(
@@ -250,6 +298,8 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
             setPasswordConfirm('')
             setFullName('')
             setCreateRoles(['USER'])
+            setSelectedOrganizationId('')
+            setCreateModalOpen(false)
             setSuccess(`Пользователь ${created.email} создан.`)
             requestReloadFromFirstPage()
         } catch (error) {
@@ -257,6 +307,31 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         } finally {
             setCreating(false)
         }
+    }
+
+    async function openDetailsModal(user: User): Promise<void> {
+        setDetailsLoadingUserId(user.id)
+        setDetailsError('')
+
+        try {
+            const details = await getUserDetails(user.id)
+            setDetailsUser(details)
+        } catch (error) {
+            setDetailsError(
+                getApiErrorMessage(
+                    error,
+                    'Не удалось загрузить сведения о пользователе.'
+                )
+            )
+            setDetailsUser(user)
+        } finally {
+            setDetailsLoadingUserId(null)
+        }
+    }
+
+    function closeDetailsModal() {
+        setDetailsUser(null)
+        setDetailsError('')
     }
 
     function openEditModal(user: User) {
@@ -281,6 +356,12 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         setModalError('')
     }
 
+    function openDeleteModal(user: User) {
+        setDeleteUser(user)
+        setDeleteConfirmationEmail('')
+        setModalError('')
+    }
+
     function closeMutationModals() {
         if (actionUserId) {
             return
@@ -288,6 +369,7 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
         setEditUser(null)
         setRolesUser(null)
         setResetPasswordUser(null)
+        setDeleteUser(null)
         setModalError('')
     }
 
@@ -375,14 +457,50 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
 
         await runUserModalMutation(
             resetPasswordUser.id,
-            'Не удалось изменить пароль.',
+            'Не удалось установить новый пароль.',
             async () => {
                 await resetUserPassword(resetPasswordUser.id, {
                     password: resetPasswordValue,
                 })
 
-                setSuccess(`Пароль для ${resetPasswordUser.email} изменён.`)
+                setSuccess(`Для ${resetPasswordUser.email} установлен новый пароль. Активные сессии завершены.`)
                 setResetPasswordUser(null)
+            }
+        )
+    }
+
+    async function submitPermanentDelete(
+        event: SyntheticEvent<HTMLFormElement, SubmitEvent>
+    ) {
+        event.preventDefault()
+
+        if (!deleteUser) {
+            return
+        }
+
+        if (
+            deleteConfirmationEmail.trim().toLowerCase()
+            !== deleteUser.email.toLowerCase()
+        ) {
+            setModalError(
+                'Введите email пользователя полностью и без ошибок.'
+            )
+            return
+        }
+
+        await runUserModalMutation(
+            deleteUser.id,
+            'Не удалось удалить пользователя.',
+            async () => {
+                await permanentlyDeleteUser(deleteUser.id, {
+                    confirmationEmail: deleteConfirmationEmail.trim(),
+                })
+
+                setSuccess(
+                    `Пользователь ${deleteUser.email} удалён навсегда.`
+                )
+                setDeleteUser(null)
+                requestReloadFromFirstPage()
             }
         )
     }
@@ -442,136 +560,73 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
             && (!targetIsAdmin || currentUserIsSuperAdmin)
     }
 
+    function canPermanentlyDelete(user: User): boolean {
+        return currentUserIsSuperAdmin
+            && canManageUser(user)
+            && user.organizationId !== PLATFORM_ORGANIZATION_ID
+    }
+
     return (
-        <div className="page">
-            <h1>Пользователи</h1>
+        <div className="page users-page">
+            <div className="users-page-header">
+                <div>
+                    <h1>Пользователи</h1>
+                    <p className="users-page-subtitle">
+                        Управление пользователями системы
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    className="users-create-button"
+                    onClick={openCreateModal}
+                >
+                    <span aria-hidden="true">＋</span>
+                    Создать пользователя
+                </button>
+            </div>
 
             {mutationError && <div className="error">{mutationError}</div>}
             {success && <div className="success">{success}</div>}
 
-            <div className="card form-card">
-                <h2>Создать пользователя</h2>
-                <form className="form" onSubmit={handleCreateUser}>
-                    <label>
-                        Email
-                        <input
-                            value={email}
-                            onChange={(event) => setEmail(event.target.value)}
-                            type="email"
-                            autoComplete="username"
-                            maxLength={255}
-                            required
-                            disabled={creating}
-                        />
-                    </label>
-                    <label>
-                        Пароль
-                        <input
-                            value={password}
-                            onChange={(event) => setPassword(event.target.value)}
-                            type="password"
-                            minLength={12}
-                            maxLength={72}
-                            autoComplete="new-password"
-                            required
-                            disabled={creating}
-                        />
-                    </label>
-                    <label>
-                        Повторите пароль
-                        <input
-                            value={passwordConfirm}
-                            onChange={(event) => setPasswordConfirm(event.target.value)}
-                            type="password"
-                            minLength={12}
-                            maxLength={72}
-                            autoComplete="new-password"
-                            required
-                            disabled={creating}
-                        />
-                    </label>
-                    <label>
-                        Полное имя
-                        <input
-                            value={fullName}
-                            onChange={(event) => setFullName(event.target.value)}
-                            maxLength={255}
-                            disabled={creating}
-                        />
-                    </label>
-
-                    {currentUserIsSuperAdmin && (
-                        <label>
-                            Организация
-                            <select
-                                value={selectedOrganizationId}
-                                onChange={(event) => setSelectedOrganizationId(event.target.value)}
-                                disabled={creating || organizationsLoading}
-                                required
-                            >
-                                <option value="">Выберите организацию</option>
-                                {organizations.map((organization) => (
-                                    <option key={organization.id} value={organization.id}>
-                                        {organization.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                    )}
-
-                    <fieldset disabled={creating}>
-                        <legend>Роли</legend>
-                        <label>
-                            <input
-                                type="checkbox"
-                                checked={createRoles.includes('USER')}
-                                onChange={() => toggleCreateRole('USER')}
-                            />
-                            USER
-                        </label>
-                        {currentUserIsSuperAdmin && (
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked={createRoles.includes('ADMIN')}
-                                    onChange={() => toggleCreateRole('ADMIN')}
-                                />
-                                ADMIN
-                            </label>
-                        )}
-                    </fieldset>
-
-                    {createError && <div className="error">{createError}</div>}
-                    <button disabled={creating || organizationsLoading}>
-                        {creating ? 'Создание...' : 'Создать пользователя'}
-                    </button>
-                </form>
-            </div>
-
-            <div className="user-toolbar">
+            <div
+                className="users-filter-bar"
+                aria-label="Фильтр пользователей по роли"
+            >
                 <button
                     type="button"
-                    className={filter === 'ALL' ? 'filter-button active' : 'filter-button'}
-                    onClick={() => setFilter('ALL')}
+                    className={filter === 'ALL' ? 'users-filter-button is-active' : 'users-filter-button'}
+                    aria-pressed={filter === 'ALL'}
+                    onClick={() => {
+                        setFilter('ALL')
+                        setPage(0)
+                    }}
                 >
-                    На странице: все ({users.length})
+                    Все <span className="users-filter-count">{statistics.total}</span>
                 </button>
                 <button
                     type="button"
-                    className={filter === 'ADMIN' ? 'filter-button active' : 'filter-button'}
-                    onClick={() => setFilter('ADMIN')}
+                    className={filter === 'ADMIN' ? 'users-filter-button is-active' : 'users-filter-button'}
+                    aria-pressed={filter === 'ADMIN'}
+                    onClick={() => {
+                        setFilter('ADMIN')
+                        setPage(0)
+                    }}
                 >
-                    ADMIN ({pageAdminCount})
+                    Администраторы <span className="users-filter-count">{statistics.administrators}</span>
                 </button>
                 <button
                     type="button"
-                    className={filter === 'USER' ? 'filter-button active' : 'filter-button'}
-                    onClick={() => setFilter('USER')}
+                    className={filter === 'USER' ? 'users-filter-button is-active' : 'users-filter-button'}
+                    aria-pressed={filter === 'USER'}
+                    onClick={() => {
+                        setFilter('USER')
+                        setPage(0)
+                    }}
                 >
-                    USER ({pageUserCount})
+                    Пользователи <span className="users-filter-count">{statistics.users}</span>
                 </button>
             </div>
-            <p className="muted">Фильтр и счётчики относятся только к текущей странице.</p>
 
             {loading && <LoadingState message="Загрузка пользователей..." />}
             {!loading && loadError && (
@@ -585,162 +640,446 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                     }
                 />
             )}
-            {!loading && !loadError && filteredUsers.length === 0 && (
-                <EmptyState message="Пользователи не найдены на текущей странице." />
+            {!loading && !loadError && users.length === 0 && (
+                <EmptyState message="Пользователи не найдены." />
             )}
 
-            {!loading && !loadError && filteredUsers.length > 0 && (
-                <div className="card table-card">
-                    <table className="admin-table users-table">
-                        <thead>
-                        <tr>
-                            <th>Email</th>
-                            <th>Полное имя</th>
-                            {currentUserIsSuperAdmin && <th>Организация</th>}
-                            <th>Роли</th>
-                            <th>Статус</th>
-                            <th>Создан</th>
-                            <th>Действия</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {filteredUsers.map((user) => {
-                            const manageable = canManageUser(user)
-                            const isBusy = actionUserId === user.id
-                            return (
-                                <tr key={user.id}>
-                                    <td>{user.email}</td>
-                                    <td>{user.fullName ?? '—'}</td>
-                                    {currentUserIsSuperAdmin && (
-                                        <td>{getOrganizationName(user.organizationId, organizations)}</td>
-                                    )}
-                                    <td>
-                                        <div className="role-list">
-                                            {user.roles.map((role) => (
-                                                <span key={role} className={getRoleBadgeClass(role)}>
-                                                        {role}
-                                                    </span>
-                                            ))}
-                                        </div>
-                                    </td>
-                                    <td>
-                                            <span className={user.enabled ? 'status-badge status-enabled' : 'status-badge status-disabled'}>
-                                                {user.enabled ? 'включён' : 'отключён'}
-                                            </span>
-                                    </td>
-                                    <td>{formatDateTime(user.createdAt)}</td>
-                                    <td className="actions-cell">
-                                        <div className="table-actions table-actions-compact">
-                                            <button type="button" className="secondary-button" onClick={() => setDetailsUser(user)}>
-                                                Детали
+            {!loading && !loadError && users.length > 0 && (
+                <div className="users-table-card">
+                    <div className="users-table-scroll">
+                        <table className="users-table">
+                            <thead>
+                            <tr>
+                                <th className="users-table__user-column">Пользователь</th>
+                                {currentUserIsSuperAdmin && (
+                                    <th className="users-table__organization-column">Организация</th>
+                                )}
+                                <th className="users-table__roles-column">Роли</th>
+                                <th className="users-table__status-column">Статус</th>
+                                <th className="users-table__date-column">Дата создания</th>
+                                <th className="users-table__actions-column">Действия</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {users.map((user) => {
+                                const manageable = canManageUser(user)
+                                const isBusy = actionUserId === user.id
+
+                                return (
+                                    <tr key={user.id}>
+                                        <td>
+                                            <button
+                                                type="button"
+                                                className="user-identity-link"
+                                                disabled={detailsLoadingUserId === user.id}
+                                                onClick={() => void openDetailsModal(user)}
+                                            >
+                                                <UserIdentityCell
+                                                    fullName={user.fullName}
+                                                    email={user.email}
+                                                    roles={user.roles}
+                                                />
                                             </button>
-                                            {manageable && (
-                                                <>
-                                                    <button type="button" className="secondary-button" disabled={isBusy} onClick={() => openEditModal(user)}>
-                                                        Изменить
-                                                    </button>
-                                                    <button type="button" className="secondary-button" disabled={isBusy} onClick={() => openRolesModal(user)}>
-                                                        Роли
-                                                    </button>
-                                                    <button type="button" className="secondary-button" disabled={isBusy} onClick={() => openResetPasswordModal(user)}>
-                                                        Пароль
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className={user.enabled ? 'danger-button' : 'secondary-button'}
-                                                        disabled={isBusy}
-                                                        onClick={() => setConfirmState({ user, nextEnabled: !user.enabled })}
-                                                    >
-                                                        {user.enabled ? 'Отключить' : 'Включить'}
-                                                    </button>
-                                                </>
-                                            )}
+                                        </td>
+                                        {currentUserIsSuperAdmin && (
+                                            <td>
+                                                {getOrganizationName(
+                                                    user.organizationId,
+                                                    organizations
+                                                )}
+                                            </td>
+                                        )}
+                                        <td>
+                                            <div className="role-list">
+                                                {user.roles.map((role) => (
+                                                    <UserRoleBadge
+                                                        key={role}
+                                                        role={role}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span
+                                                className={
+                                                    user.enabled
+                                                        ? 'status-chip status-chip--enabled'
+                                                        : 'status-chip status-chip--disabled'
+                                                }
+                                            >
+                                                <span className="status-chip__dot" aria-hidden="true" />
+                                                {user.enabled ? 'Включён' : 'Отключён'}
+                                            </span>
+                                        </td>
+                                        <td>{formatDateTime(user.createdAt)}</td>
+                                        <td className="actions-cell">
+                                            <UserActionsMenu
+                                                disabled={isBusy}
+                                                canManage={manageable}
+                                                canDelete={canPermanentlyDelete(user)}
+                                                enabled={user.enabled}
+                                                onDetails={() => void openDetailsModal(user)}
+                                                onEdit={() => openEditModal(user)}
+                                                onRoles={() => openRolesModal(user)}
+                                                onResetPassword={() =>
+                                                    openResetPasswordModal(user)
+                                                }
+                                                onToggleEnabled={() =>
+                                                    setConfirmState({
+                                                        user,
+                                                        nextEnabled: !user.enabled,
+                                                    })
+                                                }
+                                                onDelete={() => openDeleteModal(user)}
+                                            />
+
                                             {!manageable && (
                                                 <span className="muted">
-                                                        {user.roles.includes('SUPER_ADMIN')
-                                                            ? 'Платформенный администратор'
-                                                            : user.id === currentUser.id
-                                                                ? 'Текущий пользователь'
-                                                                : 'Недоступно для ADMIN'}
-                                                    </span>
+                                                    {user.roles.includes('SUPER_ADMIN')
+                                                        ? 'Платформенный администратор'
+                                                        : user.id === currentUser.id
+                                                            ? 'Текущий пользователь'
+                                                            : 'Недоступно для ADMIN'}
+                                                </span>
                                             )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            )
-                        })}
-                        </tbody>
-                    </table>
+                                        </td>
+                                    </tr>
+                                )
+                            })}
+                            </tbody>
+                        </table>
+                    </div>
 
                     <div className="pagination">
-                        <button type="button" className="secondary-button" disabled={page === 0 || loading} onClick={() => setPage((value) => Math.max(0, value - 1))}>
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={page === 0 || loading}
+                            onClick={() =>
+                                setPage((value) => Math.max(0, value - 1))
+                            }
+                        >
                             Назад
                         </button>
-                        <span>Страница {page + 1} из {Math.max(totalPages, 1)}</span>
-                        <button type="button" className="secondary-button" disabled={page + 1 >= totalPages || loading} onClick={() => setPage((value) => value + 1)}>
+                        <span>
+                            Страница {page + 1} из {Math.max(totalPages, 1)}
+                        </span>
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={page + 1 >= totalPages || loading}
+                            onClick={() => setPage((value) => value + 1)}
+                        >
                             Вперёд
                         </button>
                     </div>
                 </div>
             )}
 
-            {detailsUser && (
-                <Modal title={`Пользователь: ${detailsUser.email}`} onClose={() => setDetailsUser(null)}>
-                    <div className="form">
-                        <p><strong>ID:</strong> {detailsUser.id}</p>
-                        <p><strong>Email:</strong> {detailsUser.email}</p>
-                        <p><strong>Полное имя:</strong> {detailsUser.fullName ?? '—'}</p>
-                        <p><strong>Организация:</strong> {getOrganizationName(detailsUser.organizationId, organizations)}</p>
-                        <p><strong>Статус:</strong> {detailsUser.enabled ? 'включён' : 'отключён'}</p>
-                        <p><strong>Роли:</strong> {detailsUser.roles.join(', ')}</p>
-                        <p><strong>Создан:</strong> {formatDateTime(detailsUser.createdAt)}</p>
-                        <div className="modal-actions">
-                            <button type="button" className="secondary-button" onClick={() => setDetailsUser(null)}>Закрыть</button>
+            {createModalOpen && (
+                <Modal
+                    title="Создать пользователя"
+                    onClose={closeCreateModal}
+                    closeDisabled={creating}
+                    size="lg"
+                >
+                    <form className="form users-create-form" onSubmit={handleCreateUser}>
+                        <div className="users-create-form__grid">
+                            <label>
+                                Email
+                                <input
+                                    value={email}
+                                    onChange={(event) => setEmail(event.target.value)}
+                                    type="email"
+                                    autoComplete="username"
+                                    maxLength={255}
+                                    required
+                                    disabled={creating}
+                                    placeholder="user@company.ru"
+                                />
+                            </label>
+
+                            <label>
+                                Полное имя
+                                <input
+                                    value={fullName}
+                                    onChange={(event) => setFullName(event.target.value)}
+                                    maxLength={255}
+                                    disabled={creating}
+                                    placeholder="Иван Иванов"
+                                />
+                            </label>
+
+                            <PasswordFields
+                                password={password}
+                                passwordConfirm={passwordConfirm}
+                                onPasswordChange={setPassword}
+                                onPasswordConfirmChange={setPasswordConfirm}
+                                disabled={creating}
+                            />
+
+                            {currentUserIsSuperAdmin && (
+                                <label className="users-create-form__wide">
+                                    Организация
+                                    <select
+                                        value={selectedOrganizationId}
+                                        onChange={(event) =>
+                                            setSelectedOrganizationId(event.target.value)
+                                        }
+                                        disabled={creating || organizationsLoading}
+                                        required
+                                    >
+                                        <option value="">Выберите организацию</option>
+                                        {organizations.map((organization) => (
+                                            <option
+                                                key={organization.id}
+                                                value={organization.id}
+                                            >
+                                                {organization.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                            )}
                         </div>
+
+                        <fieldset className="users-role-selector" disabled={creating}>
+                            <legend>Роли</legend>
+
+                            <label
+                                className={
+                                    createRoles.includes('USER')
+                                        ? 'users-role-option users-role-option--user is-selected'
+                                        : 'users-role-option users-role-option--user'
+                                }
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={createRoles.includes('USER')}
+                                    onChange={() => toggleCreateRole('USER')}
+                                />
+                                <span className="users-role-option__marker" aria-hidden="true" />
+                                <span>
+                                    <strong>Пользователь</strong>
+                                    <small>Доступ к чатам и рабочим функциям</small>
+                                </span>
+                            </label>
+
+                            {currentUserIsSuperAdmin && (
+                                <label
+                                    className={
+                                        createRoles.includes('ADMIN')
+                                            ? 'users-role-option users-role-option--admin is-selected'
+                                            : 'users-role-option users-role-option--admin'
+                                    }
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={createRoles.includes('ADMIN')}
+                                        onChange={() => toggleCreateRole('ADMIN')}
+                                    />
+                                    <span className="users-role-option__marker" aria-hidden="true" />
+                                    <span>
+                                        <strong>Администратор</strong>
+                                        <small>Управление пользователями организации</small>
+                                    </span>
+                                </label>
+                            )}
+                        </fieldset>
+
+                        {createError && <div className="error">{createError}</div>}
+
+                        <div className="modal-actions">
+                            <button
+                                type="button"
+                                className="button button--secondary"
+                                disabled={creating}
+                                onClick={closeCreateModal}
+                            >
+                                Отмена
+                            </button>
+                            <button
+                                type="submit"
+                                className="button button--primary"
+                                disabled={creating || organizationsLoading}
+                            >
+                                {creating ? 'Создание...' : 'Создать пользователя'}
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {detailsUser && (
+                <Modal
+                    title="Подробнее о пользователе"
+                    onClose={closeDetailsModal}
+                    size="md"
+                >
+                    <p className="modal-subtitle">{detailsUser.email}</p>
+                    {detailsError && <div className="error">{detailsError}</div>}
+                    <dl className="user-details">
+                        <div className="user-details__row"><dt>Email</dt><dd>{detailsUser.email}</dd></div>
+                        <div className="user-details__row"><dt>Полное имя</dt><dd>{detailsUser.fullName ?? '—'}</dd></div>
+                        <div className="user-details__row">
+                            <dt>Организация</dt>
+                            <dd>
+                                {getOrganizationName(
+                                    detailsUser.organizationId,
+                                    organizations
+                                )}
+                            </dd>
+                        </div>
+                        <div className="user-details__row">
+                            <dt>Роли</dt>
+                            <dd>{detailsUser.roles.map(getRoleLabel).join(', ')}</dd>
+                        </div>
+                        <div className="user-details__row">
+                            <dt>Статус</dt>
+                            <dd>{detailsUser.enabled ? 'Включён' : 'Отключён'}</dd>
+                        </div>
+                        <div className="user-details__row">
+                            <dt>Дата создания</dt>
+                            <dd>{formatDateTime(detailsUser.createdAt)}</dd>
+                        </div>
+                        <div className="user-details__row">
+                            <dt>Дата последнего изменения</dt>
+                            <dd>{formatDateTime(detailsUser.updatedAt)}</dd>
+                        </div>
+                        <div className="user-details__row">
+                            <dt>Последний вход</dt>
+                            <dd>
+                                {detailsUser.lastLoginAt
+                                    ? formatDateTime(detailsUser.lastLoginAt)
+                                    : 'Ещё не входил'}
+                            </dd>
+                        </div>
+                        <div className="user-details__row">
+                            <dt>ID пользователя</dt>
+                            <dd className="user-details-monospace">
+                                {detailsUser.id}
+                            </dd>
+                        </div>
+                    </dl>
+                    <div className="modal-actions">
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={closeDetailsModal}
+                        >
+                            Закрыть
+                        </button>
                     </div>
                 </Modal>
             )}
 
             {editUser && (
-                <Modal title={`Изменить: ${editUser.email}`} onClose={closeMutationModals} closeDisabled={actionUserId === editUser.id}>
+                <Modal size="sm" title="Редактирование пользователя" onClose={closeMutationModals} closeDisabled={actionUserId === editUser.id}>
+                    <p className="modal-subtitle">{editUser.email}</p>
                     <form className="form" onSubmit={submitEditUser}>
                         <label>Email<input value={editEmail} onChange={(event) => setEditEmail(event.target.value)} type="email" maxLength={255} required disabled={actionUserId === editUser.id} /></label>
                         <label>Полное имя<input value={editFullName} onChange={(event) => setEditFullName(event.target.value)} maxLength={255} disabled={actionUserId === editUser.id} /></label>
                         {modalError && <div className="error">{modalError}</div>}
                         <div className="modal-actions">
                             <button type="button" className="secondary-button" disabled={actionUserId === editUser.id} onClick={closeMutationModals}>Отмена</button>
-                            <button disabled={actionUserId === editUser.id || !editEmail.trim()}>{actionUserId === editUser.id ? 'Сохранение...' : 'Сохранить'}</button>
+                            <button disabled={actionUserId === editUser.id || !editEmail.trim()}>{actionUserId === editUser.id ? 'Сохранение...' : 'Сохранить изменения'}</button>
                         </div>
                     </form>
                 </Modal>
             )}
 
             {rolesUser && (
-                <Modal title={`Роли: ${rolesUser.email}`} onClose={closeMutationModals} closeDisabled={actionUserId === rolesUser.id}>
+                <Modal size="sm" title="Роли и доступ" onClose={closeMutationModals} closeDisabled={actionUserId === rolesUser.id}>
+                    <p className="modal-subtitle">{rolesUser.email}</p>
                     <form className="form" onSubmit={submitRoles}>
                         <fieldset disabled={actionUserId === rolesUser.id}>
-                            <legend>Выберите роли</legend>
+                            <legend>Назначенные роли</legend>
                             <label><input type="checkbox" checked={selectedRoles.includes('USER')} onChange={() => toggleSelectedRole('USER')} /> USER</label>
                             <label><input type="checkbox" checked={selectedRoles.includes('ADMIN')} onChange={() => toggleSelectedRole('ADMIN')} /> ADMIN</label>
                         </fieldset>
                         {modalError && <div className="error">{modalError}</div>}
                         <div className="modal-actions">
                             <button type="button" className="secondary-button" disabled={actionUserId === rolesUser.id} onClick={closeMutationModals}>Отмена</button>
-                            <button disabled={actionUserId === rolesUser.id || selectedRoles.length === 0}>{actionUserId === rolesUser.id ? 'Сохранение...' : 'Сохранить роли'}</button>
+                            <button disabled={actionUserId === rolesUser.id || selectedRoles.length === 0}>{actionUserId === rolesUser.id ? 'Сохранение...' : 'Сохранить изменения'}</button>
                         </div>
                     </form>
                 </Modal>
             )}
 
             {resetPasswordUser && (
-                <Modal title={`Сброс пароля: ${resetPasswordUser.email}`} onClose={closeMutationModals} closeDisabled={actionUserId === resetPasswordUser.id}>
+                <Modal size="sm" title="Установить новый пароль" onClose={closeMutationModals} closeDisabled={actionUserId === resetPasswordUser.id}>
+                    <p className="modal-subtitle">Пользователь: {resetPasswordUser.email}</p>
+                    <p className="modal-help">После сохранения все активные сессии пользователя будут завершены.</p>
                     <form className="form" onSubmit={submitResetPassword}>
-                        <label>Новый пароль<input type="password" value={resetPasswordValue} onChange={(event) => setResetPasswordValue(event.target.value)} minLength={12} maxLength={72} required disabled={actionUserId === resetPasswordUser.id} /></label>
-                        <label>Повторите пароль<input type="password" value={resetPasswordConfirm} onChange={(event) => setResetPasswordConfirm(event.target.value)} minLength={12} maxLength={72} required disabled={actionUserId === resetPasswordUser.id} /></label>
+                        <PasswordFields
+                            password={resetPasswordValue}
+                            passwordConfirm={resetPasswordConfirm}
+                            onPasswordChange={setResetPasswordValue}
+                            onPasswordConfirmChange={setResetPasswordConfirm}
+                            disabled={actionUserId === resetPasswordUser.id}
+                            passwordLabel="Новый пароль"
+                        />
                         {modalError && <div className="error">{modalError}</div>}
                         <div className="modal-actions">
                             <button type="button" className="secondary-button" disabled={actionUserId === resetPasswordUser.id} onClick={closeMutationModals}>Отмена</button>
-                            <button disabled={actionUserId === resetPasswordUser.id || !resetPasswordValue || !resetPasswordConfirm}>{actionUserId === resetPasswordUser.id ? 'Сброс...' : 'Сбросить пароль'}</button>
+                            <button disabled={actionUserId === resetPasswordUser.id || !resetPasswordValue || !resetPasswordConfirm}>{actionUserId === resetPasswordUser.id ? 'Сохранение...' : 'Установить новый пароль'}</button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {deleteUser && (
+                <Modal
+                    title="Удалить пользователя навсегда?"
+                    size="sm"
+                    onClose={closeMutationModals}
+                    closeDisabled={actionUserId === deleteUser.id}
+                >
+                    <p>
+                        Пользователь: <strong>{deleteUser.email}</strong>
+                    </p>
+                    <div className="danger-notice">
+                        Это действие нельзя отменить. История аудита будет
+                        сохранена, но учётную запись нельзя будет восстановить.
+                        Пользователя с историей чатов удалить нельзя — его можно
+                        только отключить.
+                    </div>
+                    <form className="form" onSubmit={submitPermanentDelete}>
+                        <label>
+                            Для подтверждения введите email пользователя
+                            <input
+                                type="email"
+                                value={deleteConfirmationEmail}
+                                onChange={(event) =>
+                                    setDeleteConfirmationEmail(event.target.value)
+                                }
+                                autoComplete="off"
+                                required
+                                disabled={actionUserId === deleteUser.id}
+                            />
+                        </label>
+                        {modalError && <div className="error">{modalError}</div>}
+                        <div className="modal-actions">
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                disabled={actionUserId === deleteUser.id}
+                                onClick={closeMutationModals}
+                            >
+                                Отмена
+                            </button>
+                            <button
+                                className="danger-button"
+                                disabled={
+                                    actionUserId === deleteUser.id
+                                    || deleteConfirmationEmail.trim().toLowerCase()
+                                    !== deleteUser.email.toLowerCase()
+                                }
+                            >
+                                {actionUserId === deleteUser.id
+                                    ? 'Удаление...'
+                                    : 'Удалить навсегда'}
+                            </button>
                         </div>
                     </form>
                 </Modal>
@@ -749,8 +1088,12 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
             {confirmState && (
                 <ConfirmDialog
                     title={confirmState.nextEnabled ? 'Включить пользователя' : 'Отключить пользователя'}
-                    message={`${confirmState.nextEnabled ? 'Включить' : 'Отключить'} пользователя ${confirmState.user.email}?`}
-                    confirmText={confirmState.nextEnabled ? 'Включить' : 'Отключить'}
+                    message={confirmState.nextEnabled
+                        ? `Включить пользователя ${confirmState.user.email}?`
+                        : `Отключить пользователя ${confirmState.user.email}? Все активные сессии будут завершены.`}
+                    confirmText={confirmState.nextEnabled
+                        ? 'Включить пользователя'
+                        : 'Отключить пользователя'}
                     danger={!confirmState.nextEnabled}
                     loading={actionUserId === confirmState.user.id}
                     onCancel={() => setConfirmState(null)}
@@ -758,6 +1101,57 @@ function AdminUsersPage({ currentUser }: AdminUsersPageProps) {
                 />
             )}
         </div>
+    )
+}
+
+type PasswordFieldsProps = {
+    password: string
+    passwordConfirm: string
+    onPasswordChange: (value: string) => void
+    onPasswordConfirmChange: (value: string) => void
+    disabled: boolean
+    passwordLabel?: string
+}
+
+function PasswordFields({
+                            password,
+                            passwordConfirm,
+                            onPasswordChange,
+                            onPasswordConfirmChange,
+                            disabled,
+                            passwordLabel = 'Пароль',
+                        }: PasswordFieldsProps) {
+    return (
+        <>
+            <label>
+                {passwordLabel}
+                <input
+                    value={password}
+                    onChange={(event) => onPasswordChange(event.target.value)}
+                    type="password"
+                    minLength={12}
+                    maxLength={72}
+                    autoComplete="new-password"
+                    required
+                    disabled={disabled}
+                />
+            </label>
+            <label>
+                Повторите пароль
+                <input
+                    value={passwordConfirm}
+                    onChange={(event) =>
+                        onPasswordConfirmChange(event.target.value)
+                    }
+                    type="password"
+                    minLength={12}
+                    maxLength={72}
+                    autoComplete="new-password"
+                    required
+                    disabled={disabled}
+                />
+            </label>
+        </>
     )
 }
 
@@ -772,10 +1166,10 @@ function getOrganizationName(id: string, organizations: Organization[]): string 
     return organizations.find((organization) => organization.id === id)?.name ?? id
 }
 
-function getRoleBadgeClass(role: UserRole): string {
-    if (role === 'SUPER_ADMIN') return 'role-badge role-super-admin'
-    if (role === 'ADMIN') return 'role-badge role-admin'
-    return 'role-badge role-user'
+function getRoleLabel(role: UserRole): string {
+    if (role === 'SUPER_ADMIN') return 'Суперадминистратор'
+    if (role === 'ADMIN') return 'Администратор'
+    return 'Пользователь'
 }
 
 function validatePassword(password: string): string | null {
@@ -791,3 +1185,4 @@ function validatePassword(password: string): string | null {
 }
 
 export default AdminUsersPage
+

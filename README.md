@@ -510,7 +510,8 @@ safeai-desk/
 │   │   │           │   ├── V15__audit_query_and_retention_indexes.sql
 │   │   │           │   ├── V16__preserve_usage_history_on_user_delete.sql
 │   │   │           │   ├── V17__ai_usage_and_pricing_metadata.sql
-│   │   │           │   └── V18__audit_actor_snapshots.sql
+│   │   │           │   ├── V18__audit_actor_snapshots.sql
+│   │   │           │   └── V19__user_management_details_and_audit.sql
 │   │   │           │
 │   │   │           └── local-migration/
 │   │   │               └── V1000__seed_local_demo_data.sql
@@ -561,28 +562,47 @@ safeai-desk/
 │   │   │   ├── ErrorBoundary.tsx
 │   │   │   ├── Modal.tsx
 │   │   │   ├── StateBlock.tsx
-│   │   │   └── admin/
-│   │   │          └── audit/
-│   │   │             ├── AuditActor.tsx
-│   │   │             ├── AuditDetailsModal.tsx
-│   │   │             ├── AuditFilters.tsx
-│   │   │             ├── AuditPagination.tsx
-│   │   │             ├── AuditTable.tsx
-│   │   │             └── types.ts
-│   │   │
+│   │   │   ├── admin/
+│   │   │   │   ├── audit/
+│   │   │   │   │    ├── AuditActor.tsx
+│   │   │   │   │    ├── AuditDetailsModal.tsx
+│   │   │   │   │    ├── AuditFilters.tsx
+│   │   │   │   │    ├── AuditPagination.tsx
+│   │   │   │   │    ├── AuditTable.tsx
+│   │   │   │   │    └── types.ts
+│   │   │   │   │    
+│   │   │   │   ├── UserActionsMenu.tsx
+│   │   │   │   ├── UserIdentityCell.tsx
+│   │   │   │   └── UserRoleBadge.tsx
+│   │   │   │      
+│   │   │   ├── ConfirmDialog.tsx   
+│   │   │   ├── ErrorBoundary.tsx    
+│   │   │   ├── Modal.tsx    
+│   │   │   └── StateBlock.tsx    
+│   │   │         
+│   │   │         
 │   │   ├── hooks/
-│   │   │   └── admin/
-│   │   │          ├── useAuditDirectories.ts
-│   │   │          └── useAuditEvents.ts
-│   │   │   
+│   │   │   ├── admin/
+│   │   │   │   ├── useAuditDirectories.ts
+│   │   │   │   └── useAuditEvents.ts
+│   │   │   │
+│   │   │   └── useAutoClearMessage.ts
+│   │   │
 │   │   │
 │   │   ├── pages/
 │   │   │   ├── AdminAuditPage.tsx
 │   │   │   ├── AdminOrganizationsPage.tsx
 │   │   │   ├── AdminUsagePage.tsx
+│   │   │   ├── AAdminUsersPage.css
 │   │   │   ├── AdminUsersPage.tsx
 │   │   │   ├── ChatPage.tsx
 │   │   │   └── LoginPage.tsx
+│   │   │
+│   │   ├── styles/
+│   │   │   └── user-management-additions.css
+│   │   │
+│   │   ├── test/
+│   │   │   └── setup.ts
 │   │   │
 │   │   ├── utils/
 │   │   │   ├── date.ts

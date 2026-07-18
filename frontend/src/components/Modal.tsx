@@ -1,162 +1,143 @@
 // ============================================================
 // frontend/src/components/admin/Modal.tsx
 // ============================================================
+import {
+    useEffect,
+    useId,
+    useRef,
+} from 'react'
+import type {
+    MouseEvent as ReactMouseEvent,
+    ReactNode,
+} from 'react'
 
-import { useEffect, useId, useRef } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
-
-type ModalProps = {
+type Props = {
     title: string
     children: ReactNode
     onClose: () => void
     closeDisabled?: boolean
+    size?: 'sm' | 'md' | 'lg'
 }
-
-const FOCUSABLE_SELECTOR = [
-    'a[href]',
-    'button:not([disabled])',
-    'textarea:not([disabled])',
-    'input:not([disabled])',
-    'select:not([disabled])',
-    '[tabindex]:not([tabindex="-1"])',
-].join(',')
 
 function Modal({
                    title,
                    children,
                    onClose,
                    closeDisabled = false,
-               }: ModalProps) {
+                   size = 'md',
+               }: Props) {
     const titleId = useId()
-    const modalRef = useRef<HTMLDivElement | null>(null)
-    const previousActiveElementRef = useRef<Element | null>(null)
+    const cardRef = useRef<HTMLDivElement>(null)
+    const previousActiveElementRef = useRef<HTMLElement | null>(null)
 
     useEffect(() => {
-        previousActiveElementRef.current = document.activeElement
+        previousActiveElementRef.current =
+            document.activeElement instanceof HTMLElement
+                ? document.activeElement
+                : null
 
-        const previousOverflow = document.body.style.overflow
-        document.body.style.overflow = 'hidden'
+        const card = cardRef.current
+        const firstFocusable = card?.querySelector<HTMLElement>(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
 
-        const focusableElements =
-            modalRef.current?.querySelectorAll<HTMLElement>(
-                FOCUSABLE_SELECTOR
+        firstFocusable?.focus()
+
+        function handleKeyDown(event: KeyboardEvent) {
+            if (event.key === 'Escape') {
+                if (!closeDisabled) {
+                    onClose()
+                }
+                return
+            }
+
+            if (event.key !== 'Tab' || !cardRef.current) {
+                return
+            }
+
+            const focusable = Array.from(
+                cardRef.current.querySelectorAll<HTMLElement>(
+                    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                )
             )
 
-        const firstFocusableElement = focusableElements?.[0]
+            if (focusable.length === 0) {
+                return
+            }
 
-        if (firstFocusableElement) {
-            firstFocusableElement.focus()
-        } else {
-            modalRef.current?.focus()
-        }
+            const first = focusable[0]
+            const last = focusable[focusable.length - 1]
 
-        function handleKeyDown(event: globalThis.KeyboardEvent) {
-            if (event.key === 'Escape' && !closeDisabled) {
+            if (event.shiftKey && document.activeElement === first) {
                 event.preventDefault()
-                onClose()
+                last.focus()
+            } else if (
+                !event.shiftKey
+                && document.activeElement === last
+            ) {
+                event.preventDefault()
+                first.focus()
             }
         }
 
         document.addEventListener('keydown', handleKeyDown)
+        document.body.classList.add('modal-open')
 
         return () => {
             document.removeEventListener('keydown', handleKeyDown)
-            document.body.style.overflow = previousOverflow
-
-            if (
-                previousActiveElementRef.current instanceof HTMLElement
-                && document.contains(previousActiveElementRef.current)
-            ) {
-                previousActiveElementRef.current.focus()
-            }
+            document.body.classList.remove('modal-open')
+            previousActiveElementRef.current?.focus()
         }
     }, [closeDisabled, onClose])
 
-    function handleBackdropMouseDown() {
-        if (!closeDisabled) {
-            onClose()
-        }
-    }
-
-    function handleModalKeyDown(
-        event: KeyboardEvent<HTMLDivElement>
+    function handleBackdropClick(
+        event: ReactMouseEvent<HTMLDivElement>
     ) {
-        if (event.key !== 'Tab') {
-            return
-        }
-
-        const focusableElements = Array.from(
-            modalRef.current?.querySelectorAll<HTMLElement>(
-                FOCUSABLE_SELECTOR
-            ) ?? []
-        )
-
-        if (focusableElements.length === 0) {
-            event.preventDefault()
-            modalRef.current?.focus()
-            return
-        }
-
-        const firstElement = focusableElements[0]
-        const lastElement =
-            focusableElements[focusableElements.length - 1]
-
         if (
-            event.shiftKey
-            && (
-                document.activeElement === firstElement
-                || document.activeElement === modalRef.current
-            )
+            event.target === event.currentTarget
+            && !closeDisabled
         ) {
-            event.preventDefault()
-            lastElement.focus()
-            return
-        }
-
-        if (
-            !event.shiftKey
-            && document.activeElement === lastElement
-        ) {
-            event.preventDefault()
-            firstElement.focus()
+            onClose()
         }
     }
 
     return (
         <div
             className="modal-backdrop"
-            onMouseDown={handleBackdropMouseDown}
+            onMouseDown={handleBackdropClick}
         >
             <div
-                ref={modalRef}
-                className="modal-card"
+                ref={cardRef}
+                className={`modal-card modal-card--${size}`}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={titleId}
                 aria-busy={closeDisabled}
-                tabIndex={-1}
-                onKeyDown={handleModalKeyDown}
-                onMouseDown={(event) => event.stopPropagation()}
             >
                 <div className="modal-header">
                     <h2 id={titleId}>{title}</h2>
 
                     <button
                         type="button"
-                        className="secondary-button modal-close-button"
-                        onClick={onClose}
-                        aria-label="Закрыть окно"
+                        className="modal-close"
+                        aria-label={
+                            closeDisabled
+                                ? 'Закрытие недоступно во время выполнения операции'
+                                : 'Закрыть окно'
+                        }
                         disabled={closeDisabled}
+                        onClick={onClose}
                     >
                         ×
                     </button>
                 </div>
 
-                {children}
+                <div className="modal-body">
+                    {children}
+                </div>
             </div>
         </div>
     )
 }
 
 export default Modal
-

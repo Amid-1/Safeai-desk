@@ -1,0 +1,192 @@
+/* frontend/src/styles/user-management-additions.css  */
+/* Add this block to the end of the main imported CSS file. */
+.users-table {
+    min-width: 920px;
+}
+
+.users-table .actions-cell {
+    min-width: 300px;
+}
+
+.user-identity-button {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+}
+
+.user-identity-button:hover:not(:disabled) .user-identity-email {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.user-identity-name,
+.user-identity-email {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.user-identity-name {
+    font-weight: 700;
+}
+
+.user-identity-email {
+    color: #2563eb;
+    font-size: 13px;
+}
+
+.table-actions-primary {
+    flex-wrap: nowrap;
+}
+
+.actions-menu {
+    position: relative;
+}
+
+.actions-menu > summary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 38px;
+    min-height: 34px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: #e5e7eb;
+    color: #111827;
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    list-style: none;
+}
+
+.actions-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.actions-menu[open] > summary {
+    background: #d1d5db;
+}
+
+.actions-menu__panel {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 8px);
+    right: 0;
+    width: min(280px, calc(100vw - 48px));
+    padding: 8px;
+    border: 1px solid #dbe1e8;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+}
+
+.actions-menu__panel button {
+    display: block;
+    width: 100%;
+    min-height: 40px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    background: transparent;
+    color: #17202a;
+    text-align: left;
+}
+
+.actions-menu__panel button:hover:not(:disabled) {
+    background: #f3f4f6;
+}
+
+.actions-menu__panel .actions-menu__danger {
+    color: #b91c1c;
+}
+
+.actions-menu__panel .actions-menu__danger:hover:not(:disabled) {
+    background: #fef2f2;
+}
+
+.actions-menu__separator {
+    height: 1px;
+    margin: 6px 4px;
+    background: #e5e7eb;
+}
+
+.modal-subtitle {
+    margin: -8px 0 18px;
+    color: #6b7280;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.modal-help {
+    margin: 0 0 16px;
+    color: #4b5563;
+    line-height: 1.5;
+}
+
+.user-details-list {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+}
+
+.user-details-list > div {
+    display: grid;
+    grid-template-columns: minmax(150px, 210px) 1fr;
+    gap: 16px;
+}
+
+.user-details-list dt {
+    font-weight: 700;
+}
+
+.user-details-list dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.user-details-monospace {
+    font-family:
+        "SFMono-Regular",
+        Consolas,
+        "Liberation Mono",
+        monospace;
+    font-size: 13px;
+}
+
+.danger-notice {
+    margin: 0 0 16px;
+    padding: 12px;
+    border: 1px solid #fecaca;
+    border-radius: 10px;
+    background: #fef2f2;
+    color: #991b1b;
+    line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+    .table-actions-primary {
+        flex-wrap: wrap;
+    }
+
+    .actions-menu__panel {
+        position: fixed;
+        top: auto;
+        right: 16px;
+        bottom: 16px;
+        left: 16px;
+        width: auto;
+    }
+
+    .user-details-list > div {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+}

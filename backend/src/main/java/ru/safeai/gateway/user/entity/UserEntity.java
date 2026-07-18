@@ -15,7 +15,6 @@ import java.util.UUID;
 @Entity
 @Table(name = "users")
 public class UserEntity {
-
     @Id
     @Column(name = "id", nullable = false)
     private UUID id;
@@ -44,21 +43,14 @@ public class UserEntity {
     )
     private Set<RoleEntity> roles = new HashSet<>();
 
-    @Column(
-            name = "created_at",
-            nullable = false,
-            insertable = false,
-            updatable = false
-    )
+    @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private Instant createdAt;
 
-    @Column(
-            name = "updated_at",
-            nullable = false,
-            insertable = false,
-            updatable = false
-    )
+    @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
     private Instant updatedAt;
+
+    @Column(name = "last_login_at")
+    private Instant lastLoginAt;
 
     @Column(name = "token_version", nullable = false)
     private long tokenVersion;
