@@ -1,7 +1,6 @@
 package ru.safeai.gateway.auth.security;
 
 import lombok.RequiredArgsConstructor;
-import org.jspecify.annotations.NonNull;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -23,26 +22,33 @@ public class CustomUserDetailsService implements UserDetailsService {
 
     @Override
     @Transactional(readOnly = true)
-    public @NonNull UserDetails loadUserByUsername(
-            @NonNull String email
+    public UserDetails loadUserByUsername(
+            String email
     ) throws UsernameNotFoundException {
-        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+        String normalizedEmail = email
+                .trim()
+                .toLowerCase(Locale.ROOT);
 
-        UserEntity user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+        UserEntity user = userRepository
+                .findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new UsernameNotFoundException(
                         "Пользователь не найден"
                 ));
 
         var authorities = RoleAuthorityMapper.toAuthorities(
-                user.getRoles().stream().map(RoleEntity::getName).toList()
+                user.getRoles()
+                        .stream()
+                        .map(RoleEntity::getName)
+                        .toList()
         );
 
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.passwordPrincipal(
                 user.getId(),
                 user.getOrganization().getId(),
                 user.getEmail(),
                 user.getPasswordHash(),
-                user.isEnabled() && user.getOrganization().isEnabled(),
+                user.isEnabled()
+                        && user.getOrganization().isEnabled(),
                 user.getTokenVersion(),
                 authorities
         );

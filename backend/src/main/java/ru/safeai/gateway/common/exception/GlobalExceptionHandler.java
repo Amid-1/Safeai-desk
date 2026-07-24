@@ -1,22 +1,35 @@
 package ru.safeai.gateway.common.exception;
 
+import jakarta.persistence.OptimisticLockException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
-import jakarta.validation.Path;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSourceResolvable;
+import org.springframework.core.Ordered;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.authorization.AuthorizationDeniedException;
+import org.springframework.security.authentication.AccountExpiredException;
+import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.CredentialsExpiredException;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
+import org.springframework.validation.method.ParameterErrors;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -28,61 +41,127 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import ru.safeai.gateway.common.security.RequestIdFilter;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Единственный common-level MVC exception advice.
+ *
+ * <p>Специализированные advice функциональных модулей должны иметь явно
+ * более высокий приоритет. Отдельные common advice для chat availability
+ * и optimistic locking использовать не нужно.</p>
+ */
 @Slf4j
 @RestControllerAdvice
 @RequiredArgsConstructor
-public class GlobalExceptionHandler {
+public class GlobalExceptionHandler implements Ordered {
 
-    private static final String GLOBAL_ERROR_KEY = "_global";
+    private static final String VALIDATION_MESSAGE =
+            "Ошибка валидации запроса";
+    private static final String INTERNAL_ERROR_MESSAGE =
+            "Внутренняя ошибка сервера";
+    private static final String OPTIMISTIC_LOCK_MESSAGE =
+            "Данные были изменены другим пользователем. "
+                    + "Обновите данные и повторите операцию";
+    private static final String CHAT_LOCK_UNAVAILABLE_MESSAGE =
+            "Сервис блокировки чата временно недоступен";
+    private static final String RATE_LIMIT_UNAVAILABLE_MESSAGE =
+            "Сервис ограничения запросов временно недоступен";
+    private static final String INVALID_REFRESH_TOKEN_MESSAGE =
+            "Недействительный refresh token";
 
     private final ApiErrorResponseFactory errorResponseFactory;
 
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ApiErrorResponse> handleResourceNotFound(
-            ResourceNotFoundException exception,
-            HttpServletRequest request
-    ) {
-        return buildResponse(
-                HttpStatus.NOT_FOUND,
-                "NOT_FOUND",
-                safeMessage(exception.getMessage(), "Ресурс не найден"),
-                request,
-                null
-        );
+    @Override
+    public int getOrder() {
+        return Ordered.LOWEST_PRECEDENCE;
     }
 
-    @ExceptionHandler(ConflictException.class)
-    public ResponseEntity<ApiErrorResponse> handleConflict(
-            ConflictException exception,
+    @ExceptionHandler(ChatBusyException.class)
+    public ResponseEntity<ApiErrorResponse> handleChatBusy(
+            ChatBusyException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
+        return build(
                 HttpStatus.CONFLICT,
-                "CONFLICT",
-                safeMessage(exception.getMessage(), "Конфликт данных"),
+                ApiErrorCode.CHAT_BUSY,
+                safeMessage(
+                        exception.getMessage(),
+                        "В этот чат уже отправляется сообщение"
+                ),
                 request,
+                null,
                 null
         );
     }
 
-    @ExceptionHandler(ForbiddenOperationException.class)
-    public ResponseEntity<ApiErrorResponse> handleForbiddenOperation(
-            ForbiddenOperationException exception,
+    @ExceptionHandler(ChatLockUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleChatLockUnavailable(
+            ChatLockUnavailableException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
-                HttpStatus.FORBIDDEN,
-                "FORBIDDEN",
-                safeMessage(exception.getMessage(), "Операция запрещена"),
+        log.error(
+                "Chat lock service unavailable: requestId={}, path={}",
+                requestId(request),
+                request.getRequestURI(),
+                exception
+        );
+
+        return build(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                ApiErrorCode.CHAT_LOCK_UNAVAILABLE,
+                CHAT_LOCK_UNAVAILABLE_MESSAGE,
                 request,
+                null,
+                null
+        );
+    }
+
+    @ExceptionHandler(RateLimitUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleRateLimitUnavailable(
+            RateLimitUnavailableException exception,
+            HttpServletRequest request
+    ) {
+        log.error(
+                "Rate limit service unavailable: requestId={}, path={}",
+                requestId(request),
+                request.getRequestURI(),
+                exception
+        );
+
+        return build(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                ApiErrorCode.RATE_LIMIT_UNAVAILABLE,
+                RATE_LIMIT_UNAVAILABLE_MESSAGE,
+                request,
+                null,
+                null
+        );
+    }
+
+    @ExceptionHandler(AuthServiceUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleAuthServiceUnavailable(
+            AuthServiceUnavailableException exception,
+            HttpServletRequest request
+    ) {
+        log.error(
+                "Authentication service unavailable: requestId={}, path={}",
+                requestId(request),
+                request.getRequestURI(),
+                exception
+        );
+
+        return build(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
+                "Сервис авторизации временно недоступен",
+                request,
+                null,
                 null
         );
     }
@@ -92,11 +171,175 @@ public class GlobalExceptionHandler {
             BadRequestException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
+        return build(
                 HttpStatus.BAD_REQUEST,
-                "BAD_REQUEST",
+                ApiErrorCode.BAD_REQUEST,
                 safeMessage(exception.getMessage(), "Некорректный запрос"),
                 request,
+                null,
+                null
+        );
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleResourceNotFound(
+            ResourceNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return build(
+                HttpStatus.NOT_FOUND,
+                ApiErrorCode.NOT_FOUND,
+                safeMessage(exception.getMessage(), "Ресурс не найден"),
+                request,
+                null,
+                null
+        );
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleConflict(
+            ConflictException exception,
+            HttpServletRequest request
+    ) {
+        return build(
+                HttpStatus.CONFLICT,
+                ApiErrorCode.CONFLICT,
+                safeMessage(exception.getMessage(), "Конфликт данных"),
+                request,
+                null,
+                null
+        );
+    }
+
+    @ExceptionHandler(ForbiddenOperationException.class)
+    public ResponseEntity<ApiErrorResponse> handleForbiddenOperation(
+            ForbiddenOperationException exception,
+            HttpServletRequest request
+    ) {
+        return build(
+                HttpStatus.FORBIDDEN,
+                ApiErrorCode.FORBIDDEN,
+                safeMessage(exception.getMessage(), "Операция запрещена"),
+                request,
+                null,
+                null
+        );
+    }
+
+    /**
+     * Обрабатывает отказ Spring Method Security, например
+     * AuthorizationDeniedException от @PreAuthorize.
+     *
+     * <p>Исключения из MVC method invocation не обрабатываются
+     * ExceptionTranslationFilter, поэтому их необходимо явно преобразовать
+     * в единый API-контракт.</p>
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiErrorResponse> handleAccessDenied(
+            AccessDeniedException exception,
+            HttpServletRequest request
+    ) {
+        log.debug(
+                "Access denied: requestId={}, path={}, type={}",
+                requestId(request),
+                request.getRequestURI(),
+                exception.getClass().getSimpleName()
+        );
+
+        return build(
+                HttpStatus.FORBIDDEN,
+                ApiErrorCode.FORBIDDEN,
+                "Доступ запрещён",
+                request,
+                null,
+                null
+        );
+    }
+
+    @ExceptionHandler(ExpiredRefreshTokenException.class)
+    public ResponseEntity<ApiErrorResponse> handleExpiredRefreshToken(
+            ExpiredRefreshTokenException exception,
+            HttpServletRequest request
+    ) {
+        log.debug(
+                "Expired refresh token: requestId={}, path={}",
+                requestId(request),
+                request.getRequestURI(),
+                exception
+        );
+
+        return build(
+                HttpStatus.UNAUTHORIZED,
+                ApiErrorCode.EXPIRED_REFRESH_TOKEN,
+                "Refresh token истёк",
+                request,
+                null,
+                null
+        );
+    }
+
+    @ExceptionHandler(RefreshTokenReuseDetectedException.class)
+    public ResponseEntity<ApiErrorResponse> handleRefreshTokenReuseDetected(
+            RefreshTokenReuseDetectedException exception,
+            HttpServletRequest request
+    ) {
+        log.warn(
+                "Refresh token reuse detected: requestId={}, userId={}, "
+                        + "organizationId={}, tokenFamilyId={}, path={}",
+                requestId(request),
+                exception.getUserId(),
+                exception.getOrganizationId(),
+                exception.getTokenFamilyId(),
+                request.getRequestURI()
+        );
+
+        return build(
+                HttpStatus.UNAUTHORIZED,
+                ApiErrorCode.INVALID_REFRESH_TOKEN,
+                INVALID_REFRESH_TOKEN_MESSAGE,
+                request,
+                null,
+                null
+        );
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<ApiErrorResponse> handleInvalidRefreshToken(
+            InvalidRefreshTokenException exception,
+            HttpServletRequest request
+    ) {
+        log.debug(
+                "Invalid refresh token: requestId={}, path={}",
+                requestId(request),
+                request.getRequestURI(),
+                exception
+        );
+
+        return build(
+                HttpStatus.UNAUTHORIZED,
+                ApiErrorCode.INVALID_REFRESH_TOKEN,
+                INVALID_REFRESH_TOKEN_MESSAGE,
+                request,
+                null,
+                null
+        );
+    }
+
+    /**
+     * Общий fallback только для прочих ApiException-наследников.
+     * Специальные исключения выше имеют более конкретные mappings.
+     */
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ApiErrorResponse> handleApiException(
+            ApiException exception,
+            HttpServletRequest request
+    ) {
+        return build(
+                exception.getStatus(),
+                exception.getErrorCode(),
+                exception.getPublicMessage(),
+                request,
+                null,
                 null
         );
     }
@@ -106,41 +349,45 @@ public class GlobalExceptionHandler {
             RateLimitExceededException exception,
             HttpServletRequest request
     ) {
-        ResponseEntity.BodyBuilder builder = ResponseEntity
-                .status(HttpStatus.TOO_MANY_REQUESTS);
-
+        HttpHeaders headers = new HttpHeaders();
         if (exception.getRetryAfterSeconds() > 0) {
-            builder.header(
+            headers.set(
                     HttpHeaders.RETRY_AFTER,
-                    String.valueOf(exception.getRetryAfterSeconds())
+                    Long.toString(exception.getRetryAfterSeconds())
             );
         }
 
-        return builder.body(errorResponseFactory.create(
+        return build(
                 HttpStatus.TOO_MANY_REQUESTS,
-                "RATE_LIMIT_EXCEEDED",
+                ApiErrorCode.RATE_LIMIT_EXCEEDED,
                 safeMessage(exception.getMessage(), "Превышен лимит запросов"),
                 request,
-                null
-        ));
+                null,
+                headers
+        );
     }
 
-    @ExceptionHandler(RateLimitUnavailableException.class)
-    public ResponseEntity<ApiErrorResponse> handleRateLimitUnavailable(
-            RateLimitUnavailableException exception,
+    @ExceptionHandler({
+            OptimisticLockException.class,
+            OptimisticLockingFailureException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleOptimisticLock(
+            Exception exception,
             HttpServletRequest request
     ) {
-        log.error(
-                "Rate limit service unavailable for request {}",
+        log.info(
+                "Optimistic lock conflict: requestId={}, path={}, type={}",
+                requestId(request),
                 request.getRequestURI(),
-                exception
+                exception.getClass().getSimpleName()
         );
 
-        return buildResponse(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                "RATE_LIMIT_UNAVAILABLE",
-                "Сервис ограничения запросов временно недоступен",
+        return build(
+                HttpStatus.CONFLICT,
+                ApiErrorCode.CONFLICT,
+                OPTIMISTIC_LOCK_MESSAGE,
                 request,
+                null,
                 null
         );
     }
@@ -156,29 +403,6 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(HandlerMethodValidationException.class)
-    public ResponseEntity<ApiErrorResponse> handleHandlerMethodValidation(
-            HandlerMethodValidationException exception,
-            HttpServletRequest request
-    ) {
-        Map<String, List<String>> fieldErrors = new LinkedHashMap<>();
-
-        exception.getParameterValidationResults().forEach(result -> {
-            String parameterName = result.getMethodParameter().getParameterName();
-            String key = parameterName == null ? "request" : parameterName;
-
-            result.getResolvableErrors().forEach(error ->
-                    fieldErrors.computeIfAbsent(key, ignored -> new ArrayList<>())
-                            .add(safeMessage(
-                                    error.getDefaultMessage(),
-                                    "Некорректное значение"
-                            ))
-            );
-        });
-
-        return validationResponse(request, fieldErrors);
-    }
-
     @ExceptionHandler(BindException.class)
     public ResponseEntity<ApiErrorResponse> handleBindException(
             BindException exception,
@@ -190,6 +414,58 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodValidation(
+            HandlerMethodValidationException exception,
+            HttpServletRequest request
+    ) {
+        if (exception.isForReturnValue()) {
+            log.error(
+                    "Controller return value validation failed: "
+                            + "requestId={}, path={}",
+                    requestId(request),
+                    request.getRequestURI(),
+                    exception
+            );
+            return internalServerError(request);
+        }
+
+        Map<String, List<String>> fieldErrors = new LinkedHashMap<>();
+
+        for (ParameterValidationResult result
+                : exception.getParameterValidationResults()) {
+            if (result instanceof ParameterErrors parameterErrors) {
+                for (FieldError error : parameterErrors.getFieldErrors()) {
+                    addError(
+                            fieldErrors,
+                            error.getField(),
+                            defaultMessage(error)
+                    );
+                }
+                for (ObjectError error : parameterErrors.getGlobalErrors()) {
+                    addError(
+                            fieldErrors,
+                            parameterName(result),
+                            defaultMessage(error)
+                    );
+                }
+                continue;
+            }
+
+            String field = parameterName(result);
+            for (MessageSourceResolvable error : result.getResolvableErrors()) {
+                addError(fieldErrors, field, defaultMessage(error));
+            }
+        }
+
+        for (MessageSourceResolvable error
+                : exception.getCrossParameterValidationResults()) {
+            addError(fieldErrors, "_global", defaultMessage(error));
+        }
+
+        return validationResponse(request, fieldErrors);
+    }
+
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiErrorResponse> handleConstraintViolation(
             ConstraintViolationException exception,
@@ -197,31 +473,31 @@ public class GlobalExceptionHandler {
     ) {
         Map<String, List<String>> fieldErrors = new LinkedHashMap<>();
 
-        exception.getConstraintViolations().forEach(violation -> {
-            String field = normalizeConstraintPath(violation.getPropertyPath());
-            String message = safeMessage(
-                    violation.getMessage(),
-                    "Некорректное значение"
+        for (ConstraintViolation<?> violation
+                : exception.getConstraintViolations()) {
+            addError(
+                    fieldErrors,
+                    normalizeConstraintPath(
+                            violation.getPropertyPath().toString()
+                    ),
+                    violation.getMessage()
             );
-
-            fieldErrors.computeIfAbsent(field, ignored -> new ArrayList<>())
-                    .add(message);
-        });
+        }
 
         return validationResponse(request, fieldErrors);
     }
 
-    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(
-            MethodArgumentTypeMismatchException exception,
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnreadableBody(
             HttpServletRequest request
     ) {
-        return buildResponse(
+        return build(
                 HttpStatus.BAD_REQUEST,
-                "BAD_REQUEST",
-                "Некорректный параметр запроса: "
-                        + safeMessage(exception.getName(), "unknown"),
+                ApiErrorCode.BAD_REQUEST,
+                "Некорректное тело запроса. "
+                        + "Проверьте формат JSON и типы полей",
                 request,
+                null,
                 null
         );
     }
@@ -231,12 +507,13 @@ public class GlobalExceptionHandler {
             MissingServletRequestParameterException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
+        return build(
                 HttpStatus.BAD_REQUEST,
-                "BAD_REQUEST",
-                "Не указан обязательный параметр запроса: "
+                ApiErrorCode.BAD_REQUEST,
+                "Обязательный параметр отсутствует: "
                         + exception.getParameterName(),
                 request,
+                null,
                 null
         );
     }
@@ -246,223 +523,89 @@ public class GlobalExceptionHandler {
             MissingRequestHeaderException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
+        return build(
                 HttpStatus.BAD_REQUEST,
-                "BAD_REQUEST",
-                "Не указан обязательный заголовок запроса: "
+                ApiErrorCode.BAD_REQUEST,
+                "Обязательный заголовок отсутствует: "
                         + exception.getHeaderName(),
                 request,
+                null,
                 null
         );
     }
 
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ApiErrorResponse> handleInvalidJson(
-            HttpMessageNotReadableException exception,
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(
+            MethodArgumentTypeMismatchException exception,
             HttpServletRequest request
     ) {
-        log.debug(
-                "Invalid JSON body for request {}",
-                request.getRequestURI(),
-                exception
-        );
-
-        return buildResponse(
+        return build(
                 HttpStatus.BAD_REQUEST,
-                "BAD_REQUEST",
-                "Некорректное тело запроса. Проверьте формат JSON и типы полей",
+                ApiErrorCode.BAD_REQUEST,
+                "Некорректное значение параметра: " + exception.getName(),
                 request,
+                null,
                 null
         );
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<ApiErrorResponse> handleMethodNotSupported(
+    public ResponseEntity<ApiErrorResponse> handleMethodNotAllowed(
             HttpRequestMethodNotSupportedException exception,
             HttpServletRequest request
     ) {
-        ResponseEntity.BodyBuilder builder = ResponseEntity
-                .status(HttpStatus.METHOD_NOT_ALLOWED);
-
-        if (exception.getSupportedMethods() != null) {
-            builder.header(
-                    HttpHeaders.ALLOW,
-                    String.join(", ", exception.getSupportedMethods())
-            );
-        }
-
-        return builder.body(errorResponseFactory.create(
+        return build(
                 HttpStatus.METHOD_NOT_ALLOWED,
-                "METHOD_NOT_ALLOWED",
-                "HTTP-метод не поддерживается для этого endpoint",
+                ApiErrorCode.METHOD_NOT_ALLOWED,
+                "HTTP-метод не поддерживается для этого ресурса",
                 request,
-                null
-        ));
+                null,
+                exception.getHeaders()
+        );
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
-    public ResponseEntity<ApiErrorResponse> handleMediaTypeNotSupported(
+    public ResponseEntity<ApiErrorResponse> handleUnsupportedMediaType(
+            HttpMediaTypeNotSupportedException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
+        return build(
                 HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                "UNSUPPORTED_MEDIA_TYPE",
+                ApiErrorCode.UNSUPPORTED_MEDIA_TYPE,
                 "Тип содержимого запроса не поддерживается",
                 request,
-                null
+                null,
+                exception.getHeaders()
         );
     }
 
     @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
-    public ResponseEntity<ApiErrorResponse> handleMediaTypeNotAcceptable(
+    public ResponseEntity<ApiErrorResponse> handleNotAcceptable(
+            HttpMediaTypeNotAcceptableException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
+        return build(
                 HttpStatus.NOT_ACCEPTABLE,
-                "NOT_ACCEPTABLE",
+                ApiErrorCode.NOT_ACCEPTABLE,
                 "Запрошенный формат ответа не поддерживается",
                 request,
-                null
+                null,
+                exception.getHeaders()
         );
     }
 
-    @ExceptionHandler({
-            NoHandlerFoundException.class,
-            NoResourceFoundException.class
-    })
-    public ResponseEntity<ApiErrorResponse> handleNoHandlerFound(
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleNoResource(
+            NoResourceFoundException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
+        return build(
                 HttpStatus.NOT_FOUND,
-                "NOT_FOUND",
+                ApiErrorCode.NOT_FOUND,
                 "Ресурс не найден",
                 request,
-                null
-        );
-    }
-
-    @ExceptionHandler(AuthenticationException.class)
-    public ResponseEntity<ApiErrorResponse> handleAuthenticationException(
-            AuthenticationException exception,
-            HttpServletRequest request
-    ) {
-        log.debug(
-                "Authentication error for request {}",
-                request.getRequestURI(),
-                exception
-        );
-
-        return buildResponse(
-                HttpStatus.UNAUTHORIZED,
-                "UNAUTHORIZED",
-                "Требуется авторизация",
-                request,
-                null
-        );
-    }
-
-    @ExceptionHandler({
-            AuthorizationDeniedException.class,
-            AccessDeniedException.class
-    })
-    public ResponseEntity<ApiErrorResponse> handleAccessDenied(
-            Exception exception,
-            HttpServletRequest request
-    ) {
-        log.debug(
-                "Access denied for request {}",
-                request.getRequestURI(),
-                exception
-        );
-
-        return buildResponse(
-                HttpStatus.FORBIDDEN,
-                "FORBIDDEN",
-                "Доступ запрещён",
-                request,
-                null
-        );
-    }
-
-    @ExceptionHandler(ExpiredRefreshTokenException.class)
-    public ResponseEntity<ApiErrorResponse> handleExpiredRefreshToken(
-            ExpiredRefreshTokenException exception,
-            HttpServletRequest request
-    ) {
-        log.debug(
-                "Expired refresh token for request {}",
-                request.getRequestURI(),
-                exception
-        );
-
-        return buildResponse(
-                HttpStatus.UNAUTHORIZED,
-                "EXPIRED_REFRESH_TOKEN",
-                "Refresh token истёк",
-                request,
-                null
-        );
-    }
-
-    @ExceptionHandler(RefreshTokenReuseDetectedException.class)
-    public ResponseEntity<ApiErrorResponse> handleRefreshTokenReuseDetected(
-            RefreshTokenReuseDetectedException exception,
-            HttpServletRequest request
-    ) {
-        log.warn(
-                "Refresh token reuse detected: userId={}, organizationId={}, tokenFamilyId={}",
-                exception.getUserId(),
-                exception.getOrganizationId(),
-                exception.getTokenFamilyId()
-        );
-
-        return buildResponse(
-                HttpStatus.UNAUTHORIZED,
-                "INVALID_REFRESH_TOKEN",
-                "Недействительный refresh token",
-                request,
-                null
-        );
-    }
-
-    @ExceptionHandler(InvalidRefreshTokenException.class)
-    public ResponseEntity<ApiErrorResponse> handleInvalidRefreshToken(
-            InvalidRefreshTokenException exception,
-            HttpServletRequest request
-    ) {
-        log.debug(
-                "Invalid refresh token for request {}",
-                request.getRequestURI(),
-                exception
-        );
-
-        return buildResponse(
-                HttpStatus.UNAUTHORIZED,
-                "INVALID_REFRESH_TOKEN",
-                "Недействительный refresh token",
-                request,
-                null
-        );
-    }
-
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(
-            DataIntegrityViolationException exception,
-            HttpServletRequest request
-    ) {
-        log.warn(
-                "Data integrity violation for request {}",
-                request.getRequestURI(),
-                exception
-        );
-
-        return buildResponse(
-                HttpStatus.CONFLICT,
-                "CONFLICT",
-                "Конфликт данных",
-                request,
-                null
+                null,
+                exception.getHeaders()
         );
     }
 
@@ -471,41 +614,109 @@ public class GlobalExceptionHandler {
             ResponseStatusException exception,
             HttpServletRequest request
     ) {
-        HttpStatus resolved = HttpStatus.resolve(
-                exception.getStatusCode().value()
-        );
-        HttpStatus responseStatus = resolved == null
-                ? HttpStatus.INTERNAL_SERVER_ERROR
-                : resolved;
+        HttpStatusCode status = exception.getStatusCode();
 
-        String message = responseStatus.is5xxServerError()
-                ? "Внутренняя ошибка сервера"
-                : safeMessage(
-                exception.getReason(),
-                responseStatus.getReasonPhrase()
-        );
-
-        if (responseStatus.is5xxServerError()) {
+        if (status.is5xxServerError()) {
             log.error(
-                    "ResponseStatusException for request {}",
+                    "ResponseStatusException with server status: "
+                            + "requestId={}, path={}, status={}",
+                    requestId(request),
                     request.getRequestURI(),
-                    exception
-            );
-        } else {
-            log.debug(
-                    "ResponseStatusException for request {}",
-                    request.getRequestURI(),
+                    status.value(),
                     exception
             );
         }
 
-        return buildResponse(
-                responseStatus,
-                stableResponseStatusCode(responseStatus),
+        String message = status.is5xxServerError()
+                ? INTERNAL_ERROR_MESSAGE
+                : safeMessage(
+                exception.getReason(),
+                messageForStatus(status)
+        );
+
+        return build(
+                status,
+                codeForStatus(status),
                 message,
                 request,
+                null,
+                exception.getHeaders()
+        );
+    }
+
+    @ExceptionHandler({
+            BadCredentialsException.class,
+            DisabledException.class,
+            LockedException.class,
+            AccountExpiredException.class,
+            CredentialsExpiredException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleExpectedAuthenticationFailure(
+            HttpServletRequest request
+    ) {
+        return build(
+                HttpStatus.UNAUTHORIZED,
+                ApiErrorCode.UNAUTHORIZED,
+                "Неверные учётные данные",
+                request,
+                null,
                 null
         );
+    }
+
+    @ExceptionHandler(AuthenticationServiceException.class)
+    public ResponseEntity<ApiErrorResponse> handleAuthenticationInfrastructure(
+            AuthenticationServiceException exception,
+            HttpServletRequest request
+    ) {
+        log.error(
+                "Authentication infrastructure failure: "
+                        + "requestId={}, path={}",
+                requestId(request),
+                request.getRequestURI(),
+                exception
+        );
+
+        return build(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
+                "Сервис авторизации временно недоступен",
+                request,
+                null,
+                null
+        );
+    }
+
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnexpectedAuthenticationFailure(
+            AuthenticationException exception,
+            HttpServletRequest request
+    ) {
+        log.error(
+                "Unexpected authentication failure: requestId={}, path={}",
+                requestId(request),
+                request.getRequestURI(),
+                exception
+        );
+        return internalServerError(request);
+    }
+
+    /**
+     * Неизвестное нарушение целостности является backend defect, пока
+     * сервисный слой явно не перевёл известный constraint в ConflictException.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(
+            DataIntegrityViolationException exception,
+            HttpServletRequest request
+    ) {
+        log.error(
+                "Unexpected data integrity violation: requestId={}, path={}",
+                requestId(request),
+                request.getRequestURI(),
+                exception
+        );
+        return internalServerError(request);
     }
 
     @ExceptionHandler(Exception.class)
@@ -514,125 +725,199 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         log.error(
-                "Неожиданная ошибка при обработке запроса {}",
+                "Unhandled exception: requestId={}, path={}",
+                requestId(request),
                 request.getRequestURI(),
                 exception
         );
-
-        return buildResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "INTERNAL_SERVER_ERROR",
-                "Внутренняя ошибка сервера",
-                request,
-                null
-        );
+        return internalServerError(request);
     }
 
     private ResponseEntity<ApiErrorResponse> validationResponse(
             HttpServletRequest request,
             Map<String, List<String>> fieldErrors
     ) {
-        return buildResponse(
+        Map<String, List<String>> normalized =
+                fieldErrors == null || fieldErrors.isEmpty()
+                        ? Map.of(
+                        "request",
+                        List.of("Некорректное значение")
+                )
+                        : fieldErrors;
+
+        return build(
                 HttpStatus.BAD_REQUEST,
-                "VALIDATION_ERROR",
-                "Ошибка валидации запроса",
+                ApiErrorCode.VALIDATION_ERROR,
+                VALIDATION_MESSAGE,
                 request,
-                fieldErrors
+                normalized,
+                null
         );
     }
 
-    private ResponseEntity<ApiErrorResponse> buildResponse(
-            HttpStatus status,
-            String error,
+    private ResponseEntity<ApiErrorResponse> internalServerError(
+            HttpServletRequest request
+    ) {
+        return build(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                ApiErrorCode.INTERNAL_SERVER_ERROR,
+                INTERNAL_ERROR_MESSAGE,
+                request,
+                null,
+                null
+        );
+    }
+
+    private ResponseEntity<ApiErrorResponse> build(
+            HttpStatusCode status,
+            ApiErrorCode error,
             String message,
             HttpServletRequest request,
-            Map<String, List<String>> fieldErrors
+            Map<String, List<String>> fieldErrors,
+            HttpHeaders headers
     ) {
-        return ResponseEntity
-                .status(status)
-                .body(errorResponseFactory.create(
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(status);
+
+        if (headers != null && !headers.isEmpty()) {
+            builder.headers(headers);
+        }
+
+        // Устанавливается последним: exception headers не отменят no-store.
+        builder.cacheControl(CacheControl.noStore());
+
+        return builder.body(
+                errorResponseFactory.create(
                         status,
                         error,
                         message,
                         request,
                         fieldErrors
-                ));
+                )
+        );
     }
 
-    private Map<String, List<String>> bindingErrors(BindingResult bindingResult) {
+    private Map<String, List<String>> bindingErrors(
+            BindingResult bindingResult
+    ) {
         Map<String, List<String>> errors = new LinkedHashMap<>();
 
-        for (FieldError fieldError : bindingResult.getFieldErrors()) {
-            errors.computeIfAbsent(
-                    fieldError.getField(),
-                    ignored -> new ArrayList<>()
-            ).add(safeMessage(
-                    fieldError.getDefaultMessage(),
-                    "Некорректное значение"
-            ));
+        for (FieldError error : bindingResult.getFieldErrors()) {
+            addError(errors, error.getField(), defaultMessage(error));
         }
 
-        for (ObjectError globalError : bindingResult.getGlobalErrors()) {
-            errors.computeIfAbsent(
-                    GLOBAL_ERROR_KEY,
-                    ignored -> new ArrayList<>()
-            ).add(safeMessage(
-                    globalError.getDefaultMessage(),
-                    "Некорректное значение"
-            ));
+        for (ObjectError error : bindingResult.getGlobalErrors()) {
+            addError(errors, "_global", defaultMessage(error));
         }
 
         return errors;
     }
 
-    private String normalizeConstraintPath(Path propertyPath) {
-        if (propertyPath == null) {
-            return "request";
+    private void addError(
+            Map<String, List<String>> errors,
+            String field,
+            String message
+    ) {
+        String normalizedField = field == null || field.isBlank()
+                ? "_global"
+                : field.trim();
+        String normalizedMessage = message == null || message.isBlank()
+                ? "Некорректное значение"
+                : message.trim();
+
+        List<String> messages = errors.computeIfAbsent(
+                normalizedField,
+                ignored -> new ArrayList<>()
+        );
+
+        if (!messages.contains(normalizedMessage)) {
+            messages.add(normalizedMessage);
         }
-
-        String rawPath = propertyPath.toString();
-
-        if (rawPath == null || rawPath.isBlank()) {
-            return "request";
-        }
-
-        int lastDotIndex = rawPath.lastIndexOf('.');
-
-        if (lastDotIndex >= 0 && lastDotIndex < rawPath.length() - 1) {
-            return rawPath.substring(lastDotIndex + 1);
-        }
-
-        return rawPath;
     }
 
-    private String stableResponseStatusCode(HttpStatus status) {
-        if (status == HttpStatus.BAD_REQUEST) {
-            return "BAD_REQUEST";
+    private String parameterName(ParameterValidationResult result) {
+        String parameterName = result.getMethodParameter().getParameterName();
+        String base = parameterName == null || parameterName.isBlank()
+                ? "parameter"
+                : parameterName;
+
+        if (result.getContainerIndex() != null) {
+            return base + "[" + result.getContainerIndex() + "]";
         }
-        if (status == HttpStatus.UNAUTHORIZED) {
-            return "UNAUTHORIZED";
+        if (result.getContainerKey() != null) {
+            return base + "[" + result.getContainerKey() + "]";
         }
-        if (status == HttpStatus.FORBIDDEN) {
-            return "FORBIDDEN";
+        return base;
+    }
+
+    /**
+     * Удаляет только имя метода, сохраняя вложенный путь.
+     * createUser.request.users[0].email -> request.users[0].email
+     */
+    private String normalizeConstraintPath(String rawPath) {
+        if (rawPath == null || rawPath.isBlank()) {
+            return "_global";
         }
-        if (status == HttpStatus.NOT_FOUND) {
-            return "NOT_FOUND";
-        }
-        if (status == HttpStatus.CONFLICT) {
-            return "CONFLICT";
-        }
-        if (status == HttpStatus.TOO_MANY_REQUESTS) {
-            return "RATE_LIMIT_EXCEEDED";
-        }
-        if (status.is4xxClientError()) {
-            return "BAD_REQUEST";
-        }
-        return "INTERNAL_SERVER_ERROR";
+
+        String normalized = rawPath.trim();
+        int firstDot = normalized.indexOf('.');
+        return firstDot < 0
+                ? normalized
+                : normalized.substring(firstDot + 1);
+    }
+
+    private String defaultMessage(MessageSourceResolvable error) {
+        String message = error.getDefaultMessage();
+        return message == null || message.isBlank()
+                ? "Некорректное значение"
+                : message;
+    }
+
+    private ApiErrorCode codeForStatus(HttpStatusCode status) {
+        return switch (status.value()) {
+            case 400 -> ApiErrorCode.BAD_REQUEST;
+            case 401 -> ApiErrorCode.UNAUTHORIZED;
+            case 403 -> ApiErrorCode.FORBIDDEN;
+            case 404 -> ApiErrorCode.NOT_FOUND;
+            case 405 -> ApiErrorCode.METHOD_NOT_ALLOWED;
+            case 406 -> ApiErrorCode.NOT_ACCEPTABLE;
+            case 409 -> ApiErrorCode.CONFLICT;
+            case 415 -> ApiErrorCode.UNSUPPORTED_MEDIA_TYPE;
+            case 429 -> ApiErrorCode.RATE_LIMIT_EXCEEDED;
+            default -> status.is5xxServerError()
+                    ? ApiErrorCode.INTERNAL_SERVER_ERROR
+                    : ApiErrorCode.BAD_REQUEST;
+        };
+    }
+
+    private String messageForStatus(HttpStatusCode status) {
+        return switch (status.value()) {
+            case 400 -> "Некорректный запрос";
+            case 401 -> "Требуется авторизация";
+            case 403 -> "Доступ запрещён";
+            case 404 -> "Ресурс не найден";
+            case 405 -> "HTTP-метод не поддерживается для этого ресурса";
+            case 406 -> "Запрошенный формат ответа не поддерживается";
+            case 409 -> "Конфликт данных";
+            case 415 -> "Тип содержимого запроса не поддерживается";
+            case 429 -> "Превышен лимит запросов";
+            default -> status.is5xxServerError()
+                    ? INTERNAL_ERROR_MESSAGE
+                    : "Ошибка запроса";
+        };
     }
 
     private String safeMessage(String message, String fallback) {
         return message == null || message.isBlank()
                 ? fallback
-                : message;
+                : message.trim();
+    }
+
+    private String requestId(HttpServletRequest request) {
+        Object value = request.getAttribute(
+                RequestIdFilter.REQUEST_ID_ATTRIBUTE
+        );
+        return value instanceof String requestId && !requestId.isBlank()
+                ? requestId
+                : "missing";
     }
 }

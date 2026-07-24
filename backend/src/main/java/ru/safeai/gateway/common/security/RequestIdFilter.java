@@ -4,7 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -28,11 +28,14 @@ public class RequestIdFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(
-            @NonNull HttpServletRequest request,
-            @NonNull HttpServletResponse response,
-            @NonNull FilterChain filterChain
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
     ) throws ServletException, IOException {
-        String requestId = normalizeRequestId(request.getHeader(REQUEST_ID_HEADER));
+        String requestId = normalizeRequestId(
+                request.getHeader(REQUEST_ID_HEADER)
+        );
+        String previousMdcValue = MDC.get(REQUEST_ID_ATTRIBUTE);
 
         request.setAttribute(REQUEST_ID_ATTRIBUTE, requestId);
         response.setHeader(REQUEST_ID_HEADER, requestId);
@@ -41,23 +44,25 @@ public class RequestIdFilter extends OncePerRequestFilter {
         try {
             filterChain.doFilter(request, response);
         } finally {
-            MDC.remove(REQUEST_ID_ATTRIBUTE);
+            if (previousMdcValue == null) {
+                MDC.remove(REQUEST_ID_ATTRIBUTE);
+            } else {
+                MDC.put(REQUEST_ID_ATTRIBUTE, previousMdcValue);
+            }
         }
     }
 
-    private String normalizeRequestId(String requestId) {
+    private String normalizeRequestId(@Nullable String requestId) {
         if (requestId == null) {
             return UUID.randomUUID().toString();
         }
 
         String normalized = requestId.trim();
-
         if (normalized.isBlank()
                 || normalized.length() > MAX_REQUEST_ID_LENGTH
                 || !REQUEST_ID_PATTERN.matcher(normalized).matches()) {
             return UUID.randomUUID().toString();
         }
-
         return normalized;
     }
 }

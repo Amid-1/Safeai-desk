@@ -6,8 +6,12 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.service.AuthService;
@@ -26,7 +30,11 @@ public class AuthController {
             HttpServletRequest httpRequest,
             HttpServletResponse response
     ) {
-        return authService.login(request, httpRequest, response);
+        return authService.login(
+                request,
+                httpRequest,
+                response
+        );
     }
 
     @PostMapping("/refresh")
@@ -49,15 +57,9 @@ public class AuthController {
 
     @GetMapping("/me")
     public CurrentUserResponse me(
-            @AuthenticationPrincipal SafeAiUserPrincipal principal
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal principal
     ) {
-        if (principal == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Пользователь не авторизован"
-            );
-        }
-
         return authService.getCurrentUser(principal);
     }
 }

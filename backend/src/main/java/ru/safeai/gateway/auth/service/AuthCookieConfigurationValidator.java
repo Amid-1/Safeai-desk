@@ -16,7 +16,9 @@ public class AuthCookieConfigurationValidator {
 
     @PostConstruct
     void validate() {
-        Duration jwtLifetime = Duration.ofMinutes(jwtProperties.expirationMinutes());
+        Duration jwtLifetime = Duration.ofMinutes(
+                jwtProperties.expirationMinutes()
+        );
 
         if (!authCookieProperties.accessTokenMaxAge().equals(jwtLifetime)) {
             throw new IllegalStateException(

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.safeai.gateway.auth.entity.RefreshTokenEntity;
+import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -15,90 +16,110 @@ import java.util.UUID;
 public interface RefreshTokenRepository
         extends JpaRepository<RefreshTokenEntity, UUID> {
 
+    /**
+     * Блокирует только одну строку refresh_tokens.
+     * User/organization/roles загружаются отдельными запросами
+     * внутри той же транзакции.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-        select distinct token
-        from RefreshTokenEntity token
-        join fetch token.user user
-        join fetch user.organization
-        left join fetch user.roles
-        where token.tokenHash = :tokenHash
-        """)
+            select token
+            from RefreshTokenEntity token
+            where token.tokenHash = :tokenHash
+            """)
     Optional<RefreshTokenEntity> findByTokenHashForUpdate(
             @Param("tokenHash") String tokenHash
     );
 
+    /**
+     * Терминально закрывает всю family.
+     * Первоначальный revokedAt сохраняется, итоговая причина family
+     * записывается во все её строки.
+     */
+    @Modifying(flushAutomatically = true)
     @Query("""
-            select distinct token
-            from RefreshTokenEntity token
-            join fetch token.user user
-            join fetch user.organization
-            left join fetch user.roles
-            where token.tokenHash = :tokenHash
+            update RefreshTokenEntity token
+            set token.revokedAt = coalesce(
+                    token.revokedAt,
+                    :revokedAt
+                ),
+                token.revocationReason = :reason
+            where token.tokenFamilyId = :tokenFamilyId
             """)
-    Optional<RefreshTokenEntity> findByTokenHashWithUser(
-            @Param("tokenHash") String tokenHash
-    );
-
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-        update RefreshTokenEntity token
-        set token.revokedAt = :revokedAt
-        where token.tokenHash = :tokenHash
-          and token.revokedAt is null
-        """)
-    void revokeByTokenHash(
-            @Param("tokenHash") String tokenHash,
-            @Param("revokedAt") Instant revokedAt
-    );
-
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-        update RefreshTokenEntity token
-        set token.revokedAt = :revokedAt
-        where token.tokenFamilyId = :tokenFamilyId
-          and token.revokedAt is null
-        """)
-    void revokeAllActiveByTokenFamilyId(
+    int terminateFamily(
             @Param("tokenFamilyId") UUID tokenFamilyId,
-            @Param("revokedAt") Instant revokedAt
+            @Param("revokedAt") Instant revokedAt,
+            @Param("reason") RefreshTokenRevocationReason reason
     );
 
     @Modifying(flushAutomatically = true)
     @Query("""
             update RefreshTokenEntity token
-            set token.revokedAt = :revokedAt
+            set token.revokedAt = coalesce(
+                    token.revokedAt,
+                    :revokedAt
+                ),
+                token.revocationReason = :reason
             where token.user.id = :userId
-              and token.revokedAt is null
             """)
-    int revokeAllActiveByUserId(
+    int terminateAllByUserId(
             @Param("userId") UUID userId,
-            @Param("revokedAt") Instant revokedAt
+            @Param("revokedAt") Instant revokedAt,
+            @Param("reason") RefreshTokenRevocationReason reason
     );
 
     @Modifying(flushAutomatically = true)
     @Query("""
             update RefreshTokenEntity token
-            set token.revokedAt = :revokedAt
+            set token.revokedAt = coalesce(
+                    token.revokedAt,
+                    :revokedAt
+                ),
+                token.revocationReason = :reason
             where token.user.id in (
-                select user.id
-                from UserEntity user
-                where user.organization.id = :organizationId
+                select u.id
+                from UserEntity u
+                where u.organization.id = :organizationId
             )
-              and token.revokedAt is null
             """)
-    int revokeAllActiveByOrganizationId(
+    int terminateAllByOrganizationId(
             @Param("organizationId") UUID organizationId,
-            @Param("revokedAt") Instant revokedAt
+            @Param("revokedAt") Instant revokedAt,
+            @Param("reason") RefreshTokenRevocationReason reason
     );
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            delete from RefreshTokenEntity token
-            where token.expiresAt < :threshold
-               or token.revokedAt < :threshold
-            """)
-    int deleteExpiredAndRevokedBefore(
-            @Param("threshold") Instant threshold
+    /**
+     * Удаляет не более batchSize строк за одну короткую транзакцию.
+     *
+     * <p>SKIP LOCKED позволяет нескольким backend instances выполнять
+     * cleanup одновременно: каждый экземпляр получает собственный набор
+     * строк и не ждёт row locks другого экземпляра.</p>
+     *
+     * <p>Граница намеренно строгая: familyExpiresAt == threshold
+     * ещё сохраняется.</p>
+     */
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true
+    )
+    @Query(
+            value = """
+                    with candidates as (
+                        select token.id
+                        from refresh_tokens token
+                        where token.family_expires_at < :threshold
+                        order by token.family_expires_at, token.id
+                        for update skip locked
+                        limit :batchSize
+                    )
+                    delete from refresh_tokens token
+                    using candidates
+                    where token.id = candidates.id
+                    """,
+            nativeQuery = true
+    )
+    int deleteExpiredBatch(
+            @Param("threshold") Instant threshold,
+            @Param("batchSize") int batchSize
     );
 }

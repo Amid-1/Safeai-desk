@@ -44,6 +44,8 @@ spring:
     locations:
       - classpath:db/migration
     validate-migration-naming: true
+    postgresql:
+      transactional-lock: false
 
   jackson:
     default-property-inclusion: non_null
@@ -72,7 +74,7 @@ app:
     jwt:
       secret: ${SAFEAI_JWT_SECRET}
       expiration-minutes: ${SAFEAI_JWT_EXPIRATION_MINUTES:15}
-      issuer: ${SAFEAI_JWT_ISSUER:safeai-desk}
+      issuer: ${SAFEAI_JWT_ISSUER}
       audience: ${SAFEAI_JWT_AUDIENCE:safeai-desk-api}
 
 safeai:
@@ -159,6 +161,16 @@ safeai:
       same-site: ${SAFEAI_AUTH_COOKIES_SAME_SITE:Lax}
       access-token-max-age: ${SAFEAI_AUTH_ACCESS_TOKEN_MAX_AGE:15m}
       refresh-token-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_MAX_AGE:30d}
+      refresh-token-absolute-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_ABSOLUTE_MAX_AGE:90d}
+      reuse-detection-retention: ${SAFEAI_AUTH_REUSE_DETECTION_RETENTION:7d}
+      domain: ${SAFEAI_AUTH_COOKIES_DOMAIN:}
+      access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:}
+      refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:}
+
+    refresh-cleanup:
+      cron: "${SAFEAI_AUTH_REFRESH_CLEANUP_CRON:0 0 3 * * *}"
+      batch-size: ${SAFEAI_AUTH_REFRESH_CLEANUP_BATCH_SIZE:200}
+      max-batches-per-run: ${SAFEAI_AUTH_REFRESH_CLEANUP_MAX_BATCHES_PER_RUN:100}
 
   security:
     client-ip:
@@ -168,6 +180,9 @@ safeai:
       enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:true}
       ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
       key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:local:user-status}
+
+    hsts:
+      enabled: ${SAFEAI_HSTS_ENABLED:false}
 
   platform:
     organization-id: 00000000-0000-0000-0000-000000000001

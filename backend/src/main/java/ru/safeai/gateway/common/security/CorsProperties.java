@@ -1,5 +1,6 @@
 package ru.safeai.gateway.common.security;
 
+import org.jspecify.annotations.NullUnmarked;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.net.URI;
@@ -8,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
+@NullUnmarked
 @ConfigurationProperties(prefix = "safeai.cors")
 public record CorsProperties(
         List<String> allowedOrigins
@@ -19,22 +21,16 @@ public record CorsProperties(
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(value -> !value.isBlank())
+                .map(CorsProperties::normalizeOrigin)
                 .distinct()
-                .peek(CorsProperties::validateOrigin)
                 .toList();
     }
 
-    /**
-     * Оставлен для совместимости с существующим SecurityConfig.
-     */
-    public List<String> allowedOriginList() {
-        return allowedOrigins;
-    }
-
-    private static void validateOrigin(String origin) {
+    private static String normalizeOrigin(String origin) {
         if ("*".equals(origin)) {
             throw new IllegalStateException(
-                    "safeai.cors.allowed-origins не может содержать '*' при allowCredentials(true)"
+                    "safeai.cors.allowed-origins не может содержать '*' "
+                            + "при allowCredentials(true)"
             );
         }
 
@@ -49,19 +45,55 @@ public record CorsProperties(
             String scheme = uri.getScheme() == null
                     ? ""
                     : uri.getScheme().toLowerCase(Locale.ROOT);
+            String host = uri.getHost();
+            int port = normalizeDefaultPort(scheme, uri.getPort());
 
-            boolean validScheme = "http".equals(scheme) || "https".equals(scheme);
-            boolean hasAuthority = uri.getHost() != null;
-            boolean hasForbiddenParts = uri.getRawPath() != null && !uri.getRawPath().isEmpty()
-                    || uri.getRawQuery() != null
-                    || uri.getRawFragment() != null
-                    || uri.getUserInfo() != null;
+            boolean validScheme = "http".equals(scheme)
+                    || "https".equals(scheme);
+            boolean validPort = port == -1 || (port >= 1 && port <= 65_535);
+            boolean hasForbiddenParts =
+                    (uri.getRawPath() != null && !uri.getRawPath().isEmpty())
+                            || uri.getRawQuery() != null
+                            || uri.getRawFragment() != null
+                            || uri.getUserInfo() != null;
 
-            if (!validScheme || !hasAuthority || hasForbiddenParts) {
-                throw new IllegalStateException("Некорректный CORS origin: " + origin);
+            if (!validScheme
+                    || host == null
+                    || host.isBlank()
+                    || !validPort
+                    || hasForbiddenParts) {
+                throw invalidOrigin(origin, null);
             }
+
+            return new URI(
+                    scheme,
+                    null,
+                    host.toLowerCase(Locale.ROOT),
+                    port,
+                    null,
+                    null,
+                    null
+            ).toASCIIString();
         } catch (URISyntaxException exception) {
-            throw new IllegalStateException("Некорректный CORS origin: " + origin, exception);
+            throw invalidOrigin(origin, exception);
         }
+    }
+
+    private static int normalizeDefaultPort(String scheme, int port) {
+        if (("http".equals(scheme) && port == 80)
+                || ("https".equals(scheme) && port == 443)) {
+            return -1;
+        }
+        return port;
+    }
+
+    private static IllegalStateException invalidOrigin(
+            String origin,
+            Exception cause
+    ) {
+        String message = "Некорректный CORS origin: " + origin;
+        return cause == null
+                ? new IllegalStateException(message)
+                : new IllegalStateException(message, cause);
     }
 }

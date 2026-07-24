@@ -755,12 +755,10 @@ class UsageQueryServiceTest {
             UUID organizationId,
             String role
     ) {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 userId,
                 organizationId,
                 "user@test.com",
-                "",
-                true,
                 0L,
                 List.of(
                         new SimpleGrantedAuthority(role)

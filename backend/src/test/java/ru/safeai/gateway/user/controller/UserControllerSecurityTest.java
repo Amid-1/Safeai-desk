@@ -349,26 +349,30 @@ class UserControllerSecurityTest {
     }
 
     private SafeAiUserPrincipal adminPrincipal() {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 ADMIN_ID,
                 ORGANIZATION_ID,
                 "admin@test.com",
-                "encoded-password",
-                true,
                 0L,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+                Set.of(
+                        new SimpleGrantedAuthority(
+                                "ROLE_ADMIN"
+                        )
+                )
         );
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
                 "super-admin@test.com",
-                "encoded-password",
-                true,
                 0L,
-                List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
+                Set.of(
+                        new SimpleGrantedAuthority(
+                                "ROLE_SUPER_ADMIN"
+                        )
+                )
         );
     }
 

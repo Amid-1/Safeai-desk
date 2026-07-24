@@ -1,6 +1,5 @@
 package ru.safeai.gateway.common.security;
 
-import org.jspecify.annotations.NonNull;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -23,9 +22,8 @@ public class SafeAiJwtAuthenticationConverter
     private static final int MAX_EMAIL_LENGTH = 255;
 
     @Override
-    public @NonNull AbstractAuthenticationToken convert(@NonNull Jwt jwt) {
+    public AbstractAuthenticationToken convert(Jwt jwt) {
         String subject = jwt.getSubject();
-
         if (subject == null || subject.isBlank()) {
             throw new BadJwtException("JWT subject is missing");
         }
@@ -42,21 +40,17 @@ public class SafeAiJwtAuthenticationConverter
         }
 
         List<String> roles = jwt.getClaimAsStringList("roles");
-
         if (roles == null || roles.isEmpty()) {
-            throw new BadJwtException(
-                    "JWT claim is missing: roles"
-            );
+            throw new BadJwtException("JWT claim is missing: roles");
         }
 
         Set<SimpleGrantedAuthority> authorities;
-
         try {
             authorities = RoleAuthorityMapper.toAuthorities(roles);
-        } catch (IllegalArgumentException invalidRoleException) {
+        } catch (IllegalArgumentException | NullPointerException exception) {
             throw new BadJwtException(
-                    "JWT roles contain unknown values: "
-                            + invalidRoleException.getMessage()
+                    "JWT roles contain invalid values",
+                    exception
             );
         }
 
@@ -64,26 +58,25 @@ public class SafeAiJwtAuthenticationConverter
             throw new BadJwtException("JWT roles are invalid");
         }
 
-        SafeAiUserPrincipal principal = new SafeAiUserPrincipal(
-                parseUuid(userId, "userId"),
-                parseUuid(organizationId, "organizationId"),
-                email,
-                "",
-                true,
-                tokenVersion,
-                authorities
-        );
+        SafeAiUserPrincipal principal =
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        parseUuid(userId, "userId"),
+                        parseUuid(organizationId, "organizationId"),
+                        email,
+                        tokenVersion,
+                        authorities
+                );
 
-        return new UsernamePasswordAuthenticationToken(
+        // Raw Jwt/token value намеренно не сохраняется в credentials.
+        return UsernamePasswordAuthenticationToken.authenticated(
                 principal,
-                jwt,
+                null,
                 authorities
         );
     }
 
     private long requiredNonNegativeTokenVersion(Jwt jwt) {
         Object raw = jwt.getClaim("tokenVersion");
-
         if (!(raw instanceof Number number)) {
             throw new BadJwtException(
                     "JWT claim is not numeric: tokenVersion"
@@ -91,7 +84,6 @@ public class SafeAiJwtAuthenticationConverter
         }
 
         long result;
-
         try {
             result = switch (number) {
                 case Byte value -> value.longValue();
@@ -110,20 +102,16 @@ public class SafeAiJwtAuthenticationConverter
                     if (!Float.isFinite(value) || value % 1 != 0) {
                         throw new ArithmeticException("not integral");
                     }
-                    yield BigDecimal.valueOf(
-                            value.doubleValue()
-                    ).longValueExact();
+                    yield BigDecimal.valueOf(value.doubleValue())
+                            .longValueExact();
                 }
                 default -> throw new ArithmeticException(
                         "unsupported numeric type"
                 );
             };
-        } catch (ArithmeticException invalidNumberException) {
+        } catch (ArithmeticException exception) {
             throw new BadJwtException(
                     "JWT claim is not an integral long: tokenVersion"
-                            + " ("
-                            + invalidNumberException.getMessage()
-                            + ")"
             );
         }
 
@@ -132,13 +120,11 @@ public class SafeAiJwtAuthenticationConverter
                     "JWT claim is negative: tokenVersion"
             );
         }
-
         return result;
     }
 
     private String requiredCanonicalEmail(Jwt jwt) {
         String email = requiredClaim(jwt, "email");
-
         if (email.length() > MAX_EMAIL_LENGTH
                 || !email.equals(email.trim())
                 || !email.equals(email.toLowerCase(Locale.ROOT))) {
@@ -146,32 +132,25 @@ public class SafeAiJwtAuthenticationConverter
                     "JWT email claim is not canonical"
             );
         }
-
         return email;
     }
 
     private String requiredClaim(Jwt jwt, String claimName) {
         String value = jwt.getClaimAsString(claimName);
-
         if (value == null || value.isBlank()) {
             throw new BadJwtException(
                     "JWT claim is missing: " + claimName
             );
         }
-
         return value;
     }
 
     private UUID parseUuid(String value, String claimName) {
         try {
             return UUID.fromString(value);
-        } catch (IllegalArgumentException invalidUuidException) {
+        } catch (IllegalArgumentException exception) {
             throw new BadJwtException(
-                    "JWT claim is not valid UUID: "
-                            + claimName
-                            + " ("
-                            + invalidUuidException.getMessage()
-                            + ")"
+                    "JWT claim is not valid UUID: " + claimName
             );
         }
     }

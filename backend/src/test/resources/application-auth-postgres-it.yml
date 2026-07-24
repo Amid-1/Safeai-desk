@@ -1,0 +1,39 @@
+# D:\Java projects\Safeai-desk\backend\src\test\resources\application-auth-postgres-it.yml
+app:
+  security:
+    jwt:
+      secret: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      expiration-minutes: 15
+      issuer: https://issuer.safeai.test
+      audience: safeai-desk-api
+
+spring:
+  flyway:
+    enabled: true
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+safeai:
+  auth:
+    cookies:
+      secure: false
+      same-site: Lax
+      access-token-max-age: 15m
+      refresh-token-max-age: 30d
+      refresh-token-absolute-max-age: 90d
+      reuse-detection-retention: 7d
+      domain: ""
+      access-token-name: safeai-access
+      refresh-token-name: safeai-refresh
+
+    refresh-cleanup:
+      cron: "0 0 3 * * *"
+      batch-size: 200
+      max-batches-per-run: 100

@@ -1,11 +1,11 @@
 package ru.safeai.gateway.common.security;
 
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -13,81 +13,38 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RoleAuthorityMapperTest {
 
     @Test
-    void toAuthorities_shouldAddRolePrefix() {
-        Set<SimpleGrantedAuthority> authorities =
-                RoleAuthorityMapper.toAuthorities(List.of("ADMIN"));
-
-        assertThat(authorities)
+    void mapsKnownRolesInStableOrder() {
+        assertThat(RoleAuthorityMapper.toAuthorities(
+                List.of("user", "ROLE_ADMIN")
+        ))
                 .extracting(SimpleGrantedAuthority::getAuthority)
-                .containsExactly("ROLE_ADMIN");
+                .containsExactly(
+                        "ROLE_ADMIN",
+                        "ROLE_USER"
+                );
     }
 
     @Test
-    void toAuthorities_shouldNotDuplicateRolePrefix() {
-        Set<SimpleGrantedAuthority> authorities =
-                RoleAuthorityMapper.toAuthorities(List.of("ROLE_ADMIN"));
-
-        assertThat(authorities)
-                .extracting(SimpleGrantedAuthority::getAuthority)
-                .containsExactly("ROLE_ADMIN");
-    }
-
-    @Test
-    void toAuthorities_shouldNormalizeRolesToUppercase() {
-        Set<SimpleGrantedAuthority> authorities =
-                RoleAuthorityMapper.toAuthorities(List.of("admin", "user"));
-
-        assertThat(authorities)
-                .extracting(SimpleGrantedAuthority::getAuthority)
-                .containsExactlyInAnyOrder("ROLE_ADMIN", "ROLE_USER");
-    }
-
-    @Test
-    void toAuthorities_shouldReturnEmptySetWhenRolesAreNull() {
-        assertThat(RoleAuthorityMapper.toAuthorities(null)).isEmpty();
-    }
-
-    @Test
-    void toAuthorities_shouldIgnoreBlankAndNullRoles() {
-        List<String> roles = Arrays.asList("ADMIN", null, "   ");
-
-        Set<SimpleGrantedAuthority> authorities =
-                RoleAuthorityMapper.toAuthorities(roles);
-
-        assertThat(authorities)
-                .extracting(SimpleGrantedAuthority::getAuthority)
-                .containsExactly("ROLE_ADMIN");
-    }
-
-    @Test
-    void toAuthorities_shouldThrowWhenRoleIsUnknown() {
+    void unknownRoleFailsFast() {
         assertThatThrownBy(() ->
-                RoleAuthorityMapper.toAuthorities(List.of("ROOT"))
+                RoleAuthorityMapper.toAuthorities(
+                        List.of("ROOT")
+                )
         )
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown role");
     }
 
     @Test
-    void toRoleNames_shouldReturnSortedRoleNamesWithoutPrefix() {
-        List<String> roles = RoleAuthorityMapper.toRoleNames(List.of(
-                new SimpleGrantedAuthority("ROLE_USER"),
-                new SimpleGrantedAuthority("ROLE_ADMIN"),
-                new SimpleGrantedAuthority("ROLE_SUPER_ADMIN")
-        ));
+    void nullRoleFailsFast() {
+        List<@Nullable String> roles = new ArrayList<>();
+        roles.add("USER");
+        roles.add(null);
 
-        assertThat(roles)
-                .containsExactly("ADMIN", "SUPER_ADMIN", "USER");
-    }
-
-    @Test
-    void toRoleNames_shouldThrowWhenAuthorityContainsUnknownRole() {
         assertThatThrownBy(() ->
-                RoleAuthorityMapper.toRoleNames(List.of(
-                        new SimpleGrantedAuthority("ROLE_ROOT")
-                ))
+                RoleAuthorityMapper.toAuthorities(roles)
         )
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Unknown role");
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("role element не должен быть null");
     }
 }

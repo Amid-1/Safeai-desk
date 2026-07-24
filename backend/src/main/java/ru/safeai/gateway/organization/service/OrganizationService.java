@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 import ru.safeai.gateway.auth.service.UserSessionRevocationService;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
@@ -41,56 +42,78 @@ import java.util.UUID;
 public class OrganizationService {
 
     private static final Set<String> ALLOWED_SORT_PROPERTIES =
-            Set.of("createdAt", "name", "enabled");
+            Set.of(
+                    "createdAt",
+                    "name",
+                    "enabled"
+            );
 
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
     private final AuditEventService auditEventService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformProperties platformProperties;
-    private final UserSessionRevocationService userSessionRevocationService;
+    private final UserSessionRevocationService
+            userSessionRevocationService;
 
     @Transactional
     public OrganizationResponse create(
             CreateOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(request, "request не должен быть null");
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
 
         requireSuperAdmin(currentUser);
 
-        String name = normalizeName(request.name());
+        String name = canonicalOrganizationName(
+                request.name()
+        );
 
-        if (organizationRepository.existsByNameIgnoreCase(name)) {
-            throw new ConflictException(
-                    "Организация с таким названием уже существует: " + name
-            );
+        String normalizedName =
+                OrganizationNameNormalizer.normalizedName(
+                        name
+                );
+
+        if (organizationRepository.existsByNormalizedName(
+                normalizedName
+        )) {
+            throw organizationNameConflict(name);
         }
 
         try {
-            OrganizationEntity entity = new OrganizationEntity();
+            OrganizationEntity entity =
+                    new OrganizationEntity();
+
             entity.setName(name);
             entity.setEnabled(true);
 
             OrganizationEntity saved =
-                    organizationRepository.saveAndFlush(entity);
+                    organizationRepository.saveAndFlush(
+                            entity
+                    );
 
             auditEventService.record(
                     currentUser.getId(),
                     saved.getId(),
                     AuditEventType.ORGANIZATION_CREATED,
                     Map.of(
-                            "organizationId", saved.getId().toString(),
-                            "organizationName", saved.getName()
+                            "organizationId",
+                            saved.getId().toString(),
+                            "organizationName",
+                            saved.getName()
                     )
             );
 
             return toResponse(saved);
         } catch (DataIntegrityViolationException exception) {
-            throw new ConflictException(
-                    "Организация с таким названием уже существует: " + name
-            );
+            throw organizationNameConflict(name);
         }
     }
 
@@ -99,26 +122,43 @@ public class OrganizationService {
             SafeAiUserPrincipal currentUser,
             Pageable pageable
     ) {
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
-        Objects.requireNonNull(pageable, "pageable не должен быть null");
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
+        Objects.requireNonNull(
+                pageable,
+                "pageable не должен быть null"
+        );
 
         validatePageableSort(pageable);
 
         if (isSuperAdmin(currentUser)) {
-            return organizationRepository.findAll(pageable)
+            return organizationRepository
+                    .findAll(pageable)
                     .map(this::toResponse);
         }
 
         if (pageable.getOffset() > 0) {
-            return new PageImpl<>(List.of(), pageable, 1);
+            return new PageImpl<>(
+                    List.of(),
+                    pageable,
+                    1
+            );
         }
 
-        OrganizationEntity organization = organizationRepository
-                .findById(currentUser.getOrganizationId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Организация не найдена: "
-                                + currentUser.getOrganizationId()
-                ));
+        OrganizationEntity organization =
+                organizationRepository
+                        .findById(
+                                currentUser.getOrganizationId()
+                        )
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Организация не найдена: "
+                                                + currentUser
+                                                .getOrganizationId()
+                                )
+                        );
 
         return new PageImpl<>(
                 List.of(toResponse(organization)),
@@ -131,14 +171,23 @@ public class OrganizationService {
     public OrganizationResponse findCurrentOrganization(
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
 
-        OrganizationEntity organization = organizationRepository
-                .findById(currentUser.getOrganizationId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Организация не найдена: "
-                                + currentUser.getOrganizationId()
-                ));
+        OrganizationEntity organization =
+                organizationRepository
+                        .findById(
+                                currentUser.getOrganizationId()
+                        )
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Организация не найдена: "
+                                                + currentUser
+                                                .getOrganizationId()
+                                )
+                        );
 
         return toResponse(organization);
     }
@@ -148,20 +197,33 @@ public class OrganizationService {
             UUID id,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(id, "id не должен быть null");
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(
+                id,
+                "id не должен быть null"
+        );
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
 
         if (!isSuperAdmin(currentUser)
-                && !currentUser.getOrganizationId().equals(id)) {
+                && !currentUser
+                .getOrganizationId()
+                .equals(id)) {
             throw new ForbiddenOperationException(
                     "Нельзя просматривать другую организацию"
             );
         }
 
-        OrganizationEntity entity = organizationRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Организация не найдена: " + id
-                ));
+        OrganizationEntity entity =
+                organizationRepository
+                        .findById(id)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Организация не найдена: "
+                                                + id
+                                )
+                        );
 
         return toResponse(entity);
     }
@@ -172,48 +234,65 @@ public class OrganizationService {
             UpdateOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
 
         OrganizationEntity entity =
-                findMutableOrganizationForSuperAdmin(id, currentUser);
+                findMutableOrganizationForSuperAdmin(
+                        id,
+                        currentUser
+                );
 
         String oldName = entity.getName();
-        String newName = normalizeName(request.name());
+
+        String newName = canonicalOrganizationName(
+                request.name()
+        );
 
         if (oldName.equals(newName)) {
             return toResponse(entity);
         }
 
+        String normalizedName =
+                OrganizationNameNormalizer.normalizedName(
+                        newName
+                );
+
         if (organizationRepository
-                .existsByNameIgnoreCaseAndIdNot(newName, id)) {
-            throw new ConflictException(
-                    "Организация с таким названием уже существует: "
-                            + newName
-            );
+                .existsByNormalizedNameAndIdNot(
+                        normalizedName,
+                        id
+                )) {
+            throw organizationNameConflict(newName);
         }
 
         try {
             entity.setName(newName);
+
             OrganizationEntity saved =
-                    organizationRepository.saveAndFlush(entity);
+                    organizationRepository.saveAndFlush(
+                            entity
+                    );
 
             auditEventService.record(
                     currentUser.getId(),
                     saved.getId(),
                     AuditEventType.ORGANIZATION_NAME_CHANGED,
                     Map.of(
-                            "organizationId", saved.getId().toString(),
-                            "oldName", oldName,
-                            "newName", saved.getName()
+                            "organizationId",
+                            saved.getId().toString(),
+                            "oldName",
+                            oldName,
+                            "newName",
+                            saved.getName()
                     )
             );
 
             return toResponse(saved);
         } catch (DataIntegrityViolationException exception) {
-            throw new ConflictException(
-                    "Организация с таким названием уже существует: "
-                            + newName
-            );
+            throw organizationNameConflict(newName);
         }
     }
 
@@ -223,21 +302,31 @@ public class OrganizationService {
             UpdateOrganizationEnabledRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
 
         OrganizationEntity entity =
-                findMutableOrganizationForSuperAdmin(id, currentUser);
+                findMutableOrganizationForSuperAdmin(
+                        id,
+                        currentUser
+                );
 
         boolean oldEnabled = entity.isEnabled();
-        boolean newEnabled = Boolean.TRUE.equals(request.enabled());
+        boolean newEnabled =
+                Boolean.TRUE.equals(request.enabled());
 
         if (oldEnabled == newEnabled) {
             return toResponse(entity);
         }
 
         entity.setEnabled(newEnabled);
+
         OrganizationEntity saved =
-                organizationRepository.saveAndFlush(entity);
+                organizationRepository.saveAndFlush(
+                        entity
+                );
 
         UUID organizationId = saved.getId();
         String organizationName = saved.getName();
@@ -246,18 +335,26 @@ public class OrganizationService {
         int affectedUsers = 0;
 
         if (!newEnabled) {
-            userSessionRevocationService.revokeAllForOrganization(
-                    organizationId
-            );
-            affectedUsers =
-                    userRepository.incrementTokenVersionByOrganizationId(
-                            organizationId
+            userSessionRevocationService
+                    .revokeAllForOrganization(
+                            organizationId,
+                            RefreshTokenRevocationReason
+                                    .ORGANIZATION_DISABLED
                     );
+
+            affectedUsers =
+                    userRepository
+                            .incrementTokenVersionByOrganizationId(
+                                    organizationId
+                            );
+
             sessionsRevoked = true;
         }
 
         eventPublisher.publishEvent(
-                new OrganizationSecurityStateChangedEvent(organizationId)
+                new OrganizationSecurityStateChangedEvent(
+                        organizationId
+                )
         );
 
         auditEventService.record(
@@ -265,13 +362,20 @@ public class OrganizationService {
                 organizationId,
                 AuditEventType.ORGANIZATION_ENABLED_CHANGED,
                 Map.of(
-                        "organizationId", organizationId.toString(),
-                        "organizationName", organizationName,
-                        "oldEnabled", oldEnabled,
-                        "newEnabled", newEnabled,
-                        "sessionsRevoked", sessionsRevoked,
-                        "affectedUsers", affectedUsers,
-                        "requiresRelogin", !newEnabled
+                        "organizationId",
+                        organizationId.toString(),
+                        "organizationName",
+                        organizationName,
+                        "oldEnabled",
+                        oldEnabled,
+                        "newEnabled",
+                        newEnabled,
+                        "sessionsRevoked",
+                        sessionsRevoked,
+                        "affectedUsers",
+                        affectedUsers,
+                        "requiresRelogin",
+                        !newEnabled
                 )
         );
 
@@ -283,25 +387,40 @@ public class OrganizationService {
         );
     }
 
-    private OrganizationEntity findMutableOrganizationForSuperAdmin(
+    private OrganizationEntity
+    findMutableOrganizationForSuperAdmin(
             UUID id,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(id, "id не должен быть null");
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        Objects.requireNonNull(
+                id,
+                "id не должен быть null"
+        );
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
 
         requireSuperAdmin(currentUser);
         rejectPlatformOrganizationMutation(id);
 
-        return organizationRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Организация не найдена: " + id
-                ));
+        return organizationRepository
+                .findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Организация не найдена: "
+                                        + id
+                        )
+                );
     }
 
-    private void validatePageableSort(Pageable pageable) {
+    private void validatePageableSort(
+            Pageable pageable
+    ) {
         for (Sort.Order order : pageable.getSort()) {
-            if (!ALLOWED_SORT_PROPERTIES.contains(order.getProperty())) {
+            if (!ALLOWED_SORT_PROPERTIES.contains(
+                    order.getProperty()
+            )) {
                 throw new BadRequestException(
                         "Сортировка по полю не разрешена: "
                                 + order.getProperty()
@@ -310,17 +429,37 @@ public class OrganizationService {
         }
     }
 
-    private String normalizeName(String name) {
-        if (name == null || name.isBlank()) {
+    private String canonicalOrganizationName(
+            String value
+    ) {
+        if (value == null) {
             throw new BadRequestException(
-                    "Название организации не должно быть пустым"
+                    "Название организации не должно быть null"
             );
         }
 
-        return name.trim().replaceAll("\\s+", " ");
+        try {
+            return OrganizationNameNormalizer
+                    .canonicalName(value);
+        } catch (IllegalArgumentException exception) {
+            throw new BadRequestException(
+                    exception.getMessage()
+            );
+        }
     }
 
-    private OrganizationResponse toResponse(OrganizationEntity entity) {
+    private ConflictException organizationNameConflict(
+            String name
+    ) {
+        return new ConflictException(
+                "Организация с таким названием уже существует: "
+                        + name
+        );
+    }
+
+    private OrganizationResponse toResponse(
+            OrganizationEntity entity
+    ) {
         return new OrganizationResponse(
                 entity.getId(),
                 entity.getName(),
@@ -329,7 +468,9 @@ public class OrganizationService {
         );
     }
 
-    private boolean isSuperAdmin(SafeAiUserPrincipal currentUser) {
+    private boolean isSuperAdmin(
+            SafeAiUserPrincipal currentUser
+    ) {
         return currentUser.getAuthorities()
                 .stream()
                 .map(GrantedAuthority::getAuthority)
@@ -339,10 +480,13 @@ public class OrganizationService {
     private void rejectPlatformOrganizationMutation(
             UUID organizationId
     ) {
-        if (platformProperties.organizationId().equals(organizationId)) {
+        if (platformProperties
+                .organizationId()
+                .equals(organizationId)) {
             throw new ForbiddenOperationException(
-                    "Платформенную организацию нельзя изменять через "
-                            + "обычный organization-management endpoint"
+                    "Платформенную организацию нельзя изменять "
+                            + "через обычный "
+                            + "organization-management endpoint"
             );
         }
     }

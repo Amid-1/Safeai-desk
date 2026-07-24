@@ -8,10 +8,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 import ru.safeai.gateway.auth.service.UserSessionRevocationService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
@@ -30,33 +32,52 @@ import ru.safeai.gateway.user.repository.UserRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class OrganizationServiceTest {
 
     private static final UUID PLATFORM_ORGANIZATION_ID =
-            UUID.fromString("00000000-0000-0000-0000-000000000001");
+            UUID.fromString(
+                    "00000000-0000-0000-0000-000000000001"
+            );
 
     private static final UUID ORGANIZATION_ID =
-            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+            UUID.fromString(
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            );
 
     private static final UUID OTHER_ORGANIZATION_ID =
-            UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
+            UUID.fromString(
+                    "dddddddd-dddd-dddd-dddd-dddddddddddd"
+            );
 
     private static final UUID ADMIN_ID =
-            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+            UUID.fromString(
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            );
 
     private static final UUID SUPER_ADMIN_ID =
-            UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
+            UUID.fromString(
+                    "cccccccc-cccc-cccc-cccc-cccccccccccc"
+            );
 
     private static final UUID SAVED_ORGANIZATION_ID =
-            UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+            UUID.fromString(
+                    "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+            );
 
     private static final Instant SAVED_AT =
             Instant.parse("2026-06-12T12:00:00Z");
@@ -74,7 +95,8 @@ class OrganizationServiceTest {
     private ApplicationEventPublisher eventPublisher;
 
     @Mock
-    private UserSessionRevocationService userSessionRevocationService;
+    private UserSessionRevocationService
+            userSessionRevocationService;
 
     private OrganizationService organizationService;
 
@@ -85,43 +107,64 @@ class OrganizationServiceTest {
                 userRepository,
                 auditEventService,
                 eventPublisher,
-                new PlatformProperties(PLATFORM_ORGANIZATION_ID),
+                new PlatformProperties(
+                        PLATFORM_ORGANIZATION_ID
+                ),
                 userSessionRevocationService
         );
     }
 
     @Test
     void create_shouldCreateOrganizationWhenCurrentUserIsSuperAdmin() {
-        when(organizationRepository.existsByNameIgnoreCase("SafeAI"))
-                .thenReturn(false);
+        when(organizationRepository.existsByNormalizedName(
+                "safeai"
+        )).thenReturn(false);
 
         when(organizationRepository.saveAndFlush(
                 any(OrganizationEntity.class)
         )).thenAnswer(invocation -> {
-            OrganizationEntity entity = invocation.getArgument(0);
+            OrganizationEntity entity =
+                    invocation.getArgument(0);
+
             entity.setId(ORGANIZATION_ID);
             entity.setCreatedAt(SAVED_AT);
+
             return entity;
         });
 
-        OrganizationResponse response = organizationService.create(
-                new CreateOrganizationRequest(" SafeAI "),
-                superAdminPrincipal()
-        );
+        OrganizationResponse response =
+                organizationService.create(
+                        new CreateOrganizationRequest(
+                                " SafeAI "
+                        ),
+                        superAdminPrincipal()
+                );
 
-        assertThat(response.id()).isEqualTo(ORGANIZATION_ID);
-        assertThat(response.name()).isEqualTo("SafeAI");
-        assertThat(response.enabled()).isTrue();
+        assertThat(response.id())
+                .isEqualTo(ORGANIZATION_ID);
+
+        assertThat(response.name())
+                .isEqualTo("SafeAI");
+
+        assertThat(response.enabled())
+                .isTrue();
 
         ArgumentCaptor<OrganizationEntity> captor =
-                ArgumentCaptor.forClass(OrganizationEntity.class);
+                ArgumentCaptor.forClass(
+                        OrganizationEntity.class
+                );
 
-        verify(organizationRepository).saveAndFlush(captor.capture());
+        verify(organizationRepository)
+                .saveAndFlush(captor.capture());
 
-        OrganizationEntity saved = captor.getValue();
+        OrganizationEntity saved =
+                captor.getValue();
 
-        assertThat(saved.getName()).isEqualTo("SafeAI");
-        assertThat(saved.isEnabled()).isTrue();
+        assertThat(saved.getName())
+                .isEqualTo("SafeAI");
+
+        assertThat(saved.isEnabled())
+                .isTrue();
 
         verify(auditEventService).record(
                 eq(SUPER_ADMIN_ID),
@@ -130,7 +173,10 @@ class OrganizationServiceTest {
                 anyMap()
         );
 
-        verifyNoInteractions(userSessionRevocationService);
+        verifyNoInteractions(
+                userSessionRevocationService
+        );
+
         verifyNoInteractions(userRepository);
     }
 
@@ -138,119 +184,181 @@ class OrganizationServiceTest {
     void create_shouldThrowForbiddenWhenCurrentUserIsAdmin() {
         assertThatThrownBy(() ->
                 organizationService.create(
-                        new CreateOrganizationRequest("SafeAI"),
+                        new CreateOrganizationRequest(
+                                "SafeAI"
+                        ),
                         adminPrincipal()
                 )
         )
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Only SUPER_ADMIN");
+                .isInstanceOf(
+                        ForbiddenOperationException.class
+                )
+                .hasMessageContaining(
+                        "Only SUPER_ADMIN"
+                );
 
-        verifyNoInteractions(organizationRepository);
-        verifyNoInteractions(userRepository);
-        verifyNoInteractions(userSessionRevocationService);
+        verifyNoInteractions(
+                organizationRepository,
+                userRepository,
+                userSessionRevocationService
+        );
     }
 
     @Test
     void create_shouldThrowConflictWhenNameAlreadyExists() {
-        when(organizationRepository.existsByNameIgnoreCase("SafeAI"))
-                .thenReturn(true);
+        when(organizationRepository.existsByNormalizedName(
+                "safeai"
+        )).thenReturn(true);
 
         assertThatThrownBy(() ->
                 organizationService.create(
-                        new CreateOrganizationRequest("SafeAI"),
+                        new CreateOrganizationRequest(
+                                "SafeAI"
+                        ),
                         superAdminPrincipal()
                 )
         )
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Организация с таким названием уже существует");
+                .hasMessageContaining(
+                        "Организация с таким названием "
+                                + "уже существует"
+                );
 
-        verify(organizationRepository, never()).saveAndFlush(any());
-        verifyNoInteractions(userRepository);
-        verifyNoInteractions(userSessionRevocationService);
+        verify(
+                organizationRepository,
+                never()
+        ).saveAndFlush(any());
+
+        verifyNoInteractions(
+                userRepository,
+                userSessionRevocationService
+        );
     }
 
     @Test
     void create_shouldThrowConflictWhenNameAlreadyExistsWithDifferentCase() {
-        when(organizationRepository.existsByNameIgnoreCase("safeai"))
-                .thenReturn(true);
+        when(organizationRepository.existsByNormalizedName(
+                "safeai"
+        )).thenReturn(true);
 
         assertThatThrownBy(() ->
                 organizationService.create(
-                        new CreateOrganizationRequest("safeai"),
+                        new CreateOrganizationRequest(
+                                "safeai"
+                        ),
                         superAdminPrincipal()
                 )
         )
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Организация с таким названием уже существует");
+                .hasMessageContaining(
+                        "Организация с таким названием "
+                                + "уже существует"
+                );
 
-        verify(organizationRepository, never()).saveAndFlush(any());
+        verify(
+                organizationRepository,
+                never()
+        ).saveAndFlush(any());
+
         verifyNoInteractions(userRepository);
     }
 
     @Test
     void findAll_shouldReturnCurrentOrganizationOnlyForAdmin() {
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organization()));
-
-        Page<OrganizationResponse> page = organizationService.findAll(
-                adminPrincipal(),
-                PageRequest.of(0, 20)
+        when(organizationRepository.findById(
+                ORGANIZATION_ID
+        )).thenReturn(
+                Optional.of(organization())
         );
 
-        assertThat(page.getContent()).hasSize(1);
-        assertThat(page.getContent().getFirst().id()).isEqualTo(ORGANIZATION_ID);
+        Page<OrganizationResponse> page =
+                organizationService.findAll(
+                        adminPrincipal(),
+                        PageRequest.of(0, 20)
+                );
 
-        verify(organizationRepository).findById(ORGANIZATION_ID);
+        assertThat(page.getContent())
+                .hasSize(1);
+
+        assertThat(page.getContent().getFirst().id())
+                .isEqualTo(ORGANIZATION_ID);
+
+        verify(organizationRepository)
+                .findById(ORGANIZATION_ID);
     }
 
     @Test
     void findAll_shouldReturnEmptyPageForAdminWhenPageOffsetIsNotZero() {
-        Page<OrganizationResponse> page = organizationService.findAll(
-                adminPrincipal(),
-                PageRequest.of(1, 20)
+        Page<OrganizationResponse> page =
+                organizationService.findAll(
+                        adminPrincipal(),
+                        PageRequest.of(1, 20)
+                );
+
+        assertThat(page.getContent())
+                .isEmpty();
+
+        assertThat(page.getTotalElements())
+                .isEqualTo(1);
+
+        verifyNoInteractions(
+                organizationRepository
         );
-
-        assertThat(page.getContent()).isEmpty();
-        assertThat(page.getTotalElements()).isEqualTo(1);
-
-        verifyNoInteractions(organizationRepository);
     }
 
     @Test
     void findAll_shouldReturnAllOrganizationsForSuperAdmin() {
-        when(organizationRepository.findAll(any(PageRequest.class)))
-                .thenReturn(new org.springframework.data.domain.PageImpl<>(
+        when(organizationRepository.findAll(
+                any(PageRequest.class)
+        )).thenReturn(
+                new PageImpl<>(
                         List.of(organization()),
                         PageRequest.of(0, 20),
                         1
-                ));
-
-        Page<OrganizationResponse> page = organizationService.findAll(
-                superAdminPrincipal(),
-                PageRequest.of(0, 20)
+                )
         );
 
-        assertThat(page.getContent()).hasSize(1);
-        assertThat(page.getContent().getFirst().id()).isEqualTo(ORGANIZATION_ID);
+        Page<OrganizationResponse> page =
+                organizationService.findAll(
+                        superAdminPrincipal(),
+                        PageRequest.of(0, 20)
+                );
+
+        assertThat(page.getContent())
+                .hasSize(1);
+
+        assertThat(page.getContent().getFirst().id())
+                .isEqualTo(ORGANIZATION_ID);
     }
 
     @Test
     void findCurrentOrganization_shouldReturnCurrentOrganization() {
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organization()));
-
-        OrganizationResponse response = organizationService.findCurrentOrganization(
-                adminPrincipal()
+        when(organizationRepository.findById(
+                ORGANIZATION_ID
+        )).thenReturn(
+                Optional.of(organization())
         );
 
-        assertThat(response.id()).isEqualTo(ORGANIZATION_ID);
-        assertThat(response.name()).isEqualTo("SafeAI");
+        OrganizationResponse response =
+                organizationService
+                        .findCurrentOrganization(
+                                adminPrincipal()
+                        );
+
+        assertThat(response.id())
+                .isEqualTo(ORGANIZATION_ID);
+
+        assertThat(response.name())
+                .isEqualTo("SafeAI");
     }
 
     @Test
     void findById_shouldReturnOrganizationWhenAdminReadsOwnOrganization() {
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organization()));
+        when(organizationRepository.findById(
+                ORGANIZATION_ID
+        )).thenReturn(
+                Optional.of(organization())
+        );
 
         OrganizationResponse response =
                 organizationService.findById(
@@ -258,22 +366,27 @@ class OrganizationServiceTest {
                         adminPrincipal()
                 );
 
-        assertThat(response.id()).isEqualTo(ORGANIZATION_ID);
-        assertThat(response.name()).isEqualTo("SafeAI");
+        assertThat(response.id())
+                .isEqualTo(ORGANIZATION_ID);
+
+        assertThat(response.name())
+                .isEqualTo("SafeAI");
     }
 
     @Test
     void findById_shouldThrowWhenOrganizationNotFound() {
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.empty());
+        when(organizationRepository.findById(
+                ORGANIZATION_ID
+        )).thenReturn(Optional.empty());
 
         assertThatThrownBy(() ->
                 organizationService.findById(
                         ORGANIZATION_ID,
                         adminPrincipal()
                 )
-        )
-                .isInstanceOf(ResourceNotFoundException.class);
+        ).isInstanceOf(
+                ResourceNotFoundException.class
+        );
     }
 
     @Test
@@ -284,32 +397,52 @@ class OrganizationServiceTest {
                         adminPrincipal()
                 )
         )
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Нельзя просматривать другую организацию");
+                .isInstanceOf(
+                        ForbiddenOperationException.class
+                )
+                .hasMessageContaining(
+                        "Нельзя просматривать другую организацию"
+                );
 
-        verifyNoInteractions(organizationRepository);
+        verifyNoInteractions(
+                organizationRepository
+        );
     }
 
     @Test
     void updateName_shouldUpdateNormalOrganizationWhenCurrentUserIsSuperAdmin() {
-        OrganizationEntity organization = organization();
+        OrganizationEntity organization =
+                organization();
 
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organization));
+        when(organizationRepository.findById(
+                ORGANIZATION_ID
+        )).thenReturn(
+                Optional.of(organization)
+        );
 
-        when(organizationRepository.existsByNameIgnoreCaseAndIdNot("New SafeAI", ORGANIZATION_ID))
+        when(organizationRepository
+                .existsByNormalizedNameAndIdNot(
+                        "new safeai",
+                        ORGANIZATION_ID
+                ))
                 .thenReturn(false);
 
         stubOrganizationSaveAndFlush();
 
-        OrganizationResponse response = organizationService.updateName(
-                ORGANIZATION_ID,
-                new UpdateOrganizationRequest(" New   SafeAI "),
-                superAdminPrincipal()
-        );
+        OrganizationResponse response =
+                organizationService.updateName(
+                        ORGANIZATION_ID,
+                        new UpdateOrganizationRequest(
+                                " New   SafeAI "
+                        ),
+                        superAdminPrincipal()
+                );
 
-        assertThat(response.name()).isEqualTo("New SafeAI");
-        assertThat(organization.getName()).isEqualTo("New SafeAI");
+        assertThat(response.name())
+                .isEqualTo("New SafeAI");
+
+        assertThat(organization.getName())
+                .isEqualTo("New SafeAI");
 
         verify(auditEventService).record(
                 eq(SUPER_ADMIN_ID),
@@ -318,29 +451,46 @@ class OrganizationServiceTest {
                 anyMap()
         );
 
-        verifyNoInteractions(userSessionRevocationService);
-        verifyNoInteractions(userRepository);
+        verifyNoInteractions(
+                userSessionRevocationService,
+                userRepository
+        );
     }
 
     @Test
     void updateName_shouldThrowConflictWhenNameAlreadyExists() {
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organization()));
+        when(organizationRepository.findById(
+                ORGANIZATION_ID
+        )).thenReturn(
+                Optional.of(organization())
+        );
 
-        when(organizationRepository.existsByNameIgnoreCaseAndIdNot("Other", ORGANIZATION_ID))
+        when(organizationRepository
+                .existsByNormalizedNameAndIdNot(
+                        "other",
+                        ORGANIZATION_ID
+                ))
                 .thenReturn(true);
 
         assertThatThrownBy(() ->
                 organizationService.updateName(
                         ORGANIZATION_ID,
-                        new UpdateOrganizationRequest("Other"),
+                        new UpdateOrganizationRequest(
+                                "Other"
+                        ),
                         superAdminPrincipal()
                 )
         )
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Организация с таким названием уже существует");
+                .hasMessageContaining(
+                        "Организация с таким названием "
+                                + "уже существует"
+                );
 
-        verify(organizationRepository, never()).saveAndFlush(any());
+        verify(
+                organizationRepository,
+                never()
+        ).saveAndFlush(any());
     }
 
     @Test
@@ -348,14 +498,22 @@ class OrganizationServiceTest {
         assertThatThrownBy(() ->
                 organizationService.updateName(
                         ORGANIZATION_ID,
-                        new UpdateOrganizationRequest("Other"),
+                        new UpdateOrganizationRequest(
+                                "Other"
+                        ),
                         adminPrincipal()
                 )
         )
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Only SUPER_ADMIN");
+                .isInstanceOf(
+                        ForbiddenOperationException.class
+                )
+                .hasMessageContaining(
+                        "Only SUPER_ADMIN"
+                );
 
-        verifyNoInteractions(organizationRepository);
+        verifyNoInteractions(
+                organizationRepository
+        );
     }
 
     @Test
@@ -363,103 +521,195 @@ class OrganizationServiceTest {
         assertThatThrownBy(() ->
                 organizationService.updateName(
                         PLATFORM_ORGANIZATION_ID,
-                        new UpdateOrganizationRequest("Platform New Name"),
+                        new UpdateOrganizationRequest(
+                                "Platform New Name"
+                        ),
                         superAdminPrincipal()
                 )
         )
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Платформенную организацию нельзя изменять");
+                .isInstanceOf(
+                        ForbiddenOperationException.class
+                )
+                .hasMessageContaining(
+                        "Платформенную организацию "
+                                + "нельзя изменять"
+                );
 
-        verifyNoInteractions(organizationRepository);
+        verifyNoInteractions(
+                organizationRepository
+        );
     }
 
     @Test
     void updateEnabled_shouldDisableNormalOrganizationAndRevokeRefreshSessionsAndIncrementUserTokenVersions() {
-        OrganizationEntity organization = organization();
+        OrganizationEntity organization =
+                organization();
 
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organization));
+        when(organizationRepository.findById(
+                ORGANIZATION_ID
+        )).thenReturn(
+                Optional.of(organization)
+        );
 
         stubOrganizationSaveAndFlush();
 
-        when(userRepository.incrementTokenVersionByOrganizationId(ORGANIZATION_ID))
+        when(userRepository
+                .incrementTokenVersionByOrganizationId(
+                        ORGANIZATION_ID
+                ))
                 .thenReturn(5);
 
-        OrganizationResponse response = organizationService.updateEnabled(
-                ORGANIZATION_ID,
-                new UpdateOrganizationEnabledRequest(false),
-                superAdminPrincipal()
-        );
+        OrganizationResponse response =
+                organizationService.updateEnabled(
+                        ORGANIZATION_ID,
+                        new UpdateOrganizationEnabledRequest(
+                                false
+                        ),
+                        superAdminPrincipal()
+                );
 
-        assertThat(response.enabled()).isFalse();
-        assertThat(organization.isEnabled()).isFalse();
+        assertThat(response.enabled())
+                .isFalse();
 
-        verify(userSessionRevocationService).revokeAllForOrganization(ORGANIZATION_ID);
-        verify(userRepository).incrementTokenVersionByOrganizationId(ORGANIZATION_ID);
-        verify(eventPublisher).publishEvent(any(OrganizationSecurityStateChangedEvent.class));
+        assertThat(organization.isEnabled())
+                .isFalse();
+
+        verify(userSessionRevocationService)
+                .revokeAllForOrganization(
+                        ORGANIZATION_ID,
+                        RefreshTokenRevocationReason
+                                .ORGANIZATION_DISABLED
+                );
+
+        verify(userRepository)
+                .incrementTokenVersionByOrganizationId(
+                        ORGANIZATION_ID
+                );
+
+        verify(eventPublisher)
+                .publishEvent(
+                        any(
+                                OrganizationSecurityStateChangedEvent
+                                        .class
+                        )
+                );
 
         verify(auditEventService).record(
                 eq(SUPER_ADMIN_ID),
                 eq(ORGANIZATION_ID),
-                eq(AuditEventType.ORGANIZATION_ENABLED_CHANGED),
+                eq(
+                        AuditEventType
+                                .ORGANIZATION_ENABLED_CHANGED
+                ),
                 argThat(details ->
-                        details.containsKey("affectedUsers")
-                                && details.containsKey("requiresRelogin")
+                        details.containsKey(
+                                "affectedUsers"
+                        )
+                                && details.containsKey(
+                                "requiresRelogin"
+                        )
                 )
         );
     }
 
     @Test
     void updateEnabled_shouldEnableOrganizationWithoutRestoringRefreshSessionsOrIncrementingTokenVersions() {
-        OrganizationEntity organization = organization();
+        OrganizationEntity organization =
+                organization();
+
         organization.setEnabled(false);
 
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organization));
+        when(organizationRepository.findById(
+                ORGANIZATION_ID
+        )).thenReturn(
+                Optional.of(organization)
+        );
 
         stubOrganizationSaveAndFlush();
 
-        OrganizationResponse response = organizationService.updateEnabled(
-                ORGANIZATION_ID,
-                new UpdateOrganizationEnabledRequest(true),
-                superAdminPrincipal()
+        OrganizationResponse response =
+                organizationService.updateEnabled(
+                        ORGANIZATION_ID,
+                        new UpdateOrganizationEnabledRequest(
+                                true
+                        ),
+                        superAdminPrincipal()
+                );
+
+        assertThat(response.enabled())
+                .isTrue();
+
+        assertThat(organization.isEnabled())
+                .isTrue();
+
+        verify(
+                userSessionRevocationService,
+                never()
+        ).revokeAllForOrganization(
+                any(UUID.class),
+                any(RefreshTokenRevocationReason.class)
         );
 
-        assertThat(response.enabled()).isTrue();
-        assertThat(organization.isEnabled()).isTrue();
+        verify(
+                userRepository,
+                never()
+        ).incrementTokenVersionByOrganizationId(
+                any(UUID.class)
+        );
 
-        verify(userSessionRevocationService, never()).revokeAllForOrganization(any());
-        verify(userRepository, never()).incrementTokenVersionByOrganizationId(any());
-        verify(eventPublisher).publishEvent(any(OrganizationSecurityStateChangedEvent.class));
+        verify(eventPublisher)
+                .publishEvent(
+                        any(
+                                OrganizationSecurityStateChangedEvent
+                                        .class
+                        )
+                );
 
         verify(auditEventService).record(
                 eq(SUPER_ADMIN_ID),
                 eq(ORGANIZATION_ID),
-                eq(AuditEventType.ORGANIZATION_ENABLED_CHANGED),
+                eq(
+                        AuditEventType
+                                .ORGANIZATION_ENABLED_CHANGED
+                ),
                 anyMap()
         );
     }
 
     @Test
     void updateEnabled_shouldReturnWithoutChangesWhenValueIsSame() {
-        OrganizationEntity organization = organization();
+        OrganizationEntity organization =
+                organization();
 
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organization));
-
-        OrganizationResponse response = organizationService.updateEnabled(
-                ORGANIZATION_ID,
-                new UpdateOrganizationEnabledRequest(true),
-                superAdminPrincipal()
+        when(organizationRepository.findById(
+                ORGANIZATION_ID
+        )).thenReturn(
+                Optional.of(organization)
         );
 
-        assertThat(response.enabled()).isTrue();
+        OrganizationResponse response =
+                organizationService.updateEnabled(
+                        ORGANIZATION_ID,
+                        new UpdateOrganizationEnabledRequest(
+                                true
+                        ),
+                        superAdminPrincipal()
+                );
 
-        verify(organizationRepository, never()).saveAndFlush(any());
-        verifyNoInteractions(userSessionRevocationService);
-        verifyNoInteractions(userRepository);
-        verifyNoInteractions(eventPublisher);
-        verifyNoInteractions(auditEventService);
+        assertThat(response.enabled())
+                .isTrue();
+
+        verify(
+                organizationRepository,
+                never()
+        ).saveAndFlush(any());
+
+        verifyNoInteractions(
+                userSessionRevocationService,
+                userRepository,
+                eventPublisher,
+                auditEventService
+        );
     }
 
     @Test
@@ -467,16 +717,24 @@ class OrganizationServiceTest {
         assertThatThrownBy(() ->
                 organizationService.updateEnabled(
                         ORGANIZATION_ID,
-                        new UpdateOrganizationEnabledRequest(false),
+                        new UpdateOrganizationEnabledRequest(
+                                false
+                        ),
                         adminPrincipal()
                 )
         )
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Only SUPER_ADMIN");
+                .isInstanceOf(
+                        ForbiddenOperationException.class
+                )
+                .hasMessageContaining(
+                        "Only SUPER_ADMIN"
+                );
 
-        verifyNoInteractions(organizationRepository);
-        verifyNoInteractions(userSessionRevocationService);
-        verifyNoInteractions(userRepository);
+        verifyNoInteractions(
+                organizationRepository,
+                userSessionRevocationService,
+                userRepository
+        );
     }
 
     @Test
@@ -484,27 +742,38 @@ class OrganizationServiceTest {
         assertThatThrownBy(() ->
                 organizationService.updateEnabled(
                         PLATFORM_ORGANIZATION_ID,
-                        new UpdateOrganizationEnabledRequest(false),
+                        new UpdateOrganizationEnabledRequest(
+                                false
+                        ),
                         superAdminPrincipal()
                 )
         )
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Платформенную организацию нельзя изменять");
+                .isInstanceOf(
+                        ForbiddenOperationException.class
+                )
+                .hasMessageContaining(
+                        "Платформенную организацию "
+                                + "нельзя изменять"
+                );
 
-        verifyNoInteractions(organizationRepository);
-        verifyNoInteractions(userSessionRevocationService);
-        verifyNoInteractions(userRepository);
+        verifyNoInteractions(
+                organizationRepository,
+                userSessionRevocationService,
+                userRepository
+        );
     }
-
 
     private void stubOrganizationSaveAndFlush() {
         when(organizationRepository.saveAndFlush(
                 any(OrganizationEntity.class)
         )).thenAnswer(invocation -> {
-            OrganizationEntity entity = invocation.getArgument(0);
+            OrganizationEntity entity =
+                    invocation.getArgument(0);
 
             if (entity.getId() == null) {
-                entity.setId(SAVED_ORGANIZATION_ID);
+                entity.setId(
+                        SAVED_ORGANIZATION_ID
+                );
             }
 
             if (entity.getCreatedAt() == null) {
@@ -516,39 +785,44 @@ class OrganizationServiceTest {
     }
 
     private OrganizationEntity organization() {
-        OrganizationEntity entity = new OrganizationEntity();
+        OrganizationEntity entity =
+                new OrganizationEntity();
+
         entity.setId(ORGANIZATION_ID);
         entity.setName("SafeAI");
         entity.setEnabled(true);
-        entity.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+        entity.setCreatedAt(SAVED_AT);
+
         return entity;
     }
 
     private SafeAiUserPrincipal adminPrincipal() {
-        return new SafeAiUserPrincipal(
-                ADMIN_ID,
-                ORGANIZATION_ID,
-                "admin@test.com",
-                "",
-                true,
-                0L,
-                List.of(
-                        new SimpleGrantedAuthority("ROLE_ADMIN")
-                )
-        );
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        ADMIN_ID,
+                        ORGANIZATION_ID,
+                        "admin@test.com",
+                        0L,
+                        Set.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_ADMIN"
+                                )
+                        )
+                );
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
-        return new SafeAiUserPrincipal(
-                SUPER_ADMIN_ID,
-                PLATFORM_ORGANIZATION_ID,
-                "superadmin@test.com",
-                "",
-                true,
-                0L,
-                List.of(
-                        new SimpleGrantedAuthority("ROLE_SUPER_ADMIN")
-                )
-        );
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        SUPER_ADMIN_ID,
+                        PLATFORM_ORGANIZATION_ID,
+                        "superadmin@test.com",
+                        0L,
+                        Set.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_SUPER_ADMIN"
+                                )
+                        )
+                );
     }
 }

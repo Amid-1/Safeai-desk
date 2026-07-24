@@ -5,13 +5,13 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.jspecify.annotations.NonNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import ru.safeai.gateway.common.security.JsonSecurityErrorWriter;
+import ru.safeai.gateway.common.exception.ApiErrorCode;
+import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.service.UserStatusCacheService;
 
@@ -22,29 +22,35 @@ import java.io.IOException;
 public class UserStatusFilter extends OncePerRequestFilter {
 
     private final UserStatusCacheService userStatusCacheService;
-    private final JsonSecurityErrorWriter errorWriter;
+    private final ApiErrorResponseWriter errorWriter;
 
     @Override
     protected void doFilterInternal(
-            @NonNull HttpServletRequest request,
-            @NonNull HttpServletResponse response,
-            @NonNull FilterChain filterChain
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
     ) throws ServletException, IOException {
         Authentication authentication = SecurityContextHolder
                 .getContext()
                 .getAuthentication();
 
-        if (authentication == null || !(authentication.getPrincipal() instanceof SafeAiUserPrincipal principal)) {
+        if (authentication == null
+                || !(authentication.getPrincipal()
+                instanceof SafeAiUserPrincipal principal)) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        boolean valid = userStatusCacheService.getStatus(principal.getId())
+        boolean valid = userStatusCacheService
+                .getStatus(principal.getId())
                 .map(status ->
                         status.userEnabled()
                                 && status.organizationEnabled()
-                                && status.tokenVersion() == principal.getTokenVersion()
-                                && status.organizationId().equals(principal.getOrganizationId())
+                                && status.tokenVersion()
+                                == principal.getTokenVersion()
+                                && status.organizationId().equals(
+                                principal.getOrganizationId()
+                        )
                 )
                 .orElse(false);
 
@@ -55,7 +61,7 @@ public class UserStatusFilter extends OncePerRequestFilter {
                     request,
                     response,
                     HttpStatus.UNAUTHORIZED,
-                    "TOKEN_REVOKED",
+                    ApiErrorCode.TOKEN_REVOKED,
                     "Токен больше не действителен"
             );
             return;

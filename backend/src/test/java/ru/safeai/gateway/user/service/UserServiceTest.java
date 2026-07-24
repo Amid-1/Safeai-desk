@@ -11,6 +11,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 import ru.safeai.gateway.auth.service.UserSessionRevocationService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
@@ -237,7 +238,10 @@ class UserServiceTest {
         assertThat(user.getTokenVersion()).isEqualTo(1L);
 
         verify(userRepository).save(user);
-        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
+        verify(userSessionRevocationService).revokeAllForUser(
+                USER_ID,
+                RefreshTokenRevocationReason.USER_DISABLED
+        );
         verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
@@ -271,7 +275,10 @@ class UserServiceTest {
         assertThat(response.enabled()).isTrue();
         assertThat(user.getTokenVersion()).isEqualTo(1L);
 
-        verify(userSessionRevocationService, never()).revokeAllForUser(any());
+        verify(userSessionRevocationService, never()).revokeAllForUser(
+                any(UUID.class),
+                any(RefreshTokenRevocationReason.class)
+        );
         verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
@@ -388,7 +395,10 @@ class UserServiceTest {
         assertThat(response.roles()).containsExactly("ADMIN");
         assertThat(user.getTokenVersion()).isEqualTo(1L);
 
-        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
+        verify(userSessionRevocationService).revokeAllForUser(
+                USER_ID,
+                RefreshTokenRevocationReason.ROLE_CHANGED
+        );
         verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
@@ -452,7 +462,10 @@ class UserServiceTest {
         assertThat(response.roles()).containsExactly("USER");
         assertThat(user.getTokenVersion()).isZero();
 
-        verify(userSessionRevocationService, never()).revokeAllForUser(any());
+        verify(userSessionRevocationService, never()).revokeAllForUser(
+                any(UUID.class),
+                any(RefreshTokenRevocationReason.class)
+        );
         verify(eventPublisher, never()).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
@@ -568,7 +581,10 @@ class UserServiceTest {
         assertThat(user.getTokenVersion()).isEqualTo(1L);
 
         verify(userRepository).save(user);
-        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
+        verify(userSessionRevocationService).revokeAllForUser(
+                USER_ID,
+                RefreshTokenRevocationReason.PASSWORD_RESET
+        );
         verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
 
         verify(auditEventService).record(
@@ -600,7 +616,10 @@ class UserServiceTest {
                 superAdminPrincipal()
         );
 
-        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
+        verify(userSessionRevocationService).revokeAllForUser(
+                USER_ID,
+                RefreshTokenRevocationReason.ADMIN_REVOKED
+        );
         verify(userRepository).delete(user);
         verify(userRepository).flush();
         verify(eventPublisher).publishEvent(
@@ -706,26 +725,30 @@ class UserServiceTest {
     }
 
     private SafeAiUserPrincipal adminPrincipal() {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 ADMIN_ID,
                 ORGANIZATION_ID,
                 "admin@test.com",
-                "encoded-password",
-                true,
                 0L,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+                Set.of(
+                        new SimpleGrantedAuthority(
+                                "ROLE_ADMIN"
+                        )
+                )
         );
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
                 "super-admin@test.com",
-                "encoded-password",
-                true,
                 0L,
-                List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
+                Set.of(
+                        new SimpleGrantedAuthority(
+                                "ROLE_SUPER_ADMIN"
+                        )
+                )
         );
     }
 

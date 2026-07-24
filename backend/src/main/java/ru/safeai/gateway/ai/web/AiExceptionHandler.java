@@ -3,7 +3,6 @@ package ru.safeai.gateway.ai.web;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -16,6 +15,7 @@ import ru.safeai.gateway.ai.exception.AiProviderOverloadedException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
 import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
 import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
+import ru.safeai.gateway.common.exception.ApiErrorCode;
 import ru.safeai.gateway.common.exception.ApiErrorResponse;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 
@@ -23,7 +23,7 @@ import java.time.Duration;
 
 @Slf4j
 @RestControllerAdvice
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(0)
 @RequiredArgsConstructor
 public class AiExceptionHandler {
 
@@ -38,7 +38,7 @@ public class AiExceptionHandler {
 
         return buildResponse(
                 HttpStatus.GATEWAY_TIMEOUT,
-                "AI_PROVIDER_TIMEOUT",
+                ApiErrorCode.AI_PROVIDER_TIMEOUT,
                 "AI-провайдер не ответил вовремя",
                 request,
                 null
@@ -54,7 +54,7 @@ public class AiExceptionHandler {
 
         return buildResponse(
                 HttpStatus.TOO_MANY_REQUESTS,
-                "AI_PROVIDER_RATE_LIMITED",
+                ApiErrorCode.AI_PROVIDER_RATE_LIMITED,
                 "AI-провайдер временно ограничил количество запросов",
                 request,
                 exception.getRetryAfter()
@@ -70,7 +70,7 @@ public class AiExceptionHandler {
 
         return buildResponse(
                 HttpStatus.SERVICE_UNAVAILABLE,
-                "AI_PROVIDER_OVERLOADED",
+                ApiErrorCode.AI_PROVIDER_OVERLOADED,
                 "AI-провайдер временно перегружен",
                 request,
                 exception.getRetryAfter()
@@ -86,7 +86,7 @@ public class AiExceptionHandler {
 
         return buildResponse(
                 HttpStatus.SERVICE_UNAVAILABLE,
-                "AI_PROVIDER_UNAVAILABLE",
+                ApiErrorCode.AI_PROVIDER_UNAVAILABLE,
                 "AI-провайдер временно недоступен",
                 request,
                 null
@@ -102,7 +102,7 @@ public class AiExceptionHandler {
 
         return buildResponse(
                 HttpStatus.BAD_GATEWAY,
-                "AI_PROVIDER_ERROR",
+                ApiErrorCode.AI_PROVIDER_ERROR,
                 "Ошибка при обращении к AI-провайдеру",
                 request,
                 null
@@ -113,7 +113,7 @@ public class AiExceptionHandler {
             AiProviderException exception,
             HttpServletRequest request
     ) {
-        String message =
+        String logMessage =
                 "AI provider error: provider={}, model={}, "
                         + "errorType={}, statusCode={}, "
                         + "providerRequestId={}, retryRecommended={}, "
@@ -122,7 +122,7 @@ public class AiExceptionHandler {
         if (exception.getErrorType()
                 == AiProviderErrorType.AUTHENTICATION) {
             log.error(
-                    message,
+                    logMessage,
                     exception.getProvider(),
                     exception.getModel(),
                     exception.getErrorType(),
@@ -133,25 +133,27 @@ public class AiExceptionHandler {
                     request.getRequestURI(),
                     exception
             );
-        } else {
-            log.warn(
-                    message,
-                    exception.getProvider(),
-                    exception.getModel(),
-                    exception.getErrorType(),
-                    exception.getStatusCode(),
-                    exception.getProviderRequestId(),
-                    exception.isRetryRecommended(),
-                    exception.isOutcomeAmbiguous(),
-                    request.getRequestURI(),
-                    exception
-            );
+
+            return;
         }
+
+        log.warn(
+                logMessage,
+                exception.getProvider(),
+                exception.getModel(),
+                exception.getErrorType(),
+                exception.getStatusCode(),
+                exception.getProviderRequestId(),
+                exception.isRetryRecommended(),
+                exception.isOutcomeAmbiguous(),
+                request.getRequestURI(),
+                exception
+        );
     }
 
     private ResponseEntity<ApiErrorResponse> buildResponse(
             HttpStatus status,
-            String error,
+            ApiErrorCode error,
             String message,
             HttpServletRequest request,
             Duration retryAfter
@@ -159,8 +161,8 @@ public class AiExceptionHandler {
         ResponseEntity.BodyBuilder builder =
                 ResponseEntity.status(status);
 
-        if (retryAfter != null) {
-            long seconds = Math.max(
+        if (retryAfter != null && !retryAfter.isNegative()) {
+            long retryAfterSeconds = Math.max(
                     1L,
                     (long) Math.ceil(
                             retryAfter.toMillis() / 1000.0
@@ -169,7 +171,7 @@ public class AiExceptionHandler {
 
             builder.header(
                     HttpHeaders.RETRY_AFTER,
-                    Long.toString(seconds)
+                    Long.toString(retryAfterSeconds)
             );
         }
 

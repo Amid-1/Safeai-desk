@@ -1,8 +1,19 @@
 package ru.safeai.gateway.common.exception;
 
-public class BadRequestException extends RuntimeException {
+import org.springframework.http.HttpStatus;
 
-    public BadRequestException(String message) {
-        super(message);
+public class BadRequestException extends ApiException {
+
+    public BadRequestException(String publicMessage) {
+        super(HttpStatus.BAD_REQUEST, ApiErrorCode.BAD_REQUEST, publicMessage);
+    }
+
+    public BadRequestException(String publicMessage, Throwable cause) {
+        super(
+                HttpStatus.BAD_REQUEST,
+                ApiErrorCode.BAD_REQUEST,
+                publicMessage,
+                cause
+        );
     }
 }

@@ -11,4 +11,7 @@ public record CurrentUserResponse(
         boolean enabled,
         Set<String> roles
 ) {
+    public CurrentUserResponse {
+        roles = Set.copyOf(roles);
+    }
 }

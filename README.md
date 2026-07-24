@@ -511,10 +511,14 @@ safeai-desk/
 │   │   │           │   ├── V16__preserve_usage_history_on_user_delete.sql
 │   │   │           │   ├── V17__ai_usage_and_pricing_metadata.sql
 │   │   │           │   ├── V18__audit_actor_snapshots.sql
-│   │   │           │   └── V19__user_management_details_and_audit.sql
+│   │   │           │   ├── V19__user_management_details_and_audit.sql
+│   │   │           │   ├── V20__production_integrity_hardening.sql
+│   │   │           │   ├── V21__refresh_token_cleanup_batch_index.sql
+│   │   │           │   ├── V22__chat_single_reply_index.sql
+│   │   │           │   └── V23__organization_normalized_name_index.sql
 │   │   │           │
 │   │   │           └── local-migration/
-│   │   │               └── V1000__seed_local_demo_data.sql
+│   │   │               └── R__seed_local_demo_data.sql
 │   │   │
 │   │   └── test/
 │   │       ├── java/
@@ -534,6 +538,7 @@ safeai-desk/
 │   │       │               └── SafeaiBackendApplicationTests.java
 │   │       │
 │   │       └── resources/
+│   │           ├── application-auth-postgres-it.yml
 │   │           └── application-test.yml
 │   │
 │   ├── .env
@@ -737,36 +742,55 @@ ru.safeai.gateway/
 │   └── AuditEventType
 │
 ├── auth/
+│   ├── config/
+│   │   └── RefreshTokenCleanupConfiguration
+│   │
 │   ├── controller/
 │   │   ├── AuthController
 │   │   └── CsrfController
 │   │
 │   ├── dto/
+│   │   ├── CsrfTokenResponse
 │   │   ├── CurrentUserResponse
 │   │   └── LoginRequest
 │   │
 │   ├── entity/
-│   │   └── RefreshTokenEntity
+│   │   ├── RefreshTokenEntity
+│   │   └── RefreshTokenRevocationReason
 │   │
 │   ├── repository/
 │   │   └── RefreshTokenRepository
 │   │
 │   ├── security/
+│   │   ├── AccessCookieAuthenticationFilter
 │   │   ├── CsrfCookieFilter
 │   │   ├── CustomUserDetailsService
+│   │   ├── package-info.java
 │   │   ├── SecurityConfig
 │   │   ├── SpaCsrfTokenRequestHandler
 │   │   └── UserStatusFilter
 │   │
-│   └── service/
-│       ├── AuthCookieConfigurationValidator
-│       ├── AuthCookieProperties
-│       ├── AuthCookieService
-│       ├── AuthEventService
-│       ├── AuthService
-│       ├── RefreshTokenCleanupJob
-│       ├── RefreshTokenService
-│       └── UserSessionRevocationService
+│   ├── service/
+│   │   ├── AuthAuditTransactionService
+│   │   ├── AuthCookieConfigurationValidator
+│   │   ├── AuthCookieProperties
+│   │   ├── AuthCookieService
+│   │   ├── AuthEventService
+│   │   ├── AuthService
+│   │   ├── LoginSessionResult
+│   │   ├── LoginSessionTransactionService
+│   │   ├── LogoutAuditSubject
+│   │   ├── RefreshTokenCleanupBatchService
+│   │   ├── RefreshTokenCleanupJob
+│   │   ├── RRefreshTokenCleanupProperties
+│   │   ├── RefreshTokenService
+│   │   ├── UserSecurityMutationTransactionService
+│   │   └── UserSessionRevocationService
+│   │   
+│   └── validation/
+│       ├── Utf8ByteLength
+│       └── Utf8ByteLengthValidator
+│
 │
 ├── chat/
 │   ├── controller/
@@ -805,8 +829,12 @@ ru.safeai.gateway/
 │   │   └── TimeConfiguration
 │   │
 │   ├── exception/
+│   │   ├── ApiErrorCode
 │   │   ├── ApiErrorResponse
 │   │   ├── ApiErrorResponseFactory
+│   │   ├── ApiErrorResponseWriter
+│   │   ├── ApiException
+│   │   ├── AuthServiceUnavailableException
 │   │   ├── BadRequestException
 │   │   ├── ChatAvailabilityExceptionHandler
 │   │   ├── ChatBusyException
@@ -823,22 +851,28 @@ ru.safeai.gateway/
 │   │   └── ResourceNotFoundException
 │   │
 │   ├── platform/
-│   │   └── PlatformProperties
+│   │   ├── PlatformProperties
+│   │   └── PlatformPropertiesConfiguration
 │   │
 │   ├── security/
 │   │   ├── AccessTokenSubject
 │   │   ├── ClientIpProperties
 │   │   ├── ClientIpResolver
 │   │   ├── CorsProperties
-│   │   ├── JsonAccessDeniedHandler
-│   │   ├── JsonAuthenticationEntryPoint
-│   │   ├── JsonSecurityErrorWriter
+│   │   ├── JwtCodecConfiguration
 │   │   ├── JwtProperties
 │   │   ├── JwtService
+│   │   ├── package-info.java
+│   │   ├── PasswordEncodingConfiguration
+│   │   ├── ProductionSecurityInvariantValidator
 │   │   ├── RequestIdFilter
+│   │   ├── RestAccessDeniedHandler
+│   │   ├── RestAuthenticationEntryPoint
 │   │   ├── RoleAuthorityMapper
 │   │   ├── SafeAiJwtAuthenticationConverter
-│   │   └── SafeAiUserPrincipal
+│   │   ├── SafeAiUserPrincipal
+│   │   ├── SecurityPropertiesConfiguration
+│   │   └── SystemRole
 │   │
 │   └── web/
 │       └── ApiFallbackController
@@ -863,6 +897,7 @@ ru.safeai.gateway/
 │   │   └── OrganizationRepository
 │   │
 │   └── service/
+│       ├── OrganizationNameNormalizer
 │       ├── OrganizationService
 │       └── OrganizationStatusCacheInvalidationListener
 │
@@ -915,6 +950,9 @@ ru.safeai.gateway/
 │   │
 │   ├── event/
 │   │   └── UserSecurityStateChangedEvent
+│   │
+│   ├── mapper/
+│   │   └── UserRoleMapper
 │   │
 │   ├── repository/
 │   │   ├── RoleRepository
@@ -995,10 +1033,15 @@ safeai-desk/
 │   │       │               │
 │   │       │               ├── auth/
 │   │       │               │   ├── controller/
-│   │       │               │   │  └── AuthControllerSecurityTest
+│   │       │               │   │  ├── AuthControllerSecurityTest
+│   │       │               │   │  └── CsrfControllerTest
+│   │       │               │   │
+│   │       │               │   ├── integration/
+│   │       │               │   │  └── AuthPostgresConcurrencyIT
 │   │       │               │   │
 │   │       │               │   ├── security/
 │   │       │               │   │  ├── CustomUserDetailsServiceTest 
+│   │       │               │   │  ├── SecurityConfigIntegrationTest 
 │   │       │               │   │  └── UserStatusFilterTest
 │   │       │               │   │
 │   │       │               │   └── service/
@@ -1023,15 +1066,19 @@ safeai-desk/
 │   │       │               │   │  └── GlobalExceptionHandlerTest
 │   │       │               │   │
 │   │       │               │   └── security/
+│   │       │               │      ├── AccessTokenSubjectTest
 │   │       │               │      ├── ClientIpPropertiesTest
 │   │       │               │      ├── ClientIpResolverTest
 │   │       │               │      ├── CorsPropertiesTest
+│   │       │               │      ├── JwtCodecConfigurationTest
 │   │       │               │      ├── JwtPropertiesTest
 │   │       │               │      ├── JwtServiceTest
+│   │       │               │      ├── JPasswordEncodingConfigurationTest
 │   │       │               │      ├── RequestIdFilterTest
 │   │       │               │      ├── RoleAuthorityMapperTest  
 │   │       │               │      ├── SafeAiJwtAuthenticationConverterTest
-│   │       │               │      └── SafeAiUserPrincipalTest
+│   │       │               │      ├── SafeAiUserPrincipalTest
+│   │       │               │      └── SecurityErrorResponseIntegrationTest
 │   │       │               │
 │   │       │               ├── organization/
 │   │       │               │   ├── controller/
@@ -1066,6 +1113,9 @@ safeai-desk/
 │   │       │               └── SafeaiBackendApplicationTests.java
 │   │       │
 │   │       └── resources/
+│   │           ├── sql/
+│   │           │   └── post_v23_assertions.sql
+│   │           ├── application-auth-postgres-it.yml
 │   │           └── application-test.yml
 
 
@@ -1738,7 +1788,7 @@ V11 add USER_UPDATED audit event type
 Local-only seed:
 
 ```text
-V1000__seed_local_demo_data.sql
+R__seed_local_demo_data.sql
 ```
 
 Важно: в `V11` используется колонка `name`, потому что `audit_event_types` создана как:
@@ -1835,7 +1885,7 @@ role:     SUPER_ADMIN
 org:      SafeAI Platform
 ```
 
-Пароль зависит от bcrypt hash в `V1000__seed_local_demo_data.sql`.
+Пароль зависит от bcrypt hash в `R__seed_local_demo_data.sql`.
 
 В текущей local-сборке использовался:
 

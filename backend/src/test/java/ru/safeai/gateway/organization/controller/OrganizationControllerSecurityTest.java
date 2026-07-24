@@ -100,7 +100,10 @@ class OrganizationControllerSecurityTest {
 
         @Bean
         Clock clock() {
-            return Clock.fixed(NOW, ZoneOffset.UTC);
+            return Clock.fixed(
+                    NOW,
+                    ZoneOffset.UTC
+            );
         }
 
         @Bean
@@ -157,9 +160,13 @@ class OrganizationControllerSecurityTest {
 
         mockMvc.perform(
                         get("/api/organizations")
-                                .with(authentication(
-                                        authToken(adminPrincipal())
-                                ))
+                                .with(
+                                        authentication(
+                                                authToken(
+                                                        adminPrincipal()
+                                                )
+                                        )
+                                )
                 )
                 .andExpect(status().isOk());
 
@@ -174,11 +181,13 @@ class OrganizationControllerSecurityTest {
             throws Exception {
         mockMvc.perform(
                         post("/api/organizations")
-                                .with(authentication(
-                                        authToken(
-                                                superAdminPrincipal()
+                                .with(
+                                        authentication(
+                                                authToken(
+                                                        superAdminPrincipal()
+                                                )
                                         )
-                                ))
+                                )
                                 .contentType(
                                         MediaType.APPLICATION_JSON
                                 )
@@ -190,8 +199,13 @@ class OrganizationControllerSecurityTest {
                 )
                 .andExpect(status().isBadRequest());
 
-        verify(organizationService, never())
-                .create(any(), any());
+        verify(
+                organizationService,
+                never()
+        ).create(
+                any(),
+                any()
+        );
     }
 
     private Authentication authToken(
@@ -205,12 +219,10 @@ class OrganizationControllerSecurityTest {
     }
 
     private SafeAiUserPrincipal adminPrincipal() {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 ADMIN_ID,
                 ORGANIZATION_ID,
                 "admin@test.com",
-                "encoded-password",
-                true,
                 0L,
                 List.of(
                         new SimpleGrantedAuthority(
@@ -221,12 +233,10 @@ class OrganizationControllerSecurityTest {
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
                 "superadmin@test.com",
-                "encoded-password",
-                true,
                 0L,
                 List.of(
                         new SimpleGrantedAuthority(

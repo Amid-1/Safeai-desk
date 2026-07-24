@@ -1,16 +1,21 @@
-fix(auth,user): исправить фильтрацию пользователей и обновление авторизации
+feat(security): усилить аутентификацию и обработку ошибок
 
-- исправлена пагинация пользователей при фильтрации по роли
-- устранена ошибка PostgreSQL:
-  SELECT DISTINCT с ORDER BY по полю, отсутствующему в SELECT
-- обновлены запросы findAllIdsByRole и
-  findAllIdsByOrganizationIdAndRole
-- сохранён порядок пользователей после повторной загрузки сущностей
-  вместе с ролями и организацией
-- добавлена обработка пустой страницы пользователей
-- обновление lastLoginAt теперь возвращает количество изменённых строк
-- добавлена проверка успешного обновления lastLoginAt при входе
-- синхронизировано значение lastLoginAt в загруженной UserEntity
-- сохранена корректная работа persistence context без его принудительной очистки
-- уточнена работа запросов refresh token и блокировки токена при ротации
-- сохранена загрузка пользователя, организации и ролей для выпуска access token
+- разделить обработку JWT из Authorization header и access-token cookie
+- добавить отдельный AccessCookieAuthenticationFilter для cookie-аутентификации
+- сохранить приоритет Bearer-токена из Authorization над access-token cookie
+- выполнять cookie-аутентификацию после CSRF-проверки
+- требовать CSRF для небезопасных запросов с cookie-аутентификацией
+- не требовать CSRF для запросов с Bearer-токеном в Authorization header
+- исключить публичные auth-endpoints из обработки access JWT
+- преобразовывать ошибки JWT и конвертации claims в стандартный JSON-ответ 401
+- унифицировать ответы 401 и 403 через RestAuthenticationEntryPoint,
+  RestAccessDeniedHandler, ApiErrorResponseFactory и ApiErrorResponseWriter
+- сохранить requestId и единый формат ошибок security pipeline
+- актуализировать проверку состояния пользователя и версии токена
+  в UserStatusFilter
+- вынести PasswordEncoder в общую security-конфигурацию
+- использовать DelegatingPasswordEncoder с BCrypt strength 12
+  и поддержкой старых BCrypt-хешей без префикса
+- удалить дублирующую PasswordSecurityConfig
+- обновить интеграционные и модульные тесты для JWT, cookie, CSRF,
+  ролей, user status, principal, password encoding и security-ошибок

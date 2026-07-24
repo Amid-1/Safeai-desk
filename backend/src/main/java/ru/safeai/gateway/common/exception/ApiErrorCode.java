@@ -1,0 +1,39 @@
+package ru.safeai.gateway.common.exception;
+
+/**
+ * Stable machine-readable API error codes.
+ * Localized messages must never be used as client branching keys.
+ */
+public enum ApiErrorCode {
+
+    BAD_REQUEST,
+    VALIDATION_ERROR,
+    UNAUTHORIZED,
+    FORBIDDEN,
+    NOT_FOUND,
+    CONFLICT,
+
+    CHAT_BUSY,
+    CHAT_LOCK_UNAVAILABLE,
+
+    RATE_LIMIT_EXCEEDED,
+    RATE_LIMIT_UNAVAILABLE,
+
+    AUTH_SERVICE_UNAVAILABLE,
+
+    EXPIRED_REFRESH_TOKEN,
+    INVALID_REFRESH_TOKEN,
+    TOKEN_REVOKED,
+
+    AI_PROVIDER_TIMEOUT,
+    AI_PROVIDER_RATE_LIMITED,
+    AI_PROVIDER_OVERLOADED,
+    AI_PROVIDER_UNAVAILABLE,
+    AI_PROVIDER_ERROR,
+
+    METHOD_NOT_ALLOWED,
+    UNSUPPORTED_MEDIA_TYPE,
+    NOT_ACCEPTABLE,
+
+    INTERNAL_SERVER_ERROR
+}

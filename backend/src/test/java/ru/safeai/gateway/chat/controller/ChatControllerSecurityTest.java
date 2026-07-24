@@ -273,12 +273,10 @@ class ChatControllerSecurityTest {
     }
 
     private SafeAiUserPrincipal currentUser() {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 USER_ID,
                 ORGANIZATION_ID,
                 "admin@test.com",
-                "password-hash",
-                true,
                 0L,
                 List.of(
                         new SimpleGrantedAuthority(
@@ -288,4 +286,3 @@ class ChatControllerSecurityTest {
         );
     }
 }
-

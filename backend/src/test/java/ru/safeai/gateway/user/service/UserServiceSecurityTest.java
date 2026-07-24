@@ -6,10 +6,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 import ru.safeai.gateway.auth.service.UserSessionRevocationService;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
@@ -23,6 +25,7 @@ import ru.safeai.gateway.user.dto.PermanentDeleteUserRequest;
 import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
 import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
 import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
+import ru.safeai.gateway.user.dto.UserResponse;
 import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.event.UserSecurityStateChangedEvent;
@@ -31,7 +34,6 @@ import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Instant;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -41,29 +43,66 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceSecurityTest {
 
     private static final UUID PLATFORM_ORGANIZATION_ID =
-            UUID.fromString("00000000-0000-0000-0000-000000000001");
-    private static final UUID ORGANIZATION_ID =
-            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private static final UUID ADMIN_ID =
-            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-    private static final UUID USER_ID =
-            UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
-    private static final UUID SUPER_ADMIN_ID =
-            UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
+            UUID.fromString(
+                    "00000000-0000-0000-0000-000000000001"
+            );
 
-    @Mock UserRepository userRepository;
-    @Mock RoleRepository roleRepository;
-    @Mock OrganizationRepository organizationRepository;
-    @Mock PasswordEncoder passwordEncoder;
-    @Mock AuditEventService auditEventService;
-    @Mock ApplicationEventPublisher eventPublisher;
-    @Mock UserSessionRevocationService userSessionRevocationService;
+    private static final UUID ORGANIZATION_ID =
+            UUID.fromString(
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            );
+
+    private static final UUID ADMIN_ID =
+            UUID.fromString(
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            );
+
+    private static final UUID USER_ID =
+            UUID.fromString(
+                    "cccccccc-cccc-cccc-cccc-cccccccccccc"
+            );
+
+    private static final UUID SUPER_ADMIN_ID =
+            UUID.fromString(
+                    "dddddddd-dddd-dddd-dddd-dddddddddddd"
+            );
+
+    private static final Instant CREATED_AT =
+            Instant.parse("2026-06-12T12:00:00Z");
+
+    private static final Instant UPDATED_AT =
+            Instant.parse("2026-06-13T12:00:00Z");
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private RoleRepository roleRepository;
+
+    @Mock
+    private OrganizationRepository organizationRepository;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private AuditEventService auditEventService;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private UserSessionRevocationService
+            userSessionRevocationService;
 
     private UserService userService;
 
@@ -77,20 +116,37 @@ class UserServiceSecurityTest {
                 auditEventService,
                 eventPublisher,
                 userSessionRevocationService,
-                new PlatformProperties(PLATFORM_ORGANIZATION_ID)
+                new PlatformProperties(
+                        PLATFORM_ORGANIZATION_ID
+                )
         );
     }
 
     @Test
     void adminCannotSeeUserFromAnotherOrganization() {
-        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.empty());
+        when(userRepository.findByIdAndOrganizationId(
+                USER_ID,
+                ORGANIZATION_ID
+        )).thenReturn(Optional.empty());
 
         assertThatThrownBy(() ->
-                userService.findDetailsById(USER_ID, adminPrincipal())
+                userService.findDetailsById(
+                        USER_ID,
+                        adminPrincipal()
+                )
         )
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Пользователь не найден");
+                .isInstanceOf(
+                        ResourceNotFoundException.class
+                )
+                .hasMessageContaining(
+                        "Пользователь не найден"
+                );
+
+        verify(userRepository)
+                .findByIdAndOrganizationId(
+                        USER_ID,
+                        ORGANIZATION_ID
+                );
     }
 
     @Test
@@ -99,34 +155,74 @@ class UserServiceSecurityTest {
                 userService.findAll(
                         adminPrincipal(),
                         "SUPER_ADMIN",
-                        org.springframework.data.domain.PageRequest.of(0, 20)
+                        PageRequest.of(0, 20)
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Недопустимый фильтр роли");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "Недопустимый фильтр роли"
+                );
+
+        verifyNoInteractions(
+                userRepository,
+                roleRepository,
+                organizationRepository,
+                passwordEncoder,
+                auditEventService,
+                eventPublisher,
+                userSessionRevocationService
+        );
     }
 
     @Test
     void passwordResetIncrementsTokenVersionRevokesSessionsAndAudits() {
-        UserEntity user = userEntity(Set.of(role("USER")), true);
+        UserEntity user = userEntity(
+                Set.of(role("USER")),
+                true
+        );
 
-        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(user));
-        when(passwordEncoder.encode("Strong_New_123!"))
-                .thenReturn("new-hash");
-        when(userRepository.save(user)).thenReturn(user);
+        when(userRepository.findByIdAndOrganizationId(
+                USER_ID,
+                ORGANIZATION_ID
+        )).thenReturn(Optional.of(user));
+
+        when(passwordEncoder.encode(
+                "Strong_New_123!"
+        )).thenReturn("new-hash");
+
+        when(userRepository.save(user))
+                .thenReturn(user);
 
         userService.resetPassword(
                 USER_ID,
-                new ResetUserPasswordRequest("Strong_New_123!"),
+                new ResetUserPasswordRequest(
+                        "Strong_New_123!"
+                ),
                 adminPrincipal()
         );
 
-        assertThat(user.getPasswordHash()).isEqualTo("new-hash");
-        assertThat(user.getTokenVersion()).isEqualTo(1L);
+        assertThat(user.getPasswordHash())
+                .isEqualTo("new-hash");
 
-        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
-        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
+        assertThat(user.getTokenVersion())
+                .isEqualTo(1L);
+
+        verify(userSessionRevocationService)
+                .revokeAllForUser(
+                        USER_ID,
+                        RefreshTokenRevocationReason
+                                .PASSWORD_RESET
+                );
+
+        verify(eventPublisher)
+                .publishEvent(
+                        any(
+                                UserSecurityStateChangedEvent.class
+                        )
+                );
+
         verify(auditEventService).record(
                 eq(ADMIN_ID),
                 eq(ORGANIZATION_ID),
@@ -137,164 +233,289 @@ class UserServiceSecurityTest {
 
     @Test
     void disablingUserRevokesSessionsAndIncrementsTokenVersion() {
-        UserEntity user = userEntity(Set.of(role("USER")), true);
-
-        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(user));
-        when(userRepository.save(user)).thenReturn(user);
-
-        var response = userService.updateEnabled(
-                USER_ID,
-                new UpdateUserEnabledRequest(false),
-                adminPrincipal()
+        UserEntity user = userEntity(
+                Set.of(role("USER")),
+                true
         );
 
-        assertThat(response.enabled()).isFalse();
-        assertThat(user.getTokenVersion()).isEqualTo(1L);
+        when(userRepository.findByIdAndOrganizationId(
+                USER_ID,
+                ORGANIZATION_ID
+        )).thenReturn(Optional.of(user));
 
-        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
-        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
+        when(userRepository.save(user))
+                .thenReturn(user);
+
+        UserResponse response =
+                userService.updateEnabled(
+                        USER_ID,
+                        new UpdateUserEnabledRequest(false),
+                        adminPrincipal()
+                );
+
+        assertThat(response.enabled())
+                .isFalse();
+
+        assertThat(user.isEnabled())
+                .isFalse();
+
+        assertThat(user.getTokenVersion())
+                .isEqualTo(1L);
+
+        verify(userSessionRevocationService)
+                .revokeAllForUser(
+                        USER_ID,
+                        RefreshTokenRevocationReason
+                                .USER_DISABLED
+                );
+
+        verify(eventPublisher)
+                .publishEvent(
+                        any(
+                                UserSecurityStateChangedEvent.class
+                        )
+                );
     }
 
     @Test
     void adminCannotManageAnotherAdmin() {
-        UserEntity targetAdmin = userEntity(Set.of(role("ADMIN")), true);
+        UserEntity targetAdmin = userEntity(
+                Set.of(role("ADMIN")),
+                true
+        );
 
-        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(targetAdmin));
+        when(userRepository.findByIdAndOrganizationId(
+                USER_ID,
+                ORGANIZATION_ID
+        )).thenReturn(Optional.of(targetAdmin));
 
         assertThatThrownBy(() ->
                 userService.updateRoles(
                         USER_ID,
-                        new UpdateUserRolesRequest(Set.of("USER")),
+                        new UpdateUserRolesRequest(
+                                Set.of("USER")
+                        ),
                         adminPrincipal()
                 )
         )
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("ADMIN не может управлять другим ADMIN");
+                .isInstanceOf(
+                        ForbiddenOperationException.class
+                )
+                .hasMessageContaining(
+                        "ADMIN не может управлять другим ADMIN"
+                );
 
-        verify(userRepository, never()).save(any());
+        verify(
+                userRepository,
+                never()
+        ).save(any());
+
+        verifyNoInteractions(
+                userSessionRevocationService,
+                eventPublisher
+        );
     }
 
     @Test
     void permanentDeletionRejectsWrongConfirmationEmail() {
-        UserEntity user = userEntity(Set.of(role("USER")), false);
+        UserEntity user = userEntity(
+                Set.of(role("USER")),
+                false
+        );
 
-        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
-                .thenReturn(Optional.of(user));
+        when(userRepository.findByIdWithRolesAndOrganization(
+                USER_ID
+        )).thenReturn(Optional.of(user));
 
         assertThatThrownBy(() ->
                 userService.permanentlyDelete(
                         USER_ID,
-                        new PermanentDeleteUserRequest("wrong@test.com"),
+                        new PermanentDeleteUserRequest(
+                                "wrong@test.com"
+                        ),
                         superAdminPrincipal()
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Email подтверждения");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "Email подтверждения"
+                );
 
-        verify(userRepository, never()).delete(any());
+        verify(
+                userRepository,
+                never()
+        ).delete(any());
+
+        verifyNoInteractions(
+                userSessionRevocationService,
+                eventPublisher
+        );
     }
 
     @Test
     void permanentDeletionRejectsDependencies() {
-        UserEntity user = userEntity(Set.of(role("USER")), false);
+        UserEntity user = userEntity(
+                Set.of(role("USER")),
+                false
+        );
 
-        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
-                .thenReturn(Optional.of(user));
-        when(userRepository.hasPermanentDeletionDependencies(USER_ID))
-                .thenReturn(true);
+        when(userRepository.findByIdWithRolesAndOrganization(
+                USER_ID
+        )).thenReturn(Optional.of(user));
+
+        when(userRepository.hasPermanentDeletionDependencies(
+                USER_ID
+        )).thenReturn(true);
 
         assertThatThrownBy(() ->
                 userService.permanentlyDelete(
                         USER_ID,
-                        new PermanentDeleteUserRequest(user.getEmail()),
+                        new PermanentDeleteUserRequest(
+                                user.getEmail()
+                        ),
                         superAdminPrincipal()
                 )
         )
-                .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Отключите пользователя");
+                .isInstanceOf(
+                        ConflictException.class
+                )
+                .hasMessageContaining(
+                        "Отключите пользователя"
+                );
 
-        verify(userRepository, never()).delete(any());
-        verifyNoInteractions(userSessionRevocationService);
+        verify(
+                userRepository,
+                never()
+        ).delete(any());
+
+        verifyNoInteractions(
+                userSessionRevocationService,
+                eventPublisher
+        );
     }
 
     @Test
-    void permanentDeletionDeletesEmptyUserAndWritesAudit() {
-        UserEntity user = userEntity(Set.of(role("USER")), false);
+    void permanentDeletionDeletesEmptyUserRevokesSessionsAndWritesAudit() {
+        UserEntity user = userEntity(
+                Set.of(role("USER")),
+                false
+        );
 
-        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
-                .thenReturn(Optional.of(user));
-        when(userRepository.hasPermanentDeletionDependencies(USER_ID))
-                .thenReturn(false);
+        when(userRepository.findByIdWithRolesAndOrganization(
+                USER_ID
+        )).thenReturn(Optional.of(user));
+
+        when(userRepository.hasPermanentDeletionDependencies(
+                USER_ID
+        )).thenReturn(false);
 
         userService.permanentlyDelete(
                 USER_ID,
-                new PermanentDeleteUserRequest(user.getEmail()),
+                new PermanentDeleteUserRequest(
+                        user.getEmail()
+                ),
                 superAdminPrincipal()
         );
 
-        verify(userSessionRevocationService).revokeAllForUser(USER_ID);
-        verify(userRepository).delete(user);
-        verify(userRepository).flush();
-        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
+        verify(userSessionRevocationService)
+                .revokeAllForUser(
+                        USER_ID,
+                        RefreshTokenRevocationReason
+                                .ADMIN_REVOKED
+                );
+
+        verify(userRepository)
+                .delete(user);
+
+        verify(userRepository)
+                .flush();
+
+        verify(eventPublisher)
+                .publishEvent(
+                        any(
+                                UserSecurityStateChangedEvent.class
+                        )
+                );
+
         verify(auditEventService).record(
                 eq(SUPER_ADMIN_ID),
                 eq(ORGANIZATION_ID),
-                eq(AuditEventType.USER_PERMANENTLY_DELETED),
+                eq(
+                        AuditEventType
+                                .USER_PERMANENTLY_DELETED
+                ),
                 anyMap()
         );
     }
 
-    private UserEntity userEntity(Set<RoleEntity> roles, boolean enabled) {
-        OrganizationEntity organization = new OrganizationEntity();
+    private UserEntity userEntity(
+            Set<RoleEntity> roles,
+            boolean enabled
+    ) {
+        OrganizationEntity organization =
+                new OrganizationEntity();
+
         organization.setId(ORGANIZATION_ID);
         organization.setName("Organization");
         organization.setEnabled(true);
-        organization.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
+        organization.setCreatedAt(CREATED_AT);
 
         UserEntity user = new UserEntity();
+
         user.setId(USER_ID);
         user.setOrganization(organization);
         user.setEmail("user@test.com");
         user.setPasswordHash("old-hash");
         user.setFullName("Test User");
         user.setEnabled(enabled);
-        user.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-        user.setUpdatedAt(Instant.parse("2026-06-13T12:00:00Z"));
+        user.setCreatedAt(CREATED_AT);
+        user.setUpdatedAt(UPDATED_AT);
         user.setRoles(new HashSet<>(roles));
         user.setTokenVersion(0L);
+
         return user;
     }
 
-    private RoleEntity role(String name) {
+    private RoleEntity role(
+            String name
+    ) {
         RoleEntity role = new RoleEntity();
+
         role.setId(UUID.randomUUID());
         role.setName(name);
+
         return role;
     }
 
     private SafeAiUserPrincipal adminPrincipal() {
-        return new SafeAiUserPrincipal(
-                ADMIN_ID,
-                ORGANIZATION_ID,
-                "admin@test.com",
-                "hash",
-                true,
-                0L,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
-        );
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        ADMIN_ID,
+                        ORGANIZATION_ID,
+                        "admin@test.com",
+                        0L,
+                        Set.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_ADMIN"
+                                )
+                        )
+                );
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
-        return new SafeAiUserPrincipal(
-                SUPER_ADMIN_ID,
-                PLATFORM_ORGANIZATION_ID,
-                "super-admin@test.com",
-                "hash",
-                true,
-                0L,
-                List.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
-        );
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        SUPER_ADMIN_ID,
+                        PLATFORM_ORGANIZATION_ID,
+                        "super-admin@test.com",
+                        0L,
+                        Set.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_SUPER_ADMIN"
+                                )
+                        )
+                );
     }
 }

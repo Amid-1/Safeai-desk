@@ -1,4 +1,9 @@
 # "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local.yml"
+app:
+  security:
+    jwt:
+      issuer: http://localhost:8080
+
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/safeai}
@@ -21,6 +26,13 @@ safeai:
     cookies:
       secure: false
       same-site: Lax
+      access-token-max-age: 15m
+      refresh-token-max-age: 30d
+      refresh-token-absolute-max-age: 90d
+      reuse-detection-retention: 7d
+      domain: ""
+      access-token-name: safeai-access
+      refresh-token-name: safeai-refresh
 
   rate-limit:
     redis:
@@ -36,6 +48,9 @@ safeai:
       enabled: true
       ttl: 60s
       key-prefix: safeai:local:user-status
+
+    hsts:
+      enabled: false
 
   audit:
     retention:

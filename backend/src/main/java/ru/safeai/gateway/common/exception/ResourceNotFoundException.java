@@ -1,8 +1,10 @@
 package ru.safeai.gateway.common.exception;
 
-public class ResourceNotFoundException extends RuntimeException {
+import org.springframework.http.HttpStatus;
 
-    public ResourceNotFoundException(String message) {
-        super(message);
+public class ResourceNotFoundException extends ApiException {
+
+    public ResourceNotFoundException(String publicMessage) {
+        super(HttpStatus.NOT_FOUND, ApiErrorCode.NOT_FOUND, publicMessage);
     }
 }

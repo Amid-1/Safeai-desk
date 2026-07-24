@@ -3,7 +3,7 @@
 ## Files
 
 - `V13__identity_refresh_and_message_integrity.sql` — place in `backend/src/main/resources/db/migration/`.
-- `V1000__seed_local_demo_data.sql` — replace the existing file in `backend/src/main/resources/db/local-migration/`.
+- `R__seed_local_demo_data.sql` — replace the existing file in `backend/src/main/resources/db/local-migration/`.
 
 ## Application changes still required
 

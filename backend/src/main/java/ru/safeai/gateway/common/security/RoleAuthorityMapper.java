@@ -1,85 +1,89 @@
 package ru.safeai.gateway.common.security;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 public final class RoleAuthorityMapper {
-
-    private static final String ROLE_PREFIX = "ROLE_";
-
-    private static final Set<String> ALLOWED_ROLES = Set.of(
-            "SUPER_ADMIN",
-            "ADMIN",
-            "USER"
-    );
 
     private RoleAuthorityMapper() {
     }
 
-    public static Set<SimpleGrantedAuthority> toAuthorities(Collection<String> roles) {
-        if (roles == null || roles.isEmpty()) {
-            return Set.of();
-        }
+    public static List<String> normalizeRoleNames(
+            Collection<@Nullable String> roles
+    ) {
+        Objects.requireNonNull(
+                roles,
+                "roles не должен быть null"
+        );
 
         return roles.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(role -> !role.isBlank())
-                .map(RoleAuthorityMapper::withoutRolePrefix)
-                .map(RoleAuthorityMapper::validateRole)
-                .map(RoleAuthorityMapper::withRolePrefix)
-                .map(SimpleGrantedAuthority::new)
-                .collect(Collectors.toUnmodifiableSet());
-    }
-
-    public static List<String> toRoleNames(Collection<? extends GrantedAuthority> authorities) {
-        if (authorities == null || authorities.isEmpty()) {
-            return List.of();
-        }
-
-        return authorities.stream()
-                .filter(Objects::nonNull)
-                .map(GrantedAuthority::getAuthority)
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(authority -> !authority.isBlank())
-                .map(RoleAuthorityMapper::withoutRolePrefix)
-                .map(RoleAuthorityMapper::validateRole)
+                .map(role -> Objects.requireNonNull(
+                        role,
+                        "role element не должен быть null"
+                ))
+                .map(SystemRole::parse)
                 .distinct()
-                .sorted()
+                .sorted(Comparator.comparing(SystemRole::name))
+                .map(Enum::name)
                 .toList();
     }
 
-    private static String validateRole(String role) {
-        String normalized = role.trim().toUpperCase(Locale.ROOT);
+    public static Set<SimpleGrantedAuthority> toAuthorities(
+            Collection<@Nullable String> roles
+    ) {
+        List<String> normalizedRoles =
+                normalizeRoleNames(roles);
 
-        if (!ALLOWED_ROLES.contains(normalized)) {
-            throw new IllegalArgumentException("Unknown role: " + role);
+        if (normalizedRoles.isEmpty()) {
+            return Set.of();
         }
 
-        return normalized;
+        LinkedHashSet<SimpleGrantedAuthority> result =
+                normalizedRoles.stream()
+                        .map(SystemRole::valueOf)
+                        .map(role -> new SimpleGrantedAuthority(
+                                role.authority()
+                        ))
+                        .collect(
+                                java.util.stream.Collectors.toCollection(
+                                        LinkedHashSet::new
+                                )
+                        );
+
+        return Collections.unmodifiableSet(result);
     }
 
-    private static String withRolePrefix(String role) {
-        String normalized = role.trim().toUpperCase(Locale.ROOT);
+    public static List<String> toRoleNames(
+            Collection<? extends @Nullable GrantedAuthority> authorities
+    ) {
+        Objects.requireNonNull(
+                authorities,
+                "authorities не должен быть null"
+        );
 
-        return normalized.startsWith(ROLE_PREFIX)
-                ? normalized
-                : ROLE_PREFIX + normalized;
-    }
-
-    private static String withoutRolePrefix(String authority) {
-        String normalized = authority.trim().toUpperCase(Locale.ROOT);
-
-        return normalized.startsWith(ROLE_PREFIX)
-                ? normalized.substring(ROLE_PREFIX.length())
-                : normalized;
+        return authorities.stream()
+                .map(authority -> Objects.requireNonNull(
+                        authority,
+                        "authority element не должен быть null"
+                ))
+                .map(GrantedAuthority::getAuthority)
+                .map(authority -> Objects.requireNonNull(
+                        authority,
+                        "authority name не должен быть null"
+                ))
+                .map(SystemRole::parse)
+                .distinct()
+                .sorted(Comparator.comparing(SystemRole::name))
+                .map(Enum::name)
+                .toList();
     }
 }

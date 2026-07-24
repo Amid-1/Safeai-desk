@@ -38,6 +38,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -705,14 +706,12 @@ class AdminUsageControllerSecurityTest {
     }
 
     private SafeAiUserPrincipal adminPrincipal() {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 ADMIN_ID,
                 ORGANIZATION_ID,
                 "admin@test.com",
-                "",
-                true,
                 0L,
-                List.of(
+                Set.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_ADMIN"
                         )
@@ -721,14 +720,12 @@ class AdminUsageControllerSecurityTest {
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
                 "superadmin@test.com",
-                "",
-                true,
                 0L,
-                List.of(
+                Set.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_SUPER_ADMIN"
                         )

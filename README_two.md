@@ -531,7 +531,7 @@ safeai-desk/
 │   │   │           │   └── V11__add_user_updated_audit_event_type.sql
 │   │   │           │
 │   │   │           └── local-migration/
-│   │   │               └── V1000__seed_local_demo_data.sql
+│   │   │               └── R__seed_local_demo_data.sql
 │   │   │
 │   │   └── test/
 │   │       ├── java/
@@ -1520,7 +1520,7 @@ V7  usage quotas and rollups
 V1000 local demo data
 ```
 
-`V1000__seed_local_demo_data.sql` применяется только при local profile.
+`R__seed_local_demo_data.sql` применяется только при local profile.
 
 ---
 
@@ -1591,7 +1591,7 @@ Local seed создает платформенного пользователя:
 email:    superadmin@test.com
 role:     SUPER_ADMIN
 org:      SafeAI Platform
-password: зависит от bcrypt hash в V1000__seed_local_demo_data.sql
+password: зависит от bcrypt hash в R__seed_local_demo_data.sql
 ```
 
 В текущей local-сборке пароль использовался:

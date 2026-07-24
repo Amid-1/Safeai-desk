@@ -1314,7 +1314,7 @@ Safeai-desk/
 │   │   │           │ 
 │   │   │           │    
 │   │   │           └── local-migration/
-│   │   │               └── V1000__seed_local_demo_data.sql
+│   │   │               └── R__seed_local_demo_data.sql
 │   │   │
 │   │   └── test/
 │   │       ├── java/

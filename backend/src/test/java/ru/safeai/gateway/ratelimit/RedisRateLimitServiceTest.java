@@ -383,12 +383,10 @@ class RedisRateLimitServiceTest {
     private SafeAiUserPrincipal principal(
             String role
     ) {
-        return new SafeAiUserPrincipal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 USER_ID,
                 ORGANIZATION_ID,
                 "user@test.com",
-                "",
-                true,
                 0L,
                 List.of(
                         new SimpleGrantedAuthority(role)
@@ -396,4 +394,3 @@ class RedisRateLimitServiceTest {
         );
     }
 }
-

@@ -27,10 +27,26 @@ management:
 safeai:
   auth:
     cookies:
-      secure: true
+      secure: ${SAFEAI_AUTH_COOKIES_SECURE:true}
       same-site: ${SAFEAI_AUTH_COOKIES_SAME_SITE:Lax}
       access-token-max-age: ${SAFEAI_AUTH_ACCESS_TOKEN_MAX_AGE:15m}
       refresh-token-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_MAX_AGE:30d}
+      refresh-token-absolute-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_ABSOLUTE_MAX_AGE:90d}
+      reuse-detection-retention: ${SAFEAI_AUTH_REUSE_DETECTION_RETENTION:7d}
+
+      # Empty value means a host-only cookie.
+      domain: ${SAFEAI_AUTH_COOKIES_DOMAIN:}
+
+      # With Secure=true and an empty Domain, AuthCookieProperties can choose
+      # hardened production names such as __Host-safeai-access and
+      # __Secure-safeai-refresh.
+      access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:}
+      refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:}
+
+    refresh-cleanup:
+      cron: "${SAFEAI_AUTH_REFRESH_CLEANUP_CRON:0 0 3 * * *}"
+      batch-size: ${SAFEAI_AUTH_REFRESH_CLEANUP_BATCH_SIZE:200}
+      max-batches-per-run: ${SAFEAI_AUTH_REFRESH_CLEANUP_MAX_BATCHES_PER_RUN:100}
 
   rate-limit:
     redis:
@@ -52,7 +68,7 @@ safeai:
       key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status}
 
     hsts:
-      enabled: true
+      enabled: ${SAFEAI_HSTS_ENABLED:true}
 
   cors:
     allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS}
@@ -71,3 +87,6 @@ safeai:
       initial-backoff: ${SAFEAI_AI_RETRY_INITIAL_BACKOFF:250ms}
       max-backoff: ${SAFEAI_AI_RETRY_MAX_BACKOFF:2s}
       max-retry-after: ${SAFEAI_AI_RETRY_MAX_RETRY_AFTER:10s}
+
+# Management port, network restrictions and authentication are
+# deployment-specific. Do not expose /actuator/prometheus publicly.

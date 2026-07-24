@@ -1,8 +1,15 @@
 package ru.safeai.gateway.common.exception;
 
-public class ExpiredRefreshTokenException extends InvalidRefreshTokenException {
+import org.springframework.http.HttpStatus;
 
-    public ExpiredRefreshTokenException(String message) {
-        super(message);
+public class ExpiredRefreshTokenException extends ApiException {
+
+    public ExpiredRefreshTokenException(String internalMessage) {
+        super(
+                HttpStatus.UNAUTHORIZED,
+                ApiErrorCode.EXPIRED_REFRESH_TOKEN,
+                "Refresh token истёк",
+                new IllegalStateException(internalMessage)
+        );
     }
 }

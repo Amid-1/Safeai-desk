@@ -1,8 +1,10 @@
 package ru.safeai.gateway.common.exception;
 
-public class ForbiddenOperationException extends RuntimeException {
+import org.springframework.http.HttpStatus;
 
-    public ForbiddenOperationException(String message) {
-        super(message);
+public class ForbiddenOperationException extends ApiException {
+
+    public ForbiddenOperationException(String publicMessage) {
+        super(HttpStatus.FORBIDDEN, ApiErrorCode.FORBIDDEN, publicMessage);
     }
 }
