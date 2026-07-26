@@ -63,19 +63,35 @@ safeai:
       trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:172.28.0.0/24}
 
     user-status-cache:
-      enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:true}
-      ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:15s}
-      key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status}
+      # Security state читается из PostgreSQL на каждом
+      # authenticated request.
+      enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:false}
+      ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
+      key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status:}
 
     hsts:
       enabled: ${SAFEAI_HSTS_ENABLED:true}
+
+  platform:
+    organization-id: 00000000-0000-0000-0000-000000000001
+
+  user-management:
+    permanent-deletion-retention: ${SAFEAI_USER_DELETION_RETENTION:7d}
 
   cors:
     allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS}
 
   audit:
+    outbox:
+      batch-size: ${SAFEAI_AUDIT_OUTBOX_BATCH_SIZE:100}
+      poll-delay-ms: ${SAFEAI_AUDIT_OUTBOX_POLL_DELAY_MS:1000}
+
     retention:
-      cron: ${SAFEAI_AUDIT_RETENTION_CRON:0 30 3 * * *}
+      enabled: ${SAFEAI_AUDIT_RETENTION_ENABLED:true}
+      period: ${SAFEAI_AUDIT_RETENTION_PERIOD:1095d}
+      batch-size: ${SAFEAI_AUDIT_RETENTION_BATCH_SIZE:10000}
+      max-batches-per-run: ${SAFEAI_AUDIT_RETENTION_MAX_BATCHES_PER_RUN:10}
+      cron: "${SAFEAI_AUDIT_RETENTION_CRON:0 30 3 * * *}"
       zone: ${SAFEAI_AUDIT_RETENTION_ZONE:UTC}
 
   ai:

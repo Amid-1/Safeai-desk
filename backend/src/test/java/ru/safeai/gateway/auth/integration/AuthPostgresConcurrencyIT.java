@@ -159,8 +159,6 @@ class AuthPostgresConcurrencyIT {
     @Autowired
     private RoleRepository roleRepository;
 
-
-
     @Autowired
     private EntityManager entityManager;
 
@@ -213,10 +211,12 @@ class AuthPostgresConcurrencyIT {
                     "delete from refresh_tokens where user_id = ?",
                     seed.userId()
             );
-            jdbcTemplate.update(
-                    "delete from user_roles where user_id = ?",
-                    seed.userId()
-            );
+            /*
+             * Таблицу user_roles нельзя очищать отдельно:
+             * constraint trigger запрещает оставлять пользователя
+             * без роли. Удаление пользователя каскадно удалит
+             * связанные строки ролей.
+             */
             jdbcTemplate.update(
                     "delete from users where id = ?",
                     seed.userId()
@@ -319,10 +319,17 @@ class AuthPostgresConcurrencyIT {
                 );
         assertThat(race.second()).isEqualTo(1L);
 
-        assertThat(activeFamilyRows(familyId)).isZero();
-        assertThat(familyReasons(familyId))
-                .isNotEmpty()
-                .containsOnly(mutation.reason().name());
+        /*
+         * При READ COMMITTED replacement может физически успеть
+         * вставиться после начала bulk-revoke. Он всё равно должен
+         * быть непригодным, потому что содержит старый security epoch.
+         */
+        assertThat(usableActiveFamilyRows(familyId))
+                .isZero();
+
+        assertThat(revokedFamilyReasons(familyId))
+                .contains(mutation.reason().name());
+
         assertThat(tokenVersion(seed.userId())).isEqualTo(1L);
 
         if (mutation == SecurityMutation.DISABLE) {
@@ -472,6 +479,7 @@ class AuthPostgresConcurrencyIT {
                 seed.userId(),
                 hash(replacementRaw),
                 0L,
+                0L,
                 NOW.minus(Duration.ofDays(8)),
                 NOW.plus(Duration.ofDays(20)),
                 familyCreatedAt,
@@ -487,6 +495,7 @@ class AuthPostgresConcurrencyIT {
                 oldTokenId,
                 seed.userId(),
                 hash(oldRaw),
+                0L,
                 0L,
                 NOW.minus(Duration.ofDays(9)),
                 NOW.plus(Duration.ofDays(10)),
@@ -666,6 +675,7 @@ class AuthPostgresConcurrencyIT {
                 "encoded-password",
                 true,
                 0L,
+                0L,
                 Set.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_" + ADMIN_ROLE
@@ -749,6 +759,31 @@ class AuthPostgresConcurrencyIT {
         );
     }
 
+    private long usableActiveFamilyRows(
+            UUID familyId
+    ) {
+        return queryLong(
+                """
+                select count(*)
+                from refresh_tokens token
+                join users app_user
+                  on app_user.id = token.user_id
+                join organizations organization
+                  on organization.id =
+                     app_user.organization_id
+                where token.token_family_id = ?
+                  and token.revoked_at is null
+                  and app_user.enabled = true
+                  and organization.enabled = true
+                  and token.issued_token_version =
+                      app_user.token_version
+                  and token.issued_organization_auth_version =
+                      organization.auth_version
+                """,
+                familyId
+        );
+    }
+
     private long activeUserRows(UUID userId) {
         return queryLong(
                 "select count(*) from refresh_tokens "
@@ -795,6 +830,23 @@ class AuthPostgresConcurrencyIT {
                 "select revocation_reason from refresh_tokens "
                         + "where token_family_id = ? "
                         + "order by created_at, id",
+                String.class,
+                familyId
+        );
+    }
+
+    private List<String> revokedFamilyReasons(
+            UUID familyId
+    ) {
+        return jdbcTemplate.queryForList(
+                """
+                select revocation_reason
+                from refresh_tokens
+                where token_family_id = ?
+                  and revoked_at is not null
+                  and revocation_reason is not null
+                order by created_at, id
+                """,
                 String.class,
                 familyId
         );
@@ -857,6 +909,7 @@ class AuthPostgresConcurrencyIT {
                     userId,
                     hash(raw),
                     0L,
+                    0L,
                     createdAt,
                     expiresAt,
                     familyCreatedAt,
@@ -888,6 +941,7 @@ class AuthPostgresConcurrencyIT {
                 id,
                 userId,
                 hash(rawToken("boundary")),
+                0L,
                 0L,
                 createdAt,
                 expiresAt,
@@ -929,41 +983,66 @@ class AuthPostgresConcurrencyIT {
         statement.setObject(2, row.userId());
         statement.setString(3, row.tokenHash());
         statement.setLong(4, row.issuedTokenVersion());
-        statement.setTimestamp(5, Timestamp.from(row.expiresAt()));
-        statement.setTimestamp(6, Timestamp.from(row.familyCreatedAt()));
-        statement.setTimestamp(7, Timestamp.from(row.familyExpiresAt()));
+        statement.setLong(
+                5,
+                row.issuedOrganizationAuthVersion()
+        );
+        statement.setTimestamp(
+                6,
+                Timestamp.from(row.expiresAt())
+        );
+        statement.setTimestamp(
+                7,
+                Timestamp.from(row.familyCreatedAt())
+        );
+        statement.setTimestamp(
+                8,
+                Timestamp.from(row.familyExpiresAt())
+        );
 
         if (row.revokedAt() == null) {
-            statement.setNull(8, Types.TIMESTAMP);
+            statement.setNull(9, Types.TIMESTAMP);
         } else {
             statement.setTimestamp(
-                    8,
+                    9,
                     Timestamp.from(row.revokedAt())
             );
         }
 
         if (row.reason() == null) {
-            statement.setNull(9, Types.VARCHAR);
+            statement.setNull(10, Types.VARCHAR);
         } else {
-            statement.setString(9, row.reason().name());
+            statement.setString(
+                    10,
+                    row.reason().name()
+            );
         }
 
-        statement.setTimestamp(10, Timestamp.from(row.createdAt()));
-        statement.setString(11, "127.0.0.1");
-        statement.setString(12, "AuthPostgresConcurrencyIT");
-        statement.setObject(13, row.familyId());
+        statement.setTimestamp(
+                11,
+                Timestamp.from(row.createdAt())
+        );
+        statement.setString(12, "127.0.0.1");
+        statement.setString(
+                13,
+                "AuthPostgresConcurrencyIT"
+        );
+        statement.setObject(14, row.familyId());
 
         if (row.replacedByTokenId() == null) {
-            statement.setNull(14, Types.OTHER);
+            statement.setNull(15, Types.OTHER);
         } else {
-            statement.setObject(14, row.replacedByTokenId());
+            statement.setObject(
+                    15,
+                    row.replacedByTokenId()
+            );
         }
 
         if (row.lastUsedAt() == null) {
-            statement.setNull(15, Types.TIMESTAMP);
+            statement.setNull(16, Types.TIMESTAMP);
         } else {
             statement.setTimestamp(
-                    15,
+                    16,
                     Timestamp.from(row.lastUsedAt())
             );
         }
@@ -1063,6 +1142,7 @@ class AuthPostgresConcurrencyIT {
                 user_id,
                 token_hash,
                 issued_token_version,
+                issued_organization_auth_version,
                 expires_at,
                 family_created_at,
                 family_expires_at,
@@ -1074,7 +1154,10 @@ class AuthPostgresConcurrencyIT {
                 token_family_id,
                 replaced_by_token_id,
                 last_used_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) values (
+                ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?
+            )
             """;
 
     private enum SecurityMutation {
@@ -1149,6 +1232,7 @@ class AuthPostgresConcurrencyIT {
             UUID userId,
             String tokenHash,
             long issuedTokenVersion,
+            long issuedOrganizationAuthVersion,
             Instant createdAt,
             Instant expiresAt,
             Instant familyCreatedAt,

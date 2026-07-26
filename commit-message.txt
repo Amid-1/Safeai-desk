@@ -1,21 +1,35 @@
-feat(security): усилить аутентификацию и обработку ошибок
+fix(security): synchronize JWT epochs and harden concurrent updates
 
-- разделить обработку JWT из Authorization header и access-token cookie
-- добавить отдельный AccessCookieAuthenticationFilter для cookie-аутентификации
-- сохранить приоритет Bearer-токена из Authorization над access-token cookie
-- выполнять cookie-аутентификацию после CSRF-проверки
-- требовать CSRF для небезопасных запросов с cookie-аутентификацией
-- не требовать CSRF для запросов с Bearer-токеном в Authorization header
-- исключить публичные auth-endpoints из обработки access JWT
-- преобразовывать ошибки JWT и конвертации claims в стандартный JSON-ответ 401
-- унифицировать ответы 401 и 403 через RestAuthenticationEntryPoint,
-  RestAccessDeniedHandler, ApiErrorResponseFactory и ApiErrorResponseWriter
-- сохранить requestId и единый формат ошибок security pipeline
-- актуализировать проверку состояния пользователя и версии токена
-  в UserStatusFilter
-- вынести PasswordEncoder в общую security-конфигурацию
-- использовать DelegatingPasswordEncoder с BCrypt strength 12
-  и поддержкой старых BCrypt-хешей без префикса
-- удалить дублирующую PasswordSecurityConfig
-- обновить интеграционные и модульные тесты для JWT, cookie, CSRF,
-  ролей, user status, principal, password encoding и security-ошибок
+- добавлен claim organizationAuthVersion в access JWT;
+- сохранён стабильный порядок ролей в JWT payload;
+- добавлен JsonSecurityErrorWriter в SecurityConfigIntegrationTest;
+- исправлена обработка конкурентного создания организаций;
+- для проверки дубликатов используется фактический индекс
+  ux_organizations_name_normalized;
+- только нарушение уникальности имени организации преобразуется
+  в ConflictException, остальные ошибки целостности не скрываются;
+- одинаковая обработка конфликта применяется при создании
+  и переименовании организации;
+- исправлена гонка между изменением роли пользователя
+  и отключением организации;
+- перед получением pessimistic lock отсоединяются устаревшие
+  UserEntity и OrganizationEntity из persistence context;
+- lazy-связи organization и roles явно инициализируются через
+  Hibernate.initialize;
+- устранены предупреждения об игнорировании результатов
+  Set.size() и OrganizationEntity.getId();
+- сохранена независимая инкрементация user token_version
+  и organization auth_version;
+- исправлена локальная конфигурация срока действия access cookie
+  относительно срока действия JWT.
+
+Проверено:
+- backend компилируется;
+- Flyway успешно проверяет 26 миграций;
+- локальная схема PostgreSQL находится на версии 25;
+- приложение успешно запускается с профилем local;
+- Tomcat запускается на порту 8080.
+
+Примечание:
+- предупреждение Netty о native DNS resolver для macOS
+  не блокирует запуск приложения.

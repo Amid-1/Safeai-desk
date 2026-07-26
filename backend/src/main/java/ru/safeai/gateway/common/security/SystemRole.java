@@ -1,32 +1,46 @@
 package ru.safeai.gateway.common.security;
 
 import java.util.Locale;
-import java.util.Objects;
 
 public enum SystemRole {
     SUPER_ADMIN,
     ADMIN,
     USER;
 
-    public String authority() {
-        return "ROLE_" + name();
+    private static final String ROLE_PREFIX = "ROLE_";
+
+    public String roleName() {
+        return name();
     }
 
-    public static SystemRole parse(String rawRole) {
-        Objects.requireNonNull(rawRole, "Role must not be null");
-        if (rawRole.isBlank()) {
-            throw new IllegalArgumentException("Role must not be blank");
+    public String authority() {
+        return ROLE_PREFIX + name();
+    }
+
+    public static SystemRole parse(String value) {
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Role must not be blank"
+            );
         }
 
-        String normalized = rawRole.trim().toUpperCase(Locale.ROOT);
-        if (normalized.startsWith("ROLE_")) {
-            normalized = normalized.substring("ROLE_".length());
+        String normalized = value
+                .trim()
+                .toUpperCase(Locale.ROOT);
+
+        if (normalized.startsWith(ROLE_PREFIX)) {
+            normalized = normalized.substring(
+                    ROLE_PREFIX.length()
+            );
         }
 
         try {
             return SystemRole.valueOf(normalized);
         } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException("Unknown role: " + rawRole, exception);
+            throw new IllegalArgumentException(
+                    "Unknown role: " + value,
+                    exception
+            );
         }
     }
 }

@@ -10,14 +10,21 @@ public record UserStatusCacheProperties(
         Duration ttl,
         String keyPrefix
 ) {
+    private static final Duration DEFAULT_TTL = Duration.ofSeconds(60);
     private static final Duration MAX_TTL = Duration.ofMinutes(5);
+    private static final String DEFAULT_KEY_PREFIX =
+            "safeai:user-status:";
 
     public UserStatusCacheProperties {
         if (enabled == null) {
-            enabled = true;
+            enabled = false;
         }
 
-        if (ttl == null || ttl.isZero() || ttl.isNegative()) {
+        if (ttl == null) {
+            ttl = DEFAULT_TTL;
+        }
+
+        if (ttl.isZero() || ttl.isNegative()) {
             throw new IllegalStateException(
                     "safeai.security.user-status-cache.ttl должен быть положительным"
             );
@@ -30,9 +37,7 @@ public record UserStatusCacheProperties(
         }
 
         if (keyPrefix == null || keyPrefix.isBlank()) {
-            throw new IllegalStateException(
-                    "safeai.security.user-status-cache.key-prefix не задан"
-            );
+            keyPrefix = DEFAULT_KEY_PREFIX;
         }
 
         keyPrefix = keyPrefix.trim();

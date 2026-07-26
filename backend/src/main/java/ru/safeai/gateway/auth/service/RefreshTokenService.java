@@ -221,6 +221,17 @@ public class RefreshTokenService {
 
         if (oldToken.getIssuedTokenVersion()
                 != user.getTokenVersion()) {
+
+            terminateForSecurityState(
+                    familyId,
+                    now,
+                    RefreshTokenRevocationReason.SECURITY_STATE_CHANGED
+            );
+        }
+
+        if (oldToken.getIssuedOrganizationAuthVersion()
+                != user.getOrganization().getAuthVersion()) {
+
             terminateForSecurityState(
                     familyId,
                     now,
@@ -392,10 +403,19 @@ public class RefreshTokenService {
         UUID tokenId = UUID.randomUUID();
 
         RefreshTokenEntity entity = new RefreshTokenEntity();
+
         entity.setId(tokenId);
         entity.setUser(user);
         entity.setTokenHash(hash(rawToken));
-        entity.setIssuedTokenVersion(user.getTokenVersion());
+
+        entity.setIssuedTokenVersion(
+                user.getTokenVersion()
+        );
+
+        entity.setIssuedOrganizationAuthVersion(
+                user.getOrganization().getAuthVersion()
+        );
+
         entity.setTokenFamilyId(tokenFamilyId);
         entity.setCreatedAt(now);
         entity.setExpiresAt(expiresAt);
@@ -415,12 +435,15 @@ public class RefreshTokenService {
         );
     }
 
-    private AccessTokenSubject toAccessTokenSubject(UserEntity user) {
+    private AccessTokenSubject toAccessTokenSubject(
+            UserEntity user
+    ) {
         return new AccessTokenSubject(
                 user.getId(),
                 user.getOrganization().getId(),
                 canonicalEmail(user.getEmail()),
                 user.getTokenVersion(),
+                user.getOrganization().getAuthVersion(),
                 UserRoleMapper.toRoleNames(user)
         );
     }

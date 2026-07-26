@@ -13,7 +13,9 @@ public class UserStatusCacheInvalidationListener {
     private final UserStatusCacheService userStatusCacheService;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void onUserSecurityStateChanged(UserSecurityStateChangedEvent event) {
+    public void onUserSecurityStateChanged(
+            UserSecurityStateChangedEvent event
+    ) {
         userStatusCacheService.evict(event.userId());
     }
 }

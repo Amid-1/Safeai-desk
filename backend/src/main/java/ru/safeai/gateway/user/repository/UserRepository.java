@@ -3,6 +3,7 @@ package ru.safeai.gateway.user.repository;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -15,14 +16,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface UserRepository
-        extends JpaRepository<UserEntity, UUID> {
+public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     /**
-     * Загружает пользователя для password authentication.
-
-     * Email предварительно должен быть приведён к каноническому виду:
-     * trim + lowercase.
+     * Параметр email должен быть каноническим: trim + lowercase.
+     * V24 гарантирует такой же invariant и обычный unique(email) в PostgreSQL.
      */
     @EntityGraph(attributePaths = {
             "roles",
@@ -31,29 +29,21 @@ public interface UserRepository
     @Query("""
             select distinct user
             from UserEntity user
-            where lower(user.email) = lower(:email)
+            where user.email = :email
             """)
-    Optional<UserEntity> findByEmailIgnoreCase(
+    Optional<UserEntity> findByEmail(
             @Param("email") String email
     );
 
     @Query("""
             select count(user) > 0
             from UserEntity user
-            where lower(user.email) = lower(:email)
+            where user.email = :email
             """)
-    boolean existsByEmailIgnoreCase(
+    boolean existsByEmail(
             @Param("email") String email
     );
 
-    /**
-     * Загружает полный пользовательский snapshot без блокировки.
-
-     * Используется для обычного чтения:
-     * - GET /users;
-     * - GET /auth/me;
-     * - отображение административных данных.
-     */
     @EntityGraph(attributePaths = {
             "roles",
             "organization"
@@ -67,30 +57,6 @@ public interface UserRepository
             @Param("id") UUID id
     );
 
-    /**
-     * Единая точка pessimistic locking для security state пользователя.
-
-     * Используется при:
-     * - создании login session;
-     * - смене пароля;
-     * - reset password;
-     * - смене email;
-     * - изменении ролей;
-     * - включении и отключении пользователя.
-
-     * Запрос намеренно не содержит fetch join и collection join.
-     * Organization и roles загружаются после получения user lock
-     * внутри той же транзакции.
-
-     * Единый порядок security-операций:
-
-     * lock user
-     * → проверить актуальное состояние
-     * → изменить security state
-     * → увеличить tokenVersion
-     * → отозвать refresh sessions
-     * → commit
-     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select user
@@ -111,9 +77,7 @@ public interface UserRepository
                     from UserEntity user
                     """
     )
-    Page<UUID> findAllIds(
-            Pageable pageable
-    );
+    Page<UUID> findAllIds(Pageable pageable);
 
     @Query(
             value = """
@@ -206,13 +170,6 @@ public interface UserRepository
             @Param("ids") List<UUID> ids
     );
 
-    /**
-     * Блокирует активных администраторов организации
-     * в стабильном порядке UUID.
-
-     * Используется для защиты инварианта:
-     * организация не должна остаться без активного ADMIN.
-     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select user
@@ -258,24 +215,23 @@ public interface UserRepository
     );
 
     @Query("""
-            select user.id
-            from UserEntity user
-            where user.organization.id = :organizationId
+            select appUser.id
+            from UserEntity appUser
+            where appUser.organization.id = :organizationId
+            order by appUser.id
             """)
-    List<UUID> findIdsByOrganizationId(
-            @Param("organizationId") UUID organizationId
+    Slice<UUID> findIdsByOrganizationId(
+            @Param("organizationId") UUID organizationId,
+            Pageable pageable
     );
 
-    /**
-     * Инвалидирует access JWT всех пользователей организации.
-
-     * Метод обычно вызывается после блокировки OrganizationEntity.
-     * После bulk update нельзя считать ранее загруженные UserEntity
-     * актуальными без refresh/clear persistence context.
-     */
-    @Modifying(flushAutomatically = true)
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true
+    )
     @Query("""
-            update UserEntity user
+            
+                update UserEntity user
             set user.tokenVersion = user.tokenVersion + 1
             where user.organization.id = :organizationId
             """)
@@ -283,18 +239,62 @@ public interface UserRepository
             @Param("organizationId") UUID organizationId
     );
 
+    @SuppressWarnings({
+            "SqlResolve",
+            "SqlNoDataSourceInspection"
+    })
     @Query(
             value = """
                     select exists (
                         select 1
-                        from chat_sessions
-                        where user_id = :userId
+                        from public.refresh_tokens as refresh_token
+                        where refresh_token.user_id = :userId
+                          and refresh_token.revoked_at is null
+                          and refresh_token.expires_at > current_timestamp
+                    )
+                    """,
+            nativeQuery = true
+    )
+    boolean hasActiveRefreshTokens(
+            @Param("userId") UUID userId
+    );
 
-                        union all
-
+    @SuppressWarnings({
+            "SqlResolve",
+            "SqlNoDataSourceInspection"
+    })
+    @Query(
+            value = """
+                    select exists (
                         select 1
-                        from usage_daily_user_model_rollups
-                        where user_id = :userId
+                        from public.chat_sessions as chat_session
+                        where chat_session.user_id = :userId
+                    
+                        union all
+                    
+                        select 1
+                        from public.usage_daily_user_model_rollups
+                                as usage_rollup
+                        where usage_rollup.user_id = :userId
+                    
+                        union all
+                    
+                        select 1
+                        from public.user_ai_quotas as user_quota
+                        where user_quota.user_id = :userId
+                    
+                        union all
+                    
+                        select 1
+                        from public.audit_events as audit_event
+                        where audit_event.user_id = :userId
+                           or audit_event.actor_user_id = :userId
+                    
+                        union all
+                    
+                        select 1
+                        from public.audit_outbox as audit_outbox_event
+                        where audit_outbox_event.actor_user_id = :userId
                     )
                     """,
             nativeQuery = true
@@ -303,18 +303,14 @@ public interface UserRepository
             @Param("userId") UUID userId
     );
 
-    long countByOrganization_Id(
-            UUID organizationId
-    );
+    long countByOrganization_Id(UUID organizationId);
 
     long countByOrganization_IdAndEnabled(
             UUID organizationId,
             boolean enabled
     );
 
-    long countByEnabled(
-            boolean enabled
-    );
+    long countByEnabled(boolean enabled);
 
     @Query("""
             select count(distinct user.id)

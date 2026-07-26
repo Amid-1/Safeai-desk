@@ -1,5 +1,7 @@
 package ru.safeai.gateway.user.service;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -9,21 +11,21 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 import ru.safeai.gateway.auth.service.UserSessionRevocationService;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
-import ru.safeai.gateway.organization.repository.OrganizationRepository;
 import ru.safeai.gateway.user.dto.CreateUserRequest;
 import ru.safeai.gateway.user.dto.PermanentDeleteUserRequest;
 import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
 import ru.safeai.gateway.user.dto.UpdateUserEnabledRequest;
+import ru.safeai.gateway.user.dto.UpdateUserRequest;
 import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
 import ru.safeai.gateway.user.dto.UserResponse;
 import ru.safeai.gateway.user.entity.RoleEntity;
@@ -32,7 +34,10 @@ import ru.safeai.gateway.user.event.UserSecurityStateChangedEvent;
 import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -41,47 +46,40 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
 
-    private static final UUID ORGANIZATION_ID =
-            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-
-    private static final UUID ADMIN_ID =
-            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
-
-    private static final UUID USER_ID =
-            UUID.fromString("cccccccc-cccc-cccc-cccc-cccccccccccc");
-
-    private static final UUID TARGET_ADMIN_ID =
-            UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
-
-    private static final UUID SUPER_ADMIN_ID =
-            UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
-
     private static final UUID PLATFORM_ORGANIZATION_ID =
             UUID.fromString("00000000-0000-0000-0000-000000000001");
-
-    private static final String VALID_PASSWORD = "Admin123!456";
-    private static final String NEW_VALID_PASSWORD = "NewPass123!45";
-
-    private static final UUID SAVED_USER_ID =
-            UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
-
-    private static final Instant SAVED_AT =
-            Instant.parse("2026-06-12T12:00:00Z");
+    private static final UUID ORGANIZATION_A_ID =
+            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static final UUID ORGANIZATION_B_ID =
+            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    private static final UUID ADMIN_ID =
+            UUID.fromString("11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static final UUID SUPER_ADMIN_ID =
+            UUID.fromString("22222222-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static final UUID USER_ID =
+            UUID.fromString("33333333-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static final UUID OTHER_USER_ID =
+            UUID.fromString("44444444-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    private static final Instant NOW =
+            Instant.parse("2026-07-25T12:00:00Z");
+    private static final String VALID_PASSWORD = "Strong_User_123!";
 
     @Mock
     private UserRepository userRepository;
 
     @Mock
     private RoleRepository roleRepository;
-
-    @Mock
-    private OrganizationRepository organizationRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -95,6 +93,9 @@ class UserServiceTest {
     @Mock
     private UserSessionRevocationService userSessionRevocationService;
 
+    @Mock
+    private EntityManager entityManager;
+
     private UserService userService;
 
     @BeforeEach
@@ -102,131 +103,401 @@ class UserServiceTest {
         userService = new UserService(
                 userRepository,
                 roleRepository,
-                organizationRepository,
                 passwordEncoder,
                 auditEventService,
                 eventPublisher,
                 userSessionRevocationService,
-                new PlatformProperties(PLATFORM_ORGANIZATION_ID)
+                new PlatformProperties(PLATFORM_ORGANIZATION_ID),
+                new UserManagementProperties(Duration.ZERO),
+                entityManager,
+                Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
 
     @Test
-    void createWhenEmailAlreadyExistsThrowsConflictException() {
-        CreateUserRequest request = createUserRequest(Set.of("USER"));
+    void adminCannotSeeUserFromAnotherOrganization() {
+        when(userRepository.findByIdAndOrganizationId(
+                OTHER_USER_ID,
+                ORGANIZATION_A_ID
+        )).thenReturn(Optional.empty());
 
-        when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(true);
-
-        assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
-                .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Пользователь с таким email уже существует");
-
-        verify(userRepository, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void createWhenOrganizationNotFoundThrowsResourceNotFoundException() {
-        CreateUserRequest request = createUserRequest(Set.of("USER"));
-
-        when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
-        when(organizationRepository.findById(ORGANIZATION_ID)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
+        assertThatThrownBy(() ->
+                userService.findDetailsById(
+                        OTHER_USER_ID,
+                        adminPrincipal()
+                ))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Организация не найдена");
-
-        verify(userRepository, never()).saveAndFlush(any());
+                .hasMessageContaining("Пользователь не найден");
     }
 
     @Test
-    void createWhenRoleNotFoundThrowsResourceNotFoundException() {
-        CreateUserRequest request = createUserRequest(Set.of("USER"));
+    void adminCannotMutateUserFromAnotherOrganization() {
+        when(userRepository.findByIdAndOrganizationId(
+                OTHER_USER_ID,
+                ORGANIZATION_A_ID
+        )).thenReturn(Optional.empty());
 
-        when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organizationEntity()));
-        when(roleRepository.findByName("USER")).thenReturn(Optional.empty());
+        assertThatThrownBy(() ->
+                userService.updateUser(
+                        OTHER_USER_ID,
+                        new UpdateUserRequest(
+                                "other@test.com",
+                                "Other User"
+                        ),
+                        adminPrincipal()
+                ))
+                .isInstanceOf(ResourceNotFoundException.class);
 
-        assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Роль не найдена");
-
-        verify(userRepository, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void createWhenAdminAssignsAdminRoleThrowsForbiddenOperationException() {
-        CreateUserRequest request = createUserRequest(Set.of("ADMIN"));
-
-        when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organizationEntity()));
-
-        assertThatThrownBy(() -> userService.create(request, adminPrincipal()))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("ADMIN может назначать только роль USER");
-
-        verify(roleRepository, never()).findByName(anyString());
-        verify(userRepository, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void createWhenSuperAdminCreatesAdminSavesUserWithEncodedPasswordAndRoles() {
-        RoleEntity adminRole = roleEntity("ADMIN");
-
-        CreateUserRequest request = createUserRequest(Set.of("ADMIN"));
-
-        when(userRepository.existsByEmailIgnoreCase("admin@test.com")).thenReturn(false);
-        when(organizationRepository.findById(ORGANIZATION_ID))
-                .thenReturn(Optional.of(organizationEntity()));
-        when(roleRepository.findByName("ADMIN")).thenReturn(Optional.of(adminRole));
-        when(passwordEncoder.encode(VALID_PASSWORD)).thenReturn("encoded-password");
-        stubUserSaveAndFlush();
-
-        UserResponse response = userService.create(request, superAdminPrincipal());
-
-        ArgumentCaptor<UserEntity> captor = ArgumentCaptor.forClass(UserEntity.class);
-        verify(userRepository).saveAndFlush(captor.capture());
-
-        UserEntity savedEntity = captor.getValue();
-
-        assertThat(savedEntity.getId()).isNotNull();
-        assertThat(savedEntity.getOrganization().getId()).isEqualTo(ORGANIZATION_ID);
-        assertThat(savedEntity.getEmail()).isEqualTo("admin@test.com");
-        assertThat(savedEntity.getPasswordHash()).isEqualTo("encoded-password");
-        assertThat(savedEntity.getFullName()).isEqualTo("Demo Admin");
-        assertThat(savedEntity.isEnabled()).isTrue();
-        assertThat(savedEntity.getRoles())
-                .extracting(RoleEntity::getName)
-                .containsExactly("ADMIN");
-
-        assertThat(response.email()).isEqualTo("admin@test.com");
-        assertThat(response.organizationId()).isEqualTo(ORGANIZATION_ID);
-        assertThat(response.roles()).containsExactly("ADMIN");
-
-        verify(auditEventService).record(
-                eq(SUPER_ADMIN_ID),
-                eq(ORGANIZATION_ID),
-                eq(AuditEventType.USER_CREATED),
-                anyMap()
-        );
-
+        verify(userRepository, never())
+                .findByIdForSecurityUpdate(any());
         verifyNoInteractions(userSessionRevocationService);
     }
 
     @Test
-    void updateEnabledShouldDisableUserAndRevokeRefreshSessions() {
-        UserEntity user = userEntity(
-                USER_ID,
-                "user@test.com",
-                true,
-                Set.of(roleEntity("USER"))
+    void adminCannotPermanentlyDeleteUserFromAnotherOrganization() {
+        assertThatThrownBy(() -> userService.permanentlyDelete(
+                OTHER_USER_ID,
+                new PermanentDeleteUserRequest("other@test.com"),
+                adminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("Только SUPER_ADMIN");
+
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void adminCannotCreateUserInAnotherOrganization() {
+        CreateUserRequest request = new CreateUserRequest(
+                ORGANIZATION_B_ID,
+                "user-b@test.com",
+                VALID_PASSWORD,
+                "User B",
+                Set.of("USER")
         );
 
-        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(user));
+        assertThatThrownBy(() ->
+                userService.create(request, adminPrincipal()))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("другой организации");
 
-        stubUserSave();
+        verifyNoInteractions(
+                roleRepository,
+                passwordEncoder,
+                auditEventService
+        );
+    }
+
+    @Test
+    void adminCreatesUserWithOnlyUserRole() {
+        OrganizationEntity organization = organization(
+                ORGANIZATION_A_ID,
+                true
+        );
+        RoleEntity userRole = role("USER");
+
+        stubOrganizationLock(organization);
+        when(userRepository.existsByEmail("new-user@test.com"))
+                .thenReturn(false);
+        when(roleRepository.findByName("USER"))
+                .thenReturn(Optional.of(userRole));
+        when(passwordEncoder.encode(VALID_PASSWORD))
+                .thenReturn("encoded-password");
+        stubSaveAndRefresh();
+
+        UserResponse response = userService.create(
+                new CreateUserRequest(
+                        ORGANIZATION_A_ID,
+                        " New-User@Test.com ",
+                        VALID_PASSWORD,
+                        " New   User ",
+                        Set.of("USER")
+                ),
+                adminPrincipal()
+        );
+
+        assertThat(response.email()).isEqualTo("new-user@test.com");
+        assertThat(response.fullName()).isEqualTo("New User");
+        assertThat(response.roles()).containsExactly("USER");
+
+        ArgumentCaptor<UserEntity> captor =
+                ArgumentCaptor.forClass(UserEntity.class);
+        verify(userRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getRoles())
+                .extracting(RoleEntity::getName)
+                .containsExactly("USER");
+    }
+
+    @Test
+    void adminCannotCreateAdmin() {
+        OrganizationEntity organization = organization(
+                ORGANIZATION_A_ID,
+                true
+        );
+        stubOrganizationLock(organization);
+        when(userRepository.existsByEmail("new-admin@test.com"))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> userService.create(
+                new CreateUserRequest(
+                        ORGANIZATION_A_ID,
+                        "new-admin@test.com",
+                        VALID_PASSWORD,
+                        "New Admin",
+                        Set.of("ADMIN")
+                ),
+                adminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("только роль USER");
+
+        verify(roleRepository, never()).findByName(any());
+    }
+
+    @Test
+    void superAdminCannotCreateSuperAdminThroughEndpoint() {
+        OrganizationEntity organization = organization(
+                ORGANIZATION_A_ID,
+                true
+        );
+        stubOrganizationLock(organization);
+        when(userRepository.existsByEmail("new-super@test.com"))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> userService.create(
+                new CreateUserRequest(
+                        ORGANIZATION_A_ID,
+                        "new-super@test.com",
+                        VALID_PASSWORD,
+                        "New Super Admin",
+                        Set.of("SUPER_ADMIN")
+                ),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("SUPER_ADMIN нельзя назначать");
+    }
+
+    @Test
+    void existingSuperAdminCannotBeModifiedThroughEndpoint() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "SUPER_ADMIN"
+        );
+        stubMutationAsSuperAdmin(target);
+
+        assertThatThrownBy(() -> userService.updateEnabled(
+                USER_ID,
+                new UpdateUserEnabledRequest(false),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("SUPER_ADMIN нельзя изменять");
+
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void adminCannotManageAnotherAdmin() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "ADMIN"
+        );
+        stubMutationAsAdmin(target);
+
+        assertThatThrownBy(() -> userService.updateRoles(
+                USER_ID,
+                new UpdateUserRolesRequest(Set.of("USER")),
+                adminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("ADMIN не может управлять");
+    }
+
+    @Test
+    void selfRoleMutationIsBlocked() {
+        UserEntity currentAdmin = user(
+                ADMIN_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "ADMIN"
+        );
+        stubMutationAsAdmin(currentAdmin);
+
+        assertThatThrownBy(() -> userService.updateRoles(
+                ADMIN_ID,
+                new UpdateUserRolesRequest(Set.of("USER")),
+                adminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("собственные роли");
+    }
+
+    @Test
+    void lastActiveAdminCannotBeDisabled() {
+        UserEntity targetAdmin = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "ADMIN"
+        );
+        stubMutationAsSuperAdmin(targetAdmin);
+        when(userRepository.findEnabledAdminsForUpdate(
+                ORGANIZATION_A_ID
+        )).thenReturn(List.of(targetAdmin));
+
+        assertThatThrownBy(() -> userService.updateEnabled(
+                USER_ID,
+                new UpdateUserEnabledRequest(false),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("последнего активного администратора");
+    }
+
+    @Test
+    void adminRoleCannotBeRemovedFromLastActiveAdmin() {
+        UserEntity targetAdmin = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "ADMIN"
+        );
+        stubMutationAsSuperAdmin(targetAdmin);
+        when(userRepository.findEnabledAdminsForUpdate(
+                ORGANIZATION_A_ID
+        )).thenReturn(List.of(targetAdmin));
+
+        assertThatThrownBy(() -> userService.updateRoles(
+                USER_ID,
+                new UpdateUserRolesRequest(Set.of("USER")),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("последнего активного администратора");
+    }
+
+    @Test
+    void lastActiveAdminCannotBePermanentlyDeleted() {
+        UserEntity targetAdmin = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "ADMIN"
+        );
+        stubMutationAsSuperAdmin(targetAdmin);
+        when(userRepository.findEnabledAdminsForUpdate(
+                ORGANIZATION_A_ID
+        )).thenReturn(List.of(targetAdmin));
+
+        assertThatThrownBy(() -> userService.permanentlyDelete(
+                USER_ID,
+                new PermanentDeleteUserRequest(targetAdmin.getEmail()),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("последнего активного администратора");
+    }
+
+    @Test
+    void emailChangeIncrementsTokenVersionAndRevokesSessions() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "USER"
+        );
+        stubMutationAsAdmin(target);
+        when(userRepository.existsByEmail("new-email@test.com"))
+                .thenReturn(false);
+        stubSaveAndRefresh();
+
+        userService.updateUser(
+                USER_ID,
+                new UpdateUserRequest(
+                        "new-email@test.com",
+                        target.getFullName()
+                ),
+                adminPrincipal()
+        );
+
+        assertThat(target.getTokenVersion()).isEqualTo(1L);
+        verify(userSessionRevocationService).revokeAllForUser(
+                USER_ID,
+                RefreshTokenRevocationReason.EMAIL_CHANGED
+        );
+        verify(eventPublisher).publishEvent(
+                any(UserSecurityStateChangedEvent.class)
+        );
+    }
+
+    @Test
+    void roleChangeIncrementsTokenVersionAndRevokesSessions() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "USER"
+        );
+        stubMutationAsSuperAdmin(target);
+        when(roleRepository.findByName("ADMIN"))
+                .thenReturn(Optional.of(role("ADMIN")));
+        stubSaveAndRefresh();
+
+        userService.updateRoles(
+                USER_ID,
+                new UpdateUserRolesRequest(Set.of("ADMIN")),
+                superAdminPrincipal()
+        );
+
+        assertThat(target.getTokenVersion()).isEqualTo(1L);
+        verify(userSessionRevocationService).revokeAllForUser(
+                USER_ID,
+                RefreshTokenRevocationReason.ROLE_CHANGED
+        );
+    }
+
+    @Test
+    void passwordResetIncrementsTokenVersionAndRevokesSessions() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "USER"
+        );
+        stubMutationAsAdmin(target);
+        when(passwordEncoder.encode(VALID_PASSWORD))
+                .thenReturn("new-hash");
+        stubSaveAndRefresh();
+
+        userService.resetPassword(
+                USER_ID,
+                new ResetUserPasswordRequest(VALID_PASSWORD),
+                adminPrincipal()
+        );
+
+        assertThat(target.getPasswordHash()).isEqualTo("new-hash");
+        assertThat(target.getTokenVersion()).isEqualTo(1L);
+        verify(userSessionRevocationService).revokeAllForUser(
+                USER_ID,
+                RefreshTokenRevocationReason.PASSWORD_RESET
+        );
+    }
+
+    @Test
+    void disablingUserIncrementsTokenVersionAndRevokesSessions() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "USER"
+        );
+        stubMutationAsAdmin(target);
+        stubSaveAndRefresh();
 
         UserResponse response = userService.updateEnabled(
                 USER_ID,
@@ -235,36 +506,24 @@ class UserServiceTest {
         );
 
         assertThat(response.enabled()).isFalse();
-        assertThat(user.getTokenVersion()).isEqualTo(1L);
-
-        verify(userRepository).save(user);
+        assertThat(target.getDisabledAt()).isEqualTo(NOW);
+        assertThat(target.getTokenVersion()).isEqualTo(1L);
         verify(userSessionRevocationService).revokeAllForUser(
                 USER_ID,
                 RefreshTokenRevocationReason.USER_DISABLED
         );
-        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
-
-        verify(auditEventService).record(
-                eq(ADMIN_ID),
-                eq(ORGANIZATION_ID),
-                eq(AuditEventType.USER_ENABLED_CHANGED),
-                anyMap()
-        );
     }
 
     @Test
-    void updateEnabledShouldEnableUserWithoutRevokingRefreshSessions() {
-        UserEntity user = userEntity(
+    void enablingUserIncrementsTokenVersionWithoutRestoringSessions() {
+        UserEntity target = user(
                 USER_ID,
-                "user@test.com",
+                organization(ORGANIZATION_A_ID, true),
                 false,
-                Set.of(roleEntity("USER"))
+                "USER"
         );
-
-        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(user));
-
-        stubUserSave();
+        stubMutationAsAdmin(target);
+        stubSaveAndRefresh();
 
         UserResponse response = userService.updateEnabled(
                 USER_ID,
@@ -273,346 +532,201 @@ class UserServiceTest {
         );
 
         assertThat(response.enabled()).isTrue();
-        assertThat(user.getTokenVersion()).isEqualTo(1L);
-
-        verify(userSessionRevocationService, never()).revokeAllForUser(
-                any(UUID.class),
-                any(RefreshTokenRevocationReason.class)
-        );
-        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
-
-        verify(auditEventService).record(
-                eq(ADMIN_ID),
-                eq(ORGANIZATION_ID),
-                eq(AuditEventType.USER_ENABLED_CHANGED),
-                anyMap()
-        );
+        assertThat(target.getDisabledAt()).isNull();
+        assertThat(target.getTokenVersion()).isEqualTo(1L);
+        verify(userSessionRevocationService, never())
+                .revokeAllForUser(any(), any());
     }
 
     @Test
-    void updateEnabledShouldThrowForbiddenOperationExceptionWhenAdminDisablesSelf() {
-        UserEntity admin = userEntity(
-                ADMIN_ID,
-                "admin@test.com",
-                true,
-                Set.of(roleEntity("ADMIN"))
-        );
-
-        when(userRepository.findByIdAndOrganizationId(ADMIN_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(admin));
-
-        assertThatThrownBy(() -> userService.updateEnabled(
-                ADMIN_ID,
-                new UpdateUserEnabledRequest(false),
-                adminPrincipal()
-        ))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Нельзя отключить самого себя");
-
-        verify(userRepository, never()).save(any());
-        verifyNoInteractions(auditEventService);
-        verifyNoInteractions(userSessionRevocationService);
-    }
-
-    @Test
-    void updateEnabledShouldThrowForbiddenOperationExceptionWhenAdminManagesAnotherAdmin() {
-        UserEntity targetAdmin = userEntity(
-                TARGET_ADMIN_ID,
-                "second-admin@test.com",
-                true,
-                Set.of(roleEntity("ADMIN"))
-        );
-
-        when(userRepository.findByIdAndOrganizationId(TARGET_ADMIN_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(targetAdmin));
-
-        assertThatThrownBy(() -> userService.updateEnabled(
-                TARGET_ADMIN_ID,
-                new UpdateUserEnabledRequest(false),
-                adminPrincipal()
-        ))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("ADMIN не может управлять другим ADMIN");
-
-        verify(userRepository, never()).save(any());
-        verifyNoInteractions(auditEventService);
-        verifyNoInteractions(userSessionRevocationService);
-    }
-
-    @Test
-    void updateEnabledShouldThrowForbiddenOperationExceptionWhenSuperAdminDisablesLastActiveAdmin() {
-        UserEntity targetAdmin = userEntity(
-                TARGET_ADMIN_ID,
-                "second-admin@test.com",
-                true,
-                Set.of(roleEntity("ADMIN"))
-        );
-
-        when(userRepository.findByIdWithRolesAndOrganization(TARGET_ADMIN_ID))
-                .thenReturn(Optional.of(targetAdmin));
-
-        when(userRepository.findEnabledAdminsForUpdate(ORGANIZATION_ID))
-                .thenReturn(List.of(targetAdmin));
-
-        assertThatThrownBy(() -> userService.updateEnabled(
-                TARGET_ADMIN_ID,
-                new UpdateUserEnabledRequest(false),
-                superAdminPrincipal()
-        ))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("последнего активного администратора");
-
-        verify(userRepository, never()).save(any());
-        verifyNoInteractions(auditEventService);
-        verifyNoInteractions(userSessionRevocationService);
-    }
-
-    @Test
-    void updateRolesShouldChangeUserRoleToAdminAndRevokeRefreshSessionsWhenCurrentUserIsSuperAdmin() {
-        UserEntity user = userEntity(
-                USER_ID,
-                "user@test.com",
-                true,
-                Set.of(roleEntity("USER"))
-        );
-
-        RoleEntity adminRole = roleEntity("ADMIN");
-
-        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
-                .thenReturn(Optional.of(user));
-
-        when(roleRepository.findByName("ADMIN"))
-                .thenReturn(Optional.of(adminRole));
-
-        stubUserSave();
-
-        UserResponse response = userService.updateRoles(
-                USER_ID,
-                new UpdateUserRolesRequest(Set.of("ADMIN")),
-                superAdminPrincipal()
-        );
-
-        assertThat(response.roles()).containsExactly("ADMIN");
-        assertThat(user.getTokenVersion()).isEqualTo(1L);
-
-        verify(userSessionRevocationService).revokeAllForUser(
-                USER_ID,
-                RefreshTokenRevocationReason.ROLE_CHANGED
-        );
-        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
-
-        verify(auditEventService).record(
-                eq(SUPER_ADMIN_ID),
-                eq(ORGANIZATION_ID),
-                eq(AuditEventType.USER_ROLES_CHANGED),
-                anyMap()
-        );
-    }
-
-    @Test
-    void updateRolesShouldThrowForbiddenOperationExceptionWhenAdminAssignsAdminRole() {
-        UserEntity user = userEntity(
-                USER_ID,
-                "user@test.com",
-                true,
-                Set.of(roleEntity("USER"))
-        );
-
-        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(user));
-
-        assertThatThrownBy(() -> userService.updateRoles(
-                USER_ID,
-                new UpdateUserRolesRequest(Set.of("ADMIN")),
-                adminPrincipal()
-        ))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("ADMIN может назначать только роль USER");
-
-        verify(userRepository, never()).save(any());
-        verifyNoInteractions(auditEventService);
-        verifyNoInteractions(userSessionRevocationService);
-    }
-
-    @Test
-    void updateRolesShouldNotChangeTokenVersionWhenRolesAreSame() {
-        UserEntity user = userEntity(
-                USER_ID,
-                "user@test.com",
-                true,
-                Set.of(roleEntity("USER"))
-        );
-
-        RoleEntity userRole = roleEntity("USER");
-
-        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(user));
-
-        when(roleRepository.findByName("USER"))
-                .thenReturn(Optional.of(userRole));
-
-        stubUserSave();
-
-        UserResponse response = userService.updateRoles(
-                USER_ID,
-                new UpdateUserRolesRequest(Set.of("USER")),
-                adminPrincipal()
-        );
-
-        assertThat(response.roles()).containsExactly("USER");
-        assertThat(user.getTokenVersion()).isZero();
-
-        verify(userSessionRevocationService, never()).revokeAllForUser(
-                any(UUID.class),
-                any(RefreshTokenRevocationReason.class)
-        );
-        verify(eventPublisher, never()).publishEvent(any(UserSecurityStateChangedEvent.class));
-
-        verify(auditEventService).record(
-                eq(ADMIN_ID),
-                eq(ORGANIZATION_ID),
-                eq(AuditEventType.USER_ROLES_CHANGED),
-                anyMap()
-        );
-    }
-
-    @Test
-    void updateRolesShouldThrowForbiddenOperationExceptionWhenAdminRemovesOwnAdminRole() {
-        UserEntity admin = userEntity(
-                ADMIN_ID,
-                "admin@test.com",
-                true,
-                Set.of(roleEntity("ADMIN"))
-        );
-
-        when(userRepository.findByIdAndOrganizationId(ADMIN_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(admin));
-
-        assertThatThrownBy(() -> userService.updateRoles(
-                ADMIN_ID,
-                new UpdateUserRolesRequest(Set.of("USER")),
-                adminPrincipal()
-        ))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Нельзя менять собственные роли");
-
-        verify(userRepository, never()).save(any());
-        verifyNoInteractions(auditEventService);
-        verifyNoInteractions(userSessionRevocationService);
-    }
-
-    @Test
-    void updateRolesShouldThrowForbiddenOperationExceptionWhenAdminManagesAnotherAdmin() {
-        UserEntity targetAdmin = userEntity(
-                TARGET_ADMIN_ID,
-                "second-admin@test.com",
-                true,
-                Set.of(roleEntity("ADMIN"))
-        );
-
-        when(userRepository.findByIdAndOrganizationId(TARGET_ADMIN_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(targetAdmin));
-
-        assertThatThrownBy(() -> userService.updateRoles(
-                TARGET_ADMIN_ID,
-                new UpdateUserRolesRequest(Set.of("USER")),
-                adminPrincipal()
-        ))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("ADMIN не может управлять другим ADMIN");
-
-        verify(userRepository, never()).save(any());
-        verifyNoInteractions(auditEventService);
-        verifyNoInteractions(userSessionRevocationService);
-    }
-
-    @Test
-    void updateRolesShouldThrowForbiddenOperationExceptionWhenSuperAdminRemovesAdminRoleFromLastActiveAdmin() {
-        UserEntity targetAdmin = userEntity(
-                TARGET_ADMIN_ID,
-                "second-admin@test.com",
-                true,
-                Set.of(roleEntity("ADMIN"))
-        );
-
-        when(userRepository.findByIdWithRolesAndOrganization(TARGET_ADMIN_ID))
-                .thenReturn(Optional.of(targetAdmin));
-
-        when(userRepository.findEnabledAdminsForUpdate(ORGANIZATION_ID))
-                .thenReturn(List.of(targetAdmin));
-
-        assertThatThrownBy(() -> userService.updateRoles(
-                TARGET_ADMIN_ID,
-                new UpdateUserRolesRequest(Set.of("USER")),
-                superAdminPrincipal()
-        ))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Нельзя снять роль ADMIN с последнего активного администратора");
-
-        verify(userRepository, never()).save(any());
-        verifyNoInteractions(auditEventService);
-        verifyNoInteractions(userSessionRevocationService);
-    }
-
-    @Test
-    void resetPasswordShouldUpdatePasswordHashAndRevokeRefreshSessions() {
-        UserEntity user = userEntity(
-                USER_ID,
-                "user@test.com",
-                true,
-                Set.of(roleEntity("USER"))
-        );
-
-        when(userRepository.findByIdAndOrganizationId(USER_ID, ORGANIZATION_ID))
-                .thenReturn(Optional.of(user));
-
-        when(passwordEncoder.encode(NEW_VALID_PASSWORD))
-                .thenReturn("new-encoded-password");
-
-        stubUserSave();
-
-        userService.resetPassword(
-                USER_ID,
-                new ResetUserPasswordRequest(NEW_VALID_PASSWORD),
-                adminPrincipal()
-        );
-
-        assertThat(user.getPasswordHash()).isEqualTo("new-encoded-password");
-        assertThat(user.getTokenVersion()).isEqualTo(1L);
-
-        verify(userRepository).save(user);
-        verify(userSessionRevocationService).revokeAllForUser(
-                USER_ID,
-                RefreshTokenRevocationReason.PASSWORD_RESET
-        );
-        verify(eventPublisher).publishEvent(any(UserSecurityStateChangedEvent.class));
-
-        verify(auditEventService).record(
-                eq(ADMIN_ID),
-                eq(ORGANIZATION_ID),
-                eq(AuditEventType.USER_PASSWORD_RESET),
-                anyMap()
-        );
-    }
-
-
-    @Test
-    void permanentlyDeleteShouldDeleteEmptyUserAndPreserveAuditMetadata() {
-        UserEntity user = userEntity(
-                USER_ID,
-                "user@test.com",
+    void selfDeletionIsBlocked() {
+        UserEntity target = user(
+                SUPER_ADMIN_ID,
+                organization(ORGANIZATION_A_ID, true),
                 false,
-                Set.of(roleEntity("USER"))
+                "USER"
+        );
+        stubMutationAsSuperAdmin(target);
+
+        assertThatThrownBy(() -> userService.permanentlyDelete(
+                SUPER_ADMIN_ID,
+                new PermanentDeleteUserRequest(target.getEmail()),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("собственную учётную запись");
+    }
+
+    @Test
+    void superAdminDeletionIsBlocked() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                false,
+                "SUPER_ADMIN"
+        );
+        stubMutationAsSuperAdmin(target);
+
+        assertThatThrownBy(() -> userService.permanentlyDelete(
+                USER_ID,
+                new PermanentDeleteUserRequest(target.getEmail()),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("SUPER_ADMIN нельзя изменять");
+    }
+
+    @Test
+    void platformOrganizationUserDeletionIsBlocked() {
+        UserEntity target = user(
+                USER_ID,
+                organization(PLATFORM_ORGANIZATION_ID, true),
+                false,
+                "USER"
+        );
+        stubMutationAsSuperAdmin(target);
+
+        assertThatThrownBy(() -> userService.permanentlyDelete(
+                USER_ID,
+                new PermanentDeleteUserRequest(target.getEmail()),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("платформенной организации");
+    }
+
+    @Test
+    void permanentDeletionRequiresMatchingConfirmationEmail() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                false,
+                "USER"
+        );
+        stubMutationAsSuperAdmin(target);
+
+        assertThatThrownBy(() -> userService.permanentlyDelete(
+                USER_ID,
+                new PermanentDeleteUserRequest("wrong@test.com"),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Email подтверждения");
+    }
+
+    @Test
+    void permanentDeletionRequiresDisabledUser() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "USER"
+        );
+        stubMutationAsSuperAdmin(target);
+
+        assertThatThrownBy(() -> userService.permanentlyDelete(
+                USER_ID,
+                new PermanentDeleteUserRequest(target.getEmail()),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("необходимо отключить");
+    }
+
+    @Test
+    void permanentDeletionBeforeRetentionExpiresIsBlocked() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                false,
+                "USER"
+        );
+        target.setDisabledAt(NOW.minus(Duration.ofDays(1)));
+        stubMutationAsSuperAdmin(target);
+
+        UserService retentionService = new UserService(
+                userRepository,
+                roleRepository,
+                passwordEncoder,
+                auditEventService,
+                eventPublisher,
+                userSessionRevocationService,
+                new PlatformProperties(PLATFORM_ORGANIZATION_ID),
+                new UserManagementProperties(Duration.ofDays(7)),
+                entityManager,
+                Clock.fixed(NOW, ZoneOffset.UTC)
         );
 
-        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
-                .thenReturn(Optional.of(user));
+        assertThatThrownBy(() -> retentionService.permanentlyDelete(
+                USER_ID,
+                new PermanentDeleteUserRequest(target.getEmail()),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("Период хранения");
+
+        verify(userRepository, never()).delete(any());
+    }
+
+    @Test
+    void permanentDeletionRejectsActiveRefreshToken() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                false,
+                "USER"
+        );
+        stubMutationAsSuperAdmin(target);
+        when(userRepository.hasActiveRefreshTokens(USER_ID))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> userService.permanentlyDelete(
+                USER_ID,
+                new PermanentDeleteUserRequest(target.getEmail()),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("refresh-сессии");
+    }
+
+    @Test
+    void permanentDeletionRejectsDependencies() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                false,
+                "USER"
+        );
+        stubMutationAsSuperAdmin(target);
+        when(userRepository.hasPermanentDeletionDependencies(USER_ID))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> userService.permanentlyDelete(
+                USER_ID,
+                new PermanentDeleteUserRequest(target.getEmail()),
+                superAdminPrincipal()
+        ))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("связанные данные");
+    }
+
+    @Test
+    void permanentDeletionDeletesEmptyDisabledUser() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                false,
+                "USER"
+        );
+        stubMutationAsSuperAdmin(target);
+        when(userRepository.hasActiveRefreshTokens(USER_ID))
+                .thenReturn(false);
         when(userRepository.hasPermanentDeletionDependencies(USER_ID))
                 .thenReturn(false);
 
         userService.permanentlyDelete(
                 USER_ID,
-                new PermanentDeleteUserRequest("user@test.com"),
+                new PermanentDeleteUserRequest(target.getEmail()),
                 superAdminPrincipal()
         );
 
@@ -620,121 +734,137 @@ class UserServiceTest {
                 USER_ID,
                 RefreshTokenRevocationReason.ADMIN_REVOKED
         );
-        verify(userRepository).delete(user);
+        verify(userRepository).delete(target);
         verify(userRepository).flush();
-        verify(eventPublisher).publishEvent(
-                any(UserSecurityStateChangedEvent.class)
-        );
         verify(auditEventService).record(
                 eq(SUPER_ADMIN_ID),
-                eq(ORGANIZATION_ID),
-                eq(AuditEventType.USER_PERMANENTLY_DELETED),
+                eq(ORGANIZATION_A_ID),
+                any(),
                 anyMap()
         );
     }
 
     @Test
-    void permanentlyDeleteShouldRejectUserWithChatHistory() {
-        UserEntity user = userEntity(
-                USER_ID,
-                "user@test.com",
-                false,
-                Set.of(roleEntity("USER"))
-        );
+void cannotCreateUserInDisabledOrganization() {
+    OrganizationEntity disabledOrganization = organization(
+            ORGANIZATION_A_ID,
+            false
+    );
 
-        when(userRepository.findByIdWithRolesAndOrganization(USER_ID))
-                .thenReturn(Optional.of(user));
-        when(userRepository.hasPermanentDeletionDependencies(USER_ID))
-                .thenReturn(true);
+    stubOrganizationLock(disabledOrganization);
 
-        assertThatThrownBy(() -> userService.permanentlyDelete(
-                USER_ID,
-                new PermanentDeleteUserRequest("user@test.com"),
-                superAdminPrincipal()
-        ))
-                .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("есть история чатов");
+    assertThatThrownBy(() -> userService.create(
+            new CreateUserRequest(
+                    ORGANIZATION_A_ID,
+                    "new-user@test.com",
+                    VALID_PASSWORD,
+                    "New User",
+                    Set.of("USER")
+            ),
+            adminPrincipal()
+    ))
+            .isInstanceOf(ForbiddenOperationException.class)
+            .hasMessageContaining("отключенной организации");
 
-        verify(userRepository, never()).delete(any());
-        verify(userRepository, never()).flush();
-        verifyNoInteractions(auditEventService);
+    verify(userRepository, never()).existsByEmail(any());
+    verify(userRepository, never()).saveAndFlush(any());
+    verifyNoInteractions(
+            roleRepository,
+            passwordEncoder,
+            auditEventService
+    );
+}
+
+    private void stubMutationAsAdmin(UserEntity target) {
+        when(userRepository.findByIdAndOrganizationId(
+                target.getId(),
+                ORGANIZATION_A_ID
+        )).thenReturn(Optional.of(target));
+        stubLockedTarget(target);
     }
 
-
-    private void stubUserSaveAndFlush() {
-        when(userRepository.saveAndFlush(
-                any(UserEntity.class)
-        )).thenAnswer(invocation -> {
-            UserEntity entity = invocation.getArgument(0);
-
-            if (entity.getId() == null) {
-                entity.setId(SAVED_USER_ID);
-            }
-
-            if (entity.getCreatedAt() == null) {
-                entity.setCreatedAt(SAVED_AT);
-            }
-
-            return entity;
-        });
+    private void stubMutationAsSuperAdmin(UserEntity target) {
+        when(userRepository.findByIdWithRolesAndOrganization(
+                target.getId()
+        )).thenReturn(Optional.of(target));
+        stubLockedTarget(target);
     }
 
-    private CreateUserRequest createUserRequest(Set<String> roles) {
-        return new CreateUserRequest(
-                ORGANIZATION_ID,
-                "admin@test.com",
-                VALID_PASSWORD,
-                "Demo Admin",
-                roles
-        );
+    private void stubLockedTarget(UserEntity target) {
+        stubOrganizationLock(target.getOrganization());
+        when(userRepository.findByIdForSecurityUpdate(target.getId()))
+                .thenReturn(Optional.of(target));
     }
 
-    private OrganizationEntity organizationEntity() {
+    private void stubOrganizationLock(OrganizationEntity organization) {
+        when(entityManager.find(
+                OrganizationEntity.class,
+                organization.getId(),
+                LockModeType.PESSIMISTIC_WRITE
+        )).thenReturn(organization);
+    }
+
+    private void stubSaveAndRefresh() {
+        when(userRepository.saveAndFlush(any(UserEntity.class)))
+                .thenAnswer(invocation -> {
+                    UserEntity user = invocation.getArgument(0);
+                    if (user.getId() == null) {
+                        user.setId(UUID.randomUUID());
+                    }
+                    return user;
+                });
+    }
+
+    private OrganizationEntity organization(
+            UUID id,
+            boolean enabled
+    ) {
         OrganizationEntity organization = new OrganizationEntity();
-        organization.setId(ORGANIZATION_ID);
-        organization.setName("Demo Company");
-        organization.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-        organization.setEnabled(true);
+        organization.setId(id);
+        organization.setName("Organization " + id);
+        organization.setEnabled(enabled);
+        organization.setCreatedAt(NOW.minus(Duration.ofDays(30)));
+        organization.setUpdatedAt(NOW.minus(Duration.ofDays(1)));
         return organization;
     }
 
-    private RoleEntity roleEntity(String name) {
+    private UserEntity user(
+            UUID id,
+            OrganizationEntity organization,
+            boolean enabled,
+            String roleName
+    ) {
+        UserEntity user = new UserEntity();
+        user.setId(id);
+        user.setOrganization(organization);
+        user.setEmail("user-" + id + "@test.com");
+        user.setPasswordHash("old-hash");
+        user.setFullName("Test User");
+        user.setEnabled(enabled);
+        user.setDisabledAt(
+                enabled ? null : NOW.minus(Duration.ofDays(10))
+        );
+        user.setCreatedAt(NOW.minus(Duration.ofDays(30)));
+        user.setUpdatedAt(NOW.minus(Duration.ofDays(1)));
+        user.setTokenVersion(0L);
+        user.setRoles(new HashSet<>(Set.of(role(roleName))));
+        return user;
+    }
+
+    private RoleEntity role(String name) {
         RoleEntity role = new RoleEntity();
         role.setId(UUID.randomUUID());
         role.setName(name);
         return role;
     }
 
-    private UserEntity userEntity(
-            UUID id,
-            String email,
-            boolean enabled,
-            Set<RoleEntity> roles
-    ) {
-        UserEntity user = new UserEntity();
-        user.setId(id);
-        user.setOrganization(organizationEntity());
-        user.setEmail(email);
-        user.setPasswordHash("encoded-password");
-        user.setFullName("Test User");
-        user.setEnabled(enabled);
-        user.setCreatedAt(Instant.parse("2026-06-12T12:00:00Z"));
-        user.setRoles(new HashSet<>(roles));
-        user.setTokenVersion(0L);
-        return user;
-    }
-
     private SafeAiUserPrincipal adminPrincipal() {
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 ADMIN_ID,
-                ORGANIZATION_ID,
-                "admin@test.com",
+                ORGANIZATION_A_ID,
+                "admin-a@test.com",
                 0L,
-                Set.of(
-                        new SimpleGrantedAuthority(
-                                "ROLE_ADMIN"
-                        )
-                )
+                Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
     }
 
@@ -744,19 +874,7 @@ class UserServiceTest {
                 PLATFORM_ORGANIZATION_ID,
                 "super-admin@test.com",
                 0L,
-                Set.of(
-                        new SimpleGrantedAuthority(
-                                "ROLE_SUPER_ADMIN"
-                        )
-                )
-        );
-    }
-
-    private void stubUserSave() {
-        when(userRepository.save(
-                any(UserEntity.class)
-        )).thenAnswer(invocation ->
-                invocation.getArgument(0)
+                Set.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
         );
     }
 }

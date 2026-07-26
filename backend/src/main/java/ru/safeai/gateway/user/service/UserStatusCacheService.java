@@ -9,6 +9,7 @@ import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,6 +18,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @EnableConfigurationProperties(UserStatusCacheProperties.class)
 public class UserStatusCacheService {
+
+    private static final int SERIALIZED_PARTS = 5;
 
     private final UserRepository userRepository;
     private final StringRedisTemplate redisTemplate;
@@ -27,6 +30,10 @@ public class UserStatusCacheService {
             return Optional.empty();
         }
 
+        /*
+         * В production cache по умолчанию выключен. PostgreSQL остаётся
+         * источником истины для каждого authenticated request.
+         */
         if (!properties.isEnabled()) {
             return loadFromDatabase(userId);
         }
@@ -35,7 +42,6 @@ public class UserStatusCacheService {
 
         try {
             String cached = redisTemplate.opsForValue().get(key);
-
             Optional<UserSecurityStatus> cachedStatus = parse(cached);
 
             if (cachedStatus.isPresent()) {
@@ -52,8 +58,8 @@ public class UserStatusCacheService {
             }
         } catch (RuntimeException exception) {
             log.warn(
-                    "User status cache unavailable, fallback to PostgreSQL: "
-                            + "userId={}",
+                    "User status cache unavailable, "
+                            + "fallback to PostgreSQL: userId={}",
                     userId,
                     exception
             );
@@ -63,7 +69,6 @@ public class UserStatusCacheService {
                 loadFromDatabase(userId);
 
         status.ifPresent(value -> cache(userId, value));
-
         return status;
     }
 
@@ -91,7 +96,7 @@ public class UserStatusCacheService {
         }
 
         List<String> keys = userIds.stream()
-                .filter(java.util.Objects::nonNull)
+                .filter(Objects::nonNull)
                 .map(this::key)
                 .toList();
 
@@ -110,17 +115,23 @@ public class UserStatusCacheService {
         }
     }
 
-    private Optional<UserSecurityStatus> loadFromDatabase(UUID userId) {
+    private Optional<UserSecurityStatus> loadFromDatabase(
+            UUID userId
+    ) {
         return userRepository.findByIdWithOrganization(userId)
                 .map(user -> new UserSecurityStatus(
                         user.getOrganization().getId(),
                         user.isEnabled(),
                         user.getOrganization().isEnabled(),
-                        user.getTokenVersion()
+                        user.getTokenVersion(),
+                        user.getOrganization().getAuthVersion()
                 ));
     }
 
-    private void cache(UUID userId, UserSecurityStatus status) {
+    private void cache(
+            UUID userId,
+            UserSecurityStatus status
+    ) {
         try {
             redisTemplate.opsForValue().set(
                     key(userId),
@@ -143,48 +154,57 @@ public class UserStatusCacheService {
 
         String[] parts = value.split(":", -1);
 
-        if (parts.length != 4) {
-            return Optional.empty();
-        }
-
-        UUID organizationId;
-
-        try {
-            organizationId = UUID.fromString(parts[0]);
-        } catch (RuntimeException exception) {
-            return Optional.empty();
-        }
-
-        Optional<Boolean> userEnabled =
-                parseBooleanStrict(parts[1]);
-
-        Optional<Boolean> organizationEnabled =
-                parseBooleanStrict(parts[2]);
-
-        if (userEnabled.isEmpty()
-                || organizationEnabled.isEmpty()) {
+        /*
+         * Старый четырёхполевой формат намеренно отклоняется.
+         * Он не содержит organizationAuthVersion.
+         */
+        if (parts.length != SERIALIZED_PARTS) {
             return Optional.empty();
         }
 
         try {
-            long tokenVersion = Long.parseLong(parts[3]);
+            UUID organizationId =
+                    UUID.fromString(parts[0]);
 
-            if (tokenVersion < 0) {
+            Optional<Boolean> userEnabled =
+                    parseBooleanStrict(parts[1]);
+
+            Optional<Boolean> organizationEnabled =
+                    parseBooleanStrict(parts[2]);
+
+            if (userEnabled.isEmpty()
+                    || organizationEnabled.isEmpty()) {
                 return Optional.empty();
             }
 
-            return Optional.of(new UserSecurityStatus(
-                    organizationId,
-                    userEnabled.get(),
-                    organizationEnabled.get(),
-                    tokenVersion
-            ));
+            long tokenVersion =
+                    Long.parseLong(parts[3]);
+
+            long organizationAuthVersion =
+                    Long.parseLong(parts[4]);
+
+            if (tokenVersion < 0
+                    || organizationAuthVersion < 0) {
+                return Optional.empty();
+            }
+
+            return Optional.of(
+                    new UserSecurityStatus(
+                            organizationId,
+                            userEnabled.get(),
+                            organizationEnabled.get(),
+                            tokenVersion,
+                            organizationAuthVersion
+                    )
+            );
         } catch (RuntimeException exception) {
             return Optional.empty();
         }
     }
 
-    private Optional<Boolean> parseBooleanStrict(String value) {
+    private Optional<Boolean> parseBooleanStrict(
+            String value
+    ) {
         if ("true".equalsIgnoreCase(value)) {
             return Optional.of(true);
         }
@@ -198,12 +218,10 @@ public class UserStatusCacheService {
 
     private String serialize(UserSecurityStatus status) {
         return status.organizationId()
-                + ":"
-                + status.userEnabled()
-                + ":"
-                + status.organizationEnabled()
-                + ":"
-                + status.tokenVersion();
+                + ":" + status.userEnabled()
+                + ":" + status.organizationEnabled()
+                + ":" + status.tokenVersion()
+                + ":" + status.organizationAuthVersion();
     }
 
     private String key(UUID userId) {

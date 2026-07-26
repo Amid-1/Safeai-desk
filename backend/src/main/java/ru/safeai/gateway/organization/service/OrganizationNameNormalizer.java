@@ -1,55 +1,41 @@
 package ru.safeai.gateway.organization.service;
 
+import ru.safeai.gateway.common.exception.BadRequestException;
+
 import java.util.Locale;
-import java.util.regex.Pattern;
 
 public final class OrganizationNameNormalizer {
-
-    private static final int MAX_NAME_LENGTH = 255;
-
-    private static final Pattern WHITESPACE =
-            Pattern.compile(
-                    "\\s+",
-                    Pattern.UNICODE_CHARACTER_CLASS
-            );
 
     private OrganizationNameNormalizer() {
     }
 
-    public static String canonicalName(
-            String value
-    ) {
-        if (value == null) {
-            throw new IllegalArgumentException(
-                    "Название организации не должно быть null"
-            );
-        }
-
-        String canonical = WHITESPACE
-                .matcher(value.trim())
-                .replaceAll(" ");
-
-        if (canonical.isBlank()) {
-            throw new IllegalArgumentException(
+    public static String canonicalize(String value) {
+        if (value == null || value.isBlank()) {
+            throw new BadRequestException(
                     "Название организации не должно быть пустым"
             );
         }
 
-        if (canonical.length() > MAX_NAME_LENGTH) {
-            throw new IllegalArgumentException(
-                    "Название организации не должно превышать "
-                            + MAX_NAME_LENGTH
-                            + " символов"
+        String canonical = value
+                .strip()
+                .replaceAll("[\\p{Z}\\s]+", " ");
+
+        if (canonical.isBlank()) {
+            throw new BadRequestException(
+                    "Название организации не должно быть пустым"
+            );
+        }
+
+        if (canonical.length() > 255) {
+            throw new BadRequestException(
+                    "Название организации не должно превышать 255 символов"
             );
         }
 
         return canonical;
     }
 
-    public static String normalizedName(
-            String value
-    ) {
-        return canonicalName(value)
-                .toLowerCase(Locale.ROOT);
+    public static String normalize(String canonicalName) {
+        return canonicalize(canonicalName).toLowerCase(Locale.ROOT);
     }
 }

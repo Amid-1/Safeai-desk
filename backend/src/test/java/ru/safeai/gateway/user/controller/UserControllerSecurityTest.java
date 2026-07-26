@@ -340,6 +340,65 @@ class UserControllerSecurityTest {
         );
     }
 
+
+    @Test
+    void createWithTwoRolesReturns400AndDoesNotCallService()
+            throws Exception {
+        mockMvc.perform(post("/api/users")
+                        .with(authentication(authToken(adminPrincipal())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "organizationId": "%s",
+                                  "email": "user@test.com",
+                                  "password": "Strong_User_123!",
+                                  "roles": ["USER", "ADMIN"]
+                                }
+                                """.formatted(ORGANIZATION_ID)))
+                .andExpect(status().isBadRequest());
+
+        verify(userService, never()).create(any(), any());
+    }
+
+    @Test
+    void permanentDeletionWithoutConfirmationEmailReturns400()
+            throws Exception {
+        mockMvc.perform(post(
+                        "/api/users/{id}/permanent-deletion",
+                        USER_ID
+                )
+                        .with(authentication(authToken(superAdminPrincipal())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        verify(userService, never()).permanentlyDelete(
+                any(),
+                any(),
+                any()
+        );
+    }
+
+    @Test
+    void updateRolesWithTwoRolesReturns400AndDoesNotCallService()
+            throws Exception {
+        mockMvc.perform(patch("/api/users/{id}/roles", USER_ID)
+                        .with(authentication(authToken(superAdminPrincipal())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "roles": ["USER", "ADMIN"]
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(userService, never()).updateRoles(
+                any(),
+                any(),
+                any()
+        );
+    }
+
     private Authentication authToken(SafeAiUserPrincipal principal) {
         return new UsernamePasswordAuthenticationToken(
                 principal,

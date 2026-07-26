@@ -196,7 +196,7 @@ class SafeAiUserPrincipalTest {
         principal.eraseCredentials();
 
         assertThat(principal.getPassword())
-                .isEmpty();
+                .isNull();
     }
 
     @Test
@@ -208,7 +208,7 @@ class SafeAiUserPrincipalTest {
         principal.eraseCredentials();
 
         assertThat(principal.getPassword())
-                .isEmpty();
+                .isNull();
     }
 
     @Test
@@ -237,7 +237,7 @@ class SafeAiUserPrincipalTest {
                 .isEqualTo(EMAIL);
 
         assertThat(principal.getPassword())
-                .isEmpty();
+                .isNull();
 
         assertThat(principal.isEnabled())
                 .isTrue();

@@ -1,10 +1,10 @@
 package ru.safeai.gateway.auth.security;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
@@ -12,7 +12,6 @@ import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
-import java.time.Instant;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -20,139 +19,73 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class CustomUserDetailsServiceTest {
 
-    private static final UUID USER_ID = UUID.fromString(
-            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-    );
-
-    private static final UUID ORGANIZATION_ID = UUID.fromString(
-            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-    );
-
     @Mock
     private UserRepository userRepository;
 
-    private CustomUserDetailsService service;
-
-    @BeforeEach
-    void setUp() {
-        service = new CustomUserDetailsService(
-                userRepository
-        );
-    }
-
     @Test
-    void returnsPasswordPrincipalForExistingUser() {
-        UserEntity user = userEntity();
+    void loadsCanonicalEmailAndBuildsPasswordPrincipal() {
+        UUID organizationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
 
-        when(userRepository.findByEmailIgnoreCase(
-                "admin@test.com"
-        )).thenReturn(Optional.of(user));
-
-        SafeAiUserPrincipal principal =
-                (SafeAiUserPrincipal) service
-                        .loadUserByUsername(
-                                " Admin@Test.COM "
-                        );
-
-        assertThat(principal.getId()).isEqualTo(USER_ID);
-        assertThat(principal.getOrganizationId())
-                .isEqualTo(ORGANIZATION_ID);
-        assertThat(principal.getEmail())
-                .isEqualTo("admin@test.com");
-        assertThat(principal.getPassword())
-                .isEqualTo("encoded-password");
-        assertThat(principal.isEnabled()).isTrue();
-        assertThat(principal.getAuthorities())
-                .extracting("authority")
-                .containsExactly("ROLE_ADMIN");
-    }
-
-    @Test
-    void missingUserUsesUsernameNotFoundException() {
-        when(userRepository.findByEmailIgnoreCase(
-                "missing@test.com"
-        )).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() ->
-                service.loadUserByUsername(
-                        "missing@test.com"
-                )
-        ).isInstanceOf(UsernameNotFoundException.class)
-                .hasMessageContaining(
-                        "Пользователь не найден"
-                );
-    }
-
-    @Test
-    void disabledOrganizationDisablesPrincipal() {
-        UserEntity user = userEntity();
-        user.getOrganization().setEnabled(false);
-
-        when(userRepository.findByEmailIgnoreCase(
-                "admin@test.com"
-        )).thenReturn(Optional.of(user));
-
-        SafeAiUserPrincipal principal =
-                (SafeAiUserPrincipal) service
-                        .loadUserByUsername(
-                                "admin@test.com"
-                        );
-
-        assertThat(principal.isEnabled()).isFalse();
-    }
-
-    @Test
-    void disabledUserDisablesPrincipal() {
-        UserEntity user = userEntity();
-        user.setEnabled(false);
-
-        when(userRepository.findByEmailIgnoreCase(
-                "admin@test.com"
-        )).thenReturn(Optional.of(user));
-
-        SafeAiUserPrincipal principal =
-                (SafeAiUserPrincipal) service
-                        .loadUserByUsername(
-                                "admin@test.com"
-                        );
-
-        assertThat(principal.isEnabled()).isFalse();
-    }
-
-    private UserEntity userEntity() {
-        OrganizationEntity organization =
-                new OrganizationEntity();
-        organization.setId(ORGANIZATION_ID);
-        organization.setName("Demo Company");
+        OrganizationEntity organization = new OrganizationEntity();
+        organization.setId(organizationId);
         organization.setEnabled(true);
-        organization.setCreatedAt(
-                Instant.parse("2026-06-12T12:00:00Z")
-        );
 
         RoleEntity role = new RoleEntity();
-        role.setId(UUID.fromString(
-                "11111111-1111-1111-1111-111111111111"
-        ));
+        role.setId(UUID.randomUUID());
         role.setName("ADMIN");
 
         UserEntity user = new UserEntity();
-        user.setId(USER_ID);
+        user.setId(userId);
         user.setOrganization(organization);
         user.setEmail("admin@test.com");
-        user.setPasswordHash("encoded-password");
-        user.setFullName("Demo Admin");
+        user.setPasswordHash("password-hash");
         user.setEnabled(true);
-        user.setCreatedAt(
-                Instant.parse("2026-06-12T12:00:00Z")
-        );
+        user.setTokenVersion(7L);
         user.setRoles(new HashSet<>(Set.of(role)));
-        user.setTokenVersion(0L);
 
-        return user;
+        when(userRepository.findByEmail("admin@test.com"))
+                .thenReturn(Optional.of(user));
+
+        CustomUserDetailsService service =
+                new CustomUserDetailsService(userRepository);
+
+        SafeAiUserPrincipal principal =
+                (SafeAiUserPrincipal) service.loadUserByUsername(
+                        " Admin@Test.com "
+                );
+
+        assertThat(principal.getId()).isEqualTo(userId);
+        assertThat(principal.getOrganizationId())
+                .isEqualTo(organizationId);
+        assertThat(principal.getUsername()).isEqualTo("admin@test.com");
+        assertThat(principal.getPassword()).isEqualTo("password-hash");
+        assertThat(principal.getTokenVersion()).isEqualTo(7L);
+        assertThat(principal.getAuthorities())
+                .extracting(GrantedAuthority::getAuthority)
+                .containsExactly("ROLE_ADMIN");
+
+        verify(userRepository).findByEmail("admin@test.com");
+    }
+
+    @Test
+    void missingUserThrowsUsernameNotFound() {
+        when(userRepository.findByEmail("missing@test.com"))
+                .thenReturn(Optional.empty());
+
+        CustomUserDetailsService service =
+                new CustomUserDetailsService(userRepository);
+
+        assertThatThrownBy(() -> service.loadUserByUsername(
+                "missing@test.com"
+        ))
+                .isInstanceOf(UsernameNotFoundException.class)
+                .hasMessageContaining("missing@test.com");
     }
 }

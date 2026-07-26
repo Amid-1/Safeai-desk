@@ -17,9 +17,10 @@ public interface RefreshTokenRepository
         extends JpaRepository<RefreshTokenEntity, UUID> {
 
     /**
-     * Блокирует только одну строку refresh_tokens.
-     * User/organization/roles загружаются отдельными запросами
-     * внутри той же транзакции.
+     * Блокируется только строка refresh token.
+
+     * User, organization и roles загружаются отдельным запросом
+     * внутри той же транзакции RefreshTokenService.rotate().
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
@@ -31,11 +32,6 @@ public interface RefreshTokenRepository
             @Param("tokenHash") String tokenHash
     );
 
-    /**
-     * Терминально закрывает всю family.
-     * Первоначальный revokedAt сохраняется, итоговая причина family
-     * записывается во все её строки.
-     */
     @Modifying(flushAutomatically = true)
     @Query("""
             update RefreshTokenEntity token
@@ -77,9 +73,9 @@ public interface RefreshTokenRepository
                 ),
                 token.revocationReason = :reason
             where token.user.id in (
-                select u.id
-                from UserEntity u
-                where u.organization.id = :organizationId
+                select appUser.id
+                from UserEntity appUser
+                where appUser.organization.id = :organizationId
             )
             """)
     int terminateAllByOrganizationId(
@@ -88,16 +84,10 @@ public interface RefreshTokenRepository
             @Param("reason") RefreshTokenRevocationReason reason
     );
 
-    /**
-     * Удаляет не более batchSize строк за одну короткую транзакцию.
-     *
-     * <p>SKIP LOCKED позволяет нескольким backend instances выполнять
-     * cleanup одновременно: каждый экземпляр получает собственный набор
-     * строк и не ждёт row locks другого экземпляра.</p>
-     *
-     * <p>Граница намеренно строгая: familyExpiresAt == threshold
-     * ещё сохраняется.</p>
-     */
+    @SuppressWarnings({
+            "SqlResolve",
+            "SqlNoDataSourceInspection"
+    })
     @Modifying(
             flushAutomatically = true,
             clearAutomatically = true
@@ -106,13 +96,13 @@ public interface RefreshTokenRepository
             value = """
                     with candidates as (
                         select token.id
-                        from refresh_tokens token
+                        from public.refresh_tokens as token
                         where token.family_expires_at < :threshold
                         order by token.family_expires_at, token.id
-                        for update skip locked
+                        for update of token skip locked
                         limit :batchSize
                     )
-                    delete from refresh_tokens token
+                    delete from public.refresh_tokens as token
                     using candidates
                     where token.id = candidates.id
                     """,

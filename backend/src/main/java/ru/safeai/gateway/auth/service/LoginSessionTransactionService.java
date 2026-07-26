@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.common.security.AccessTokenSubject;
+import ru.safeai.gateway.common.security.RoleAuthorityMapper;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.mapper.UserRoleMapper;
@@ -48,7 +49,6 @@ public class LoginSessionTransactionService {
                 authenticatedPrincipal,
                 "authenticatedPrincipal не должен быть null"
         );
-
         Objects.requireNonNull(
                 request,
                 "request не должен быть null"
@@ -60,13 +60,11 @@ public class LoginSessionTransactionService {
                 )
                 .orElseThrow(this::securityStateChanged);
 
-        /*
-         * Обращение к organization и roles происходит внутри
-         * активной транзакции. Это одновременно инициализирует
-         * LAZY relationships без бессмысленных ignored calls.
-         */
         UUID organizationId =
                 user.getOrganization().getId();
+
+        long organizationAuthVersion =
+                user.getOrganization().getAuthVersion();
 
         String canonicalEmail =
                 canonicalEmail(user.getEmail());
@@ -74,12 +72,19 @@ public class LoginSessionTransactionService {
         Set<String> roleNames =
                 UserRoleMapper.toRoleNames(user);
 
+        Set<String> authenticatedRoleNames =
+                authenticatedRoleNames(
+                        authenticatedPrincipal
+                );
+
         validateAuthenticatedSnapshot(
                 authenticatedPrincipal,
                 user,
                 organizationId,
+                organizationAuthVersion,
                 canonicalEmail,
-                roleNames
+                roleNames,
+                authenticatedRoleNames
         );
 
         Instant now = clock.instant();
@@ -99,6 +104,7 @@ public class LoginSessionTransactionService {
                         organizationId,
                         canonicalEmail,
                         user.getTokenVersion(),
+                        organizationAuthVersion,
                         roleNames
                 );
 
@@ -124,8 +130,10 @@ public class LoginSessionTransactionService {
             SafeAiUserPrincipal principal,
             UserEntity user,
             UUID organizationId,
+            long organizationAuthVersion,
             String canonicalEmail,
-            Set<String> currentRoleNames
+            Set<String> currentRoleNames,
+            Set<String> authenticatedRoleNames
     ) {
         boolean valid =
                 user.isEnabled()
@@ -133,17 +141,36 @@ public class LoginSessionTransactionService {
                         && organizationId.equals(
                         principal.getOrganizationId()
                 )
+                        && organizationAuthVersion
+                        == principal.getOrganizationAuthVersion()
                         && canonicalEmail.equals(
                         principal.getEmail()
                 )
                         && user.getTokenVersion()
                         == principal.getTokenVersion()
                         && currentRoleNames.equals(
-                        principal.authorityNames()
+                        authenticatedRoleNames
                 );
 
         if (!valid) {
             throw securityStateChanged();
+        }
+    }
+
+    private Set<String> authenticatedRoleNames(
+            SafeAiUserPrincipal principal
+    ) {
+        try {
+            return Set.copyOf(
+                    RoleAuthorityMapper.toRoleNames(
+                            principal.getAuthorities()
+                    )
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new BadCredentialsException(
+                    SECURITY_STATE_CHANGED_MESSAGE,
+                    exception
+            );
         }
     }
 

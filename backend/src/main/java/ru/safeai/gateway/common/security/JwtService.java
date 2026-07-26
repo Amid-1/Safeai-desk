@@ -25,13 +25,16 @@ public class JwtService {
     private final JwtProperties jwtProperties;
     private final Clock clock;
 
-    public String generateToken(AccessTokenSubject subject) {
+    public String generateToken(
+            AccessTokenSubject subject
+    ) {
         Objects.requireNonNull(
                 subject,
                 "subject не должен быть null"
         );
 
         Instant issuedAt = clock.instant();
+
         Instant expiresAt = issuedAt.plus(
                 Duration.ofMinutes(
                         jwtProperties.expirationMinutes()
@@ -40,7 +43,8 @@ public class JwtService {
 
         /*
          * AccessTokenSubject уже проверяет и нормализует роли.
-         * Дополнительная сортировка обеспечивает стабильный JWT payload.
+         * Дополнительная сортировка обеспечивает стабильный
+         * порядок элементов в JWT payload.
          */
         List<String> roles = subject.roles()
                 .stream()
@@ -54,12 +58,13 @@ public class JwtService {
 
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(jwtProperties.issuer())
-                .audience(List.of(jwtProperties.audience()))
+                .audience(List.of(
+                        jwtProperties.audience()
+                ))
                 .issuedAt(issuedAt)
                 .expiresAt(expiresAt)
                 .subject(subject.userId().toString())
                 .id(UUID.randomUUID().toString())
-                .claim("email", subject.email())
                 .claim(
                         "userId",
                         subject.userId().toString()
@@ -68,10 +73,21 @@ public class JwtService {
                         "organizationId",
                         subject.organizationId().toString()
                 )
-                .claim("roles", roles)
+                .claim(
+                        "email",
+                        subject.email()
+                )
                 .claim(
                         "tokenVersion",
                         subject.tokenVersion()
+                )
+                .claim(
+                        "organizationAuthVersion",
+                        subject.organizationAuthVersion()
+                )
+                .claim(
+                        "roles",
+                        roles
                 )
                 .build();
 

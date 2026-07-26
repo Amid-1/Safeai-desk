@@ -1,17 +1,17 @@
 package ru.safeai.gateway.audit.service;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
-import ru.safeai.gateway.audit.entity.AuditEventEntity;
-import ru.safeai.gateway.audit.repository.AuditEventRepository;
+import ru.safeai.gateway.audit.entity.AuditOutboxEntity;
+import ru.safeai.gateway.audit.repository.AuditOutboxRepository;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.lang.reflect.Array;
+import java.time.Clock;
 import java.time.temporal.TemporalAccessor;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -22,7 +22,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuditEventService {
@@ -32,107 +31,67 @@ public class AuditEventService {
     private static final int MAX_COLLECTION_ITEMS = 100;
     private static final int MAX_STRING_LENGTH = 1_024;
 
-    private static final String REDACTED_VALUE =
-            "[REDACTED]";
-
-    private static final String MAX_DEPTH_VALUE =
-            "[MAX_DEPTH]";
-
+    private static final String REDACTED_VALUE = "[REDACTED]";
+    private static final String MAX_DEPTH_VALUE = "[MAX_DEPTH]";
     private static final String UNSUPPORTED_VALUE_PREFIX =
             "[UNSUPPORTED_TYPE:";
 
-    private static final Set<String> SENSITIVE_KEY_PARTS =
-            Set.of(
-                    "password",
-                    "token",
-                    "secret",
-                    "apikey",
-                    "authorization",
-                    "cookie",
-                    "prompt",
-                    "response"
-            );
+    private static final Set<String> SENSITIVE_KEY_PARTS = Set.of(
+            "password",
+            "token",
+            "secret",
+            "apikey",
+            "authorization",
+            "cookie",
+            "prompt",
+            "response"
+    );
 
-    private final AuditEventRepository auditEventRepository;
+    private final AuditOutboxRepository auditOutboxRepository;
     private final UserRepository userRepository;
+    private final Clock clock;
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    /**
+     * Записывает audit outbox в ту же транзакцию, что и business mutation.
+     * Ошибка записи не проглатывается: security-sensitive mutation должна
+     * быть атомарна с durable audit intent.
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
     public void recordSystem(
             UUID organizationId,
             AuditEventType eventType,
             Map<String, Object> details
     ) {
-        record(
-                null,
-                organizationId,
-                eventType,
-                details
-        );
+        record(null, organizationId, eventType, details);
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRED)
     public void record(
             UUID userId,
             UUID organizationId,
             AuditEventType eventType,
             Map<String, Object> details
     ) {
-        try {
-            requireArguments(
-                    organizationId,
-                    eventType
-            );
+        requireArguments(organizationId, eventType);
 
-            AuditEventEntity event =
-                    new AuditEventEntity();
+        UserEntity actor = resolveActor(userId);
 
-            /*
-             * UUID actor сохраняется независимо от того,
-             * существует ли пользователь к моменту записи аудита.
-             */
-            event.setActorUserId(userId);
+        AuditOutboxEntity outbox = new AuditOutboxEntity();
+        outbox.setActorUserId(userId);
 
-            UserEntity actor = resolveActor(
-                    userId,
-                    organizationId,
-                    eventType
-            );
-
-            event.setUser(actor);
-
-            if (actor != null) {
-                event.setActorEmail(
-                        normalizeEmail(
-                                actor.getEmail()
-                        )
-                );
-
-                event.setActorDisplayName(
-                        normalizeDisplayName(
-                                actor.getFullName()
-                        )
-                );
-            }
-
-            event.setOrganizationId(organizationId);
-            event.setEventType(eventType.name());
-
-            event.setDetails(
-                    sanitizeDetails(details)
-            );
-
-            auditEventRepository.save(event);
-        } catch (RuntimeException exception) {
-            log.error(
-                    "Не удалось записать событие аудита: "
-                            + "userId={}, organizationId={}, "
-                            + "eventType={}",
-                    userId,
-                    organizationId,
-                    eventType,
-                    exception
+        if (actor != null) {
+            outbox.setActorEmail(normalizeEmail(actor.getEmail()));
+            outbox.setActorDisplayName(
+                    normalizeDisplayName(actor.getFullName())
             );
         }
+
+        outbox.setOrganizationId(organizationId);
+        outbox.setEventType(eventType.name());
+        outbox.setDetails(sanitizeDetails(details));
+        outbox.setCreatedAt(clock.instant());
+
+        auditOutboxRepository.save(outbox);
     }
 
     private void requireArguments(
@@ -141,33 +100,25 @@ public class AuditEventService {
     ) {
         if (organizationId == null) {
             throw new IllegalArgumentException(
-                    "organizationId не должен быть null "
-                            + "для audit event"
+                    "organizationId не должен быть null для audit event"
             );
         }
 
         if (eventType == null) {
             throw new IllegalArgumentException(
-                    "eventType не должен быть null "
-                            + "для audit event"
+                    "eventType не должен быть null для audit event"
             );
         }
     }
 
-    private void logMissingUser(
-            UUID userId,
-            UUID organizationId,
-            AuditEventType eventType
-    ) {
-        log.warn(
-                "Audit user reference not found; "
-                        + "writing event without user FK: "
-                        + "userId={}, organizationId={}, "
-                        + "eventType={}",
-                userId,
-                organizationId,
-                eventType
-        );
+    private UserEntity resolveActor(UUID userId) {
+        if (userId == null) {
+            return null;
+        }
+
+        return userRepository
+                .findByIdWithOrganization(userId)
+                .orElse(null);
     }
 
     private Map<String, Object> sanitizeDetails(
@@ -177,21 +128,16 @@ public class AuditEventService {
             return Map.of();
         }
 
-        Map<String, Object> sanitized =
-                new LinkedHashMap<>();
-
+        Map<String, Object> sanitized = new LinkedHashMap<>();
         int count = 0;
 
-        for (Map.Entry<String, Object> entry
-                : details.entrySet()) {
+        for (Map.Entry<String, Object> entry : details.entrySet()) {
             if (count >= MAX_DETAILS_ENTRIES) {
                 sanitized.put("_truncated", true);
                 break;
             }
 
-            String key = sanitizeKey(
-                    entry.getKey()
-            );
+            String key = sanitizeKey(entry.getKey());
 
             if (key == null) {
                 continue;
@@ -199,10 +145,7 @@ public class AuditEventService {
 
             Object value = isSensitiveKey(key)
                     ? REDACTED_VALUE
-                    : sanitizeValue(
-                    entry.getValue(),
-                    0
-            );
+                    : sanitizeValue(entry.getValue(), 0);
 
             if (value != null) {
                 sanitized.put(key, value);
@@ -210,9 +153,7 @@ public class AuditEventService {
             }
         }
 
-        return Collections.unmodifiableMap(
-                sanitized
-        );
+        return Collections.unmodifiableMap(sanitized);
     }
 
     private String sanitizeKey(String key) {
@@ -229,33 +170,17 @@ public class AuditEventService {
         }
 
         return switch (rawKey) {
-            case String value ->
-                    sanitizeKey(value);
-
-            case UUID value ->
-                    value.toString();
-
-            case Enum<?> value ->
-                    value.name();
-
-            case Number value ->
-                    value.toString();
-
-            case Boolean value ->
-                    value.toString();
-
-            case Character value ->
-                    value.toString();
-
-            default ->
-                    null;
+            case String value -> sanitizeKey(value);
+            case UUID value -> value.toString();
+            case Enum<?> value -> value.name();
+            case Number value -> value.toString();
+            case Boolean value -> value.toString();
+            case Character value -> value.toString();
+            default -> null;
         };
     }
 
-    private Object sanitizeValue(
-            Object value,
-            int depth
-    ) {
+    private Object sanitizeValue(Object value, int depth) {
         if (value == null) {
             return null;
         }
@@ -265,56 +190,25 @@ public class AuditEventService {
         }
 
         return switch (value) {
-            case String stringValue ->
-                    truncate(stringValue);
-
-            case Number numberValue ->
-                    numberValue;
-
-            case Boolean booleanValue ->
-                    booleanValue;
-
-            case Character characterValue ->
-                    characterValue.toString();
-
-            case UUID uuid ->
-                    uuid.toString();
-
-            case Enum<?> enumValue ->
-                    enumValue.name();
-
+            case String stringValue -> truncate(stringValue);
+            case Number numberValue -> numberValue;
+            case Boolean booleanValue -> booleanValue;
+            case Character characterValue -> characterValue.toString();
+            case UUID uuid -> uuid.toString();
+            case Enum<?> enumValue -> enumValue.name();
             case TemporalAccessor temporalAccessor ->
                     temporalAccessor.toString();
-
             case Map<?, ?> mapValue ->
-                    sanitizeMapValue(
-                            mapValue,
-                            depth + 1
-                    );
-
+                    sanitizeMapValue(mapValue, depth + 1);
             case Iterable<?> iterableValue ->
-                    sanitizeIterableValue(
-                            iterableValue,
-                            depth + 1
-                    );
-
-            default ->
-                    sanitizeUnknownValue(
-                            value,
-                            depth
-                    );
+                    sanitizeIterableValue(iterableValue, depth + 1);
+            default -> sanitizeUnknownValue(value, depth);
         };
     }
 
-    private Object sanitizeUnknownValue(
-            Object value,
-            int depth
-    ) {
+    private Object sanitizeUnknownValue(Object value, int depth) {
         if (value.getClass().isArray()) {
-            return sanitizeArrayValue(
-                    value,
-                    depth + 1
-            );
+            return sanitizeArrayValue(value, depth + 1);
         }
 
         return UNSUPPORTED_VALUE_PREFIX
@@ -326,21 +220,16 @@ public class AuditEventService {
             Map<?, ?> mapValue,
             int depth
     ) {
-        Map<String, Object> sanitized =
-                new LinkedHashMap<>();
-
+        Map<String, Object> sanitized = new LinkedHashMap<>();
         int count = 0;
 
-        for (Map.Entry<?, ?> entry
-                : mapValue.entrySet()) {
+        for (Map.Entry<?, ?> entry : mapValue.entrySet()) {
             if (count >= MAX_DETAILS_ENTRIES) {
                 sanitized.put("_truncated", true);
                 break;
             }
 
-            String key = sanitizeMapKey(
-                    entry.getKey()
-            );
+            String key = sanitizeMapKey(entry.getKey());
 
             if (key == null) {
                 continue;
@@ -348,10 +237,7 @@ public class AuditEventService {
 
             Object value = isSensitiveKey(key)
                     ? REDACTED_VALUE
-                    : sanitizeValue(
-                    entry.getValue(),
-                    depth
-            );
+                    : sanitizeValue(entry.getValue(), depth);
 
             if (value != null) {
                 sanitized.put(key, value);
@@ -359,18 +245,14 @@ public class AuditEventService {
             }
         }
 
-        return Collections.unmodifiableMap(
-                sanitized
-        );
+        return Collections.unmodifiableMap(sanitized);
     }
 
     private List<Object> sanitizeIterableValue(
             Iterable<?> iterableValue,
             int depth
     ) {
-        List<Object> sanitized =
-                new ArrayList<>();
-
+        List<Object> sanitized = new ArrayList<>();
         int count = 0;
 
         for (Object item : iterableValue) {
@@ -379,10 +261,7 @@ public class AuditEventService {
                 break;
             }
 
-            Object value = sanitizeValue(
-                    item,
-                    depth
-            );
+            Object value = sanitizeValue(item, depth);
 
             if (value != null) {
                 sanitized.add(value);
@@ -397,21 +276,11 @@ public class AuditEventService {
             Object arrayValue,
             int depth
     ) {
-        List<Object> sanitized =
-                new ArrayList<>();
+        List<Object> sanitized = new ArrayList<>();
+        int length = Array.getLength(arrayValue);
+        int limit = Math.min(length, MAX_COLLECTION_ITEMS);
 
-        int length = Array.getLength(
-                arrayValue
-        );
-
-        int limit = Math.min(
-                length,
-                MAX_COLLECTION_ITEMS
-        );
-
-        for (int index = 0;
-             index < limit;
-             index++) {
+        for (int index = 0; index < limit; index++) {
             Object value = sanitizeValue(
                     Array.get(arrayValue, index),
                     depth
@@ -436,20 +305,12 @@ public class AuditEventService {
 
         String trimmed = value.trim();
 
-        if (trimmed.length()
-                <= MAX_STRING_LENGTH) {
-            return trimmed;
-        }
-
-        return trimmed.substring(
-                0,
-                MAX_STRING_LENGTH
-        );
+        return trimmed.length() <= MAX_STRING_LENGTH
+                ? trimmed
+                : trimmed.substring(0, MAX_STRING_LENGTH);
     }
 
-    private boolean isSensitiveKey(
-            String key
-    ) {
+    private boolean isSensitiveKey(String key) {
         if (key == null || key.isBlank()) {
             return false;
         }
@@ -460,58 +321,23 @@ public class AuditEventService {
                 .replace("_", "")
                 .replace(".", "");
 
-        return SENSITIVE_KEY_PARTS
-                .stream()
+        return SENSITIVE_KEY_PARTS.stream()
                 .anyMatch(normalized::contains);
     }
 
-    private UserEntity resolveActor(
-            UUID userId,
-            UUID organizationId,
-            AuditEventType eventType
-    ) {
-        if (userId == null) {
-            return null;
-        }
-
-        return userRepository
-                .findByIdAndOrganizationId(
-                        userId,
-                        organizationId
-                )
-                .orElseGet(() -> {
-                    logMissingUser(
-                            userId,
-                            organizationId,
-                            eventType
-                    );
-
-                    return null;
-                });
-    }
-
-    private String normalizeEmail(
-            String email
-    ) {
+    private String normalizeEmail(String email) {
         if (email == null || email.isBlank()) {
             return null;
         }
 
-        return email
-                .trim()
-                .toLowerCase(Locale.ROOT);
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 
-    private String normalizeDisplayName(
-            String displayName
-    ) {
-        if (displayName == null
-                || displayName.isBlank()) {
+    private String normalizeDisplayName(String displayName) {
+        if (displayName == null || displayName.isBlank()) {
             return null;
         }
 
-        return truncate(
-                displayName.trim()
-        );
+        return truncate(displayName.trim());
     }
 }

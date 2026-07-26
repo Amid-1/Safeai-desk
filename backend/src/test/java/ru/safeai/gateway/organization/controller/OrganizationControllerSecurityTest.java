@@ -27,6 +27,7 @@ import ru.safeai.gateway.auth.security.UserStatusFilter;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
 import ru.safeai.gateway.organization.service.OrganizationService;
 
@@ -44,6 +45,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(
@@ -84,6 +86,9 @@ class OrganizationControllerSecurityTest {
     private static final Instant NOW =
             Instant.parse("2026-06-12T12:00:00Z");
 
+    private static final long TOKEN_VERSION = 0L;
+    private static final long ORGANIZATION_AUTH_VERSION = 0L;
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -100,10 +105,7 @@ class OrganizationControllerSecurityTest {
 
         @Bean
         Clock clock() {
-            return Clock.fixed(
-                    NOW,
-                    ZoneOffset.UTC
-            );
+            return Clock.fixed(NOW, ZoneOffset.UTC);
         }
 
         @Bean
@@ -137,6 +139,11 @@ class OrganizationControllerSecurityTest {
                                 )
                 )
                 .andExpect(status().isForbidden());
+
+        verify(
+                organizationService,
+                never()
+        ).findAll(any(), any());
     }
 
     @Test
@@ -147,28 +154,19 @@ class OrganizationControllerSecurityTest {
                 any(Pageable.class)
         )).thenReturn(
                 new PageImpl<>(
-                        List.of(
-                                new OrganizationResponse(
-                                        ORGANIZATION_ID,
-                                        "SafeAI",
-                                        true,
-                                        NOW
-                                )
-                        )
+                        List.of(response())
                 )
         );
 
         mockMvc.perform(
                         get("/api/organizations")
-                                .with(
-                                        authentication(
-                                                authToken(
-                                                        adminPrincipal()
-                                                )
-                                        )
-                                )
+                                .with(authentication(
+                                        authToken(adminPrincipal())
+                                ))
                 )
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id")
+                        .value(ORGANIZATION_ID.toString()));
 
         verify(organizationService).findAll(
                 any(SafeAiUserPrincipal.class),
@@ -177,20 +175,69 @@ class OrganizationControllerSecurityTest {
     }
 
     @Test
+    void createWithAdminRoleReturns403()
+            throws Exception {
+        mockMvc.perform(
+                        post("/api/organizations")
+                                .with(authentication(
+                                        authToken(adminPrincipal())
+                                ))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "name": "Tenant"
+                                        }
+                                        """)
+                )
+                .andExpect(status().isForbidden());
+
+        verify(
+                organizationService,
+                never()
+        ).create(any(), any());
+    }
+
+    @Test
+    void createWithSuperAdminRoleReturns201()
+            throws Exception {
+        when(organizationService.create(
+                any(CreateOrganizationRequest.class),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(response());
+
+        mockMvc.perform(
+                        post("/api/organizations")
+                                .with(authentication(
+                                        authToken(superAdminPrincipal())
+                                ))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "name": "SafeAI"
+                                        }
+                                        """)
+                )
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id")
+                        .value(ORGANIZATION_ID.toString()))
+                .andExpect(jsonPath("$.createdAt")
+                        .value(NOW.toString()));
+
+        verify(organizationService).create(
+                any(CreateOrganizationRequest.class),
+                any(SafeAiUserPrincipal.class)
+        );
+    }
+
+    @Test
     void createWithBlankNameReturns400()
             throws Exception {
         mockMvc.perform(
                         post("/api/organizations")
-                                .with(
-                                        authentication(
-                                                authToken(
-                                                        superAdminPrincipal()
-                                                )
-                                        )
-                                )
-                                .contentType(
-                                        MediaType.APPLICATION_JSON
-                                )
+                                .with(authentication(
+                                        authToken(superAdminPrincipal())
+                                ))
+                                .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
                                           "name": ""
@@ -202,9 +249,16 @@ class OrganizationControllerSecurityTest {
         verify(
                 organizationService,
                 never()
-        ).create(
-                any(),
-                any()
+        ).create(any(), any());
+    }
+
+    private OrganizationResponse response() {
+        return new OrganizationResponse(
+                ORGANIZATION_ID,
+                "SafeAI",
+                true,
+                NOW,
+                NOW
         );
     }
 
@@ -223,7 +277,8 @@ class OrganizationControllerSecurityTest {
                 ADMIN_ID,
                 ORGANIZATION_ID,
                 "admin@test.com",
-                0L,
+                TOKEN_VERSION,
+                ORGANIZATION_AUTH_VERSION,
                 List.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_ADMIN"
@@ -237,7 +292,8 @@ class OrganizationControllerSecurityTest {
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
                 "superadmin@test.com",
-                0L,
+                TOKEN_VERSION,
+                ORGANIZATION_AUTH_VERSION,
                 List.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_SUPER_ADMIN"

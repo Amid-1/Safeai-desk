@@ -8,6 +8,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -15,6 +16,7 @@ import java.util.UUID;
 @Getter
 @Setter
 @Entity
+@DynamicUpdate
 @Table(name = "organizations")
 public class OrganizationEntity {
 
@@ -25,8 +27,20 @@ public class OrganizationEntity {
     @Column(name = "name", nullable = false, length = 255)
     private String name;
 
+    @Column(
+            name = "normalized_name",
+            nullable = false,
+            insertable = false,
+            updatable = false,
+            length = 255
+    )
+    private String normalizedName;
+
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;
+
+    @Column(name = "auth_version", nullable = false)
+    private long authVersion;
 
     @Version
     @Column(name = "version", nullable = false)
@@ -52,6 +66,11 @@ public class OrganizationEntity {
     void prePersist() {
         if (id == null) {
             id = UUID.randomUUID();
+        }
+        if (authVersion < 0) {
+            throw new IllegalStateException(
+                    "OrganizationEntity.authVersion не может быть отрицательным"
+            );
         }
     }
 }

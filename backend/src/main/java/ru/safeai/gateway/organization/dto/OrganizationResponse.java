@@ -7,6 +7,7 @@ public record OrganizationResponse(
         UUID id,
         String name,
         boolean enabled,
-        Instant createdAt
+        Instant createdAt,
+        Instant updatedAt
 ) {
 }

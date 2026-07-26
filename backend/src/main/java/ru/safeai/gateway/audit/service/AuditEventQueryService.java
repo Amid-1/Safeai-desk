@@ -9,7 +9,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.dto.AuditEventFilter;
@@ -19,6 +18,7 @@ import ru.safeai.gateway.audit.repository.AuditEventRepository;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.common.security.SystemRole;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -330,14 +330,11 @@ public class AuditEventQueryService {
                         0
                 );
 
-        int pageSize =
-                Math.max(
-                        1,
-                        Math.min(
-                                pageable.getPageSize(),
-                                MAX_PAGE_SIZE
-                        )
-                );
+        int pageSize = Math.clamp(
+                pageable.getPageSize(),
+                1,
+                MAX_PAGE_SIZE
+        );
 
         return PageRequest.of(
                 pageNumber,
@@ -451,13 +448,9 @@ public class AuditEventQueryService {
             SafeAiUserPrincipal currentUser
     ) {
         return currentUser
-                .getAuthorities()
-                .stream()
-                .map(
-                        GrantedAuthority::getAuthority
-                )
-                .anyMatch(
-                        "ROLE_SUPER_ADMIN"::equals
+                .authorityNames()
+                .contains(
+                        SystemRole.SUPER_ADMIN.authority()
                 );
     }
 }

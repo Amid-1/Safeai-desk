@@ -27,18 +27,66 @@ public interface AuditEventRepository
             @NonNull Pageable pageable
     );
 
+    /*
+     * Таблица audit_outbox создаётся Flyway-миграцией V24.
+     * SqlResolve подавляется только для native SQL, который IDEA не может
+     * связать со схемой до применения или индексации миграции.
+     */
+    @SuppressWarnings({
+            "SqlResolve",
+            "SqlNoDataSourceInspection"
+    })
+    @Modifying(flushAutomatically = true)
+    @Query(
+            value = """
+                    insert into public.audit_events (
+                        id,
+                        user_id,
+                        actor_user_id,
+                        actor_email,
+                        actor_display_name,
+                        organization_id,
+                        event_type,
+                        details,
+                        created_at
+                    )
+                    select outbox.id,
+                           actor.id,
+                           outbox.actor_user_id,
+                           outbox.actor_email,
+                           outbox.actor_display_name,
+                           outbox.organization_id,
+                           outbox.event_type,
+                           outbox.details,
+                           outbox.created_at
+                    from public.audit_outbox as outbox
+                    left join public.users as actor
+                      on actor.id = outbox.actor_user_id
+                    where outbox.id = :outboxId
+                    on conflict (id) do nothing
+                    """,
+            nativeQuery = true
+    )
+    void insertFromOutbox(
+            @Param("outboxId") UUID outboxId
+    );
+
+    @SuppressWarnings({
+            "SqlResolve",
+            "SqlNoDataSourceInspection"
+    })
     @Modifying(
             flushAutomatically = true,
             clearAutomatically = true
     )
     @Query(
             value = """
-                    delete from audit_events
-                    where id in (
-                        select id
-                        from audit_events
-                        where created_at < :threshold
-                        order by created_at, id
+                    delete from public.audit_events as audit_event
+                    where audit_event.id in (
+                        select candidate.id
+                        from public.audit_events as candidate
+                        where candidate.created_at < :threshold
+                        order by candidate.created_at, candidate.id
                         limit :batchSize
                     )
                     """,

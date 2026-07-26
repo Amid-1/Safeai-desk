@@ -18,6 +18,14 @@ class PasswordValidatorTest {
     }
 
     @Test
+    void acceptsSpaceAsAValidSpecialCharacter() {
+        assertThat(validator.isValid(
+                "Strong Password 123",
+                null
+        )).isTrue();
+    }
+
+    @Test
     void rejectsNullBlankAndShortPasswords() {
         assertThat(validator.isValid(null, null)).isFalse();
         assertThat(validator.isValid("   ", null)).isFalse();

@@ -1,11 +1,11 @@
 package ru.safeai.gateway.common.security;
 
-import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -13,11 +13,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RoleAuthorityMapperTest {
 
     @Test
-    void mapsKnownRolesInStableOrder() {
+    void mapsRoleNamesToDeterministicAuthorities() {
         assertThat(RoleAuthorityMapper.toAuthorities(
-                List.of("user", "ROLE_ADMIN")
+                List.of("user", "ADMIN", "ROLE_USER")
         ))
-                .extracting(SimpleGrantedAuthority::getAuthority)
+                .extracting(GrantedAuthority::getAuthority)
                 .containsExactly(
                         "ROLE_ADMIN",
                         "ROLE_USER"
@@ -25,26 +25,33 @@ class RoleAuthorityMapperTest {
     }
 
     @Test
-    void unknownRoleFailsFast() {
-        assertThatThrownBy(() ->
-                RoleAuthorityMapper.toAuthorities(
-                        List.of("ROOT")
+    void mapsAuthoritiesToDeterministicRoleNames() {
+        assertThat(RoleAuthorityMapper.toRoleNames(
+                Set.of(
+                        new SimpleGrantedAuthority("ROLE_USER"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN")
                 )
-        )
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Unknown role");
+        )).containsExactly("ADMIN", "USER");
     }
 
     @Test
-    void nullRoleFailsFast() {
-        List<@Nullable String> roles = new ArrayList<>();
-        roles.add("USER");
-        roles.add(null);
+    void rejectsUnknownRole() {
+        assertThatThrownBy(() ->
+                RoleAuthorityMapper.toAuthorities(
+                        List.of("UNKNOWN")
+                ))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsAuthorityWithNullName() {
+        GrantedAuthority invalidAuthority = () -> null;
 
         assertThatThrownBy(() ->
-                RoleAuthorityMapper.toAuthorities(roles)
-        )
+                RoleAuthorityMapper.toRoleNames(
+                        List.of(invalidAuthority)
+                ))
                 .isInstanceOf(NullPointerException.class)
-                .hasMessage("role element не должен быть null");
+                .hasMessageContaining("getAuthority");
     }
 }

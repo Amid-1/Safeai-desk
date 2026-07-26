@@ -58,12 +58,34 @@ public class SafeAiJwtAuthenticationConverter
             throw new BadJwtException("JWT roles are invalid");
         }
 
+        Number organizationAuthVersionClaim =
+                jwt.getClaim("organizationAuthVersion");
+
+        if (organizationAuthVersionClaim == null) {
+            throw new BadJwtException(
+                    "JWT claim is missing: organizationAuthVersion"
+            );
+        }
+
+        long organizationAuthVersion =
+                organizationAuthVersionClaim.longValue();
+
+        if (organizationAuthVersion < 0) {
+            throw new BadJwtException(
+                    "JWT organizationAuthVersion is invalid"
+            );
+        }
+
         SafeAiUserPrincipal principal =
                 SafeAiUserPrincipal.accessTokenPrincipal(
                         parseUuid(userId, "userId"),
-                        parseUuid(organizationId, "organizationId"),
+                        parseUuid(
+                                organizationId,
+                                "organizationId"
+                        ),
                         email,
                         tokenVersion,
+                        organizationAuthVersion,
                         authorities
                 );
 

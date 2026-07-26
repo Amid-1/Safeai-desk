@@ -13,6 +13,12 @@ spring:
       repositories:
         enabled: false
 
+  flyway:
+    locations:
+      - classpath:db/migration
+    postgresql:
+      transactional-lock: false
+
 safeai:
   auth:
     cookies:
@@ -51,12 +57,20 @@ safeai:
       enabled: false
 
   audit:
+    outbox:
+      batch-size: 100
+      poll-delay-ms: 3600000
     retention:
       enabled: false
 
   security:
     user-status-cache:
       enabled: false
+      ttl: 60s
+      key-prefix: "safeai:test:user-status:"
+
+  user-management:
+    permanent-deletion-retention: 0s
 
     hsts:
       enabled: false

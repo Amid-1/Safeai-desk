@@ -13,10 +13,12 @@ import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.util.Locale;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
-public class CustomUserDetailsService implements UserDetailsService {
+public class CustomUserDetailsService
+        implements UserDetailsService {
 
     private final UserRepository userRepository;
 
@@ -25,15 +27,26 @@ public class CustomUserDetailsService implements UserDetailsService {
     public UserDetails loadUserByUsername(
             String email
     ) throws UsernameNotFoundException {
-        String normalizedEmail = email
+        String normalizedEmail = Objects.requireNonNull(
+                        email,
+                        "email не должен быть null"
+                )
                 .trim()
                 .toLowerCase(Locale.ROOT);
 
         UserEntity user = userRepository
-                .findByEmailIgnoreCase(normalizedEmail)
-                .orElseThrow(() -> new UsernameNotFoundException(
-                        "Пользователь не найден"
-                ));
+                .findByEmail(normalizedEmail)
+                .orElseThrow(() ->
+                        new UsernameNotFoundException(
+                                "Пользователь не найден: "
+                                        + normalizedEmail
+                        )
+                );
+
+        var organization = Objects.requireNonNull(
+                user.getOrganization(),
+                "organization пользователя не должна быть null"
+        );
 
         var authorities = RoleAuthorityMapper.toAuthorities(
                 user.getRoles()
@@ -44,12 +57,13 @@ public class CustomUserDetailsService implements UserDetailsService {
 
         return SafeAiUserPrincipal.passwordPrincipal(
                 user.getId(),
-                user.getOrganization().getId(),
-                user.getEmail(),
+                organization.getId(),
+                normalizedEmail,
                 user.getPasswordHash(),
                 user.isEnabled()
-                        && user.getOrganization().isEnabled(),
+                        && organization.isEnabled(),
                 user.getTokenVersion(),
+                organization.getAuthVersion(),
                 authorities
         );
     }

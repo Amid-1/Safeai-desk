@@ -1,10 +1,15 @@
 package ru.safeai.gateway.user.service;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import org.hibernate.Hibernate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.GrantedAuthority;
@@ -19,10 +24,11 @@ import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.persistence.DatabaseConstraintClassifier;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.common.security.SystemRole;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
-import ru.safeai.gateway.organization.repository.OrganizationRepository;
 import ru.safeai.gateway.user.dto.CreateUserRequest;
 import ru.safeai.gateway.user.dto.PermanentDeleteUserRequest;
 import ru.safeai.gateway.user.dto.ResetUserPasswordRequest;
@@ -39,6 +45,8 @@ import ru.safeai.gateway.user.mapper.UserRoleMapper;
 import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -52,65 +60,48 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@EnableConfigurationProperties(UserManagementProperties.class)
 public class UserService {
 
-    private static final String ROLE_USER = "USER";
-    private static final String ROLE_ADMIN = "ADMIN";
-    private static final String ROLE_SUPER_ADMIN = "SUPER_ADMIN";
+    private static final Set<SystemRole> SUPER_ADMIN_ASSIGNABLE_ROLES =
+            Set.of(SystemRole.USER, SystemRole.ADMIN);
 
-    private static final Set<String> SYSTEM_ROLES =
-            Set.of(
-                    ROLE_USER,
-                    ROLE_ADMIN,
-                    ROLE_SUPER_ADMIN
-            );
+    private static final Set<SystemRole> ADMIN_ASSIGNABLE_ROLES =
+            Set.of(SystemRole.USER);
 
-    private static final Set<String>
-            SUPER_ADMIN_ASSIGNABLE_ROLES =
-            Set.of(
-                    ROLE_USER,
-                    ROLE_ADMIN
-            );
+    private static final Set<SystemRole> LIST_FILTER_ROLES =
+            Set.of(SystemRole.USER, SystemRole.ADMIN);
 
-    private static final Set<String>
-            ADMIN_ASSIGNABLE_ROLES =
-            Set.of(ROLE_USER);
+    private static final Set<String> ALLOWED_SORT_PROPERTIES = Set.of(
+            "createdAt",
+            "email",
+            "fullName",
+            "enabled",
+            "lastLoginAt"
+    );
 
-    private static final Set<String> LIST_FILTER_ROLES =
-            Set.of(
-                    ROLE_USER,
-                    ROLE_ADMIN
-            );
-
-    private static final Set<String>
-            ALLOWED_SORT_PROPERTIES =
-            Set.of(
-                    "createdAt",
-                    "email",
-                    "fullName",
-                    "enabled",
-                    "lastLoginAt"
-            );
+    private static final Set<String> EMAIL_UNIQUE_CONSTRAINTS = Set.of(
+            "uq_users_email",
+            "ux_users_email_normalized"
+    );
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
-    private final OrganizationRepository organizationRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditEventService auditEventService;
     private final ApplicationEventPublisher eventPublisher;
-    private final UserSessionRevocationService
-            userSessionRevocationService;
+    private final UserSessionRevocationService userSessionRevocationService;
     private final PlatformProperties platformProperties;
+    private final UserManagementProperties userManagementProperties;
+    private final EntityManager entityManager;
+    private final Clock clock;
 
     @Transactional
     public UserResponse create(
             CreateUserRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(
                 currentUser,
                 "currentUser не должен быть null"
@@ -118,51 +109,36 @@ public class UserService {
 
         String email = normalizeEmail(request.email());
 
-        UUID targetOrganizationId =
-                resolveTargetOrganizationId(
-                        request.organizationId(),
-                        currentUser
-                );
+        UUID targetOrganizationId = resolveTargetOrganizationId(
+                request.organizationId(),
+                currentUser
+        );
 
-        rejectPlatformOrganizationCreation(
+        rejectPlatformOrganizationCreation(targetOrganizationId);
+
+        OrganizationEntity organization = lockOrganization(
                 targetOrganizationId
         );
 
-        if (userRepository.existsByEmailIgnoreCase(email)) {
-            throw new ConflictException(
-                    "Пользователь с таким email уже существует: "
-                            + email
+        if (!organization.isEnabled()) {
+            throw new ForbiddenOperationException(
+                    "Нельзя создать пользователя в отключенной организации"
             );
         }
 
-        OrganizationEntity organization =
-                organizationRepository
-                        .findById(targetOrganizationId)
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Организация не найдена: "
-                                                + targetOrganizationId
-                                )
-                        );
-
-        if (!organization.isEnabled()) {
-            throw new ForbiddenOperationException(
-                    "Нельзя создать пользователя "
-                            + "в отключенной организации"
-            );
+        if (userRepository.existsByEmail(email)) {
+            throw duplicateEmail(email);
         }
 
         Set<String> requestedRoles =
-                request.roles() == null
-                        || request.roles().isEmpty()
-                        ? Set.of(ROLE_USER)
+                request.roles() == null || request.roles().isEmpty()
+                        ? Set.of(SystemRole.USER.roleName())
                         : request.roles();
 
-        Set<RoleEntity> roles =
-                resolveUserManagementRoles(
-                        requestedRoles,
-                        currentUser
-                );
+        Set<RoleEntity> roles = resolveUserManagementRoles(
+                requestedRoles,
+                currentUser
+        );
 
         UserEntity entity = new UserEntity();
         entity.setOrganization(organization);
@@ -170,21 +146,21 @@ public class UserService {
         entity.setPasswordHash(
                 passwordEncoder.encode(request.password())
         );
-        entity.setFullName(
-                normalizeFullName(request.fullName())
-        );
+        entity.setFullName(normalizeFullName(request.fullName()));
         entity.setEnabled(true);
+        entity.setDisabledAt(null);
         entity.setRoles(new HashSet<>(roles));
 
         UserEntity saved;
 
         try {
-            saved = userRepository.saveAndFlush(entity);
+            saved = saveAndRefresh(entity);
         } catch (DataIntegrityViolationException exception) {
-            throw new ConflictException(
-                    "Пользователь с таким email уже существует: "
-                            + email
-            );
+            if (isEmailUniqueViolation(exception)) {
+                throw duplicateEmail(email);
+            }
+
+            throw exception;
         }
 
         auditEventService.record(
@@ -192,16 +168,11 @@ public class UserService {
                 saved.getOrganization().getId(),
                 AuditEventType.USER_CREATED,
                 Map.of(
-                        "targetUserId",
-                        saved.getId().toString(),
-                        "targetUserEmail",
-                        saved.getEmail(),
+                        "targetUserId", saved.getId().toString(),
+                        "targetUserEmail", saved.getEmail(),
                         "targetOrganizationId",
-                        saved.getOrganization()
-                                .getId()
-                                .toString(),
-                        "roles",
-                        UserRoleMapper.toRoleNames(saved)
+                        saved.getOrganization().getId().toString(),
+                        "roles", UserRoleMapper.toRoleNames(saved)
                 )
         );
 
@@ -218,78 +189,72 @@ public class UserService {
                 currentUser,
                 "currentUser не должен быть null"
         );
-        Objects.requireNonNull(
-                pageable,
-                "pageable не должен быть null"
-        );
+        Objects.requireNonNull(pageable, "pageable не должен быть null");
 
-        validatePageableSort(pageable);
-
-        String normalizedRole =
-                normalizeListRole(role);
+        Pageable stablePageable = normalizePageable(pageable);
+        String normalizedRole = normalizeListRole(role);
 
         Page<UUID> idPage;
 
         if (isSuperAdmin(currentUser)) {
             idPage = normalizedRole == null
-                    ? userRepository.findAllIds(pageable)
+                    ? userRepository.findAllIds(stablePageable)
                     : userRepository.findAllIdsByRole(
-                    normalizedRole,
-                    pageable
-            );
+                            normalizedRole,
+                            stablePageable
+                    );
         } else {
             idPage = normalizedRole == null
-                    ? userRepository
-                    .findAllIdsByOrganizationId(
+                    ? userRepository.findAllIdsByOrganizationId(
                             currentUser.getOrganizationId(),
-                            pageable
+                            stablePageable
                     )
-                    : userRepository
-                    .findAllIdsByOrganizationIdAndRole(
+                    : userRepository.findAllIdsByOrganizationIdAndRole(
                             currentUser.getOrganizationId(),
                             normalizedRole,
-                            pageable
+                            stablePageable
                     );
         }
 
         if (idPage.isEmpty()) {
             return new PageImpl<>(
                     List.of(),
-                    pageable,
+                    stablePageable,
                     idPage.getTotalElements()
             );
         }
 
-        List<UserEntity> users =
-                userRepository
-                        .findAllByIdsWithRolesAndOrganization(
-                                idPage.getContent()
-                        );
+        List<UserEntity> users = userRepository
+                .findAllByIdsWithRolesAndOrganization(
+                        idPage.getContent()
+                );
 
-        Map<UUID, UserEntity> usersById =
-                new HashMap<>();
+        Map<UUID, UserEntity> usersById = new HashMap<>();
 
         for (UserEntity user : users) {
-            usersById.put(
-                    user.getId(),
-                    user
-            );
+            usersById.put(user.getId(), user);
         }
 
-        List<UserResponse> content =
-                new ArrayList<>(idPage.getSize());
+        List<UserResponse> content = new ArrayList<>(
+                idPage.getNumberOfElements()
+        );
 
         for (UUID userId : idPage.getContent()) {
             UserEntity user = usersById.get(userId);
 
-            if (user != null) {
-                content.add(toResponse(user));
+            if (user == null) {
+                throw new IllegalStateException(
+                        "Не удалось загрузить пользователя из page snapshot: "
+                                + userId
+                );
             }
+
+            content.add(toResponse(user));
         }
 
         return new PageImpl<>(
                 content,
-                pageable,
+                stablePageable,
                 idPage.getTotalElements()
         );
     }
@@ -300,10 +265,7 @@ public class UserService {
             SafeAiUserPrincipal currentUser
     ) {
         return toDetailsResponse(
-                findUserVisibleForCurrentUser(
-                        id,
-                        currentUser
-                )
+                findUserVisibleForCurrentUser(id, currentUser)
         );
     }
 
@@ -319,41 +281,37 @@ public class UserService {
         if (isSuperAdmin(currentUser)) {
             return new UserStatisticsResponse(
                     userRepository.count(),
-                    userRepository.countByRole(ROLE_ADMIN),
-                    userRepository.countByRole(ROLE_USER),
+                    userRepository.countByRole(
+                            SystemRole.ADMIN.roleName()
+                    ),
+                    userRepository.countByRole(
+                            SystemRole.USER.roleName()
+                    ),
                     userRepository.countByEnabled(true),
                     userRepository.countByEnabled(false)
             );
         }
 
-        UUID organizationId =
-                currentUser.getOrganizationId();
+        UUID organizationId = currentUser.getOrganizationId();
 
         return new UserStatisticsResponse(
-                userRepository
-                        .countByOrganization_Id(
-                                organizationId
-                        ),
-                userRepository
-                        .countByOrganizationIdAndRole(
-                                organizationId,
-                                ROLE_ADMIN
-                        ),
-                userRepository
-                        .countByOrganizationIdAndRole(
-                                organizationId,
-                                ROLE_USER
-                        ),
-                userRepository
-                        .countByOrganization_IdAndEnabled(
-                                organizationId,
-                                true
-                        ),
-                userRepository
-                        .countByOrganization_IdAndEnabled(
-                                organizationId,
-                                false
-                        )
+                userRepository.countByOrganization_Id(organizationId),
+                userRepository.countByOrganizationIdAndRole(
+                        organizationId,
+                        SystemRole.ADMIN.roleName()
+                ),
+                userRepository.countByOrganizationIdAndRole(
+                        organizationId,
+                        SystemRole.USER.roleName()
+                ),
+                userRepository.countByOrganization_IdAndEnabled(
+                        organizationId,
+                        true
+                ),
+                userRepository.countByOrganization_IdAndEnabled(
+                        organizationId,
+                        false
+                )
         );
     }
 
@@ -363,59 +321,29 @@ public class UserService {
             UpdateUserRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
 
-        UserEntity user =
-                findUserVisibleForCurrentUser(
-                        id,
-                        currentUser
-                );
+        UserEntity user = findUserForSecurityMutation(id, currentUser);
 
         rejectSuperAdminMutation(user);
+        rejectSelfManagement(user, currentUser, "редактировать");
+        rejectAdminManagingAdmin(user, currentUser);
 
-        if (user.getId().equals(currentUser.getId())) {
-            throw new ForbiddenOperationException(
-                    "Нельзя редактировать самого себя "
-                            + "через user-management"
-            );
-        }
+        String normalizedEmail = normalizeEmail(request.email());
+        String normalizedFullName = normalizeFullName(request.fullName());
 
-        rejectAdminManagingAdmin(
-                user,
-                currentUser
+        boolean emailChanged = !user.getEmail().equals(normalizedEmail);
+        boolean fullNameChanged = !Objects.equals(
+                user.getFullName(),
+                normalizedFullName
         );
-
-        String normalizedEmail =
-                normalizeEmail(request.email());
-
-        String normalizedFullName =
-                normalizeFullName(request.fullName());
-
-        boolean emailChanged =
-                !user.getEmail().equals(normalizedEmail);
-
-        boolean fullNameChanged =
-                !Objects.equals(
-                        user.getFullName(),
-                        normalizedFullName
-                );
 
         if (!emailChanged && !fullNameChanged) {
             return toResponse(user);
         }
 
-        if (emailChanged
-                && userRepository
-                .existsByEmailIgnoreCase(
-                        normalizedEmail
-                )) {
-            throw new ConflictException(
-                    "Пользователь с таким email уже существует: "
-                            + normalizedEmail
-            );
+        if (emailChanged && userRepository.existsByEmail(normalizedEmail)) {
+            throw duplicateEmail(normalizedEmail);
         }
 
         String oldEmail = user.getEmail();
@@ -425,36 +353,27 @@ public class UserService {
         user.setFullName(normalizedFullName);
 
         if (emailChanged) {
-            user.setTokenVersion(
-                    Math.addExact(
-                            user.getTokenVersion(),
-                            1L
-                    )
-            );
+            incrementTokenVersion(user);
         }
 
         UserEntity saved;
 
         try {
-            saved = userRepository.saveAndFlush(user);
+            saved = saveAndRefresh(user);
         } catch (DataIntegrityViolationException exception) {
-            throw new ConflictException(
-                    "Пользователь с такими данными "
-                            + "уже существует"
-            );
+            if (isEmailUniqueViolation(exception)) {
+                throw duplicateEmail(normalizedEmail);
+            }
+
+            throw exception;
         }
 
         if (emailChanged) {
-            userSessionRevocationService
-                    .revokeAllForUser(
-                            saved.getId(),
-                            RefreshTokenRevocationReason
-                                    .EMAIL_CHANGED
-                    );
-
-            publishSecurityStateChanged(
-                    saved.getId()
+            userSessionRevocationService.revokeAllForUser(
+                    saved.getId(),
+                    RefreshTokenRevocationReason.EMAIL_CHANGED
             );
+            publishSecurityStateChanged(saved.getId());
         }
 
         auditEventService.record(
@@ -462,26 +381,14 @@ public class UserService {
                 saved.getOrganization().getId(),
                 AuditEventType.USER_UPDATED,
                 Map.of(
-                        "targetUserId",
-                        saved.getId().toString(),
-                        "oldEmail",
-                        oldEmail,
-                        "newEmail",
-                        saved.getEmail(),
-                        "oldFullName",
-                        oldFullName == null
-                                ? ""
-                                : oldFullName,
-                        "newFullName",
-                        saved.getFullName() == null
-                                ? ""
-                                : saved.getFullName(),
-                        "emailChanged",
-                        emailChanged,
-                        "fullNameChanged",
-                        fullNameChanged,
-                        "sessionsRevoked",
-                        emailChanged
+                        "targetUserId", saved.getId().toString(),
+                        "oldEmail", oldEmail,
+                        "newEmail", saved.getEmail(),
+                        "oldFullName", nullToEmpty(oldFullName),
+                        "newFullName", nullToEmpty(saved.getFullName()),
+                        "emailChanged", emailChanged,
+                        "fullNameChanged", fullNameChanged,
+                        "sessionsRevoked", emailChanged
                 )
         );
 
@@ -494,101 +401,61 @@ public class UserService {
             UpdateUserEnabledRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
 
-        UserEntity user =
-                findUserVisibleForCurrentUser(
-                        id,
-                        currentUser
-                );
+        UserEntity user = findUserForSecurityMutation(id, currentUser);
 
         rejectSuperAdminMutation(user);
 
         boolean oldEnabled = user.isEnabled();
-        boolean newEnabled =
-                Boolean.TRUE.equals(request.enabled());
+        boolean newEnabled = Boolean.TRUE.equals(request.enabled());
 
-        if (user.getId().equals(currentUser.getId())
-                && !newEnabled) {
+        if (user.getId().equals(currentUser.getId()) && !newEnabled) {
             throw new ForbiddenOperationException(
                     "Нельзя отключить самого себя"
             );
         }
 
-        rejectAdminManagingAdmin(
-                user,
-                currentUser
-        );
+        rejectAdminManagingAdmin(user, currentUser);
 
         if (!newEnabled && isEnabledAdmin(user)) {
-            List<UserEntity> enabledAdmins =
-                    userRepository
-                            .findEnabledAdminsForUpdate(
-                                    user.getOrganization()
-                                            .getId()
-                            );
-
-            if (enabledAdmins.size() <= 1) {
-                throw new ForbiddenOperationException(
-                        "Нельзя отключить последнего активного "
-                                + "администратора организации"
-                );
-            }
+            assertNotLastEnabledAdmin(user);
         }
 
-        boolean changed =
-                oldEnabled != newEnabled;
+        boolean changed = oldEnabled != newEnabled;
 
-        if (changed) {
-            user.setEnabled(newEnabled);
-            user.setTokenVersion(
-                    Math.addExact(
-                            user.getTokenVersion(),
-                            1L
-                    )
+        if (!changed) {
+            return toResponse(user);
+        }
+
+        user.setEnabled(newEnabled);
+        user.setDisabledAt(newEnabled ? null : clock.instant());
+        incrementTokenVersion(user);
+
+        UserEntity saved = saveAndRefresh(user);
+
+        if (!newEnabled) {
+            userSessionRevocationService.revokeAllForUser(
+                    saved.getId(),
+                    RefreshTokenRevocationReason.USER_DISABLED
             );
         }
 
-        UserEntity saved =
-                userRepository.save(user);
-
-        if (changed) {
-            if (!newEnabled) {
-                userSessionRevocationService
-                        .revokeAllForUser(
-                                saved.getId(),
-                                RefreshTokenRevocationReason
-                                        .USER_DISABLED
-                        );
-            }
-
-            publishSecurityStateChanged(
-                    saved.getId()
-            );
-        }
+        publishSecurityStateChanged(saved.getId());
 
         auditEventService.record(
                 currentUser.getId(),
                 saved.getOrganization().getId(),
                 AuditEventType.USER_ENABLED_CHANGED,
                 Map.of(
-                        "targetUserId",
-                        saved.getId().toString(),
-                        "targetUserEmail",
-                        saved.getEmail(),
+                        "targetUserId", saved.getId().toString(),
+                        "targetUserEmail", saved.getEmail(),
                         "targetOrganizationId",
-                        saved.getOrganization()
-                                .getId()
-                                .toString(),
-                        "oldEnabled",
-                        oldEnabled,
-                        "newEnabled",
-                        saved.isEnabled(),
-                        "changed",
-                        changed
+                        saved.getOrganization().getId().toString(),
+                        "oldEnabled", oldEnabled,
+                        "newEnabled", saved.isEnabled(),
+                        "changed", true,
+                        "sessionsRevoked", !newEnabled
                 )
         );
 
@@ -601,116 +468,71 @@ public class UserService {
             UpdateUserRolesRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
 
-        UserEntity user =
-                findUserVisibleForCurrentUser(
-                        id,
-                        currentUser
-                );
+        UserEntity user = findUserForSecurityMutation(id, currentUser);
 
         rejectSuperAdminMutation(user);
+        rejectSelfManagement(user, currentUser, "менять собственные роли");
+        rejectAdminManagingAdmin(user, currentUser);
 
-        if (user.getId().equals(currentUser.getId())) {
-            throw new ForbiddenOperationException(
-                    "Нельзя менять собственные роли"
+        Set<String> oldRoles = UserRoleMapper.toRoleNames(user);
+        Set<SystemRole> requestedRoles = normalizeRoles(request.roles());
+
+        if (requestedRoles.size() != 1) {
+            throw new ConflictException(
+                    "У пользователя должна быть ровно одна роль"
             );
         }
 
-        rejectAdminManagingAdmin(
-                user,
+        boolean removesAdminRole = oldRoles.contains(
+                SystemRole.ADMIN.roleName()
+        ) && !requestedRoles.contains(SystemRole.ADMIN);
+
+        if (user.isEnabled() && removesAdminRole) {
+            assertNotLastEnabledAdmin(user);
+        }
+
+        Set<RoleEntity> roles = resolveUserManagementRoles(
+                requestedRoles.stream()
+                        .map(SystemRole::roleName)
+                        .collect(Collectors.toUnmodifiableSet()),
                 currentUser
         );
 
-        Set<String> oldRoles =
-                UserRoleMapper.toRoleNames(user);
+        Set<String> requestedRoleNames = requestedRoles.stream()
+                .map(SystemRole::roleName)
+                .collect(Collectors.toUnmodifiableSet());
 
-        Set<String> requestedRoles =
-                normalizeRoles(request.roles());
-
-        if (requestedRoles.isEmpty()) {
-            throw new ConflictException(
-                    "У пользователя должна быть хотя бы одна роль"
-            );
+        if (oldRoles.equals(requestedRoleNames)) {
+            return toResponse(user);
         }
 
-        boolean removesAdminRole =
-                oldRoles.contains(ROLE_ADMIN)
-                        && !requestedRoles.contains(ROLE_ADMIN);
+        user.getRoles().clear();
+        user.getRoles().addAll(roles);
+        incrementTokenVersion(user);
 
-        if (user.isEnabled() && removesAdminRole) {
-            List<UserEntity> enabledAdmins =
-                    userRepository
-                            .findEnabledAdminsForUpdate(
-                                    user.getOrganization()
-                                            .getId()
-                            );
+        UserEntity saved = saveAndRefresh(user);
 
-            if (enabledAdmins.size() <= 1) {
-                throw new ForbiddenOperationException(
-                        "Нельзя снять роль ADMIN с последнего "
-                                + "активного администратора организации"
-                );
-            }
-        }
-
-        Set<RoleEntity> roles =
-                resolveUserManagementRoles(
-                        requestedRoles,
-                        currentUser
-                );
-
-        boolean changed =
-                !oldRoles.equals(requestedRoles);
-
-        if (changed) {
-            user.setRoles(new HashSet<>(roles));
-            user.setTokenVersion(
-                    Math.addExact(
-                            user.getTokenVersion(),
-                            1L
-                    )
-            );
-        }
-
-        UserEntity saved =
-                userRepository.save(user);
-
-        if (changed) {
-            userSessionRevocationService
-                    .revokeAllForUser(
-                            saved.getId(),
-                            RefreshTokenRevocationReason
-                                    .ROLE_CHANGED
-                    );
-
-            publishSecurityStateChanged(
-                    saved.getId()
-            );
-        }
+        userSessionRevocationService.revokeAllForUser(
+                saved.getId(),
+                RefreshTokenRevocationReason.ROLE_CHANGED
+        );
+        publishSecurityStateChanged(saved.getId());
 
         auditEventService.record(
                 currentUser.getId(),
                 saved.getOrganization().getId(),
                 AuditEventType.USER_ROLES_CHANGED,
                 Map.of(
-                        "targetUserId",
-                        saved.getId().toString(),
-                        "targetUserEmail",
-                        saved.getEmail(),
+                        "targetUserId", saved.getId().toString(),
+                        "targetUserEmail", saved.getEmail(),
                         "targetOrganizationId",
-                        saved.getOrganization()
-                                .getId()
-                                .toString(),
-                        "oldRoles",
-                        oldRoles,
-                        "newRoles",
-                        UserRoleMapper.toRoleNames(saved),
-                        "changed",
-                        changed
+                        saved.getOrganization().getId().toString(),
+                        "oldRoles", oldRoles,
+                        "newRoles", UserRoleMapper.toRoleNames(saved),
+                        "changed", true,
+                        "sessionsRevoked", true
                 )
         );
 
@@ -723,61 +545,36 @@ public class UserService {
             ResetUserPasswordRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
 
-        UserEntity user =
-                findUserVisibleForCurrentUser(
-                        id,
-                        currentUser
-                );
+        UserEntity user = findUserForSecurityMutation(id, currentUser);
 
         rejectSuperAdminMutation(user);
-        rejectAdminManagingAdmin(
-                user,
-                currentUser
-        );
+        rejectAdminManagingAdmin(user, currentUser);
 
         user.setPasswordHash(
                 passwordEncoder.encode(request.password())
         );
+        incrementTokenVersion(user);
 
-        user.setTokenVersion(
-                Math.addExact(
-                        user.getTokenVersion(),
-                        1L
-                )
+        UserEntity saved = saveAndRefresh(user);
+
+        userSessionRevocationService.revokeAllForUser(
+                saved.getId(),
+                RefreshTokenRevocationReason.PASSWORD_RESET
         );
-
-        UserEntity saved =
-                userRepository.save(user);
-
-        userSessionRevocationService
-                .revokeAllForUser(
-                        saved.getId(),
-                        RefreshTokenRevocationReason
-                                .PASSWORD_RESET
-                );
-
-        publishSecurityStateChanged(
-                saved.getId()
-        );
+        publishSecurityStateChanged(saved.getId());
 
         auditEventService.record(
                 currentUser.getId(),
                 saved.getOrganization().getId(),
                 AuditEventType.USER_PASSWORD_RESET,
                 Map.of(
-                        "targetUserId",
-                        saved.getId().toString(),
-                        "targetUserEmail",
-                        saved.getEmail(),
+                        "targetUserId", saved.getId().toString(),
+                        "targetUserEmail", saved.getEmail(),
                         "targetOrganizationId",
-                        saved.getOrganization()
-                                .getId()
-                                .toString()
+                        saved.getOrganization().getId().toString(),
+                        "sessionsRevoked", true
                 )
         );
     }
@@ -788,10 +585,7 @@ public class UserService {
             PermanentDeleteUserRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(
                 currentUser,
                 "currentUser не должен быть null"
@@ -799,16 +593,11 @@ public class UserService {
 
         if (!isSuperAdmin(currentUser)) {
             throw new ForbiddenOperationException(
-                    "Только SUPER_ADMIN может удалять "
-                            + "пользователей навсегда"
+                    "Только SUPER_ADMIN может удалять пользователей навсегда"
             );
         }
 
-        UserEntity user =
-                findUserVisibleForCurrentUser(
-                        id,
-                        currentUser
-                );
+        UserEntity user = findUserForSecurityMutation(id, currentUser);
 
         if (user.getId().equals(currentUser.getId())) {
             throw new ForbiddenOperationException(
@@ -818,85 +607,105 @@ public class UserService {
 
         rejectSuperAdminMutation(user);
 
-        if (platformProperties
-                .organizationId()
-                .equals(
-                        user.getOrganization().getId()
-                )) {
+        UUID targetOrganizationId = user.getOrganization().getId();
+
+        if (platformProperties.organizationId().equals(targetOrganizationId)) {
             throw new ForbiddenOperationException(
-                    "Нельзя удалить пользователя "
-                            + "платформенной организации"
+                    "Нельзя удалить пользователя платформенной организации"
             );
         }
 
-        String confirmationEmail =
-                normalizeEmail(
-                        request.confirmationEmail()
-                );
+        String confirmationEmail = normalizeEmail(
+                request.confirmationEmail()
+        );
 
         if (!user.getEmail().equals(confirmationEmail)) {
             throw new BadRequestException(
-                    "Email подтверждения не совпадает "
-                            + "с email пользователя"
+                    "Email подтверждения не совпадает с email пользователя"
             );
         }
 
-        if (userRepository
-                .hasPermanentDeletionDependencies(
-                        user.getId()
-                )) {
+        if (isEnabledAdmin(user)) {
+            assertNotLastEnabledAdmin(user);
+        }
+
+        if (user.isEnabled()) {
+            throw new ForbiddenOperationException(
+                    "Перед окончательным удалением пользователя необходимо отключить"
+            );
+        }
+
+        Instant disabledAt = user.getDisabledAt();
+
+        if (disabledAt == null) {
             throw new ConflictException(
-                    "Пользователя нельзя удалить навсегда, "
-                            + "поскольку у него есть история чатов. "
-                            + "Отключите пользователя."
+                    "Для отключённого пользователя не зафиксировано время отключения"
+            );
+        }
+
+        Instant deletionAllowedAt = disabledAt.plus(
+                userManagementProperties.permanentDeletionRetention()
+        );
+
+        if (clock.instant().isBefore(deletionAllowedAt)) {
+            throw new ForbiddenOperationException(
+                    "Период хранения перед окончательным удалением ещё не истёк: "
+                            + deletionAllowedAt
+            );
+        }
+
+        if (userRepository.hasActiveRefreshTokens(user.getId())) {
+            throw new ConflictException(
+                    "Пользователя нельзя удалить: остались активные refresh-сессии"
+            );
+        }
+
+        if (userRepository.hasPermanentDeletionDependencies(user.getId())) {
+            throw new ConflictException(
+                    "Пользователя нельзя удалить навсегда: сохранены связанные данные"
             );
         }
 
         UUID targetUserId = user.getId();
-
-        UUID targetOrganizationId =
-                user.getOrganization().getId();
-
         String targetEmail = user.getEmail();
         String targetFullName = user.getFullName();
+        Set<String> targetRoles = UserRoleMapper.toRoleNames(user);
 
-        Set<String> targetRoles =
-                UserRoleMapper.toRoleNames(user);
-
-        userSessionRevocationService
-                .revokeAllForUser(
-                        targetUserId,
-                        RefreshTokenRevocationReason.ADMIN_REVOKED
-                );
-
-        userRepository.delete(user);
-        userRepository.flush();
-
-        publishSecurityStateChanged(
-                targetUserId
+        userSessionRevocationService.revokeAllForUser(
+                targetUserId,
+                RefreshTokenRevocationReason.ADMIN_REVOKED
         );
+
+        try {
+            userRepository.delete(user);
+            userRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            if (DatabaseConstraintClassifier.isForeignKeyViolation(
+                    exception
+            )) {
+                throw new ConflictException(
+                        "Пользователя нельзя удалить: во время удаления появились связанные данные"
+                );
+            }
+
+            throw exception;
+        }
+
+        publishSecurityStateChanged(targetUserId);
 
         auditEventService.record(
                 currentUser.getId(),
                 targetOrganizationId,
                 AuditEventType.USER_PERMANENTLY_DELETED,
                 Map.of(
-                        "targetUserId",
-                        targetUserId.toString(),
-                        "targetUserEmail",
-                        targetEmail,
-                        "targetUserFullName",
-                        targetFullName == null
-                                ? ""
-                                : targetFullName,
+                        "targetUserId", targetUserId.toString(),
+                        "targetUserEmail", targetEmail,
+                        "targetUserFullName", nullToEmpty(targetFullName),
                         "targetOrganizationId",
                         targetOrganizationId.toString(),
-                        "targetRoles",
-                        targetRoles,
-                        "hadChatHistory",
-                        false,
-                        "sessionsRevoked",
-                        true
+                        "targetRoles", targetRoles,
+                        "retentionSatisfied", true,
+                        "sessionsRevoked", true
                 )
         );
     }
@@ -914,12 +723,11 @@ public class UserService {
             return requestedOrganizationId;
         }
 
-        if (!currentUser
-                .getOrganizationId()
-                .equals(requestedOrganizationId)) {
+        if (!currentUser.getOrganizationId().equals(
+                requestedOrganizationId
+        )) {
             throw new ForbiddenOperationException(
-                    "Нельзя создавать пользователя "
-                            + "в другой организации"
+                    "Нельзя создавать пользователя в другой организации"
             );
         }
 
@@ -930,82 +738,140 @@ public class UserService {
             UUID id,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                id,
-                "id не должен быть null"
-        );
+        Objects.requireNonNull(id, "id не должен быть null");
         Objects.requireNonNull(
                 currentUser,
                 "currentUser не должен быть null"
         );
 
         if (isSuperAdmin(currentUser)) {
-            return userRepository
-                    .findByIdWithRolesAndOrganization(id)
-                    .orElseThrow(() ->
-                            new ResourceNotFoundException(
-                                    "Пользователь не найден: "
-                                            + id
-                            )
-                    );
+            return userRepository.findByIdWithRolesAndOrganization(id)
+                    .orElseThrow(() -> userNotFound(id));
         }
 
-        return userRepository
-                .findByIdAndOrganizationId(
+        return userRepository.findByIdAndOrganizationId(
                         id,
                         currentUser.getOrganizationId()
                 )
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Пользователь не найден: "
-                                        + id
-                        )
-                );
+                .orElseThrow(() -> userNotFound(id));
+    }
+
+    /**
+     * Единый порядок административных mutation:
+     * organization lock -> user lock -> invariant checks -> mutation.
+     *
+     * <p>Предварительный visibility snapshot загружает versioned
+     * OrganizationEntity в persistence context. Перед получением
+     * PESSIMISTIC_WRITE snapshot и организация выборочно отсоединяются,
+     * чтобы Hibernate не пытался повысить блокировку устаревшей версии
+     * организации после параллельного изменения organization epoch.</p>
+     */
+    private UserEntity findUserForSecurityMutation(
+            UUID id,
+            SafeAiUserPrincipal currentUser
+    ) {
+        UserEntity visibleSnapshot = findUserVisibleForCurrentUser(
+                id,
+                currentUser
+        );
+
+        OrganizationEntity visibleOrganization =
+                visibleSnapshot.getOrganization();
+
+        UUID organizationId = visibleOrganization.getId();
+
+        detachVisibleSecuritySnapshot(
+                visibleSnapshot,
+                visibleOrganization
+        );
+
+        lockOrganization(organizationId);
+
+        UserEntity locked = userRepository.findByIdForSecurityUpdate(id)
+                .orElseThrow(() -> userNotFound(id));
+
+        UUID lockedOrganizationId = locked.getOrganization().getId();
+        Hibernate.initialize(locked.getRoles());
+
+        if (!organizationId.equals(lockedOrganizationId)) {
+            throw new IllegalStateException(
+                    "Организация пользователя изменилась во время блокировки: "
+                            + id
+            );
+        }
+
+        if (!isSuperAdmin(currentUser)
+                && !currentUser.getOrganizationId().equals(
+                        lockedOrganizationId
+                )) {
+            throw userNotFound(id);
+        }
+
+        return locked;
+    }
+
+    private void detachVisibleSecuritySnapshot(
+            UserEntity visibleSnapshot,
+            OrganizationEntity visibleOrganization
+    ) {
+        if (entityManager.contains(visibleSnapshot)) {
+            entityManager.detach(visibleSnapshot);
+        }
+
+        if (entityManager.contains(visibleOrganization)) {
+            entityManager.detach(visibleOrganization);
+        }
+    }
+
+    private OrganizationEntity lockOrganization(UUID organizationId) {
+        OrganizationEntity organization = entityManager.find(
+                OrganizationEntity.class,
+                organizationId,
+                LockModeType.PESSIMISTIC_WRITE
+        );
+
+        if (organization == null) {
+            throw new ResourceNotFoundException(
+                    "Организация не найдена: " + organizationId
+            );
+        }
+
+        return organization;
     }
 
     private Set<RoleEntity> resolveUserManagementRoles(
             Set<String> requestedRoles,
             SafeAiUserPrincipal currentUser
     ) {
-        Set<String> normalizedRoles =
-                normalizeRoles(requestedRoles);
+        Set<SystemRole> normalizedRoles = normalizeRoles(requestedRoles);
 
-        if (normalizedRoles.isEmpty()) {
+        if (normalizedRoles.size() != 1) {
             throw new ConflictException(
-                    "У пользователя должна быть хотя бы одна роль"
+                    "У пользователя должна быть ровно одна роль"
             );
         }
 
-        if (!SYSTEM_ROLES.containsAll(normalizedRoles)) {
-            throw new ConflictException(
-                    "Неизвестные роли: "
-                            + normalizedRoles
-            );
-        }
-
-        Set<String> assignableRoles =
-                isSuperAdmin(currentUser)
-                        ? SUPER_ADMIN_ASSIGNABLE_ROLES
-                        : ADMIN_ASSIGNABLE_ROLES;
+        Set<SystemRole> assignableRoles = isSuperAdmin(currentUser)
+                ? SUPER_ADMIN_ASSIGNABLE_ROLES
+                : ADMIN_ASSIGNABLE_ROLES;
 
         if (!assignableRoles.containsAll(normalizedRoles)) {
             throw new ForbiddenOperationException(
                     isSuperAdmin(currentUser)
-                            ? "SUPER_ADMIN нельзя назначать через "
-                            + "user-management endpoint"
+                            ? "SUPER_ADMIN нельзя назначать через user-management endpoint"
                             : "ADMIN может назначать только роль USER"
             );
         }
 
         return normalizedRoles.stream()
-                .map(roleName ->
-                        roleRepository.findByName(roleName)
-                                .orElseThrow(() ->
-                                        new ResourceNotFoundException(
-                                                "Роль не найдена: "
-                                                        + roleName
-                                        )
+                .map(role -> roleRepository
+                        .findByName(role.roleName())
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Роль не найдена: "
+                                                + role.roleName()
                                 )
+                        )
                 )
                 .collect(Collectors.toUnmodifiableSet());
     }
@@ -1014,8 +880,10 @@ public class UserService {
             UserEntity targetUser,
             SafeAiUserPrincipal currentUser
     ) {
-        if (!isSuperAdmin(currentUser)
-                && hasAdminRole(targetUser)) {
+        if (!isSuperAdmin(currentUser) && hasRole(
+                targetUser,
+                SystemRole.ADMIN
+        )) {
             throw new ForbiddenOperationException(
                     "ADMIN не может управлять другим ADMIN"
             );
@@ -1025,115 +893,134 @@ public class UserService {
     private void rejectPlatformOrganizationCreation(
             UUID targetOrganizationId
     ) {
-        if (platformProperties
-                .organizationId()
-                .equals(targetOrganizationId)) {
+        if (platformProperties.organizationId().equals(
+                targetOrganizationId
+        )) {
             throw new ForbiddenOperationException(
-                    "Нельзя создавать пользователей "
-                            + "в platform organization через обычный "
-                            + "user-management endpoint"
+                    "Нельзя создавать пользователей в platform organization через обычный user-management endpoint"
             );
         }
     }
 
-    private String normalizeListRole(
-            String role
-    ) {
+    private String normalizeListRole(String role) {
         if (role == null || role.isBlank()) {
             return null;
         }
 
-        String normalized = role
-                .trim()
-                .toUpperCase(Locale.ROOT);
+        SystemRole normalized;
 
-        if (!LIST_FILTER_ROLES.contains(normalized)) {
+        try {
+            normalized = SystemRole.parse(role);
+        } catch (IllegalArgumentException exception) {
             throw new BadRequestException(
-                    "Недопустимый фильтр роли: "
-                            + role
+                    "Недопустимый фильтр роли: " + role
             );
         }
 
-        return normalized;
+        if (!LIST_FILTER_ROLES.contains(normalized)) {
+            throw new BadRequestException(
+                    "Недопустимый фильтр роли: " + role
+            );
+        }
+
+        return normalized.roleName();
     }
 
-    private Set<String> normalizeRoles(
-            Set<String> roles
-    ) {
+    private Set<SystemRole> normalizeRoles(Set<String> roles) {
         if (roles == null) {
             return Set.of();
         }
 
-        return roles.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(role -> !role.isBlank())
-                .map(role ->
-                        role.toUpperCase(Locale.ROOT)
-                )
-                .collect(Collectors.toUnmodifiableSet());
-    }
-
-    private boolean isSuperAdmin(
-            SafeAiUserPrincipal currentUser
-    ) {
-        return currentUser.getAuthorities()
-                .stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch("ROLE_SUPER_ADMIN"::equals);
-    }
-
-    private boolean isEnabledAdmin(
-            UserEntity user
-    ) {
-        return user.isEnabled()
-                && hasAdminRole(user);
-    }
-
-    private boolean hasAdminRole(
-            UserEntity user
-    ) {
-        return user.getRoles()
-                .stream()
-                .map(RoleEntity::getName)
-                .anyMatch(
-                        ROLE_ADMIN::equalsIgnoreCase
-                );
-    }
-
-    private boolean hasSuperAdminRole(
-            UserEntity user
-    ) {
-        return user.getRoles()
-                .stream()
-                .map(RoleEntity::getName)
-                .anyMatch(
-                        ROLE_SUPER_ADMIN::equalsIgnoreCase
-                );
-    }
-
-    private void rejectSuperAdminMutation(
-            UserEntity user
-    ) {
-        if (hasSuperAdminRole(user)) {
-            throw new ForbiddenOperationException(
-                    "SUPER_ADMIN нельзя изменять через обычный "
-                            + "user-management endpoint"
+        try {
+            return roles.stream()
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(role -> !role.isBlank())
+                    .map(SystemRole::parse)
+                    .collect(Collectors.toUnmodifiableSet());
+        } catch (IllegalArgumentException exception) {
+            throw new ConflictException(
+                    "Передана неизвестная системная роль"
             );
         }
     }
 
-    private void publishSecurityStateChanged(
-            UUID userId
+    private boolean isSuperAdmin(SafeAiUserPrincipal currentUser) {
+        return currentUser.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(SystemRole.SUPER_ADMIN.authority()::equals);
+    }
+
+    private boolean isEnabledAdmin(UserEntity user) {
+        return user.isEnabled() && hasRole(user, SystemRole.ADMIN);
+    }
+
+    private boolean hasRole(UserEntity user, SystemRole role) {
+        return user.getRoles().stream()
+                .map(RoleEntity::getName)
+                .filter(Objects::nonNull)
+                .map(SystemRole::parse)
+                .anyMatch(role::equals);
+    }
+
+    private void rejectSuperAdminMutation(UserEntity user) {
+        if (hasRole(user, SystemRole.SUPER_ADMIN)) {
+            throw new ForbiddenOperationException(
+                    "SUPER_ADMIN нельзя изменять через обычный user-management endpoint"
+            );
+        }
+    }
+
+    private void rejectSelfManagement(
+            UserEntity user,
+            SafeAiUserPrincipal currentUser,
+            String operation
     ) {
+        if (user.getId().equals(currentUser.getId())) {
+            throw new ForbiddenOperationException(
+                    "Нельзя " + operation + " самого себя через user-management"
+            );
+        }
+    }
+
+    private void assertNotLastEnabledAdmin(UserEntity user) {
+        List<UserEntity> enabledAdmins = userRepository
+                .findEnabledAdminsForUpdate(
+                        user.getOrganization().getId()
+                );
+
+        if (enabledAdmins.size() <= 1) {
+            throw new ForbiddenOperationException(
+                    "Нельзя изменить или удалить последнего активного администратора организации"
+            );
+        }
+    }
+
+    private void incrementTokenVersion(UserEntity user) {
+        user.setTokenVersion(
+                Math.addExact(user.getTokenVersion(), 1L)
+        );
+    }
+
+    private void publishSecurityStateChanged(UUID userId) {
         eventPublisher.publishEvent(
                 new UserSecurityStateChangedEvent(userId)
         );
     }
 
-    private UserResponse toResponse(
-            UserEntity entity
-    ) {
+    private UserEntity saveAndRefresh(UserEntity entity) {
+        UserEntity saved = userRepository.saveAndFlush(entity);
+        entityManager.refresh(saved);
+        initializeUserAssociations(saved);
+        return saved;
+    }
+
+    private void initializeUserAssociations(UserEntity user) {
+        Hibernate.initialize(user.getOrganization());
+        Hibernate.initialize(user.getRoles());
+    }
+
+    private UserResponse toResponse(UserEntity entity) {
         return new UserResponse(
                 entity.getId(),
                 entity.getOrganization().getId(),
@@ -1147,9 +1034,7 @@ public class UserService {
         );
     }
 
-    private UserDetailsResponse toDetailsResponse(
-            UserEntity entity
-    ) {
+    private UserDetailsResponse toDetailsResponse(UserEntity entity) {
         return new UserDetailsResponse(
                 entity.getId(),
                 entity.getOrganization().getId(),
@@ -1163,13 +1048,30 @@ public class UserService {
         );
     }
 
-    private void validatePageableSort(
-            Pageable pageable
-    ) {
+    private Pageable normalizePageable(Pageable pageable) {
+        validatePageableSort(pageable);
+
+        Sort sort = pageable.getSort().isUnsorted()
+                ? Sort.by(Sort.Order.desc("createdAt"))
+                : pageable.getSort();
+
+        boolean hasId = sort.stream()
+                .anyMatch(order -> "id".equals(order.getProperty()));
+
+        if (!hasId) {
+            sort = sort.and(Sort.by(Sort.Order.desc("id")));
+        }
+
+        return PageRequest.of(
+                pageable.getPageNumber(),
+                pageable.getPageSize(),
+                sort
+        );
+    }
+
+    private void validatePageableSort(Pageable pageable) {
         for (Sort.Order order : pageable.getSort()) {
-            if (!ALLOWED_SORT_PROPERTIES.contains(
-                    order.getProperty()
-            )) {
+            if (!ALLOWED_SORT_PROPERTIES.contains(order.getProperty())) {
                 throw new BadRequestException(
                         "Сортировка по полю не разрешена: "
                                 + order.getProperty()
@@ -1178,13 +1080,8 @@ public class UserService {
         }
     }
 
-    private String normalizeEmail(
-            String email
-    ) {
-        Objects.requireNonNull(
-                email,
-                "email не должен быть null"
-        );
+    private String normalizeEmail(String email) {
+        Objects.requireNonNull(email, "email не должен быть null");
 
         String normalized = email
                 .trim()
@@ -1199,15 +1096,34 @@ public class UserService {
         return normalized;
     }
 
-    private String normalizeFullName(
-            String fullName
-    ) {
+    private String normalizeFullName(String fullName) {
         if (fullName == null || fullName.isBlank()) {
             return null;
         }
 
-        return fullName
-                .trim()
-                .replaceAll("\\s+", " ");
+        return fullName.trim().replaceAll("\\s+", " ");
+    }
+
+    private boolean isEmailUniqueViolation(Throwable exception) {
+        return DatabaseConstraintClassifier.isUniqueViolation(
+                exception,
+                EMAIL_UNIQUE_CONSTRAINTS.toArray(String[]::new)
+        );
+    }
+
+    private ConflictException duplicateEmail(String email) {
+        return new ConflictException(
+                "Пользователь с таким email уже существует: " + email
+        );
+    }
+
+    private ResourceNotFoundException userNotFound(UUID id) {
+        return new ResourceNotFoundException(
+                "Пользователь не найден: " + id
+        );
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 }

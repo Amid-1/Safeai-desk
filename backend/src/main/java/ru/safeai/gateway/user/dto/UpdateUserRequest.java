@@ -1,4 +1,3 @@
-// Safeai-desk/backend/src/main/java/ru/safeai/gateway/user/dto/UpdateUserRequest.java
 package ru.safeai.gateway.user.dto;
 
 import jakarta.validation.constraints.Email;

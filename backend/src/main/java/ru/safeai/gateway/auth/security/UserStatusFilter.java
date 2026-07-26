@@ -5,24 +5,27 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import ru.safeai.gateway.common.exception.ApiErrorCode;
-import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
+import ru.safeai.gateway.common.security.JsonSecurityErrorWriter;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.user.service.UserSecurityStatus;
 import ru.safeai.gateway.user.service.UserStatusCacheService;
 
 import java.io.IOException;
+import java.util.Optional;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class UserStatusFilter extends OncePerRequestFilter {
 
     private final UserStatusCacheService userStatusCacheService;
-    private final ApiErrorResponseWriter errorWriter;
+    private final JsonSecurityErrorWriter errorWriter;
 
     @Override
     protected void doFilterInternal(
@@ -41,32 +44,70 @@ public class UserStatusFilter extends OncePerRequestFilter {
             return;
         }
 
-        boolean valid = userStatusCacheService
-                .getStatus(principal.getId())
-                .map(status ->
-                        status.userEnabled()
-                                && status.organizationEnabled()
-                                && status.tokenVersion()
-                                == principal.getTokenVersion()
-                                && status.organizationId().equals(
-                                principal.getOrganizationId()
-                        )
-                )
-                .orElse(false);
+        try {
+            Optional<UserSecurityStatus> optionalStatus =
+                    userStatusCacheService.getStatus(
+                            principal.getId()
+                    );
 
-        if (!valid) {
+            boolean valid = optionalStatus
+                    .map(status -> isValid(status, principal))
+                    .orElse(false);
+
+            if (!valid) {
+                rejectToken(request, response);
+                return;
+            }
+        } catch (RuntimeException exception) {
             SecurityContextHolder.clearContext();
+
+            log.error(
+                    "Unable to validate user security state: userId={}",
+                    principal.getId(),
+                    exception
+            );
 
             errorWriter.write(
                     request,
                     response,
-                    HttpStatus.UNAUTHORIZED,
-                    ApiErrorCode.TOKEN_REVOKED,
-                    "Токен больше не действителен"
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "AUTH_STATUS_UNAVAILABLE",
+                    "Сервис проверки авторизации временно недоступен"
             );
+
             return;
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isValid(
+            UserSecurityStatus status,
+            SafeAiUserPrincipal principal
+    ) {
+        return status.userEnabled()
+                && status.organizationEnabled()
+                && status.organizationId().equals(
+                        principal.getOrganizationId()
+                )
+                && status.tokenVersion()
+                == principal.getTokenVersion()
+                && status.organizationAuthVersion()
+                == principal.getOrganizationAuthVersion();
+    }
+
+    private void rejectToken(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) throws IOException {
+        SecurityContextHolder.clearContext();
+
+        errorWriter.write(
+                request,
+                response,
+                HttpStatus.UNAUTHORIZED,
+                "TOKEN_REVOKED",
+                "Токен больше не действителен"
+        );
     }
 }

@@ -26,6 +26,9 @@ class SafeAiJwtAuthenticationConverterTest {
     private static final UUID ORGANIZATION_ID =
             UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
+    private static final long ORGANIZATION_AUTH_VERSION =
+            2L;
+
     private static final Instant ISSUED_AT =
             Instant.parse("2026-06-12T12:00:00Z");
 
@@ -67,16 +70,17 @@ class SafeAiJwtAuthenticationConverterTest {
         assertThat(principal.getTokenVersion())
                 .isEqualTo(1L);
 
+        assertThat(principal.getOrganizationAuthVersion())
+                .isEqualTo(ORGANIZATION_AUTH_VERSION);
+
         assertThat(principal.isEnabled())
                 .isTrue();
 
         /*
          * Access-token principal не содержит password hash.
-         * Пустая строка используется для совместимости
-         * с non-null контрактом UserDetails.
          */
         assertThat(principal.getPassword())
-                .isEmpty();
+                .isNull();
 
         assertThat(authentication.getAuthorities())
                 .extracting("authority")
@@ -183,6 +187,17 @@ class SafeAiJwtAuthenticationConverterTest {
         )
                 .isInstanceOf(BadJwtException.class)
                 .hasMessageContaining("tokenVersion");
+    }
+
+    @Test
+    void missingOrganizationAuthVersionIsRejected() {
+        Map<String, Object> claims = validClaims();
+        claims.remove("organizationAuthVersion");
+
+        assertMissingClaim(
+                claims,
+                "organizationAuthVersion"
+        );
     }
 
     @Test
@@ -477,6 +492,10 @@ class SafeAiJwtAuthenticationConverterTest {
                 new ArrayList<>(List.of("USER", "ADMIN"))
         );
         claims.put("tokenVersion", 1L);
+        claims.put(
+                "organizationAuthVersion",
+                ORGANIZATION_AUTH_VERSION
+        );
 
         return claims;
     }

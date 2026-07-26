@@ -3,6 +3,7 @@ package ru.safeai.gateway.auth.security;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import jakarta.servlet.http.Cookie;
 import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -102,6 +103,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         RestAccessDeniedHandler.class,
         ApiErrorResponseWriter.class,
         ApiErrorResponseFactory.class,
+        JsonSecurityErrorWriter.class,
         RequestIdFilter.class,
 
         JwtService.class,
@@ -153,6 +155,8 @@ class SecurityConfigIntegrationTest {
             "user@test.com";
 
     private static final long TOKEN_VERSION = 7L;
+
+    private static final long ORGANIZATION_AUTH_VERSION = 11L;
 
     private static final String ACCESS_COOKIE_NAME =
             "safeai-access";
@@ -542,11 +546,14 @@ class SecurityConfigIntegrationTest {
         assertThat(principal.getTokenVersion())
                 .isEqualTo(TOKEN_VERSION);
 
+        assertThat(principal.getOrganizationAuthVersion())
+                .isEqualTo(ORGANIZATION_AUTH_VERSION);
+
         assertThat(principal.authorityNames())
                 .containsExactly("ROLE_USER");
 
         assertThat(principal.getPassword())
-                .isEmpty();
+                .isNull();
 
         verify(userStatusCacheService)
                 .getStatus(USER_ID);
@@ -707,6 +714,18 @@ class SecurityConfigIntegrationTest {
                 encodeToken(
                         jwtEncoder,
                         defaultClaims().withoutOrganizationId()
+                )
+        );
+    }
+
+    @Test
+    void tokenWithoutOrganizationAuthVersionReturns401()
+            throws Exception {
+        assertInvalidJwt(
+                encodeToken(
+                        jwtEncoder,
+                        defaultClaims()
+                                .withoutOrganizationAuthVersion()
                 )
         );
     }
@@ -1084,7 +1103,8 @@ class SecurityConfigIntegrationTest {
                                 ORGANIZATION_ID,
                                 false,
                                 true,
-                                TOKEN_VERSION
+                                TOKEN_VERSION,
+                                ORGANIZATION_AUTH_VERSION
                         )
                 ),
                 new InvalidSecurityStatusCase(
@@ -1093,7 +1113,8 @@ class SecurityConfigIntegrationTest {
                                 ORGANIZATION_ID,
                                 true,
                                 false,
-                                TOKEN_VERSION
+                                TOKEN_VERSION,
+                                ORGANIZATION_AUTH_VERSION
                         )
                 ),
                 new InvalidSecurityStatusCase(
@@ -1102,7 +1123,18 @@ class SecurityConfigIntegrationTest {
                                 ORGANIZATION_ID,
                                 true,
                                 true,
-                                TOKEN_VERSION + 1
+                                TOKEN_VERSION + 1,
+                                ORGANIZATION_AUTH_VERSION
+                        )
+                ),
+                new InvalidSecurityStatusCase(
+                        "organization auth version is stale",
+                        new UserSecurityStatus(
+                                ORGANIZATION_ID,
+                                true,
+                                true,
+                                TOKEN_VERSION,
+                                ORGANIZATION_AUTH_VERSION + 1
                         )
                 ),
                 new InvalidSecurityStatusCase(
@@ -1111,7 +1143,8 @@ class SecurityConfigIntegrationTest {
                                 OTHER_ORGANIZATION_ID,
                                 true,
                                 true,
-                                TOKEN_VERSION
+                                TOKEN_VERSION,
+                                ORGANIZATION_AUTH_VERSION
                         )
                 )
         );
@@ -1151,7 +1184,8 @@ class SecurityConfigIntegrationTest {
                                 ORGANIZATION_ID,
                                 true,
                                 true,
-                                TOKEN_VERSION
+                                TOKEN_VERSION,
+                                ORGANIZATION_AUTH_VERSION
                         )
                 ));
     }
@@ -1212,6 +1246,7 @@ class SecurityConfigIntegrationTest {
                         ORGANIZATION_ID,
                         EMAIL,
                         TOKEN_VERSION,
+                        ORGANIZATION_AUTH_VERSION,
                         roles
                 )
         );
@@ -1241,6 +1276,7 @@ class SecurityConfigIntegrationTest {
                 ORGANIZATION_ID,
                 EMAIL,
                 TOKEN_VERSION,
+                ORGANIZATION_AUTH_VERSION,
                 List.of("USER")
         );
     }
@@ -1291,6 +1327,13 @@ class SecurityConfigIntegrationTest {
             );
         }
 
+        if (claims.organizationAuthVersion() != null) {
+            builder.claim(
+                    "organizationAuthVersion",
+                    claims.organizationAuthVersion()
+            );
+        }
+
         if (claims.roles() != null) {
             builder.claim(
                     "roles",
@@ -1331,7 +1374,7 @@ class SecurityConfigIntegrationTest {
 
     private record InvalidSecurityStatusCase(
             String description,
-            UserSecurityStatus securityStatus
+            @Nullable UserSecurityStatus securityStatus
     ) {
         private InvalidSecurityStatusCase {
             Objects.requireNonNull(
@@ -1363,13 +1406,13 @@ class SecurityConfigIntegrationTest {
             Instant issuedAt,
             Instant expiresAt,
             String subject,
-            UUID userId,
-            UUID organizationId,
-            String email,
-            Long tokenVersion,
-            List<String> roles
+            @Nullable UUID userId,
+            @Nullable UUID organizationId,
+            @Nullable String email,
+            @Nullable Long tokenVersion,
+            @Nullable Long organizationAuthVersion,
+            @Nullable List<String> roles
     ) {
-
         private TokenClaims {
             Objects.requireNonNull(
                     issuer,
@@ -1407,6 +1450,7 @@ class SecurityConfigIntegrationTest {
                     organizationId,
                     email,
                     tokenVersion,
+                    organizationAuthVersion,
                     roles
             );
         }
@@ -1422,6 +1466,7 @@ class SecurityConfigIntegrationTest {
                     organizationId,
                     email,
                     tokenVersion,
+                    organizationAuthVersion,
                     roles
             );
         }
@@ -1439,6 +1484,7 @@ class SecurityConfigIntegrationTest {
                     organizationId,
                     email,
                     tokenVersion,
+                    organizationAuthVersion,
                     roles
             );
         }
@@ -1456,6 +1502,7 @@ class SecurityConfigIntegrationTest {
                     organizationId,
                     email,
                     tokenVersion,
+                    organizationAuthVersion,
                     roles
             );
         }
@@ -1473,6 +1520,7 @@ class SecurityConfigIntegrationTest {
                     organizationId,
                     email,
                     tokenVersion,
+                    organizationAuthVersion,
                     newRoles
             );
         }
@@ -1488,6 +1536,23 @@ class SecurityConfigIntegrationTest {
                     null,
                     email,
                     tokenVersion,
+                    organizationAuthVersion,
+                    roles
+            );
+        }
+
+        TokenClaims withoutOrganizationAuthVersion() {
+            return new TokenClaims(
+                    issuer,
+                    audience,
+                    issuedAt,
+                    expiresAt,
+                    subject,
+                    userId,
+                    organizationId,
+                    email,
+                    tokenVersion,
+                    null,
                     roles
             );
         }

@@ -1,89 +1,96 @@
 package ru.safeai.gateway.common.security;
 
-import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public final class RoleAuthorityMapper {
 
     private RoleAuthorityMapper() {
     }
 
+    /**
+     * Преобразует имена ролей к каноническому формату:
+
+     * USER      -> USER
+     * ROLE_USER -> USER
+     * user      -> USER
+
+     * Неизвестная, пустая или некорректная роль приводит
+     * к исключению в SystemRole.parse().
+     */
     public static List<String> normalizeRoleNames(
-            Collection<@Nullable String> roles
+            Collection<String> roles
     ) {
-        Objects.requireNonNull(
-                roles,
-                "roles не должен быть null"
-        );
+        if (roles.isEmpty()) {
+            return List.of();
+        }
 
         return roles.stream()
-                .map(role -> Objects.requireNonNull(
-                        role,
-                        "role element не должен быть null"
-                ))
                 .map(SystemRole::parse)
+                .map(SystemRole::roleName)
                 .distinct()
-                .sorted(Comparator.comparing(SystemRole::name))
-                .map(Enum::name)
+                .sorted()
                 .toList();
     }
 
+    /**
+     * Преобразует бизнес-роли в Spring Security authorities.
+     */
     public static Set<SimpleGrantedAuthority> toAuthorities(
-            Collection<@Nullable String> roles
+            Collection<String> roles
     ) {
-        List<String> normalizedRoles =
-                normalizeRoleNames(roles);
-
-        if (normalizedRoles.isEmpty()) {
+        if (roles.isEmpty()) {
             return Set.of();
         }
 
-        LinkedHashSet<SimpleGrantedAuthority> result =
-                normalizedRoles.stream()
-                        .map(SystemRole::valueOf)
-                        .map(role -> new SimpleGrantedAuthority(
-                                role.authority()
-                        ))
-                        .collect(
-                                java.util.stream.Collectors.toCollection(
-                                        LinkedHashSet::new
-                                )
-                        );
+        LinkedHashSet<SimpleGrantedAuthority> authorities =
+                roles.stream()
+                        .map(SystemRole::parse)
+                        .map(SystemRole::authority)
+                        .distinct()
+                        .sorted()
+                        .map(SimpleGrantedAuthority::new)
+                        .collect(Collectors.toCollection(
+                                LinkedHashSet::new
+                        ));
 
-        return Collections.unmodifiableSet(result);
+        return Collections.unmodifiableSet(authorities);
     }
 
+    /**
+     * Преобразует Spring Security authorities обратно
+     * в канонические имена бизнес-ролей.
+     */
     public static List<String> toRoleNames(
-            Collection<? extends @Nullable GrantedAuthority> authorities
+            Collection<? extends GrantedAuthority> authorities
     ) {
-        Objects.requireNonNull(
-                authorities,
-                "authorities не должен быть null"
-        );
+        if (authorities.isEmpty()) {
+            return List.of();
+        }
 
         return authorities.stream()
-                .map(authority -> Objects.requireNonNull(
-                        authority,
-                        "authority element не должен быть null"
-                ))
-                .map(GrantedAuthority::getAuthority)
-                .map(authority -> Objects.requireNonNull(
-                        authority,
-                        "authority name не должен быть null"
-                ))
+                .map(RoleAuthorityMapper::requireAuthorityName)
                 .map(SystemRole::parse)
+                .map(SystemRole::roleName)
                 .distinct()
-                .sorted(Comparator.comparing(SystemRole::name))
-                .map(Enum::name)
+                .sorted()
                 .toList();
+    }
+
+    private static String requireAuthorityName(
+            GrantedAuthority authority
+    ) {
+        return Objects.requireNonNull(
+                authority.getAuthority(),
+                "GrantedAuthority#getAuthority() не должен возвращать null"
+        );
     }
 }
