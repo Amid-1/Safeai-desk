@@ -11,9 +11,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import ru.safeai.gateway.audit.dto.AuditEventCursorResponse;
 import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
+import ru.safeai.gateway.audit.service.AuditEventCursorService;
 import ru.safeai.gateway.audit.service.AuditEventQueryService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
@@ -27,7 +30,8 @@ public class AuditController {
 
     private static final int DEFAULT_PAGE_SIZE = 50;
 
-    private final AuditEventQueryService auditEventQueryService;
+    private final AuditEventQueryService queryService;
+    private final AuditEventCursorService cursorService;
 
     @GetMapping
     public Page<AuditEventResponse> findAll(
@@ -44,10 +48,32 @@ public class AuditController {
             )
             Pageable pageable
     ) {
-        return auditEventQueryService.findAll(
+        return queryService.findAll(
                 currentUser,
                 filter,
                 pageable
+        );
+    }
+
+    @GetMapping("/cursor")
+    public AuditEventCursorResponse findAllByCursor(
+            @AuthenticationPrincipal
+            SafeAiUserPrincipal currentUser,
+
+            @ModelAttribute
+            AuditEventFilter filter,
+
+            @RequestParam(required = false)
+            String cursor,
+
+            @RequestParam(required = false)
+            Integer limit
+    ) {
+        return cursorService.findAll(
+                currentUser,
+                filter,
+                cursor,
+                limit
         );
     }
 
@@ -66,7 +92,7 @@ public class AuditController {
             )
             Pageable pageable
     ) {
-        return auditEventQueryService.findByUserId(
+        return queryService.findByUserId(
                 userId,
                 currentUser,
                 pageable

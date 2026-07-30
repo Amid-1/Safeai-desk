@@ -4,7 +4,6 @@ import org.jspecify.annotations.NonNull;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -17,21 +16,16 @@ import java.util.UUID;
 
 public interface AuditEventRepository
         extends JpaRepository<AuditEventEntity, UUID>,
-        JpaSpecificationExecutor<AuditEventEntity> {
+        JpaSpecificationExecutor<AuditEventEntity>,
+        AuditEventCursorRepository {
 
     @Override
     @NonNull
-    @EntityGraph(attributePaths = "user")
     Page<AuditEventEntity> findAll(
             @NonNull Specification<AuditEventEntity> specification,
             @NonNull Pageable pageable
     );
 
-    /*
-     * Таблица audit_outbox создаётся Flyway-миграцией V24.
-     * SqlResolve подавляется только для native SQL, который IDEA не может
-     * связать со схемой до применения или индексации миграции.
-     */
     @SuppressWarnings({
             "SqlResolve",
             "SqlNoDataSourceInspection"
@@ -43,6 +37,7 @@ public interface AuditEventRepository
                         id,
                         user_id,
                         actor_user_id,
+                        actor_organization_id,
                         actor_email,
                         actor_display_name,
                         organization_id,
@@ -53,12 +48,13 @@ public interface AuditEventRepository
                     select outbox.id,
                            actor.id,
                            outbox.actor_user_id,
+                           outbox.actor_organization_id,
                            outbox.actor_email,
                            outbox.actor_display_name,
                            outbox.organization_id,
                            outbox.event_type,
                            outbox.details,
-                           outbox.created_at
+                           outbox.occurred_at
                     from public.audit_outbox as outbox
                     left join public.users as actor
                       on actor.id = outbox.actor_user_id
@@ -67,7 +63,7 @@ public interface AuditEventRepository
                     """,
             nativeQuery = true
     )
-    void insertFromOutbox(
+    int insertFromOutbox(
             @Param("outboxId") UUID outboxId
     );
 
@@ -86,7 +82,8 @@ public interface AuditEventRepository
                         select candidate.id
                         from public.audit_events as candidate
                         where candidate.created_at < :threshold
-                        order by candidate.created_at, candidate.id
+                        order by candidate.created_at,
+                                 candidate.id
                         limit :batchSize
                     )
                     """,

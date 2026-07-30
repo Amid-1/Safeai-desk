@@ -94,7 +94,7 @@ public class OrganizationService {
         }
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 saved.getId(),
                 AuditEventType.ORGANIZATION_CREATED,
                 Map.of(
@@ -214,7 +214,7 @@ public class OrganizationService {
         }
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 saved.getId(),
                 AuditEventType.ORGANIZATION_NAME_CHANGED,
                 Map.of(
@@ -272,7 +272,7 @@ public class OrganizationService {
         );
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 saved.getId(),
                 AuditEventType.ORGANIZATION_ENABLED_CHANGED,
                 Map.of(

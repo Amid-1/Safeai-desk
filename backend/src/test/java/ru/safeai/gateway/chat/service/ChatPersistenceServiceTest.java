@@ -37,9 +37,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -174,11 +172,11 @@ class ChatPersistenceServiceTest {
                 .isEqualTo(ChatMessageStatus.COMPLETED);
 
         verify(auditEventService).record(
-                eq(USER_ID),
-                eq(ORGANIZATION_ID),
-                eq(AuditEventType.CHAT_MESSAGE_SENT),
-                anyMap()
-        );
+        same(currentUser),
+        eq(ORGANIZATION_ID),
+        eq(AuditEventType.CHAT_MESSAGE_SENT),
+        anyMap()
+);
     }
 
     @Test

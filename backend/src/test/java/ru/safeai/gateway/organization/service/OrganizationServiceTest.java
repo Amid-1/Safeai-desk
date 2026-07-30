@@ -32,6 +32,7 @@ import ru.safeai.gateway.organization.repository.OrganizationRepository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -41,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -134,12 +136,15 @@ class OrganizationServiceTest {
             return entity;
         });
 
+        SafeAiUserPrincipal currentUser =
+                superAdminPrincipal();
+
         OrganizationResponse response =
                 organizationService.create(
                         new CreateOrganizationRequest(
                                 " SafeAI "
                         ),
-                        superAdminPrincipal()
+                        currentUser
                 );
 
         assertThat(response.id())
@@ -180,13 +185,16 @@ class OrganizationServiceTest {
         verify(entityManager).refresh(saved);
 
         verify(auditEventService).record(
-                eq(SUPER_ADMIN_ID),
+                same(currentUser),
                 eq(ORGANIZATION_ID),
                 eq(AuditEventType.ORGANIZATION_CREATED),
-                argThat(details ->
-                        Long.valueOf(0L).equals(
-                                details.get("authVersion")
-                        )
+                argThat(
+                        (Map<String, Object> details) ->
+                                Long.valueOf(0L).equals(
+                                        details.get(
+                                                "authVersion"
+                                        )
+                                )
                 )
         );
 
@@ -386,32 +394,40 @@ class OrganizationServiceTest {
                 organization
         )).thenReturn(organization);
 
+        SafeAiUserPrincipal currentUser =
+                superAdminPrincipal();
+
         OrganizationResponse response =
                 organizationService.updateName(
                         ORGANIZATION_ID,
                         new UpdateOrganizationRequest(
                                 " New   SafeAI "
                         ),
-                        superAdminPrincipal()
+                        currentUser
                 );
 
         assertThat(response.name())
                 .isEqualTo("New SafeAI");
 
         verify(auditEventService).record(
-                eq(SUPER_ADMIN_ID),
+                same(currentUser),
                 eq(ORGANIZATION_ID),
                 eq(
                         AuditEventType
                                 .ORGANIZATION_NAME_CHANGED
                 ),
-                argThat(details ->
-                        "SafeAI".equals(
-                                details.get("oldName")
-                        )
-                                && "New SafeAI".equals(
-                                details.get("newName")
-                        )
+                argThat(
+                        (Map<String, Object> details) ->
+                                "SafeAI".equals(
+                                        details.get(
+                                                "oldName"
+                                        )
+                                )
+                                        && "New SafeAI".equals(
+                                        details.get(
+                                                "newName"
+                                        )
+                                )
                 )
         );
     }
@@ -455,13 +471,16 @@ class OrganizationServiceTest {
                 organization
         )).thenReturn(organization);
 
+        SafeAiUserPrincipal currentUser =
+                superAdminPrincipal();
+
         OrganizationResponse response =
                 organizationService.updateEnabled(
                         ORGANIZATION_ID,
                         new UpdateOrganizationEnabledRequest(
                                 false
                         ),
-                        superAdminPrincipal()
+                        currentUser
                 );
 
         assertThat(response.enabled()).isFalse();
@@ -492,25 +511,32 @@ class OrganizationServiceTest {
                 .isEqualTo(AUTH_VERSION + 1);
 
         verify(auditEventService).record(
-                eq(SUPER_ADMIN_ID),
+                same(currentUser),
                 eq(ORGANIZATION_ID),
                 eq(
                         AuditEventType
                                 .ORGANIZATION_ENABLED_CHANGED
                 ),
-                argThat(details ->
-                        Long.valueOf(AUTH_VERSION)
-                                .equals(details.get(
-                                        "oldAuthVersion"
-                                ))
-                                && Long.valueOf(
-                                AUTH_VERSION + 1
-                        ).equals(details.get(
-                                "newAuthVersion"
-                        ))
-                                && Boolean.TRUE.equals(
-                                details.get("sessionsRevoked")
-                        )
+                argThat(
+                        (Map<String, Object> details) ->
+                                Long.valueOf(AUTH_VERSION)
+                                        .equals(
+                                                details.get(
+                                                        "oldAuthVersion"
+                                                )
+                                        )
+                                        && Long.valueOf(
+                                        AUTH_VERSION + 1
+                                ).equals(
+                                        details.get(
+                                                "newAuthVersion"
+                                        )
+                                )
+                                        && Boolean.TRUE.equals(
+                                        details.get(
+                                                "sessionsRevoked"
+                                        )
+                                )
                 )
         );
     }

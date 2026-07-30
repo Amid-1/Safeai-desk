@@ -51,26 +51,62 @@ public class ChatService {
     private final ChatProperties chatProperties;
 
     @Transactional
-    public ChatResponse create(CreateChatRequest request, SafeAiUserPrincipal currentUser) {
-        Objects.requireNonNull(request, "request не должен быть null");
-        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
-        UserEntity user = userRepository.findByIdAndOrganizationId(
-                        currentUser.getId(), currentUser.getOrganizationId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Пользователь не найден: " + currentUser.getId()));
+    public ChatResponse create(
+            CreateChatRequest request,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
 
-        String title = normalizeTitle(request.title());
-        ChatSessionEntity session = new ChatSessionEntity();
+        UserEntity user = userRepository
+                .findByIdAndOrganizationId(
+                        currentUser.getId(),
+                        currentUser.getOrganizationId()
+                )
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Пользователь не найден: "
+                                        + currentUser.getId()
+                        )
+                );
+
+        String title =
+                normalizeTitle(request.title());
+
+        ChatSessionEntity session =
+                new ChatSessionEntity();
+
         session.setUser(user);
-        session.setOrganization(user.getOrganization());
+        session.setOrganization(
+                user.getOrganization()
+        );
         session.setTitle(title);
-        ChatSessionEntity saved = chatSessionRepository.saveAndFlush(session);
 
-        auditEventService.record(currentUser.getId(), saved.getOrganization().getId(),
+        ChatSessionEntity saved =
+                chatSessionRepository
+                        .saveAndFlush(session);
+
+        auditEventService.record(
+                currentUser,
+                saved.getOrganization().getId(),
                 AuditEventType.CHAT_CREATED,
-                Map.of("chatId", saved.getId().toString(),
-                        "titleLength", title.length(),
-                        "defaultTitle", request.title() == null || request.title().isBlank()));
+                Map.of(
+                        "chatId",
+                        saved.getId(),
+                        "titleLength",
+                        title.length(),
+                        "defaultTitle",
+                        request.title() == null
+                                || request.title().isBlank()
+                )
+        );
+
         return chatMapper.toChatResponse(saved);
     }
 

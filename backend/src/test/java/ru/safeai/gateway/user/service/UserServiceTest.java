@@ -46,9 +46,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -711,38 +709,55 @@ class UserServiceTest {
     }
 
     @Test
-    void permanentDeletionDeletesEmptyDisabledUser() {
-        UserEntity target = user(
-                USER_ID,
-                organization(ORGANIZATION_A_ID, true),
-                false,
-                "USER"
-        );
-        stubMutationAsSuperAdmin(target);
-        when(userRepository.hasActiveRefreshTokens(USER_ID))
-                .thenReturn(false);
-        when(userRepository.hasPermanentDeletionDependencies(USER_ID))
-                .thenReturn(false);
+void permanentDeletionDeletesEmptyDisabledUser() {
+    UserEntity target = user(
+            USER_ID,
+            organization(
+                    ORGANIZATION_A_ID,
+                    true
+            ),
+            false,
+            "USER"
+    );
 
-        userService.permanentlyDelete(
-                USER_ID,
-                new PermanentDeleteUserRequest(target.getEmail()),
-                superAdminPrincipal()
-        );
+    stubMutationAsSuperAdmin(target);
 
-        verify(userSessionRevocationService).revokeAllForUser(
-                USER_ID,
-                RefreshTokenRevocationReason.ADMIN_REVOKED
-        );
-        verify(userRepository).delete(target);
-        verify(userRepository).flush();
-        verify(auditEventService).record(
-                eq(SUPER_ADMIN_ID),
-                eq(ORGANIZATION_A_ID),
-                any(),
-                anyMap()
-        );
-    }
+    when(userRepository.hasActiveRefreshTokens(USER_ID))
+            .thenReturn(false);
+
+    when(userRepository.hasPermanentDeletionDependencies(USER_ID))
+            .thenReturn(false);
+
+    SafeAiUserPrincipal currentUser =
+            superAdminPrincipal();
+
+    userService.permanentlyDelete(
+            USER_ID,
+            new PermanentDeleteUserRequest(
+                    target.getEmail()
+            ),
+            currentUser
+    );
+
+    verify(userSessionRevocationService)
+            .revokeAllForUser(
+                    USER_ID,
+                    RefreshTokenRevocationReason.ADMIN_REVOKED
+            );
+
+    verify(userRepository)
+            .delete(target);
+
+    verify(userRepository)
+            .flush();
+
+    verify(auditEventService).record(
+            same(currentUser),
+            eq(ORGANIZATION_A_ID),
+            any(),
+            anyMap()
+    );
+}
 
     @Test
 void cannotCreateUserInDisabledOrganization() {

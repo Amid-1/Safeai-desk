@@ -211,7 +211,7 @@ public class ChatPersistenceService {
                 );
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 session.getOrganization().getId(),
                 AuditEventType.AI_RESPONSE_RECEIVED,
                 aiResponseDetails(
@@ -255,7 +255,7 @@ public class ChatPersistenceService {
                 );
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 session.getOrganization().getId(),
                 AuditEventType.AI_RESPONSE_FAILED,
                 Map.of(
@@ -433,7 +433,7 @@ public class ChatPersistenceService {
             SafeAiUserPrincipal currentUser
     ) {
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 session.getOrganization().getId(),
                 AuditEventType.CHAT_MESSAGE_SENT,
                 Map.of(

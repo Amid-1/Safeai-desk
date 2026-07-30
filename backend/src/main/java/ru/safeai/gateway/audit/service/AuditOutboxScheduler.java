@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AuditOutboxScheduler {
 
-    private final AuditOutboxProcessor auditOutboxProcessor;
+    private final AuditOutboxProcessor processor;
 
     @Scheduled(
             fixedDelayString =
@@ -18,12 +18,25 @@ public class AuditOutboxScheduler {
     )
     public void process() {
         try {
-            int processed = auditOutboxProcessor.processBatch();
+            AuditOutboxProcessor.BatchResult result =
+                    processor.processBatch();
 
-            if (processed > 0) {
+            if (result.processed() > 0
+                    || result.failed() > 0) {
                 log.debug(
-                        "Processed audit outbox batch: count={}",
-                        processed
+                        "Processed audit outbox batch: "
+                                + "processed={}, failed={}, "
+                                + "deadLettered={}",
+                        result.processed(),
+                        result.failed(),
+                        result.deadLettered()
+                );
+            }
+
+            if (result.deadLettered() > 0) {
+                log.error(
+                        "Audit outbox rows moved to dead-letter: count={}",
+                        result.deadLettered()
                 );
             }
         } catch (RuntimeException exception) {

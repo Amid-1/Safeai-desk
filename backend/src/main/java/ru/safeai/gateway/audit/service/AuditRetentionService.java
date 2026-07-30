@@ -15,6 +15,7 @@ import java.time.Instant;
 public class AuditRetentionService {
 
     private final AuditRetentionBatchService batchService;
+    private final AuditRetentionLockService lockService;
     private final AuditRetentionProperties properties;
     private final Clock clock;
 
@@ -31,8 +32,36 @@ public class AuditRetentionService {
                 properties.effectivePeriod()
         );
 
+        AuditRetentionLockService.LockExecution<Integer>
+                execution = lockService.tryExecute(
+                () -> deleteBatches(threshold)
+        );
+
+        if (!execution.acquired()) {
+            log.debug(
+                    "Audit retention skipped: another "
+                            + "backend instance holds the lock"
+            );
+            return;
+        }
+
+        int totalDeleted = execution.result();
+
+        if (totalDeleted > 0) {
+            log.info(
+                    "Audit retention cleanup completed: "
+                            + "deleted={}, threshold={}",
+                    totalDeleted,
+                    threshold
+            );
+        }
+    }
+
+    private int deleteBatches(Instant threshold) {
         int totalDeleted = 0;
-        int batchSize = properties.effectiveBatchSize();
+        int batchSize =
+                properties.effectiveBatchSize();
+
         int maxBatches =
                 properties.effectiveMaxBatchesPerRun();
 
@@ -52,13 +81,6 @@ public class AuditRetentionService {
             }
         }
 
-        if (totalDeleted > 0) {
-            log.info(
-                    "Audit retention cleanup completed: "
-                            + "deleted={}, threshold={}",
-                    totalDeleted,
-                    threshold
-            );
-        }
+        return totalDeleted;
     }
 }

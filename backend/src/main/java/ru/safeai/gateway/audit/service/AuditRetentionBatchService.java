@@ -13,14 +13,8 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class AuditRetentionBatchService {
 
-    private final AuditEventRepository auditEventRepository;
+    private final AuditEventRepository repository;
 
-    /**
-     * Каждый batch удаляется в собственной транзакции.
-
-     * REQUIRES_NEW ограничивает продолжительность блокировок,
-     * объём одной транзакции и размер rollback scope.
-     */
     @Transactional(
             propagation = Propagation.REQUIRES_NEW
     )
@@ -39,10 +33,9 @@ public class AuditRetentionBatchService {
             );
         }
 
-        return auditEventRepository
-                .deleteBatchCreatedBefore(
-                        threshold,
-                        batchSize
-                );
+        return repository.deleteBatchCreatedBefore(
+                threshold,
+                batchSize
+        );
     }
 }

@@ -6,6 +6,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.audit.service.AuditOutboxScheduler;
 import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
@@ -84,33 +85,58 @@ void successfulSecurityMutationRevokesRefreshSessionInSameCommit() {
 void auditFailureRollsBackMutationAndRefreshRevocation() {
     prepareUserWithActiveRefreshToken();
 
-    doThrow(new IllegalStateException(
-            "audit outbox unavailable"
-    ))
+    doThrow(
+            new IllegalStateException(
+                    "audit outbox unavailable"
+            )
+    )
             .when(auditEventService)
-            .record(any(), any(), any(), anyMap());
+            .record(
+                    any(SafeAiUserPrincipal.class),
+                    any(UUID.class),
+                    any(AuditEventType.class),
+                    anyMap()
+            );
 
-    assertThatThrownBy(() -> userService.updateEnabled(
-            USER_ID,
-            new UpdateUserEnabledRequest(false),
-            adminPrincipal()
-    ))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("audit outbox unavailable");
+    SafeAiUserPrincipal currentUser =
+            adminPrincipal();
 
-    assertThat(userEnabled(USER_ID)).isTrue();
-    assertThat(tokenVersion(USER_ID)).isZero();
+    assertThatThrownBy(() ->
+            userService.updateEnabled(
+                    USER_ID,
+                    new UpdateUserEnabledRequest(false),
+                    currentUser
+            )
+    )
+            .isInstanceOf(
+                    IllegalStateException.class
+            )
+            .hasMessageContaining(
+                    "audit outbox unavailable"
+            );
 
-    Integer activeTokens = jdbcTemplate.queryForObject("""
-            select count(*)
-            from public.refresh_tokens as token
-            where token.user_id = ?
-              and token.revoked_at is null
-            """, Integer.class, USER_ID);
+    assertThat(userEnabled(USER_ID))
+            .isTrue();
 
-    assertThat(activeTokens).isEqualTo(1);
+    assertThat(tokenVersion(USER_ID))
+            .isZero();
 
-    verify(userStatusCacheService, never()).evict(USER_ID);
+    Integer activeTokens =
+            jdbcTemplate.queryForObject("""
+                    select count(*)
+                    from public.refresh_tokens as token
+                    where token.user_id = ?
+                      and token.revoked_at is null
+                    """,
+                    Integer.class,
+                    USER_ID
+            );
+
+    assertThat(activeTokens)
+            .isEqualTo(1);
+
+    verify(userStatusCacheService, never())
+            .evict(USER_ID);
 }
 
     private void prepareUserWithActiveRefreshToken() {

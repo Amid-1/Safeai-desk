@@ -8,10 +8,11 @@ public record AuditEventResponse(
         UUID id,
 
         /*
-         * Исторические данные actor snapshot,
-         * а не актуальные поля UserEntity.
+         * userId/userEmail оставлены для совместимости API.
+         * Это immutable actor snapshot.
          */
         UUID userId,
+        UUID actorOrganizationId,
         UUID organizationId,
         String userEmail,
         String userDisplayName,

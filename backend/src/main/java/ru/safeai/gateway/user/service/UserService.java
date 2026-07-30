@@ -164,7 +164,7 @@ public class UserService {
         }
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 saved.getOrganization().getId(),
                 AuditEventType.USER_CREATED,
                 Map.of(
@@ -200,20 +200,20 @@ public class UserService {
             idPage = normalizedRole == null
                     ? userRepository.findAllIds(stablePageable)
                     : userRepository.findAllIdsByRole(
-                            normalizedRole,
-                            stablePageable
-                    );
+                    normalizedRole,
+                    stablePageable
+            );
         } else {
             idPage = normalizedRole == null
                     ? userRepository.findAllIdsByOrganizationId(
-                            currentUser.getOrganizationId(),
-                            stablePageable
-                    )
+                    currentUser.getOrganizationId(),
+                    stablePageable
+            )
                     : userRepository.findAllIdsByOrganizationIdAndRole(
-                            currentUser.getOrganizationId(),
-                            normalizedRole,
-                            stablePageable
-                    );
+                    currentUser.getOrganizationId(),
+                    normalizedRole,
+                    stablePageable
+            );
         }
 
         if (idPage.isEmpty()) {
@@ -377,7 +377,7 @@ public class UserService {
         }
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 saved.getOrganization().getId(),
                 AuditEventType.USER_UPDATED,
                 Map.of(
@@ -444,7 +444,7 @@ public class UserService {
         publishSecurityStateChanged(saved.getId());
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 saved.getOrganization().getId(),
                 AuditEventType.USER_ENABLED_CHANGED,
                 Map.of(
@@ -521,7 +521,7 @@ public class UserService {
         publishSecurityStateChanged(saved.getId());
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 saved.getOrganization().getId(),
                 AuditEventType.USER_ROLES_CHANGED,
                 Map.of(
@@ -566,7 +566,7 @@ public class UserService {
         publishSecurityStateChanged(saved.getId());
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 saved.getOrganization().getId(),
                 AuditEventType.USER_PASSWORD_RESET,
                 Map.of(
@@ -694,7 +694,7 @@ public class UserService {
         publishSecurityStateChanged(targetUserId);
 
         auditEventService.record(
-                currentUser.getId(),
+                currentUser,
                 targetOrganizationId,
                 AuditEventType.USER_PERMANENTLY_DELETED,
                 Map.of(
@@ -802,8 +802,8 @@ public class UserService {
 
         if (!isSuperAdmin(currentUser)
                 && !currentUser.getOrganizationId().equals(
-                        lockedOrganizationId
-                )) {
+                lockedOrganizationId
+        )) {
             throw userNotFound(id);
         }
 

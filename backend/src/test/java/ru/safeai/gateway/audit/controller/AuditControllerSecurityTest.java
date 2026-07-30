@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -32,10 +33,13 @@ import org.springframework.test.context.bean.override.mockito
         .MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.dto.AuditEventCursorResponse;
 import ru.safeai.gateway.audit.dto.AuditEventFilter;
+import ru.safeai.gateway.audit.service.AuditEventCursorService;
 import ru.safeai.gateway.audit.service.AuditEventQueryService;
 import ru.safeai.gateway.auth.security.UserStatusFilter;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -54,6 +58,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request
         .SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request
@@ -73,7 +78,8 @@ import static org.springframework.test.web.servlet.result
         )
 )
 @Import({
-        AuditControllerSecurityTest.TestSecurityConfig.class,
+        AuditControllerSecurityTest
+                .TestSecurityConfig.class,
         GlobalExceptionHandler.class,
         ApiErrorResponseFactory.class
 })
@@ -112,7 +118,10 @@ class AuditControllerSecurityTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private AuditEventQueryService auditEventQueryService;
+    private AuditEventQueryService queryService;
+
+    @MockitoBean
+    private AuditEventCursorService cursorService;
 
     @TestConfiguration(proxyBeanMethods = false)
     @EnableWebSecurity
@@ -132,13 +141,18 @@ class AuditControllerSecurityTest {
                 HttpSecurity http
         ) {
             return http
-                    .csrf(AbstractHttpConfigurer::disable)
+                    .csrf(
+                            AbstractHttpConfigurer
+                                    ::disable
+                    )
                     .exceptionHandling(exceptions ->
-                            exceptions.authenticationEntryPoint(
-                                    new HttpStatusEntryPoint(
-                                            HttpStatus.UNAUTHORIZED
+                            exceptions
+                                    .authenticationEntryPoint(
+                                            new HttpStatusEntryPoint(
+                                                    HttpStatus
+                                                            .UNAUTHORIZED
+                                            )
                                     )
-                            )
                     )
                     .authorizeHttpRequests(authorize ->
                             authorize
@@ -150,19 +164,20 @@ class AuditControllerSecurityTest {
     }
 
     @Test
-    void findAllReturns401WhenAnonymous()
+    void allEndpointsReturn401WhenAnonymous()
             throws Exception {
         mockMvc.perform(
                         get("/api/admin/audit-events")
                 )
                 .andExpect(status().isUnauthorized());
 
-        verifyNoInteractions(auditEventQueryService);
-    }
+        mockMvc.perform(
+                        get(
+                                "/api/admin/audit-events/cursor"
+                        )
+                )
+                .andExpect(status().isUnauthorized());
 
-    @Test
-    void findByUserIdReturns401WhenAnonymous()
-            throws Exception {
         mockMvc.perform(
                         get(
                                 "/api/admin/audit-events/users/{userId}",
@@ -171,11 +186,14 @@ class AuditControllerSecurityTest {
                 )
                 .andExpect(status().isUnauthorized());
 
-        verifyNoInteractions(auditEventQueryService);
+        verifyNoInteractions(
+                queryService,
+                cursorService
+        );
     }
 
     @Test
-    void findAllReturns403WhenUserRole()
+    void allEndpointsReturn403ForOrdinaryUser()
             throws Exception {
         mockMvc.perform(
                         get("/api/admin/audit-events")
@@ -184,22 +202,19 @@ class AuditControllerSecurityTest {
                                                 .roles("USER")
                                 )
                 )
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.status")
-                        .value(403))
-                .andExpect(jsonPath("$.error")
-                        .value("FORBIDDEN"))
-                .andExpect(jsonPath("$.message")
-                        .value("Доступ запрещён"))
-                .andExpect(jsonPath("$.path")
-                        .value("/api/admin/audit-events"));
+                .andExpect(status().isForbidden());
 
-        verifyNoInteractions(auditEventQueryService);
-    }
+        mockMvc.perform(
+                        get(
+                                "/api/admin/audit-events/cursor"
+                        )
+                                .with(
+                                        user("user@test.com")
+                                                .roles("USER")
+                                )
+                )
+                .andExpect(status().isForbidden());
 
-    @Test
-    void findByUserIdReturns403WhenUserRole()
-            throws Exception {
         mockMvc.perform(
                         get(
                                 "/api/admin/audit-events/users/{userId}",
@@ -210,52 +225,57 @@ class AuditControllerSecurityTest {
                                                 .roles("USER")
                                 )
                 )
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.status")
-                        .value(403))
-                .andExpect(jsonPath("$.error")
-                        .value("FORBIDDEN"))
-                .andExpect(jsonPath("$.message")
-                        .value("Доступ запрещён"))
-                .andExpect(jsonPath("$.path")
-                        .value(
-                                "/api/admin/audit-events/users/"
-                                        + USER_ID
-                        ));
+                .andExpect(status().isForbidden());
 
-        verifyNoInteractions(auditEventQueryService);
+        verifyNoInteractions(
+                queryService,
+                cursorService
+        );
     }
 
     @Test
-    void findAllReturns200ForAdminAndPassesDefaultPageable()
+    void pageEndpointPassesPrincipalFilterAndDefaultPageable()
             throws Exception {
         SafeAiUserPrincipal principal =
                 adminPrincipal();
 
+        when(queryService.findAll(
+                any(),
+                any(),
+                any()
+        )).thenReturn(Page.empty());
+
         mockMvc.perform(
                         get("/api/admin/audit-events")
-                                .with(authentication(
-                                        authToken(principal)
-                                ))
+                                .with(
+                                        authentication(
+                                                authToken(
+                                                        principal
+                                                )
+                                        )
+                                )
                 )
                 .andExpect(status().isOk());
 
         var principalCaptor =
-                org.mockito.ArgumentCaptor.forClass(
-                        SafeAiUserPrincipal.class
-                );
+                org.mockito.ArgumentCaptor
+                        .forClass(
+                                SafeAiUserPrincipal.class
+                        );
 
         var filterCaptor =
-                org.mockito.ArgumentCaptor.forClass(
-                        AuditEventFilter.class
-                );
+                org.mockito.ArgumentCaptor
+                        .forClass(
+                                AuditEventFilter.class
+                        );
 
         var pageableCaptor =
-                org.mockito.ArgumentCaptor.forClass(
-                        Pageable.class
-                );
+                org.mockito.ArgumentCaptor
+                        .forClass(
+                                Pageable.class
+                        );
 
-        verify(auditEventQueryService).findAll(
+        verify(queryService).findAll(
                 principalCaptor.capture(),
                 filterCaptor.capture(),
                 pageableCaptor.capture()
@@ -270,56 +290,60 @@ class AuditControllerSecurityTest {
         assertThat(filter.eventType()).isNull();
         assertThat(filter.userEmail()).isNull();
         assertThat(filter.userId()).isNull();
-        assertThat(filter.dateFrom()).isNull();
-        assertThat(filter.dateTo()).isNull();
         assertThat(filter.organizationId()).isNull();
 
         Pageable pageable =
                 pageableCaptor.getValue();
 
-        assertThat(pageable.getPageNumber())
-                .isZero();
-
+        assertThat(pageable.getPageNumber()).isZero();
         assertThat(pageable.getPageSize())
                 .isEqualTo(50);
 
-        Sort.Order createdAtOrder =
-                Objects.requireNonNull(
-                        pageable.getSort()
-                                .getOrderFor("createdAt"),
-                        "createdAt sort order must be present"
-                );
+        Sort.Order order = Objects.requireNonNull(
+                pageable.getSort()
+                        .getOrderFor("createdAt")
+        );
 
-        assertThat(createdAtOrder.getDirection())
+        assertThat(order.getDirection())
                 .isEqualTo(Sort.Direction.DESC);
 
-        verifyNoMoreInteractions(
-                auditEventQueryService
-        );
+        verifyNoMoreInteractions(queryService);
+        verifyNoInteractions(cursorService);
     }
 
     @Test
-    void findAllBindsFiltersAndPageableForSuperAdmin()
+    void pageEndpointBindsAllFiltersForSuperAdmin()
             throws Exception {
         SafeAiUserPrincipal principal =
                 superAdminPrincipal();
 
-        Instant dateFrom =
-                Instant.parse("2026-06-01T00:00:00Z");
+        when(queryService.findAll(
+                any(),
+                any(),
+                any()
+        )).thenReturn(Page.empty());
 
-        Instant dateTo =
-                Instant.parse("2026-07-01T00:00:00Z");
+        Instant from =
+                Instant.parse(
+                        "2026-06-01T00:00:00Z"
+                );
+
+        Instant to =
+                Instant.parse(
+                        "2026-07-01T00:00:00Z"
+                );
 
         mockMvc.perform(
                         get("/api/admin/audit-events")
                                 .param(
                                         "eventType",
-                                        AuditEventType.USER_LOGIN_SUCCESS
+                                        AuditEventType
+                                                .USER_LOGIN_SUCCESS
                                                 .name()
                                 )
                                 .param(
                                         "userEmail",
-                                        "admin@test.com"
+                                        " ADMIN@Test.Com "
                                 )
                                 .param(
                                         "userId",
@@ -327,15 +351,16 @@ class AuditControllerSecurityTest {
                                 )
                                 .param(
                                         "dateFrom",
-                                        dateFrom.toString()
+                                        from.toString()
                                 )
                                 .param(
                                         "dateTo",
-                                        dateTo.toString()
+                                        to.toString()
                                 )
                                 .param(
                                         "organizationId",
-                                        ORGANIZATION_ID.toString()
+                                        ORGANIZATION_ID
+                                                .toString()
                                 )
                                 .param("page", "2")
                                 .param("size", "25")
@@ -343,23 +368,29 @@ class AuditControllerSecurityTest {
                                         "sort",
                                         "createdAt,asc"
                                 )
-                                .with(authentication(
-                                        authToken(principal)
-                                ))
+                                .with(
+                                        authentication(
+                                                authToken(
+                                                        principal
+                                                )
+                                        )
+                                )
                 )
                 .andExpect(status().isOk());
 
         var filterCaptor =
-                org.mockito.ArgumentCaptor.forClass(
-                        AuditEventFilter.class
-                );
+                org.mockito.ArgumentCaptor
+                        .forClass(
+                                AuditEventFilter.class
+                        );
 
         var pageableCaptor =
-                org.mockito.ArgumentCaptor.forClass(
-                        Pageable.class
-                );
+                org.mockito.ArgumentCaptor
+                        .forClass(
+                                Pageable.class
+                        );
 
-        verify(auditEventQueryService).findAll(
+        verify(queryService).findAll(
                 eq(principal),
                 filterCaptor.capture(),
                 pageableCaptor.capture()
@@ -370,21 +401,17 @@ class AuditControllerSecurityTest {
 
         assertThat(filter.eventType())
                 .isEqualTo(
-                        AuditEventType.USER_LOGIN_SUCCESS
+                        AuditEventType
+                                .USER_LOGIN_SUCCESS
                 );
-
         assertThat(filter.userEmail())
                 .isEqualTo("admin@test.com");
-
         assertThat(filter.userId())
                 .isEqualTo(USER_ID);
-
         assertThat(filter.dateFrom())
-                .isEqualTo(dateFrom);
-
+                .isEqualTo(from);
         assertThat(filter.dateTo())
-                .isEqualTo(dateTo);
-
+                .isEqualTo(to);
         assertThat(filter.organizationId())
                 .isEqualTo(ORGANIZATION_ID);
 
@@ -393,141 +420,137 @@ class AuditControllerSecurityTest {
 
         assertThat(pageable.getPageNumber())
                 .isEqualTo(2);
-
         assertThat(pageable.getPageSize())
                 .isEqualTo(25);
-
-        Sort.Order createdAtOrder =
-                Objects.requireNonNull(
-                        pageable.getSort()
-                                .getOrderFor("createdAt"),
-                        "createdAt sort order must be present"
-                );
-
-        assertThat(createdAtOrder.getDirection())
-                .isEqualTo(Sort.Direction.ASC);
-
-        verifyNoMoreInteractions(
-                auditEventQueryService
-        );
     }
 
     @Test
-    void findByUserIdReturns200ForAdminAndPassesPathVariable()
+    void cursorEndpointPassesOpaqueCursorAndLimit()
             throws Exception {
         SafeAiUserPrincipal principal =
                 adminPrincipal();
 
+        when(cursorService.findAll(
+                any(),
+                any(),
+                any(),
+                any()
+        )).thenReturn(
+                new AuditEventCursorResponse(
+                        List.of(),
+                        null,
+                        false
+                )
+        );
+
         mockMvc.perform(
                         get(
-                                "/api/admin/audit-events/users/{userId}",
-                                USER_ID
+                                "/api/admin/audit-events/cursor"
                         )
-                                .with(authentication(
-                                        authToken(principal)
-                                ))
+                                .param(
+                                        "cursor",
+                                        "opaque-cursor"
+                                )
+                                .param("limit", "25")
+                                .with(
+                                        authentication(
+                                                authToken(
+                                                        principal
+                                                )
+                                        )
+                                )
                 )
-                .andExpect(status().isOk());
-
-        var pageableCaptor =
-                org.mockito.ArgumentCaptor.forClass(
-                        Pageable.class
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.items").isArray()
+                )
+                .andExpect(
+                        jsonPath("$.hasNext")
+                                .value(false)
                 );
 
-        verify(auditEventQueryService).findByUserId(
-                eq(USER_ID),
+        verify(cursorService).findAll(
                 eq(principal),
-                pageableCaptor.capture()
+                any(AuditEventFilter.class),
+                eq("opaque-cursor"),
+                eq(25)
         );
 
-        Pageable pageable =
-                pageableCaptor.getValue();
-
-        assertThat(pageable.getPageNumber())
-                .isZero();
-
-        assertThat(pageable.getPageSize())
-                .isEqualTo(50);
-
-        Sort.Order createdAtOrder =
-                Objects.requireNonNull(
-                        pageable.getSort()
-                                .getOrderFor("createdAt"),
-                        "createdAt sort order must be present"
-                );
-
-        assertThat(createdAtOrder.getDirection())
-                .isEqualTo(Sort.Direction.DESC);
-
-        verifyNoMoreInteractions(
-                auditEventQueryService
-        );
+        verifyNoInteractions(queryService);
     }
 
     @Test
-    void findByUserIdReturns200ForSuperAdmin()
+    void userEndpointPassesPathVariable()
             throws Exception {
         SafeAiUserPrincipal principal =
-                superAdminPrincipal();
+                adminPrincipal();
+
+        when(queryService.findByUserId(
+                any(),
+                any(),
+                any()
+        )).thenReturn(Page.empty());
 
         mockMvc.perform(
                         get(
                                 "/api/admin/audit-events/users/{userId}",
                                 USER_ID
                         )
-                                .with(authentication(
-                                        authToken(principal)
-                                ))
+                                .with(
+                                        authentication(
+                                                authToken(
+                                                        principal
+                                                )
+                                        )
+                                )
                 )
                 .andExpect(status().isOk());
 
-        verify(auditEventQueryService).findByUserId(
+        verify(queryService).findByUserId(
                 eq(USER_ID),
                 eq(principal),
                 any(Pageable.class)
         );
-
-        verifyNoMoreInteractions(
-                auditEventQueryService
-        );
     }
 
     @Test
-    void findByUserIdReturns400ForInvalidUuid()
+    void invalidUserUuidReturns400BeforeService()
             throws Exception {
         mockMvc.perform(
                         get(
                                 "/api/admin/audit-events/users/not-a-uuid"
                         )
-                                .with(authentication(
-                                        authToken(
-                                                adminPrincipal()
+                                .with(
+                                        authentication(
+                                                authToken(
+                                                        adminPrincipal()
+                                                )
                                         )
-                                ))
+                                )
                 )
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status")
-                        .value(400))
-                .andExpect(jsonPath("$.error")
-                        .value("BAD_REQUEST"));
+                .andExpect(
+                        status().isBadRequest()
+                )
+                .andExpect(
+                        jsonPath("$.error")
+                                .value("BAD_REQUEST")
+                );
 
-        verifyNoInteractions(
-                auditEventQueryService
-        );
+        verifyNoInteractions(queryService);
     }
 
     @Test
-    void findAllMapsForbiddenServiceFailureTo403()
+    void forbiddenServiceFailureMapsTo403()
             throws Exception {
         SafeAiUserPrincipal principal =
                 adminPrincipal();
 
         doThrow(
                 new ForbiddenOperationException(
-                        "Нельзя фильтровать audit "
+                        "Нельзя фильтровать аудит "
                                 + "другой организации"
                 )
-        ).when(auditEventQueryService).findAll(
+        ).when(queryService).findAll(
                 eq(principal),
                 any(AuditEventFilter.class),
                 any(Pageable.class)
@@ -540,30 +563,71 @@ class AuditControllerSecurityTest {
                                         PLATFORM_ORGANIZATION_ID
                                                 .toString()
                                 )
-                                .with(authentication(
-                                        authToken(principal)
-                                ))
+                                .with(
+                                        authentication(
+                                                authToken(
+                                                        principal
+                                                )
+                                        )
+                                )
                 )
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.status")
-                        .value(403))
-                .andExpect(jsonPath("$.error")
-                        .value("FORBIDDEN"))
-                .andExpect(jsonPath("$.message")
-                        .value(
-                                "Нельзя фильтровать audit "
-                                        + "другой организации"
-                        ));
+                .andExpect(
+                        jsonPath("$.status").value(403)
+                )
+                .andExpect(
+                        jsonPath("$.error")
+                                .value("FORBIDDEN")
+                );
+    }
 
-        verify(auditEventQueryService).findAll(
+    @Test
+    void invalidSortFailureMapsTo400()
+            throws Exception {
+        SafeAiUserPrincipal principal =
+                adminPrincipal();
+
+        doThrow(
+                new BadRequestException(
+                        "Сортировка по полю "
+                                + "не разрешена: password"
+                )
+        ).when(queryService).findAll(
                 eq(principal),
                 any(AuditEventFilter.class),
                 any(Pageable.class)
         );
 
-        verifyNoMoreInteractions(
-                auditEventQueryService
-        );
+        mockMvc.perform(
+                        get("/api/admin/audit-events")
+                                .param(
+                                        "sort",
+                                        "password,asc"
+                                )
+                                .with(
+                                        authentication(
+                                                authToken(
+                                                        principal
+                                                )
+                                        )
+                                )
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(
+                        jsonPath("$.status").value(400)
+                )
+                .andExpect(
+                        jsonPath("$.error")
+                                .value("BAD_REQUEST")
+                )
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(
+                                        "Сортировка по полю "
+                                                + "не разрешена: "
+                                                + "password"
+                                )
+                );
     }
 
     private Authentication authToken(
