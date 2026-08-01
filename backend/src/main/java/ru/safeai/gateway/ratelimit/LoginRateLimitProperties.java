@@ -3,17 +3,23 @@ package ru.safeai.gateway.ratelimit;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
+import java.util.UUID;
 
 @ConfigurationProperties(prefix = "safeai.rate-limit.login")
 public record LoginRateLimitProperties(
         Boolean enabled,
         Integer emailLimit,
         Integer ipLimit,
-        Duration window
+        Duration window,
+        UUID auditOrganizationId
 ) {
     private static final int MAX_LIMIT = 10_000;
-    private static final Duration MIN_WINDOW = Duration.ofSeconds(1);
-    private static final Duration MAX_WINDOW = Duration.ofHours(24);
+
+    private static final Duration MIN_WINDOW =
+            Duration.ofSeconds(1);
+
+    private static final Duration MAX_WINDOW =
+            Duration.ofHours(24);
 
     public LoginRateLimitProperties {
         enabled = enabled == null || enabled;
@@ -36,6 +42,13 @@ public record LoginRateLimitProperties(
                             + "в диапазоне 1s–24h"
             );
         }
+
+        if (enabled && auditOrganizationId == null) {
+            throw new IllegalStateException(
+                    "safeai.rate-limit.login.audit-organization-id "
+                            + "не задан"
+            );
+        }
     }
 
     public boolean isEnabled() {
@@ -52,6 +65,17 @@ public record LoginRateLimitProperties(
 
     public Duration effectiveWindow() {
         return window;
+    }
+
+    public UUID effectiveAuditOrganizationId() {
+        if (auditOrganizationId == null) {
+            throw new IllegalStateException(
+                    "safeai.rate-limit.login.audit-organization-id "
+                            + "не задан"
+            );
+        }
+
+        return auditOrganizationId;
     }
 
     private static int requireLimit(

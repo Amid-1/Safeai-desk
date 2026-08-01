@@ -69,7 +69,7 @@ if ! process_is_running "${BACKEND_PID_FILE}"; then
     export SPRING_PROFILES_ACTIVE=local
 
     export SAFEAI_JWT_SECRET="safeai-local-development-secret-key-change-this-value-please-123456789"
-    export SAFEAI_JWT_EXPIRATION_MINUTES=60
+    export SAFEAI_JWT_EXPIRATION_MINUTES=15
     export SAFEAI_JWT_ISSUER="safeai-desk"
 
     export SAFEAI_AUTH_COOKIES_SECURE=false

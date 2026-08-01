@@ -12,47 +12,41 @@ public record RateLimitExceededEvent(
         String actorDisplayName,
         UUID targetOrganizationId,
         String type,
-        int limit,
+        Integer limit,
         String window,
         Map<String, Object> details
 ) {
     public RateLimitExceededEvent {
         Objects.requireNonNull(
-                actorUserId,
-                "actorUserId не должен быть null"
-        );
-        Objects.requireNonNull(
-                actorOrganizationId,
-                "actorOrganizationId не должен быть null"
-        );
-        Objects.requireNonNull(
                 targetOrganizationId,
                 "targetOrganizationId не должен быть null"
         );
-        Objects.requireNonNull(
-                actorEmail,
-                "actorEmail не должен быть null"
-        );
-        Objects.requireNonNull(type, "type не должен быть null");
-        Objects.requireNonNull(window, "window не должен быть null");
 
-        actorEmail = actorEmail
-                .trim()
-                .toLowerCase(Locale.ROOT);
+        type = requireText(type, "type");
+        window = requireText(window, "window");
 
-        actorDisplayName =
-                normalize(actorDisplayName);
-
-        if (actorEmail.isBlank()) {
-            throw new IllegalArgumentException(
-                    "actorEmail не должен быть пустым"
-            );
-        }
-
-        if (limit <= 0) {
+        if (limit != null && limit <= 0) {
             throw new IllegalArgumentException(
                     "limit должен быть положительным"
             );
+        }
+
+        actorEmail = normalizeEmail(actorEmail);
+        actorDisplayName = normalize(actorDisplayName);
+
+        if (actorUserId != null) {
+            Objects.requireNonNull(
+                    actorOrganizationId,
+                    "actorOrganizationId не должен быть null "
+                            + "для пользовательского события"
+            );
+
+            if (actorEmail == null) {
+                throw new IllegalArgumentException(
+                        "actorEmail не должен быть пустым "
+                                + "для пользовательского события"
+                );
+            }
         }
 
         details = details == null
@@ -60,7 +54,42 @@ public record RateLimitExceededEvent(
                 : Map.copyOf(details);
     }
 
-    private static String normalize(String value) {
+    /**
+     * Методы совместимости для существующего audit listener.
+     */
+    public UUID userId() {
+        return actorUserId;
+    }
+
+    public UUID organizationId() {
+        return targetOrganizationId;
+    }
+
+    private static String requireText(
+            String value,
+            String name
+    ) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    name + " не должен быть пустым"
+            );
+        }
+
+        return value.trim();
+    }
+
+    private static String normalizeEmail(
+            String value
+    ) {
+        return value == null || value.isBlank()
+                ? null
+                : value.trim()
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalize(
+            String value
+    ) {
         return value == null || value.isBlank()
                 ? null
                 : value.trim();

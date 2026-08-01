@@ -162,6 +162,12 @@ cd ~/Workspace/Projects/Products/SafeAI-Desk/backend
 ./mvnw clean
 ```
 
+Тесты?
+```bash
+cd backend
+./mvnw test
+```
+
 Установи переменные окружения:
 
 ```bash
@@ -169,11 +175,11 @@ cd ~/Workspace/Projects/Products/SafeAI-Desk/backend && \
 chmod +x mvnw && \
 export SPRING_PROFILES_ACTIVE=local && \
 export SAFEAI_JWT_SECRET="safeai-local-development-secret-key-change-this-value-please-123456789" && \
-export SAFEAI_JWT_EXPIRATION_MINUTES=60 && \
+export SAFEAI_JWT_EXPIRATION_MINUTES=15 && \
 export SAFEAI_JWT_ISSUER="safeai-desk" && \
 export SAFEAI_AUTH_COOKIES_SECURE=false && \
 export SAFEAI_AUTH_COOKIES_SAME_SITE=Lax && \
-export SAFEAI_AUTH_COOKIES_ACCESS_TOKEN_MAX_AGE=60m && \
+export SAFEAI_AUTH_ACCESS_TOKEN_MAX_AGE=15m && \
 export SAFEAI_AUTH_COOKIES_REFRESH_TOKEN_MAX_AGE=30d && \
 export REDIS_HOST=localhost && \
 export REDIS_PORT=6379 && \

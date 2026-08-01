@@ -6,80 +6,53 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
 public class RedisFixedWindowRateLimiter {
 
     private static final DefaultRedisScript<String>
-            TRY_INCREMENT_BOTH_SCRIPT;
+            TRY_INCREMENT_BOTH_SCRIPT = script("""
+            local ttlMs = tonumber(ARGV[1])
+            local firstLimit = tonumber(ARGV[2])
+            local secondLimit = tonumber(ARGV[3])
 
-    private static final DefaultRedisScript<String>
-            INCREMENT_BOTH_AND_CHECK_SCRIPT;
+            local firstCurrent =
+                tonumber(redis.call('GET', KEYS[1]) or '0')
 
-    static {
-        /*
-         * AI rate limit:
-         * оба счётчика увеличиваются только тогда, когда оба лимита
-         * разрешают выполнение запроса.
-         *
-         * KEYS[1] — user key
-         * KEYS[2] — organization key
-         * ARGV[1] — TTL в миллисекундах
-         * ARGV[2] — user limit
-         * ARGV[3] — organization limit
-         */
-        TRY_INCREMENT_BOTH_SCRIPT = new DefaultRedisScript<>();
-        TRY_INCREMENT_BOTH_SCRIPT.setResultType(String.class);
-        TRY_INCREMENT_BOTH_SCRIPT.setScriptText("""
-                local ttlMs = tonumber(ARGV[1])
-                local firstLimit = tonumber(ARGV[2])
-                local secondLimit = tonumber(ARGV[3])
+            local secondCurrent =
+                tonumber(redis.call('GET', KEYS[2]) or '0')
 
-                local firstCurrent =
-                    tonumber(redis.call('GET', KEYS[1]) or '0')
+            local firstTtl = redis.call('PTTL', KEYS[1])
+            local secondTtl = redis.call('PTTL', KEYS[2])
 
-                local secondCurrent =
-                    tonumber(redis.call('GET', KEYS[2]) or '0')
+            if firstCurrent > 0 and firstTtl < 0 then
+                redis.call('PEXPIRE', KEYS[1], ttlMs)
+                firstTtl = ttlMs
+            end
 
-                local firstTtl = redis.call('PTTL', KEYS[1])
-                local secondTtl = redis.call('PTTL', KEYS[2])
+            if secondCurrent > 0 and secondTtl < 0 then
+                redis.call('PEXPIRE', KEYS[2], ttlMs)
+                secondTtl = ttlMs
+            end
 
-                if firstCurrent > 0 and firstTtl < 0 then
-                    redis.call('PEXPIRE', KEYS[1], ttlMs)
-                    firstTtl = ttlMs
-                end
+            local firstExceeded =
+                firstCurrent >= firstLimit
 
-                if secondCurrent > 0 and secondTtl < 0 then
-                    redis.call('PEXPIRE', KEYS[2], ttlMs)
-                    secondTtl = ttlMs
-                end
+            local secondExceeded =
+                secondCurrent >= secondLimit
 
-                local firstExceeded =
-                    firstCurrent >= firstLimit
+            if firstExceeded or secondExceeded then
+                local firstNotification = 0
+                local secondNotification = 0
 
-                local secondExceeded =
-                    secondCurrent >= secondLimit
-
-                if firstExceeded or secondExceeded then
-                    local decision = 'BOTH_EXCEEDED'
-
-                    if firstExceeded and not secondExceeded then
-                        decision = 'FIRST_EXCEEDED'
-                    elseif secondExceeded and not firstExceeded then
-                        decision = 'SECOND_EXCEEDED'
-                    end
-
-                    local notification = 0
-                    local markerKey = KEYS[1] .. ':exceeded'
+                if firstExceeded then
                     local markerTtl = firstTtl
-
-                    if secondExceeded and not firstExceeded then
-                        markerKey = KEYS[2] .. ':exceeded'
-                        markerTtl = secondTtl
-                    end
 
                     if markerTtl < 1 then
                         markerTtl = ttlMs
@@ -87,7 +60,7 @@ public class RedisFixedWindowRateLimiter {
 
                     local markerResult = redis.call(
                         'SET',
-                        markerKey,
+                        KEYS[3],
                         '1',
                         'PX',
                         markerTtl,
@@ -95,115 +68,235 @@ public class RedisFixedWindowRateLimiter {
                     )
 
                     if markerResult then
-                        notification = 1
+                        firstNotification = 1
+                    end
+                end
+
+                if secondExceeded then
+                    local markerTtl = secondTtl
+
+                    if markerTtl < 1 then
+                        markerTtl = ttlMs
                     end
 
-                    return decision
-                        .. ':' .. tostring(firstCurrent)
-                        .. ':' .. tostring(secondCurrent)
-                        .. ':' .. tostring(firstTtl)
-                        .. ':' .. tostring(secondTtl)
-                        .. ':' .. tostring(notification)
+                    local markerResult = redis.call(
+                        'SET',
+                        KEYS[4],
+                        '1',
+                        'PX',
+                        markerTtl,
+                        'NX'
+                    )
+
+                    if markerResult then
+                        secondNotification = 1
+                    end
                 end
 
-                local newFirst =
-                    redis.call('INCR', KEYS[1])
+                local decision = 'BOTH_EXCEEDED'
 
-                local newSecond =
-                    redis.call('INCR', KEYS[2])
-
-                firstTtl = redis.call('PTTL', KEYS[1])
-                secondTtl = redis.call('PTTL', KEYS[2])
-
-                if firstTtl < 0 then
-                    redis.call('PEXPIRE', KEYS[1], ttlMs)
-                    firstTtl = ttlMs
-                end
-
-                if secondTtl < 0 then
-                    redis.call('PEXPIRE', KEYS[2], ttlMs)
-                    secondTtl = ttlMs
-                end
-
-                return 'ALLOWED'
-                    .. ':' .. tostring(newFirst)
-                    .. ':' .. tostring(newSecond)
-                    .. ':' .. tostring(firstTtl)
-                    .. ':' .. tostring(secondTtl)
-                    .. ':0'
-                """);
-
-        /*
-         * Login rate limit:
-         * оба счётчика всегда увеличиваются атомарно.
-         *
-         * KEYS[1] — email key
-         * KEYS[2] — IP key
-         * ARGV[1] — TTL в миллисекундах
-         * ARGV[2] — email limit
-         * ARGV[3] — IP limit
-         */
-        INCREMENT_BOTH_AND_CHECK_SCRIPT =
-                new DefaultRedisScript<>();
-
-        INCREMENT_BOTH_AND_CHECK_SCRIPT.setResultType(
-                String.class
-        );
-
-        INCREMENT_BOTH_AND_CHECK_SCRIPT.setScriptText("""
-                local ttlMs = tonumber(ARGV[1])
-                local firstLimit = tonumber(ARGV[2])
-                local secondLimit = tonumber(ARGV[3])
-
-                local newFirst =
-                    redis.call('INCR', KEYS[1])
-
-                local newSecond =
-                    redis.call('INCR', KEYS[2])
-
-                local firstTtl =
-                    redis.call('PTTL', KEYS[1])
-
-                local secondTtl =
-                    redis.call('PTTL', KEYS[2])
-
-                if firstTtl < 0 then
-                    redis.call('PEXPIRE', KEYS[1], ttlMs)
-                    firstTtl = ttlMs
-                end
-
-                if secondTtl < 0 then
-                    redis.call('PEXPIRE', KEYS[2], ttlMs)
-                    secondTtl = ttlMs
-                end
-
-                local firstExceeded =
-                    newFirst > firstLimit
-
-                local secondExceeded =
-                    newSecond > secondLimit
-
-                local decision = 'ALLOWED'
-
-                if firstExceeded and secondExceeded then
-                    decision = 'BOTH_EXCEEDED'
-                elseif firstExceeded then
+                if firstExceeded and not secondExceeded then
                     decision = 'FIRST_EXCEEDED'
-                elseif secondExceeded then
+                elseif secondExceeded and not firstExceeded then
                     decision = 'SECOND_EXCEEDED'
                 end
 
+                local returnedFirstTtl = firstTtl
+
+                if returnedFirstTtl < 1 then
+                    returnedFirstTtl = ttlMs
+                end
+
+                local returnedSecondTtl = secondTtl
+
+                if returnedSecondTtl < 1 then
+                    returnedSecondTtl = ttlMs
+                end
+
                 return decision
-                    .. ':' .. tostring(newFirst)
-                    .. ':' .. tostring(newSecond)
-                    .. ':' .. tostring(firstTtl)
-                    .. ':' .. tostring(secondTtl)
-                    .. ':0'
-                """);
-    }
+                    .. ':' .. tostring(firstCurrent)
+                    .. ':' .. tostring(secondCurrent)
+                    .. ':' .. tostring(returnedFirstTtl)
+                    .. ':' .. tostring(returnedSecondTtl)
+                    .. ':' .. tostring(firstNotification)
+                    .. ':' .. tostring(secondNotification)
+            end
+
+            local newFirst =
+                redis.call('INCR', KEYS[1])
+
+            local newSecond =
+                redis.call('INCR', KEYS[2])
+
+            firstTtl = redis.call('PTTL', KEYS[1])
+            secondTtl = redis.call('PTTL', KEYS[2])
+
+            if firstTtl < 0 then
+                redis.call('PEXPIRE', KEYS[1], ttlMs)
+                firstTtl = ttlMs
+            end
+
+            if secondTtl < 0 then
+                redis.call('PEXPIRE', KEYS[2], ttlMs)
+                secondTtl = ttlMs
+            end
+
+            return 'ALLOWED'
+                .. ':' .. tostring(newFirst)
+                .. ':' .. tostring(newSecond)
+                .. ':' .. tostring(firstTtl)
+                .. ':' .. tostring(secondTtl)
+                .. ':0:0'
+            """);
+
+    private static final DefaultRedisScript<String>
+            INCREMENT_BOTH_AND_CHECK_SCRIPT = script("""
+            local ttlMs = tonumber(ARGV[1])
+            local firstLimit = tonumber(ARGV[2])
+            local secondLimit = tonumber(ARGV[3])
+
+            local newFirst =
+                redis.call('INCR', KEYS[1])
+
+            local newSecond =
+                redis.call('INCR', KEYS[2])
+
+            local firstTtl =
+                redis.call('PTTL', KEYS[1])
+
+            local secondTtl =
+                redis.call('PTTL', KEYS[2])
+
+            if firstTtl < 0 then
+                redis.call('PEXPIRE', KEYS[1], ttlMs)
+                firstTtl = ttlMs
+            end
+
+            if secondTtl < 0 then
+                redis.call('PEXPIRE', KEYS[2], ttlMs)
+                secondTtl = ttlMs
+            end
+
+            local firstExceeded =
+                newFirst > firstLimit
+
+            local secondExceeded =
+                newSecond > secondLimit
+
+            local firstNotification = 0
+            local secondNotification = 0
+
+            if firstExceeded then
+                local markerResult = redis.call(
+                    'SET',
+                    KEYS[3],
+                    '1',
+                    'PX',
+                    firstTtl,
+                    'NX'
+                )
+
+                if markerResult then
+                    firstNotification = 1
+                end
+            end
+
+            if secondExceeded then
+                local markerResult = redis.call(
+                    'SET',
+                    KEYS[4],
+                    '1',
+                    'PX',
+                    secondTtl,
+                    'NX'
+                )
+
+                if markerResult then
+                    secondNotification = 1
+                end
+            end
+
+            local decision = 'ALLOWED'
+
+            if firstExceeded and secondExceeded then
+                decision = 'BOTH_EXCEEDED'
+            elseif firstExceeded then
+                decision = 'FIRST_EXCEEDED'
+            elseif secondExceeded then
+                decision = 'SECOND_EXCEEDED'
+            end
+
+            return decision
+                .. ':' .. tostring(newFirst)
+                .. ':' .. tostring(newSecond)
+                .. ':' .. tostring(firstTtl)
+                .. ':' .. tostring(secondTtl)
+                .. ':' .. tostring(firstNotification)
+                .. ':' .. tostring(secondNotification)
+            """);
+
+    private static final DefaultRedisScript<Long>
+            RESET_COUNTER_AND_MARKER_SCRIPT =
+            longScript("""
+                    return redis.call(
+                        'DEL',
+                        KEYS[1],
+                        KEYS[2]
+                    )
+                    """);
+
+    private static final DefaultRedisScript<Long>
+            LOGIN_SUCCESS_CLEANUP_SCRIPT =
+            longScript("""
+                    redis.call(
+                        'DEL',
+                        KEYS[1],
+                        KEYS[3]
+                    )
+
+                    local secondCurrent =
+                        tonumber(redis.call('GET', KEYS[2]) or '0')
+
+                    if secondCurrent <= 1 then
+                        redis.call(
+                            'DEL',
+                            KEYS[2],
+                            KEYS[4]
+                        )
+
+                        return 0
+                    end
+
+                    return redis.call('DECR', KEYS[2])
+                    """);
 
     private final StringRedisTemplate redisTemplate;
 
+    public DualRateLimitResult tryIncrementBoth(
+            String firstKey,
+            String firstMarkerKey,
+            int firstLimit,
+            String secondKey,
+            String secondMarkerKey,
+            int secondLimit,
+            Duration ttl
+    ) {
+        return executeDualScript(
+                TRY_INCREMENT_BOTH_SCRIPT,
+                firstKey,
+                firstMarkerKey,
+                firstLimit,
+                secondKey,
+                secondMarkerKey,
+                secondLimit,
+                ttl
+        );
+    }
+
+    /**
+     * Backward-compatible overload. Marker keys всё равно передаются
+     * Lua явно через KEYS.
+     */
     public DualRateLimitResult tryIncrementBoth(
             String firstKey,
             int firstLimit,
@@ -211,11 +304,33 @@ public class RedisFixedWindowRateLimiter {
             int secondLimit,
             Duration ttl
     ) {
-        return executeDualScript(
-                TRY_INCREMENT_BOTH_SCRIPT,
+        return tryIncrementBoth(
                 firstKey,
+                firstKey + ":exceeded",
                 firstLimit,
                 secondKey,
+                secondKey + ":exceeded",
+                secondLimit,
+                ttl
+        );
+    }
+
+    public DualRateLimitResult incrementBothAndCheck(
+            String firstKey,
+            String firstMarkerKey,
+            int firstLimit,
+            String secondKey,
+            String secondMarkerKey,
+            int secondLimit,
+            Duration ttl
+    ) {
+        return executeDualScript(
+                INCREMENT_BOTH_AND_CHECK_SCRIPT,
+                firstKey,
+                firstMarkerKey,
+                firstLimit,
+                secondKey,
+                secondMarkerKey,
                 secondLimit,
                 ttl
         );
@@ -228,52 +343,154 @@ public class RedisFixedWindowRateLimiter {
             int secondLimit,
             Duration ttl
     ) {
-        return executeDualScript(
-                INCREMENT_BOTH_AND_CHECK_SCRIPT,
+        return incrementBothAndCheck(
                 firstKey,
+                firstKey + ":exceeded",
                 firstLimit,
                 secondKey,
+                secondKey + ":exceeded",
                 secondLimit,
                 ttl
         );
     }
 
-    public void reset(String key) {
-        Objects.requireNonNull(
-                key,
-                "key не должен быть null"
+    /**
+     * После успешного login:
+     * 1. полностью удаляет email counter и его marker;
+     * 2. уменьшает IP counter ровно на одну зарезервированную попытку;
+     * 3. не удаляет накопленные до этого IP failures.
+     */
+    public void resetFirstAndDecrementSecond(
+            String firstKey,
+            String secondKey,
+            String firstMarkerKey,
+            String secondMarkerKey
+    ) {
+        validateDistinctKeys(
+                firstKey,
+                secondKey,
+                firstMarkerKey,
+                secondMarkerKey
         );
 
-        if (key.isBlank()) {
-            throw new IllegalArgumentException(
-                    "key не должен быть пустым"
+        Long remainingSecondCount =
+                redisTemplate.execute(
+                        LOGIN_SUCCESS_CLEANUP_SCRIPT,
+                        List.of(
+                                firstKey,
+                                secondKey,
+                                firstMarkerKey,
+                                secondMarkerKey
+                        )
+                );
+
+        if (remainingSecondCount == null
+                || remainingSecondCount < 0L) {
+            throw new IllegalStateException(
+                    "Redis login success cleanup returned "
+                            + "invalid result"
             );
         }
+    }
 
-        redisTemplate.delete(key);
-        redisTemplate.delete(key + ":exceeded");
+    public void reset(
+            String counterKey,
+            String markerKey
+    ) {
+        validateDistinctKeys(
+                counterKey,
+                markerKey
+        );
+
+        Long result = redisTemplate.execute(
+                RESET_COUNTER_AND_MARKER_SCRIPT,
+                List.of(counterKey, markerKey)
+        );
+
+        if (result == null || result < 0L) {
+            throw new IllegalStateException(
+                    "Redis reset script returned invalid result"
+            );
+        }
+    }
+
+    public void reset(
+            String counterKey
+    ) {
+        reset(
+                counterKey,
+                counterKey + ":exceeded"
+        );
+    }
+
+    /**
+     * Marker является механизмом подавления шума, а не подтверждением
+     * сохранения аудита. При синхронной ошибке публикации marker удаляется,
+     * чтобы следующий rejected request мог повторить доставку события.
+     */
+    public void releaseNotificationMarkers(
+            DualRateLimitResult result,
+            String firstMarkerKey,
+            String secondMarkerKey
+    ) {
+        Objects.requireNonNull(
+                result,
+                "result не должен быть null"
+        );
+
+        List<String> markerKeys = new ArrayList<>(2);
+
+        if (result.firstExceededNotification()) {
+            markerKeys.add(requireKey(firstMarkerKey));
+        }
+
+        if (result.secondExceededNotification()) {
+            markerKeys.add(requireKey(secondMarkerKey));
+        }
+
+        if (!markerKeys.isEmpty()) {
+            redisTemplate.delete(markerKeys);
+        }
     }
 
     private DualRateLimitResult executeDualScript(
             DefaultRedisScript<String> script,
             String firstKey,
+            String firstMarkerKey,
             int firstLimit,
             String secondKey,
+            String secondMarkerKey,
             int secondLimit,
             Duration ttl
     ) {
-        validateKeyAndTtl(firstKey, ttl);
-        validateKeyAndTtl(secondKey, ttl);
+        Objects.requireNonNull(
+                script,
+                "script не должен быть null"
+        );
+
+        validateDistinctKeys(
+                firstKey,
+                secondKey,
+                firstMarkerKey,
+                secondMarkerKey
+        );
 
         validateLimit(firstLimit, "firstLimit");
         validateLimit(secondLimit, "secondLimit");
 
+        long ttlMillis = requireTtlMillis(ttl);
+
         String result = redisTemplate.execute(
                 script,
-                List.of(firstKey, secondKey),
-                String.valueOf(ttl.toMillis()),
-                String.valueOf(firstLimit),
-                String.valueOf(secondLimit)
+                List.of(
+                        firstKey,
+                        secondKey,
+                        firstMarkerKey,
+                        secondMarkerKey
+                ),
+                Long.toString(ttlMillis),
+                Integer.toString(firstLimit),
+                Integer.toString(secondLimit)
         );
 
         if (result == null || result.isBlank()) {
@@ -284,7 +501,7 @@ public class RedisFixedWindowRateLimiter {
 
         String[] parts = result.split(":", -1);
 
-        if (parts.length != 6) {
+        if (parts.length != 7) {
             throw new IllegalStateException(
                     "Redis dual Lua script returned invalid result: "
                             + result
@@ -298,10 +515,45 @@ public class RedisFixedWindowRateLimiter {
                 decision,
                 parseNonNegativeLong(parts[1], result),
                 parseNonNegativeLong(parts[2], result),
-                toSeconds(parseTtlMillis(parts[3], result)),
-                toSeconds(parseTtlMillis(parts[4], result)),
-                parseNotificationFlag(parts[5], result)
+                toSeconds(
+                        parsePositiveTtlMillis(
+                                parts[3],
+                                result
+                        )
+                ),
+                toSeconds(
+                        parsePositiveTtlMillis(
+                                parts[4],
+                                result
+                        )
+                ),
+                parseNotificationFlag(parts[5], result),
+                parseNotificationFlag(parts[6], result)
         );
+    }
+
+    private static DefaultRedisScript<String> script(
+            String text
+    ) {
+        DefaultRedisScript<String> script =
+                new DefaultRedisScript<>();
+
+        script.setResultType(String.class);
+        script.setScriptText(text);
+
+        return script;
+    }
+
+    private static DefaultRedisScript<Long> longScript(
+            String text
+    ) {
+        DefaultRedisScript<Long> script =
+                new DefaultRedisScript<>();
+
+        script.setResultType(Long.class);
+        script.setScriptText(text);
+
+        return script;
     }
 
     private RateLimitDecision parseDecision(
@@ -334,31 +586,33 @@ public class RedisFixedWindowRateLimiter {
         };
     }
 
-    private void validateKeyAndTtl(
-            String key,
-            Duration ttl
+    private void validateDistinctKeys(
+            String... keys
     ) {
-        Objects.requireNonNull(
-                key,
-                "key не должен быть null"
-        );
+        Set<String> uniqueKeys =
+                new HashSet<>(keys.length);
 
-        Objects.requireNonNull(
-                ttl,
-                "ttl не должен быть null"
-        );
+        for (String key : keys) {
+            uniqueKeys.add(requireKey(key));
+        }
 
-        if (key.isBlank()) {
+        if (uniqueKeys.size() != keys.length) {
             throw new IllegalArgumentException(
-                    "key не должен быть пустым"
+                    "Redis script keys должны быть различными"
+            );
+        }
+    }
+
+    private String requireKey(
+            String key
+    ) {
+        if (key == null || key.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Redis key не должен быть пустым"
             );
         }
 
-        if (ttl.isZero() || ttl.isNegative()) {
-            throw new IllegalArgumentException(
-                    "ttl должен быть положительным"
-            );
-        }
+        return key;
     }
 
     private void validateLimit(
@@ -372,6 +626,34 @@ public class RedisFixedWindowRateLimiter {
         }
     }
 
+    private long requireTtlMillis(
+            Duration ttl
+    ) {
+        Objects.requireNonNull(
+                ttl,
+                "ttl не должен быть null"
+        );
+
+        long ttlMillis;
+
+        try {
+            ttlMillis = ttl.toMillis();
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException(
+                    "ttl слишком большой",
+                    exception
+            );
+        }
+
+        if (ttlMillis < 1L) {
+            throw new IllegalArgumentException(
+                    "ttl должен быть не меньше 1 ms"
+            );
+        }
+
+        return ttlMillis;
+    }
+
     private long parseNonNegativeLong(
             String value,
             String rawResult
@@ -379,7 +661,7 @@ public class RedisFixedWindowRateLimiter {
         try {
             long parsed = Long.parseLong(value);
 
-            if (parsed < 0) {
+            if (parsed < 0L) {
                 throw new IllegalStateException(
                         "Redis returned negative counter: "
                                 + rawResult
@@ -389,19 +671,28 @@ public class RedisFixedWindowRateLimiter {
             return parsed;
         } catch (NumberFormatException exception) {
             throw new IllegalStateException(
-                    "Redis returned non-numeric value: "
+                    "Redis returned non-numeric counter: "
                             + rawResult,
                     exception
             );
         }
     }
 
-    private long parseTtlMillis(
+    private long parsePositiveTtlMillis(
             String value,
             String rawResult
     ) {
         try {
-            return Long.parseLong(value);
+            long parsed = Long.parseLong(value);
+
+            if (parsed < 1L) {
+                throw new IllegalStateException(
+                        "Redis returned non-positive TTL: "
+                                + rawResult
+                );
+            }
+
+            return parsed;
         } catch (NumberFormatException exception) {
             throw new IllegalStateException(
                     "Redis returned invalid TTL: "
@@ -411,14 +702,13 @@ public class RedisFixedWindowRateLimiter {
         }
     }
 
-    private long toSeconds(long ttlMillis) {
-        if (ttlMillis <= 0) {
-            return 1L;
-        }
+    private long toSeconds(
+            long ttlMillis
+    ) {
+        long wholeSeconds = ttlMillis / 1_000L;
 
-        return Math.max(
-                1L,
-                (long) Math.ceil(ttlMillis / 1000.0)
-        );
+        return ttlMillis % 1_000L == 0L
+                ? Math.max(1L, wholeSeconds)
+                : Math.max(1L, wholeSeconds + 1L);
     }
 }

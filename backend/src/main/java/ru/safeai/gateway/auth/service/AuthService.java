@@ -3,7 +3,6 @@ package ru.safeai.gateway.auth.service;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.security.authentication.AccountStatusException;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -20,7 +19,6 @@ import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.common.exception.AuthServiceUnavailableException;
 import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
-import ru.safeai.gateway.common.exception.RateLimitExceededException;
 import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.ClientIpResolver;
@@ -34,7 +32,6 @@ import ru.safeai.gateway.user.repository.UserRepository;
 import java.util.Locale;
 import java.util.Objects;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -96,9 +93,25 @@ public class AuthService {
                 "password не должен быть null"
         );
 
-        checkLoginRateLimit(
+        /*
+         * IP вычисляется один раз и используется как для предварительного
+         * резервирования login attempt, так и для компенсации успешного входа.
+         * Это исключает расхождение при повторном разборе proxy headers.
+         */
+        String ipAddress =
+                clientIpResolver.resolve(httpRequest);
+
+        /*
+         * LoginRateLimitService самостоятельно:
+         * - применяет fail-closed policy при недоступности Redis;
+         * - публикует подавленное marker-ами security audit event;
+         * - возвращает 429 через RateLimitExceededException.
+         *
+         * AuthService не должен создавать второй audit event на каждый 429.
+         */
+        loginRateLimitService.checkAllowed(
                 email,
-                httpRequest
+                ipAddress
         );
 
         LoginSessionResult session;
@@ -151,6 +164,28 @@ public class AuthService {
         );
 
         /*
+         * Аудит успешного входа выполняется до выдачи cookies.
+         * Если политика аудита считает событие обязательным и enqueue
+         * завершится ошибкой, клиент не получит частично сформированный
+         * успешный login response.
+         */
+        authEventService.loginSuccess(
+                session.currentUser(),
+                httpRequest
+        );
+
+        /*
+         * Успешная аутентификация не должна расходовать общий IP-limit:
+         * email counter удаляется, IP counter уменьшается ровно на одну
+         * предварительно зарезервированную попытку. Сам метод best effort
+         * и не превращает уже успешную аутентификацию в ошибку.
+         */
+        loginRateLimitService.onLoginSuccess(
+                email,
+                ipAddress
+        );
+
+        /*
          * Старый anonymous CSRF token удаляется после успешного login.
          * Frontend после login должен снова вызвать GET /api/auth/csrf.
          */
@@ -170,13 +205,6 @@ public class AuthService {
                 session.rawRefreshToken(),
                 session.refreshCookieMaxAge()
         );
-
-        authEventService.loginSuccess(
-                session.currentUser(),
-                httpRequest
-        );
-
-        resetEmailRateLimitBestEffort(email);
 
         return session.currentUser();
     }
@@ -339,43 +367,6 @@ public class AuthService {
                         && user.getOrganization().isEnabled(),
                 UserRoleMapper.toRoleNames(user)
         );
-    }
-
-    private void checkLoginRateLimit(
-            String email,
-            HttpServletRequest request
-    ) {
-        try {
-            loginRateLimitService.checkAllowed(
-                    email,
-                    clientIpResolver.resolve(request)
-            );
-        } catch (RateLimitExceededException exception) {
-            authEventService.loginRateLimitExceeded(
-                    email,
-                    request,
-                    exception
-            );
-
-            throw exception;
-        } catch (DataAccessException exception) {
-            throw authServiceUnavailable(exception);
-        }
-    }
-
-    private void resetEmailRateLimitBestEffort(
-            String email
-    ) {
-        try {
-            loginRateLimitService.resetEmailLimit(email);
-        } catch (RuntimeException exception) {
-            log.warn(
-                    "Failed to reset login email rate limit "
-                            + "after successful login: email={}",
-                    email,
-                    exception
-            );
-        }
     }
 
     private void clearAuthCookies(

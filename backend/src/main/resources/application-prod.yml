@@ -51,29 +51,37 @@ safeai:
   rate-limit:
     redis:
       key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX}
+      hmac-secret: ${SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET}
+      key-version: ${SAFEAI_RATE_LIMIT_REDIS_KEY_VERSION:v1}
 
     login:
       enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}
+      email-limit: ${SAFEAI_RATE_LIMIT_LOGIN_EMAIL_LIMIT:10}
+      ip-limit: ${SAFEAI_RATE_LIMIT_LOGIN_IP_LIMIT:100}
+      window: ${SAFEAI_RATE_LIMIT_LOGIN_WINDOW:10m}
+      audit-organization-id: ${SAFEAI_RATE_LIMIT_LOGIN_AUDIT_ORGANIZATION_ID:${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}}
 
     ai-messages:
       enabled: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ENABLED:true}
+      user-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_USER_LIMIT_PER_HOUR:20}
+      admin-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_ADMIN_LIMIT_PER_HOUR:100}
+      organization-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_ORGANIZATION_LIMIT_PER_HOUR:1000}
 
   security:
     client-ip:
       trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:172.28.0.0/24}
 
     user-status-cache:
-      # Security state читается из PostgreSQL на каждом
-      # authenticated request.
+      # Security state is read from PostgreSQL on each authenticated request.
       enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:false}
       ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
-      key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status:}
+      key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status}
 
     hsts:
       enabled: ${SAFEAI_HSTS_ENABLED:true}
 
   platform:
-    organization-id: 00000000-0000-0000-0000-000000000001
+    organization-id: ${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}
 
   user-management:
     permanent-deletion-retention: ${SAFEAI_USER_DELETION_RETENTION:7d}

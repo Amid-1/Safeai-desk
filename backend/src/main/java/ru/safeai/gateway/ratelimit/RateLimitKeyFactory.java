@@ -1,46 +1,110 @@
 package ru.safeai.gateway.ratelimit;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.security.GeneralSecurityException;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.UUID;
 
 @Component
-@RequiredArgsConstructor
-@EnableConfigurationProperties(RateLimitRedisKeyProperties.class)
+@EnableConfigurationProperties(
+        RateLimitRedisKeyProperties.class
+)
 public class RateLimitKeyFactory {
 
+    private static final String HMAC_ALGORITHM =
+            "HmacSHA256";
+
+    private static final String LOGIN_HASH_TAG =
+            "{login}";
+
+    private static final int ORGANIZATION_TAG_LENGTH = 32;
+
     private final RateLimitRedisKeyProperties properties;
+    private final SecretKeySpec hmacKey;
 
-    public String loginEmail(String normalizedEmail) {
-        return withPrefix(
-                "rate-limit:login:email:"
-                        + sha256(requireIdentity(normalizedEmail))
+    public RateLimitKeyFactory(
+            RateLimitRedisKeyProperties properties
+    ) {
+        this.properties = Objects.requireNonNull(
+                properties,
+                "properties не должен быть null"
+        );
+
+        this.hmacKey = new SecretKeySpec(
+                properties.hmacSecret()
+                        .getBytes(StandardCharsets.UTF_8),
+                HMAC_ALGORITHM
         );
     }
 
-    public String loginIp(String normalizedIp) {
+    /**
+     * Все login-ключи используют hash tag {login}.
+     * Поэтому email, IP и marker keys находятся в одном Redis Cluster slot.
+     */
+    public String loginEmail(
+            String normalizedEmail
+    ) {
         return withPrefix(
-                "rate-limit:login:ip:"
-                        + sha256(requireIdentity(normalizedIp))
+                "rate-limit:"
+                        + LOGIN_HASH_TAG
+                        + ":email:"
+                        + hmac(
+                                "login-email:",
+                                requireIdentity(
+                                        normalizedEmail
+                                )
+                        )
         );
     }
 
-    public String aiMessageUser(UUID userId) {
+    public String loginIp(
+            String normalizedIp
+    ) {
+        return withPrefix(
+                "rate-limit:"
+                        + LOGIN_HASH_TAG
+                        + ":ip:"
+                        + hmac(
+                                "login-ip:",
+                                requireIdentity(normalizedIp)
+                        )
+        );
+    }
+
+    /**
+     * User и organization AI keys получают одинаковый
+     * organization-scoped hash tag и попадают в один cluster slot.
+     */
+    public String aiMessageUser(
+            UUID organizationId,
+            UUID userId
+    ) {
+        Objects.requireNonNull(
+                organizationId,
+                "organizationId не должен быть null"
+        );
+
         Objects.requireNonNull(
                 userId,
                 "userId не должен быть null"
         );
 
         return withPrefix(
-                "rate-limit:ai-message:user:"
-                        + sha256(userId.toString())
+                "rate-limit:"
+                        + aiOrganizationHashTag(
+                                organizationId
+                        )
+                        + ":user:"
+                        + hmac(
+                                "ai-user:",
+                                userId.toString()
+                        )
         );
     }
 
@@ -53,18 +117,70 @@ public class RateLimitKeyFactory {
         );
 
         return withPrefix(
-                "rate-limit:ai-message:organization:"
-                        + sha256(organizationId.toString())
+                "rate-limit:"
+                        + aiOrganizationHashTag(
+                                organizationId
+                        )
+                        + ":organization"
         );
     }
 
-    private String withPrefix(String key) {
-        return properties.effectiveKeyPrefix()
+    /**
+     * Marker формируется в Java, но всегда передаётся Lua как отдельный KEYS.
+     */
+    public String exceededMarker(
+            String counterKey
+    ) {
+        return requireKey(counterKey) + ":exceeded";
+    }
+
+    public String emailFingerprint(
+            String normalizedEmail
+    ) {
+        return hmac(
+                "audit-email:",
+                requireIdentity(normalizedEmail)
+        );
+    }
+
+    public String ipFingerprint(
+            String normalizedIp
+    ) {
+        return hmac(
+                "audit-ip:",
+                requireIdentity(normalizedIp)
+        );
+    }
+
+    private String aiOrganizationHashTag(
+            UUID organizationId
+    ) {
+        String organizationDigest = hmac(
+                "ai-organization:",
+                organizationId.toString()
+        );
+
+        return "{ai-"
+                + organizationDigest.substring(
+                        0,
+                        ORGANIZATION_TAG_LENGTH
+                )
+                + "}";
+    }
+
+    private String withPrefix(
+            String key
+    ) {
+        return properties.keyPrefix()
+                + ":"
+                + properties.keyVersion()
                 + ":"
                 + key;
     }
 
-    private String requireIdentity(String value) {
+    private String requireIdentity(
+            String value
+    ) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(
                     "rate-limit identity не должна быть пустой"
@@ -74,19 +190,36 @@ public class RateLimitKeyFactory {
         return value;
     }
 
-    private String sha256(String value) {
-        try {
-            MessageDigest digest =
-                    MessageDigest.getInstance("SHA-256");
+    private String requireKey(
+            String value
+    ) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    "rate-limit key не должен быть пустым"
+            );
+        }
 
-            byte[] hash = digest.digest(
-                    value.getBytes(StandardCharsets.UTF_8)
+        return value;
+    }
+
+    private String hmac(
+            String domain,
+            String value
+    ) {
+        try {
+            Mac mac = Mac.getInstance(HMAC_ALGORITHM);
+            mac.init(hmacKey);
+
+            byte[] hash = mac.doFinal(
+                    (domain + value)
+                            .getBytes(StandardCharsets.UTF_8)
             );
 
             return HexFormat.of().formatHex(hash);
-        } catch (NoSuchAlgorithmException exception) {
+        } catch (GeneralSecurityException exception) {
             throw new IllegalStateException(
-                    "SHA-256 algorithm is not available",
+                    HMAC_ALGORITHM
+                            + " algorithm is not available",
                     exception
             );
         }

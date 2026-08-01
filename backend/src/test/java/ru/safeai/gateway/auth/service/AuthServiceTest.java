@@ -21,6 +21,7 @@ import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.common.exception.AuthServiceUnavailableException;
 import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.common.exception.RateLimitExceededException;
+import ru.safeai.gateway.common.exception.RateLimitUnavailableException;
 import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.security.AccessTokenSubject;
 import ru.safeai.gateway.common.security.ClientIpResolver;
@@ -37,11 +38,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
-
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -49,13 +49,21 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
 
-    private static final UUID USER_ID = UUID.fromString(
-            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-    );
+    private static final UUID USER_ID =
+            UUID.fromString(
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            );
 
-    private static final UUID ORGANIZATION_ID = UUID.fromString(
-            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-    );
+    private static final UUID ORGANIZATION_ID =
+            UUID.fromString(
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            );
+
+    private static final String EMAIL =
+            "admin@test.com";
+
+    private static final String IP_ADDRESS =
+            "127.0.0.1";
 
     @Mock
     private AuthenticationManager authenticationManager;
@@ -110,13 +118,16 @@ class AuthServiceTest {
     }
 
     @Test
-    void validLoginCreatesCommittedSessionThenWritesCookies() {
-        LoginRequest request = new LoginRequest(
-                " Admin@Test.COM ",
-                "legacy-password"
-        );
+    void validLoginCreatesCommittedSessionThenAuditsAndWritesCookies() {
+        LoginRequest loginRequest =
+                new LoginRequest(
+                        " Admin@Test.COM ",
+                        "legacy-password"
+                );
 
-        MockHttpServletRequest httpRequest = request();
+        MockHttpServletRequest httpRequest =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
@@ -124,111 +135,180 @@ class AuthServiceTest {
                 passwordPrincipal();
 
         UsernamePasswordAuthenticationToken authentication =
-                UsernamePasswordAuthenticationToken.authenticated(
-                        principal,
-                        null,
-                        principal.getAuthorities()
-                );
+                UsernamePasswordAuthenticationToken
+                        .authenticated(
+                                principal,
+                                null,
+                                principal.getAuthorities()
+                        );
 
         AccessTokenSubject tokenSubject =
                 accessTokenSubject();
+
         CurrentUserResponse currentUser =
                 currentUserResponse();
-        Duration refreshMaxAge = Duration.ofDays(30);
+
+        Duration refreshMaxAge =
+                Duration.ofDays(30);
 
         when(clientIpResolver.resolve(httpRequest))
-                .thenReturn("127.0.0.1");
+                .thenReturn(IP_ADDRESS);
+
         when(authenticationManager.authenticate(any()))
                 .thenReturn(authentication);
+
         when(loginSessionTransactionService.createSession(
                 principal,
                 httpRequest
         )).thenReturn(loginSessionResult);
+
         when(loginSessionResult.accessTokenSubject())
                 .thenReturn(tokenSubject);
+
         when(loginSessionResult.currentUser())
                 .thenReturn(currentUser);
+
         when(loginSessionResult.rawRefreshToken())
                 .thenReturn("refresh-token");
+
         when(loginSessionResult.refreshCookieMaxAge())
                 .thenReturn(refreshMaxAge);
+
         when(jwtService.generateToken(tokenSubject))
                 .thenReturn("access-token");
 
-        CurrentUserResponse result = authService.login(
-                request,
-                httpRequest,
-                response
-        );
+        CurrentUserResponse result =
+                authService.login(
+                        loginRequest,
+                        httpRequest,
+                        response
+                );
 
-        assertThat(result).isSameAs(currentUser);
+        assertThat(result)
+                .isSameAs(currentUser);
 
-        verify(loginRateLimitService).checkAllowed(
-                "admin@test.com",
-                "127.0.0.1"
-        );
+        InOrder order =
+                inOrder(
+                        clientIpResolver,
+                        loginRateLimitService,
+                        authenticationManager,
+                        loginSessionTransactionService,
+                        jwtService,
+                        authEventService,
+                        csrfTokenRepository,
+                        authCookieService
+                );
 
-        InOrder order = inOrder(
-                loginSessionTransactionService,
-                jwtService,
-                csrfTokenRepository,
-                authCookieService
-        );
+        order.verify(clientIpResolver)
+                .resolve(httpRequest);
+
+        order.verify(loginRateLimitService)
+                .checkAllowed(
+                        EMAIL,
+                        IP_ADDRESS
+                );
+
+        order.verify(authenticationManager)
+                .authenticate(
+                        any(
+                                UsernamePasswordAuthenticationToken.class
+                        )
+                );
 
         order.verify(loginSessionTransactionService)
-                .createSession(principal, httpRequest);
+                .createSession(
+                        principal,
+                        httpRequest
+                );
+
         order.verify(jwtService)
                 .generateToken(tokenSubject);
+
+        order.verify(authEventService)
+                .loginSuccess(
+                        currentUser,
+                        httpRequest
+                );
+
+        order.verify(loginRateLimitService)
+                .onLoginSuccess(
+                        EMAIL,
+                        IP_ADDRESS
+                );
+
         order.verify(csrfTokenRepository)
-                .saveToken(null, httpRequest, response);
+                .saveToken(
+                        null,
+                        httpRequest,
+                        response
+                );
+
         order.verify(authCookieService)
                 .addAccessTokenCookie(
                         response,
                         "access-token"
                 );
+
         order.verify(authCookieService)
                 .addRefreshTokenCookie(
                         response,
                         "refresh-token",
                         refreshMaxAge
                 );
-
-        verify(authEventService).loginSuccess(
-                currentUser,
-                httpRequest
-        );
-        verify(loginRateLimitService)
-                .resetEmailLimit("admin@test.com");
     }
 
     @Test
-    void badPasswordReturnsAuthenticationFailureWithoutSession() {
-        LoginRequest request = new LoginRequest(
-                "admin@test.com",
-                "wrong-password"
-        );
+    void badPasswordRecordsAuthenticationFailureWithoutSession() {
+        LoginRequest loginRequest =
+                new LoginRequest(
+                        EMAIL,
+                        "wrong-password"
+                );
 
-        MockHttpServletRequest httpRequest = request();
+        MockHttpServletRequest httpRequest =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
         when(clientIpResolver.resolve(httpRequest))
-                .thenReturn("127.0.0.1");
+                .thenReturn(IP_ADDRESS);
+
         when(authenticationManager.authenticate(any()))
-                .thenThrow(new BadCredentialsException(
-                        "Bad credentials"
-                ));
+                .thenThrow(
+                        new BadCredentialsException(
+                                "Bad credentials"
+                        )
+                );
 
-        assertThatThrownBy(() -> authService.login(
-                request,
-                httpRequest,
-                response
-        )).isInstanceOf(BadCredentialsException.class);
-
-        verify(authEventService).loginFailed(
-                "admin@test.com",
-                httpRequest
+        assertThatThrownBy(() ->
+                authService.login(
+                        loginRequest,
+                        httpRequest,
+                        response
+                )
+        ).isInstanceOf(
+                BadCredentialsException.class
         );
+
+        verify(loginRateLimitService)
+                .checkAllowed(
+                        EMAIL,
+                        IP_ADDRESS
+                );
+
+        verify(authEventService)
+                .loginFailed(
+                        EMAIL,
+                        httpRequest
+                );
+
+        verify(loginRateLimitService, never())
+                .onLoginSuccess(
+                        anyString(),
+                        anyString()
+                );
+
         verifyNoInteractions(
                 loginSessionTransactionService,
                 jwtService,
@@ -239,110 +319,175 @@ class AuthServiceTest {
 
     @Test
     void disabledAccountUsesSameAuthenticationFailurePath() {
-        LoginRequest request = new LoginRequest(
-                "admin@test.com",
-                "password"
-        );
+        LoginRequest loginRequest =
+                new LoginRequest(
+                        EMAIL,
+                        "password"
+                );
 
-        MockHttpServletRequest httpRequest = request();
+        MockHttpServletRequest httpRequest =
+                request();
 
         when(clientIpResolver.resolve(httpRequest))
-                .thenReturn("127.0.0.1");
+                .thenReturn(IP_ADDRESS);
+
         when(authenticationManager.authenticate(any()))
-                .thenThrow(new DisabledException("disabled"));
+                .thenThrow(
+                        new DisabledException(
+                                "disabled"
+                        )
+                );
 
-        assertThatThrownBy(() -> authService.login(
-                request,
-                httpRequest,
-                new MockHttpServletResponse()
-        )).isInstanceOf(DisabledException.class);
-
-        verify(authEventService).loginFailed(
-                "admin@test.com",
-                httpRequest
+        assertThatThrownBy(() ->
+                authService.login(
+                        loginRequest,
+                        httpRequest,
+                        new MockHttpServletResponse()
+                )
+        ).isInstanceOf(
+                DisabledException.class
         );
+
+        verify(authEventService)
+                .loginFailed(
+                        EMAIL,
+                        httpRequest
+                );
+
+        verify(loginRateLimitService, never())
+                .onLoginSuccess(
+                        anyString(),
+                        anyString()
+                );
     }
 
     @Test
     void loginAcceptsExistingPasswordEvenIfItDoesNotMatchNewCreationPolicy() {
-        LoginRequest request = new LoginRequest(
-                "admin@test.com",
-                "old"
-        );
+        LoginRequest loginRequest =
+                new LoginRequest(
+                        EMAIL,
+                        "old"
+                );
 
-        MockHttpServletRequest httpRequest = request();
+        MockHttpServletRequest httpRequest =
+                request();
+
         SafeAiUserPrincipal principal =
                 passwordPrincipal();
 
         when(clientIpResolver.resolve(httpRequest))
-                .thenReturn("127.0.0.1");
+                .thenReturn(IP_ADDRESS);
+
         when(authenticationManager.authenticate(any()))
                 .thenReturn(
-                        UsernamePasswordAuthenticationToken.authenticated(
-                                principal,
-                                null,
-                                principal.getAuthorities()
-                        )
+                        UsernamePasswordAuthenticationToken
+                                .authenticated(
+                                        principal,
+                                        null,
+                                        principal.getAuthorities()
+                                )
                 );
+
         when(loginSessionTransactionService.createSession(
                 principal,
                 httpRequest
         )).thenReturn(loginSessionResult);
+
         when(loginSessionResult.accessTokenSubject())
                 .thenReturn(accessTokenSubject());
+
         when(loginSessionResult.currentUser())
                 .thenReturn(currentUserResponse());
+
         when(loginSessionResult.rawRefreshToken())
                 .thenReturn("refresh-token");
+
         when(loginSessionResult.refreshCookieMaxAge())
-                .thenReturn(Duration.ofDays(30));
-        when(jwtService.generateToken(any(AccessTokenSubject.class)))
-                .thenReturn("access-token");
+                .thenReturn(
+                        Duration.ofDays(30)
+                );
+
+        when(jwtService.generateToken(
+                any(AccessTokenSubject.class)
+        )).thenReturn("access-token");
 
         authService.login(
-                request,
+                loginRequest,
                 httpRequest,
                 new MockHttpServletResponse()
         );
 
-        verify(authenticationManager).authenticate(
-                any(UsernamePasswordAuthenticationToken.class)
-        );
+        verify(authenticationManager)
+                .authenticate(
+                        any(
+                                UsernamePasswordAuthenticationToken.class
+                        )
+                );
+
+        verify(loginRateLimitService)
+                .onLoginSuccess(
+                        EMAIL,
+                        IP_ADDRESS
+                );
     }
 
     @Test
-    void transactionCommitFailureDoesNotWriteAuthCookies() {
-        LoginRequest request = new LoginRequest(
-                "admin@test.com",
-                "password"
-        );
+    void transactionCommitFailureDoesNotWriteAuditOrCookies() {
+        LoginRequest loginRequest =
+                new LoginRequest(
+                        EMAIL,
+                        "password"
+                );
 
-        MockHttpServletRequest httpRequest = request();
+        MockHttpServletRequest httpRequest =
+                request();
+
         SafeAiUserPrincipal principal =
                 passwordPrincipal();
 
         when(clientIpResolver.resolve(httpRequest))
-                .thenReturn("127.0.0.1");
+                .thenReturn(IP_ADDRESS);
+
         when(authenticationManager.authenticate(any()))
                 .thenReturn(
-                        UsernamePasswordAuthenticationToken.authenticated(
-                                principal,
-                                null,
-                                principal.getAuthorities()
-                        )
+                        UsernamePasswordAuthenticationToken
+                                .authenticated(
+                                        principal,
+                                        null,
+                                        principal.getAuthorities()
+                                )
                 );
+
         when(loginSessionTransactionService.createSession(
                 principal,
                 httpRequest
-        )).thenThrow(new TransactionSystemException(
-                "commit failed"
-        ));
+        )).thenThrow(
+                new TransactionSystemException(
+                        "commit failed"
+                )
+        );
 
-        assertThatThrownBy(() -> authService.login(
-                request,
-                httpRequest,
-                new MockHttpServletResponse()
-        )).isInstanceOf(AuthServiceUnavailableException.class);
+        assertThatThrownBy(() ->
+                authService.login(
+                        loginRequest,
+                        httpRequest,
+                        new MockHttpServletResponse()
+                )
+        ).isInstanceOf(
+                AuthServiceUnavailableException.class
+        );
+
+        verify(authEventService, never())
+                .loginSuccess(
+                        any(),
+                        any()
+                );
+
+        verify(loginRateLimitService, never())
+                .onLoginSuccess(
+                        anyString(),
+                        anyString()
+                );
 
         verifyNoInteractions(
                 jwtService,
@@ -352,40 +497,69 @@ class AuthServiceTest {
     }
 
     @Test
-    void rateLimitDbOutageBecomes503() {
-        LoginRequest request = new LoginRequest(
-                "admin@test.com",
-                "password"
-        );
+    void rateLimitUnavailableIsPropagatedWithoutAuthenticationAttempt() {
+        LoginRequest loginRequest =
+                new LoginRequest(
+                        EMAIL,
+                        "password"
+                );
 
-        MockHttpServletRequest httpRequest = request();
+        MockHttpServletRequest httpRequest =
+                request();
+
+        RateLimitUnavailableException exception =
+                new RateLimitUnavailableException(
+                        "Redis login rate limit недоступен",
+                        new RuntimeException(
+                                "Redis unavailable"
+                        )
+                );
 
         when(clientIpResolver.resolve(httpRequest))
-                .thenReturn("127.0.0.1");
-        doThrow(new DataAccessResourceFailureException(
-                "database unavailable"
-        )).when(loginRateLimitService).checkAllowed(
-                "admin@test.com",
-                "127.0.0.1"
+                .thenReturn(IP_ADDRESS);
+
+        doThrow(exception)
+                .when(loginRateLimitService)
+                .checkAllowed(
+                        EMAIL,
+                        IP_ADDRESS
+                );
+
+        assertThatThrownBy(() ->
+                authService.login(
+                        loginRequest,
+                        httpRequest,
+                        new MockHttpServletResponse()
+                )
+        ).isSameAs(exception);
+
+        verifyNoInteractions(
+                authenticationManager,
+                loginSessionTransactionService,
+                jwtService,
+                authEventService,
+                authCookieService,
+                csrfTokenRepository
         );
 
-        assertThatThrownBy(() -> authService.login(
-                request,
-                httpRequest,
-                new MockHttpServletResponse()
-        )).isInstanceOf(AuthServiceUnavailableException.class);
-
-        verifyNoInteractions(authenticationManager);
+        verify(loginRateLimitService, never())
+                .onLoginSuccess(
+                        anyString(),
+                        anyString()
+                );
     }
 
     @Test
-    void rateLimitExceededIsPreservedAndAudited() {
-        LoginRequest request = new LoginRequest(
-                "admin@test.com",
-                "password"
-        );
+    void rateLimitExceededIsPropagatedWithoutDuplicateAuthAudit() {
+        LoginRequest loginRequest =
+                new LoginRequest(
+                        EMAIL,
+                        "password"
+                );
 
-        MockHttpServletRequest httpRequest = request();
+        MockHttpServletRequest httpRequest =
+                request();
+
         RateLimitExceededException exception =
                 new RateLimitExceededException(
                         "Слишком много попыток",
@@ -393,36 +567,52 @@ class AuthServiceTest {
                 );
 
         when(clientIpResolver.resolve(httpRequest))
-                .thenReturn("127.0.0.1");
-        doThrow(exception).when(loginRateLimitService)
+                .thenReturn(IP_ADDRESS);
+
+        doThrow(exception)
+                .when(loginRateLimitService)
                 .checkAllowed(
-                        "admin@test.com",
-                        "127.0.0.1"
+                        EMAIL,
+                        IP_ADDRESS
                 );
 
-        assertThatThrownBy(() -> authService.login(
-                request,
-                httpRequest,
-                new MockHttpServletResponse()
-        )).isSameAs(exception);
-
-        verify(authEventService)
-                .loginRateLimitExceeded(
-                        "admin@test.com",
+        assertThatThrownBy(() ->
+                authService.login(
+                        loginRequest,
                         httpRequest,
-                        exception
+                        new MockHttpServletResponse()
+                )
+        ).isSameAs(exception);
+
+        verifyNoInteractions(
+                authenticationManager,
+                loginSessionTransactionService,
+                jwtService,
+                authEventService,
+                authCookieService,
+                csrfTokenRepository
+        );
+
+        verify(loginRateLimitService, never())
+                .onLoginSuccess(
+                        anyString(),
+                        anyString()
                 );
     }
 
     @Test
     void successfulRefreshRotatesBothCookies() {
-        MockHttpServletRequest request = request();
+        MockHttpServletRequest request =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
         AccessTokenSubject subject =
                 accessTokenSubject();
-        Duration maxAge = Duration.ofDays(30);
+
+        Duration maxAge =
+                Duration.ofDays(30);
 
         RefreshTokenService.RefreshTokenRotationResult rotation =
                 new RefreshTokenService.RefreshTokenRotationResult(
@@ -433,29 +623,39 @@ class AuthServiceTest {
 
         when(authCookieService.extractRefreshToken(request))
                 .thenReturn("old-refresh-token");
+
         when(refreshTokenService.rotate(
                 "old-refresh-token",
                 request
         )).thenReturn(rotation);
+
         when(jwtService.generateToken(subject))
                 .thenReturn("new-access-token");
 
-        authService.refresh(request, response);
+        authService.refresh(
+                request,
+                response
+        );
 
-        verify(authCookieService).addAccessTokenCookie(
-                response,
-                "new-access-token"
-        );
-        verify(authCookieService).addRefreshTokenCookie(
-                response,
-                "new-refresh-token",
-                maxAge
-        );
+        verify(authCookieService)
+                .addAccessTokenCookie(
+                        response,
+                        "new-access-token"
+                );
+
+        verify(authCookieService)
+                .addRefreshTokenCookie(
+                        response,
+                        "new-refresh-token",
+                        maxAge
+                );
     }
 
     @Test
     void refreshReuseAuditsAndClearsCookies() {
-        MockHttpServletRequest request = request();
+        MockHttpServletRequest request =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
@@ -469,39 +669,57 @@ class AuthServiceTest {
 
         when(authCookieService.extractRefreshToken(request))
                 .thenReturn("refresh-token");
+
         when(refreshTokenService.rotate(
                 "refresh-token",
                 request
         )).thenThrow(exception);
 
         assertThatThrownBy(() ->
-                authService.refresh(request, response)
+                authService.refresh(
+                        request,
+                        response
+                )
         ).isSameAs(exception);
 
         verify(authEventService)
-                .refreshReuseDetected(exception, request);
+                .refreshReuseDetected(
+                        exception,
+                        request
+                );
+
         verify(authCookieService)
                 .clearAuthCookies(response);
     }
 
     @Test
     void refreshDbOutagePreservesCookiesForRetry() {
-        MockHttpServletRequest request = request();
+        MockHttpServletRequest request =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
         when(authCookieService.extractRefreshToken(request))
                 .thenReturn("refresh-token");
+
         when(refreshTokenService.rotate(
                 "refresh-token",
                 request
-        )).thenThrow(new DataAccessResourceFailureException(
-                "database unavailable"
-        ));
+        )).thenThrow(
+                new DataAccessResourceFailureException(
+                        "database unavailable"
+                )
+        );
 
         assertThatThrownBy(() ->
-                authService.refresh(request, response)
-        ).isInstanceOf(AuthServiceUnavailableException.class);
+                authService.refresh(
+                        request,
+                        response
+                )
+        ).isInstanceOf(
+                AuthServiceUnavailableException.class
+        );
 
         verify(authCookieService, never())
                 .clearAuthCookies(response);
@@ -509,64 +727,97 @@ class AuthServiceTest {
 
     @Test
     void logoutRevokesFamilyAuditsAndAlwaysClearsCookies() {
-        MockHttpServletRequest request = request();
+        MockHttpServletRequest request =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
-        LogoutAuditSubject subject = new LogoutAuditSubject(
-                USER_ID,
-                ORGANIZATION_ID,
-                "admin@test.com"
-        );
+
+        LogoutAuditSubject subject =
+                new LogoutAuditSubject(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        EMAIL
+                );
 
         when(authCookieService.extractRefreshToken(request))
                 .thenReturn("refresh-token");
+
         when(refreshTokenService.revokeFamilyAndReturnSubject(
                 "refresh-token"
-        )).thenReturn(Optional.of(subject));
+        )).thenReturn(
+                Optional.of(subject)
+        );
 
-        authService.logout(request, response);
-
-        verify(authEventService).logout(subject, request);
-        verify(authCookieService).clearAuthCookies(response);
-        verify(csrfTokenRepository).saveToken(
-                null,
+        authService.logout(
                 request,
                 response
         );
+
+        verify(authEventService)
+                .logout(
+                        subject,
+                        request
+                );
+
+        verify(authCookieService)
+                .clearAuthCookies(response);
+
+        verify(csrfTokenRepository)
+                .saveToken(
+                        null,
+                        request,
+                        response
+                );
     }
 
     @Test
     void malformedLogoutTokenRemainsIdempotent() {
-        MockHttpServletRequest request = request();
+        MockHttpServletRequest request =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
         when(authCookieService.extractRefreshToken(request))
                 .thenReturn("malformed");
+
         when(refreshTokenService.revokeFamilyAndReturnSubject(
                 "malformed"
-        )).thenThrow(new InvalidRefreshTokenException(
-                "invalid"
-        ));
-
-        authService.logout(request, response);
-
-        verify(authEventService, never()).logout(
-                any(LogoutAuditSubject.class),
-                any()
+        )).thenThrow(
+                new InvalidRefreshTokenException(
+                        "invalid"
+                )
         );
-        verify(authCookieService).clearAuthCookies(response);
-        verify(csrfTokenRepository).saveToken(
-                null,
+
+        authService.logout(
                 request,
                 response
         );
+
+        verify(authEventService, never())
+                .logout(
+                        any(LogoutAuditSubject.class),
+                        any()
+                );
+
+        verify(authCookieService)
+                .clearAuthCookies(response);
+
+        verify(csrfTokenRepository)
+                .saveToken(
+                        null,
+                        request,
+                        response
+                );
     }
 
     private MockHttpServletRequest request() {
         MockHttpServletRequest request =
                 new MockHttpServletRequest();
-        request.setRemoteAddr("127.0.0.1");
+
+        request.setRemoteAddr(IP_ADDRESS);
+
         return request;
     }
 
@@ -574,7 +825,7 @@ class AuthServiceTest {
         return SafeAiUserPrincipal.passwordPrincipal(
                 USER_ID,
                 ORGANIZATION_ID,
-                "admin@test.com",
+                EMAIL,
                 "encoded-password",
                 true,
                 0L,
@@ -590,7 +841,7 @@ class AuthServiceTest {
         return new AccessTokenSubject(
                 USER_ID,
                 ORGANIZATION_ID,
-                "admin@test.com",
+                EMAIL,
                 0L,
                 Set.of("ADMIN")
         );
@@ -600,7 +851,7 @@ class AuthServiceTest {
         return new CurrentUserResponse(
                 USER_ID,
                 ORGANIZATION_ID,
-                "admin@test.com",
+                EMAIL,
                 "Demo Admin",
                 true,
                 Set.of("ADMIN")

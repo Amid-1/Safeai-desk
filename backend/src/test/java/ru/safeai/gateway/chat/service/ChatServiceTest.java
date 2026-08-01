@@ -11,6 +11,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.metadata.AiResponseStatus;
+import ru.safeai.gateway.ai.metadata.PricingStatus;
+import ru.safeai.gateway.ai.metadata.UsageStatus;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
@@ -22,12 +25,8 @@ import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
-import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
-import ru.safeai.gateway.ai.metadata.AiResponseStatus;
-import ru.safeai.gateway.ai.metadata.PricingStatus;
-import ru.safeai.gateway.ai.metadata.UsageStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -49,31 +48,47 @@ import static org.mockito.Mockito.when;
 class ChatServiceTest {
 
     private static final UUID USER_ID =
-            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+            UUID.fromString(
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            );
 
     private static final UUID ORGANIZATION_ID =
-            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+            UUID.fromString(
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            );
 
     private static final UUID CHAT_ID =
-            UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
+            UUID.fromString(
+                    "2251f787-044c-4ef8-80d7-60d3ce4d72af"
+            );
 
     private static final UUID USER_MESSAGE_ID =
-            UUID.fromString("11111111-1111-1111-1111-111111111111");
-
-    private static final Instant CREATED_AT =
-            Instant.parse("2026-06-12T12:00:00Z");
+            UUID.fromString(
+                    "11111111-1111-1111-1111-111111111111"
+            );
 
     private static final UUID PROVIDER_MESSAGE_ID =
-            UUID.fromString("22222222-2222-2222-2222-222222222222");
+            UUID.fromString(
+                    "22222222-2222-2222-2222-222222222222"
+            );
+
+    private static final Instant CREATED_AT =
+            Instant.parse(
+                    "2026-06-12T12:00:00Z"
+            );
 
     private static final Instant PRICING_CALCULATED_AT =
-            Instant.parse("2026-06-12T12:00:01Z");
+            Instant.parse(
+                    "2026-06-12T12:00:01Z"
+            );
 
     @Mock
-    private ChatSessionRepository chatSessionRepository;
+    private ChatSessionRepository
+            chatSessionRepository;
 
     @Mock
-    private ChatMessageRepository chatMessageRepository;
+    private ChatMessageRepository
+            chatMessageRepository;
 
     @Mock
     private UserRepository userRepository;
@@ -85,10 +100,12 @@ class ChatServiceTest {
     private AuditEventService auditEventService;
 
     @Mock
-    private ChatPersistenceService chatPersistenceService;
+    private ChatPersistenceService
+            chatPersistenceService;
 
     @Mock
-    private RedisRateLimitService rateLimitService;
+    private ChatTurnReservationService
+            chatTurnReservationService;
 
     @Mock
     private ChatLockService chatLockService;
@@ -104,65 +121,85 @@ class ChatServiceTest {
                 aiProvider,
                 auditEventService,
                 chatPersistenceService,
+                chatTurnReservationService,
                 new ChatMapper(),
-                rateLimitService,
                 chatLockService,
-                new ChatProperties(50, 30, 8_000)
+                new ChatProperties(
+                        50,
+                        30,
+                        8_000
+                )
         );
     }
 
     @Test
     void createUsesTenantSafeUserLookupAndSaveAndFlush() {
-        SafeAiUserPrincipal currentUser = currentUser();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
 
         when(userRepository.findByIdAndOrganizationId(
                 USER_ID,
                 ORGANIZATION_ID
-        )).thenReturn(Optional.of(user()));
+        )).thenReturn(
+                Optional.of(user())
+        );
 
         when(chatSessionRepository.saveAndFlush(
                 any(ChatSessionEntity.class)
         )).thenAnswer(invocation -> {
-            ChatSessionEntity session = invocation.getArgument(0);
+            ChatSessionEntity session =
+                    invocation.getArgument(0);
+
             session.setId(CHAT_ID);
             session.setCreatedAt(CREATED_AT);
             session.setUpdatedAt(CREATED_AT);
+
             return session;
         });
 
         var response = service.create(
-                new CreateChatRequest(" Новый чат "),
+                new CreateChatRequest(
+                        " Новый чат "
+                ),
                 currentUser
         );
 
-        assertThat(response.title()).isEqualTo("Новый чат");
+        assertThat(response.title())
+                .isEqualTo("Новый чат");
 
-        verify(userRepository).findByIdAndOrganizationId(
-                USER_ID,
-                ORGANIZATION_ID
-        );
+        verify(userRepository)
+                .findByIdAndOrganizationId(
+                        USER_ID,
+                        ORGANIZATION_ID
+                );
 
         verify(chatSessionRepository)
-                .saveAndFlush(any(ChatSessionEntity.class));
+                .saveAndFlush(
+                        any(ChatSessionEntity.class)
+                );
     }
 
     @Test
     void sendMessagePreservesSpacesAndNormalizesLineEndings() {
-        SafeAiUserPrincipal currentUser = currentUser();
-        UUID clientRequestId = UUID.randomUUID();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
+
+        UUID clientRequestId =
+                UUID.randomUUID();
 
         ChatLockService.ChatLock lock =
                 org.mockito.Mockito.mock(
                         ChatLockService.ChatLock.class
                 );
 
-        AiChatRequest aiRequest = new AiChatRequest(
-                USER_ID,
-                ORGANIZATION_ID,
-                CHAT_ID,
-                "  line1\nline2\n  ",
-                List.of()
-        );
+        AiChatRequest aiRequest =
+                new AiChatRequest(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        CHAT_ID,
+                        "  line1\nline2\n  ",
+                        List.of()
+                );
 
         ChatProcessingContext context =
                 new ChatProcessingContext(
@@ -173,7 +210,8 @@ class ChatServiceTest {
                         false
                 );
 
-        AiChatResponse aiResponse = completedMockResponse();
+        AiChatResponse aiResponse =
+                completedMockResponse();
 
         ChatDetailsResponse expected =
                 new ChatDetailsResponse(
@@ -187,12 +225,11 @@ class ChatServiceTest {
         when(chatLockService.lock(CHAT_ID))
                 .thenReturn(lock);
 
-        when(chatPersistenceService
-                .saveUserMessageAndPrepareAiRequest(
-                        eq(CHAT_ID),
-                        any(SendMessageRequest.class),
-                        eq(currentUser)
-                )).thenReturn(context);
+        when(chatTurnReservationService.reserveOrReplay(
+                eq(CHAT_ID),
+                any(SendMessageRequest.class),
+                eq(currentUser)
+        )).thenReturn(context);
 
         when(aiProvider.sendMessage(aiRequest))
                 .thenReturn(aiResponse);
@@ -203,25 +240,36 @@ class ChatServiceTest {
                         USER_MESSAGE_ID,
                         aiResponse,
                         currentUser
-                )).thenReturn(expected);
+                ))
+                .thenReturn(expected);
 
-        ChatDetailsResponse result = service.sendMessage(
-                CHAT_ID,
-                new SendMessageRequest(
-                        "  line1\r\nline2\r  ",
-                        clientRequestId
-                ),
-                currentUser
-        );
+        ChatDetailsResponse result =
+                service.sendMessage(
+                        CHAT_ID,
+                        new SendMessageRequest(
+                                "  line1\r\nline2\r  ",
+                                clientRequestId
+                        ),
+                        currentUser
+                );
 
-        assertThat(result).isSameAs(expected);
+        assertThat(result)
+                .isSameAs(expected);
 
         verify(chatPersistenceService)
-                .saveUserMessageAndPrepareAiRequest(
+                .assertOwnedChatExists(
+                        CHAT_ID,
+                        currentUser
+                );
+
+        verify(chatTurnReservationService)
+                .reserveOrReplay(
                         eq(CHAT_ID),
                         argThat(request ->
                                 "  line1\nline2\n  "
-                                        .equals(request.content())
+                                        .equals(
+                                                request.content()
+                                        )
                                         && clientRequestId.equals(
                                         request.clientRequestId()
                                 )
@@ -229,14 +277,20 @@ class ChatServiceTest {
                         eq(currentUser)
                 );
 
-        verify(chatLockService).ensureValid(lock);
-        verify(chatLockService).unlockQuietly(lock);
+        verify(chatLockService)
+                .ensureValid(lock);
+
+        verify(chatLockService)
+                .unlockQuietly(lock);
     }
 
     @Test
     void replayDoesNotCallProvider() {
-        SafeAiUserPrincipal currentUser = currentUser();
-        UUID clientRequestId = UUID.randomUUID();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
+
+        UUID clientRequestId =
+                UUID.randomUUID();
 
         ChatLockService.ChatLock lock =
                 org.mockito.Mockito.mock(
@@ -264,12 +318,11 @@ class ChatServiceTest {
         when(chatLockService.lock(CHAT_ID))
                 .thenReturn(lock);
 
-        when(chatPersistenceService
-                .saveUserMessageAndPrepareAiRequest(
-                        eq(CHAT_ID),
-                        any(),
-                        eq(currentUser)
-                )).thenReturn(context);
+        when(chatTurnReservationService.reserveOrReplay(
+                eq(CHAT_ID),
+                any(SendMessageRequest.class),
+                eq(currentUser)
+        )).thenReturn(context);
 
         when(chatPersistenceService.returnExistingResult(
                 CHAT_ID,
@@ -277,42 +330,57 @@ class ChatServiceTest {
                 currentUser
         )).thenReturn(expected);
 
-        ChatDetailsResponse result = service.sendMessage(
-                CHAT_ID,
-                new SendMessageRequest(
-                        "Привет",
-                        clientRequestId
-                ),
-                currentUser
-        );
+        ChatDetailsResponse result =
+                service.sendMessage(
+                        CHAT_ID,
+                        new SendMessageRequest(
+                                "Привет",
+                                clientRequestId
+                        ),
+                        currentUser
+                );
 
-        assertThat(result).isSameAs(expected);
+        assertThat(result)
+                .isSameAs(expected);
 
-        verify(aiProvider, never()).sendMessage(any());
-        verify(chatLockService, never()).ensureValid(lock);
-        verify(chatLockService).unlockQuietly(lock);
+        verify(aiProvider, never())
+                .sendMessage(any());
+
+        verify(chatLockService, never())
+                .ensureValid(lock);
+
+        verify(chatLockService)
+                .unlockQuietly(lock);
     }
 
     @Test
     void providerFailureRemainsPrimaryWhenFailurePersistenceAlsoFails() {
-        SafeAiUserPrincipal currentUser = currentUser();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
+
         RuntimeException providerException =
-                new RuntimeException("provider failed");
+                new RuntimeException(
+                        "provider failed"
+                );
+
         RuntimeException persistenceException =
-                new RuntimeException("database failed");
+                new RuntimeException(
+                        "database failed"
+                );
 
         ChatLockService.ChatLock lock =
                 org.mockito.Mockito.mock(
                         ChatLockService.ChatLock.class
                 );
 
-        AiChatRequest aiRequest = new AiChatRequest(
-                USER_ID,
-                ORGANIZATION_ID,
-                CHAT_ID,
-                "Привет",
-                List.of()
-        );
+        AiChatRequest aiRequest =
+                new AiChatRequest(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        CHAT_ID,
+                        "Привет",
+                        List.of()
+                );
 
         ChatProcessingContext context =
                 new ChatProcessingContext(
@@ -326,12 +394,11 @@ class ChatServiceTest {
         when(chatLockService.lock(CHAT_ID))
                 .thenReturn(lock);
 
-        when(chatPersistenceService
-                .saveUserMessageAndPrepareAiRequest(
-                        eq(CHAT_ID),
-                        any(),
-                        eq(currentUser)
-                )).thenReturn(context);
+        when(chatTurnReservationService.reserveOrReplay(
+                eq(CHAT_ID),
+                any(SendMessageRequest.class),
+                eq(currentUser)
+        )).thenReturn(context);
 
         when(aiProvider.sendMessage(aiRequest))
                 .thenThrow(providerException);
@@ -345,38 +412,52 @@ class ChatServiceTest {
                         currentUser
                 );
 
-        assertThatThrownBy(() -> service.sendMessage(
-                CHAT_ID,
-                new SendMessageRequest("Привет", null),
-                currentUser
-        ))
+        assertThatThrownBy(() ->
+                service.sendMessage(
+                        CHAT_ID,
+                        new SendMessageRequest(
+                                "Привет",
+                                null
+                        ),
+                        currentUser
+                )
+        )
                 .isSameAs(providerException)
                 .satisfies(exception ->
-                        assertThat(exception.getSuppressed())
-                                .containsExactly(persistenceException)
+                        assertThat(
+                                exception.getSuppressed()
+                        ).containsExactly(
+                                persistenceException
+                        )
                 );
 
-        verify(chatLockService).unlockQuietly(lock);
+        verify(chatLockService)
+                .unlockQuietly(lock);
     }
 
     @Test
     void persistenceFailureAfterSuccessfulProviderDoesNotCreateFailedRow() {
-        SafeAiUserPrincipal currentUser = currentUser();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
+
         RuntimeException persistenceException =
-                new RuntimeException("database failed");
+                new RuntimeException(
+                        "database failed"
+                );
 
         ChatLockService.ChatLock lock =
                 org.mockito.Mockito.mock(
                         ChatLockService.ChatLock.class
                 );
 
-        AiChatRequest aiRequest = new AiChatRequest(
-                USER_ID,
-                ORGANIZATION_ID,
-                CHAT_ID,
-                "Привет",
-                List.of()
-        );
+        AiChatRequest aiRequest =
+                new AiChatRequest(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        CHAT_ID,
+                        "Привет",
+                        List.of()
+                );
 
         ChatProcessingContext context =
                 new ChatProcessingContext(
@@ -387,17 +468,17 @@ class ChatServiceTest {
                         false
                 );
 
-        AiChatResponse aiResponse = completedMockResponse();
+        AiChatResponse aiResponse =
+                completedMockResponse();
 
         when(chatLockService.lock(CHAT_ID))
                 .thenReturn(lock);
 
-        when(chatPersistenceService
-                .saveUserMessageAndPrepareAiRequest(
-                        eq(CHAT_ID),
-                        any(),
-                        eq(currentUser)
-                )).thenReturn(context);
+        when(chatTurnReservationService.reserveOrReplay(
+                eq(CHAT_ID),
+                any(SendMessageRequest.class),
+                eq(currentUser)
+        )).thenReturn(context);
 
         when(aiProvider.sendMessage(aiRequest))
                 .thenReturn(aiResponse);
@@ -408,13 +489,19 @@ class ChatServiceTest {
                         USER_MESSAGE_ID,
                         aiResponse,
                         currentUser
-                )).thenThrow(persistenceException);
+                ))
+                .thenThrow(persistenceException);
 
-        assertThatThrownBy(() -> service.sendMessage(
-                CHAT_ID,
-                new SendMessageRequest("Привет", null),
-                currentUser
-        )).isSameAs(persistenceException);
+        assertThatThrownBy(() ->
+                service.sendMessage(
+                        CHAT_ID,
+                        new SendMessageRequest(
+                                "Привет",
+                                null
+                        ),
+                        currentUser
+                )
+        ).isSameAs(persistenceException);
 
         verify(chatPersistenceService, never())
                 .saveFailedAssistantMessage(
@@ -424,33 +511,45 @@ class ChatServiceTest {
                         any()
                 );
 
-        verify(chatLockService).ensureValid(lock);
-        verify(chatLockService).unlockQuietly(lock);
+        verify(chatLockService)
+                .ensureValid(lock);
+
+        verify(chatLockService)
+                .unlockQuietly(lock);
     }
 
     @Test
     void findAllAddsDeterministicIdSort() {
-        SafeAiUserPrincipal currentUser = currentUser();
-        PageRequest requested = PageRequest.of(
-                0,
-                20,
-                org.springframework.data.domain.Sort
-                        .by("updatedAt")
-                        .descending()
-        );
+        SafeAiUserPrincipal currentUser =
+                currentUser();
+
+        PageRequest requested =
+                PageRequest.of(
+                        0,
+                        20,
+                        org.springframework.data.domain.Sort
+                                .by("updatedAt")
+                                .descending()
+                );
 
         when(chatSessionRepository
                 .findByUser_IdAndOrganization_Id(
                         eq(USER_ID),
                         eq(ORGANIZATION_ID),
                         any(Pageable.class)
-                )).thenReturn(new PageImpl<>(
-                List.of(),
-                requested,
-                0
-        ));
+                ))
+                .thenReturn(
+                        new PageImpl<>(
+                                List.of(),
+                                requested,
+                                0
+                        )
+                );
 
-        service.findAll(currentUser, requested);
+        service.findAll(
+                currentUser,
+                requested
+        );
 
         verify(chatSessionRepository)
                 .findByUser_IdAndOrganization_Id(
@@ -458,54 +557,75 @@ class ChatServiceTest {
                         eq(ORGANIZATION_ID),
                         argThat(pageable ->
                                 pageable.getSort()
-                                        .getOrderFor("updatedAt")
-                                        != null
+                                        .getOrderFor(
+                                                "updatedAt"
+                                        ) != null
                                         && pageable.getSort()
-                                        .getOrderFor("id")
-                                        != null
+                                        .getOrderFor(
+                                                "id"
+                                        ) != null
                         )
                 );
     }
 
     @Test
     void findAllRejectsUnsupportedSort() {
-        Pageable pageable = PageRequest.of(
-                0,
-                20,
-                org.springframework.data.domain.Sort.by("user.passwordHash")
-        );
+        Pageable pageable =
+                PageRequest.of(
+                        0,
+                        20,
+                        org.springframework.data.domain.Sort
+                                .by(
+                                        "user.passwordHash"
+                                )
+                );
 
         assertThatThrownBy(() ->
-                service.findAll(currentUser(), pageable)
+                service.findAll(
+                        currentUser(),
+                        pageable
+                )
         )
-                .isInstanceOf(BadRequestException.class)
+                .isInstanceOf(
+                        BadRequestException.class
+                )
                 .hasMessageContaining(
                         "Сортировка по полю не разрешена"
                 );
     }
 
     private SafeAiUserPrincipal currentUser() {
-        return SafeAiUserPrincipal.accessTokenPrincipal(
-                USER_ID,
-                ORGANIZATION_ID,
-                "admin@test.com",
-                0L,
-                List.of(
-                        new SimpleGrantedAuthority(
-                                "ROLE_ADMIN"
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        "admin@test.com",
+                        0L,
+                        List.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_ADMIN"
+                                )
                         )
-                )
-        );
+                );
     }
 
     private UserEntity user() {
         OrganizationEntity organization =
                 new OrganizationEntity();
-        organization.setId(ORGANIZATION_ID);
-        organization.setName("Demo Company");
+
+        organization.setId(
+                ORGANIZATION_ID
+        );
+
+        organization.setName(
+                "Demo Company"
+        );
+
         organization.setEnabled(true);
 
-        UserEntity user = new UserEntity();
+        UserEntity user =
+                new UserEntity();
+
         user.setId(USER_ID);
         user.setEmail("admin@test.com");
         user.setEnabled(true);

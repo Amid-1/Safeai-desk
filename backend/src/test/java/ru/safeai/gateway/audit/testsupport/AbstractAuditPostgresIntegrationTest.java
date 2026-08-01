@@ -9,6 +9,10 @@ import tools.jackson.databind.json.JsonMapper;
 import java.util.Map;
 import java.util.UUID;
 
+@SuppressWarnings({
+        "SqlResolve",
+        "SqlNoDataSourceInspection"
+})
 public abstract class AbstractAuditPostgresIntegrationTest
         extends AbstractPostgresIntegrationTest {
 

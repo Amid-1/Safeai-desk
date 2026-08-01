@@ -5,7 +5,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.model.AuditActor;
-import ru.safeai.gateway.audit.service.BestEffortStandaloneAuditService;
+import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.ratelimit.RateLimitExceededEvent;
 
 import java.util.LinkedHashMap;
@@ -16,9 +16,15 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class RateLimitAuditListener {
 
-    private final BestEffortStandaloneAuditService
-            bestEffortAuditService;
+    private final AuditEventService auditEventService;
 
+    /**
+     * Listener намеренно синхронный.
+     *
+     * <p>Ошибка durable enqueue должна выйти обратно в publisher.
+     * Тогда rate-limit service сможет освободить notification marker
+     * и повторить enqueue на следующем rejected request.</p>
+     */
     @EventListener
     public void onRateLimitExceeded(
             RateLimitExceededEvent event
@@ -28,6 +34,24 @@ public class RateLimitAuditListener {
                 "event не должен быть null"
         );
 
+        Map<String, Object> details =
+                buildAuditDetails(event);
+
+        /*
+         * Login rejection возникает до аутентификации, поэтому actorUserId
+         * отсутствует. Не пытаемся искать пользователя по введённому email:
+         * пишем системное событие в targetOrganizationId.
+         */
+        if (event.actorUserId() == null) {
+            auditEventService.recordSystem(
+                    event.targetOrganizationId(),
+                    AuditEventType.RATE_LIMIT_EXCEEDED,
+                    details
+            );
+
+            return;
+        }
+
         AuditActor actor = new AuditActor(
                 event.actorUserId(),
                 event.actorOrganizationId(),
@@ -35,11 +59,11 @@ public class RateLimitAuditListener {
                 event.actorDisplayName()
         );
 
-        bestEffortAuditService.tryRecord(
+        auditEventService.record(
                 actor,
                 event.targetOrganizationId(),
                 AuditEventType.RATE_LIMIT_EXCEEDED,
-                buildAuditDetails(event)
+                details
         );
     }
 
@@ -47,21 +71,26 @@ public class RateLimitAuditListener {
             RateLimitExceededEvent event
     ) {
         Map<String, Object> result =
-                new LinkedHashMap<>();
-
-        if (event.details() != null) {
-            result.putAll(event.details());
-        }
+                new LinkedHashMap<>(
+                        event.details()
+                );
 
         result.putIfAbsent(
                 "type",
                 event.type()
         );
 
-        result.putIfAbsent(
-                "limit",
-                event.limit()
-        );
+        /*
+         * Для BOTH limit намеренно null: у события два независимых лимита.
+         * Map.copyOf не допускает null values, поэтому поле добавляется
+         * только для одномерного превышения.
+         */
+        if (event.limit() != null) {
+            result.putIfAbsent(
+                    "limit",
+                    event.limit()
+            );
+        }
 
         result.putIfAbsent(
                 "window",

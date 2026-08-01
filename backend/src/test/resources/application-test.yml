@@ -60,6 +60,7 @@ safeai:
     outbox:
       batch-size: 100
       poll-delay-ms: 3600000
+
     retention:
       enabled: false
 
@@ -69,15 +70,27 @@ safeai:
       ttl: 60s
       key-prefix: "safeai:test:user-status:"
 
-  user-management:
-    permanent-deletion-retention: 0s
-
     hsts:
       enabled: false
 
+  user-management:
+    permanent-deletion-retention: 0s
+
   rate-limit:
+    redis:
+      key-prefix: safeai:test
+      hmac-secret: safeai-test-rate-limit-hmac-secret-for-integration-tests-2026
+      key-version: v1
+
     login:
-      enabled: false
+      enabled: true
+      email-limit: 10
+      ip-limit: 100
+      window: 10m
+      audit-organization-id: 00000000-0000-0000-0000-000000000001
 
     ai-messages:
-      enabled: false
+      enabled: true
+      user-limit-per-hour: 20
+      admin-limit-per-hour: 100
+      organization-limit-per-hour: 1000

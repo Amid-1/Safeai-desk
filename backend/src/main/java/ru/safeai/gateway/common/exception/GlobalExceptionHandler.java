@@ -48,6 +48,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Единственный common-level MVC exception advice.
@@ -63,19 +66,39 @@ public class GlobalExceptionHandler implements Ordered {
 
     private static final String VALIDATION_MESSAGE =
             "Ошибка валидации запроса";
+
     private static final String INTERNAL_ERROR_MESSAGE =
             "Внутренняя ошибка сервера";
+
     private static final String OPTIMISTIC_LOCK_MESSAGE =
             "Данные были изменены другим пользователем. "
                     + "Обновите данные и повторите операцию";
+
     private static final String CHAT_LOCK_UNAVAILABLE_MESSAGE =
             "Сервис блокировки чата временно недоступен";
+
     private static final String RATE_LIMIT_UNAVAILABLE_MESSAGE =
             "Сервис ограничения запросов временно недоступен";
+
     private static final String INVALID_REFRESH_TOKEN_MESSAGE =
             "Недействительный refresh token";
 
-    private final ApiErrorResponseFactory errorResponseFactory;
+    /*
+     * Во время Redis outage один request не должен создавать один полный
+     * ERROR stack trace. Один экземпляр приложения пишет первый stack trace,
+     * затем не чаще одного раза в минуту сообщает число подавленных записей.
+     */
+    private static final long RATE_LIMIT_LOG_INTERVAL_NANOS =
+            TimeUnit.MINUTES.toNanos(1);
+
+    private final ApiErrorResponseFactory
+            errorResponseFactory;
+
+    private final AtomicLong nextRateLimitLogNanos =
+            new AtomicLong();
+
+    private final LongAdder suppressedRateLimitLogs =
+            new LongAdder();
 
     @Override
     public int getOrder() {
@@ -127,11 +150,9 @@ public class GlobalExceptionHandler implements Ordered {
             RateLimitUnavailableException exception,
             HttpServletRequest request
     ) {
-        log.error(
-                "Rate limit service unavailable: requestId={}, path={}",
-                requestId(request),
-                request.getRequestURI(),
-                exception
+        logRateLimitUnavailable(
+                exception,
+                request
         );
 
         return build(
@@ -150,7 +171,8 @@ public class GlobalExceptionHandler implements Ordered {
             HttpServletRequest request
     ) {
         log.error(
-                "Authentication service unavailable: requestId={}, path={}",
+                "Authentication service unavailable: "
+                        + "requestId={}, path={}",
                 requestId(request),
                 request.getRequestURI(),
                 exception
@@ -174,7 +196,10 @@ public class GlobalExceptionHandler implements Ordered {
         return build(
                 HttpStatus.BAD_REQUEST,
                 ApiErrorCode.BAD_REQUEST,
-                safeMessage(exception.getMessage(), "Некорректный запрос"),
+                safeMessage(
+                        exception.getMessage(),
+                        "Некорректный запрос"
+                ),
                 request,
                 null,
                 null
@@ -189,7 +214,10 @@ public class GlobalExceptionHandler implements Ordered {
         return build(
                 HttpStatus.NOT_FOUND,
                 ApiErrorCode.NOT_FOUND,
-                safeMessage(exception.getMessage(), "Ресурс не найден"),
+                safeMessage(
+                        exception.getMessage(),
+                        "Ресурс не найден"
+                ),
                 request,
                 null,
                 null
@@ -204,7 +232,10 @@ public class GlobalExceptionHandler implements Ordered {
         return build(
                 HttpStatus.CONFLICT,
                 ApiErrorCode.CONFLICT,
-                safeMessage(exception.getMessage(), "Конфликт данных"),
+                safeMessage(
+                        exception.getMessage(),
+                        "Конфликт данных"
+                ),
                 request,
                 null,
                 null
@@ -219,21 +250,16 @@ public class GlobalExceptionHandler implements Ordered {
         return build(
                 HttpStatus.FORBIDDEN,
                 ApiErrorCode.FORBIDDEN,
-                safeMessage(exception.getMessage(), "Операция запрещена"),
+                safeMessage(
+                        exception.getMessage(),
+                        "Операция запрещена"
+                ),
                 request,
                 null,
                 null
         );
     }
 
-    /**
-     * Обрабатывает отказ Spring Method Security, например
-     * AuthorizationDeniedException от @PreAuthorize.
-     *
-     * <p>Исключения из MVC method invocation не обрабатываются
-     * ExceptionTranslationFilter, поэтому их необходимо явно преобразовать
-     * в единый API-контракт.</p>
-     */
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAccessDenied(
             AccessDeniedException exception,
@@ -279,13 +305,15 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(RefreshTokenReuseDetectedException.class)
-    public ResponseEntity<ApiErrorResponse> handleRefreshTokenReuseDetected(
+    public ResponseEntity<ApiErrorResponse>
+    handleRefreshTokenReuseDetected(
             RefreshTokenReuseDetectedException exception,
             HttpServletRequest request
     ) {
         log.warn(
-                "Refresh token reuse detected: requestId={}, userId={}, "
-                        + "organizationId={}, tokenFamilyId={}, path={}",
+                "Refresh token reuse detected: requestId={}, "
+                        + "userId={}, organizationId={}, "
+                        + "tokenFamilyId={}, path={}",
                 requestId(request),
                 exception.getUserId(),
                 exception.getOrganizationId(),
@@ -325,6 +353,35 @@ public class GlobalExceptionHandler implements Ordered {
         );
     }
 
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleRateLimitExceeded(
+            RateLimitExceededException exception,
+            HttpServletRequest request
+    ) {
+        HttpHeaders headers = new HttpHeaders();
+
+        if (exception.getRetryAfterSeconds() > 0L) {
+            headers.set(
+                    HttpHeaders.RETRY_AFTER,
+                    Long.toString(
+                            exception.getRetryAfterSeconds()
+                    )
+            );
+        }
+
+        return build(
+                HttpStatus.TOO_MANY_REQUESTS,
+                ApiErrorCode.RATE_LIMIT_EXCEEDED,
+                safeMessage(
+                        exception.getPublicMessage(),
+                        "Превышен лимит запросов"
+                ),
+                request,
+                null,
+                headers
+        );
+    }
+
     /**
      * Общий fallback только для прочих ApiException-наследников.
      * Специальные исключения выше имеют более конкретные mappings.
@@ -341,29 +398,6 @@ public class GlobalExceptionHandler implements Ordered {
                 request,
                 null,
                 null
-        );
-    }
-
-    @ExceptionHandler(RateLimitExceededException.class)
-    public ResponseEntity<ApiErrorResponse> handleRateLimitExceeded(
-            RateLimitExceededException exception,
-            HttpServletRequest request
-    ) {
-        HttpHeaders headers = new HttpHeaders();
-        if (exception.getRetryAfterSeconds() > 0) {
-            headers.set(
-                    HttpHeaders.RETRY_AFTER,
-                    Long.toString(exception.getRetryAfterSeconds())
-            );
-        }
-
-        return build(
-                HttpStatus.TOO_MANY_REQUESTS,
-                ApiErrorCode.RATE_LIMIT_EXCEEDED,
-                safeMessage(exception.getMessage(), "Превышен лимит запросов"),
-                request,
-                null,
-                headers
         );
     }
 
@@ -399,7 +433,9 @@ public class GlobalExceptionHandler implements Ordered {
     ) {
         return validationResponse(
                 request,
-                bindingErrors(exception.getBindingResult())
+                bindingErrors(
+                        exception.getBindingResult()
+                )
         );
     }
 
@@ -410,7 +446,9 @@ public class GlobalExceptionHandler implements Ordered {
     ) {
         return validationResponse(
                 request,
-                bindingErrors(exception.getBindingResult())
+                bindingErrors(
+                        exception.getBindingResult()
+                )
         );
     }
 
@@ -427,43 +465,62 @@ public class GlobalExceptionHandler implements Ordered {
                     request.getRequestURI(),
                     exception
             );
+
             return internalServerError(request);
         }
 
-        Map<String, List<String>> fieldErrors = new LinkedHashMap<>();
+        Map<String, List<String>> fieldErrors =
+                new LinkedHashMap<>();
 
         for (ParameterValidationResult result
                 : exception.getParameterValidationResults()) {
             if (result instanceof ParameterErrors parameterErrors) {
-                for (FieldError error : parameterErrors.getFieldErrors()) {
+                for (FieldError error
+                        : parameterErrors.getFieldErrors()) {
                     addError(
                             fieldErrors,
                             error.getField(),
                             defaultMessage(error)
                     );
                 }
-                for (ObjectError error : parameterErrors.getGlobalErrors()) {
+
+                for (ObjectError error
+                        : parameterErrors.getGlobalErrors()) {
                     addError(
                             fieldErrors,
                             parameterName(result),
                             defaultMessage(error)
                     );
                 }
+
                 continue;
             }
 
             String field = parameterName(result);
-            for (MessageSourceResolvable error : result.getResolvableErrors()) {
-                addError(fieldErrors, field, defaultMessage(error));
+
+            for (MessageSourceResolvable error
+                    : result.getResolvableErrors()) {
+                addError(
+                        fieldErrors,
+                        field,
+                        defaultMessage(error)
+                );
             }
         }
 
         for (MessageSourceResolvable error
                 : exception.getCrossParameterValidationResults()) {
-            addError(fieldErrors, "_global", defaultMessage(error));
+            addError(
+                    fieldErrors,
+                    "_global",
+                    defaultMessage(error)
+            );
         }
 
-        return validationResponse(request, fieldErrors);
+        return validationResponse(
+                request,
+                fieldErrors
+        );
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -471,20 +528,25 @@ public class GlobalExceptionHandler implements Ordered {
             ConstraintViolationException exception,
             HttpServletRequest request
     ) {
-        Map<String, List<String>> fieldErrors = new LinkedHashMap<>();
+        Map<String, List<String>> fieldErrors =
+                new LinkedHashMap<>();
 
         for (ConstraintViolation<?> violation
                 : exception.getConstraintViolations()) {
             addError(
                     fieldErrors,
                     normalizeConstraintPath(
-                            violation.getPropertyPath().toString()
+                            violation.getPropertyPath()
+                                    .toString()
                     ),
                     violation.getMessage()
             );
         }
 
-        return validationResponse(request, fieldErrors);
+        return validationResponse(
+                request,
+                fieldErrors
+        );
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -542,7 +604,8 @@ public class GlobalExceptionHandler implements Ordered {
         return build(
                 HttpStatus.BAD_REQUEST,
                 ApiErrorCode.BAD_REQUEST,
-                "Некорректное значение параметра: " + exception.getName(),
+                "Некорректное значение параметра: "
+                        + exception.getName(),
                 request,
                 null,
                 null
@@ -610,11 +673,13 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<ApiErrorResponse> handleResponseStatusException(
+    public ResponseEntity<ApiErrorResponse>
+    handleResponseStatusException(
             ResponseStatusException exception,
             HttpServletRequest request
     ) {
-        HttpStatusCode status = exception.getStatusCode();
+        HttpStatusCode status =
+                exception.getStatusCode();
 
         if (status.is5xxServerError()) {
             log.error(
@@ -651,7 +716,8 @@ public class GlobalExceptionHandler implements Ordered {
             AccountExpiredException.class,
             CredentialsExpiredException.class
     })
-    public ResponseEntity<ApiErrorResponse> handleExpectedAuthenticationFailure(
+    public ResponseEntity<ApiErrorResponse>
+    handleExpectedAuthenticationFailure(
             HttpServletRequest request
     ) {
         return build(
@@ -665,7 +731,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(AuthenticationServiceException.class)
-    public ResponseEntity<ApiErrorResponse> handleAuthenticationInfrastructure(
+    public ResponseEntity<ApiErrorResponse>
+    handleAuthenticationInfrastructure(
             AuthenticationServiceException exception,
             HttpServletRequest request
     ) {
@@ -688,34 +755,36 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(AuthenticationException.class)
-    public ResponseEntity<ApiErrorResponse> handleUnexpectedAuthenticationFailure(
+    public ResponseEntity<ApiErrorResponse>
+    handleUnexpectedAuthenticationFailure(
             AuthenticationException exception,
             HttpServletRequest request
     ) {
         log.error(
-                "Unexpected authentication failure: requestId={}, path={}",
+                "Unexpected authentication failure: "
+                        + "requestId={}, path={}",
                 requestId(request),
                 request.getRequestURI(),
                 exception
         );
+
         return internalServerError(request);
     }
 
-    /**
-     * Неизвестное нарушение целостности является backend defect, пока
-     * сервисный слой явно не перевёл известный constraint в ConflictException.
-     */
     @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<ApiErrorResponse> handleDataIntegrityViolation(
+    public ResponseEntity<ApiErrorResponse>
+    handleDataIntegrityViolation(
             DataIntegrityViolationException exception,
             HttpServletRequest request
     ) {
         log.error(
-                "Unexpected data integrity violation: requestId={}, path={}",
+                "Unexpected data integrity violation: "
+                        + "requestId={}, path={}",
                 requestId(request),
                 request.getRequestURI(),
                 exception
         );
+
         return internalServerError(request);
     }
 
@@ -730,18 +799,74 @@ public class GlobalExceptionHandler implements Ordered {
                 request.getRequestURI(),
                 exception
         );
+
         return internalServerError(request);
     }
+
+    private void logRateLimitUnavailable(
+            RateLimitUnavailableException exception,
+            HttpServletRequest request
+    ) {
+        long now = System.nanoTime();
+
+        while (true) {
+            long next =
+                    nextRateLimitLogNanos.get();
+
+            /*
+             * Сравнение через разность корректно переживает переполнение
+             * монотонного счётчика System.nanoTime().
+             */
+            if (now - next < 0L) {
+                suppressedRateLimitLogs.increment();
+                return;
+            }
+
+            long candidate =
+                    now + RATE_LIMIT_LOG_INTERVAL_NANOS;
+
+            if (!nextRateLimitLogNanos.compareAndSet(
+                    next,
+                    candidate
+            )) {
+                /*
+                 * Другой поток мог обновить deadline.
+                 * Обновляем now перед повторной проверкой.
+                 */
+                now = System.nanoTime();
+                continue;
+            }
+
+            long suppressed =
+                    suppressedRateLimitLogs.sumThenReset();
+
+            log.error(
+                    "Rate limit service unavailable: "
+                            + "requestId={}, path={}, "
+                            + "suppressedSinceLastLog={}",
+                    requestId(request),
+                    request.getRequestURI(),
+                    suppressed,
+                    exception
+            );
+
+            return;
+        }
+    }
+
 
     private ResponseEntity<ApiErrorResponse> validationResponse(
             HttpServletRequest request,
             Map<String, List<String>> fieldErrors
     ) {
         Map<String, List<String>> normalized =
-                fieldErrors == null || fieldErrors.isEmpty()
+                fieldErrors == null
+                        || fieldErrors.isEmpty()
                         ? Map.of(
                         "request",
-                        List.of("Некорректное значение")
+                        List.of(
+                                "Некорректное значение"
+                        )
                 )
                         : fieldErrors;
 
@@ -776,14 +901,16 @@ public class GlobalExceptionHandler implements Ordered {
             Map<String, List<String>> fieldErrors,
             HttpHeaders headers
     ) {
-        ResponseEntity.BodyBuilder builder = ResponseEntity.status(status);
+        ResponseEntity.BodyBuilder builder =
+                ResponseEntity.status(status);
 
         if (headers != null && !headers.isEmpty()) {
             builder.headers(headers);
         }
 
-        // Устанавливается последним: exception headers не отменят no-store.
-        builder.cacheControl(CacheControl.noStore());
+        builder.cacheControl(
+                CacheControl.noStore()
+        );
 
         return builder.body(
                 errorResponseFactory.create(
@@ -799,14 +926,25 @@ public class GlobalExceptionHandler implements Ordered {
     private Map<String, List<String>> bindingErrors(
             BindingResult bindingResult
     ) {
-        Map<String, List<String>> errors = new LinkedHashMap<>();
+        Map<String, List<String>> errors =
+                new LinkedHashMap<>();
 
-        for (FieldError error : bindingResult.getFieldErrors()) {
-            addError(errors, error.getField(), defaultMessage(error));
+        for (FieldError error
+                : bindingResult.getFieldErrors()) {
+            addError(
+                    errors,
+                    error.getField(),
+                    defaultMessage(error)
+            );
         }
 
-        for (ObjectError error : bindingResult.getGlobalErrors()) {
-            addError(errors, "_global", defaultMessage(error));
+        for (ObjectError error
+                : bindingResult.getGlobalErrors()) {
+            addError(
+                    errors,
+                    "_global",
+                    defaultMessage(error)
+            );
         }
 
         return errors;
@@ -817,62 +955,87 @@ public class GlobalExceptionHandler implements Ordered {
             String field,
             String message
     ) {
-        String normalizedField = field == null || field.isBlank()
-                ? "_global"
-                : field.trim();
-        String normalizedMessage = message == null || message.isBlank()
-                ? "Некорректное значение"
-                : message.trim();
+        String normalizedField =
+                field == null || field.isBlank()
+                        ? "_global"
+                        : field.trim();
 
-        List<String> messages = errors.computeIfAbsent(
-                normalizedField,
-                ignored -> new ArrayList<>()
-        );
+        String normalizedMessage =
+                message == null || message.isBlank()
+                        ? "Некорректное значение"
+                        : message.trim();
+
+        List<String> messages =
+                errors.computeIfAbsent(
+                        normalizedField,
+                        ignored -> new ArrayList<>()
+                );
 
         if (!messages.contains(normalizedMessage)) {
             messages.add(normalizedMessage);
         }
     }
 
-    private String parameterName(ParameterValidationResult result) {
-        String parameterName = result.getMethodParameter().getParameterName();
-        String base = parameterName == null || parameterName.isBlank()
-                ? "parameter"
-                : parameterName;
+    private String parameterName(
+            ParameterValidationResult result
+    ) {
+        String parameterName =
+                result.getMethodParameter()
+                        .getParameterName();
+
+        String base =
+                parameterName == null
+                        || parameterName.isBlank()
+                        ? "parameter"
+                        : parameterName;
 
         if (result.getContainerIndex() != null) {
-            return base + "[" + result.getContainerIndex() + "]";
+            return base
+                    + "["
+                    + result.getContainerIndex()
+                    + "]";
         }
+
         if (result.getContainerKey() != null) {
-            return base + "[" + result.getContainerKey() + "]";
+            return base
+                    + "["
+                    + result.getContainerKey()
+                    + "]";
         }
+
         return base;
     }
 
-    /**
-     * Удаляет только имя метода, сохраняя вложенный путь.
-     * createUser.request.users[0].email -> request.users[0].email
-     */
-    private String normalizeConstraintPath(String rawPath) {
+    private String normalizeConstraintPath(
+            String rawPath
+    ) {
         if (rawPath == null || rawPath.isBlank()) {
             return "_global";
         }
 
         String normalized = rawPath.trim();
         int firstDot = normalized.indexOf('.');
+
         return firstDot < 0
                 ? normalized
-                : normalized.substring(firstDot + 1);
+                : normalized.substring(
+                firstDot + 1
+        );
     }
 
-    private String defaultMessage(MessageSourceResolvable error) {
+    private String defaultMessage(
+            MessageSourceResolvable error
+    ) {
         String message = error.getDefaultMessage();
+
         return message == null || message.isBlank()
                 ? "Некорректное значение"
                 : message;
     }
 
-    private ApiErrorCode codeForStatus(HttpStatusCode status) {
+    private ApiErrorCode codeForStatus(
+            HttpStatusCode status
+    ) {
         return switch (status.value()) {
             case 400 -> ApiErrorCode.BAD_REQUEST;
             case 401 -> ApiErrorCode.UNAUTHORIZED;
@@ -889,7 +1052,9 @@ public class GlobalExceptionHandler implements Ordered {
         };
     }
 
-    private String messageForStatus(HttpStatusCode status) {
+    private String messageForStatus(
+            HttpStatusCode status
+    ) {
         return switch (status.value()) {
             case 400 -> "Некорректный запрос";
             case 401 -> "Требуется авторизация";
@@ -906,17 +1071,24 @@ public class GlobalExceptionHandler implements Ordered {
         };
     }
 
-    private String safeMessage(String message, String fallback) {
+    private String safeMessage(
+            String message,
+            String fallback
+    ) {
         return message == null || message.isBlank()
                 ? fallback
                 : message.trim();
     }
 
-    private String requestId(HttpServletRequest request) {
+    private String requestId(
+            HttpServletRequest request
+    ) {
         Object value = request.getAttribute(
                 RequestIdFilter.REQUEST_ID_ATTRIBUTE
         );
-        return value instanceof String requestId && !requestId.isBlank()
+
+        return value instanceof String requestId
+                && !requestId.isBlank()
                 ? requestId
                 : "missing";
     }

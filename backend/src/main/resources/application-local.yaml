@@ -37,6 +37,11 @@ safeai:
   rate-limit:
     redis:
       key-prefix: safeai:local
+      hmac-secret: ${SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET:safeai-local-rate-limit-hmac-secret-change-before-production-2026}
+      key-version: v1
+
+    login:
+      audit-organization-id: ${SAFEAI_RATE_LIMIT_LOGIN_AUDIT_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}
 
   security:
     client-ip:

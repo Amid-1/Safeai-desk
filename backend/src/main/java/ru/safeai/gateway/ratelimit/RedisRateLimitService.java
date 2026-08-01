@@ -1,6 +1,6 @@
 package ru.safeai.gateway.ratelimit;
 
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
@@ -16,23 +16,16 @@ import java.util.Objects;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 @EnableConfigurationProperties(
         AiMessageRateLimitProperties.class
 )
 public class RedisRateLimitService {
 
-    private static final String AI_MESSAGE_USER_LIMIT_TYPE =
-            "AI_MESSAGE_USER";
+    private static final String RATE_LIMIT_TYPE =
+            "ai_message";
 
-    private static final String
-            AI_MESSAGE_ORGANIZATION_LIMIT_TYPE =
-            "AI_MESSAGE_ORGANIZATION";
-
-    private static final String AI_MESSAGE_BOTH_LIMIT_TYPE =
-            "AI_MESSAGE_USER_AND_ORGANIZATION";
-
-    private static final String AI_MESSAGE_WINDOW = "1h";
+    private static final String AI_MESSAGE_WINDOW =
+            "1h";
 
     private static final Duration WINDOW =
             Duration.ofHours(1);
@@ -41,13 +34,46 @@ public class RedisRateLimitService {
     private final AiMessageRateLimitProperties properties;
     private final ApplicationEventPublisher eventPublisher;
     private final RateLimitKeyFactory keyFactory;
+    private final RateLimitMetrics metrics;
+
+    public RedisRateLimitService(
+            RedisFixedWindowRateLimiter rateLimiter,
+            AiMessageRateLimitProperties properties,
+            ApplicationEventPublisher eventPublisher,
+            RateLimitKeyFactory keyFactory,
+            RateLimitMetrics metrics
+    ) {
+        this.rateLimiter = Objects.requireNonNull(
+                rateLimiter,
+                "rateLimiter не должен быть null"
+        );
+
+        this.properties = Objects.requireNonNull(
+                properties,
+                "properties не должен быть null"
+        );
+
+        this.eventPublisher = Objects.requireNonNull(
+                eventPublisher,
+                "eventPublisher не должен быть null"
+        );
+
+        this.keyFactory = Objects.requireNonNull(
+                keyFactory,
+                "keyFactory не должен быть null"
+        );
+
+        this.metrics = Objects.requireNonNull(
+                metrics,
+                "metrics не должен быть null"
+        );
+    }
 
     /**
      * Fail-closed policy:
-     * a Redis failure blocks paid AI traffic with 503.
-     * <p>
-     * User and organization counters are checked atomically. Counters are
-     * incremented only if both dimensions allow the request.
+     * Redis failure blocks paid AI traffic with HTTP 503.
+     * User and organization counters are checked atomically and are
+     * incremented only when both dimensions allow the request.
      */
     public void checkAiMessageAllowed(
             SafeAiUserPrincipal user
@@ -69,175 +95,130 @@ public class RedisRateLimitService {
                 properties
                         .effectiveOrganizationLimitPerHour();
 
+        String userKey =
+                keyFactory.aiMessageUser(
+                        user.getOrganizationId(),
+                        user.getId()
+                );
+
+        String organizationKey =
+                keyFactory.aiMessageOrganization(
+                        user.getOrganizationId()
+                );
+
+        String userMarker =
+                keyFactory.exceededMarker(userKey);
+
+        String organizationMarker =
+                keyFactory.exceededMarker(
+                        organizationKey
+                );
+
+        Timer.Sample sample =
+                metrics.startRedisOperation();
+
         DualRateLimitResult result;
 
         try {
             result = rateLimiter.tryIncrementBoth(
-                    keyFactory.aiMessageUser(
-                            user.getId()
-                    ),
+                    userKey,
+                    userMarker,
                     userLimit,
-                    keyFactory.aiMessageOrganization(
-                            user.getOrganizationId()
-                    ),
+                    organizationKey,
+                    organizationMarker,
                     organizationLimit,
                     WINDOW
             );
+
+            metrics.finishRedisOperation(
+                    sample,
+                    RATE_LIMIT_TYPE,
+                    "check",
+                    "success"
+            );
         } catch (RuntimeException exception) {
+            metrics.finishRedisOperation(
+                    sample,
+                    RATE_LIMIT_TYPE,
+                    "check",
+                    "error"
+            );
+
+            metrics.recordUnavailable(
+                    RATE_LIMIT_TYPE
+            );
+
             throw new RateLimitUnavailableException(
                     "Redis AI message rate limit недоступен",
                     exception
             );
         }
 
-        enforceDecision(
-                user,
-                userLimit,
-                organizationLimit,
-                result
-        );
-    }
-
-    /**
-     * Record pattern intentionally avoids coupling this service to the
-     * component accessor names of DualRateLimitResult. Its component order is:
-     * decision, user count, organization count, user TTL, organization TTL,
-     * notification marker.
-     */
-    private void enforceDecision(
-            SafeAiUserPrincipal user,
-            int userLimit,
-            int organizationLimit,
-            DualRateLimitResult result
-    ) {
-        Objects.requireNonNull(
-                result,
-                "rateLimiter вернул null"
-        );
-
-        RateLimitDecision decision =
-                Objects.requireNonNull(
-                        result.decision(),
-                        "rateLimiter вернул null decision"
-                );
-
         if (result.allowed()) {
+            metrics.recordAllowed(RATE_LIMIT_TYPE);
             return;
         }
 
-        long userCount =
-                result.firstCount();
+        metrics.recordRejected(
+                RATE_LIMIT_TYPE,
+                rejectedDimension(
+                        result.decision()
+                )
+        );
 
-        long organizationCount =
-                result.secondCount();
-
-        long userTtlSeconds =
-                result.firstTtlSeconds();
-
-        long organizationTtlSeconds =
-                result.secondTtlSeconds();
-
-        ExceededLimit exceeded =
-                resolveExceededLimit(
-                        decision,
-                        userLimit,
-                        organizationLimit,
-                        userTtlSeconds,
-                        organizationTtlSeconds
-                );
-
-        if (result.exceededNotification()) {
+        if (result.notificationRequired()) {
             publishExceededEventBestEffort(
                     user,
-                    exceeded,
-                    decision,
                     userLimit,
                     organizationLimit,
-                    userCount,
-                    organizationCount,
-                    userTtlSeconds,
-                    organizationTtlSeconds
+                    result,
+                    userMarker,
+                    organizationMarker
             );
         }
 
         throw new RateLimitExceededException(
-                exceeded.message(),
+                publicMessage(
+                        result.decision(),
+                        userLimit,
+                        organizationLimit
+                ),
                 Duration.ofSeconds(
                         result.retryAfterSeconds()
                 )
         );
     }
 
-    private ExceededLimit resolveExceededLimit(
-            RateLimitDecision decision,
-            int userLimit,
-            int organizationLimit,
-            long userTtlSeconds,
-            long organizationTtlSeconds
-    ) {
-        return switch (decision) {
-            case FIRST_EXCEEDED -> new ExceededLimit(
-                    AI_MESSAGE_USER_LIMIT_TYPE,
-                    userLimit,
-                    positiveTtl(userTtlSeconds),
-                    "Превышен лимит AI-запросов "
-                            + "пользователя. Лимит: "
-                            + userLimit
-                            + " в час"
-            );
-
-            case SECOND_EXCEEDED -> new ExceededLimit(
-                    AI_MESSAGE_ORGANIZATION_LIMIT_TYPE,
-                    organizationLimit,
-                    positiveTtl(
-                            organizationTtlSeconds
-                    ),
-                    "Превышен лимит AI-запросов "
-                            + "организации. Лимит: "
-                            + organizationLimit
-                            + " в час"
-            );
-
-            case BOTH_EXCEEDED -> new ExceededLimit(
-                    AI_MESSAGE_BOTH_LIMIT_TYPE,
-                    userLimit,
-                    Math.max(
-                            positiveTtl(
-                                    userTtlSeconds
-                            ),
-                            positiveTtl(
-                                    organizationTtlSeconds
-                            )
-                    ),
-                    "Превышены лимиты AI-запросов "
-                            + "пользователя и организации"
-            );
-
-            case ALLOWED -> throw new IllegalArgumentException(
-                    "ALLOWED не является превышением лимита"
-            );
-        };
-    }
-
     private void publishExceededEventBestEffort(
             SafeAiUserPrincipal user,
-            ExceededLimit exceeded,
-            RateLimitDecision decision,
             int userLimit,
             int organizationLimit,
-            long userCount,
-            long organizationCount,
-            long userTtlSeconds,
-            long organizationTtlSeconds
+            DualRateLimitResult result,
+            String userMarker,
+            String organizationMarker
     ) {
+        String notificationDimension =
+                notificationDimension(result);
+
+        Integer eventLimit =
+                notificationLimit(
+                        result,
+                        userLimit,
+                        organizationLimit
+                );
+
         Map<String, Object> details = Map.ofEntries(
                 Map.entry(
-                        "type",
-                        exceeded.type()
+                        "source",
+                        "AI_MESSAGE"
                 ),
                 Map.entry(
-                        "limit",
-                        exceeded.limit()
+                        "dimension",
+                        notificationDimension
+                ),
+                Map.entry(
+                        "decision",
+                        result.decision().name()
                 ),
                 Map.entry(
                         "window",
@@ -253,29 +234,31 @@ public class RedisRateLimitService {
                 ),
                 Map.entry(
                         "userCount",
-                        userCount
+                        result.firstCount()
                 ),
                 Map.entry(
                         "organizationCount",
-                        organizationCount
+                        result.secondCount()
                 ),
                 Map.entry(
                         "userTtlSeconds",
-                        positiveTtl(userTtlSeconds)
+                        result.firstTtlSeconds()
                 ),
                 Map.entry(
                         "organizationTtlSeconds",
-                        positiveTtl(
-                                organizationTtlSeconds
-                        )
+                        result.secondTtlSeconds()
                 ),
                 Map.entry(
                         "retryAfterSeconds",
-                        exceeded.retryAfterSeconds()
+                        result.retryAfterSeconds()
                 ),
                 Map.entry(
-                        "decision",
-                        decision.name()
+                        "userNotification",
+                        result.firstExceededNotification()
+                ),
+                Map.entry(
+                        "organizationNotification",
+                        result.secondExceededNotification()
                 )
         );
 
@@ -287,30 +270,136 @@ public class RedisRateLimitService {
                             user.getEmail(),
                             null,
                             user.getOrganizationId(),
-                            exceeded.type(),
-                            exceeded.limit(),
+                            aiEventType(result),
+                            eventLimit,
                             AI_MESSAGE_WINDOW,
                             details
                     )
             );
         } catch (RuntimeException exception) {
+            metrics.recordAuditPublishFailed(
+                    RATE_LIMIT_TYPE
+            );
+
+            try {
+                rateLimiter.releaseNotificationMarkers(
+                        result,
+                        userMarker,
+                        organizationMarker
+                );
+            } catch (RuntimeException markerException) {
+                exception.addSuppressed(markerException);
+                metrics.recordUnavailable(
+                        RATE_LIMIT_TYPE
+                );
+            }
+
             /*
-             * Audit/event publication is best effort. A publication failure
+             * Audit notification remains best effort. Publication failure
              * must not replace the intended HTTP 429 with HTTP 503.
              */
             log.warn(
-                    "Failed to publish rate-limit exceeded event: "
-                            + "userId={}, organizationId={}, type={}",
+                    "Failed to publish AI rate-limit event: "
+                            + "userId={}, organizationId={}, "
+                            + "dimension={}, decision={}",
                     user.getId(),
                     user.getOrganizationId(),
-                    exceeded.type(),
+                    notificationDimension,
+                    result.decision(),
                     exception
             );
         }
     }
 
-    private long positiveTtl(long ttlSeconds) {
-        return Math.max(1L, ttlSeconds);
+    private String aiEventType(
+            DualRateLimitResult result
+    ) {
+        if (result.firstExceededNotification()
+                && result.secondExceededNotification()) {
+            return "AI_MESSAGE_USER_AND_ORGANIZATION";
+        }
+
+        if (result.firstExceededNotification()) {
+            return "AI_MESSAGE_USER";
+        }
+
+        return "AI_MESSAGE_ORGANIZATION";
+    }
+
+    private Integer notificationLimit(
+            DualRateLimitResult result,
+            int userLimit,
+            int organizationLimit
+    ) {
+        if (result.firstExceededNotification()
+                && !result.secondExceededNotification()) {
+            return userLimit;
+        }
+
+        if (result.secondExceededNotification()
+                && !result.firstExceededNotification()) {
+            return organizationLimit;
+        }
+
+        /*
+         * BOTH имеет два самостоятельных лимита.
+         * Не публикуем неоднозначное агрегированное значение.
+         */
+        return null;
+    }
+
+    private String notificationDimension(
+            DualRateLimitResult result
+    ) {
+        if (result.firstExceededNotification()
+                && result.secondExceededNotification()) {
+            return "BOTH";
+        }
+
+        if (result.firstExceededNotification()) {
+            return "USER";
+        }
+
+        return "ORGANIZATION";
+    }
+
+    private String rejectedDimension(
+            RateLimitDecision decision
+    ) {
+        return switch (decision) {
+            case FIRST_EXCEEDED -> "user";
+            case SECOND_EXCEEDED -> "organization";
+            case BOTH_EXCEEDED -> "both";
+            case ALLOWED -> "none";
+        };
+    }
+
+    private String publicMessage(
+            RateLimitDecision decision,
+            int userLimit,
+            int organizationLimit
+    ) {
+        return switch (decision) {
+            case FIRST_EXCEEDED ->
+                    "Превышен лимит AI-запросов пользователя. "
+                            + "Лимит: "
+                            + userLimit
+                            + " в час";
+
+            case SECOND_EXCEEDED ->
+                    "Превышен лимит AI-запросов организации. "
+                            + "Лимит: "
+                            + organizationLimit
+                            + " в час";
+
+            case BOTH_EXCEEDED ->
+                    "Превышены лимиты AI-запросов пользователя "
+                            + "и организации";
+
+            case ALLOWED -> throw new IllegalArgumentException(
+                    "ALLOWED не является превышением лимита"
+            );
+        };
     }
 
     private boolean isAdminOrSuperAdmin(
@@ -324,35 +413,5 @@ public class RedisRateLimitService {
                                 || "ROLE_SUPER_ADMIN"
                                 .equals(authority)
                 );
-    }
-
-    private record ExceededLimit(
-            String type,
-            int limit,
-            long retryAfterSeconds,
-            String message
-    ) {
-        private ExceededLimit {
-            Objects.requireNonNull(
-                    type,
-                    "type не должен быть null"
-            );
-            Objects.requireNonNull(
-                    message,
-                    "message не должен быть null"
-            );
-
-            if (limit <= 0) {
-                throw new IllegalArgumentException(
-                        "limit должен быть положительным"
-                );
-            }
-
-            if (retryAfterSeconds <= 0) {
-                throw new IllegalArgumentException(
-                        "retryAfterSeconds должен быть положительным"
-                );
-            }
-        }
     }
 }

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import ru.safeai.gateway.common.security.JwtProperties;
 
 import java.time.Duration;
+import java.util.Objects;
 
 @Component
 @RequiredArgsConstructor
@@ -16,14 +17,29 @@ public class AuthCookieConfigurationValidator {
 
     @PostConstruct
     void validate() {
-        Duration jwtLifetime = Duration.ofMinutes(
-                jwtProperties.expirationMinutes()
-        );
+        Duration cookieLifetime =
+                Objects.requireNonNull(
+                        authCookieProperties.accessTokenMaxAge(),
+                        "safeai.auth.cookies.access-token-max-age "
+                                + "не должен быть null"
+                );
 
-        if (!authCookieProperties.accessTokenMaxAge().equals(jwtLifetime)) {
+        Duration jwtLifetime =
+                Duration.ofMinutes(
+                        jwtProperties.expirationMinutes()
+                );
+
+        if (!cookieLifetime.equals(jwtLifetime)) {
             throw new IllegalStateException(
-                    "safeai.auth.cookies.access-token-max-age должен совпадать "
-                            + "с app.security.jwt.expiration-minutes"
+                    "safeai.auth.cookies.access-token-max-age "
+                            + "должен совпадать с "
+                            + "app.security.jwt.expiration-minutes"
+                            + "; cookieLifetime="
+                            + cookieLifetime
+                            + "; jwtLifetime="
+                            + jwtLifetime
+                            + "; jwtExpirationMinutes="
+                            + jwtProperties.expirationMinutes()
             );
         }
     }

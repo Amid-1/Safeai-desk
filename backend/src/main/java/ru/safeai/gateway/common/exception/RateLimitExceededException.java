@@ -5,7 +5,8 @@ import org.springframework.http.HttpStatus;
 
 import java.time.Duration;
 
-public final class RateLimitExceededException extends ApiException {
+public final class RateLimitExceededException
+        extends ApiException {
 
     @Getter
     private final long retryAfterSeconds;
@@ -20,22 +21,34 @@ public final class RateLimitExceededException extends ApiException {
                 publicMessage
         );
 
-        this.retryAfterSeconds = ceilToSeconds(retryAfter);
+        this.retryAfterSeconds =
+                ceilToSeconds(retryAfter);
     }
 
-    private static long ceilToSeconds(Duration duration) {
+    /**
+     * Округляет положительный Duration вверх до целой секунды без
+     * промежуточного перевода всего значения в миллисекунды.
+     * Это исключает переполнение Duration.toMillis() для больших значений.
+     */
+    private static long ceilToSeconds(
+            Duration duration
+    ) {
         if (duration == null
                 || duration.isZero()
                 || duration.isNegative()) {
             return 0L;
         }
 
-        try {
-            long millis = duration.toMillis();
+        long seconds = duration.getSeconds();
 
+        if (duration.getNano() == 0) {
+            return Math.max(1L, seconds);
+        }
+
+        try {
             return Math.max(
                     1L,
-                    Math.addExact(millis, 999L) / 1_000L
+                    Math.addExact(seconds, 1L)
             );
         } catch (ArithmeticException exception) {
             return Long.MAX_VALUE;
