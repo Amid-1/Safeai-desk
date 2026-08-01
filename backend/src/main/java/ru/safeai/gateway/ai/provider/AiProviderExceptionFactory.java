@@ -3,6 +3,7 @@ package ru.safeai.gateway.ai.provider;
 import org.springframework.web.client.ResourceAccessException;
 import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.exception.AiProviderResponseTooLargeException;
 import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
 import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
 
@@ -17,6 +18,16 @@ public final class AiProviderExceptionFactory {
             String model,
             ResourceAccessException exception
     ) {
+        if (AiProviderSupport.isResponseTooLarge(exception)) {
+            return new AiProviderResponseTooLargeException(
+                    provider,
+                    model,
+                    providerDisplayName
+                            + " response exceeded configured body limit",
+                    exception
+            );
+        }
+
         if (AiProviderSupport.isConnectFailure(exception)) {
             return new AiProviderUnavailableException(
                     provider,
@@ -80,7 +91,7 @@ public final class AiProviderExceptionFactory {
                 model,
                 null,
                 null,
-                AiProviderErrorType.UNKNOWN,
+                AiProviderErrorType.PROTOCOL_ERROR,
                 false,
                 false,
                 null,

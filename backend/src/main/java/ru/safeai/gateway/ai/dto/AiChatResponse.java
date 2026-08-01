@@ -7,12 +7,15 @@ import ru.safeai.gateway.ai.pricing.PricingResult;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Objects;
 
 public record AiChatResponse(
         String content,
+        String requestedModel,
         String model,
         String providerMessageId,
+        String providerRequestId,
         AiResponseStatus responseStatus,
         String finishReason,
         Integer inputTokens,
@@ -24,32 +27,61 @@ public record AiChatResponse(
         String priceVersion,
         Instant pricingCalculatedAt
 ) {
+
+    private static final int MAX_CONTENT_CHARS = 1_000_000;
+    private static final int MAX_MODEL_CHARS = 100;
+    private static final int MAX_PROVIDER_ID_CHARS = 255;
+    private static final int MAX_FINISH_REASON_CHARS = 100;
+    private static final int MAX_PRICE_VERSION_CHARS = 64;
+    private static final int MAX_COST_SCALE = 12;
+
     public AiChatResponse {
-        if (content == null || content.isBlank()) {
-            throw new IllegalArgumentException(
-                    "AI response content не должен быть пустым"
-            );
-        }
+        content = requireContent(content);
 
-        if (model == null || model.isBlank()) {
-            throw new IllegalArgumentException(
-                    "AI response model не должен быть пустым"
-            );
-        }
+        requestedModel = requireModel(
+                requestedModel,
+                "requestedModel"
+        );
 
-        model = model.trim();
-        providerMessageId = normalizeOptional(providerMessageId);
-        finishReason = normalizeOptional(finishReason);
+        model = requireModel(
+                model,
+                "model"
+        );
 
-        responseStatus = Objects.requireNonNull(
+        providerMessageId = normalizeOptional(
+                providerMessageId,
+                MAX_PROVIDER_ID_CHARS,
+                "providerMessageId"
+        );
+
+        providerRequestId = normalizeOptional(
+                providerRequestId,
+                MAX_PROVIDER_ID_CHARS,
+                "providerRequestId"
+        );
+
+        finishReason = normalizeOptional(
+                finishReason,
+                MAX_FINISH_REASON_CHARS,
+                "finishReason"
+        );
+
+        Objects.requireNonNull(
                 responseStatus,
                 "responseStatus не должен быть null"
         );
 
-        validateToken(inputTokens, "inputTokens");
-        validateToken(outputTokens, "outputTokens");
+        validateToken(
+                inputTokens,
+                "inputTokens"
+        );
 
-        usageStatus = Objects.requireNonNull(
+        validateToken(
+                outputTokens,
+                "outputTokens"
+        );
+
+        Objects.requireNonNull(
                 usageStatus,
                 "usageStatus не должен быть null"
         );
@@ -60,19 +92,20 @@ public record AiChatResponse(
                 outputTokens
         );
 
-        pricingStatus = Objects.requireNonNull(
+        Objects.requireNonNull(
                 pricingStatus,
                 "pricingStatus не должен быть null"
         );
 
-        if (costUsd != null && costUsd.signum() < 0) {
-            throw new IllegalArgumentException(
-                    "costUsd не может быть отрицательным"
-            );
-        }
+        validateCost(costUsd);
 
         currency = normalizeCurrency(currency);
-        priceVersion = normalizeOptional(priceVersion);
+
+        priceVersion = normalizeOptional(
+                priceVersion,
+                MAX_PRICE_VERSION_CHARS,
+                "priceVersion"
+        );
 
         validatePricing(
                 pricingStatus,
@@ -84,10 +117,59 @@ public record AiChatResponse(
         );
     }
 
-    public static AiChatResponse fromProvider(
+    /**
+     * Конструктор совместимости со старым DTO.
+     * Использовать только для данных, в которых requested и resolved model
+     * исторически не разделялись.
+     */
+    public AiChatResponse(
             String content,
             String model,
             String providerMessageId,
+            AiResponseStatus responseStatus,
+            String finishReason,
+            Integer inputTokens,
+            Integer outputTokens,
+            UsageStatus usageStatus,
+            BigDecimal costUsd,
+            PricingStatus pricingStatus,
+            String currency,
+            String priceVersion,
+            Instant pricingCalculatedAt
+    ) {
+        this(
+                content,
+                model,
+                model,
+                providerMessageId,
+                null,
+                responseStatus,
+                finishReason,
+                inputTokens,
+                outputTokens,
+                usageStatus,
+                costUsd,
+                pricingStatus,
+                currency,
+                priceVersion,
+                pricingCalculatedAt
+        );
+    }
+
+    /**
+     * Каноническая фабрика для успешного ответа AI-провайдера.
+     *
+     * @param requestedModel    модель, которую запросило приложение
+     * @param resolvedModel     фактическая модель из ответа провайдера
+     * @param providerMessageId идентификатор AI response/message
+     * @param providerRequestId HTTP request ID, выданный провайдером
+     */
+    public static AiChatResponse fromProvider(
+            String content,
+            String requestedModel,
+            String resolvedModel,
+            String providerMessageId,
+            String providerRequestId,
             AiResponseStatus responseStatus,
             String finishReason,
             Integer inputTokens,
@@ -101,13 +183,18 @@ public record AiChatResponse(
 
         return new AiChatResponse(
                 content,
-                model,
+                requestedModel,
+                resolvedModel,
                 providerMessageId,
+                providerRequestId,
                 responseStatus,
                 finishReason,
                 inputTokens,
                 outputTokens,
-                determineUsageStatus(inputTokens, outputTokens),
+                determineUsageStatus(
+                        inputTokens,
+                        outputTokens
+                ),
                 pricing.costUsd(),
                 pricing.status(),
                 pricing.currency(),
@@ -133,11 +220,32 @@ public record AiChatResponse(
 
     private static void validateToken(
             Integer value,
-            String name
+            String fieldName
     ) {
         if (value != null && value < 0) {
             throw new IllegalArgumentException(
-                    name + " не может быть отрицательным"
+                    fieldName + " не может быть отрицательным"
+            );
+        }
+    }
+
+    private static void validateCost(
+            BigDecimal costUsd
+    ) {
+        if (costUsd == null) {
+            return;
+        }
+
+        if (costUsd.signum() < 0) {
+            throw new IllegalArgumentException(
+                    "costUsd не может быть отрицательным"
+            );
+        }
+
+        if (costUsd.scale() > MAX_COST_SCALE) {
+            throw new IllegalArgumentException(
+                    "costUsd должен иметь scale не более "
+                            + MAX_COST_SCALE
             );
         }
     }
@@ -155,6 +263,7 @@ public record AiChatResponse(
                     );
                 }
             }
+
             case MISSING -> {
                 if (inputTokens != null || outputTokens != null) {
                     throw new IllegalArgumentException(
@@ -162,15 +271,21 @@ public record AiChatResponse(
                     );
                 }
             }
+
             case PARTIAL -> {
-                if ((inputTokens == null) == (outputTokens == null)) {
+                boolean inputMissing = inputTokens == null;
+                boolean outputMissing = outputTokens == null;
+
+                if (inputMissing == outputMissing) {
                     throw new IllegalArgumentException(
                             "PARTIAL требует ровно один token counter"
                     );
                 }
             }
+
             case NOT_APPLICABLE -> throw new IllegalArgumentException(
-                    "Provider response не может иметь NOT_APPLICABLE usage"
+                    "Provider response не может иметь "
+                            + "NOT_APPLICABLE usage"
             );
         }
     }
@@ -184,69 +299,205 @@ public record AiChatResponse(
             UsageStatus usageStatus
     ) {
         switch (status) {
-            case PRICED, FREE -> {
-                Objects.requireNonNull(costUsd, "costUsd обязателен");
-                Objects.requireNonNull(currency, "currency обязательна");
-                Objects.requireNonNull(priceVersion, "priceVersion обязателен");
-                Objects.requireNonNull(
-                        calculatedAt,
-                        "pricingCalculatedAt обязателен"
-                );
+            case PRICED -> validateCalculatedPricing(
+                    costUsd,
+                    currency,
+                    priceVersion,
+                    calculatedAt,
+                    usageStatus,
+                    false
+            );
 
-                if (usageStatus != UsageStatus.AVAILABLE) {
-                    throw new IllegalArgumentException(
-                            "PRICED/FREE требуют AVAILABLE usage"
-                    );
-                }
+            case FREE -> validateCalculatedPricing(
+                    costUsd,
+                    currency,
+                    priceVersion,
+                    calculatedAt,
+                    usageStatus,
+                    true
+            );
 
-                if (status == PricingStatus.FREE
-                        && costUsd.signum() != 0) {
-                    throw new IllegalArgumentException(
-                            "FREE должен иметь costUsd = 0"
+            case UNPRICED, CALCULATION_FAILED ->
+                    validateAbsentPricing(
+                            status,
+                            costUsd,
+                            currency,
+                            priceVersion,
+                            calculatedAt
                     );
-                }
-            }
-            case UNPRICED, CALCULATION_FAILED -> {
-                if (costUsd != null) {
-                    throw new IllegalArgumentException(
-                            status + " не должен содержать costUsd"
-                    );
-                }
-                Objects.requireNonNull(
-                        calculatedAt,
-                        "pricingCalculatedAt обязателен"
-                );
-            }
+
             case NOT_APPLICABLE -> throw new IllegalArgumentException(
-                    "Provider response не может иметь NOT_APPLICABLE pricing"
+                    "Provider response не может иметь "
+                            + "NOT_APPLICABLE pricing"
             );
         }
     }
 
-    private static String normalizeOptional(String value) {
+    private static void validateCalculatedPricing(
+            BigDecimal costUsd,
+            String currency,
+            String priceVersion,
+            Instant calculatedAt,
+            UsageStatus usageStatus,
+            boolean free
+    ) {
+        Objects.requireNonNull(
+                costUsd,
+                "costUsd обязателен"
+        );
+
+        Objects.requireNonNull(
+                currency,
+                "currency обязательна"
+        );
+
+        Objects.requireNonNull(
+                priceVersion,
+                "priceVersion обязателен"
+        );
+
+        Objects.requireNonNull(
+                calculatedAt,
+                "pricingCalculatedAt обязателен"
+        );
+
+        if (usageStatus != UsageStatus.AVAILABLE) {
+            throw new IllegalArgumentException(
+                    (free ? "FREE" : "PRICED")
+                            + " требует AVAILABLE usage"
+            );
+        }
+
+        if (free && costUsd.signum() != 0) {
+            throw new IllegalArgumentException(
+                    "FREE должен иметь costUsd = 0"
+            );
+        }
+
+        if (!free && costUsd.signum() <= 0) {
+            throw new IllegalArgumentException(
+                    "PRICED требует costUsd > 0"
+            );
+        }
+    }
+
+    private static void validateAbsentPricing(
+            PricingStatus status,
+            BigDecimal costUsd,
+            String currency,
+            String priceVersion,
+            Instant calculatedAt
+    ) {
+        if (costUsd != null
+                || currency != null
+                || priceVersion != null) {
+            throw new IllegalArgumentException(
+                    status
+                            + " не должен содержать price metadata"
+            );
+        }
+
+        Objects.requireNonNull(
+                calculatedAt,
+                "pricingCalculatedAt обязателен"
+        );
+    }
+
+    private static String requireContent(
+            String value
+    ) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    "content не должен быть пустым"
+            );
+        }
+
+        if (value.length() > MAX_CONTENT_CHARS) {
+            throw new IllegalArgumentException(
+                    "content превышает "
+                            + MAX_CONTENT_CHARS
+                            + " символов"
+            );
+        }
+
+        /*
+         * Контент намеренно не trim-ится:
+         * пробелы и переносы могут быть значимой частью ответа модели.
+         */
+        return value;
+    }
+
+    private static String requireModel(
+            String value,
+            String fieldName
+    ) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    fieldName + " не должен быть пустым"
+            );
+        }
+
+        String normalized = value.trim();
+
+        if (normalized.length() > MAX_MODEL_CHARS) {
+            throw new IllegalArgumentException(
+                    fieldName + " превышает "
+                            + MAX_MODEL_CHARS
+                            + " символов"
+            );
+        }
+
+        return normalized;
+    }
+
+    private static String normalizeOptional(
+            String value,
+            int maxLength,
+            String fieldName
+    ) {
         if (value == null) {
             return null;
         }
 
         String normalized = value.trim();
-        return normalized.isBlank() ? null : normalized;
+
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        if (normalized.length() > maxLength) {
+            throw new IllegalArgumentException(
+                    fieldName + " превышает "
+                            + maxLength
+                            + " символов"
+            );
+        }
+
+        return normalized;
     }
 
-    private static String normalizeCurrency(String value) {
-        String normalized = normalizeOptional(value);
+    private static String normalizeCurrency(
+            String value
+    ) {
+        String normalized = normalizeOptional(
+                value,
+                3,
+                "currency"
+        );
 
         if (normalized == null) {
             return null;
         }
 
-        normalized = normalized.toUpperCase();
+        String upperCase =
+                normalized.toUpperCase(Locale.ROOT);
 
-        if (!normalized.matches("[A-Z]{3}")) {
+        if (!"USD".equals(upperCase)) {
             throw new IllegalArgumentException(
-                    "currency должен быть ISO-4217 кодом"
+                    "Текущая модель costUsd поддерживает только USD"
             );
         }
 
-        return normalized;
+        return upperCase;
     }
 }

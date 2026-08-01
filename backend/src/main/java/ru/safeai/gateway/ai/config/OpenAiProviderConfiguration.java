@@ -11,6 +11,8 @@ import ru.safeai.gateway.ai.provider.openai.OpenAiProperties;
         name = "provider",
         havingValue = "openai"
 )
-@EnableConfigurationProperties(OpenAiProperties.class)
+@EnableConfigurationProperties(
+        OpenAiProperties.class
+)
 public class OpenAiProviderConfiguration {
 }

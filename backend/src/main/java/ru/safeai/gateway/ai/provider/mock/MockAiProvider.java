@@ -3,6 +3,7 @@ package ru.safeai.gateway.ai.provider.mock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
@@ -16,6 +17,7 @@ import ru.safeai.gateway.ai.provider.AiProvider;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Profile("!prod")
 @ConditionalOnProperty(
         name = "safeai.ai.provider",
         havingValue = "mock",
@@ -33,21 +35,20 @@ public class MockAiProvider implements AiProvider {
                 "Mock AI provider response: "
                         + request.userMessage();
 
-        int inputTokens =
-                calculateMockInputTokens(request);
-        int outputTokens =
-                estimateTokens(content);
+        int inputTokens = calculateMockInputTokens(request);
+        int outputTokens = estimateTokens(content);
 
-        PricingResult pricing =
-                pricingService.calculate(
-                        MODEL,
-                        inputTokens,
-                        outputTokens,
-                        UsageStatus.AVAILABLE
-                );
+        PricingResult pricing = pricingService.calculate(
+                MODEL,
+                inputTokens,
+                outputTokens,
+                UsageStatus.AVAILABLE
+        );
 
         log.debug(
-                "Mock AI response generated: model={}, inputTokens={}, outputTokens={}, pricingStatus={}",
+                "Mock AI response generated: operationId={}, model={}, "
+                        + "inputTokens={}, outputTokens={}, pricingStatus={}",
+                request.providerOperationId(),
                 MODEL,
                 inputTokens,
                 outputTokens,
@@ -57,6 +58,8 @@ public class MockAiProvider implements AiProvider {
         return AiChatResponse.fromProvider(
                 content,
                 MODEL,
+                MODEL,
+                request.providerOperationId().toString(),
                 request.providerOperationId().toString(),
                 AiResponseStatus.COMPLETED,
                 "mock_completed",
@@ -76,6 +79,8 @@ public class MockAiProvider implements AiProvider {
                 .sum();
 
         return historyTokens
+                + estimateTokens(request.systemInstructions())
+                + estimateTokens(request.developerInstructions())
                 + estimateTokens(request.userMessage());
     }
 

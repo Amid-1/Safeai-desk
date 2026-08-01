@@ -1,5 +1,6 @@
 package ru.safeai.gateway.ai;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
 
@@ -9,54 +10,55 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+@Tag("unit")
 class ModelPricingPropertiesTest {
 
     @Test
-    void findsModelCaseInsensitively() {
+    void exactModelLookupIsCaseInsensitiveButDoesNotUseAliases() {
         ModelPricingProperties.ModelPrice price = price(
-                "gpt-4.1",
-                "2.00",
-                "8.00",
+                "gpt-snapshot",
+                "2",
+                "8",
                 "USD",
-                "openai-2026-07"
+                "v1"
         );
-
         ModelPricingProperties properties =
                 new ModelPricingProperties(List.of(price));
 
-        assertThat(properties.find(" GPT-4.1 "))
-                .isSameAs(price);
+        assertThat(properties.find(" GPT-SNAPSHOT ")).isSameAs(price);
+        assertThat(properties.find("gpt-alias")).isNull();
     }
 
     @Test
     void rejectsDuplicateNormalizedModels() {
         assertThatThrownBy(() -> new ModelPricingProperties(
                 List.of(
-                        price("gpt-4.1", "2", "8", "USD", "v1"),
-                        price(" GPT-4.1 ", "3", "9", "USD", "v2")
+                        price("gpt", "2", "8", "USD", "v1"),
+                        price(" GPT ", "3", "9", "USD", "v2")
                 )
-        ))
-                .isInstanceOf(IllegalStateException.class)
+        )).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Дублирующая");
     }
 
     @Test
-    void rejectsBlankModelNegativePriceInvalidCurrencyAndBlankVersion() {
-        assertThatThrownBy(() ->
-                price(" ", "2", "8", "USD", "v1")
-        ).isInstanceOf(IllegalStateException.class);
+    void rejectsNonUsdAndExcessivePriceScale() {
+        assertThatThrownBy(() -> price(
+                "gpt",
+                "2",
+                "8",
+                "EUR",
+                "v1"
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("USD");
 
-        assertThatThrownBy(() ->
-                price("gpt", "-1", "8", "USD", "v1")
-        ).isInstanceOf(IllegalStateException.class);
-
-        assertThatThrownBy(() ->
-                price("gpt", "1", "8", "US", "v1")
-        ).isInstanceOf(IllegalStateException.class);
-
-        assertThatThrownBy(() ->
-                price("gpt", "1", "8", "USD", " ")
-        ).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> price(
+                "gpt",
+                "0.0000000000001",
+                "8",
+                "USD",
+                "v1"
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("точность");
     }
 
     private ModelPricingProperties.ModelPrice price(

@@ -17,10 +17,12 @@ spring:
 
 safeai:
   ai:
-    provider: mock
+    provider: ${SAFEAI_AI_PROVIDER:mock}
 
     retry:
-      enabled: false
+      enabled: ${SAFEAI_AI_RETRY_ENABLED:false}
+      max-attempts: ${SAFEAI_AI_RETRY_MAX_ATTEMPTS:1}
+      total-timeout: ${SAFEAI_AI_RETRY_TOTAL_TIMEOUT:65s}
 
   auth:
     cookies:

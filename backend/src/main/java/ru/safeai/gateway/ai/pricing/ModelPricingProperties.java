@@ -13,9 +13,7 @@ public final class ModelPricingProperties {
 
     private final Map<String, ModelPrice> modelsByNormalizedName;
 
-    public ModelPricingProperties(
-            List<ModelPrice> models
-    ) {
+    public ModelPricingProperties(List<ModelPrice> models) {
         List<ModelPrice> safeModels = models == null
                 ? List.of()
                 : List.copyOf(models);
@@ -40,17 +38,20 @@ public final class ModelPricingProperties {
             }
         }
 
-        modelsByNormalizedName =
-                Map.copyOf(normalized);
+        modelsByNormalizedName = Map.copyOf(normalized);
     }
 
-    public ModelPrice find(String model) {
-        if (model == null || model.isBlank()) {
+    /**
+     * Только точное совпадение resolved model. Alias не подставляется
+     * молча для snapshot-модели.
+     */
+    public ModelPrice find(String resolvedModel) {
+        if (resolvedModel == null || resolvedModel.isBlank()) {
             return null;
         }
 
         return modelsByNormalizedName.get(
-                model.trim()
+                resolvedModel.trim()
                         .toLowerCase(Locale.ROOT)
         );
     }
@@ -62,8 +63,8 @@ public final class ModelPricingProperties {
             String currency,
             String version
     ) {
-
         private static final int MAX_PRICE_SCALE = 12;
+        private static final int MAX_PRICE_PRECISION = 24;
 
         public ModelPrice {
             if (model == null || model.isBlank()) {
@@ -73,6 +74,12 @@ public final class ModelPricingProperties {
             }
 
             model = model.trim();
+
+            if (model.length() > 100) {
+                throw new IllegalStateException(
+                        "pricing model превышает 100 символов"
+                );
+            }
 
             inputUsdPer1mTokens = validatePrice(
                     inputUsdPer1mTokens,
@@ -94,10 +101,9 @@ public final class ModelPricingProperties {
                     .trim()
                     .toUpperCase(Locale.ROOT);
 
-            if (!currency.matches("[A-Z]{3}")) {
+            if (!"USD".equals(currency)) {
                 throw new IllegalStateException(
-                        "pricing currency должен быть "
-                                + "трёхбуквенным ISO-4217 кодом"
+                        "Текущая схема costUsd поддерживает только USD"
                 );
             }
 
@@ -108,6 +114,12 @@ public final class ModelPricingProperties {
             }
 
             version = version.trim();
+
+            if (version.length() > 64) {
+                throw new IllegalStateException(
+                        "pricing version превышает 64 символа"
+                );
+            }
         }
 
         public String normalizedModel() {
@@ -128,18 +140,19 @@ public final class ModelPricingProperties {
                         propertyName + " не задан"
                 );
             }
-
             if (value.signum() < 0) {
                 throw new IllegalStateException(
-                        propertyName
-                                + " должен быть неотрицательным"
+                        propertyName + " должен быть неотрицательным"
                 );
             }
-
             if (value.scale() > MAX_PRICE_SCALE) {
                 throw new IllegalStateException(
-                        propertyName
-                                + " имеет чрезмерную точность"
+                        propertyName + " имеет чрезмерную точность"
+                );
+            }
+            if (value.precision() > MAX_PRICE_PRECISION) {
+                throw new IllegalStateException(
+                        propertyName + " имеет чрезмерную precision"
                 );
             }
 

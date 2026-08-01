@@ -16,17 +16,13 @@ public class AiResponseMetadataService {
 
     public AiResponseMetadata extract(
             JsonNode response,
-            String model
+            String resolvedModel
     ) {
         Integer inputTokens =
-                AiProviderSupport.extractInputTokens(
-                        response
-                );
+                AiProviderSupport.extractInputTokens(response);
 
         Integer outputTokens =
-                AiProviderSupport.extractOutputTokens(
-                        response
-                );
+                AiProviderSupport.extractOutputTokens(response);
 
         UsageStatus usageStatus =
                 AiChatResponse.determineUsageStatus(
@@ -36,7 +32,7 @@ public class AiResponseMetadataService {
 
         PricingResult pricing =
                 pricingService.calculate(
-                        model,
+                        resolvedModel,
                         inputTokens,
                         outputTokens,
                         usageStatus

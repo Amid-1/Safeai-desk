@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
+
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="
+             http://maven.apache.org/POM/4.0.0
+             https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
 
@@ -17,21 +20,37 @@
     <version>0.0.1-SNAPSHOT</version>
 
     <name>SafeAI Desk Backend</name>
-    <description>Corporate AI Gateway backend with audit, usage tracking and RAG support</description>
+
+    <description>
+        Corporate AI Gateway backend with audit,
+        usage tracking and RAG support
+    </description>
+
     <url>https://github.com/Amid-1/Safeai-desk</url>
 
     <properties>
         <java.version>21</java.version>
+
         <testcontainers.version>2.0.5</testcontainers.version>
         <commons-compress.version>1.28.0</commons-compress.version>
-        <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
-        <maven-failsafe-plugin.version>3.5.6</maven-failsafe-plugin.version>
+        <logstash-logback-encoder.version>
+            9.0
+        </logstash-logback-encoder.version>
+        <maven-failsafe-plugin.version>
+            3.5.6
+        </maven-failsafe-plugin.version>
 
+        <!--
+            Используется в maven-surefire-plugin.
+            Пустое значение позволяет другим Maven-плагинам
+            дополнять argLine.
+        -->
         <argLine/>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+
             <!-- Testcontainers versions -->
             <dependency>
                 <groupId>org.testcontainers</groupId>
@@ -41,53 +60,60 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- Override vulnerable transitive dependency from Testcontainers/docker-java -->
+            <!--
+                Override vulnerable transitive dependency
+                from Testcontainers/docker-java.
+            -->
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-compress</artifactId>
                 <version>${commons-compress.version}</version>
             </dependency>
+
         </dependencies>
     </dependencyManagement>
 
     <dependencies>
-        <!-- Web MVC: REST controllers, JSON API, servlet stack -->
+
+        <!-- REST API, servlet stack, Spring MVC -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
 
-        <!-- Actuator: health checks and operational endpoints -->
+        <!-- Health checks and operational endpoints -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
-        <!-- Security: authentication, authorization, method security -->
+        <!-- Authentication and authorization -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- OAuth2 Resource Server: JWT decoding and authentication infrastructure -->
+        <!-- OAuth2 Resource Server and JWT infrastructure -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+            <artifactId>
+                spring-boot-starter-security-oauth2-resource-server
+            </artifactId>
         </dependency>
 
-        <!-- Validation: @Valid, @NotBlank, @Email, @Size, etc. -->
+        <!-- Jakarta Bean Validation -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- JPA/Hibernate: ORM and repositories -->
+        <!-- Spring Data JPA and Hibernate -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
 
-        <!-- Flyway: database migrations -->
+        <!-- Flyway core integration -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-flyway</artifactId>
@@ -99,187 +125,268 @@
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
-        <!-- Redis: rate limits, future token revocation/cache -->
+        <!-- Redis -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
-        <!-- Cache abstraction: future cache layer -->
+        <!-- Spring Cache abstraction -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-cache</artifactId>
         </dependency>
 
-        <!-- WebClient/HTTP client support for external AI providers -->
+        <!-- External HTTP clients and WebClient -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webclient</artifactId>
         </dependency>
 
-        <!-- PostgreSQL JDBC driver: runtime database connection -->
+        <!-- PostgreSQL JDBC driver -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Lombok: getters, constructors, logging annotations -->
+        <!-- Lombok annotations and annotation processor -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
 
-        <!-- Prometheus metrics export for /actuator/prometheus -->
+        <!-- Prometheus exporter -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!-- Metadata generation for @ConfigurationProperties -->
+        <!--
+            Generates META-INF/spring-configuration-metadata.json
+            from @ConfigurationProperties classes.
+        -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-configuration-processor</artifactId>
+            <artifactId>
+                spring-boot-configuration-processor
+            </artifactId>
             <optional>true</optional>
         </dependency>
 
-        <!-- Structured JSON logging for production -->
+        <!-- Structured JSON logging -->
         <dependency>
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
             <version>${logstash-logback-encoder.version}</version>
         </dependency>
 
-        <!-- Spring Boot tests: JUnit, AssertJ, Mockito, test utilities -->
+        <!-- JUnit, AssertJ, Mockito and Spring test utilities -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- Web MVC tests: MockMvc slice tests for Spring Boot 4 MVC -->
+        <!-- Spring MVC test support -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- Security tests: @WithMockUser, request post-processors, security MockMvc support -->
+        <!-- Spring Security test support -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security-test</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- Testcontainers PostgreSQL: integration tests with real PostgreSQL container -->
+        <!-- PostgreSQL Testcontainers -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- Testcontainers JUnit Jupiter integration -->
+        <!-- JUnit Jupiter Testcontainers integration -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- Data JPA slice tests: @DataJpaTest -->
+        <!-- @DataJpaTest support -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-data-jpa-test</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- Spring Boot integration with Testcontainers: @ServiceConnection -->
+        <!-- @ServiceConnection support -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-testcontainers</artifactId>
             <scope>test</scope>
         </dependency>
 
+        <!-- Native DNS resolver for Apple Silicon macOS -->
         <dependency>
             <groupId>io.netty</groupId>
-            <artifactId>netty-resolver-dns-native-macos</artifactId>
+            <artifactId>
+                netty-resolver-dns-native-macos
+            </artifactId>
             <classifier>osx-aarch_64</classifier>
             <scope>runtime</scope>
         </dependency>
+
     </dependencies>
 
     <build>
-    <plugins>
-        <plugin>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-maven-plugin</artifactId>
+        <plugins>
 
-            <configuration>
-                <excludes>
-                    <exclude>
-                        <groupId>org.projectlombok</groupId>
-                        <artifactId>lombok</artifactId>
-                    </exclude>
-                </excludes>
-            </configuration>
-        </plugin>
+            <!--
+                Spring Boot packaging and executable application support.
+            -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>
+                    spring-boot-maven-plugin
+                </artifactId>
 
-        <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
 
-            <configuration>
-                <argLine>
-                    @{argLine} -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
-                </argLine>
-            </configuration>
-        </plugin>
+            <!--
+                Java compilation and annotation processors.
 
-        <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-enforcer-plugin</artifactId>
+                Это отдельный Maven plugin.
+                annotationProcessorPaths нельзя помещать внутрь
+                spring-boot-maven-plugin.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>
+                    maven-compiler-plugin
+                </artifactId>
 
-            <executions>
-                <execution>
-                    <id>enforce-build-environment</id>
+                <configuration>
+                    <parameters>true</parameters>
 
-                    <goals>
-                        <goal>enforce</goal>
-                    </goals>
+                    <annotationProcessorPaths>
 
-                    <configuration>
-                        <rules>
-                            <requireJavaVersion>
-                                <version>[21,22)</version>
-                            </requireJavaVersion>
+                        <!--
+                            Lombok должен быть доступен компилятору
+                            как annotation processor.
+                        -->
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </path>
 
-                            <requireMavenVersion>
-                                <version>[3.9,)</version>
-                            </requireMavenVersion>
+                        <!--
+                            Генерирует Spring Boot configuration metadata
+                            для @ConfigurationProperties.
+                        -->
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>
+                                spring-boot-configuration-processor
+                            </artifactId>
+                        </path>
 
-                            <dependencyConvergence/>
-                        </rules>
-                    </configuration>
-                </execution>
-            </executions>
-        </plugin>
-    </plugins>
-</build>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
+            <!-- Unit and regular integration tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>
+                    maven-surefire-plugin
+                </artifactId>
+
+                <configuration>
+                    <argLine>
+                        @{argLine}
+                        -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
+                    </argLine>
+                </configuration>
+            </plugin>
+
+            <!-- Build environment validation -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>
+                    maven-enforcer-plugin
+                </artifactId>
+
+                <executions>
+                    <execution>
+                        <id>enforce-build-environment</id>
+
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+
+                        <configuration>
+                            <rules>
+
+                                <requireJavaVersion>
+                                    <version>[21,22)</version>
+                                </requireJavaVersion>
+
+                                <requireMavenVersion>
+                                    <version>[3.9,)</version>
+                                </requireMavenVersion>
+
+                                <dependencyConvergence/>
+
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+        </plugins>
+    </build>
 
     <profiles>
+
+        <!--
+            External Redis Sentinel and Redis Cluster topology tests.
+
+            Run:
+            ./mvnw verify -Prate-limit-topology-it
+        -->
         <profile>
             <id>rate-limit-topology-it</id>
 
             <build>
                 <plugins>
+
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-failsafe-plugin</artifactId>
-                        <version>${maven-failsafe-plugin.version}</version>
+                        <artifactId>
+                            maven-failsafe-plugin
+                        </artifactId>
+                        <version>
+                            ${maven-failsafe-plugin.version}
+                        </version>
 
                         <executions>
                             <execution>
-                                <id>run-rate-limit-topology-tests</id>
+                                <id>
+                                    run-rate-limit-topology-tests
+                                </id>
 
                                 <goals>
                                     <goal>integration-test</goal>
@@ -294,9 +401,11 @@
                             </execution>
                         </executions>
                     </plugin>
+
                 </plugins>
             </build>
         </profile>
+
     </profiles>
 
 </project>

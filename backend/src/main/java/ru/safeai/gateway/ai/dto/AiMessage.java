@@ -6,6 +6,7 @@ public record AiMessage(
         AiMessageRole role,
         String content
 ) {
+    public static final int ABSOLUTE_MAX_CONTENT_CHARS = 100_000;
 
     public AiMessage {
         Objects.requireNonNull(
@@ -16,6 +17,14 @@ public record AiMessage(
         if (content == null || content.isBlank()) {
             throw new IllegalArgumentException(
                     "AI message content не должен быть пустым"
+            );
+        }
+
+        if (content.length() > ABSOLUTE_MAX_CONTENT_CHARS) {
+            throw new IllegalArgumentException(
+                    "AI message content превышает абсолютный лимит "
+                            + ABSOLUTE_MAX_CONTENT_CHARS
+                            + " символов"
             );
         }
     }

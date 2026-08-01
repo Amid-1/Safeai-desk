@@ -1,131 +1,388 @@
 package ru.safeai.gateway.ai;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.exception.AiProviderQuotaExceededException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
 import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
-import ru.safeai.gateway.ai.metadata.AiResponseStatus;
-import ru.safeai.gateway.ai.metadata.PricingStatus;
-import ru.safeai.gateway.ai.metadata.UsageStatus;
+import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
+import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
 import ru.safeai.gateway.ai.provider.AiRetryProperties;
 
-import java.math.BigDecimal;
 import java.time.Duration;
-import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static ru.safeai.gateway.ai.testsupport.AiTestFixtures.OPERATION_ID;
+import static ru.safeai.gateway.ai.testsupport.AiTestFixtures.freeResponse;
 
+@Tag("unit")
+@Timeout(5)
 class AiProviderRetryExecutorTest {
 
-    @Test
-    void retriesBoundedRateLimitWithRetryAfter() {
-        AiProviderRetryExecutor executor = executor(2);
-        AtomicInteger attempts = new AtomicInteger();
+    private static final String PROVIDER =
+            "openai";
 
-        AiChatResponse result = executor.execute(
-                "openai",
-                "gpt-4.1",
-                () -> {
-                    if (attempts.incrementAndGet() == 1) {
-                        throw new AiProviderRateLimitedException(
-                                "openai",
-                                "gpt-4.1",
-                                429,
-                                "req-1",
-                                Duration.ofMillis(10),
+    private static final String MODEL =
+            "gpt-4.1";
+
+    private static final Duration RETRY_BACKOFF =
+            Duration.ofMillis(10);
+
+    private static final Duration MAX_RETRY_AFTER =
+            Duration.ofSeconds(1);
+
+    private static final Duration TOTAL_TIMEOUT =
+            Duration.ofSeconds(2);
+
+    @Test
+    void connectFailureCanBeRetried() {
+        AiProviderRetryExecutor executor =
+                retryExecutor(2);
+
+        AtomicInteger attempts =
+                new AtomicInteger();
+
+        AiChatResponse result =
+                executor.execute(
+                        PROVIDER,
+                        MODEL,
+                        OPERATION_ID,
+                        Duration.ZERO,
+                        context -> {
+                            int currentAttempt =
+                                    attempts.incrementAndGet();
+
+                            if (currentAttempt == 1) {
+                                throw new AiProviderUnavailableException(
+                                        PROVIDER,
+                                        MODEL,
+                                        true,
+                                        false,
+                                        "connect failure",
+                                        null
+                                );
+                            }
+
+                            return freeResponse();
+                        }
+                );
+
+        assertThat(result.content())
+                .isEqualTo("Ответ");
+
+        assertThat(attempts)
+                .hasValue(2);
+    }
+
+    @Test
+    void ambiguousReadTimeoutIsNotRetried() {
+        AtomicInteger attempts =
+                new AtomicInteger();
+
+        assertThatThrownBy(
+                () -> retryExecutor(3).execute(
+                        PROVIDER,
+                        MODEL,
+                        OPERATION_ID,
+                        Duration.ZERO,
+                        context -> {
+                            attempts.incrementAndGet();
+
+                            throw new AiProviderTimeoutException(
+                                    PROVIDER,
+                                    MODEL,
+                                    true,
+                                    "read timeout after submission",
+                                    null
+                            );
+                        }
+                )
+        )
+                .isInstanceOf(
+                        AiProviderTimeoutException.class
+                );
+
+        assertThat(attempts)
+                .hasValue(1);
+    }
+
+    @Test
+    void ambiguousNetworkOutcomeIsNotRetried() {
+        AtomicInteger attempts =
+                new AtomicInteger();
+
+        assertThatThrownBy(
+                () -> retryExecutor(3).execute(
+                        PROVIDER,
+                        MODEL,
+                        OPERATION_ID,
+                        Duration.ZERO,
+                        context -> {
+                            attempts.incrementAndGet();
+
+                            throw new AiProviderUnavailableException(
+                                    PROVIDER,
+                                    MODEL,
+                                    false,
+                                    true,
+                                    "ambiguous network failure",
+                                    null
+                            );
+                        }
+                )
+        )
+                .isInstanceOf(
+                        AiProviderUnavailableException.class
+                );
+
+        assertThat(attempts)
+                .hasValue(1);
+    }
+
+    @Test
+    void eachAttemptHasUniqueIdAndLogicalOperationIsStable() {
+        List<AiProviderAttemptContext> contexts =
+                new ArrayList<>();
+
+        AiChatResponse result =
+                retryExecutor(2).execute(
+                        PROVIDER,
+                        MODEL,
+                        OPERATION_ID,
+                        Duration.ZERO,
+                        context -> {
+                            contexts.add(context);
+
+                            if (context.attemptNumber() == 1) {
+                                throw rateLimit();
+                            }
+
+                            return freeResponse();
+                        }
+                );
+
+        assertThat(result.content())
+                .isEqualTo("Ответ");
+
+        assertThat(contexts)
+                .hasSize(2);
+
+        assertThat(contexts)
+                .extracting(
+                        AiProviderAttemptContext::operationId
+                )
+                .containsOnly(OPERATION_ID);
+
+        assertThat(contexts)
+                .extracting(
+                        AiProviderAttemptContext::attemptNumber
+                )
+                .containsExactly(1, 2);
+
+        assertThat(contexts)
+                .extracting(
+                        AiProviderAttemptContext::attemptId
+                )
+                .doesNotHaveDuplicates();
+
+        assertThat(contexts.get(0).attemptId())
+                .isNotEqualTo(
+                        contexts.get(1).attemptId()
+                );
+    }
+
+    @Test
+    void exhaustedQuotaIsNeverRetried() {
+        AtomicInteger attempts =
+                new AtomicInteger();
+
+        assertThatThrownBy(
+                () -> retryExecutor(3).execute(
+                        PROVIDER,
+                        MODEL,
+                        OPERATION_ID,
+                        Duration.ZERO,
+                        context -> {
+                            attempts.incrementAndGet();
+
+                            throw new AiProviderQuotaExceededException(
+                                    PROVIDER,
+                                    MODEL,
+                                    429,
+                                    "request-id",
+                                    "insufficient_quota",
+                                    "quota exhausted",
+                                    null
+                            );
+                        }
+                )
+        )
+                .isInstanceOf(
+                        AiProviderQuotaExceededException.class
+                );
+
+        assertThat(attempts)
+                .hasValue(1);
+    }
+
+    @Test
+    void retryDoesNotStartAttemptThatCannotFitTotalDeadline() {
+        AiProviderRetryExecutor executor =
+                new AiProviderRetryExecutor(
+                        new AiRetryProperties(
                                 true,
-                                "rate limited",
-                                null
-                        );
-                    }
+                                3,
+                                RETRY_BACKOFF,
+                                RETRY_BACKOFF,
+                                MAX_RETRY_AFTER,
+                                Duration.ofSeconds(1)
+                        )
+                );
 
-                    return response();
-                }
-        );
+        AtomicInteger attempts =
+                new AtomicInteger();
 
-        assertThat(result.content()).isEqualTo("Ответ");
-        assertThat(attempts).hasValue(2);
+        assertThatThrownBy(
+                () -> executor.execute(
+                        PROVIDER,
+                        MODEL,
+                        OPERATION_ID,
+                        Duration.ofSeconds(2),
+                        context -> {
+                            attempts.incrementAndGet();
+                            throw rateLimit();
+                        }
+                )
+        )
+                .isInstanceOf(
+                        AiProviderRateLimitedException.class
+                );
+
+        assertThat(attempts)
+                .hasValue(1);
     }
 
     @Test
-    void doesNotRetryAmbiguousReadTimeout() {
-        AiProviderRetryExecutor executor = executor(3);
-        AtomicInteger attempts = new AtomicInteger();
+    void interruptedRetryRestoresInterruptFlag() {
+        Thread currentThread =
+                Thread.currentThread();
 
-        assertThatThrownBy(() -> executor.execute(
-                "openai",
-                "gpt-4.1",
-                () -> {
-                    attempts.incrementAndGet();
-                    throw new AiProviderTimeoutException(
-                            "openai",
-                            "gpt-4.1",
-                            true,
-                            "read timeout",
-                            null
-                    );
-                }
-        )).isInstanceOf(AiProviderTimeoutException.class);
+        currentThread.interrupt();
 
-        assertThat(attempts).hasValue(1);
+        try {
+            assertThatThrownBy(
+                    () -> retryExecutor(2).execute(
+                            PROVIDER,
+                            MODEL,
+                            OPERATION_ID,
+                            Duration.ZERO,
+                            context -> {
+                                throw rateLimitWithDelay();
+                            }
+                    )
+            )
+                    .isInstanceOf(AiProviderException.class)
+                    .hasMessageContaining("interrupted");
+
+            assertThat(currentThread.isInterrupted())
+                    .isTrue();
+        } finally {
+            boolean wasInterrupted =
+                    Thread.interrupted();
+
+            assertThat(wasInterrupted)
+                    .as("Interrupt-флаг должен быть установлен перед очисткой")
+                    .isTrue();
+
+            assertThat(currentThread.isInterrupted())
+                    .as("Interrupt-флаг должен быть очищен после теста")
+                    .isFalse();
+        }
     }
 
     @Test
-    void maxAttemptsOneNeverRetries() {
-        AiProviderRetryExecutor executor = executor(1);
-        AtomicInteger attempts = new AtomicInteger();
+    void disabledRetryMeansExactlyOneAttempt() {
+        AiProviderRetryExecutor executor =
+                new AiProviderRetryExecutor(
+                        new AiRetryProperties(
+                                false,
+                                1,
+                                RETRY_BACKOFF,
+                                RETRY_BACKOFF,
+                                MAX_RETRY_AFTER,
+                                Duration.ofSeconds(1)
+                        )
+                );
 
-        assertThatThrownBy(() -> executor.execute(
-                "openai",
-                "gpt-4.1",
-                () -> {
-                    attempts.incrementAndGet();
-                    throw new AiProviderRateLimitedException(
-                            "openai",
-                            "gpt-4.1",
-                            429,
-                            "req-1",
-                            Duration.ofMillis(10),
-                            true,
-                            "rate limited",
-                            null
-                    );
-                }
-        )).isInstanceOf(AiProviderRateLimitedException.class);
+        AtomicInteger attempts =
+                new AtomicInteger();
 
-        assertThat(attempts).hasValue(1);
+        assertThatThrownBy(
+                () -> executor.execute(
+                        PROVIDER,
+                        MODEL,
+                        OPERATION_ID,
+                        Duration.ZERO,
+                        context -> {
+                            attempts.incrementAndGet();
+                            throw rateLimit();
+                        }
+                )
+        )
+                .isInstanceOf(
+                        AiProviderRateLimitedException.class
+                );
+
+        assertThat(attempts)
+                .hasValue(1);
     }
 
-    private AiProviderRetryExecutor executor(int attempts) {
+    private static AiProviderRetryExecutor retryExecutor(
+            int maxAttempts
+    ) {
         return new AiProviderRetryExecutor(
                 new AiRetryProperties(
                         true,
-                        attempts,
-                        Duration.ofMillis(10),
-                        Duration.ofMillis(10),
-                        Duration.ofSeconds(1)
+                        maxAttempts,
+                        RETRY_BACKOFF,
+                        RETRY_BACKOFF,
+                        MAX_RETRY_AFTER,
+                        TOTAL_TIMEOUT
                 )
         );
     }
 
-    private AiChatResponse response() {
-        return new AiChatResponse(
-                "Ответ",
-                "gpt-4.1",
-                "resp-1",
-                AiResponseStatus.COMPLETED,
-                "completed",
-                1,
-                1,
-                UsageStatus.AVAILABLE,
-                BigDecimal.ZERO,
-                PricingStatus.FREE,
-                "USD",
-                "test-v1",
-                Instant.parse("2026-07-12T12:00:00Z")
+    private static AiProviderRateLimitedException rateLimit() {
+        return new AiProviderRateLimitedException(
+                PROVIDER,
+                MODEL,
+                429,
+                "request-id",
+                Duration.ZERO,
+                true,
+                "rate limited",
+                null
         );
     }
+
+    private static AiProviderRateLimitedException rateLimitWithDelay() {
+    return new AiProviderRateLimitedException(
+            PROVIDER,
+            MODEL,
+            429,
+            "request-id",
+            RETRY_BACKOFF,
+            true,
+            "rate limited",
+            null
+    );
+}
 }

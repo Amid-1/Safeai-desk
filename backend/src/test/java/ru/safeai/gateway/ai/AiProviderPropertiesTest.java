@@ -1,15 +1,17 @@
 package ru.safeai.gateway.ai;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import ru.safeai.gateway.ai.provider.AiProviderProperties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+@Tag("unit")
 class AiProviderPropertiesTest {
 
     @Test
-    void defaultsToMockAndNormalizesKnownProvider() {
+    void defaultsToMockOutsideProductionAndNormalizesKnownProvider() {
         assertThat(new AiProviderProperties(null).provider())
                 .isEqualTo("mock");
         assertThat(new AiProviderProperties(" OpenAI ").provider())

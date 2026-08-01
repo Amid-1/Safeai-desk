@@ -7,7 +7,9 @@ import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 
 import java.time.Duration;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -20,28 +22,74 @@ public class AiProviderRetryExecutor {
     public AiChatResponse execute(
             String provider,
             String model,
-            Supplier<AiChatResponse> action
+            UUID operationId,
+            Duration attemptTimeout,
+            Function<AiProviderAttemptContext, AiChatResponse> action
     ) {
         int maxAttempts = properties.effectiveMaxAttempts();
         Duration backoff = properties.effectiveInitialBackoff();
+        long deadlineNanos = safeAdd(
+                System.nanoTime(),
+                properties.effectiveTotalTimeout().toNanos()
+        );
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            AiProviderAttemptContext context =
+                    new AiProviderAttemptContext(
+                            operationId,
+                            UUID.randomUUID(),
+                            attempt,
+                            maxAttempts
+                    );
+
             try {
-                return action.get();
+                return action.apply(context);
             } catch (AiProviderException exception) {
-                if (!shouldRetry(exception, attempt, maxAttempts)) {
+                if (!shouldRetry(
+                        exception,
+                        attempt,
+                        maxAttempts
+                )) {
                     throw exception;
                 }
 
                 Duration delay = retryDelay(exception, backoff);
 
+                if (!fitsDeadline(
+                        delay,
+                        attemptTimeout,
+                        deadlineNanos
+                )) {
+                    log.warn(
+                            "AI retry skipped by total deadline: "
+                                    + "provider={}, model={}, operationId={}, "
+                                    + "attemptId={}, attempt={}, maxAttempts={}, "
+                                    + "errorType={}, retryAfter={}",
+                            provider,
+                            model,
+                            operationId,
+                            context.attemptId(),
+                            attempt,
+                            maxAttempts,
+                            exception.getErrorType(),
+                            exception.getRetryAfter()
+                    );
+                    throw exception;
+                }
+
                 log.warn(
-                        "Retrying safe AI provider operation: provider={}, model={}, attempt={}, maxAttempts={}, errorType={}, retryAfter={}, delayMs={}",
+                        "Retrying AI provider operation: provider={}, "
+                                + "model={}, operationId={}, attemptId={}, "
+                                + "attempt={}, maxAttempts={}, errorType={}, "
+                                + "providerRequestId={}, retryAfter={}, delayMs={}",
                         provider,
                         model,
+                        operationId,
+                        context.attemptId(),
                         attempt,
                         maxAttempts,
                         exception.getErrorType(),
+                        exception.getProviderRequestId(),
                         exception.getRetryAfter(),
                         delay.toMillis()
                 );
@@ -53,6 +101,23 @@ public class AiProviderRetryExecutor {
 
         throw new IllegalStateException(
                 "AI retry loop completed unexpectedly"
+        );
+    }
+
+    /**
+     * Совместимость со старыми тестами/вызовами.
+     */
+    public AiChatResponse execute(
+            String provider,
+            String model,
+            Supplier<AiChatResponse> action
+    ) {
+        return execute(
+                provider,
+                model,
+                UUID.randomUUID(),
+                Duration.ZERO,
+                ignored -> action.get()
         );
     }
 
@@ -86,9 +151,31 @@ public class AiProviderRetryExecutor {
         return withJitter(backoff);
     }
 
+    private boolean fitsDeadline(
+            Duration delay,
+            Duration attemptTimeout,
+            long deadlineNanos
+    ) {
+        long now = System.nanoTime();
+        long required = safeAdd(
+                delay.toNanos(),
+                attemptTimeout == null
+                        ? 0L
+                        : Math.max(0L, attemptTimeout.toNanos())
+        );
+
+        return safeAdd(now, required) <= deadlineNanos;
+    }
+
     private Duration nextBackoff(Duration current) {
-        Duration next = current.multipliedBy(2);
         Duration max = properties.effectiveMaxBackoff();
+        Duration next;
+
+        try {
+            next = current.multipliedBy(2);
+        } catch (ArithmeticException exception) {
+            return max;
+        }
 
         return next.compareTo(max) > 0 ? max : next;
     }
@@ -99,6 +186,10 @@ public class AiProviderRetryExecutor {
             String model,
             AiProviderException cause
     ) {
+        if (duration.isZero()) {
+            return;
+        }
+
         try {
             Thread.sleep(duration.toMillis());
         } catch (InterruptedException exception) {
@@ -109,6 +200,7 @@ public class AiProviderRetryExecutor {
                     model,
                     cause.getStatusCode(),
                     cause.getProviderRequestId(),
+                    cause.getProviderErrorCode(),
                     cause.getErrorType(),
                     false,
                     cause.isOutcomeAmbiguous(),
@@ -126,9 +218,18 @@ public class AiProviderRetryExecutor {
             return duration;
         }
 
-        long jitter = ThreadLocalRandom.current()
-                .nextLong(0, Math.max(1, millis / 2));
+        long lower = Math.max(1L, millis / 2);
+        long jittered = ThreadLocalRandom.current()
+                .nextLong(lower, millis + 1);
 
-        return Duration.ofMillis(millis + jitter);
+        return Duration.ofMillis(jittered);
+    }
+
+    private long safeAdd(long left, long right) {
+        try {
+            return Math.addExact(left, right);
+        } catch (ArithmeticException exception) {
+            return Long.MAX_VALUE;
+        }
     }
 }

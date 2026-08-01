@@ -4,14 +4,18 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import ru.safeai.gateway.ai.exception.AiContextLimitException;
+import ru.safeai.gateway.ai.exception.AiProviderBillingException;
 import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.exception.AiProviderOverloadedException;
+import ru.safeai.gateway.ai.exception.AiProviderQuotaExceededException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
 import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
 import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
@@ -28,6 +32,26 @@ import java.time.Duration;
 public class AiExceptionHandler {
 
     private final ApiErrorResponseFactory errorResponseFactory;
+
+    @ExceptionHandler(AiContextLimitException.class)
+    public ResponseEntity<ApiErrorResponse> handleContextLimit(
+            AiContextLimitException exception,
+            HttpServletRequest request
+    ) {
+        log.debug(
+                "AI context rejected: path={}, message={}",
+                request.getRequestURI(),
+                exception.getMessage()
+        );
+
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                ApiErrorCode.BAD_REQUEST,
+                "Сообщение или история чата превышают допустимый AI-контекст",
+                request,
+                null
+        );
+    }
 
     @ExceptionHandler(AiProviderTimeoutException.class)
     public ResponseEntity<ApiErrorResponse> handleTimeout(
@@ -77,6 +101,25 @@ public class AiExceptionHandler {
         );
     }
 
+    @ExceptionHandler({
+            AiProviderQuotaExceededException.class,
+            AiProviderBillingException.class
+    })
+    public ResponseEntity<ApiErrorResponse> handleProviderAccountFailure(
+            AiProviderException exception,
+            HttpServletRequest request
+    ) {
+        logProviderError(exception, request);
+
+        return buildResponse(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                ApiErrorCode.AI_PROVIDER_UNAVAILABLE,
+                "AI-провайдер временно недоступен из-за конфигурации аккаунта",
+                request,
+                null
+        );
+    }
+
     @ExceptionHandler(AiProviderUnavailableException.class)
     public ResponseEntity<ApiErrorResponse> handleUnavailable(
             AiProviderUnavailableException exception,
@@ -115,17 +158,22 @@ public class AiExceptionHandler {
     ) {
         String logMessage =
                 "AI provider error: provider={}, model={}, "
-                        + "errorType={}, statusCode={}, "
+                        + "errorType={}, providerErrorCode={}, statusCode={}, "
                         + "providerRequestId={}, retryRecommended={}, "
                         + "outcomeAmbiguous={}, path={}";
 
         if (exception.getErrorType()
-                == AiProviderErrorType.AUTHENTICATION) {
+                == AiProviderErrorType.AUTHENTICATION
+                || exception.getErrorType()
+                == AiProviderErrorType.BILLING_ERROR
+                || exception.getErrorType()
+                == AiProviderErrorType.QUOTA_EXHAUSTED) {
             log.error(
                     logMessage,
                     exception.getProvider(),
                     exception.getModel(),
                     exception.getErrorType(),
+                    exception.getProviderErrorCode(),
                     exception.getStatusCode(),
                     exception.getProviderRequestId(),
                     exception.isRetryRecommended(),
@@ -133,7 +181,6 @@ public class AiExceptionHandler {
                     request.getRequestURI(),
                     exception
             );
-
             return;
         }
 
@@ -142,6 +189,7 @@ public class AiExceptionHandler {
                 exception.getProvider(),
                 exception.getModel(),
                 exception.getErrorType(),
+                exception.getProviderErrorCode(),
                 exception.getStatusCode(),
                 exception.getProviderRequestId(),
                 exception.isRetryRecommended(),
@@ -159,14 +207,13 @@ public class AiExceptionHandler {
             Duration retryAfter
     ) {
         ResponseEntity.BodyBuilder builder =
-                ResponseEntity.status(status);
+                ResponseEntity.status(status)
+                        .cacheControl(CacheControl.noStore());
 
         if (retryAfter != null && !retryAfter.isNegative()) {
             long retryAfterSeconds = Math.max(
                     1L,
-                    (long) Math.ceil(
-                            retryAfter.toMillis() / 1000.0
-                    )
+                    (retryAfter.toMillis() + 999L) / 1_000L
             );
 
             builder.header(

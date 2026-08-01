@@ -1,4 +1,6 @@
 # "D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod.yml"
+# "D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod.yml"
+
 spring:
   flyway:
     locations:
@@ -16,7 +18,10 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include:
+          - health
+          - info
+          - prometheus
 
   endpoint:
     health:
@@ -25,6 +30,64 @@ management:
       show-details: never
 
 safeai:
+  ai:
+    # В production провайдер должен быть задан явно.
+    # Допустимые значения: openai или anthropic.
+    # Mock-провайдер отклоняется production-валидатором.
+    provider: ${SAFEAI_AI_PROVIDER}
+
+    context:
+      max-user-message-chars: ${SAFEAI_AI_CONTEXT_MAX_USER_MESSAGE_CHARS:16000}
+      max-instruction-chars: ${SAFEAI_AI_CONTEXT_MAX_INSTRUCTION_CHARS:32000}
+      max-history-messages: ${SAFEAI_AI_CONTEXT_MAX_HISTORY_MESSAGES:100}
+      max-message-chars: ${SAFEAI_AI_CONTEXT_MAX_MESSAGE_CHARS:50000}
+      max-total-input-chars: ${SAFEAI_AI_CONTEXT_MAX_TOTAL_INPUT_CHARS:250000}
+      chars-per-estimated-token: ${SAFEAI_AI_CONTEXT_CHARS_PER_ESTIMATED_TOKEN:3}
+      message-overhead-tokens: ${SAFEAI_AI_CONTEXT_MESSAGE_OVERHEAD_TOKENS:8}
+      safety-margin-tokens: ${SAFEAI_AI_CONTEXT_SAFETY_MARGIN_TOKENS:1024}
+
+    # Для синхронного servlet-flow повторный provider-вызов
+    # по умолчанию отключён.
+    retry:
+      enabled: ${SAFEAI_AI_RETRY_ENABLED:false}
+      max-attempts: ${SAFEAI_AI_RETRY_MAX_ATTEMPTS:1}
+      initial-backoff: ${SAFEAI_AI_RETRY_INITIAL_BACKOFF:250ms}
+      max-backoff: ${SAFEAI_AI_RETRY_MAX_BACKOFF:2s}
+      max-retry-after: ${SAFEAI_AI_RETRY_MAX_RETRY_AFTER:10s}
+      total-timeout: ${SAFEAI_AI_RETRY_TOTAL_TIMEOUT:65s}
+
+    openai:
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      api-key: ${OPENAI_API_KEY:}
+      model: ${OPENAI_MODEL:}
+      max-input-tokens: ${OPENAI_MAX_INPUT_TOKENS:64000}
+      max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS:2048}
+      max-response-chars: ${OPENAI_MAX_RESPONSE_CHARS:100000}
+      max-response-body-bytes: ${OPENAI_MAX_RESPONSE_BODY_BYTES:2097152}
+      store: ${OPENAI_STORE:false}
+      connect-timeout: ${OPENAI_CONNECT_TIMEOUT:5s}
+      read-timeout: ${OPENAI_READ_TIMEOUT:60s}
+
+    anthropic:
+      base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/v1}
+      api-key: ${ANTHROPIC_API_KEY:}
+      model: ${ANTHROPIC_MODEL:}
+      version: ${ANTHROPIC_VERSION:2023-06-01}
+      max-input-tokens: ${ANTHROPIC_MAX_INPUT_TOKENS:64000}
+      max-tokens: ${ANTHROPIC_MAX_TOKENS:2048}
+      max-response-chars: ${ANTHROPIC_MAX_RESPONSE_CHARS:100000}
+      max-response-body-bytes: ${ANTHROPIC_MAX_RESPONSE_BODY_BYTES:2097152}
+      connect-timeout: ${ANTHROPIC_CONNECT_TIMEOUT:5s}
+      read-timeout: ${ANTHROPIC_READ_TIMEOUT:60s}
+
+    # Демонстрационные цены из application.yml в production
+    # должны быть отключены.
+    #
+    # Для реального расчёта стоимости подключите точные resolved model IDs
+    # и версионированный источник тарифов.
+    pricing:
+      models: []
+
   auth:
     cookies:
       secure: ${SAFEAI_AUTH_COOKIES_SECURE:true}
@@ -34,12 +97,11 @@ safeai:
       refresh-token-absolute-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_ABSOLUTE_MAX_AGE:90d}
       reuse-detection-retention: ${SAFEAI_AUTH_REUSE_DETECTION_RETENTION:7d}
 
-      # Empty value means a host-only cookie.
+      # Пустое значение означает host-only cookie.
       domain: ${SAFEAI_AUTH_COOKIES_DOMAIN:}
 
-      # With Secure=true and an empty Domain, AuthCookieProperties can choose
-      # hardened production names such as __Host-safeai-access and
-      # __Secure-safeai-refresh.
+      # При Secure=true и пустом Domain могут использоваться
+      # hardened cookie names.
       access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:}
       refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:}
 
@@ -72,7 +134,8 @@ safeai:
       trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:172.28.0.0/24}
 
     user-status-cache:
-      # Security state is read from PostgreSQL on each authenticated request.
+      # Security state читается из PostgreSQL
+      # на каждом authenticated request.
       enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:false}
       ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
       key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status}
@@ -102,15 +165,7 @@ safeai:
       cron: "${SAFEAI_AUDIT_RETENTION_CRON:0 30 3 * * *}"
       zone: ${SAFEAI_AUDIT_RETENTION_ZONE:UTC}
 
-  ai:
-    provider: ${SAFEAI_AI_PROVIDER}
-
-    retry:
-      enabled: ${SAFEAI_AI_RETRY_ENABLED:true}
-      max-attempts: ${SAFEAI_AI_RETRY_MAX_ATTEMPTS:2}
-      initial-backoff: ${SAFEAI_AI_RETRY_INITIAL_BACKOFF:250ms}
-      max-backoff: ${SAFEAI_AI_RETRY_MAX_BACKOFF:2s}
-      max-retry-after: ${SAFEAI_AI_RETRY_MAX_RETRY_AFTER:10s}
-
-# Management port, network restrictions and authentication are
-# deployment-specific. Do not expose /actuator/prometheus publicly.
+# Management port, network restrictions и authentication
+# задаются инфраструктурой deployment.
+#
+# Не публикуйте /actuator/prometheus напрямую в интернет.

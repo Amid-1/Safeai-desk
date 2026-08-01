@@ -1,14 +1,13 @@
 # "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local-nginx.yml"
-app:
-  security:
-    jwt:
-      issuer: http://localhost:8080
+# "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local-nginx.yml"
 
-spring:
-  flyway:
-    locations:
-      - classpath:db/migration
-      - classpath:db/local-migration
+# Профиль local-nginx автоматически включает профиль local
+# через spring.profiles.group.local-nginx в application.yml.
+#
+# В этом файле находятся только отличия запуска через локальный Nginx.
+
+server:
+  forward-headers-strategy: framework
 
 safeai:
   security:
@@ -17,45 +16,3 @@ safeai:
         - 127.0.0.1/32
         - ::1/128
         - 172.16.0.0/12
-
-    user-status-cache:
-      enabled: true
-      ttl: 60s
-      key-prefix: safeai:local:user-status
-
-    hsts:
-      enabled: false
-
-  auth:
-    cookies:
-      secure: false
-      same-site: Lax
-      access-token-max-age: 15m
-      refresh-token-max-age: 30d
-      refresh-token-absolute-max-age: 90d
-      reuse-detection-retention: 7d
-      domain: ""
-      access-token-name: safeai-access
-      refresh-token-name: safeai-refresh
-
-  rate-limit:
-    redis:
-      key-prefix: safeai:local
-      hmac-secret: ${SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET:safeai-local-rate-limit-hmac-secret-change-before-production-2026}
-      key-version: v1
-
-    login:
-      audit-organization-id: ${SAFEAI_RATE_LIMIT_LOGIN_AUDIT_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}
-
-  audit:
-    retention:
-      enabled: false
-
-  ai:
-    provider: mock
-
-    retry:
-      enabled: false
-
-server:
-  forward-headers-strategy: framework

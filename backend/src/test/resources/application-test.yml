@@ -13,21 +13,58 @@ spring:
       repositories:
         enabled: false
 
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
   flyway:
+    enabled: true
     locations:
       - classpath:db/migration
+    validate-migration-naming: true
     postgresql:
       transactional-lock: false
 
 safeai:
+  platform:
+    organization-id: 00000000-0000-0000-0000-000000000001
+
+  ai:
+    # Общие интеграционные тесты не обращаются
+    # к внешним AI-провайдерам.
+    provider: mock
+
+    retry:
+      enabled: false
+      max-attempts: 1
+      total-timeout: 5s
+
+    pricing:
+      models:
+        - model: mock-safeai
+          input-usd-per-1m-tokens: 0
+          output-usd-per-1m-tokens: 0
+          currency: USD
+          version: mock-2026-01
+
   auth:
     cookies:
       secure: false
       same-site: Lax
-      access-token-max-age: 15m
-      refresh-token-max-age: 30d
-      refresh-token-absolute-max-age: 90d
-      reuse-detection-retention: 7d
+
+      # Должно совпадать с
+      # app.security.jwt.expiration-minutes: 15
+      access-token-max-age: PT15M
+
+      refresh-token-max-age: P30D
+      refresh-token-absolute-max-age: P90D
+      reuse-detection-retention: P7D
+
       domain: ""
       access-token-name: safeai-access
       refresh-token-name: safeai-refresh
@@ -36,45 +73,6 @@ safeai:
       cron: "0 0 3 * * *"
       batch-size: 200
       max-batches-per-run: 100
-
-  ai:
-    provider: mock
-
-    anthropic:
-      api-key: test-anthropic-key
-      model: claude-opus-4-8
-      version: 2023-06-01
-      base-url: https://api.anthropic.com/v1
-      max-tokens: 1024
-      max-response-chars: 100000
-      connect-timeout: 5s
-      read-timeout: 60s
-
-    openai:
-      api-key: test-openai-key
-
-    retry:
-      enabled: false
-
-  audit:
-    outbox:
-      batch-size: 100
-      poll-delay-ms: 3600000
-
-    retention:
-      enabled: false
-
-  security:
-    user-status-cache:
-      enabled: false
-      ttl: 60s
-      key-prefix: "safeai:test:user-status:"
-
-    hsts:
-      enabled: false
-
-  user-management:
-    permanent-deletion-retention: 0s
 
   rate-limit:
     redis:
@@ -94,3 +92,31 @@ safeai:
       user-limit-per-hour: 20
       admin-limit-per-hour: 100
       organization-limit-per-hour: 1000
+
+  security:
+    client-ip:
+      trusted-proxy-cidrs:
+        - 127.0.0.1/32
+        - ::1/128
+
+    user-status-cache:
+      enabled: false
+      ttl: 60s
+      key-prefix: safeai:test:user-status
+
+    hsts:
+      enabled: false
+
+  audit:
+    outbox:
+      batch-size: 100
+
+      # Практически отключает автоматический polling
+      # во время тестов.
+      poll-delay-ms: 3600000
+
+    retention:
+      enabled: false
+
+  user-management:
+    permanent-deletion-retention: 0s

@@ -1,20 +1,26 @@
 package ru.safeai.gateway.ai.provider.openai;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
-import ru.safeai.gateway.ai.dto.AiMessageRole;
+import ru.safeai.gateway.ai.exception.AiProviderBillingException;
 import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.exception.AiProviderOverloadedException;
+import ru.safeai.gateway.ai.exception.AiProviderQuotaExceededException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
+import ru.safeai.gateway.ai.provider.AiContextWindowService;
 import ru.safeai.gateway.ai.provider.AiProvider;
+import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
 import ru.safeai.gateway.ai.provider.AiProviderSupport;
 import ru.safeai.gateway.ai.provider.AiRestClientFactory;
@@ -24,12 +30,12 @@ import tools.jackson.databind.JsonNode;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Set;
 
 import static ru.safeai.gateway.ai.provider.AiJsonNodeSupport.textOrNull;
 import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.fromResourceAccess;
 import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.parsingFailure;
 import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.unknownFailure;
-
 
 @Slf4j
 @Service
@@ -42,47 +48,109 @@ public class OpenAiProvider implements AiProvider {
     private static final String PROVIDER_NAME = "openai";
     private static final String PROVIDER_DISPLAY_NAME = "OpenAI";
 
+    private static final Set<String> QUOTA_CODES = Set.of(
+            "insufficient_quota",
+            "credit_balance_exhausted",
+            "organization_spend_limit_exceeded",
+            "project_spend_limit_exceeded",
+            "organization_usage_limit_exceeded"
+    );
+
+    private static final Set<String> BILLING_CODES = Set.of(
+            "billing_error",
+            "billing_not_active"
+    );
+
     private final OpenAiProperties properties;
     private final RestClient client;
     private final AiResponseMetadataService responseMetadataService;
     private final AiProviderRetryExecutor retryExecutor;
+    private final AiContextWindowService contextWindowService;
     private final Clock clock;
 
+    @Autowired
+    public OpenAiProvider(
+            OpenAiProperties properties,
+            AiResponseMetadataService responseMetadataService,
+            AiProviderRetryExecutor retryExecutor,
+            AiContextWindowService contextWindowService,
+            Clock clock
+    ) {
+        this(
+                properties,
+                responseMetadataService,
+                retryExecutor,
+                contextWindowService,
+                clock,
+                AiRestClientFactory.create(
+                        properties.baseUrl(),
+                        properties.connectTimeout(),
+                        properties.readTimeout(),
+                        properties.maxResponseBodyBytes()
+                )
+        );
+    }
+
+    /**
+     * Совместимость с прежними unit-тестами.
+     */
     public OpenAiProvider(
             OpenAiProperties properties,
             AiResponseMetadataService responseMetadataService,
             AiProviderRetryExecutor retryExecutor,
             Clock clock
     ) {
+        this(
+                properties,
+                responseMetadataService,
+                retryExecutor,
+                AiContextWindowService.defaults(),
+                clock
+        );
+    }
+
+    OpenAiProvider(
+            OpenAiProperties properties,
+            AiResponseMetadataService responseMetadataService,
+            AiProviderRetryExecutor retryExecutor,
+            AiContextWindowService contextWindowService,
+            Clock clock,
+            RestClient client
+    ) {
         this.properties = properties;
         this.responseMetadataService = responseMetadataService;
         this.retryExecutor = retryExecutor;
+        this.contextWindowService = contextWindowService;
         this.clock = clock;
-        this.client = AiRestClientFactory.create(
-                properties.baseUrl(),
-                properties.connectTimeout(),
-                properties.readTimeout()
-        );
+        this.client = client;
     }
 
     @Override
     public AiChatResponse sendMessage(AiChatRequest request) {
+        AiChatRequest prepared = contextWindowService.prepare(
+                request,
+                properties.maxInputTokens(),
+                properties.maxOutputTokens()
+        );
+
         return retryExecutor.execute(
                 PROVIDER_NAME,
                 properties.model(),
-                () -> doSendMessage(request)
+                prepared.providerOperationId(),
+                attemptTimeout(),
+                attempt -> doSendMessage(prepared, attempt)
         );
     }
 
-    private AiChatResponse doSendMessage(AiChatRequest request) {
+    private AiChatResponse doSendMessage(
+            AiChatRequest request,
+            AiProviderAttemptContext attempt
+    ) {
         Map<String, Object> payload = Map.of(
                 "model",
                 properties.model(),
                 "input",
-                AiProviderSupport.buildMessages(
-                        request,
-                        this::normalizeRole
-                ),
+                AiProviderSupport.buildOpenAiInput(request),
                 "max_output_tokens",
                 properties.maxOutputTokens(),
                 "store",
@@ -92,7 +160,7 @@ public class OpenAiProvider implements AiProvider {
         long startedAt = System.nanoTime();
 
         try {
-            JsonNode response = client.post()
+            ResponseEntity<JsonNode> responseEntity = client.post()
                     .uri("/responses")
                     .header(
                             HttpHeaders.AUTHORIZATION,
@@ -104,14 +172,21 @@ public class OpenAiProvider implements AiProvider {
                     )
                     .header(
                             "X-Client-Request-Id",
-                            request.providerOperationId().toString()
+                            attempt.attemptId().toString()
                     )
                     .body(payload)
                     .retrieve()
-                    .body(JsonNode.class);
+                    .toEntity(JsonNode.class);
+
+            String providerRequestId =
+                    AiProviderSupport.extractProviderRequestId(
+                            responseEntity.getHeaders()
+                    );
 
             return createResponse(
-                    response,
+                    responseEntity.getBody(),
+                    providerRequestId,
+                    attempt,
                     startedAt
             );
         } catch (ResourceAccessException exception) {
@@ -137,25 +212,33 @@ public class OpenAiProvider implements AiProvider {
 
     private AiChatResponse createResponse(
             JsonNode response,
+            String providerRequestId,
+            AiProviderAttemptContext attempt,
             long startedAt
     ) {
-        ParsedOpenAiResponse parsed =
-                parseResponse(response);
+        ParsedOpenAiResponse parsed = parseResponse(response);
 
         AiResponseMetadataService.AiResponseMetadata metadata =
                 responseMetadataService.extract(
                         response,
-                        properties.model()
+                        parsed.actualModel()
                 );
 
         long durationMs =
                 (System.nanoTime() - startedAt) / 1_000_000;
 
         log.debug(
-                "OpenAI response: model={}, outcome={}, durationMs={}, "
+                "OpenAI response: requestedModel={}, actualModel={}, "
+                        + "operationId={}, attemptId={}, providerRequestId={}, "
+                        + "outcome={}, finishReason={}, durationMs={}, "
                         + "inputTokens={}, outputTokens={}, pricingStatus={}",
                 properties.model(),
+                parsed.actualModel(),
+                attempt.operationId(),
+                attempt.attemptId(),
+                providerRequestId,
                 parsed.status(),
+                parsed.finishReason(),
                 durationMs,
                 metadata.inputTokens(),
                 metadata.outputTokens(),
@@ -165,7 +248,9 @@ public class OpenAiProvider implements AiProvider {
         return AiChatResponse.fromProvider(
                 parsed.content(),
                 properties.model(),
+                parsed.actualModel(),
                 parsed.providerMessageId(),
+                providerRequestId,
                 parsed.status(),
                 parsed.finishReason(),
                 metadata.inputTokens(),
@@ -180,9 +265,7 @@ public class OpenAiProvider implements AiProvider {
         int status = exception.getStatusCode().value();
 
         String requestId =
-                AiProviderSupport.extractProviderRequestId(
-                        exception
-                );
+                AiProviderSupport.extractProviderRequestId(exception);
 
         Duration retryAfter =
                 AiProviderSupport.extractRetryAfter(
@@ -190,48 +273,99 @@ public class OpenAiProvider implements AiProvider {
                         clock
                 );
 
+        AiProviderSupport.ProviderErrorDetails error =
+                AiProviderSupport.extractProviderError(exception);
+
+        String errorCode = error.code() != null
+                ? error.code()
+                : error.type();
+
         if (status == 429) {
+            if (errorCode != null
+                    && QUOTA_CODES.contains(errorCode)) {
+                return new AiProviderQuotaExceededException(
+                        PROVIDER_NAME,
+                        properties.model(),
+                        status,
+                        requestId,
+                        errorCode,
+                        "OpenAI quota or spend limit exhausted",
+                        exception
+                );
+            }
+
+            if (errorCode != null
+                    && BILLING_CODES.contains(errorCode)) {
+                return new AiProviderBillingException(
+                        PROVIDER_NAME,
+                        properties.model(),
+                        status,
+                        requestId,
+                        errorCode,
+                        "OpenAI billing error",
+                        exception
+                );
+            }
+
             return new AiProviderRateLimitedException(
                     PROVIDER_NAME,
                     properties.model(),
                     status,
                     requestId,
+                    errorCode,
                     retryAfter,
-                    retryAfter != null,
+                    true,
                     "OpenAI API rate limited",
                     exception
             );
         }
 
-        AiProviderErrorType type = switch (status) {
-            case 401, 403 ->
-                    AiProviderErrorType.AUTHENTICATION;
+        if (status == 503) {
+            return new AiProviderOverloadedException(
+                    PROVIDER_NAME,
+                    properties.model(),
+                    status,
+                    requestId,
+                    retryAfter,
+                    "OpenAI API overloaded",
+                    exception
+            );
+        }
 
-            case 400, 404, 409, 422 ->
-                    AiProviderErrorType.INVALID_REQUEST;
+        AiProviderErrorType type = switch (status) {
+            case 401 -> AiProviderErrorType.AUTHENTICATION;
+
+            case 403 -> AiProviderErrorType.PERMISSION_DENIED;
+
+            case 400, 404, 409, 413, 422 -> AiProviderErrorType.INVALID_REQUEST;
+
+            case 408, 504 -> AiProviderErrorType.TIMEOUT;
 
             default -> status >= 500
                     ? AiProviderErrorType.SERVER_ERROR
                     : AiProviderErrorType.UNKNOWN;
         };
 
+        boolean ambiguous =
+                status == 408
+                        || status >= 500;
+
         return new AiProviderException(
                 PROVIDER_NAME,
                 properties.model(),
                 status,
                 requestId,
+                errorCode,
                 type,
                 false,
-                status >= 500,
+                ambiguous,
                 retryAfter,
                 "OpenAI API error: status=" + status,
                 exception
         );
     }
 
-    private ParsedOpenAiResponse parseResponse(
-            JsonNode response
-    ) {
+    private ParsedOpenAiResponse parseResponse(JsonNode response) {
         if (response == null) {
             throw parsingFailure(
                     PROVIDER_NAME,
@@ -243,72 +377,118 @@ public class OpenAiProvider implements AiProvider {
         String providerMessageId =
                 textOrNull(response.get("id"));
 
+        String actualModel = AiProviderSupport.resolvedModel(
+                response,
+                properties.model()
+        );
+
         String statusValue =
                 textOrNull(response.get("status"));
 
-        if ("failed".equals(statusValue)
-                || "cancelled".equals(statusValue)) {
+        if (statusValue == null) {
             throw parsingFailure(
                     PROVIDER_NAME,
-                    properties.model(),
-                    "OpenAI response status=" + statusValue
+                    actualModel,
+                    "OpenAI returned no response status"
             );
         }
 
-        String normalText =
-                extractOutputText(
-                        response,
-                        "output_text",
-                        "text"
-                );
+        switch (statusValue) {
+            case "failed", "cancelled" -> throw parsingFailure(
+                    PROVIDER_NAME,
+                    actualModel,
+                    "OpenAI response status=" + statusValue
+            );
+            case "queued", "in_progress" -> throw parsingFailure(
+                    PROVIDER_NAME,
+                    actualModel,
+                    "Unexpected async OpenAI response status="
+                            + statusValue
+            );
+            case "completed", "incomplete" -> {
+                // Разбор результата ниже.
+            }
+            default -> throw parsingFailure(
+                    PROVIDER_NAME,
+                    actualModel,
+                    "Unknown OpenAI response status=" + statusValue
+            );
+        }
 
-        String refusalText =
-                extractOutputText(
-                        response,
-                        "refusal",
-                        "refusal"
-                );
+        String normalText = extractOutputText(
+                response,
+                "output_text",
+                "text",
+                actualModel
+        );
+
+        String refusalText = extractOutputText(
+                response,
+                "refusal",
+                "refusal",
+                actualModel
+        );
 
         AiResponseStatus status;
         String content;
-        String finishReason = statusValue;
+        String finishReason;
 
-        if (normalText != null) {
-            content = normalText;
-            status = "incomplete".equals(statusValue)
-                    ? AiResponseStatus.INCOMPLETE
-                    : AiResponseStatus.COMPLETED;
-        } else if (refusalText != null) {
+        if (refusalText != null) {
             content = refusalText;
             status = AiResponseStatus.REFUSED;
             finishReason = "refusal";
+        } else if (normalText != null) {
+            content = normalText;
+
+            if ("incomplete".equals(statusValue)) {
+                status = AiResponseStatus.INCOMPLETE;
+                finishReason = incompleteReason(response);
+            } else {
+                status = AiResponseStatus.COMPLETED;
+                finishReason = "completed";
+            }
         } else {
             throw parsingFailure(
                     PROVIDER_NAME,
-                    properties.model(),
+                    actualModel,
                     "OpenAI returned no output text or refusal"
             );
         }
 
+        String validContent =
+                AiProviderSupport.requireValidContent(
+                        PROVIDER_NAME,
+                        actualModel,
+                        content,
+                        properties.maxResponseChars()
+                );
+
         return new ParsedOpenAiResponse(
-                content,
+                validContent,
                 providerMessageId,
                 status,
-                finishReason
+                finishReason,
+                actualModel
         );
     }
 
     private String extractOutputText(
             JsonNode response,
             String acceptedType,
-            String fieldName
+            String fieldName,
+            String actualModel
     ) {
         if ("output_text".equals(acceptedType)) {
             String direct =
                     textOrNull(response.get("output_text"));
 
             if (direct != null) {
-                return direct;
+                return AiProviderSupport.requireValidContent(
+                        PROVIDER_NAME,
+                        actualModel,
+                        direct,
+                        properties.maxResponseChars()
+                );
             }
         }
 
@@ -338,15 +518,13 @@ public class OpenAiProvider implements AiProvider {
                 String value =
                         textOrNull(contentItem.get(fieldName));
 
-                if (value == null) {
-                    continue;
-                }
-
-                if (!result.isEmpty()) {
-                    result.append("\n\n");
-                }
-
-                result.append(value);
+                AiProviderSupport.appendBoundedText(
+                        result,
+                        value,
+                        properties.maxResponseChars(),
+                        PROVIDER_NAME,
+                        actualModel
+                );
             }
         }
 
@@ -355,15 +533,32 @@ public class OpenAiProvider implements AiProvider {
                 : result.toString();
     }
 
-    private String normalizeRole(AiMessageRole role) {
-        return role.providerValue();
+    private String incompleteReason(JsonNode response) {
+        JsonNode details = response.get("incomplete_details");
+
+        if (details == null || !details.isObject()) {
+            return "incomplete";
+        }
+
+        String reason = textOrNull(details.get("reason"));
+        return reason == null ? "incomplete" : reason;
+    }
+
+    private Duration attemptTimeout() {
+        try {
+            return properties.connectTimeout()
+                    .plus(properties.readTimeout());
+        } catch (ArithmeticException exception) {
+            return properties.readTimeout();
+        }
     }
 
     private record ParsedOpenAiResponse(
             String content,
             String providerMessageId,
             AiResponseStatus status,
-            String finishReason
+            String finishReason,
+            String actualModel
     ) {
     }
 }

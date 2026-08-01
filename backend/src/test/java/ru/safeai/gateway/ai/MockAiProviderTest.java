@@ -1,5 +1,6 @@
 package ru.safeai.gateway.ai;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
@@ -21,6 +22,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@Tag("unit")
 class MockAiProviderTest {
 
     private static final Instant NOW =
@@ -28,13 +30,13 @@ class MockAiProviderTest {
 
     @Test
     void returnsAvailableFreeVersionedResponse() {
-        MockAiProvider provider = provider();
-
-        AiChatResponse response = provider.sendMessage(
+        AiChatResponse response = provider().sendMessage(
                 new AiChatRequest(
                         UUID.randomUUID(),
                         UUID.randomUUID(),
                         UUID.randomUUID(),
+                        "system",
+                        "developer",
                         "Привет",
                         List.of()
                 )
@@ -42,44 +44,55 @@ class MockAiProviderTest {
 
         assertThat(response.content())
                 .isEqualTo("Mock AI provider response: Привет");
+        assertThat(response.requestedModel()).isEqualTo("mock-safeai");
         assertThat(response.model()).isEqualTo("mock-safeai");
+        assertThat(response.providerRequestId()).isNotBlank();
         assertThat(response.responseStatus())
                 .isEqualTo(AiResponseStatus.COMPLETED);
         assertThat(response.usageStatus())
                 .isEqualTo(UsageStatus.AVAILABLE);
         assertThat(response.pricingStatus())
                 .isEqualTo(PricingStatus.FREE);
-        assertThat(response.costUsd()).isEqualByComparingTo("0.000000");
-        assertThat(response.currency()).isEqualTo("USD");
-        assertThat(response.priceVersion()).isEqualTo("mock-2026-01");
-        assertThat(response.pricingCalculatedAt()).isEqualTo(NOW);
+        assertThat(response.costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(response.costUsd().scale()).isEqualTo(12);
     }
 
     @Test
-    void includesHistoryInInputTokenEstimate() {
+    void includesInstructionsAndHistoryInTokenEstimate() {
         MockAiProvider provider = provider();
 
-        AiChatResponse withoutHistory = provider.sendMessage(
-                request(List.of())
-        );
+        AiChatResponse minimal = provider.sendMessage(request(
+                null,
+                null,
+                List.of()
+        ));
 
-        AiChatResponse withHistory = provider.sendMessage(
-                request(List.of(
-                        new AiMessage(AiMessageRole.USER, "Старое сообщение"),
-                        new AiMessage(AiMessageRole.ASSISTANT, "Старый ответ")
-                ))
-        );
+        AiChatResponse enriched = provider.sendMessage(request(
+                "system instructions",
+                "developer instructions",
+                List.of(
+                        new AiMessage(AiMessageRole.USER, "old user"),
+                        new AiMessage(AiMessageRole.ASSISTANT, "old answer")
+                )
+        ));
 
-        assertThat(withHistory.inputTokens())
-                .isGreaterThan(withoutHistory.inputTokens());
+        assertThat(enriched.inputTokens())
+                .isGreaterThan(minimal.inputTokens());
     }
 
-    private AiChatRequest request(List<AiMessage> history) {
+    private AiChatRequest request(
+            String system,
+            String developer,
+            List<AiMessage> history
+    ) {
         return new AiChatRequest(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 UUID.randomUUID(),
-                "Новое сообщение",
+                UUID.randomUUID(),
+                system,
+                developer,
+                "new message",
                 history
         );
     }

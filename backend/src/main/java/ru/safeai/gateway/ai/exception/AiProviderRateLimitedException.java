@@ -15,11 +15,36 @@ public class AiProviderRateLimitedException
             String message,
             Throwable cause
     ) {
+        this(
+                provider,
+                model,
+                statusCode,
+                providerRequestId,
+                null,
+                retryAfter,
+                retryRecommended,
+                message,
+                cause
+        );
+    }
+
+    public AiProviderRateLimitedException(
+            String provider,
+            String model,
+            Integer statusCode,
+            String providerRequestId,
+            String providerErrorCode,
+            Duration retryAfter,
+            boolean retryRecommended,
+            String message,
+            Throwable cause
+    ) {
         super(
                 provider,
                 model,
                 statusCode,
                 providerRequestId,
+                providerErrorCode,
                 AiProviderErrorType.RATE_LIMITED,
                 retryRecommended,
                 false,

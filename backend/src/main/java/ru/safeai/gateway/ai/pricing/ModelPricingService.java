@@ -17,14 +17,14 @@ public class ModelPricingService {
     private static final BigDecimal ONE_MILLION =
             BigDecimal.valueOf(1_000_000L);
 
-    private static final int INTERMEDIATE_SCALE = 12;
-    private static final int RESULT_SCALE = 6;
+    private static final int INTERMEDIATE_SCALE = 18;
+    private static final int RESULT_SCALE = 12;
 
     private final ModelPricingProperties properties;
     private final Clock clock;
 
     public PricingResult calculate(
-            String model,
+            String resolvedModel,
             Integer inputTokens,
             Integer outputTokens,
             UsageStatus usageStatus
@@ -32,27 +32,18 @@ public class ModelPricingService {
         Instant calculatedAt = clock.instant();
 
         if (usageStatus != UsageStatus.AVAILABLE) {
-            return PricingResult.unpriced(
-                    calculatedAt
-            );
+            return PricingResult.unpriced(calculatedAt);
         }
 
-        if (!validTokenCounters(
-                inputTokens,
-                outputTokens
-        )) {
-            return PricingResult.calculationFailed(
-                    calculatedAt
-            );
+        if (!validTokenCounters(inputTokens, outputTokens)) {
+            return PricingResult.calculationFailed(calculatedAt);
         }
 
         ModelPricingProperties.ModelPrice price =
-                properties.find(model);
+                properties.find(resolvedModel);
 
         if (price == null) {
-            return PricingResult.unpriced(
-                    calculatedAt
-            );
+            return PricingResult.unpriced(calculatedAt);
         }
 
         try {
@@ -66,6 +57,11 @@ public class ModelPricingService {
                     ? PricingStatus.FREE
                     : PricingStatus.PRICED;
 
+            if (pricingStatus == PricingStatus.PRICED
+                    && total.signum() == 0) {
+                return PricingResult.calculationFailed(calculatedAt);
+            }
+
             return new PricingResult(
                     pricingStatus,
                     total,
@@ -74,9 +70,7 @@ public class ModelPricingService {
                     calculatedAt
             );
         } catch (ArithmeticException exception) {
-            return PricingResult.calculationFailed(
-                    calculatedAt
-            );
+            return PricingResult.calculationFailed(calculatedAt);
         }
     }
 

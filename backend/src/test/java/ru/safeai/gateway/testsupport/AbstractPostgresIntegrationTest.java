@@ -124,26 +124,36 @@ public abstract class AbstractPostgresIntegrationTest {
     }
 
     @SuppressWarnings("SameParameterValue")
-    protected void insertOrganization(
-            UUID id,
-            String name,
-            boolean enabled
-    ) {
-        jdbcTemplate.update("""
-                        insert into public.organizations (
-                            id,
-                            name,
-                            enabled,
-                            created_at,
-                            updated_at,
-                            version
-                        ) values (?, ?, ?, current_timestamp, current_timestamp, 0)
-                        """,
-                id,
-                name,
-                enabled
-        );
-    }
+protected void insertOrganization(
+        UUID id,
+        String name,
+        boolean enabled
+) {
+    jdbcTemplate.update("""
+                    insert into public.organizations (
+                        id,
+                        name,
+                        normalized_name,
+                        enabled,
+                        created_at,
+                        updated_at,
+                        version
+                    ) values (
+                        ?,
+                        ?,
+                        public.normalize_organization_name(?),
+                        ?,
+                        current_timestamp,
+                        current_timestamp,
+                        0
+                    )
+                    """,
+            id,
+            name,
+            name,
+            enabled
+    );
+}
 
     protected void insertUser(
             UUID id,

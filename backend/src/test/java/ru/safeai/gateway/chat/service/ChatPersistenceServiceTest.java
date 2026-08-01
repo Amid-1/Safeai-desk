@@ -37,7 +37,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -47,25 +50,49 @@ import static org.mockito.Mockito.when;
 class ChatPersistenceServiceTest {
 
     private static final UUID USER_ID =
-            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+            UUID.fromString(
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            );
 
     private static final UUID ORGANIZATION_ID =
-            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+            UUID.fromString(
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            );
 
     private static final UUID CHAT_ID =
-            UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
+            UUID.fromString(
+                    "2251f787-044c-4ef8-80d7-60d3ce4d72af"
+            );
 
     private static final UUID USER_MESSAGE_ID =
-            UUID.fromString("11111111-1111-1111-1111-111111111111");
+            UUID.fromString(
+                    "11111111-1111-1111-1111-111111111111"
+            );
 
     private static final UUID PROVIDER_MESSAGE_ID =
-            UUID.fromString("22222222-2222-2222-2222-222222222222");
+            UUID.fromString(
+                    "22222222-2222-2222-2222-222222222222"
+            );
+
+    private static final UUID HISTORY_USER_MESSAGE_ID =
+            UUID.fromString(
+                    "33333333-3333-3333-3333-333333333333"
+            );
+
+    private static final UUID HISTORY_ASSISTANT_MESSAGE_ID =
+            UUID.fromString(
+                    "44444444-4444-4444-4444-444444444444"
+            );
 
     private static final Instant CREATED_AT =
-            Instant.parse("2026-06-12T12:00:00Z");
+            Instant.parse(
+                    "2026-06-12T12:00:00Z"
+            );
 
     private static final Instant PRICING_CALCULATED_AT =
-            Instant.parse("2026-06-12T12:00:01Z");
+            Instant.parse(
+                    "2026-06-12T12:00:01Z"
+            );
 
     @Mock
     private ChatSessionRepository chatSessionRepository;
@@ -85,53 +112,118 @@ class ChatPersistenceServiceTest {
                 chatMessageRepository,
                 auditEventService,
                 new ChatMapper(),
-                new ChatProperties(50, 30, 8_000),
+                new ChatProperties(
+                        50,
+                        30,
+                        8_000
+                ),
                 new AiHistoryBuilder()
         );
     }
 
     @Test
     void saveUserMessageSavesClientRequestIdAndUsesCompletedHistoryQuery() {
-        SafeAiUserPrincipal currentUser = currentUser();
-        ChatSessionEntity session = session();
-        UUID clientRequestId = UUID.randomUUID();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
 
-        ChatMessageEntity historyMessage = message(
-                ChatMessageRole.USER,
-                "Старое сообщение"
+        ChatSessionEntity session =
+                session();
+
+        UUID clientRequestId =
+                UUID.randomUUID();
+
+        ChatMessageEntity historyUserMessage =
+                message(
+                        ChatMessageRole.USER,
+                        "Старое сообщение"
+                );
+
+        historyUserMessage.setId(
+                HISTORY_USER_MESSAGE_ID
         );
 
-        when(chatSessionRepository
-                .findByIdAndUser_IdAndOrganization_Id(
-                        CHAT_ID,
-                        USER_ID,
-                        ORGANIZATION_ID
-                ))
-                .thenReturn(Optional.of(session));
+        historyUserMessage.setCreatedAt(
+                CREATED_AT.minusSeconds(2)
+        );
 
-        when(chatMessageRepository
-                .findBySession_IdAndClientRequestIdAndRole(
-                        CHAT_ID,
-                        clientRequestId,
-                        ChatMessageRole.USER
-                ))
-                .thenReturn(Optional.empty());
+        ChatMessageEntity historyAssistantMessage =
+                message(
+                        ChatMessageRole.ASSISTANT,
+                        "Старый ответ"
+                );
 
-        when(chatMessageRepository.findCompletedHistoryForAi(
-                eq(CHAT_ID),
-                any(Pageable.class)
-        ))
-                .thenReturn(List.of(historyMessage));
+        historyAssistantMessage.setId(
+                HISTORY_ASSISTANT_MESSAGE_ID
+        );
 
-        when(chatMessageRepository.saveAndFlush(
-                any(ChatMessageEntity.class)
-        ))
+        historyAssistantMessage.setReplyToMessageId(
+                HISTORY_USER_MESSAGE_ID
+        );
+
+        historyAssistantMessage.setCreatedAt(
+                CREATED_AT.minusSeconds(1)
+        );
+
+        when(
+                chatSessionRepository
+                        .findByIdAndUser_IdAndOrganization_Id(
+                                CHAT_ID,
+                                USER_ID,
+                                ORGANIZATION_ID
+                        )
+        )
+                .thenReturn(
+                        Optional.of(session)
+                );
+
+        when(
+                chatMessageRepository
+                        .findBySession_IdAndClientRequestIdAndRole(
+                                CHAT_ID,
+                                clientRequestId,
+                                ChatMessageRole.USER
+                        )
+        )
+                .thenReturn(
+                        Optional.empty()
+                );
+
+        /*
+         * Репозиторий возвращает историю от новых сообщений
+         * к старым, поэтому ASSISTANT располагается первым.
+         * AiHistoryBuilder преобразует её в хронологический
+         * порядок USER -> ASSISTANT.
+         */
+        when(
+                chatMessageRepository
+                        .findCompletedHistoryForAi(
+                                eq(CHAT_ID),
+                                any(Pageable.class)
+                        )
+        )
+                .thenReturn(
+                        List.of(
+                                historyAssistantMessage,
+                                historyUserMessage
+                        )
+                );
+
+        when(
+                chatMessageRepository.saveAndFlush(
+                        any(ChatMessageEntity.class)
+                )
+        )
                 .thenAnswer(invocation -> {
                     ChatMessageEntity savedMessage =
                             invocation.getArgument(0);
 
-                    savedMessage.setId(USER_MESSAGE_ID);
-                    savedMessage.setCreatedAt(CREATED_AT);
+                    savedMessage.setId(
+                            USER_MESSAGE_ID
+                    );
+
+                    savedMessage.setCreatedAt(
+                            CREATED_AT
+                    );
 
                     return savedMessage;
                 });
@@ -146,81 +238,131 @@ class ChatPersistenceServiceTest {
                         currentUser
                 );
 
-        assertThat(context.replay()).isFalse();
+        assertThat(context.replay())
+                .isFalse();
+
         assertThat(context.clientRequestId())
                 .isEqualTo(clientRequestId);
 
+        assertThat(context.aiRequest())
+                .isNotNull();
+
         assertThat(context.aiRequest().history())
                 .extracting(AiMessage::content)
-                .containsExactly("Старое сообщение");
+                .containsExactly(
+                        "Старое сообщение",
+                        "Старый ответ"
+                );
 
         ArgumentCaptor<ChatMessageEntity> captor =
-                ArgumentCaptor.forClass(ChatMessageEntity.class);
+                ArgumentCaptor.forClass(
+                        ChatMessageEntity.class
+                );
 
         verify(chatMessageRepository)
-                .saveAndFlush(captor.capture());
+                .saveAndFlush(
+                        captor.capture()
+                );
 
-        ChatMessageEntity saved = captor.getValue();
+        ChatMessageEntity saved =
+                captor.getValue();
 
         assertThat(saved.getClientRequestId())
                 .isEqualTo(clientRequestId);
 
         assertThat(saved.getRole())
-                .isEqualTo(ChatMessageRole.USER);
+                .isEqualTo(
+                        ChatMessageRole.USER
+                );
 
         assertThat(saved.getStatus())
-                .isEqualTo(ChatMessageStatus.COMPLETED);
+                .isEqualTo(
+                        ChatMessageStatus.COMPLETED
+                );
+
+        assertThat(saved.getContent())
+                .isEqualTo(
+                        "Новое сообщение"
+                );
 
         verify(auditEventService).record(
-        same(currentUser),
-        eq(ORGANIZATION_ID),
-        eq(AuditEventType.CHAT_MESSAGE_SENT),
-        anyMap()
-);
+                same(currentUser),
+                eq(ORGANIZATION_ID),
+                eq(AuditEventType.CHAT_MESSAGE_SENT),
+                anyMap()
+        );
     }
 
     @Test
     void existingCompletedTurnReturnsReplayContext() {
-        SafeAiUserPrincipal currentUser = currentUser();
-        ChatSessionEntity session = session();
-        UUID clientRequestId = UUID.randomUUID();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
 
-        ChatMessageEntity userMessage = message(
-                ChatMessageRole.USER,
-                "Привет"
+        ChatSessionEntity session =
+                session();
+
+        UUID clientRequestId =
+                UUID.randomUUID();
+
+        ChatMessageEntity userMessage =
+                message(
+                        ChatMessageRole.USER,
+                        "Привет"
+                );
+
+        userMessage.setId(
+                USER_MESSAGE_ID
         );
-        userMessage.setId(USER_MESSAGE_ID);
-        userMessage.setClientRequestId(clientRequestId);
 
-        ChatMessageEntity assistantMessage = message(
-                ChatMessageRole.ASSISTANT,
-                "Ответ"
+        userMessage.setClientRequestId(
+                clientRequestId
         );
-        assistantMessage.setReplyToMessageId(USER_MESSAGE_ID);
 
-        when(chatSessionRepository
-                .findByIdAndUser_IdAndOrganization_Id(
-                        CHAT_ID,
-                        USER_ID,
-                        ORGANIZATION_ID
-                ))
-                .thenReturn(Optional.of(session));
+        ChatMessageEntity assistantMessage =
+                message(
+                        ChatMessageRole.ASSISTANT,
+                        "Ответ"
+                );
 
-        when(chatMessageRepository
-                .findBySession_IdAndClientRequestIdAndRole(
-                        CHAT_ID,
-                        clientRequestId,
-                        ChatMessageRole.USER
-                ))
-                .thenReturn(Optional.of(userMessage));
+        assistantMessage.setReplyToMessageId(
+                USER_MESSAGE_ID
+        );
 
-        when(chatMessageRepository
-                .findFirstBySession_IdAndReplyToMessageIdAndRoleOrderByCreatedAtDescIdDesc(
-                        CHAT_ID,
-                        USER_MESSAGE_ID,
-                        ChatMessageRole.ASSISTANT
-                ))
-                .thenReturn(Optional.of(assistantMessage));
+        when(
+                chatSessionRepository
+                        .findByIdAndUser_IdAndOrganization_Id(
+                                CHAT_ID,
+                                USER_ID,
+                                ORGANIZATION_ID
+                        )
+        )
+                .thenReturn(
+                        Optional.of(session)
+                );
+
+        when(
+                chatMessageRepository
+                        .findBySession_IdAndClientRequestIdAndRole(
+                                CHAT_ID,
+                                clientRequestId,
+                                ChatMessageRole.USER
+                        )
+        )
+                .thenReturn(
+                        Optional.of(userMessage)
+                );
+
+        when(
+                chatMessageRepository
+                        .findFirstBySession_IdAndReplyToMessageIdAndRoleOrderByCreatedAtDescIdDesc(
+                                CHAT_ID,
+                                USER_MESSAGE_ID,
+                                ChatMessageRole.ASSISTANT
+                        )
+        )
+                .thenReturn(
+                        Optional.of(assistantMessage)
+                );
 
         ChatProcessingContext context =
                 service.saveUserMessageAndPrepareAiRequest(
@@ -232,93 +374,151 @@ class ChatPersistenceServiceTest {
                         currentUser
                 );
 
-        assertThat(context.replay()).isTrue();
-        assertThat(context.aiRequest()).isNull();
+        assertThat(context.replay())
+                .isTrue();
 
-        verify(chatMessageRepository, never())
-                .saveAndFlush(any(ChatMessageEntity.class));
+        assertThat(context.aiRequest())
+                .isNull();
+
+        assertThat(context.userMessageId())
+                .isEqualTo(USER_MESSAGE_ID);
+
+        assertThat(context.clientRequestId())
+                .isEqualTo(clientRequestId);
+
+        verify(
+                chatMessageRepository,
+                never()
+        ).saveAndFlush(
+                any(ChatMessageEntity.class)
+        );
     }
 
     @Test
     void existingUnfinishedTurnThrowsChatBusy() {
-        SafeAiUserPrincipal currentUser = currentUser();
-        ChatSessionEntity session = session();
-        UUID clientRequestId = UUID.randomUUID();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
 
-        ChatMessageEntity userMessage = message(
-                ChatMessageRole.USER,
-                "Привет"
+        ChatSessionEntity session =
+                session();
+
+        UUID clientRequestId =
+                UUID.randomUUID();
+
+        ChatMessageEntity userMessage =
+                message(
+                        ChatMessageRole.USER,
+                        "Привет"
+                );
+
+        userMessage.setId(
+                USER_MESSAGE_ID
         );
-        userMessage.setId(USER_MESSAGE_ID);
 
-        when(chatSessionRepository
-                .findByIdAndUser_IdAndOrganization_Id(
-                        CHAT_ID,
-                        USER_ID,
-                        ORGANIZATION_ID
-                ))
-                .thenReturn(Optional.of(session));
+        when(
+                chatSessionRepository
+                        .findByIdAndUser_IdAndOrganization_Id(
+                                CHAT_ID,
+                                USER_ID,
+                                ORGANIZATION_ID
+                        )
+        )
+                .thenReturn(
+                        Optional.of(session)
+                );
 
-        when(chatMessageRepository
-                .findBySession_IdAndClientRequestIdAndRole(
-                        CHAT_ID,
-                        clientRequestId,
-                        ChatMessageRole.USER
-                ))
-                .thenReturn(Optional.of(userMessage));
+        when(
+                chatMessageRepository
+                        .findBySession_IdAndClientRequestIdAndRole(
+                                CHAT_ID,
+                                clientRequestId,
+                                ChatMessageRole.USER
+                        )
+        )
+                .thenReturn(
+                        Optional.of(userMessage)
+                );
 
-        when(chatMessageRepository
-                .findFirstBySession_IdAndReplyToMessageIdAndRoleOrderByCreatedAtDescIdDesc(
-                        CHAT_ID,
-                        USER_MESSAGE_ID,
-                        ChatMessageRole.ASSISTANT
-                ))
-                .thenReturn(Optional.empty());
+        when(
+                chatMessageRepository
+                        .findFirstBySession_IdAndReplyToMessageIdAndRoleOrderByCreatedAtDescIdDesc(
+                                CHAT_ID,
+                                USER_MESSAGE_ID,
+                                ChatMessageRole.ASSISTANT
+                        )
+        )
+                .thenReturn(
+                        Optional.empty()
+                );
 
-        assertThatThrownBy(() ->
-                service.saveUserMessageAndPrepareAiRequest(
+        assertThatThrownBy(
+                () -> service.saveUserMessageAndPrepareAiRequest(
                         CHAT_ID,
                         new SendMessageRequest(
                                 "Привет",
                                 clientRequestId
                         ),
                         currentUser
-                ))
+                )
+        )
                 .isInstanceOf(ChatBusyException.class)
-                .hasMessageContaining("clientRequestId");
+                .hasMessageContaining(
+                        "clientRequestId"
+                );
+
+        verify(
+                chatMessageRepository,
+                never()
+        ).saveAndFlush(
+                any(ChatMessageEntity.class)
+        );
     }
 
     @Test
     void saveAssistantMessageSetsReplyAndAiMetadata() {
-        SafeAiUserPrincipal currentUser = currentUser();
-        ChatSessionEntity session = session();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
 
-        when(chatSessionRepository
-                .findByIdAndUser_IdAndOrganization_Id(
-                        CHAT_ID,
-                        USER_ID,
-                        ORGANIZATION_ID
-                ))
-                .thenReturn(Optional.of(session));
+        ChatSessionEntity session =
+                session();
 
-        when(chatMessageRepository
-                .existsByIdAndSession_IdAndSession_User_IdAndSession_Organization_IdAndRole(
-                        USER_MESSAGE_ID,
-                        CHAT_ID,
-                        USER_ID,
-                        ORGANIZATION_ID,
-                        ChatMessageRole.USER
-                ))
+        when(
+                chatSessionRepository
+                        .findByIdAndUser_IdAndOrganization_Id(
+                                CHAT_ID,
+                                USER_ID,
+                                ORGANIZATION_ID
+                        )
+        )
+                .thenReturn(
+                        Optional.of(session)
+                );
+
+        when(
+                chatMessageRepository
+                        .existsByIdAndSession_IdAndSession_User_IdAndSession_Organization_IdAndRole(
+                                USER_MESSAGE_ID,
+                                CHAT_ID,
+                                USER_ID,
+                                ORGANIZATION_ID,
+                                ChatMessageRole.USER
+                        )
+        )
                 .thenReturn(true);
 
-        when(chatMessageRepository.saveAndFlush(
-                any(ChatMessageEntity.class)
-        ))
+        when(
+                chatMessageRepository.saveAndFlush(
+                        any(ChatMessageEntity.class)
+                )
+        )
                 .thenAnswer(invocation -> {
                     ChatMessageEntity savedMessage =
                             invocation.getArgument(0);
 
-                    savedMessage.setId(UUID.randomUUID());
+                    savedMessage.setId(
+                            UUID.randomUUID()
+                    );
+
                     savedMessage.setCreatedAt(
                             CREATED_AT.plusSeconds(1)
                     );
@@ -326,14 +526,21 @@ class ChatPersistenceServiceTest {
                     return savedMessage;
                 });
 
-        when(chatMessageRepository
-                .findBySession_IdOrderByCreatedAtDescIdDesc(
-                        eq(CHAT_ID),
-                        any(Pageable.class)
-                ))
-                .thenReturn(new PageImpl<>(List.of()));
+        when(
+                chatMessageRepository
+                        .findBySession_IdOrderByCreatedAtDescIdDesc(
+                                eq(CHAT_ID),
+                                any(Pageable.class)
+                        )
+        )
+                .thenReturn(
+                        new PageImpl<>(
+                                List.of()
+                        )
+                );
 
-        AiChatResponse aiResponse = completedMockResponse();
+        AiChatResponse aiResponse =
+                completedMockResponse();
 
         service.saveAssistantMessageAndReturnChat(
                 CHAT_ID,
@@ -343,83 +550,131 @@ class ChatPersistenceServiceTest {
         );
 
         ArgumentCaptor<ChatMessageEntity> captor =
-                ArgumentCaptor.forClass(ChatMessageEntity.class);
+                ArgumentCaptor.forClass(
+                        ChatMessageEntity.class
+                );
 
         verify(chatMessageRepository)
-                .saveAndFlush(captor.capture());
+                .saveAndFlush(
+                        captor.capture()
+                );
 
-        ChatMessageEntity saved = captor.getValue();
+        ChatMessageEntity saved =
+                captor.getValue();
 
         assertThat(saved.getReplyToMessageId())
                 .isEqualTo(USER_MESSAGE_ID);
 
         assertThat(saved.getStatus())
-                .isEqualTo(ChatMessageStatus.COMPLETED);
+                .isEqualTo(
+                        ChatMessageStatus.COMPLETED
+                );
+
+        assertThat(saved.getRole())
+                .isEqualTo(
+                        ChatMessageRole.ASSISTANT
+                );
 
         assertThat(saved.getModel())
-                .isEqualTo("mock-safeai");
+                .isEqualTo(
+                        "mock-safeai"
+                );
 
         assertThat(saved.getProviderMessageId())
-                .isEqualTo(PROVIDER_MESSAGE_ID.toString());
+                .isEqualTo(
+                        PROVIDER_MESSAGE_ID.toString()
+                );
 
         assertThat(saved.getAiResponseStatus())
-                .isEqualTo(AiResponseStatus.COMPLETED);
+                .isEqualTo(
+                        AiResponseStatus.COMPLETED
+                );
 
         assertThat(saved.getFinishReason())
-                .isEqualTo("mock_completed");
+                .isEqualTo(
+                        "mock_completed"
+                );
 
-        assertThat(saved.getInputTokens()).isEqualTo(1);
-        assertThat(saved.getOutputTokens()).isEqualTo(2);
+        assertThat(saved.getInputTokens())
+                .isEqualTo(1);
+
+        assertThat(saved.getOutputTokens())
+                .isEqualTo(2);
 
         assertThat(saved.getUsageStatus())
-                .isEqualTo(UsageStatus.AVAILABLE);
+                .isEqualTo(
+                        UsageStatus.AVAILABLE
+                );
 
         assertThat(saved.getCostUsd())
-                .isEqualByComparingTo(BigDecimal.ZERO);
+                .isEqualByComparingTo(
+                        BigDecimal.ZERO
+                );
 
         assertThat(saved.getPricingStatus())
-                .isEqualTo(PricingStatus.FREE);
+                .isEqualTo(
+                        PricingStatus.FREE
+                );
 
-        assertThat(saved.getCurrency()).isEqualTo("USD");
+        assertThat(saved.getCurrency())
+                .isEqualTo("USD");
 
         assertThat(saved.getPricingVersion())
-                .isEqualTo("mock-2026-01");
+                .isEqualTo(
+                        "mock-2026-01"
+                );
 
         assertThat(saved.getPricingCalculatedAt())
-                .isEqualTo(PRICING_CALCULATED_AT);
+                .isEqualTo(
+                        PRICING_CALCULATED_AT
+                );
     }
 
     @Test
     void saveFailedAssistantMessageSetsReplyToMessageId() {
-        SafeAiUserPrincipal currentUser = currentUser();
-        ChatSessionEntity session = session();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
 
-        when(chatSessionRepository
-                .findByIdAndUser_IdAndOrganization_Id(
-                        CHAT_ID,
-                        USER_ID,
-                        ORGANIZATION_ID
-                ))
-                .thenReturn(Optional.of(session));
+        ChatSessionEntity session =
+                session();
 
-        when(chatMessageRepository
-                .existsByIdAndSession_IdAndSession_User_IdAndSession_Organization_IdAndRole(
-                        USER_MESSAGE_ID,
-                        CHAT_ID,
-                        USER_ID,
-                        ORGANIZATION_ID,
-                        ChatMessageRole.USER
-                ))
+        when(
+                chatSessionRepository
+                        .findByIdAndUser_IdAndOrganization_Id(
+                                CHAT_ID,
+                                USER_ID,
+                                ORGANIZATION_ID
+                        )
+        )
+                .thenReturn(
+                        Optional.of(session)
+                );
+
+        when(
+                chatMessageRepository
+                        .existsByIdAndSession_IdAndSession_User_IdAndSession_Organization_IdAndRole(
+                                USER_MESSAGE_ID,
+                                CHAT_ID,
+                                USER_ID,
+                                ORGANIZATION_ID,
+                                ChatMessageRole.USER
+                        )
+        )
                 .thenReturn(true);
 
-        when(chatMessageRepository.saveAndFlush(
-                any(ChatMessageEntity.class)
-        ))
+        when(
+                chatMessageRepository.saveAndFlush(
+                        any(ChatMessageEntity.class)
+                )
+        )
                 .thenAnswer(invocation -> {
                     ChatMessageEntity savedMessage =
                             invocation.getArgument(0);
 
-                    savedMessage.setId(UUID.randomUUID());
+                    savedMessage.setId(
+                            UUID.randomUUID()
+                    );
+
                     savedMessage.setCreatedAt(
                             CREATED_AT.plusSeconds(1)
                     );
@@ -430,44 +685,66 @@ class ChatPersistenceServiceTest {
         service.saveFailedAssistantMessage(
                 CHAT_ID,
                 USER_MESSAGE_ID,
-                new RuntimeException("provider failed"),
+                new RuntimeException(
+                        "provider failed"
+                ),
                 currentUser
         );
 
         ArgumentCaptor<ChatMessageEntity> captor =
-                ArgumentCaptor.forClass(ChatMessageEntity.class);
+                ArgumentCaptor.forClass(
+                        ChatMessageEntity.class
+                );
 
         verify(chatMessageRepository)
-                .saveAndFlush(captor.capture());
+                .saveAndFlush(
+                        captor.capture()
+                );
 
-        ChatMessageEntity saved = captor.getValue();
+        ChatMessageEntity saved =
+                captor.getValue();
 
         assertThat(saved.getReplyToMessageId())
                 .isEqualTo(USER_MESSAGE_ID);
 
+        assertThat(saved.getRole())
+                .isEqualTo(
+                        ChatMessageRole.ASSISTANT
+                );
+
         assertThat(saved.getStatus())
-                .isEqualTo(ChatMessageStatus.FAILED);
+                .isEqualTo(
+                        ChatMessageStatus.FAILED
+                );
     }
 
     @Test
     void assertOwnedChatExistsThrowsWhenChatIsNotOwned() {
-        SafeAiUserPrincipal currentUser = currentUser();
+        SafeAiUserPrincipal currentUser =
+                currentUser();
 
-        when(chatSessionRepository
-                .existsByIdAndUser_IdAndOrganization_Id(
-                        CHAT_ID,
-                        USER_ID,
-                        ORGANIZATION_ID
-                ))
+        when(
+                chatSessionRepository
+                        .existsByIdAndUser_IdAndOrganization_Id(
+                                CHAT_ID,
+                                USER_ID,
+                                ORGANIZATION_ID
+                        )
+        )
                 .thenReturn(false);
 
-        assertThatThrownBy(() ->
-                service.assertOwnedChatExists(
+        assertThatThrownBy(
+                () -> service.assertOwnedChatExists(
                         CHAT_ID,
                         currentUser
-                ))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Чат не найден");
+                )
+        )
+                .isInstanceOf(
+                        ResourceNotFoundException.class
+                )
+                .hasMessageContaining(
+                        "Чат не найден"
+                );
 
         verifyNoInteractions(
                 chatMessageRepository,
@@ -475,7 +752,7 @@ class ChatPersistenceServiceTest {
         );
     }
 
-    private AiChatResponse completedMockResponse() {
+    private static AiChatResponse completedMockResponse() {
         return new AiChatResponse(
                 "Ответ",
                 "mock-safeai",
@@ -493,7 +770,7 @@ class ChatPersistenceServiceTest {
         );
     }
 
-    private SafeAiUserPrincipal currentUser() {
+    private static SafeAiUserPrincipal currentUser() {
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 USER_ID,
                 ORGANIZATION_ID,
@@ -507,53 +784,108 @@ class ChatPersistenceServiceTest {
         );
     }
 
-    private ChatSessionEntity session() {
+    private static ChatSessionEntity session() {
         OrganizationEntity organization =
                 new OrganizationEntity();
 
-        organization.setId(ORGANIZATION_ID);
-        organization.setName("Demo Company");
-        organization.setEnabled(true);
+        organization.setId(
+                ORGANIZATION_ID
+        );
 
-        UserEntity user = new UserEntity();
-        user.setId(USER_ID);
-        user.setEmail("admin@test.com");
-        user.setEnabled(true);
-        user.setOrganization(organization);
+        organization.setName(
+                "Demo Company"
+        );
+
+        organization.setEnabled(
+                true
+        );
+
+        UserEntity user =
+                new UserEntity();
+
+        user.setId(
+                USER_ID
+        );
+
+        user.setEmail(
+                "admin@test.com"
+        );
+
+        user.setEnabled(
+                true
+        );
+
+        user.setOrganization(
+                organization
+        );
 
         ChatSessionEntity chatSession =
                 new ChatSessionEntity();
 
-        chatSession.setId(CHAT_ID);
-        chatSession.setUser(user);
-        chatSession.setOrganization(organization);
-        chatSession.setTitle("Чат");
-        chatSession.setCreatedAt(CREATED_AT);
-        chatSession.setUpdatedAt(CREATED_AT);
+        chatSession.setId(
+                CHAT_ID
+        );
+
+        chatSession.setUser(
+                user
+        );
+
+        chatSession.setOrganization(
+                organization
+        );
+
+        chatSession.setTitle(
+                "Чат"
+        );
+
+        chatSession.setCreatedAt(
+                CREATED_AT
+        );
+
+        chatSession.setUpdatedAt(
+                CREATED_AT
+        );
 
         return chatSession;
     }
 
-    private ChatMessageEntity message(
+    private static ChatMessageEntity message(
             ChatMessageRole role,
             String content
     ) {
-        ChatSessionEntity chatSession = session();
+        ChatSessionEntity chatSession =
+                session();
 
         ChatMessageEntity chatMessage =
                 new ChatMessageEntity();
 
-        chatMessage.setId(UUID.randomUUID());
-        chatMessage.setSession(chatSession);
+        chatMessage.setId(
+                UUID.randomUUID()
+        );
+
+        chatMessage.setSession(
+                chatSession
+        );
+
         chatMessage.setOrganization(
                 chatSession.getOrganization()
         );
-        chatMessage.setRole(role);
-        chatMessage.setContent(content);
+
+        chatMessage.setRole(
+                role
+        );
+
+        chatMessage.setContent(
+                content
+        );
+
         chatMessage.setStatus(
                 ChatMessageStatus.COMPLETED
         );
-        chatMessage.setCreatedAt(CREATED_AT);
+
+        chatMessage.setCreatedAt(
+                CREATED_AT
+        );
 
         return chatMessage;
     }
