@@ -3,130 +3,46 @@ package ru.safeai.gateway.chat.service;
 import org.springframework.stereotype.Component;
 import ru.safeai.gateway.ai.dto.AiMessage;
 import ru.safeai.gateway.ai.dto.AiMessageRole;
-import ru.safeai.gateway.chat.entity.ChatMessageEntity;
-import ru.safeai.gateway.chat.entity.ChatMessageRole;
-import ru.safeai.gateway.chat.entity.ChatMessageStatus;
+import ru.safeai.gateway.chat.repository.ChatHistoryTurn;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
+/**
+ * Builds an alternating chronological history from terminally successful
+ * turns only. Token-window truncation is delegated to AiContextWindowService,
+ * which removes complete USER/ASSISTANT pairs from the oldest boundary.
+ */
 @Component
 public class AiHistoryBuilder {
 
     public List<AiMessage> build(
-            List<ChatMessageEntity> newestFirst,
-            int tokenBudget
+            List<ChatHistoryTurn> newestFirst
     ) {
-        if (newestFirst == null
-                || newestFirst.isEmpty()
-                || tokenBudget <= 0) {
+        if (newestFirst == null || newestFirst.isEmpty()) {
             return List.of();
         }
 
-        List<ChatMessageEntity> selectedNewestFirst =
-                selectWithinTokenBudget(
-                        newestFirst,
-                        tokenBudget
+        List<AiMessage> result = new ArrayList<>(newestFirst.size() * 2);
+        for (int index = newestFirst.size() - 1; index >= 0; index--) {
+            ChatHistoryTurn turn = newestFirst.get(index);
+            if (turn == null
+                    || turn.userContent() == null
+                    || turn.userContent().isBlank()
+                    || turn.assistantContent() == null
+                    || turn.assistantContent().isBlank()) {
+                throw new IllegalStateException(
+                        "SUCCEEDED history turn должен содержать полную USER/ASSISTANT пару"
                 );
-
-        if (selectedNewestFirst.isEmpty()) {
-            return List.of();
-        }
-
-        Collections.reverse(selectedNewestFirst);
-
-        removeLeadingAssistantMessages(selectedNewestFirst);
-
-        if (selectedNewestFirst.isEmpty()) {
-            return List.of();
-        }
-
-        return selectedNewestFirst.stream()
-                .map(this::toAiMessage)
-                .toList();
-    }
-
-    private List<ChatMessageEntity> selectWithinTokenBudget(
-            List<ChatMessageEntity> newestFirst,
-            int tokenBudget
-    ) {
-        List<ChatMessageEntity> selected =
-                new ArrayList<>();
-
-        int usedTokens = 0;
-
-        for (ChatMessageEntity message : newestFirst) {
-            if (!isEligible(message)) {
-                continue;
             }
-
-            int estimatedTokens =
-                    estimateTokens(message.getContent());
-
-            if (estimatedTokens > tokenBudget - usedTokens) {
-                continue;
-            }
-
-            selected.add(message);
-            usedTokens += estimatedTokens;
-
-            if (usedTokens >= tokenBudget) {
-                break;
-            }
-        }
-
-        return selected;
-    }
-
-    private void removeLeadingAssistantMessages(
-            List<ChatMessageEntity> chronological
-    ) {
-        while (!chronological.isEmpty()
-                && chronological.getFirst().getRole()
-                == ChatMessageRole.ASSISTANT) {
-            chronological.removeFirst();
-        }
-    }
-
-    private boolean isEligible(ChatMessageEntity message) {
-        if (message == null
-                || message.getStatus()
-                != ChatMessageStatus.COMPLETED
-                || message.getContent() == null
-                || message.getContent().isBlank()) {
-            return false;
-        }
-
-        return message.getRole() == ChatMessageRole.USER
-                || message.getRole()
-                == ChatMessageRole.ASSISTANT;
-    }
-
-    private AiMessage toAiMessage(
-            ChatMessageEntity message
-    ) {
-        AiMessageRole role = switch (message.getRole()) {
-            case USER -> AiMessageRole.USER;
-            case ASSISTANT -> AiMessageRole.ASSISTANT;
-
-            case SYSTEM -> throw new IllegalStateException(
-                    "SYSTEM message must not reach ordinary chat history"
+            result.add(new AiMessage(AiMessageRole.USER, turn.userContent()));
+            result.add(
+                    new AiMessage(
+                            AiMessageRole.ASSISTANT,
+                            turn.assistantContent()
+                    )
             );
-        };
-
-        return new AiMessage(
-                role,
-                message.getContent()
-        );
-    }
-
-    private int estimateTokens(String content) {
-        if (content == null || content.isBlank()) {
-            return 0;
         }
-
-        return Math.max(1, content.length() / 4);
+        return List.copyOf(result);
     }
 }
-

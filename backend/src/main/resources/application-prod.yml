@@ -1,6 +1,4 @@
 # "D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod.yml"
-# "D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod.yml"
-
 spring:
   flyway:
     locations:
@@ -46,8 +44,6 @@ safeai:
       message-overhead-tokens: ${SAFEAI_AI_CONTEXT_MESSAGE_OVERHEAD_TOKENS:8}
       safety-margin-tokens: ${SAFEAI_AI_CONTEXT_SAFETY_MARGIN_TOKENS:1024}
 
-    # Для синхронного servlet-flow повторный provider-вызов
-    # по умолчанию отключён.
     retry:
       enabled: ${SAFEAI_AI_RETRY_ENABLED:false}
       max-attempts: ${SAFEAI_AI_RETRY_MAX_ATTEMPTS:1}
@@ -80,10 +76,7 @@ safeai:
       connect-timeout: ${ANTHROPIC_CONNECT_TIMEOUT:5s}
       read-timeout: ${ANTHROPIC_READ_TIMEOUT:60s}
 
-    # Демонстрационные цены из application.yml в production
-    # должны быть отключены.
-    #
-    # Для реального расчёта стоимости подключите точные resolved model IDs
+    # Production должен использовать точные resolved model IDs
     # и версионированный источник тарифов.
     pricing:
       models: []
@@ -100,8 +93,6 @@ safeai:
       # Пустое значение означает host-only cookie.
       domain: ${SAFEAI_AUTH_COOKIES_DOMAIN:}
 
-      # При Secure=true и пустом Domain могут использоваться
-      # hardened cookie names.
       access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:}
       refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:}
 
@@ -134,8 +125,6 @@ safeai:
       trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:172.28.0.0/24}
 
     user-status-cache:
-      # Security state читается из PostgreSQL
-      # на каждом authenticated request.
       enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:false}
       ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
       key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status}
@@ -164,6 +153,55 @@ safeai:
       max-batches-per-run: ${SAFEAI_AUDIT_RETENTION_MAX_BATCHES_PER_RUN:10}
       cron: "${SAFEAI_AUDIT_RETENTION_CRON:0 30 3 * * *}"
       zone: ${SAFEAI_AUDIT_RETENTION_ZONE:UTC}
+
+  usage:
+    default-range: ${SAFEAI_USAGE_DEFAULT_RANGE:30d}
+    max-range: ${SAFEAI_USAGE_MAX_RANGE:366d}
+    max-live-range: ${SAFEAI_USAGE_MAX_LIVE_RANGE:31d}
+    max-page-size: ${SAFEAI_USAGE_MAX_PAGE_SIZE:200}
+    query-timeout: ${SAFEAI_USAGE_QUERY_TIMEOUT:10s}
+    slow-query-threshold: ${SAFEAI_USAGE_SLOW_QUERY_THRESHOLD:2s}
+    fetch-size: ${SAFEAI_USAGE_FETCH_SIZE:200}
+    max-concurrent-reports: ${SAFEAI_USAGE_MAX_CONCURRENT_REPORTS:4}
+
+    rollup:
+      enabled: ${SAFEAI_USAGE_ROLLUP_ENABLED:true}
+      cron: "${SAFEAI_USAGE_ROLLUP_CRON:0 */10 * * * *}"
+      lookback-days: ${SAFEAI_USAGE_ROLLUP_LOOKBACK_DAYS:3}
+      backfill-days-per-run: ${SAFEAI_USAGE_ROLLUP_BACKFILL_DAYS_PER_RUN:31}
+      advisory-lock-key: ${SAFEAI_USAGE_ROLLUP_ADVISORY_LOCK_KEY:8026001}
+      statement-timeout: ${SAFEAI_USAGE_ROLLUP_STATEMENT_TIMEOUT:2m}
+
+  chat:
+    details-message-limit: ${SAFEAI_CHAT_DETAILS_MESSAGE_LIMIT:50}
+    history-turn-limit: ${SAFEAI_CHAT_HISTORY_TURN_LIMIT:50}
+    max-chat-page-size: ${SAFEAI_CHAT_MAX_CHAT_PAGE_SIZE:100}
+    max-message-page-size: ${SAFEAI_CHAT_MAX_MESSAGE_PAGE_SIZE:100}
+    max-message-chars: ${SAFEAI_CHAT_MAX_MESSAGE_CHARS:16000}
+    processing-lease: ${SAFEAI_CHAT_PROCESSING_LEASE:3m}
+    lease-renewal-threads: ${SAFEAI_CHAT_LEASE_RENEWAL_THREADS:4}
+    max-active-lease-watchdogs: ${SAFEAI_CHAT_MAX_ACTIVE_LEASE_WATCHDOGS:1000}
+
+    lock:
+      key-prefix: ${SAFEAI_CHAT_LOCK_KEY_PREFIX:safeai:prod:chat-lock}
+      ttl: ${SAFEAI_CHAT_LOCK_TTL:4m}
+      renewal-threads: ${SAFEAI_CHAT_LOCK_RENEWAL_THREADS:4}
+      max-active-locks: ${SAFEAI_CHAT_LOCK_MAX_ACTIVE_LOCKS:1000}
+      shutdown-timeout: ${SAFEAI_CHAT_LOCK_SHUTDOWN_TIMEOUT:5s}
+
+    quota:
+      enabled: ${SAFEAI_CHAT_QUOTA_ENABLED:true}
+      reservation-input-tokens: ${SAFEAI_CHAT_QUOTA_RESERVATION_INPUT_TOKENS:16000}
+      reservation-output-tokens: ${SAFEAI_CHAT_QUOTA_RESERVATION_OUTPUT_TOKENS:2048}
+      reservation-cost-usd: ${SAFEAI_CHAT_QUOTA_RESERVATION_COST_USD:1.000000000000}
+      period-zone: ${SAFEAI_CHAT_QUOTA_PERIOD_ZONE:UTC}
+
+    recovery:
+      enabled: ${SAFEAI_CHAT_RECOVERY_ENABLED:true}
+      batch-size: ${SAFEAI_CHAT_RECOVERY_BATCH_SIZE:100}
+      max-batches-per-run: ${SAFEAI_CHAT_RECOVERY_MAX_BATCHES_PER_RUN:20}
+      cron: "${SAFEAI_CHAT_RECOVERY_CRON:0 * * * * *}"
+
 
 # Management port, network restrictions и authentication
 # задаются инфраструктурой deployment.

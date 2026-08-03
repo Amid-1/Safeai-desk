@@ -1,4 +1,5 @@
-# "D:\Java projects\Safeai-desk\backend\src\main\resources\application.yml"
+# D:\Java projects\Safeai-desk\backend\src\main\resources\application.yml
+
 spring:
   application:
     name: safeai-backend
@@ -29,6 +30,7 @@ spring:
       password: ${REDIS_PASSWORD:}
       connect-timeout: ${REDIS_CONNECT_TIMEOUT:2s}
       timeout: ${REDIS_COMMAND_TIMEOUT:2s}
+
       repositories:
         enabled: false
 
@@ -39,7 +41,9 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+
     open-in-view: false
+
     properties:
       hibernate:
         format_sql: true
@@ -49,6 +53,7 @@ spring:
     locations:
       - classpath:db/migration
     validate-migration-naming: true
+
     postgresql:
       transactional-lock: false
 
@@ -90,12 +95,37 @@ safeai:
     organization-id: ${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}
 
   chat:
+    details-message-limit: ${SAFEAI_CHAT_DETAILS_MESSAGE_LIMIT:50}
+    history-turn-limit: ${SAFEAI_CHAT_HISTORY_TURN_LIMIT:50}
+    max-chat-page-size: ${SAFEAI_CHAT_MAX_CHAT_PAGE_SIZE:100}
+    max-message-page-size: ${SAFEAI_CHAT_MAX_MESSAGE_PAGE_SIZE:100}
+    max-message-chars: ${SAFEAI_CHAT_MAX_MESSAGE_CHARS:16000}
+
+    # Persistent lease подтверждает право процесса обрабатывать turn.
+    # Redis lock является только быстрым защитным слоем.
+    processing-lease: ${SAFEAI_CHAT_PROCESSING_LEASE:3m}
+    lease-renewal-threads: ${SAFEAI_CHAT_LEASE_RENEWAL_THREADS:4}
+    max-active-lease-watchdogs: ${SAFEAI_CHAT_MAX_ACTIVE_LEASE_WATCHDOGS:1000}
+
     lock:
       key-prefix: ${SAFEAI_CHAT_LOCK_KEY_PREFIX:safeai:local:chat-lock}
-      ttl: ${SAFEAI_CHAT_LOCK_TTL:240s}
+      ttl: ${SAFEAI_CHAT_LOCK_TTL:4m}
+      renewal-threads: ${SAFEAI_CHAT_LOCK_RENEWAL_THREADS:4}
+      max-active-locks: ${SAFEAI_CHAT_LOCK_MAX_ACTIVE_LOCKS:1000}
+      shutdown-timeout: ${SAFEAI_CHAT_LOCK_SHUTDOWN_TIMEOUT:5s}
 
-    details-message-limit: ${SAFEAI_CHAT_DETAILS_MESSAGE_LIMIT:50}
-    history-message-limit: ${SAFEAI_CHAT_HISTORY_MESSAGE_LIMIT:30}
+    quota:
+      enabled: ${SAFEAI_CHAT_QUOTA_ENABLED:true}
+      reservation-input-tokens: ${SAFEAI_CHAT_QUOTA_RESERVATION_INPUT_TOKENS:16000}
+      reservation-output-tokens: ${SAFEAI_CHAT_QUOTA_RESERVATION_OUTPUT_TOKENS:2048}
+      reservation-cost-usd: ${SAFEAI_CHAT_QUOTA_RESERVATION_COST_USD:1.000000000000}
+      period-zone: ${SAFEAI_CHAT_QUOTA_PERIOD_ZONE:UTC}
+
+    recovery:
+      enabled: ${SAFEAI_CHAT_RECOVERY_ENABLED:true}
+      batch-size: ${SAFEAI_CHAT_RECOVERY_BATCH_SIZE:100}
+      max-batches-per-run: ${SAFEAI_CHAT_RECOVERY_MAX_BATCHES_PER_RUN:20}
+      cron: "${SAFEAI_CHAT_RECOVERY_CRON:0 * * * * *}"
 
   ai:
     provider: ${SAFEAI_AI_PROVIDER:mock}
@@ -224,3 +254,21 @@ safeai:
       period: ${SAFEAI_AUDIT_RETENTION_PERIOD:1095d}
       batch-size: ${SAFEAI_AUDIT_RETENTION_BATCH_SIZE:10000}
       max-batches-per-run: ${SAFEAI_AUDIT_RETENTION_MAX_BATCHES_PER_RUN:10}
+
+  usage:
+    default-range: 30d
+    max-range: 366d
+    max-live-range: 31d
+    max-page-size: 200
+    query-timeout: 10s
+    slow-query-threshold: 2s
+    fetch-size: 200
+    max-concurrent-reports: 4
+
+    rollup:
+      enabled: true
+      cron: "0 */10 * * * *"
+      lookback-days: 3
+      backfill-days-per-run: 31
+      advisory-lock-key: 8026001
+      statement-timeout: 2m

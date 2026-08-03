@@ -1,4 +1,5 @@
 # D:\Java projects\Safeai-desk\backend\src\test\resources\application-auth-postgres-it.yml
+
 app:
   security:
     jwt:
@@ -37,3 +38,7 @@ safeai:
       cron: "0 0 3 * * *"
       batch-size: 200
       max-batches-per-run: 100
+
+  usage:
+    rollup:
+      enabled: false

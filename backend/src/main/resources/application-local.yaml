@@ -1,4 +1,4 @@
-# "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local.yml"
+# D:\Java projects\Safeai-desk\backend\src\main\resources\application-local.yml
 app:
   security:
     jwt:
@@ -62,3 +62,30 @@ safeai:
   audit:
     retention:
       enabled: false
+
+  usage:
+    default-range: 30d
+    max-range: 366d
+    max-live-range: 31d
+    max-page-size: 200
+    query-timeout: 10s
+    slow-query-threshold: 2s
+    fetch-size: 200
+    max-concurrent-reports: 4
+
+    rollup:
+      enabled: ${SAFEAI_USAGE_ROLLUP_ENABLED:false}
+      cron: "0 */10 * * * *"
+      lookback-days: 3
+      backfill-days-per-run: 31
+      advisory-lock-key: 8026001
+      statement-timeout: 2m
+
+  chat:
+    lock:
+      key-prefix: ${SAFEAI_CHAT_LOCK_KEY_PREFIX:safeai:local:chat-lock}
+
+    # Фоновое восстановление turn по умолчанию отключено локально,
+    # чтобы scheduler не изменял данные во время обычной разработки.
+    recovery:
+      enabled: ${SAFEAI_CHAT_RECOVERY_ENABLED:false}

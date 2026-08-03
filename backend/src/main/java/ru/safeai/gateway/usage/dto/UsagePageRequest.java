@@ -13,7 +13,6 @@ public record UsagePageRequest(
         @Max(200)
         Integer size
 ) {
-
     private static final int DEFAULT_PAGE = 0;
     private static final int DEFAULT_SIZE = 50;
 
@@ -32,4 +31,3 @@ public record UsagePageRequest(
         );
     }
 }
-

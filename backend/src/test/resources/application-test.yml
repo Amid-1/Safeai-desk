@@ -120,3 +120,47 @@ safeai:
 
   user-management:
     permanent-deletion-retention: 0s
+
+  usage:
+    default-range: 30d
+    max-range: 366d
+    max-live-range: 31d
+    max-page-size: 200
+    query-timeout: 10s
+    slow-query-threshold: 2s
+    fetch-size: 200
+    max-concurrent-reports: 4
+
+    rollup:
+      enabled: true
+      cron: "0 */10 * * * *"
+      lookback-days: 3
+      backfill-days-per-run: 31
+      advisory-lock-key: 8026001
+      statement-timeout: 2m
+
+  chat:
+    lock:
+      key-prefix: safeai:test:chat-lock
+      ttl: 2m
+      renewal-threads: 2
+      max-active-locks: 100
+      shutdown-timeout: 2s
+
+    processing-lease: 90s
+    lease-renewal-threads: 2
+    max-active-lease-watchdogs: 100
+
+    quota:
+      enabled: true
+      reservation-input-tokens: 16000
+      reservation-output-tokens: 2048
+      reservation-cost-usd: 1.000000000000
+      period-zone: UTC
+
+    # Integration tests enable it explicitly when required.
+    recovery:
+      enabled: false
+      batch-size: 100
+      max-batches-per-run: 20
+      cron: "0 * * * * *"

@@ -335,7 +335,7 @@ class UserManagementPostgresIntegrationTest
     @Test
     void usageHistoryBlocksPermanentDeletion() {
         DeletionFixture fixture = disabledUserFixture("usage@test.com");
-        insertUsageRollup(
+        insertConsistentUsageRollup(
                 fixture.userId(),
                 fixture.organizationId()
         );
@@ -557,6 +557,73 @@ class UserManagementPostgresIntegrationTest
                 Instant.now().minus(Duration.ofDays(10))
         );
         return new DeletionFixture(userId, organizationId, email);
+    }
+
+    private void insertConsistentUsageRollup(
+            UUID userId,
+            UUID organizationId
+    ) {
+        jdbcTemplate.update(
+                """
+                insert into public.usage_daily_user_model_rollups (
+                    usage_date,
+                    organization_id,
+                    user_id,
+                    model,
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
+                    cost_usd,
+                    assistant_message_count,
+                    failed_message_count,
+                    completed_response_count,
+                    refused_response_count,
+                    incomplete_response_count,
+                    partial_input_tokens,
+                    partial_output_tokens,
+                    available_usage_message_count,
+                    partial_usage_message_count,
+                    missing_usage_message_count,
+                    usage_not_applicable_message_count,
+                    priced_message_count,
+                    free_message_count,
+                    unpriced_message_count,
+                    pricing_failed_message_count,
+                    pricing_not_applicable_message_count,
+                    created_at,
+                    updated_at
+                ) values (
+                    current_date,
+                    ?,
+                    ?,
+                    'mock-safeai',
+                    10,
+                    5,
+                    15,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    current_timestamp,
+                    current_timestamp
+                )
+                """,
+                organizationId,
+                userId
+        );
     }
 
     private void assertDeletionConflict(

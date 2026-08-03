@@ -1,65 +1,69 @@
 package ru.safeai.gateway.usage.dto;
 
-import java.math.BigDecimal;
 import java.util.Objects;
 import java.util.UUID;
 
 /**
- * userId — стабильная identity пользователя.
- * userEmail — текущее display-значение, а не исторический snapshot.
+ * currentUserEmail — текущее отображаемое значение пользователя.
+ * Историческим идентификатором является userId.
  */
 public record UsageSummaryResponse(
         UUID userId,
-        String userEmail,
+        String currentUserEmail,
         String model,
-        long inputTokens,
-        long outputTokens,
-        long totalTokens,
-        BigDecimal costUsd
+        UsageResponseSummary responses,
+        UsageTokenSummary usage,
+        UsageCostSummary cost
 ) {
+
     public UsageSummaryResponse {
-        userId = Objects.requireNonNull(userId, "userId не должен быть null");
-        if (userEmail == null || userEmail.isBlank()) {
-            throw new IllegalArgumentException("userEmail не должен быть пустым");
-        }
-        if (model == null || model.isBlank()) {
-            throw new IllegalArgumentException("model не должен быть пустым");
-        }
-        userEmail = userEmail.trim();
-        model = model.trim();
-        inputTokens = nonNegative(inputTokens, "inputTokens");
-        outputTokens = nonNegative(outputTokens, "outputTokens");
-        totalTokens = Math.addExact(inputTokens, outputTokens);
-        costUsd = normalizeCost(costUsd);
+        Objects.requireNonNull(
+                userId,
+                "userId не должен быть null"
+        );
+
+        currentUserEmail = requireText(
+                currentUserEmail,
+                "currentUserEmail"
+        );
+
+        model = requireText(
+                model,
+                "model"
+        );
+
+        Objects.requireNonNull(
+                responses,
+                "responses не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                usage,
+                "usage не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                cost,
+                "cost не должен быть null"
+        );
+
+        UsageSummaryInvariants.validate(
+                responses,
+                usage,
+                cost
+        );
     }
 
-    public UsageSummaryResponse(
-            UUID userId,
-            String userEmail,
-            String model,
-            Long inputTokens,
-            Long outputTokens,
-            BigDecimal costUsd
+    private static String requireText(
+            String value,
+            String propertyName
     ) {
-        this(userId, userEmail, model, safeLong(inputTokens), safeLong(outputTokens), 0L, costUsd);
-    }
-
-    private static long safeLong(Long value) {
-        return value == null ? 0L : value;
-    }
-
-    private static long nonNegative(long value, String name) {
-        if (value < 0) {
-            throw new IllegalArgumentException(name + " не может быть отрицательным");
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    propertyName + " не должен быть пустым"
+            );
         }
-        return value;
-    }
 
-    private static BigDecimal normalizeCost(BigDecimal value) {
-        BigDecimal normalized = value == null ? BigDecimal.ZERO : value;
-        if (normalized.signum() < 0) {
-            throw new IllegalArgumentException("costUsd не может быть отрицательным");
-        }
-        return normalized;
+        return value.trim();
     }
 }

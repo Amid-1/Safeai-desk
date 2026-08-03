@@ -165,7 +165,7 @@ cd ~/Workspace/Projects/Products/SafeAI-Desk/backend
 Тесты?
 ```bash
 cd backend
-./mvnw test
+./mvnw clean test
 ```
 
 Установи переменные окружения:

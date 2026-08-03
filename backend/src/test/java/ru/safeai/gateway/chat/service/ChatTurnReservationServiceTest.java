@@ -3,209 +3,420 @@ package ru.safeai.gateway.chat.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.provider.AiProviderProperties;
+import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.chat.config.ChatProperties;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
-import ru.safeai.gateway.common.exception.RateLimitExceededException;
-import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.chat.entity.ChatTurnEntity;
+import ru.safeai.gateway.chat.entity.ChatTurnState;
+
+import ru.safeai.gateway.chat.exception.*;
+import ru.safeai.gateway.chat.observability.ChatMetrics;
+import ru.safeai.gateway.chat.repository.ChatHistoryRepository;
+import ru.safeai.gateway.chat.repository.ChatHistoryTurn;
+import ru.safeai.gateway.chat.repository.ChatMessageRepository;
+import ru.safeai.gateway.chat.repository.ChatSessionRepository;
+import ru.safeai.gateway.chat.repository.ChatTurnMutexRepository;
+import ru.safeai.gateway.chat.repository.ChatTurnRepository;
+import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
+import ru.safeai.gateway.common.exception.ChatBusyException;
 import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ChatTurnReservationServiceTest {
 
-    private static final UUID CHAT_ID =
-            UUID.fromString(
-                    "2251f787-044c-4ef8-80d7-60d3ce4d72af"
-            );
-
-    private static final UUID USER_ID =
-            UUID.fromString(
-                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-            );
-
-    private static final UUID ORGANIZATION_ID =
-            UUID.fromString(
-                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-            );
-
-    private static final UUID USER_MESSAGE_ID =
-            UUID.fromString(
-                    "11111111-1111-1111-1111-111111111111"
-            );
-
-    private static final UUID CLIENT_REQUEST_ID =
-            UUID.fromString(
-                    "22222222-2222-2222-2222-222222222222"
-            );
-
-    @Mock
-    private ChatPersistenceService
-            chatPersistenceService;
-
-    @Mock
-    private RedisRateLimitService
-            rateLimitService;
-
-    @Mock
-    private SafeAiUserPrincipal currentUser;
+    @Mock ChatSessionRepository sessionRepository;
+    @Mock ChatMessageRepository messageRepository;
+    @Mock ChatTurnRepository turnRepository;
+    @Mock ChatTurnMutexRepository mutexRepository;
+    @Mock ChatHistoryRepository historyRepository;
+    @Mock RedisRateLimitService rateLimitService;
+    @Mock ChatQuotaService quotaService;
+    @Mock AuditEventService auditEventService;
+    @Mock ChatMetrics metrics;
 
     private ChatTurnReservationService service;
+    private ChatContentNormalizer normalizer;
+    private ChatProperties properties;
 
     @BeforeEach
     void setUp() {
+        properties = new ChatProperties(
+                50, 50, 100, 100, 16_000,
+                Duration.ofMinutes(3),
+                4,
+                1000
+        );
+        normalizer = new ChatContentNormalizer(properties);
         service = new ChatTurnReservationService(
-                chatPersistenceService,
-                rateLimitService
+                sessionRepository,
+                messageRepository,
+                turnRepository,
+                mutexRepository,
+                historyRepository,
+                new AiHistoryBuilder(),
+                normalizer,
+                rateLimitService,
+                quotaService,
+                auditEventService,
+                new AiProviderProperties("openai"),
+                properties,
+                metrics,
+                ChatTestFixtures.CLOCK
         );
     }
 
     @Test
-    void replayOfSameClientRequestIdDoesNotConsumeSecondSlot() {
-        SendMessageRequest request =
-                request();
+    void succeededReplayDoesNotConsumeRateLimitOrQuota() {
+        ChatTurnEntity turn = existingTurn(ChatTurnState.SUCCEEDED, "Hello");
+        stubOwnedSession();
+        when(turnRepository.findByIdempotencyKeyForUpdate(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.CLIENT_REQUEST_ID
+        )).thenReturn(Optional.of(turn));
 
-        ChatProcessingContext replay =
-                new ChatProcessingContext(
-                        CHAT_ID,
-                        USER_MESSAGE_ID,
-                        CLIENT_REQUEST_ID,
-                        null,
-                        true
-                );
+        ChatProcessingContext result = service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        );
 
-        when(chatPersistenceService
-                .saveUserMessageAndPrepareAiRequest(
-                        CHAT_ID,
-                        request,
-                        currentUser
-                ))
-                .thenReturn(replay);
-
-        ChatProcessingContext result =
-                service.reserveOrReplay(
-                        CHAT_ID,
-                        request,
-                        currentUser
-                );
-
-        assertThat(result).isSameAs(replay);
-
-        verify(rateLimitService, never())
-                .checkAiMessageAllowed(
-                        currentUser
-                );
+        assertThat(result.replay()).isTrue();
+        assertThat(result.aiRequest()).isNull();
+        verifyNoInteractions(rateLimitService, quotaService, historyRepository);
+        verify(metrics).recordReplay(ChatTurnState.SUCCEEDED);
+        verify(messageRepository, never()).saveAndFlush(any());
     }
 
     @Test
-    void newTurnIsReservedBeforeRateLimitCheck() {
-        SendMessageRequest request =
-                request();
+    void reusedIdWithDifferentNormalizedContentReturnsConflict() {
+        ChatTurnEntity turn = existingTurn(ChatTurnState.SUCCEEDED, "first");
+        stubOwnedSession();
+        when(turnRepository.findByIdempotencyKeyForUpdate(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.CLIENT_REQUEST_ID
+        )).thenReturn(Optional.of(turn));
 
-        ChatProcessingContext created =
-                createdContext();
+        assertThatThrownBy(() -> service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("second"),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(IdempotencyKeyReusedException.class)
+                .hasMessageContaining("clientRequestId");
 
-        when(chatPersistenceService
-                .saveUserMessageAndPrepareAiRequest(
-                        CHAT_ID,
-                        request,
-                        currentUser
-                ))
-                .thenReturn(created);
+        verifyNoInteractions(rateLimitService, quotaService);
+    }
 
-        ChatProcessingContext result =
-                service.reserveOrReplay(
-                        CHAT_ID,
-                        request,
-                        currentUser
-                );
+    @Test
+    void failedReplayReturnsStableFailureWithoutNewProviderReservation() {
+        ChatTurnEntity turn = existingTurn(ChatTurnState.FAILED, "Hello");
+        turn.setFailureCode("AI_PROVIDER_INVALID_REQUEST");
+        stubOwnedSession();
+        when(turnRepository.findByIdempotencyKeyForUpdate(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.CLIENT_REQUEST_ID
+        )).thenReturn(Optional.of(turn));
 
-        assertThat(result).isSameAs(created);
+        assertThatThrownBy(() -> service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(ChatTurnFailedException.class)
+                .extracting("code")
+                .isEqualTo("AI_PROVIDER_INVALID_REQUEST");
+
+        verifyNoInteractions(rateLimitService, quotaService);
+    }
+
+    @Test
+    void activeProcessingReplayReturnsInProgressWithRetryAfter() {
+        ChatTurnEntity turn = existingTurn(ChatTurnState.PROCESSING, "Hello");
+        turn.setLeaseUntil(ChatTestFixtures.NOW.plusSeconds(30));
+        stubOwnedSession();
+        when(turnRepository.findByIdempotencyKeyForUpdate(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.CLIENT_REQUEST_ID
+        )).thenReturn(Optional.of(turn));
+
+        assertThatThrownBy(() -> service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(ChatTurnInProgressException.class)
+                .satisfies(exception -> assertThat(
+                        ((ChatTurnInProgressException) exception)
+                                .getRetryAfter()
+                ).isEqualTo(Duration.ofSeconds(30)));
+    }
+
+    @Test
+    void staleProcessingBeforeProviderCallBecomesFailedNotAmbiguous() {
+        ChatTurnEntity turn = existingTurn(ChatTurnState.PROCESSING, "Hello");
+        turn.setLeaseUntil(ChatTestFixtures.NOW.minusSeconds(1));
+        turn.setProviderCallStartedAt(null);
+        stubOwnedSession();
+        when(turnRepository.findByIdempotencyKeyForUpdate(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.CLIENT_REQUEST_ID
+        )).thenReturn(Optional.of(turn));
+        when(turnRepository.markExpiredBeforeProviderFailed(
+                turn.getId(),
+                ChatTestFixtures.NOW
+        )).thenReturn(1);
+
+        assertThatThrownBy(() -> service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(ChatTurnFailedException.class)
+                .extracting("code")
+                .isEqualTo("STALE_BEFORE_PROVIDER_CALL");
+
+        verify(quotaService).releaseFailure(turn.getId(), ChatTestFixtures.NOW);
+        verify(metrics).recordTerminalAfterCommit(ChatTurnState.FAILED);
+        verify(quotaService, never()).markAmbiguous(any(), any());
+    }
+
+    @Test
+    void staleProcessingAfterProviderCallBecomesAmbiguous() {
+        ChatTurnEntity turn = existingTurn(ChatTurnState.PROCESSING, "Hello");
+        turn.setLeaseUntil(ChatTestFixtures.NOW.minusSeconds(1));
+        turn.setProviderCallStartedAt(ChatTestFixtures.NOW.minusSeconds(10));
+        stubOwnedSession();
+        when(turnRepository.findByIdempotencyKeyForUpdate(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.CLIENT_REQUEST_ID
+        )).thenReturn(Optional.of(turn));
+        when(turnRepository.markExpiredProcessingAmbiguous(
+                turn.getId(),
+                ChatTestFixtures.NOW
+        )).thenReturn(1);
+
+        assertThatThrownBy(() -> service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(AiOutcomeAmbiguousException.class);
+
+        verify(quotaService).markAmbiguous(turn.getId(), ChatTestFixtures.NOW);
+        verify(metrics).recordTerminalAfterCommit(ChatTurnState.AMBIGUOUS);
+    }
+
+    @Test
+    void newTurnPersistsProviderOperationIdBeforeReturningAiRequest() {
+        stubNewTurn();
+        ArgumentCaptor<ChatTurnEntity> turnCaptor =
+                ArgumentCaptor.forClass(ChatTurnEntity.class);
+
+        ChatProcessingContext result = service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello\r\nworld"),
+                ChatTestFixtures.principal()
+        );
+
+        verify(turnRepository).saveAndFlush(turnCaptor.capture());
+        verify(metrics).recordReservedAfterCommit();
+        ChatTurnEntity persisted = turnCaptor.getValue();
+        assertThat(persisted.getProviderOperationId())
+                .isEqualTo(result.providerOperationId())
+                .isEqualTo(result.aiRequest().providerOperationId());
+        assertThat(result.aiRequest().userMessage())
+                .isEqualTo("Hello\nworld");
+        assertThat(result.processingToken()).isNotNull();
+    }
+
+    @Test
+    void newTurnAppliesRateAndQuotaOnceInDeterministicOrder() {
+        stubNewTurn();
+
+        ChatProcessingContext result = service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        );
 
         InOrder order = inOrder(
-                chatPersistenceService,
-                rateLimitService
+                mutexRepository,
+                rateLimitService,
+                messageRepository,
+                turnRepository,
+                quotaService
         );
-
-        order.verify(chatPersistenceService)
-                .saveUserMessageAndPrepareAiRequest(
-                        CHAT_ID,
-                        request,
-                        currentUser
-                );
-
+        order.verify(mutexRepository).lockChat(ChatTestFixtures.CHAT_ID);
+        order.verify(messageRepository).saveAndFlush(any());
+        order.verify(turnRepository).saveAndFlush(any());
+        order.verify(quotaService).reserve(
+                eq(ChatTestFixtures.CHAT_ID),
+                eq(result.turnId()),
+                eq(ChatTestFixtures.CLIENT_REQUEST_ID),
+                eq(ChatTestFixtures.ORGANIZATION_ID),
+                eq(ChatTestFixtures.USER_ID)
+        );
         order.verify(rateLimitService)
-                .checkAiMessageAllowed(
-                        currentUser
-                );
+                .checkAiMessageAllowed(any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class));
     }
 
     @Test
-    void rateLimitFailureIsPropagatedSoTransactionCanRollbackReservation() {
-        SendMessageRequest request =
-                request();
+    void malformedSucceededHistoryDoesNotCreateTurnOrConsumeLimits() {
+        stubOwnedSession();
+        when(turnRepository.findByIdempotencyKeyForUpdate(any(), any()))
+                .thenReturn(Optional.empty());
+        when(turnRepository.findSessionTurnByStateForUpdate(
+                ChatTestFixtures.CHAT_ID,
+                ChatTurnState.PROCESSING
+        )).thenReturn(Optional.empty());
+        when(historyRepository.findNewestSucceededTurns(
+                ChatTestFixtures.CHAT_ID,
+                properties.historyTurnLimit()
+        )).thenReturn(List.of(new ChatHistoryTurn(
+                UUID.randomUUID(),
+                "Question",
+                null
+        )));
 
-        when(chatPersistenceService
-                .saveUserMessageAndPrepareAiRequest(
-                        CHAT_ID,
-                        request,
-                        currentUser
-                ))
-                .thenReturn(createdContext());
+        assertThatThrownBy(() -> service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("USER/ASSISTANT");
 
-        RateLimitExceededException exception =
-                new RateLimitExceededException(
-                        "Превышен лимит",
-                        Duration.ofMinutes(1)
-                );
-
-        org.mockito.Mockito.doThrow(exception)
-                .when(rateLimitService)
-                .checkAiMessageAllowed(
-                        currentUser
-                );
-
-        assertThatThrownBy(() ->
-                service.reserveOrReplay(
-                        CHAT_ID,
-                        request,
-                        currentUser
-                )
-        ).isSameAs(exception);
+        verify(messageRepository, never()).saveAndFlush(any());
+        verify(turnRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(rateLimitService, quotaService);
     }
 
-    private SendMessageRequest request() {
+    @Test
+    void quotaRejectionOccursBeforeRateLimitConsumption() {
+        stubNewTurn();
+        org.mockito.Mockito.doThrow(new ChatQuotaExceededException(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.TURN_ID,
+                ChatTestFixtures.CLIENT_REQUEST_ID,
+                "user.monthlyRequests"
+        )).when(quotaService).reserve(
+                eq(ChatTestFixtures.CHAT_ID),
+                any(UUID.class),
+                eq(ChatTestFixtures.CLIENT_REQUEST_ID),
+                eq(ChatTestFixtures.ORGANIZATION_ID),
+                eq(ChatTestFixtures.USER_ID)
+        );
+
+        assertThatThrownBy(() -> service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(ChatQuotaExceededException.class);
+
+        verify(rateLimitService, never())
+                .checkAiMessageAllowed(any());
+    }
+
+    @Test
+    void differentActiveTurnBlocksParallelProviderOperationInSameChat() {
+        stubOwnedSession();
+        when(turnRepository.findByIdempotencyKeyForUpdate(any(), any()))
+                .thenReturn(Optional.empty());
+        ChatTurnEntity active = existingTurn(
+                ChatTurnState.PROCESSING,
+                "other"
+        );
+        active.setClientRequestId(UUID.randomUUID());
+        active.setLeaseUntil(ChatTestFixtures.NOW.plusSeconds(60));
+        when(turnRepository.findSessionTurnByStateForUpdate(
+                ChatTestFixtures.CHAT_ID,
+                ChatTurnState.PROCESSING
+        )).thenReturn(Optional.of(active));
+
+        assertThatThrownBy(() -> service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(ChatBusyException.class);
+
+        verifyNoInteractions(rateLimitService, quotaService);
+    }
+
+    private void stubNewTurn() {
+        stubOwnedSession();
+        when(turnRepository.findByIdempotencyKeyForUpdate(any(), any()))
+                .thenReturn(Optional.empty());
+        when(turnRepository.findSessionTurnByStateForUpdate(
+                ChatTestFixtures.CHAT_ID,
+                ChatTurnState.PROCESSING
+        )).thenReturn(Optional.empty());
+        when(messageRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(turnRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(historyRepository.findNewestSucceededTurns(any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of());
+    }
+
+    private void stubOwnedSession() {
+        when(sessionRepository.findByIdAndUser_IdAndOrganization_Id(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.USER_ID,
+                ChatTestFixtures.ORGANIZATION_ID
+        )).thenReturn(Optional.of(ChatTestFixtures.session()));
+    }
+
+    private SendMessageRequest request(String content) {
         return new SendMessageRequest(
-                "Привет",
-                CLIENT_REQUEST_ID
+                content,
+                ChatTestFixtures.CLIENT_REQUEST_ID
         );
     }
 
-    private ChatProcessingContext createdContext() {
-        return new ChatProcessingContext(
-                CHAT_ID,
-                USER_MESSAGE_ID,
-                CLIENT_REQUEST_ID,
-                new AiChatRequest(
-                        USER_ID,
-                        ORGANIZATION_ID,
-                        CHAT_ID,
-                        "Привет",
-                        List.of()
-                ),
-                false
+    private ChatTurnEntity existingTurn(
+            ChatTurnState state,
+            String content
+    ) {
+        ChatTurnEntity turn = ChatTurnEntity.processing(
+                ChatTestFixtures.TURN_ID,
+                ChatTestFixtures.session(),
+                ChatTestFixtures.CLIENT_REQUEST_ID,
+                normalizer.sha256(normalizer.normalize(content)),
+                ChatTestFixtures.PROVIDER_OPERATION_ID,
+                ChatTestFixtures.USER_MESSAGE_ID,
+                ChatTestFixtures.PROCESSING_TOKEN,
+                ChatTestFixtures.NOW.minusSeconds(10),
+                ChatTestFixtures.NOW.plusSeconds(60),
+                "openai"
         );
+        turn.setState(state);
+        if (state != ChatTurnState.PROCESSING) {
+            turn.setProcessingToken(null);
+            turn.setLeaseUntil(null);
+            turn.setCompletedAt(ChatTestFixtures.NOW);
+        }
+        if (state == ChatTurnState.SUCCEEDED) {
+            turn.setAssistantMessageId(ChatTestFixtures.ASSISTANT_MESSAGE_ID);
+            turn.setProviderCallStartedAt(ChatTestFixtures.NOW.minusSeconds(5));
+        }
+        if (state == ChatTurnState.AMBIGUOUS) {
+            turn.setOutcomeAmbiguous(true);
+            turn.setProviderCallStartedAt(ChatTestFixtures.NOW.minusSeconds(5));
+        }
+        return turn;
     }
 }

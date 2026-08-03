@@ -3,10 +3,12 @@ package ru.safeai.gateway.chat.service;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.test.util.ReflectionTestUtils;
+import ru.safeai.gateway.chat.config.ChatLockProperties;
+import ru.safeai.gateway.chat.observability.ChatMetrics;
+import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.common.exception.ChatBusyException;
 import ru.safeai.gateway.common.exception.ChatLockUnavailableException;
 
@@ -14,171 +16,294 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class ChatLockServiceTest {
 
-    private static final UUID CHAT_ID =
-            UUID.fromString("2251f787-044c-4ef8-80d7-60d3ce4d72af");
-
-    private static final Duration TTL = Duration.ofMinutes(5);
-
     private StringRedisTemplate redisTemplate;
-    private ValueOperations<String, String> valueOperations;
+    private ValueOperations<String, String> values;
+    private ChatMetrics metrics;
     private ChatLockService service;
 
     @SuppressWarnings("unchecked")
     @BeforeEach
     void setUp() {
         redisTemplate = mock(StringRedisTemplate.class);
-        valueOperations = mock(ValueOperations.class);
+        values = mock(ValueOperations.class);
+        metrics = mock(ChatMetrics.class);
+
+        when(redisTemplate.opsForValue())
+                .thenReturn(values);
 
         service = new ChatLockService(
                 redisTemplate,
                 new ChatLockProperties(
-                        "safeai:test:chat-lock",
-                        TTL
-                )
+                        "safeai:test:chat-lock:",
+                        Duration.ofSeconds(30),
+                        4,
+                        100,
+                        Duration.ofSeconds(1)
+                ),
+                metrics
         );
     }
 
     @AfterEach
     void tearDown() {
-        service.shutdown();
+        ReflectionTestUtils.invokeMethod(
+                service,
+                "shutdown"
+        );
     }
 
     @Test
-    void lockWhenRedisSetIfAbsentReturnsTrueReturnsLock() {
-        stubValueOperations();
-
-        when(valueOperations.setIfAbsent(
-                eq("safeai:test:chat-lock:" + CHAT_ID),
+    void lockUsesOwnerTokenAndNormalizedPrefix() {
+        when(values.setIfAbsent(
+                eq(
+                        "safeai:test:chat-lock:"
+                                + ChatTestFixtures.CHAT_ID
+                ),
                 anyString(),
-                eq(TTL)
+                eq(Duration.ofSeconds(30))
         )).thenReturn(true);
 
-        ChatLockService.ChatLock lock = service.lock(CHAT_ID);
-
-        assertThat(lock.chatId()).isEqualTo(CHAT_ID);
-        assertThat(lock.key())
-                .isEqualTo("safeai:test:chat-lock:" + CHAT_ID);
-        assertThat(lock.token()).isNotBlank();
-        assertThat(lock.valid().get()).isTrue();
-        assertNotNull(lock.renewalTask());
-
-        verify(valueOperations).setIfAbsent(
-                eq("safeai:test:chat-lock:" + CHAT_ID),
-                anyString(),
-                eq(TTL)
+        ChatLockService.ChatLock lock = service.lock(
+                ChatTestFixtures.CHAT_ID
         );
+
+        assertThat(lock.ownerToken())
+                .isNotBlank();
+
+        assertThat(lock.valid())
+                .isTrue();
 
         service.unlockQuietly(lock);
     }
 
     @Test
-    void lockWhenChatAlreadyLockedThrowsChatBusy() {
-        stubValueOperations();
-
-        when(valueOperations.setIfAbsent(
-                eq("safeai:test:chat-lock:" + CHAT_ID),
-                anyString(),
-                eq(TTL)
-        )).thenReturn(false);
-
-        assertThatThrownBy(() -> service.lock(CHAT_ID))
-                .isInstanceOf(ChatBusyException.class)
-                .hasMessageContaining(
-                        "В этот чат уже отправляется сообщение"
-                );
-    }
-
-    @Test
-    void lockWhenRedisFailsThrowsChatLockUnavailable() {
-        stubValueOperations();
-
-        when(valueOperations.setIfAbsent(
+    void secondOwnerGetsBusy() {
+        when(values.setIfAbsent(
                 anyString(),
                 anyString(),
                 any(Duration.class)
-        )).thenThrow(new RuntimeException("Redis unavailable"));
+        )).thenReturn(false);
 
-        assertThatThrownBy(() -> service.lock(CHAT_ID))
-                .isInstanceOf(ChatLockUnavailableException.class)
-                .hasMessageContaining(
-                        "Сервис блокировки чата временно недоступен"
-                );
+        assertThatThrownBy(() ->
+                service.lock(ChatTestFixtures.CHAT_ID)
+        ).isInstanceOf(ChatBusyException.class);
     }
 
     @Test
-    void ensureValidDoesNothingForValidLock() {
-        ChatLockService.ChatLock lock = manualLock(true);
+    void redisOutageFailsClosed() {
+        when(values.setIfAbsent(
+                anyString(),
+                anyString(),
+                any(Duration.class)
+        )).thenThrow(
+                new RuntimeException("redis down")
+        );
 
-        service.ensureValid(lock);
+        assertThatThrownBy(() ->
+                service.lock(ChatTestFixtures.CHAT_ID)
+        ).isInstanceOf(ChatLockUnavailableException.class);
     }
 
     @Test
-    void ensureValidThrowsWhenOwnershipWasLost() {
-        ChatLockService.ChatLock lock = manualLock(false);
+    void renewalFailureInvalidatesOnlyThatLock() {
+        ChatLockService.ChatLock lock = manualLock();
 
-        assertThatThrownBy(() -> service.ensureValid(lock))
-                .isInstanceOf(ChatLockUnavailableException.class)
-                .hasMessageContaining(
-                        "Блокировка чата была потеряна"
-                );
+        when(redisTemplate.execute(
+                any(),
+                eq(List.of(lock.key())),
+                eq(lock.ownerToken()),
+                eq("30000")
+        )).thenReturn(0L);
+
+        ReflectionTestUtils.invokeMethod(
+                service,
+                "renew",
+                lock.chatId(),
+                lock.key(),
+                lock.ownerToken(),
+                lock.valid()
+        );
+
+        assertThat(lock.valid())
+                .isFalse();
+
+        verify(metrics)
+                .recordOwnershipLoss("redis");
+
+        assertThatThrownBy(() ->
+                service.ensureValid(lock)
+        ).isInstanceOf(ChatLockUnavailableException.class);
     }
 
     @Test
-    void unlockCancelsRenewalInvalidatesLockAndDeletesRedisKey() {
-        ChatLockService.ChatLock lock = manualLock(true);
+    void releaseUsesCompareAndDeleteOwnerScript() {
+        ChatLockService.ChatLock lock = manualLock();
 
         service.unlock(lock);
 
-        verify(lock.renewalTask()).cancel(false);
-        assertThat(lock.valid().get()).isFalse();
+        verify(lock.renewalTask())
+                .cancel(false);
 
         verify(redisTemplate).execute(
                 any(),
                 eq(List.of(lock.key())),
-                eq(lock.token())
+                eq(lock.ownerToken())
+        );
+
+        assertThat(lock.valid())
+                .isFalse();
+    }
+
+    @Test
+    void oldOwnerReleaseCannotBlindlyDeleteNewOwnerKey() {
+        ChatLockService.ChatLock oldLock = manualLock();
+
+        service.unlock(oldLock);
+
+        verify(redisTemplate).execute(
+                any(),
+                eq(List.of(oldLock.key())),
+                eq(oldLock.ownerToken())
+        );
+
+        verify(redisTemplate, never())
+                .delete(oldLock.key());
+    }
+
+    @Test
+    void renewalExecutorUsesConfiguredPoolInsteadOfSingleGlobalThread() {
+        ScheduledThreadPoolExecutor executor =
+                (ScheduledThreadPoolExecutor)
+                        ReflectionTestUtils.getField(
+                                service,
+                                "renewalExecutor"
+                        );
+
+        assertThat(executor)
+                .isNotNull();
+
+        assertThat(executor.getCorePoolSize())
+                .isEqualTo(4);
+
+        assertThat(executor.getRemoveOnCancelPolicy())
+                .isTrue();
+    }
+
+    @Test
+    void activeLockCapacityIsBounded() {
+        ChatLockService bounded = new ChatLockService(
+                redisTemplate,
+                new ChatLockProperties(
+                        "safeai:test:bounded",
+                        Duration.ofSeconds(30),
+                        2,
+                        1,
+                        Duration.ofSeconds(1)
+                ),
+                metrics
+        );
+
+        try {
+            when(values.setIfAbsent(
+                    anyString(),
+                    anyString(),
+                    any(Duration.class)
+            )).thenReturn(true);
+
+            ChatLockService.ChatLock first = bounded.lock(
+                    ChatTestFixtures.CHAT_ID
+            );
+
+            assertThatThrownBy(() ->
+                    bounded.lock(UUID.randomUUID())
+            )
+                    .isInstanceOf(
+                            ChatLockUnavailableException.class
+                    )
+                    .hasMessage(
+                            "Достигнут лимит активных блокировок чатов"
+                    );
+
+            bounded.unlockQuietly(first);
+        } finally {
+            ReflectionTestUtils.invokeMethod(
+                    bounded,
+                    "shutdown"
+            );
+        }
+    }
+
+    @Test
+    void watchdogSchedulingFailureCleansUpOwnedRedisKey() {
+        when(values.setIfAbsent(
+                anyString(),
+                anyString(),
+                any(Duration.class)
+        )).thenReturn(true);
+
+        ReflectionTestUtils.invokeMethod(
+                service,
+                "shutdown"
+        );
+
+        assertThatThrownBy(() ->
+                service.lock(ChatTestFixtures.CHAT_ID)
+        )
+                .isInstanceOf(
+                        ChatLockUnavailableException.class
+                )
+                .hasMessageContaining("watchdog");
+
+        verify(redisTemplate).execute(
+                any(),
+                eq(List.of(
+                        "safeai:test:chat-lock:"
+                                + ChatTestFixtures.CHAT_ID
+                )),
+                anyString()
         );
     }
 
     @Test
-    void unlockQuietlyWhenLockIsNullDoesNothing() {
-        service.unlockQuietly(null);
+    void unlockIsIdempotentAndReleasesOwnerOnlyOnce() {
+        ChatLockService.ChatLock lock = manualLock();
 
-        verify(redisTemplate, never())
-                .execute(any(), anyList(), anyString());
+        service.unlock(lock);
+        service.unlock(lock);
 
-        verifyNoInteractions(valueOperations);
+        verify(redisTemplate, times(1))
+                .execute(
+                        any(),
+                        eq(List.of(lock.key())),
+                        eq(lock.ownerToken())
+                );
     }
 
-    private ChatLockService.ChatLock manualLock(boolean valid) {
+    private ChatLockService.ChatLock manualLock() {
         return new ChatLockService.ChatLock(
-                CHAT_ID,
-                "safeai:test:chat-lock:" + CHAT_ID,
-                "test-token",
-                new AtomicBoolean(valid),
-                mock(ScheduledFuture.class)
+                ChatTestFixtures.CHAT_ID,
+                "safeai:test:chat-lock:"
+                        + ChatTestFixtures.CHAT_ID,
+                "owner-token",
+                new AtomicBoolean(true),
+                mock(ScheduledFuture.class),
+                new AtomicBoolean(false)
         );
-    }
-
-    private void stubValueOperations() {
-        when(redisTemplate.opsForValue())
-                .thenReturn(valueOperations);
     }
 }

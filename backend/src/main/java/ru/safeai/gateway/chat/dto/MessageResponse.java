@@ -6,9 +6,17 @@ import java.util.UUID;
 
 public record MessageResponse(
         UUID id,
+        UUID clientRequestId,
+        UUID replyToMessageId,
         String role,
+        String status,
         String content,
+        String requestedModel,
         String model,
+        String providerMessageId,
+        String providerRequestId,
+        String aiResponseStatus,
+        String finishReason,
         Integer inputTokens,
         Integer outputTokens,
         String usageStatus,
@@ -17,7 +25,6 @@ public record MessageResponse(
         String currency,
         String pricingVersion,
         Instant pricingCalculatedAt,
-        Instant createdAt,
-        String status
+        Instant createdAt
 ) {
 }

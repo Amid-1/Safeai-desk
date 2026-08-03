@@ -1,0 +1,86 @@
+feat(ai): подготовить AI-провайдеры и метаданные ответов к production
+
+- добавлена полноценная интеграция с OpenAI Responses API;
+- добавлена полноценная интеграция с Anthropic Messages API;
+- разделены конфигурационные свойства OpenAI и Anthropic;
+- добавлена условная регистрация выбранного AI-провайдера;
+- исключена обязательная загрузка секретов неиспользуемого провайдера;
+- запрещено использование mock-провайдера в production-профиле;
+- обновлена валидация production-конфигурации AI;
+
+- добавлена централизованная фабрика RestClient для AI-провайдеров;
+- настроены connect timeout и read timeout;
+- запрещены автоматические HTTP-redirect;
+- добавлено ограничение размера тела ответа провайдера;
+- добавлена защита от переполнения при подсчёте прочитанных байтов;
+- добавлена безопасная обработка nullable response body;
+- нормализованы provider request ID и message ID;
+- ограничена длина идентификаторов и служебных метаданных;
+
+- реализована единая политика повторных запросов к AI-провайдерам;
+- добавлены initial backoff и maximum backoff;
+- добавлено ограничение Retry-After;
+- добавлен общий timeout выполнения запроса;
+- исключены повторные запросы при неоднозначном результате записи;
+- добавлена корректная обработка HTTP 408, 429 и 5xx;
+- исправлена обработка прерывания потока во время retry/backoff;
+
+- расширена модель AiChatResponse;
+- добавлены requested model и фактически использованная model;
+- добавлены provider message ID и provider request ID;
+- добавлены response status и finish reason;
+- добавлены input/output tokens и usage status;
+- добавлены стоимость, pricing status, валюта и версия тарифа;
+- добавлено время расчёта стоимости;
+- усилена валидация согласованности FREE, PRICED,
+  UNPRICED и CALCULATION_FAILED результатов;
+- сохранено исходное содержимое ответа без нежелательного trim;
+
+- добавлена централизованная поддержка формирования запросов
+  и обработки ответов OpenAI и Anthropic;
+- добавлена валидация контекстного окна и лимитов токенов;
+- добавлены ограничения длины запросов и ответов;
+- добавлена модель расчёта стоимости по конфигурации pricing;
+- исключены небезопасные или избыточные методы provider support;
+
+- исправлена конфигурация Maven plugins;
+- отдельно настроены Spring Boot Maven Plugin
+  и Maven Compiler Plugin;
+- включено сохранение имён параметров компиляции;
+- настроены annotation processors для Lombok
+  и Spring configuration processor;
+
+- обновлён тестовый профиль application-test.yml;
+- зафиксирован mock AI provider для интеграционных тестов;
+- отключены внешние обращения к AI API;
+- отключены retry в общих тестах;
+- добавлена тестовая pricing-конфигурация mock-safeai;
+- синхронизированы JWT lifetime и access-token cookie lifetime;
+- длительности приведены к однозначному ISO-8601 формату;
+
+- обновлены unit- и contract-тесты OpenAI и Anthropic;
+- добавлены проверки конфигурационных defaults и validation;
+- добавлены проверки retry, timeout и Retry-After;
+- добавлены проверки ограничения response body;
+- обновлены тесты AiChatResponse и pricing metadata;
+- устранены предупреждения nullable contracts и BigDecimal scale;
+- актуализировано ожидание сообщения production validator;
+
+- исправлен ChatPersistenceServiceTest;
+- тестовая история теперь содержит завершённый оборот
+  USER -> ASSISTANT;
+- сохранён порядок newest-first на уровне repository fixture;
+- проверяется преобразование истории в хронологический порядок;
+- добавлена проверка clientRequestId и AI request history;
+
+- обновлён PostgreSQL integration test fixture;
+- normalized_name явно указывается при вставке организации;
+- нормализованное имя вычисляется через функцию базы данных;
+- устранены предупреждения SQL inspection для NOT NULL колонки.
+
+Проверка:
+- SafeaiBackendApplicationTests: BUILD SUCCESS;
+- Spring Boot context успешно загружается с профилем test;
+- Flyway успешно применяет 27 миграций;
+- Hibernate schema validation проходит;
+- полный набор тестов должен быть выполнен перед push.

@@ -1,165 +1,142 @@
 package ru.safeai.gateway.chat.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.chat.config.ChatProperties;
 import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
 import ru.safeai.gateway.chat.dto.ChatResponse;
+import ru.safeai.gateway.chat.dto.ChatTurnStatusResponse;
 import ru.safeai.gateway.chat.dto.CreateChatRequest;
 import ru.safeai.gateway.chat.dto.MessageResponse;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
-import ru.safeai.gateway.chat.entity.ChatMessageEntity;
+import ru.safeai.gateway.chat.dto.SendMessageResponse;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
+import ru.safeai.gateway.chat.exception.AiOutcomeAmbiguousException;
+import ru.safeai.gateway.chat.exception.ChatLeaseUnavailableException;
+import ru.safeai.gateway.chat.exception.ChatStaleProcessorException;
+import ru.safeai.gateway.chat.exception.ChatTurnFailedException;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
-import ru.safeai.gateway.common.exception.BadRequestException;
+import ru.safeai.gateway.common.exception.ChatLockUnavailableException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
-import java.util.Comparator;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
-@EnableConfigurationProperties(ChatProperties.class)
 public class ChatService {
 
-    private static final Set<String> ALLOWED_CHAT_SORT =
-            Set.of(
-                    "updatedAt",
-                    "createdAt",
-                    "title",
-                    "id"
-            );
-
-    private final ChatSessionRepository
-            chatSessionRepository;
-
-    private final ChatMessageRepository
-            chatMessageRepository;
-
+    private final ChatSessionRepository sessionRepository;
+    private final ChatMessageRepository messageRepository;
     private final UserRepository userRepository;
     private final AiProvider aiProvider;
     private final AuditEventService auditEventService;
+    private final ChatTurnReservationService reservationService;
+    private final ChatTurnFinalizationService finalizationService;
+    private final ChatSecurityStateService securityStateService;
+    private final ChatMapper mapper;
+    private final ChatLockService lockService;
+    private final ChatTurnLeaseService leaseService;
+    private final ChatProperties properties;
+    private final Clock clock;
 
-    private final ChatPersistenceService
-            chatPersistenceService;
-
-    private final ChatTurnReservationService
-            chatTurnReservationService;
-
-    private final ChatMapper chatMapper;
-    private final ChatLockService chatLockService;
-    private final ChatProperties chatProperties;
+    public ChatService(
+            ChatSessionRepository sessionRepository,
+            ChatMessageRepository messageRepository,
+            UserRepository userRepository,
+            AiProvider aiProvider,
+            AuditEventService auditEventService,
+            ChatTurnReservationService reservationService,
+            ChatTurnFinalizationService finalizationService,
+            ChatSecurityStateService securityStateService,
+            ChatMapper mapper,
+            ChatLockService lockService,
+            ChatTurnLeaseService leaseService,
+            ChatProperties properties,
+            Clock clock
+    ) {
+        this.sessionRepository = sessionRepository;
+        this.messageRepository = messageRepository;
+        this.userRepository = userRepository;
+        this.aiProvider = aiProvider;
+        this.auditEventService = auditEventService;
+        this.reservationService = reservationService;
+        this.finalizationService = finalizationService;
+        this.securityStateService = securityStateService;
+        this.mapper = mapper;
+        this.lockService = lockService;
+        this.leaseService = leaseService;
+        this.properties = properties;
+        this.clock = clock;
+    }
 
     @Transactional
     public ChatResponse create(
             CreateChatRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
+        requireCurrentUser(currentUser);
 
         UserEntity user = userRepository
                 .findByIdAndOrganizationId(
                         currentUser.getId(),
                         currentUser.getOrganizationId()
                 )
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Пользователь не найден: "
-                                        + currentUser.getId()
-                        )
-                );
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Пользователь не найден: " + currentUser.getId()
+                ));
 
-        String title =
-                normalizeTitle(request.title());
-
-        ChatSessionEntity session =
-                new ChatSessionEntity();
-
-        session.setUser(user);
-        session.setOrganization(
-                user.getOrganization()
+        Instant now = clock.instant();
+        ChatSessionEntity session = ChatSessionEntity.create(
+                user,
+                request.title(),
+                now
         );
-        session.setTitle(title);
-
-        ChatSessionEntity saved =
-                chatSessionRepository
-                        .saveAndFlush(session);
+        ChatSessionEntity saved = sessionRepository.saveAndFlush(session);
 
         auditEventService.record(
                 currentUser,
-                saved.getOrganization().getId(),
+                currentUser.getOrganizationId(),
                 AuditEventType.CHAT_CREATED,
                 Map.of(
-                        "chatId",
-                        saved.getId(),
-                        "titleLength",
-                        title.length(),
-                        "defaultTitle",
-                        request.title() == null
+                        "chatId", saved.getId(),
+                        "titleLength", saved.getTitle().length(),
+                        "defaultTitle", request.title() == null
                                 || request.title().isBlank()
                 )
         );
-
-        return chatMapper.toChatResponse(saved);
+        return mapper.toChatResponse(saved);
     }
 
     @Transactional(readOnly = true)
-    public Page<ChatResponse> findAll(
+    public Slice<ChatResponse> findAll(
             SafeAiUserPrincipal currentUser,
             Pageable pageable
     ) {
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                pageable,
-                "pageable не должен быть null"
-        );
-
-        validateSort(pageable);
-
-        Pageable deterministic = PageRequest.of(
-                pageable.getPageNumber(),
-                pageable.getPageSize(),
-                normalizeSort(pageable.getSort())
-        );
-
-        return chatSessionRepository
-                .findByUser_IdAndOrganization_Id(
-                        currentUser.getId(),
-                        currentUser.getOrganizationId(),
-                        deterministic
-                )
-                .map(chatMapper::toChatResponse);
+        requireCurrentUser(currentUser);
+        Objects.requireNonNull(pageable, "pageable не должен быть null");
+        return sessionRepository.findByUser_IdAndOrganization_Id(
+                currentUser.getId(),
+                currentUser.getOrganizationId(),
+                pageable
+        ).map(mapper::toChatResponse);
     }
 
     @Transactional(readOnly = true)
@@ -167,203 +144,301 @@ public class ChatService {
             UUID chatId,
             SafeAiUserPrincipal currentUser
     ) {
-        ChatSessionEntity session =
-                findOwnedSession(
+        ChatSessionEntity session = findOwnedSession(chatId, currentUser);
+        List<MessageResponse> messages = messageRepository
+                .findVisibleBySessionId(
                         chatId,
-                        currentUser
-                );
-
-        List<MessageResponse> messages =
-                chatMessageRepository
-                        .findBySession_IdOrderByCreatedAtDescIdDesc(
-                                session.getId(),
-                                PageRequest.of(
-                                        0,
-                                        chatProperties
-                                                .effectiveDetailsMessageLimit()
+                        org.springframework.data.domain.PageRequest.of(
+                                0,
+                                properties.detailsMessageLimit(),
+                                org.springframework.data.domain.Sort.by(
+                                        org.springframework.data.domain.Sort.Order.desc(
+                                                "createdAt"
+                                        ),
+                                        org.springframework.data.domain.Sort.Order.desc(
+                                                "id"
+                                        )
                                 )
                         )
-                        .stream()
-                        .sorted(
-                                Comparator
-                                        .comparing(
-                                                ChatMessageEntity::getCreatedAt
-                                        )
-                                        .thenComparing(
-                                                ChatMessageEntity::getId
-                                        )
-                        )
-                        .map(chatMapper::toMessageResponse)
-                        .toList();
-
-        return chatMapper.toChatDetailsResponse(
-                session,
-                messages
-        );
+                )
+                .getContent()
+                .reversed()
+                .stream()
+                .map(mapper::toMessageResponse)
+                .toList();
+        return mapper.toChatDetailsResponse(session, messages);
     }
 
-    public ChatDetailsResponse sendMessage(
+    public SendMessageResponse sendMessage(
             UUID chatId,
             SendMessageRequest request,
             SafeAiUserPrincipal currentUser
     ) {
+        requireCurrentUser(currentUser);
+        Objects.requireNonNull(chatId, "chatId не должен быть null");
+        Objects.requireNonNull(request, "request не должен быть null");
         Objects.requireNonNull(
-                chatId,
-                "chatId не должен быть null"
+                request.clientRequestId(),
+                "clientRequestId не должен быть null"
         );
 
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        // Foreign/nonexistent IDs never allocate Redis keys.
+        assertOwnedChatExists(chatId, currentUser);
 
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        ChatLockService.ChatLock redisLock =
+                lockService.lock(chatId);
 
-        String content =
-                validateAndNormalizeLineEndings(
-                        request.content()
-                );
-
-        SendMessageRequest normalizedRequest =
-                new SendMessageRequest(
-                        content,
-                        request.clientRequestId()
-                );
-
-        /*
-         * Tenant-safe existence check выполняется до создания Redis lock,
-         * чтобы чужой/несуществующий chatId не позволял расходовать lock keys.
-         */
-        chatPersistenceService.assertOwnedChatExists(
-                chatId,
-                currentUser
-        );
-
-        ChatLockService.ChatLock lock =
-                chatLockService.lock(chatId);
+        ChatTurnLeaseService.LeaseWatch leaseWatch = null;
 
         try {
-            /*
-             * Внутри отдельной короткой transaction:
-             * replay -> без rate limit;
-             * new turn -> reservation + rate limit до commit.
-             */
             ChatProcessingContext context =
-                    chatTurnReservationService
-                            .reserveOrReplay(
-                                    chatId,
-                                    normalizedRequest,
-                                    currentUser
-                            );
+                    reservationService.reserveOrReplay(
+                            chatId,
+                            request,
+                            currentUser
+                    );
 
             if (context.replay()) {
-                return chatPersistenceService
-                        .returnExistingResult(
-                                context.chatId(),
-                                context.userMessageId(),
-                                currentUser
-                        );
-            }
-
-            AiChatResponse aiResponse;
-
-            try {
-                aiResponse = aiProvider.sendMessage(
-                        context.aiRequest()
-                );
-            } catch (RuntimeException providerException) {
-                persistProviderFailure(
+                return finalizationService.replaySucceeded(
                         context,
-                        providerException,
                         currentUser
                 );
-
-                throw providerException;
             }
-
-            chatLockService.ensureValid(lock);
 
             try {
-                return chatPersistenceService
-                        .saveAssistantMessageAndReturnChat(
-                                context.chatId(),
-                                context.userMessageId(),
-                                aiResponse,
-                                currentUser
-                        );
-            } catch (RuntimeException persistenceException) {
-                log.error(
-                        "AI response received but could not be persisted: "
-                                + "chatId={}, userMessageId={}",
+                leaseWatch = leaseService.watch(
                         context.chatId(),
-                        context.userMessageId(),
+                        context.turnId(),
+                        context.clientRequestId(),
+                        context.processingToken()
+                );
+            } catch (ChatLeaseUnavailableException exception) {
+                try {
+                    finalizationService.failBeforeProviderCall(
+                            context,
+                            "LEASE_WATCHDOG_UNAVAILABLE",
+                            "CHAT_LEASE_WATCHDOG_UNAVAILABLE",
+                            currentUser
+                    );
+                } catch (RuntimeException failurePersistenceException) {
+                    exception.addSuppressed(
+                            failurePersistenceException
+                    );
+                }
+
+                throw exception;
+            }
+
+
+            // Durable marker is committed before any provider HTTP attempt.
+            finalizationService.markProviderCallStarted(context);
+
+            AiChatResponse response = invokeProvider(context, currentUser);
+
+            try {
+                lockService.ensureValid(redisLock);
+                leaseService.ensureValid(leaseWatch);
+            } catch (ChatLockUnavailableException
+                     | ChatStaleProcessorException exception) {
+                markAmbiguousQuietly(
+                        context,
+                        response.requestedModel(),
+                        response.providerRequestId(),
+                        "PROCESSING_OWNERSHIP_LOST",
+                        "CHAT_PROCESSING_OWNERSHIP_LOST",
+                        currentUser,
+                        exception
+                );
+                throw new AiOutcomeAmbiguousException(
+                        context.chatId(),
+                        context.turnId(),
+                        context.clientRequestId(),
+                        exception
+                );
+            }
+
+            SendMessageResponse result;
+            try {
+                result = finalizationService.succeed(
+                        context,
+                        response,
+                        currentUser
+                );
+            } catch (ChatStaleProcessorException exception) {
+                throw new AiOutcomeAmbiguousException(
+                        context.chatId(),
+                        context.turnId(),
+                        context.clientRequestId(),
+                        exception
+                );
+            } catch (RuntimeException persistenceException) {
+                try {
+                    finalizationService.markAmbiguousAfterPersistenceFailure(
+                            context,
+                            response,
+                            currentUser
+                    );
+                } catch (RuntimeException ambiguityPersistenceException) {
+                    persistenceException.addSuppressed(
+                            ambiguityPersistenceException
+                    );
+                }
+                throw new AiOutcomeAmbiguousException(
+                        context.chatId(),
+                        context.turnId(),
+                        context.clientRequestId(),
                         persistenceException
                 );
-
-                throw persistenceException;
             }
+
+            securityStateService.assertStillActive(
+                    context.chatId(),
+                    context.turnId(),
+                    context.clientRequestId(),
+                    currentUser
+            );
+            return result;
         } finally {
-            chatLockService.unlockQuietly(lock);
+            leaseService.close(leaseWatch);
+            lockService.unlockQuietly(redisLock);
         }
     }
 
     @Transactional(readOnly = true)
-    public Page<MessageResponse> findMessages(
+    public Slice<MessageResponse> findMessages(
             UUID chatId,
-            int page,
-            int size,
+            Pageable pageable,
             SafeAiUserPrincipal currentUser
     ) {
-        ChatSessionEntity session =
-                findOwnedSession(
-                        chatId,
-                        currentUser
-                );
-
-        int safePage = Math.max(page, 0);
-        int safeSize = Math.clamp(size, 1,
-                100
-        );
-
-        return chatMessageRepository
-                .findBySession_IdOrderByCreatedAtDescIdDesc(
-                        session.getId(),
-                        PageRequest.of(
-                                safePage,
-                                safeSize
-                        )
-                )
-                .map(chatMapper::toMessageResponse);
+        findOwnedSession(chatId, currentUser);
+        return messageRepository.findVisibleBySessionId(
+                chatId,
+                pageable
+        ).map(mapper::toMessageResponse);
     }
 
-    private void persistProviderFailure(
+    @Transactional(readOnly = true)
+    public ChatTurnStatusResponse findTurnStatus(
+            UUID chatId,
+            UUID clientRequestId,
+            SafeAiUserPrincipal currentUser
+    ) {
+        findOwnedSession(chatId, currentUser);
+        return finalizationService.status(
+                chatId,
+                clientRequestId,
+                currentUser
+        );
+    }
+
+    private AiChatResponse invokeProvider(
             ChatProcessingContext context,
-            RuntimeException providerException,
             SafeAiUserPrincipal currentUser
     ) {
         try {
-            chatPersistenceService
-                    .saveFailedAssistantMessage(
-                            context.chatId(),
-                            context.userMessageId(),
-                            providerException,
-                            currentUser
-                    );
-        } catch (RuntimeException persistenceException) {
-            providerException.addSuppressed(
-                    persistenceException
-            );
+            return aiProvider.sendMessage(context.aiRequest());
+        } catch (AiProviderException exception) {
+            if (exception.isOutcomeAmbiguous()) {
+                markAmbiguousQuietly(
+                        context,
+                        exception.getModel(),
+                        exception.getProviderRequestId(),
+                        exception.getErrorType().name(),
+                        "AI_PROVIDER_OUTCOME_AMBIGUOUS",
+                        currentUser,
+                        exception
+                );
+                throw new AiOutcomeAmbiguousException(
+                        context.chatId(),
+                        context.turnId(),
+                        context.clientRequestId(),
+                        exception
+                );
+            }
 
-            log.error(
-                    "Failed to persist failed AI response: "
-                            + "chatId={}, userMessageId={}",
+            try {
+                finalizationService.failUnambiguous(
+                        context,
+                        exception,
+                        currentUser
+                );
+            } catch (ChatStaleProcessorException staleProcessorException) {
+                exception.addSuppressed(staleProcessorException);
+                throw new AiOutcomeAmbiguousException(
+                        context.chatId(),
+                        context.turnId(),
+                        context.clientRequestId(),
+                        exception
+                );
+            } catch (RuntimeException finalizationException) {
+                exception.addSuppressed(finalizationException);
+            }
+            throw new ChatTurnFailedException(
                     context.chatId(),
-                    context.userMessageId(),
-                    persistenceException
+                    context.turnId(),
+                    context.clientRequestId(),
+                    "AI_PROVIDER_" + exception.getErrorType().name(),
+                    exception
             );
+        } catch (RuntimeException unexpectedProviderException) {
+            // Conservative classification: provider invocation had started.
+            markAmbiguousQuietly(
+                    context,
+                    null,
+                    null,
+                    unexpectedProviderException.getClass().getSimpleName(),
+                    "AI_PROVIDER_UNCLASSIFIED_OUTCOME",
+                    currentUser,
+                    unexpectedProviderException
+            );
+            throw new AiOutcomeAmbiguousException(
+                    context.chatId(),
+                    context.turnId(),
+                    context.clientRequestId(),
+                    unexpectedProviderException
+            );
+        }
+    }
+
+    private void markAmbiguousQuietly(
+            ChatProcessingContext context,
+            String requestedModel,
+            String providerRequestId,
+            String providerErrorType,
+            String failureCode,
+            SafeAiUserPrincipal currentUser,
+            RuntimeException primary
+    ) {
+        try {
+            finalizationService.markAmbiguous(
+                    context,
+                    null,
+                    requestedModel,
+                    providerRequestId,
+                    providerErrorType,
+                    failureCode,
+                    currentUser
+            );
+        } catch (RuntimeException exception) {
+            primary.addSuppressed(exception);
+            log.error(
+                    "Failed to persist AMBIGUOUS chat turn: turnId={}",
+                    context.turnId(),
+                    exception
+            );
+        }
+    }
+
+    private void assertOwnedChatExists(
+            UUID chatId,
+            SafeAiUserPrincipal currentUser
+    ) {
+        if (!sessionRepository.existsByIdAndUser_IdAndOrganization_Id(
+                chatId,
+                currentUser.getId(),
+                currentUser.getOrganizationId()
+        )) {
+            throw new ResourceNotFoundException("Чат не найден: " + chatId);
         }
     }
 
@@ -371,90 +446,23 @@ public class ChatService {
             UUID chatId,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
+        requireCurrentUser(currentUser);
+        Objects.requireNonNull(chatId, "chatId не должен быть null");
+        return sessionRepository.findByIdAndUser_IdAndOrganization_Id(
                 chatId,
-                "chatId не должен быть null"
-        );
+                currentUser.getId(),
+                currentUser.getOrganizationId()
+        ).orElseThrow(() -> new ResourceNotFoundException(
+                "Чат не найден: " + chatId
+        ));
+    }
 
+    private static void requireCurrentUser(
+            SafeAiUserPrincipal currentUser
+    ) {
         Objects.requireNonNull(
                 currentUser,
                 "currentUser не должен быть null"
         );
-
-        return chatSessionRepository
-                .findByIdAndUser_IdAndOrganization_Id(
-                        chatId,
-                        currentUser.getId(),
-                        currentUser.getOrganizationId()
-                )
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Чат не найден: "
-                                        + chatId
-                        )
-                );
-    }
-
-    private String normalizeTitle(
-            String title
-    ) {
-        return title == null || title.isBlank()
-                ? "Новый чат"
-                : title.trim();
-    }
-
-    private String validateAndNormalizeLineEndings(
-            String content
-    ) {
-        if (content == null || content.isBlank()) {
-            throw new BadRequestException(
-                    "Сообщение не должно быть пустым"
-            );
-        }
-
-        return content
-                .replace("\r\n", "\n")
-                .replace('\r', '\n');
-    }
-
-    private void validateSort(
-            Pageable pageable
-    ) {
-        for (Sort.Order order : pageable.getSort()) {
-            if (!ALLOWED_CHAT_SORT.contains(
-                    order.getProperty()
-            )) {
-                throw new BadRequestException(
-                        "Сортировка по полю не разрешена: "
-                                + order.getProperty()
-                );
-            }
-        }
-    }
-
-    private Sort normalizeSort(
-            Sort sort
-    ) {
-        Sort effective = sort.isUnsorted()
-                ? Sort.by(
-                        Sort.Order.desc("updatedAt")
-                )
-                : sort;
-
-        boolean hasId = effective
-                .stream()
-                .anyMatch(order ->
-                        "id".equals(
-                                order.getProperty()
-                        )
-                );
-
-        return hasId
-                ? effective
-                : effective.and(
-                        Sort.by(
-                                Sort.Order.desc("id")
-                        )
-                );
     }
 }

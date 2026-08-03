@@ -1,40 +1,61 @@
 package ru.safeai.gateway.usage.service;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.usage.config.UsageProperties;
 import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
+import ru.safeai.gateway.usage.dto.UsageDataQualityResponse;
 import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
 import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
-import ru.safeai.gateway.usage.repository.UsageDailySummaryProjection;
+import ru.safeai.gateway.usage.repository.UsageInstantRange;
+import ru.safeai.gateway.usage.repository.UsageQueryCriteria;
+import ru.safeai.gateway.usage.repository.UsageQueryPlan;
 import ru.safeai.gateway.usage.repository.UsageQueryRepository;
+import ru.safeai.gateway.usage.repository.UsageRollupStateRepository;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 public class UsageQueryService {
 
-    private static final Duration DEFAULT_RANGE =
-            Duration.ofDays(30);
-
-    private static final Duration MAX_RANGE =
-            Duration.ofDays(366);
-
     private final UsageQueryRepository usageQueryRepository;
+    private final UsageRollupStateRepository rollupStateRepository;
+    private final UsageProperties properties;
+    private final UsageReportExecutor reportExecutor;
+    private final Clock clock;
+
+    public UsageQueryService(
+            UsageQueryRepository usageQueryRepository,
+            UsageRollupStateRepository rollupStateRepository,
+            UsageProperties properties,
+            UsageReportExecutor reportExecutor,
+            Clock clock
+    ) {
+        this.usageQueryRepository = usageQueryRepository;
+        this.rollupStateRepository = rollupStateRepository;
+        this.properties = properties;
+        this.reportExecutor = reportExecutor;
+        this.clock = clock;
+    }
 
     @Transactional(readOnly = true)
     public Slice<UsageSummaryResponse> getUsageSummary(
@@ -47,27 +68,25 @@ public class UsageQueryService {
         requireCurrentUser(currentUser);
         requirePageable(pageable);
 
-        UsageDateRange range =
-                normalizeRange(dateFrom, dateTo);
-
-        String normalizedModel =
-                normalizeModel(model);
-
-        if (isSuperAdmin(currentUser)) {
-            return usageQueryRepository.findUsageSummary(
-                    range.from(),
-                    range.to(),
-                    normalizedModel,
-                    pageable
-            );
-        }
-
-        return usageQueryRepository.findUsageByOrganizationId(
-                currentUser.getOrganizationId(),
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
                 range.from(),
                 range.to(),
-                normalizedModel,
-                pageable
+                isSuperAdmin(currentUser)
+                        ? null
+                        : currentUser.getOrganizationId(),
+                null,
+                normalizeModel(model)
+        );
+        UsageQueryPlan plan = buildPlan(range);
+
+        return reportExecutor.execute(
+                "summary",
+                () -> usageQueryRepository.findSummary(
+                        criteria,
+                        plan,
+                        pageable
+                )
         );
     }
 
@@ -81,24 +100,26 @@ public class UsageQueryService {
         requireCurrentUser(currentUser);
         requirePageable(pageable);
 
-        UsageDateRange range =
-                normalizeRange(dateFrom, dateTo);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(),
+                range.to(),
+                isSuperAdmin(currentUser)
+                        ? null
+                        : currentUser.getOrganizationId(),
+                null,
+                null
+        );
+        UsageQueryPlan plan = buildPlan(range);
 
-        if (isSuperAdmin(currentUser)) {
-            return usageQueryRepository.findUsageByUsers(
-                    range.from(),
-                    range.to(),
-                    pageable
-            );
-        }
-
-        return usageQueryRepository
-                .findUsageByUsersByOrganizationId(
-                        currentUser.getOrganizationId(),
-                        range.from(),
-                        range.to(),
+        return reportExecutor.execute(
+                "users",
+                () -> usageQueryRepository.findUsers(
+                        criteria,
+                        plan,
                         pageable
-                );
+                )
+        );
     }
 
     @Transactional(readOnly = true)
@@ -109,22 +130,25 @@ public class UsageQueryService {
     ) {
         requireCurrentUser(currentUser);
 
-        UsageDateRange range =
-                normalizeRange(dateFrom, dateTo);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(),
+                range.to(),
+                isSuperAdmin(currentUser)
+                        ? null
+                        : currentUser.getOrganizationId(),
+                null,
+                null
+        );
+        UsageQueryPlan plan = buildPlan(range);
 
-        if (isSuperAdmin(currentUser)) {
-            return usageQueryRepository.findUsageByModels(
-                    range.from(),
-                    range.to()
-            );
-        }
-
-        return usageQueryRepository
-                .findUsageByModelsByOrganizationId(
-                        currentUser.getOrganizationId(),
-                        range.from(),
-                        range.to()
-                );
+        return reportExecutor.execute(
+                "models",
+                () -> usageQueryRepository.findModels(
+                        criteria,
+                        plan
+                )
+        );
     }
 
     @Transactional(readOnly = true)
@@ -135,25 +159,25 @@ public class UsageQueryService {
     ) {
         requireCurrentUser(currentUser);
 
-        UsageDateRange range =
-                normalizeRange(dateFrom, dateTo);
-
-        List<UsageDailySummaryProjection> rows =
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(),
+                range.to(),
                 isSuperAdmin(currentUser)
-                        ? usageQueryRepository.findUsageDaily(
-                        range.from(),
-                        range.to()
-                )
-                        : usageQueryRepository
-                        .findUsageDailyByOrganizationId(
-                                currentUser.getOrganizationId(),
-                                range.from(),
-                                range.to()
-                        );
+                        ? null
+                        : currentUser.getOrganizationId(),
+                null,
+                null
+        );
+        UsageQueryPlan plan = buildPlan(range);
 
-        return rows.stream()
-                .map(this::toDailyResponse)
-                .toList();
+        return reportExecutor.execute(
+                "daily",
+                () -> usageQueryRepository.findDaily(
+                        criteria,
+                        plan
+                )
+        );
     }
 
     @Transactional(readOnly = true)
@@ -169,35 +193,29 @@ public class UsageQueryService {
                 userId,
                 "userId не должен быть null"
         );
-
         requireCurrentUser(currentUser);
         requirePageable(pageable);
 
-        UsageDateRange range =
-                normalizeRange(dateFrom, dateTo);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(),
+                range.to(),
+                isSuperAdmin(currentUser)
+                        ? null
+                        : currentUser.getOrganizationId(),
+                userId,
+                normalizeModel(model)
+        );
+        UsageQueryPlan plan = buildPlan(range);
 
-        String normalizedModel =
-                normalizeModel(model);
-
-        if (isSuperAdmin(currentUser)) {
-            return usageQueryRepository.findUsageByUserId(
-                    userId,
-                    range.from(),
-                    range.to(),
-                    normalizedModel,
-                    pageable
-            );
-        }
-
-        return usageQueryRepository
-                .findUsageByUserIdAndOrganizationId(
-                        userId,
-                        currentUser.getOrganizationId(),
-                        range.from(),
-                        range.to(),
-                        normalizedModel,
+        return reportExecutor.execute(
+                "by-user",
+                () -> usageQueryRepository.findSummary(
+                        criteria,
+                        plan,
                         pageable
-                );
+                )
+        );
     }
 
     @Transactional(readOnly = true)
@@ -213,7 +231,6 @@ public class UsageQueryService {
                 organizationId,
                 "organizationId не должен быть null"
         );
-
         requireCurrentUser(currentUser);
         requirePageable(pageable);
 
@@ -226,29 +243,52 @@ public class UsageQueryService {
             );
         }
 
-        UsageDateRange range =
-                normalizeRange(dateFrom, dateTo);
-
-        String normalizedModel =
-                normalizeModel(model);
-
-        return usageQueryRepository.findUsageByOrganizationId(
-                organizationId,
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
                 range.from(),
                 range.to(),
-                normalizedModel,
-                pageable
+                organizationId,
+                null,
+                normalizeModel(model)
+        );
+        UsageQueryPlan plan = buildPlan(range);
+
+        return reportExecutor.execute(
+                "by-organization",
+                () -> usageQueryRepository.findSummary(
+                        criteria,
+                        plan,
+                        pageable
+                )
         );
     }
 
-    private UsageDailySummaryResponse toDailyResponse(
-            UsageDailySummaryProjection row
+    @Transactional(readOnly = true)
+    public UsageDataQualityResponse getDataQuality(
+            Instant dateFrom,
+            Instant dateTo,
+            SafeAiUserPrincipal currentUser
     ) {
-        return new UsageDailySummaryResponse(
-                row.getUsageDate(),
-                row.getInputTokens(),
-                row.getOutputTokens(),
-                row.getCostUsd()
+        requireCurrentUser(currentUser);
+
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(),
+                range.to(),
+                isSuperAdmin(currentUser)
+                        ? null
+                        : currentUser.getOrganizationId(),
+                null,
+                null
+        );
+        UsageQueryPlan plan = buildPlan(range);
+
+        return reportExecutor.execute(
+                "data-quality",
+                () -> usageQueryRepository.findDataQuality(
+                        criteria,
+                        plan
+                )
         );
     }
 
@@ -257,11 +297,10 @@ public class UsageQueryService {
             Instant dateTo
     ) {
         Instant to = dateTo == null
-                ? Instant.now()
+                ? clock.instant()
                 : dateTo;
-
         Instant from = dateFrom == null
-                ? to.minus(DEFAULT_RANGE)
+                ? to.minus(properties.defaultRange())
                 : dateFrom;
 
         if (!from.isBefore(to)) {
@@ -270,16 +309,167 @@ public class UsageQueryService {
             );
         }
 
-        Duration requestedRange =
-                Duration.between(from, to);
+        Duration requestedRange = Duration.between(from, to);
 
-        if (requestedRange.compareTo(MAX_RANGE) > 0) {
+        if (requestedRange.compareTo(properties.maxRange()) > 0) {
             throw new BadRequestException(
-                    "Период usage не должен превышать 366 дней"
+                    "Период usage не должен превышать "
+                            + properties.maxRange().toDays()
+                            + " дней"
             );
         }
 
         return new UsageDateRange(from, to);
+    }
+
+    private UsageQueryPlan buildPlan(
+            UsageDateRange range
+    ) {
+        if (!properties.rollup().isEnabled()) {
+            return liveOnlyPlan(range);
+        }
+
+        LocalDate lastCompletedDate =
+                rollupStateRepository.findLastCompletedDate();
+
+        if (lastCompletedDate == null) {
+            return liveOnlyPlan(range);
+        }
+
+        Instant rollupStartInstant =
+                ceilUtcDay(range.from());
+
+        Instant rollupCoverageEnd = lastCompletedDate
+                .plusDays(1)
+                .atStartOfDay()
+                .toInstant(ZoneOffset.UTC);
+
+        Instant rollupEndInstant = min(
+                floorUtcDay(range.to()),
+                rollupCoverageEnd
+        );
+
+        if (!rollupStartInstant.isBefore(
+                rollupEndInstant
+        )) {
+            return liveOnlyPlan(range);
+        }
+
+        List<UsageInstantRange> liveRanges =
+                buildLiveRanges(
+                        range,
+                        rollupStartInstant,
+                        rollupEndInstant
+                );
+
+        return validateLiveFallback(
+                new UsageQueryPlan(
+                        LocalDate.ofInstant(
+                                rollupStartInstant,
+                                ZoneOffset.UTC
+                        ),
+                        LocalDate.ofInstant(
+                                rollupEndInstant,
+                                ZoneOffset.UTC
+                        ),
+                        liveRanges
+                )
+        );
+    }
+
+    private List<UsageInstantRange> buildLiveRanges(
+            UsageDateRange range,
+            Instant rollupStartInstant,
+            Instant rollupEndInstant
+    ) {
+        List<UsageInstantRange> liveRanges =
+                new ArrayList<>(2);
+
+        if (range.from().isBefore(
+                rollupStartInstant
+        )) {
+            liveRanges.add(
+                    new UsageInstantRange(
+                            range.from(),
+                            rollupStartInstant
+                    )
+            );
+        }
+
+        if (rollupEndInstant.isBefore(
+                range.to()
+        )) {
+            liveRanges.add(
+                    new UsageInstantRange(
+                            rollupEndInstant,
+                            range.to()
+                    )
+            );
+        }
+
+        return liveRanges;
+    }
+
+    private UsageQueryPlan liveOnlyPlan(UsageDateRange range) {
+        return validateLiveFallback(
+                new UsageQueryPlan(
+                        null,
+                        null,
+                        List.of(
+                                new UsageInstantRange(
+                                        range.from(),
+                                        range.to()
+                                )
+                        )
+                )
+        );
+    }
+
+    private UsageQueryPlan validateLiveFallback(
+            UsageQueryPlan plan
+    ) {
+        Duration liveDuration = Duration.ZERO;
+
+        for (UsageInstantRange range : plan.liveRanges()) {
+            liveDuration = liveDuration.plus(
+                    Duration.between(
+                            range.from(),
+                            range.to()
+                    )
+            );
+        }
+
+        if (liveDuration.compareTo(properties.maxLiveRange()) > 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Usage rollup backfill ещё не покрывает запрошенный "
+                            + "диапазон. Максимальный live fallback: "
+                            + properties.maxLiveRange().toDays()
+                            + " дней"
+            );
+        }
+
+        return plan;
+    }
+
+    private Instant ceilUtcDay(Instant instant) {
+        Instant floor = floorUtcDay(instant);
+
+        if (floor.equals(instant)) {
+            return instant;
+        }
+
+        return floor.plus(Duration.ofDays(1));
+    }
+
+    private Instant floorUtcDay(Instant instant) {
+        return LocalDate.ofInstant(instant, ZoneOffset.UTC)
+                .atStartOfDay()
+                .toInstant(ZoneOffset.UTC);
+    }
+
+    private Instant min(Instant left, Instant right) {
+        return left.isBefore(right) ? left : right;
     }
 
     private String normalizeModel(String model) {
@@ -312,6 +502,27 @@ public class UsageQueryService {
                 pageable,
                 "pageable не должен быть null"
         );
+
+        if (pageable.getPageNumber() < 0) {
+            throw new BadRequestException(
+                    "page не может быть отрицательным"
+            );
+        }
+
+        if (pageable.getPageSize() < 1
+                || pageable.getPageSize()
+                > properties.maxPageSize()) {
+            throw new BadRequestException(
+                    "size должен находиться в диапазоне 1.."
+                            + properties.maxPageSize()
+            );
+        }
+
+        if (pageable.getSort().isSorted()) {
+            throw new BadRequestException(
+                    "Произвольная сортировка usage-отчётов запрещена"
+            );
+        }
     }
 
     private boolean isSuperAdmin(

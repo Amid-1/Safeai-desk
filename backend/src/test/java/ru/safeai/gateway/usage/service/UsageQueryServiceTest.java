@@ -1,30 +1,36 @@
 package ru.safeai.gateway.usage.service;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.SliceImpl;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.web.server.ResponseStatusException;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.usage.dto.UsageDailySummaryResponse;
-import ru.safeai.gateway.usage.dto.UsageModelSummaryResponse;
+import ru.safeai.gateway.usage.config.UsageProperties;
 import ru.safeai.gateway.usage.dto.UsageSummaryResponse;
-import ru.safeai.gateway.usage.dto.UsageUserSummaryResponse;
-import ru.safeai.gateway.usage.repository.UsageDailySummaryProjection;
+import ru.safeai.gateway.usage.repository.UsageInstantRange;
+import ru.safeai.gateway.usage.repository.UsageQueryCriteria;
+import ru.safeai.gateway.usage.repository.UsageQueryPlan;
 import ru.safeai.gateway.usage.repository.UsageQueryRepository;
+import ru.safeai.gateway.usage.repository.UsageRollupStateRepository;
 
-import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,434 +38,165 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static ru.safeai.gateway.testsupport.AbstractPostgresIntegrationTest.PLATFORM_ORGANIZATION_ID;
 
 @ExtendWith(MockitoExtension.class)
 class UsageQueryServiceTest {
-
-    private static final UUID ADMIN_ID =
-            UUID.fromString(
-                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-            );
 
     private static final UUID ORGANIZATION_ID =
             UUID.fromString(
                     "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
             );
-
     private static final UUID OTHER_ORGANIZATION_ID =
+            UUID.fromString(
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            );
+    private static final UUID ADMIN_ID =
             UUID.fromString(
                     "cccccccc-cccc-cccc-cccc-cccccccccccc"
             );
-
     private static final UUID SUPER_ADMIN_ID =
-            UUID.fromString(
-                    "00000000-0000-0000-0000-000000000101"
-            );
-
-    private static final UUID PLATFORM_ORGANIZATION_ID =
-            UUID.fromString(
-                    "00000000-0000-0000-0000-000000000001"
-            );
-
-    private static final UUID TARGET_USER_ID =
             UUID.fromString(
                     "dddddddd-dddd-dddd-dddd-dddddddddddd"
             );
+    private static final UUID TARGET_USER_ID =
+            UUID.fromString(
+                    "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+            );
 
+    private static final Instant NOW =
+            Instant.parse("2026-08-02T00:00:00Z");
     private static final Instant DATE_FROM =
             Instant.parse("2026-06-01T00:00:00Z");
-
     private static final Instant DATE_TO =
             Instant.parse("2026-07-01T00:00:00Z");
-
-    private static final String MODEL =
-            "mock-safeai";
-
     private static final Pageable PAGEABLE =
             PageRequest.of(0, 50);
 
     @Mock
-    private UsageQueryRepository usageQueryRepository;
+    private UsageQueryRepository repository;
 
-    @InjectMocks
-    private UsageQueryService usageQueryService;
+    @Mock
+    private UsageRollupStateRepository stateRepository;
+
+    private UsageQueryService service;
+
+    @BeforeEach
+    void setUp() {
+        service = service(defaultProperties());
+    }
 
     @Test
-    void summaryUsesOrganizationScopeForAdmin() {
-        Slice<UsageSummaryResponse> expected =
-                usageSummarySlice();
+    void adminSummaryIsAlwaysScopedToOwnOrganization() {
+        when(repository.findSummary(
+                any(),
+                any(),
+                eq(PAGEABLE)
+        )).thenReturn(emptySlice());
 
-        when(usageQueryRepository.findUsageByOrganizationId(
-                ORGANIZATION_ID,
+        service.getUsageSummary(
                 DATE_FROM,
                 DATE_TO,
-                MODEL,
-                PAGEABLE
-        )).thenReturn(expected);
+                "  mock-safeai  ",
+                PAGEABLE,
+                adminPrincipal()
+        );
 
-        Slice<UsageSummaryResponse> result =
-                usageQueryService.getUsageSummary(
-                        DATE_FROM,
-                        DATE_TO,
-                        MODEL,
-                        PAGEABLE,
-                        adminPrincipal()
+        ArgumentCaptor<UsageQueryCriteria> criteria =
+                ArgumentCaptor.forClass(
+                        UsageQueryCriteria.class
                 );
 
-        assertThat(result).isSameAs(expected);
-        assertThat(result.getContent())
-                .containsExactlyElementsOf(expected.getContent());
+        verify(repository).findSummary(
+                criteria.capture(),
+                any(),
+                eq(PAGEABLE)
+        );
 
-        verify(usageQueryRepository)
-                .findUsageByOrganizationId(
-                        ORGANIZATION_ID,
-                        DATE_FROM,
-                        DATE_TO,
-                        MODEL,
-                        PAGEABLE
-                );
+        assertThat(criteria.getValue().organizationId())
+                .isEqualTo(ORGANIZATION_ID);
+        assertThat(criteria.getValue().userId()).isNull();
+        assertThat(criteria.getValue().model())
+                .isEqualTo("mock-safeai");
     }
 
     @Test
-    void summaryUsesGlobalQueryForSuperAdmin() {
-        Slice<UsageSummaryResponse> expected =
-                usageSummarySlice();
+    void superAdminSummaryUsesGlobalScope() {
+        when(repository.findSummary(
+                any(),
+                any(),
+                eq(PAGEABLE)
+        )).thenReturn(emptySlice());
 
-        when(usageQueryRepository.findUsageSummary(
+        service.getUsageSummary(
                 DATE_FROM,
                 DATE_TO,
-                MODEL,
-                PAGEABLE
-        )).thenReturn(expected);
+                null,
+                PAGEABLE,
+                superAdminPrincipal()
+        );
 
-        Slice<UsageSummaryResponse> result =
-                usageQueryService.getUsageSummary(
-                        DATE_FROM,
-                        DATE_TO,
-                        MODEL,
-                        PAGEABLE,
-                        superAdminPrincipal()
+        ArgumentCaptor<UsageQueryCriteria> criteria =
+                ArgumentCaptor.forClass(
+                        UsageQueryCriteria.class
                 );
 
-        assertThat(result.getContent()).hasSize(1);
-
-        verify(usageQueryRepository).findUsageSummary(
-                DATE_FROM,
-                DATE_TO,
-                MODEL,
-                PAGEABLE
+        verify(repository).findSummary(
+                criteria.capture(),
+                any(),
+                eq(PAGEABLE)
         );
+
+        assertThat(criteria.getValue().organizationId()).isNull();
+        assertThat(criteria.getValue().userId()).isNull();
     }
 
     @Test
-    void usersUseTenantAndGlobalQueries() {
-        Slice<UsageUserSummaryResponse> expected =
-                usageUserSummarySlice();
+    void adminUserReportCombinesUserIdWithTenantScope() {
+        when(repository.findSummary(
+                any(),
+                any(),
+                eq(PAGEABLE)
+        )).thenReturn(emptySlice());
 
-        when(
-                usageQueryRepository
-                        .findUsageByUsersByOrganizationId(
-                                ORGANIZATION_ID,
-                                DATE_FROM,
-                                DATE_TO,
-                                PAGEABLE
-                        )
-        ).thenReturn(expected);
-
-        when(usageQueryRepository.findUsageByUsers(
-                DATE_FROM,
-                DATE_TO,
-                PAGEABLE
-        )).thenReturn(expected);
-
-        Slice<UsageUserSummaryResponse> adminResult =
-                usageQueryService.getUsageByUsers(
-                        DATE_FROM,
-                        DATE_TO,
-                        PAGEABLE,
-                        adminPrincipal()
-                );
-
-        Slice<UsageUserSummaryResponse> superAdminResult =
-                usageQueryService.getUsageByUsers(
-                        DATE_FROM,
-                        DATE_TO,
-                        PAGEABLE,
-                        superAdminPrincipal()
-                );
-
-        assertThat(adminResult).isSameAs(expected);
-        assertThat(superAdminResult).isSameAs(expected);
-
-        verify(usageQueryRepository)
-                .findUsageByUsersByOrganizationId(
-                        ORGANIZATION_ID,
-                        DATE_FROM,
-                        DATE_TO,
-                        PAGEABLE
-                );
-
-        verify(usageQueryRepository).findUsageByUsers(
-                DATE_FROM,
-                DATE_TO,
-                PAGEABLE
-        );
-    }
-
-    @Test
-    void modelsUseTenantAndGlobalQueries() {
-        List<UsageModelSummaryResponse> expected =
-                List.of(
-                        new UsageModelSummaryResponse(
-                                MODEL,
-                                7L,
-                                13L,
-                                BigDecimal.ZERO
-                        )
-                );
-
-        when(
-                usageQueryRepository
-                        .findUsageByModelsByOrganizationId(
-                                ORGANIZATION_ID,
-                                DATE_FROM,
-                                DATE_TO
-                        )
-        ).thenReturn(expected);
-
-        when(usageQueryRepository.findUsageByModels(
-                DATE_FROM,
-                DATE_TO
-        )).thenReturn(expected);
-
-        assertThat(
-                usageQueryService.getUsageByModels(
-                        DATE_FROM,
-                        DATE_TO,
-                        adminPrincipal()
-                )
-        ).isEqualTo(expected);
-
-        assertThat(
-                usageQueryService.getUsageByModels(
-                        DATE_FROM,
-                        DATE_TO,
-                        superAdminPrincipal()
-                )
-        ).isEqualTo(expected);
-    }
-
-    @Test
-    void dailyProjectionIsMappedForAdmin() {
-        when(
-                usageQueryRepository
-                        .findUsageDailyByOrganizationId(
-                                ORGANIZATION_ID,
-                                DATE_FROM,
-                                DATE_TO
-                        )
-        ).thenReturn(
-                List.of(dailyProjection())
-        );
-
-        List<UsageDailySummaryResponse> result =
-                usageQueryService.getUsageDaily(
-                        DATE_FROM,
-                        DATE_TO,
-                        adminPrincipal()
-                );
-
-        assertThat(result)
-                .singleElement()
-                .satisfies(item -> {
-                    assertThat(item.usageDate())
-                            .isEqualTo(
-                                    LocalDate.of(
-                                            2026,
-                                            6,
-                                            12
-                                    )
-                            );
-
-                    assertThat(item.inputTokens())
-                            .isEqualTo(11L);
-
-                    assertThat(item.outputTokens())
-                            .isEqualTo(22L);
-
-                    assertThat(item.totalTokens())
-                            .isEqualTo(33L);
-
-                    assertThat(item.costUsd())
-                            .isEqualByComparingTo(
-                                    BigDecimal.ZERO
-                            );
-                });
-    }
-
-    @Test
-    void dailyProjectionUsesGlobalQueryForSuperAdmin() {
-        when(usageQueryRepository.findUsageDaily(
-                DATE_FROM,
-                DATE_TO
-        )).thenReturn(
-                List.of(dailyProjection())
-        );
-
-        List<UsageDailySummaryResponse> result =
-                usageQueryService.getUsageDaily(
-                        DATE_FROM,
-                        DATE_TO,
-                        superAdminPrincipal()
-                );
-
-        assertThat(result).hasSize(1);
-
-        verify(usageQueryRepository).findUsageDaily(
-                DATE_FROM,
-                DATE_TO
-        );
-    }
-
-    @Test
-    void userIdUsesTenantSafeQueryForAdminAndGlobalForSuperAdmin() {
-        Slice<UsageSummaryResponse> expected =
-                usageSummarySlice();
-
-        when(
-                usageQueryRepository
-                        .findUsageByUserIdAndOrganizationId(
-                                TARGET_USER_ID,
-                                ORGANIZATION_ID,
-                                DATE_FROM,
-                                DATE_TO,
-                                MODEL,
-                                PAGEABLE
-                        )
-        ).thenReturn(expected);
-
-        when(usageQueryRepository.findUsageByUserId(
+        service.getUsageByUserId(
                 TARGET_USER_ID,
                 DATE_FROM,
                 DATE_TO,
-                MODEL,
-                PAGEABLE
-        )).thenReturn(expected);
-
-        Slice<UsageSummaryResponse> adminResult =
-                usageQueryService.getUsageByUserId(
-                        TARGET_USER_ID,
-                        DATE_FROM,
-                        DATE_TO,
-                        MODEL,
-                        PAGEABLE,
-                        adminPrincipal()
-                );
-
-        Slice<UsageSummaryResponse> superAdminResult =
-                usageQueryService.getUsageByUserId(
-                        TARGET_USER_ID,
-                        DATE_FROM,
-                        DATE_TO,
-                        MODEL,
-                        PAGEABLE,
-                        superAdminPrincipal()
-                );
-
-        assertThat(adminResult.getContent()).hasSize(1);
-        assertThat(superAdminResult.getContent()).hasSize(1);
-
-        verify(usageQueryRepository)
-                .findUsageByUserIdAndOrganizationId(
-                        TARGET_USER_ID,
-                        ORGANIZATION_ID,
-                        DATE_FROM,
-                        DATE_TO,
-                        MODEL,
-                        PAGEABLE
-                );
-
-        verify(usageQueryRepository).findUsageByUserId(
-                TARGET_USER_ID,
-                DATE_FROM,
-                DATE_TO,
-                MODEL,
-                PAGEABLE
+                null,
+                PAGEABLE,
+                adminPrincipal()
         );
-    }
 
-    @Test
-    void adminCanReadOwnOrganization() {
-        Slice<UsageSummaryResponse> expected =
-                usageSummarySlice();
-
-        when(usageQueryRepository.findUsageByOrganizationId(
-                ORGANIZATION_ID,
-                DATE_FROM,
-                DATE_TO,
-                MODEL,
-                PAGEABLE
-        )).thenReturn(expected);
-
-        Slice<UsageSummaryResponse> result =
-                usageQueryService.getUsageByOrganizationId(
-                        ORGANIZATION_ID,
-                        DATE_FROM,
-                        DATE_TO,
-                        MODEL,
-                        PAGEABLE,
-                        adminPrincipal()
+        ArgumentCaptor<UsageQueryCriteria> criteria =
+                ArgumentCaptor.forClass(
+                        UsageQueryCriteria.class
                 );
 
-        assertThat(result).isSameAs(expected);
+        verify(repository).findSummary(
+                criteria.capture(),
+                any(),
+                eq(PAGEABLE)
+        );
 
-        verify(usageQueryRepository)
-                .findUsageByOrganizationId(
-                        ORGANIZATION_ID,
-                        DATE_FROM,
-                        DATE_TO,
-                        MODEL,
-                        PAGEABLE
-                );
-    }
-
-    @Test
-    void superAdminCanReadAnyOrganization() {
-        Slice<UsageSummaryResponse> expected =
-                usageSummarySlice();
-
-        when(usageQueryRepository.findUsageByOrganizationId(
-                OTHER_ORGANIZATION_ID,
-                DATE_FROM,
-                DATE_TO,
-                MODEL,
-                PAGEABLE
-        )).thenReturn(expected);
-
-        Slice<UsageSummaryResponse> result =
-                usageQueryService.getUsageByOrganizationId(
-                        OTHER_ORGANIZATION_ID,
-                        DATE_FROM,
-                        DATE_TO,
-                        MODEL,
-                        PAGEABLE,
-                        superAdminPrincipal()
-                );
-
-        assertThat(result).isSameAs(expected);
+        assertThat(criteria.getValue().organizationId())
+                .isEqualTo(ORGANIZATION_ID);
+        assertThat(criteria.getValue().userId())
+                .isEqualTo(TARGET_USER_ID);
     }
 
     @Test
     void adminCannotReadForeignOrganization() {
         assertThatThrownBy(() ->
-                usageQueryService.getUsageByOrganizationId(
+                service.getUsageByOrganizationId(
                         OTHER_ORGANIZATION_ID,
                         DATE_FROM,
                         DATE_TO,
-                        MODEL,
+                        null,
                         PAGEABLE,
                         adminPrincipal()
                 )
@@ -467,34 +204,83 @@ class UsageQueryServiceTest {
                 .isInstanceOf(
                         ForbiddenOperationException.class
                 )
-                .hasMessage(
-                        "Нельзя смотреть usage другой организации"
-                );
+                .hasMessageContaining("другой организации");
 
-        verifyNoInteractions(usageQueryRepository);
+        verifyNoInteractions(repository);
     }
 
     @Test
-    void invalidAndTooLargeRangesAreRejected() {
-        assertThatThrownBy(() ->
-                usageQueryService.getUsageSummary(
-                        DATE_TO,
-                        DATE_FROM,
-                        MODEL,
-                        PAGEABLE,
-                        adminPrincipal()
-                )
-        )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("dateFrom");
+    void superAdminCanReadExplicitForeignOrganization() {
+        when(repository.findSummary(
+                any(),
+                any(),
+                eq(PAGEABLE)
+        )).thenReturn(emptySlice());
 
+        service.getUsageByOrganizationId(
+                OTHER_ORGANIZATION_ID,
+                DATE_FROM,
+                DATE_TO,
+                null,
+                PAGEABLE,
+                superAdminPrincipal()
+        );
+
+        ArgumentCaptor<UsageQueryCriteria> criteria =
+                ArgumentCaptor.forClass(
+                        UsageQueryCriteria.class
+                );
+
+        verify(repository).findSummary(
+                criteria.capture(),
+                any(),
+                eq(PAGEABLE)
+        );
+
+        assertThat(criteria.getValue().organizationId())
+                .isEqualTo(OTHER_ORGANIZATION_ID);
+    }
+
+    @Test
+    void defaultRangeUsesInjectedClockExactly() {
+        when(repository.findSummary(
+                any(),
+                any(),
+                eq(PAGEABLE)
+        )).thenReturn(emptySlice());
+
+        service.getUsageSummary(
+                null,
+                null,
+                null,
+                PAGEABLE,
+                adminPrincipal()
+        );
+
+        ArgumentCaptor<UsageQueryCriteria> criteria =
+                ArgumentCaptor.forClass(
+                        UsageQueryCriteria.class
+                );
+
+        verify(repository).findSummary(
+                criteria.capture(),
+                any(),
+                eq(PAGEABLE)
+        );
+
+        assertThat(criteria.getValue().dateTo())
+                .isEqualTo(NOW);
+        assertThat(criteria.getValue().dateFrom())
+                .isEqualTo(NOW.minus(Duration.ofDays(30)));
+    }
+
+    @Test
+    void rangeLongerThanConfiguredMaximumIsRejected() {
         assertThatThrownBy(() ->
-                usageQueryService.getUsageSummary(
+                service.getUsageSummary(
                         DATE_FROM,
-                        DATE_FROM.plus(
-                                Duration.ofDays(367)
-                        ),
-                        MODEL,
+                        DATE_FROM.plus(Duration.ofDays(367)),
+                        null,
                         PAGEABLE,
                         adminPrincipal()
                 )
@@ -502,72 +288,69 @@ class UsageQueryServiceTest {
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("366");
 
-        verifyNoInteractions(usageQueryRepository);
+        verifyNoInteractions(repository);
     }
 
     @Test
-    void blankModelIsNormalizedToNull() {
-        when(usageQueryRepository.findUsageByOrganizationId(
-                ORGANIZATION_ID,
-                DATE_FROM,
-                DATE_TO,
-                null,
-                PAGEABLE
-        )).thenReturn(emptySummarySlice());
+    void invalidRangeIsRejectedBeforeRepositoryCall() {
+        assertThatThrownBy(() ->
+                service.getUsageSummary(
+                        DATE_TO,
+                        DATE_FROM,
+                        null,
+                        PAGEABLE,
+                        adminPrincipal()
+                )
+        )
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("dateFrom");
 
-        usageQueryService.getUsageSummary(
-                DATE_FROM,
-                DATE_TO,
-                "   ",
-                PAGEABLE,
-                adminPrincipal()
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void oversizedAndClientSortedPagesAreRejected() {
+        Pageable oversized = PageRequest.of(0, 201);
+        Pageable sorted = PageRequest.of(
+                0,
+                50,
+                Sort.by("currentUserEmail")
         );
 
-        verify(usageQueryRepository)
-                .findUsageByOrganizationId(
-                        ORGANIZATION_ID,
+        assertThatThrownBy(() ->
+                service.getUsageSummary(
                         DATE_FROM,
                         DATE_TO,
                         null,
-                        PAGEABLE
-                );
-    }
+                        oversized,
+                        adminPrincipal()
+                )
+        )
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("1..200");
 
-    @Test
-    void modelIsTrimmedBeforeRepositoryCall() {
-        when(usageQueryRepository.findUsageByOrganizationId(
-                ORGANIZATION_ID,
-                DATE_FROM,
-                DATE_TO,
-                MODEL,
-                PAGEABLE
-        )).thenReturn(emptySummarySlice());
-
-        usageQueryService.getUsageSummary(
-                DATE_FROM,
-                DATE_TO,
-                "  " + MODEL + "  ",
-                PAGEABLE,
-                adminPrincipal()
-        );
-
-        verify(usageQueryRepository)
-                .findUsageByOrganizationId(
-                        ORGANIZATION_ID,
-                        DATE_FROM,
-                        DATE_TO,
-                        MODEL,
-                        PAGEABLE
-                );
-    }
-
-    @Test
-    void tooLongModelIsRejected() {
         assertThatThrownBy(() ->
-                usageQueryService.getUsageSummary(
+                service.getUsageSummary(
                         DATE_FROM,
                         DATE_TO,
-                        "a".repeat(101),
+                        null,
+                        sorted,
+                        adminPrincipal()
+                )
+        )
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("сортировка");
+
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void modelLongerThanDatabaseContractIsRejected() {
+        assertThatThrownBy(() ->
+                service.getUsageSummary(
+                        DATE_FROM,
+                        DATE_TO,
+                        "x".repeat(101),
                         PAGEABLE,
                         adminPrincipal()
                 )
@@ -575,68 +358,148 @@ class UsageQueryServiceTest {
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("model");
 
-        verifyNoInteractions(usageQueryRepository);
+        verifyNoInteractions(repository);
     }
 
     @Test
-    void nullDatesUseThirtyDayRange() {
-        when(usageQueryRepository.findUsageByOrganizationId(
-                eq(ORGANIZATION_ID),
-                any(Instant.class),
-                any(Instant.class),
-                eq(MODEL),
+    void hybridPlanUsesClosedUtcDaysAndExactLiveEdges() {
+        when(stateRepository.findLastCompletedDate())
+                .thenReturn(LocalDate.of(2026, 6, 3));
+        when(repository.findSummary(
+                any(),
+                any(),
                 eq(PAGEABLE)
-        )).thenReturn(emptySummarySlice());
+        )).thenReturn(emptySlice());
 
-        Instant before = Instant.now();
+        Instant from =
+                Instant.parse("2026-06-01T12:00:00Z");
+        Instant to =
+                Instant.parse("2026-06-04T12:00:00Z");
 
-        usageQueryService.getUsageSummary(
+        service.getUsageSummary(
+                from,
+                to,
                 null,
-                null,
-                MODEL,
                 PAGEABLE,
                 adminPrincipal()
         );
 
-        Instant after = Instant.now();
-
-        ArgumentCaptor<Instant> fromCaptor =
+        ArgumentCaptor<UsageQueryPlan> plan =
                 ArgumentCaptor.forClass(
-                        Instant.class
+                        UsageQueryPlan.class
                 );
 
-        ArgumentCaptor<Instant> toCaptor =
-                ArgumentCaptor.forClass(
-                        Instant.class
+        verify(repository).findSummary(
+                any(),
+                plan.capture(),
+                eq(PAGEABLE)
+        );
+
+        assertThat(plan.getValue().rollupFrom())
+                .isEqualTo(LocalDate.of(2026, 6, 2));
+        assertThat(plan.getValue().rollupToExclusive())
+                .isEqualTo(LocalDate.of(2026, 6, 4));
+        assertThat(plan.getValue().liveRanges())
+                .containsExactly(
+                        new UsageInstantRange(
+                                from,
+                                Instant.parse(
+                                        "2026-06-02T00:00:00Z"
+                                )
+                        ),
+                        new UsageInstantRange(
+                                Instant.parse(
+                                        "2026-06-04T00:00:00Z"
+                                ),
+                                to
+                        )
                 );
-
-        verify(usageQueryRepository)
-                .findUsageByOrganizationId(
-                        eq(ORGANIZATION_ID),
-                        fromCaptor.capture(),
-                        toCaptor.capture(),
-                        eq(MODEL),
-                        eq(PAGEABLE)
-                );
-
-        assertThat(toCaptor.getValue())
-                .isBetween(before, after);
-
-        assertThat(
-                Duration.between(
-                        fromCaptor.getValue(),
-                        toCaptor.getValue()
-                )
-        ).isEqualTo(Duration.ofDays(30));
     }
 
     @Test
-    void nullPageableIsRejected() {
+    void uncoveredLiveFallbackLongerThanLimitReturns503() {
+        when(stateRepository.findLastCompletedDate())
+                .thenReturn(null);
+
         assertThatThrownBy(() ->
-                usageQueryService.getUsageSummary(
+                service.getUsageSummary(
+                        DATE_FROM,
+                        DATE_FROM.plus(Duration.ofDays(32)),
+                        null,
+                        PAGEABLE,
+                        adminPrincipal()
+                )
+        )
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(exception -> {
+                    ResponseStatusException response =
+                            (ResponseStatusException) exception;
+                    assertThat(response.getStatusCode())
+                            .isEqualTo(
+                                    HttpStatus.SERVICE_UNAVAILABLE
+                            );
+                })
+                .hasMessageContaining("live fallback");
+
+        verify(repository, never()).findSummary(
+                any(),
+                any(),
+                any()
+        );
+    }
+
+    @Test
+    void rollupCanBeDisabledForBoundedLiveQueries() {
+        UsageProperties noRollupProperties =
+                properties(
+                        Duration.ofDays(31),
+                        false
+                );
+        UsageQueryService noRollupService =
+                service(noRollupProperties);
+
+        when(repository.findSummary(
+                any(),
+                any(),
+                eq(PAGEABLE)
+        )).thenReturn(emptySlice());
+
+        noRollupService.getUsageSummary(
+                DATE_FROM,
+                DATE_TO,
+                null,
+                PAGEABLE,
+                adminPrincipal()
+        );
+
+        ArgumentCaptor<UsageQueryPlan> plan =
+                ArgumentCaptor.forClass(
+                        UsageQueryPlan.class
+                );
+
+        verify(repository).findSummary(
+                any(),
+                plan.capture(),
+                eq(PAGEABLE)
+        );
+
+        assertThat(plan.getValue().hasRollupRange()).isFalse();
+        assertThat(plan.getValue().liveRanges())
+                .containsExactly(
+                        new UsageInstantRange(
+                                DATE_FROM,
+                                DATE_TO
+                        )
+                );
+    }
+
+    @Test
+    void nullDependenciesAreRejectedExplicitly() {
+        assertThatThrownBy(() ->
+                service.getUsageSummary(
                         DATE_FROM,
                         DATE_TO,
-                        MODEL,
+                        null,
                         null,
                         adminPrincipal()
                 )
@@ -644,44 +507,205 @@ class UsageQueryServiceTest {
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("pageable");
 
-        verifyNoInteractions(usageQueryRepository);
-    }
-
-    @Test
-    void nullCurrentUserIsRejected() {
         assertThatThrownBy(() ->
-                usageQueryService.getUsageSummary(
+                service.getUsageSummary(
                         DATE_FROM,
                         DATE_TO,
-                        MODEL,
+                        null,
                         PAGEABLE,
                         null
                 )
         )
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("currentUser");
-
-        verifyNoInteractions(usageQueryRepository);
     }
 
-    private Slice<UsageSummaryResponse> usageSummarySlice() {
-        return new SliceImpl<>(
-                List.of(
-                        new UsageSummaryResponse(
-                                TARGET_USER_ID,
-                                "user@test.com",
-                                MODEL,
-                                10L,
-                                20L,
-                                BigDecimal.ZERO
-                        )
-                ),
+    @Test
+    void adminDataQualityIsTenantScoped() {
+        when(repository.findDataQuality(any(), any()))
+                .thenThrow(new TestCaptureException());
+
+        assertThatThrownBy(() -> service.getDataQuality(
+                DATE_FROM,
+                DATE_TO,
+                adminPrincipal()
+        ))
+                .isInstanceOf(TestCaptureException.class);
+
+        ArgumentCaptor<UsageQueryCriteria> criteria =
+                ArgumentCaptor.forClass(UsageQueryCriteria.class);
+        verify(repository).findDataQuality(
+                criteria.capture(),
+                any()
+        );
+        assertThat(criteria.getValue().organizationId())
+                .isEqualTo(ORGANIZATION_ID);
+    }
+
+    @Test
+    void usersModelsAndDailyUseGlobalScopeForSuperAdmin() {
+        when(repository.findUsers(any(), any(), eq(PAGEABLE)))
+                .thenReturn(new SliceImpl<>(List.of(), PAGEABLE, false));
+        when(repository.findModels(any(), any()))
+                .thenReturn(List.of());
+        when(repository.findDaily(any(), any()))
+                .thenReturn(List.of());
+
+        service.getUsageByUsers(
+                DATE_FROM,
+                DATE_TO,
                 PAGEABLE,
-                false
+                superAdminPrincipal()
+        );
+        service.getUsageByModels(
+                DATE_FROM,
+                DATE_TO,
+                superAdminPrincipal()
+        );
+        service.getUsageDaily(
+                DATE_FROM,
+                DATE_TO,
+                superAdminPrincipal()
+        );
+
+        ArgumentCaptor<UsageQueryCriteria> criteria =
+                ArgumentCaptor.forClass(UsageQueryCriteria.class);
+        verify(repository).findUsers(
+                criteria.capture(),
+                any(),
+                eq(PAGEABLE)
+        );
+        verify(repository).findModels(criteria.capture(), any());
+        verify(repository).findDaily(criteria.capture(), any());
+
+        assertThat(criteria.getAllValues())
+                .allSatisfy(value ->
+                        assertThat(value.organizationId()).isNull()
+                );
+    }
+
+    @Test
+    void blankModelIsNormalizedToNull() {
+        when(repository.findSummary(any(), any(), eq(PAGEABLE)))
+                .thenReturn(emptySlice());
+
+        service.getUsageSummary(
+                DATE_FROM,
+                DATE_TO,
+                "   ",
+                PAGEABLE,
+                adminPrincipal()
+        );
+
+        ArgumentCaptor<UsageQueryCriteria> criteria =
+                ArgumentCaptor.forClass(UsageQueryCriteria.class);
+        verify(repository).findSummary(
+                criteria.capture(),
+                any(),
+                eq(PAGEABLE)
+        );
+        assertThat(criteria.getValue().model()).isNull();
+    }
+
+    @Test
+    void exactlyMaximumRangeIsAccepted() {
+        Instant to = DATE_FROM.plus(Duration.ofDays(366));
+        when(stateRepository.findLastCompletedDate())
+                .thenReturn(LocalDate.of(2027, 5, 31));
+        when(repository.findSummary(any(), any(), eq(PAGEABLE)))
+                .thenReturn(emptySlice());
+
+        service.getUsageSummary(
+                DATE_FROM,
+                to,
+                null,
+                PAGEABLE,
+                adminPrincipal()
+        );
+
+        verify(repository).findSummary(any(), any(), eq(PAGEABLE));
+    }
+
+    @Test
+    void fullyCoveredWholeUtcDaysUseRollupWithoutLiveFragments() {
+        when(stateRepository.findLastCompletedDate())
+                .thenReturn(LocalDate.of(2026, 6, 30));
+        when(repository.findSummary(any(), any(), eq(PAGEABLE)))
+                .thenReturn(emptySlice());
+
+        service.getUsageSummary(
+                DATE_FROM,
+                DATE_TO,
+                null,
+                PAGEABLE,
+                adminPrincipal()
+        );
+
+        ArgumentCaptor<UsageQueryPlan> plan =
+                ArgumentCaptor.forClass(UsageQueryPlan.class);
+        verify(repository).findSummary(
+                any(),
+                plan.capture(),
+                eq(PAGEABLE)
+        );
+        assertThat(plan.getValue().rollupFrom())
+                .isEqualTo(LocalDate.of(2026, 6, 1));
+        assertThat(plan.getValue().rollupToExclusive())
+                .isEqualTo(LocalDate.of(2026, 7, 1));
+        assertThat(plan.getValue().liveRanges()).isEmpty();
+    }
+
+    private static final class TestCaptureException
+            extends RuntimeException {
+    }
+
+    private UsageQueryService service(
+            UsageProperties properties
+    ) {
+        return new UsageQueryService(
+                repository,
+                stateRepository,
+                properties,
+                new UsageReportExecutor(
+                        properties,
+                        new SimpleMeterRegistry()
+                ),
+                Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
 
-    private Slice<UsageSummaryResponse> emptySummarySlice() {
+    private UsageProperties defaultProperties() {
+        return properties(
+                Duration.ofDays(31),
+                true
+        );
+    }
+
+    private UsageProperties properties(
+            Duration maxLiveRange,
+            boolean rollupEnabled
+    ) {
+        return new UsageProperties(
+                Duration.ofDays(30),
+                Duration.ofDays(366),
+                maxLiveRange,
+                200,
+                Duration.ofSeconds(10),
+                Duration.ofSeconds(2),
+                200,
+                4,
+                new UsageProperties.Rollup(
+                        rollupEnabled,
+                        "0 */10 * * * *",
+                        3,
+                        31,
+                        8_026_001L,
+                        Duration.ofMinutes(2)
+                )
+        );
+    }
+
+    private Slice<UsageSummaryResponse> emptySlice() {
         return new SliceImpl<>(
                 List.of(),
                 PAGEABLE,
@@ -689,79 +713,30 @@ class UsageQueryServiceTest {
         );
     }
 
-    private Slice<UsageUserSummaryResponse> usageUserSummarySlice() {
-        return new SliceImpl<>(
-                List.of(
-                        new UsageUserSummaryResponse(
-                                TARGET_USER_ID,
-                                "user@test.com",
-                                5L,
-                                15L,
-                                BigDecimal.ZERO
-                        )
-                ),
-                PAGEABLE,
-                false
-        );
-    }
-
-    private UsageDailySummaryProjection dailyProjection() {
-        return new UsageDailySummaryProjection() {
-
-            @Override
-            public LocalDate getUsageDate() {
-                return LocalDate.of(
-                        2026,
-                        6,
-                        12
-                );
-            }
-
-            @Override
-            public Long getInputTokens() {
-                return 11L;
-            }
-
-            @Override
-            public Long getOutputTokens() {
-                return 22L;
-            }
-
-            @Override
-            public BigDecimal getCostUsd() {
-                return BigDecimal.ZERO;
-            }
-        };
-    }
-
     private SafeAiUserPrincipal adminPrincipal() {
-        return principal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 ADMIN_ID,
                 ORGANIZATION_ID,
-                "ROLE_ADMIN"
+                "admin@test.com",
+                0L,
+                List.of(
+                        new SimpleGrantedAuthority(
+                                "ROLE_ADMIN"
+                        )
+                )
         );
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
-        return principal(
+        return SafeAiUserPrincipal.accessTokenPrincipal(
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
-                "ROLE_SUPER_ADMIN"
-        );
-    }
-
-    private SafeAiUserPrincipal principal(
-            UUID userId,
-            UUID organizationId,
-            String role
-    ) {
-        return SafeAiUserPrincipal.accessTokenPrincipal(
-                userId,
-                organizationId,
-                "user@test.com",
+                "superadmin@test.com",
                 0L,
                 List.of(
-                        new SimpleGrantedAuthority(role)
+                        new SimpleGrantedAuthority(
+                                "ROLE_SUPER_ADMIN"
+                        )
                 )
         );
     }
