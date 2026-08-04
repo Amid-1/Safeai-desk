@@ -290,11 +290,15 @@ public class ChatTurnEntity {
                     "completedAt не может быть раньше createdAt"
             );
         }
-        if (assistantRequired != (assistantMessageId != null)) {
+        if (assistantRequired && assistantMessageId == null) {
             throw new IllegalStateException(
-                    assistantRequired
-                            ? "SUCCEEDED требует assistantMessageId"
-                            : "FAILED/AMBIGUOUS не могут иметь assistantMessageId"
+                    "SUCCEEDED требует assistantMessageId"
+            );
+        }
+
+        if (!assistantRequired && assistantMessageId != null) {
+            throw new IllegalStateException(
+                    "FAILED/AMBIGUOUS не могут иметь assistantMessageId"
             );
         }
         if (outcomeAmbiguous != ambiguous) {
@@ -318,15 +322,25 @@ public class ChatTurnEntity {
             int maxLength,
             String field
     ) {
-        if (value == null || value.isBlank()) {
+        if (value == null) {
             return null;
         }
+
         String normalized = value.trim();
-        if (normalized.length() > maxLength) {
-            throw new IllegalArgumentException(
-                    field + " не должен превышать " + maxLength + " символов"
-            );
+
+        if (normalized.isEmpty()) {
+            return null;
         }
-        return normalized;
+
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+
+        throw new IllegalArgumentException(
+                field
+                        + " не должен превышать "
+                        + maxLength
+                        + " символов"
+        );
     }
 }

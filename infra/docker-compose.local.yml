@@ -1,3 +1,4 @@
+# /infra/ docker-compose.local.yml
 name: safeai-local
 
 services:

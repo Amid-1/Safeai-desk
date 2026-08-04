@@ -122,7 +122,6 @@ public class ChatMessageEntity {
         ChatMessageEntity message = base(
                 session,
                 ChatMessageRole.USER,
-                ChatMessageStatus.COMPLETED,
                 content,
                 now
         );
@@ -130,10 +129,7 @@ public class ChatMessageEntity {
                 clientRequestId,
                 "clientRequestId не должен быть null"
         );
-        message.usageStatus = UsageStatus.NOT_APPLICABLE;
-        message.pricingStatus = PricingStatus.NOT_APPLICABLE;
-        message.validateInvariant();
-        return message;
+        return validateNonAiMessage(message);
     }
 
     public static ChatMessageEntity completedAssistant(
@@ -147,7 +143,6 @@ public class ChatMessageEntity {
         ChatMessageEntity message = base(
                 session,
                 ChatMessageRole.ASSISTANT,
-                ChatMessageStatus.COMPLETED,
                 response.content(),
                 now
         );
@@ -182,24 +177,20 @@ public class ChatMessageEntity {
         ChatMessageEntity message = base(
                 session,
                 ChatMessageRole.SYSTEM,
-                ChatMessageStatus.COMPLETED,
                 content,
                 now
         );
-        message.usageStatus = UsageStatus.NOT_APPLICABLE;
-        message.pricingStatus = PricingStatus.NOT_APPLICABLE;
-        message.validateInvariant();
-        return message;
+        return validateNonAiMessage(message);
     }
 
     private static ChatMessageEntity base(
             ChatSessionEntity session,
             ChatMessageRole role,
-            ChatMessageStatus status,
             String content,
             Instant now
     ) {
         Objects.requireNonNull(session, "session не должен быть null");
+
         ChatMessageEntity message = new ChatMessageEntity();
         message.id = UUID.randomUUID();
         message.session = session;
@@ -207,13 +198,25 @@ public class ChatMessageEntity {
                 session.getOrganization(),
                 "session.organization не должен быть null"
         );
-        message.role = Objects.requireNonNull(role, "role не должен быть null");
-        message.status = Objects.requireNonNull(
-                status,
-                "status не должен быть null"
+        message.role = Objects.requireNonNull(
+                role,
+                "role не должен быть null"
         );
+        message.status = ChatMessageStatus.COMPLETED;
         message.content = requireContent(content);
-        message.createdAt = Objects.requireNonNull(now, "now не должен быть null");
+        message.createdAt = Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
+        return message;
+    }
+
+    private static ChatMessageEntity validateNonAiMessage(
+            ChatMessageEntity message
+    ) {
+        message.usageStatus = UsageStatus.NOT_APPLICABLE;
+        message.pricingStatus = PricingStatus.NOT_APPLICABLE;
+        message.validateInvariant();
         return message;
     }
 
@@ -373,7 +376,12 @@ public class ChatMessageEntity {
                 }
             }
             case PARTIAL -> {
-                if ((inputTokens == null) == (outputTokens == null)) {
+                boolean bothMissing =
+                        inputTokens == null && outputTokens == null;
+                boolean bothPresent =
+                        inputTokens != null && outputTokens != null;
+
+                if (bothMissing || bothPresent) {
                     throw new IllegalStateException(
                             "PARTIAL требует ровно один token counter"
                     );
@@ -401,7 +409,7 @@ public class ChatMessageEntity {
         }
         switch (pricingStatus) {
             case PRICED -> {
-                if (costUsd == null || costUsd.signum() <= 0) {
+                if (costUsd == null || costUsd.signum() == 0) {
                     throw new IllegalStateException(
                             "PRICED требует положительный costUsd"
                     );
