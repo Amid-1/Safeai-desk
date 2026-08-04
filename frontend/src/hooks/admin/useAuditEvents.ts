@@ -1,27 +1,21 @@
-// ============================================================
-// frontend/src/hooks/admin/useAuditEvents.ts
-// ============================================================
 import {
     useEffect,
     useRef,
     useState,
 } from 'react'
-
 import {
     getAuditEvents,
 } from '../../api/adminApi'
-
 import type {
     AuditEvent,
     AuditEventFilter,
 } from '../../api/adminApi'
-
 import {
+    ApiError,
     getApiErrorMessage,
 } from '../../api/http'
-
-import {
-    normalizePageResponse,
+import type {
+    PageResponse,
 } from '../../utils/page'
 
 const PAGE_SIZE = 50
@@ -30,29 +24,37 @@ type UseAuditEventsParams = {
     page: number
     filter: AuditEventFilter
     reloadToken: number
-    onPageOutOfRange: (
-        correctedPage: number,
-    ) => void
+    onPageOutOfRange:
+        (correctedPage: number) => void
 }
 
 type UseAuditEventsResult = {
     events: AuditEvent[]
-    totalPages: number
+    pageResponse:
+        PageResponse<AuditEvent>
     loading: boolean
     error: string
 }
 
-function useAuditEvents({
-                            page,
-                            filter,
-                            reloadToken,
-                            onPageOutOfRange,
-                        }: UseAuditEventsParams): UseAuditEventsResult {
-    const [events, setEvents] =
-        useState<AuditEvent[]>([])
+const EMPTY_PAGE:
+    PageResponse<AuditEvent> = {
+    content: [],
+    page: 0,
+    size: PAGE_SIZE,
+    totalElements: 0,
+    totalPages: 0,
+}
 
-    const [totalPages, setTotalPages] =
-        useState(0)
+function useAuditEvents({
+    page,
+    filter,
+    reloadToken,
+    onPageOutOfRange,
+}: UseAuditEventsParams): UseAuditEventsResult {
+    const [pageResponse, setPageResponse] =
+        useState<PageResponse<AuditEvent>>(
+            EMPTY_PAGE,
+        )
 
     const [loading, setLoading] =
         useState(true)
@@ -63,11 +65,20 @@ function useAuditEvents({
     const requestSequenceRef =
         useRef(0)
 
+    const callbackRef =
+        useRef(onPageOutOfRange)
+
+    callbackRef.current =
+        onPageOutOfRange
+
     useEffect(() => {
         const sequence =
             ++requestSequenceRef.current
 
-        async function loadEvents(): Promise<void> {
+        const controller =
+            new AbortController()
+
+        async function loadEvents() {
             setLoading(true)
             setError('')
 
@@ -77,52 +88,61 @@ function useAuditEvents({
                         page,
                         PAGE_SIZE,
                         filter,
+                        {
+                            signal:
+                                controller.signal,
+                        },
                     )
 
                 if (
-                    sequence !==
-                    requestSequenceRef.current
+                    sequence
+                    !== requestSequenceRef.current
                 ) {
                     return
                 }
 
-                const normalized =
-                    normalizePageResponse(response)
-
-                setEvents(normalized.content)
-                setTotalPages(
-                    normalized.totalPages,
-                )
+                if (
+                    response.totalPages === 0
+                    && page !== 0
+                ) {
+                    callbackRef.current(0)
+                    return
+                }
 
                 if (
-                    normalized.totalPages > 0 &&
-                    page >= normalized.totalPages
+                    response.totalPages > 0
+                    && page
+                        >= response.totalPages
                 ) {
-                    onPageOutOfRange(
-                        normalized.totalPages - 1,
+                    callbackRef.current(
+                        response.totalPages - 1,
                     )
+                    return
                 }
+
+                setPageResponse(response)
             } catch (loadError) {
                 if (
-                    sequence !==
-                    requestSequenceRef.current
-                ) {
-                    return
-                }
-
-                setEvents([])
-                setTotalPages(0)
-
-                setError(
-                    getApiErrorMessage(
+                    sequence
+                    === requestSequenceRef.current
+                    && !isRequestAborted(
                         loadError,
-                        'Не удалось загрузить аудит.',
-                    ),
-                )
+                    )
+                ) {
+                    setPageResponse(
+                        EMPTY_PAGE,
+                    )
+                    setError(
+                        getApiErrorMessage(
+                            loadError,
+                            'Не удалось загрузить аудит.',
+                        ),
+                    )
+                }
             } finally {
                 if (
-                    sequence ===
-                    requestSequenceRef.current
+                    sequence
+                    === requestSequenceRef.current
                 ) {
                     setLoading(false)
                 }
@@ -132,21 +152,34 @@ function useAuditEvents({
         void loadEvents()
 
         return () => {
+            controller.abort()
             requestSequenceRef.current += 1
         }
     }, [
         page,
-        filter,
+        filter.eventType,
+        filter.actorUserId,
+        filter.actorEmail,
+        filter.dateFrom,
+        filter.dateTo,
+        filter.targetOrganizationId,
         reloadToken,
-        onPageOutOfRange,
     ])
 
     return {
-        events,
-        totalPages,
+        events: pageResponse.content,
+        pageResponse,
         loading,
         error,
     }
+}
+
+function isRequestAborted(
+    error: unknown,
+): boolean {
+    return error instanceof ApiError
+        && error.errorCode
+            === 'REQUEST_ABORTED'
 }
 
 export default useAuditEvents

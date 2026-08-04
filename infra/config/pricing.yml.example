@@ -1,0 +1,20 @@
+## SafeAi-Desk/infra/config/pricing.yml.example
+# Copy to /etc/safeai/config/pricing.yml and replace every placeholder with
+# the exact, verified tariff for the resolved provider model used in production.
+# validate-prod.sh refuses to deploy while REPLACE_WITH remains.
+
+safeai:
+  ai:
+    pricing:
+      models:
+        - model: gpt-4.1
+          input-usd-per-1m-tokens: REPLACE_WITH_VERIFIED_INPUT_PRICE
+          output-usd-per-1m-tokens: REPLACE_WITH_VERIFIED_OUTPUT_PRICE
+          currency: USD
+          version: REPLACE_WITH_IMMUTABLE_PRICE_VERSION
+
+        - model: claude-opus-4-8
+          input-usd-per-1m-tokens: REPLACE_WITH_VERIFIED_INPUT_PRICE
+          output-usd-per-1m-tokens: REPLACE_WITH_VERIFIED_OUTPUT_PRICE
+          currency: USD
+          version: REPLACE_WITH_IMMUTABLE_PRICE_VERSION

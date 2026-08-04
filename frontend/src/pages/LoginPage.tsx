@@ -1,44 +1,135 @@
-// frontend/src/pages/LoginPage.tsx
-import { useEffect, useState } from 'react'
-import type { SyntheticEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ApiError, getApiErrorMessage } from '../api/http'
+import {
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react'
+import type {
+    FormEvent,
+    KeyboardEvent,
+} from 'react'
+import {
+    ApiError,
+    getApiErrorMessage,
+} from '../api/http'
 import { useAuth } from '../auth/AuthContext'
-import { LoadingState } from '../components/StateBlock'
+import {
+    ErrorState,
+    LoadingState,
+} from '../components/StateBlock'
+
+type InvalidField =
+    | 'email'
+    | 'password'
+    | 'credentials'
+    | null
 
 function LoginPage() {
-    const navigate = useNavigate()
-    const { currentUser, authStatus, loginUser } = useAuth()
+    const {
+        authStatus,
+        authError,
+        loginUser,
+        logoutUser,
+    } = useAuth()
+
+    const emailInputRef =
+        useRef<HTMLInputElement | null>(null)
+    const passwordInputRef =
+        useRef<HTMLInputElement | null>(null)
+    const submitInFlightRef = useRef(false)
 
     const [email, setEmail] = useState('')
-    const [password, setPassword] = useState('')
+    const [password, setPassword] =
+        useState('')
     const [error, setError] = useState('')
-    const [loading, setLoading] = useState(false)
+    const [invalidField, setInvalidField] =
+        useState<InvalidField>(null)
+    const [loading, setLoading] =
+        useState(false)
+    const [retryUntil, setRetryUntil] =
+        useState<number | null>(null)
+    const [now, setNow] = useState(
+        Date.now(),
+    )
 
     useEffect(() => {
-        if (authStatus === 'authenticated' && currentUser) {
-            navigate('/chat', { replace: true })
+        if (retryUntil === null) {
+            return
         }
-    }, [authStatus, currentUser, navigate])
+
+        const intervalId = window.setInterval(
+            () => {
+                setNow(Date.now())
+            },
+            1_000,
+        )
+
+        return () => {
+            window.clearInterval(intervalId)
+        }
+    }, [retryUntil])
+
+    const retryAfterSeconds = useMemo(() => {
+        if (retryUntil === null) {
+            return 0
+        }
+
+        return Math.max(
+            0,
+            Math.ceil(
+                (retryUntil - now) / 1_000,
+            ),
+        )
+    }, [
+        retryUntil,
+        now,
+    ])
+
+    useEffect(() => {
+        if (
+            retryUntil !== null
+            && retryAfterSeconds === 0
+        ) {
+            setRetryUntil(null)
+        }
+    }, [
+        retryUntil,
+        retryAfterSeconds,
+    ])
 
     async function handleSubmit(
-        event: SyntheticEvent<HTMLFormElement, SubmitEvent>
+        event: FormEvent<HTMLFormElement>,
     ) {
         event.preventDefault()
 
-        if (loading) {
+        if (
+            submitInFlightRef.current
+            || loading
+            || retryAfterSeconds > 0
+        ) {
             return
         }
 
         setError('')
+        setInvalidField(null)
 
         const normalizedEmail = email.trim()
 
-        if (!normalizedEmail || !password) {
-            setError('Введите email и пароль.')
+        if (!normalizedEmail) {
+            setInvalidField('email')
+            setError('Введите email.')
+            emailInputRef.current?.focus()
             return
         }
 
+        if (!password) {
+            setInvalidField('password')
+            setError('Введите пароль.')
+            passwordInputRef.current?.focus()
+            return
+        }
+
+        submitInFlightRef.current = true
         setLoading(true)
 
         try {
@@ -46,67 +137,242 @@ function LoginPage() {
                 email: normalizedEmail,
                 password,
             })
+        } catch (loginError) {
+            if (
+                loginError instanceof ApiError
+                && loginError.status === 401
+            ) {
+                setPassword('')
+                setInvalidField('credentials')
+                setError(
+                    'Неверный email или пароль.',
+                )
 
-            navigate('/chat', { replace: true })
-        } catch (error) {
-            if (error instanceof ApiError && error.status === 401) {
-                setError('Неверный email или пароль.')
+                window.requestAnimationFrame(
+                    () => {
+                        passwordInputRef.current
+                            ?.focus()
+                    },
+                )
                 return
             }
 
-            setError(getApiErrorMessage(error, 'Не удалось выполнить вход.'))
+            if (
+                loginError instanceof ApiError
+                && loginError.status === 429
+                && loginError.retryAfterSeconds
+            ) {
+                setRetryUntil(
+                    Date.now()
+                    + loginError.retryAfterSeconds
+                    * 1_000,
+                )
+                setNow(Date.now())
+                setError(
+                    'Слишком много попыток входа.',
+                )
+                return
+            }
+
+            setError(
+                getApiErrorMessage(
+                    loginError,
+                    'Не удалось выполнить вход.',
+                ),
+            )
         } finally {
+            submitInFlightRef.current = false
             setLoading(false)
+        }
+    }
+
+    async function retryLogout() {
+        try {
+            await logoutUser()
+        } catch {
+            // Ошибка уже сохранена в AuthContext.
+        }
+    }
+
+    function preventSubmitOnRetry(
+        event: KeyboardEvent<HTMLButtonElement>,
+    ) {
+        if (
+            retryAfterSeconds > 0
+            && (
+                event.key === 'Enter'
+                || event.key === ' '
+            )
+        ) {
+            event.preventDefault()
         }
     }
 
     if (authStatus === 'loading') {
         return (
             <div className="page narrow-page">
-                <LoadingState message="Проверка доступа..." />
+                <LoadingState
+                    message="Проверка доступа..."
+                />
             </div>
         )
     }
+
+    if (authStatus === 'logout-unconfirmed') {
+        return (
+            <div className="page narrow-page">
+                <ErrorState
+                    title="Выход не подтверждён"
+                    message={
+                        authError
+                        ?? (
+                            'Локальные данные скрыты, '
+                            + 'но сервер не подтвердил выход.'
+                        )
+                    }
+                    action={
+                        <button
+                            type="button"
+                            onClick={() =>
+                                void retryLogout()
+                            }
+                        >
+                            Повторить выход
+                        </button>
+                    }
+                />
+            </div>
+        )
+    }
+
+    const hasError = Boolean(error)
+    const emailInvalid =
+        invalidField === 'email'
+        || invalidField === 'credentials'
+    const passwordInvalid =
+        invalidField === 'password'
+        || invalidField === 'credentials'
 
     return (
         <div className="page narrow-page">
             <h1>Вход в SafeAI Desk</h1>
 
-            <form className="card form" onSubmit={handleSubmit}>
-                <label>
+            <form
+                className="card form"
+                onSubmit={handleSubmit}
+                noValidate
+            >
+                <label htmlFor="login-email">
                     Email
-                    <input
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        type="email"
-                        autoComplete="username"
-                        maxLength={255}
-                        required
-                        disabled={loading}
-                    />
                 </label>
 
-                <label>
+                <input
+                    ref={emailInputRef}
+                    id="login-email"
+                    value={email}
+                    onChange={(event) =>
+                        setEmail(
+                            event.target.value,
+                        )
+                    }
+                    type="email"
+                    inputMode="email"
+                    autoComplete="username"
+                    maxLength={255}
+                    required
+                    disabled={loading}
+                    aria-invalid={emailInvalid}
+                    aria-describedby={
+                        hasError
+                            ? 'login-error'
+                            : undefined
+                    }
+                    autoFocus
+                />
+
+                <label htmlFor="login-password">
                     Пароль
-                    <input
-                        type="password"
-                        value={password}
-                        onChange={(event) => setPassword(event.target.value)}
-                        autoComplete="current-password"
-                        maxLength={100}
-                        required
-                        disabled={loading}
-                    />
                 </label>
 
-                {error && <div className="error">{error}</div>}
+                <input
+                    ref={passwordInputRef}
+                    id="login-password"
+                    type="password"
+                    value={password}
+                    onChange={(event) =>
+                        setPassword(
+                            event.target.value,
+                        )
+                    }
+                    autoComplete="current-password"
+                    maxLength={100}
+                    required
+                    disabled={loading}
+                    aria-invalid={
+                        passwordInvalid
+                    }
+                    aria-describedby={
+                        hasError
+                            ? 'login-error'
+                            : undefined
+                    }
+                />
 
-                <button disabled={loading || !email.trim() || !password}>
-                    {loading ? 'Вход...' : 'Войти'}
+                {hasError && (
+                    <div
+                        id="login-error"
+                        className="error"
+                        role="alert"
+                        aria-live="assertive"
+                    >
+                        {error}
+
+                        {retryAfterSeconds > 0 && (
+                            <>
+                                {' '}
+                                Повторите через{' '}
+                                {formatDuration(
+                                    retryAfterSeconds,
+                                )}.
+                            </>
+                        )}
+                    </div>
+                )}
+
+                <button
+                    type="submit"
+                    disabled={
+                        loading
+                        || retryAfterSeconds > 0
+                        || !email.trim()
+                        || !password
+                    }
+                    onKeyDown={
+                        preventSubmitOnRetry
+                    }
+                >
+                    {loading
+                        ? 'Вход...'
+                        : 'Войти'}
                 </button>
             </form>
         </div>
     )
+}
+
+function formatDuration(
+    totalSeconds: number,
+): string {
+    const minutes = Math.floor(
+        totalSeconds / 60,
+    )
+    const seconds = totalSeconds % 60
+
+    if (minutes === 0) {
+        return `${seconds} сек.`
+    }
+
+    return `${minutes} мин. ${seconds} сек.`
 }
 
 export default LoginPage

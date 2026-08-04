@@ -1,15 +1,25 @@
 # "D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod.yml"
 spring:
+  datasource:
+    username: ${SAFEAI_DB_APP_USER}
+    password: ${SAFEAI_DB_APP_PASSWORD}
+
   flyway:
     locations:
       - classpath:db/migration
+    user: ${SAFEAI_DB_MIGRATOR_USER}
+    password: ${SAFEAI_DB_MIGRATOR_PASSWORD}
 
   jpa:
     properties:
       hibernate:
         format_sql: false
 
+  lifecycle:
+    timeout-per-shutdown-phase: 90s
+
 server:
+  shutdown: graceful
   forward-headers-strategy: framework
 
 management:
@@ -20,18 +30,29 @@ management:
           - health
           - info
           - prometheus
-
   endpoint:
     health:
       probes:
         enabled: true
       show-details: never
+      group:
+        liveness:
+          include:
+            - livenessState
+        readiness:
+          include:
+            - readinessState
+            - db
+            - redis
+
+logging:
+  level:
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: "OFF"
+    org.springframework.web.filter.CommonsRequestLoggingFilter: "OFF"
 
 safeai:
   ai:
-    # В production провайдер должен быть задан явно.
-    # Допустимые значения: openai или anthropic.
-    # Mock-провайдер отклоняется production-валидатором.
     provider: ${SAFEAI_AI_PROVIDER}
 
     context:
@@ -50,7 +71,7 @@ safeai:
       initial-backoff: ${SAFEAI_AI_RETRY_INITIAL_BACKOFF:250ms}
       max-backoff: ${SAFEAI_AI_RETRY_MAX_BACKOFF:2s}
       max-retry-after: ${SAFEAI_AI_RETRY_MAX_RETRY_AFTER:10s}
-      total-timeout: ${SAFEAI_AI_RETRY_TOTAL_TIMEOUT:65s}
+      total-timeout: ${SAFEAI_AI_RETRY_TOTAL_TIMEOUT:75s}
 
     openai:
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
@@ -76,8 +97,6 @@ safeai:
       connect-timeout: ${ANTHROPIC_CONNECT_TIMEOUT:5s}
       read-timeout: ${ANTHROPIC_READ_TIMEOUT:60s}
 
-    # Production должен использовать точные resolved model IDs
-    # и версионированный источник тарифов.
     pricing:
       models: []
 
@@ -89,12 +108,9 @@ safeai:
       refresh-token-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_MAX_AGE:30d}
       refresh-token-absolute-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_ABSOLUTE_MAX_AGE:90d}
       reuse-detection-retention: ${SAFEAI_AUTH_REUSE_DETECTION_RETENTION:7d}
-
-      # Пустое значение означает host-only cookie.
       domain: ${SAFEAI_AUTH_COOKIES_DOMAIN:}
-
-      access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:}
-      refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:}
+      access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:safeai-access}
+      refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:safeai-refresh}
 
     refresh-cleanup:
       cron: "${SAFEAI_AUTH_REFRESH_CLEANUP_CRON:0 0 3 * * *}"
@@ -106,29 +122,27 @@ safeai:
       key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX}
       hmac-secret: ${SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET}
       key-version: ${SAFEAI_RATE_LIMIT_REDIS_KEY_VERSION:v1}
-
     login:
       enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}
       email-limit: ${SAFEAI_RATE_LIMIT_LOGIN_EMAIL_LIMIT:10}
       ip-limit: ${SAFEAI_RATE_LIMIT_LOGIN_IP_LIMIT:100}
       window: ${SAFEAI_RATE_LIMIT_LOGIN_WINDOW:10m}
       audit-organization-id: ${SAFEAI_RATE_LIMIT_LOGIN_AUDIT_ORGANIZATION_ID:${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}}
-
     ai-messages:
       enabled: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ENABLED:true}
-      user-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_USER_LIMIT_PER_HOUR:20}
-      admin-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_ADMIN_LIMIT_PER_HOUR:100}
-      organization-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_ORGANIZATION_LIMIT_PER_HOUR:1000}
+      user-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_USER_LIMIT_PER_HOUR:20}
+      admin-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ADMIN_LIMIT_PER_HOUR:100}
+      organization-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ORGANIZATION_LIMIT_PER_HOUR:1000}
 
   security:
     client-ip:
-      trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:172.28.0.0/24}
-
+      trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:172.28.0.10/32}
     user-status-cache:
       enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:false}
-      ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
+      ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:15s}
       key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status}
-
+    # Backend добавляет HSTS к HTTPS API-ответам. Это не заменяет
+    # domain-wide HSTS на внешнем TLS terminator, который отдаёт frontend.
     hsts:
       enabled: ${SAFEAI_HSTS_ENABLED:true}
 
@@ -145,7 +159,6 @@ safeai:
     outbox:
       batch-size: ${SAFEAI_AUDIT_OUTBOX_BATCH_SIZE:100}
       poll-delay-ms: ${SAFEAI_AUDIT_OUTBOX_POLL_DELAY_MS:1000}
-
     retention:
       enabled: ${SAFEAI_AUDIT_RETENTION_ENABLED:true}
       period: ${SAFEAI_AUDIT_RETENTION_PERIOD:1095d}
@@ -163,7 +176,6 @@ safeai:
     slow-query-threshold: ${SAFEAI_USAGE_SLOW_QUERY_THRESHOLD:2s}
     fetch-size: ${SAFEAI_USAGE_FETCH_SIZE:200}
     max-concurrent-reports: ${SAFEAI_USAGE_MAX_CONCURRENT_REPORTS:4}
-
     rollup:
       enabled: ${SAFEAI_USAGE_ROLLUP_ENABLED:true}
       cron: "${SAFEAI_USAGE_ROLLUP_CRON:0 */10 * * * *}"
@@ -181,29 +193,20 @@ safeai:
     processing-lease: ${SAFEAI_CHAT_PROCESSING_LEASE:3m}
     lease-renewal-threads: ${SAFEAI_CHAT_LEASE_RENEWAL_THREADS:4}
     max-active-lease-watchdogs: ${SAFEAI_CHAT_MAX_ACTIVE_LEASE_WATCHDOGS:1000}
-
     lock:
       key-prefix: ${SAFEAI_CHAT_LOCK_KEY_PREFIX:safeai:prod:chat-lock}
-      ttl: ${SAFEAI_CHAT_LOCK_TTL:4m}
+      ttl: ${SAFEAI_CHAT_LOCK_TTL:2m}
       renewal-threads: ${SAFEAI_CHAT_LOCK_RENEWAL_THREADS:4}
       max-active-locks: ${SAFEAI_CHAT_LOCK_MAX_ACTIVE_LOCKS:1000}
       shutdown-timeout: ${SAFEAI_CHAT_LOCK_SHUTDOWN_TIMEOUT:5s}
-
     quota:
       enabled: ${SAFEAI_CHAT_QUOTA_ENABLED:true}
       reservation-input-tokens: ${SAFEAI_CHAT_QUOTA_RESERVATION_INPUT_TOKENS:16000}
       reservation-output-tokens: ${SAFEAI_CHAT_QUOTA_RESERVATION_OUTPUT_TOKENS:2048}
       reservation-cost-usd: ${SAFEAI_CHAT_QUOTA_RESERVATION_COST_USD:1.000000000000}
       period-zone: ${SAFEAI_CHAT_QUOTA_PERIOD_ZONE:UTC}
-
     recovery:
       enabled: ${SAFEAI_CHAT_RECOVERY_ENABLED:true}
       batch-size: ${SAFEAI_CHAT_RECOVERY_BATCH_SIZE:100}
       max-batches-per-run: ${SAFEAI_CHAT_RECOVERY_MAX_BATCHES_PER_RUN:20}
       cron: "${SAFEAI_CHAT_RECOVERY_CRON:0 * * * * *}"
-
-
-# Management port, network restrictions и authentication
-# задаются инфраструктурой deployment.
-#
-# Не публикуйте /actuator/prometheus напрямую в интернет.

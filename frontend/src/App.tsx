@@ -1,7 +1,9 @@
-// ============================================================
-// frontend/src/App.tsx
-// ============================================================
-
+import {
+    lazy,
+    Suspense,
+    useState,
+    type ReactNode,
+} from 'react'
 import {
     NavLink,
     Navigate,
@@ -9,33 +11,41 @@ import {
     Routes,
     useNavigate,
 } from 'react-router-dom'
-import type { ReactNode } from 'react'
-import LoginPage from './pages/LoginPage'
-import ChatPage from './pages/ChatPage'
-import AdminUsersPage from './pages/AdminUsersPage'
-import AdminOrganizationsPage from './pages/AdminOrganizationsPage'
-import AdminAuditPage from './pages/AdminAuditPage'
-import AdminUsagePage from './pages/AdminUsagePage'
 import type { AuthUser } from './api/authApi'
 import type { UserRole } from './api/types'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { ErrorState, LoadingState } from './components/StateBlock'
 
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const ChatPage = lazy(() => import('./pages/ChatPage'))
+const AdminUsersPage = lazy(
+    () => import('./pages/AdminUsersPage'),
+)
+const AdminOrganizationsPage = lazy(
+    () => import('./pages/AdminOrganizationsPage'),
+)
+const AdminAuditPage = lazy(
+    () => import('./pages/AdminAuditPage'),
+)
+const AdminUsagePage = lazy(
+    () => import('./pages/AdminUsagePage'),
+)
+
 type ProtectedRouteProps = {
-    roles?: UserRole[]
+    roles?: readonly UserRole[]
     children: ReactNode | ((currentUser: AuthUser) => ReactNode)
 }
 
 function hasAnyRole(
     user: AuthUser | null,
-    roles: UserRole[]
+    roles: readonly UserRole[],
 ): boolean {
     return user?.roles.some((role) => roles.includes(role)) ?? false
 }
 
 function hasRequiredRole(
     user: AuthUser,
-    roles?: UserRole[]
+    roles?: readonly UserRole[],
 ): boolean {
     if (!roles || roles.length === 0) {
         return true
@@ -65,18 +75,23 @@ function getDisplayRole(user: AuthUser | null): UserRole | null {
 }
 
 function getNavLinkClass({
-                             isActive,
-                         }: {
+    isActive,
+}: {
     isActive: boolean
 }): string {
-    return isActive ? 'nav-link active' : 'nav-link'
+    return isActive
+        ? 'nav-link active'
+        : 'nav-link'
 }
 
 function AuthUnavailableState() {
-    const { authError, reloadCurrentUser } = useAuth()
+    const {
+        authError,
+        reloadCurrentUser,
+    } = useAuth()
 
     return (
-        <div className="page narrow-page">
+        <div className="page narrow-page route-state">
             <ErrorState
                 title="Сервис временно недоступен"
                 message={
@@ -96,10 +111,29 @@ function AuthUnavailableState() {
     )
 }
 
+function AccessDeniedState() {
+    return (
+        <div className="page narrow-page route-state">
+            <ErrorState
+                title="Недостаточно прав"
+                message="У вас нет доступа к этой странице."
+            />
+        </div>
+    )
+}
+
+function RouteLoadingState() {
+    return (
+        <div className="page narrow-page route-state">
+            <LoadingState message="Загрузка страницы..." />
+        </div>
+    )
+}
+
 function ProtectedRoute({
-                            roles,
-                            children,
-                        }: ProtectedRouteProps) {
+    roles,
+    children,
+}: ProtectedRouteProps) {
     const {
         currentUser,
         authStatus,
@@ -118,7 +152,7 @@ function ProtectedRoute({
     }
 
     if (!hasRequiredRole(currentUser, roles)) {
-        return <Navigate to="/chat" replace />
+        return <AccessDeniedState />
     }
 
     if (typeof children === 'function') {
@@ -171,24 +205,61 @@ function LoginRoute() {
     return <LoginPage />
 }
 
+function NotFoundRoute() {
+    const navigate = useNavigate()
+
+    return (
+        <div className="page narrow-page route-state">
+            <ErrorState
+                title="Страница не найдена"
+                message="Проверьте адрес или вернитесь на главную страницу."
+                action={
+                    <button
+                        type="button"
+                        onClick={() => navigate('/', { replace: true })}
+                    >
+                        На главную
+                    </button>
+                }
+            />
+        </div>
+    )
+}
+
 function AppLayout() {
     const navigate = useNavigate()
     const {
         currentUser,
         logoutUser,
     } = useAuth()
+    const [logoutPending, setLogoutPending] = useState(false)
 
     const isAuthenticated = currentUser !== null
     const canAccessAdmin = hasAnyRole(
         currentUser,
-        ['ADMIN', 'SUPER_ADMIN']
+        [
+            'ADMIN',
+            'SUPER_ADMIN',
+        ],
     )
     const canAccessOrganizations = isSuperAdmin(currentUser)
     const displayRole = getDisplayRole(currentUser)
 
     async function handleLogout() {
-        await logoutUser()
-        navigate('/login', { replace: true })
+        if (logoutPending) {
+            return
+        }
+
+        setLogoutPending(true)
+
+        try {
+            await logoutUser()
+        } catch {
+            // AuthContext очищает локальную сессию в finally.
+        } finally {
+            setLogoutPending(false)
+            navigate('/login', { replace: true })
+        }
     }
 
     return (
@@ -261,88 +332,102 @@ function AppLayout() {
 
                         <button
                             type="button"
+                            disabled={logoutPending}
                             onClick={() => void handleLogout()}
                         >
-                            Выйти
+                            {logoutPending
+                                ? 'Выход...'
+                                : 'Выйти'}
                         </button>
                     </div>
                 </header>
             )}
 
             <main className="content">
-                <Routes>
-                    <Route
-                        path="/"
-                        element={<RootRedirect />}
-                    />
+                <Suspense fallback={<RouteLoadingState />}>
+                    <Routes>
+                        <Route
+                            path="/"
+                            element={<RootRedirect />}
+                        />
 
-                    <Route
-                        path="/login"
-                        element={<LoginRoute />}
-                    />
+                        <Route
+                            path="/login"
+                            element={<LoginRoute />}
+                        />
 
-                    <Route
-                        path="/chat"
-                        element={
-                            <ProtectedRoute>
-                                <ChatPage />
-                            </ProtectedRoute>
-                        }
-                    />
+                        <Route
+                            path="/chat"
+                            element={
+                                <ProtectedRoute>
+                                    <ChatPage />
+                                </ProtectedRoute>
+                            }
+                        />
 
-                    <Route
-                        path="/admin/users"
-                        element={
-                            <ProtectedRoute
-                                roles={['ADMIN', 'SUPER_ADMIN']}
-                            >
-                                {(user) => (
-                                    <AdminUsersPage
-                                        currentUser={user}
-                                    />
-                                )}
-                            </ProtectedRoute>
-                        }
-                    />
+                        <Route
+                            path="/admin/users"
+                            element={
+                                <ProtectedRoute
+                                    roles={[
+                                        'ADMIN',
+                                        'SUPER_ADMIN',
+                                    ]}
+                                >
+                                    {(user) => (
+                                        <AdminUsersPage
+                                            currentUser={user}
+                                        />
+                                    )}
+                                </ProtectedRoute>
+                            }
+                        />
 
-                    <Route
-                        path="/admin/organizations"
-                        element={
-                            <ProtectedRoute
-                                roles={['SUPER_ADMIN']}
-                            >
-                                <AdminOrganizationsPage />
-                            </ProtectedRoute>
-                        }
-                    />
+                        <Route
+                            path="/admin/organizations"
+                            element={
+                                <ProtectedRoute
+                                    roles={['SUPER_ADMIN']}
+                                >
+                                    <AdminOrganizationsPage />
+                                </ProtectedRoute>
+                            }
+                        />
 
-                    <Route
-                        path="/admin/audit"
-                        element={
-                            <ProtectedRoute
-                                roles={['ADMIN', 'SUPER_ADMIN']}
-                            >
-                                <AdminAuditPage />
-                            </ProtectedRoute>
-                        }
-                    />
+                        <Route
+                            path="/admin/audit"
+                            element={
+                                <ProtectedRoute
+                                    roles={[
+                                        'ADMIN',
+                                        'SUPER_ADMIN',
+                                    ]}
+                                >
+                                    <AdminAuditPage />
+                                </ProtectedRoute>
+                            }
+                        />
 
-                    <Route
-                        path="/admin/usage"
-                        element={
-                            <ProtectedRoute
-                                roles={['ADMIN', 'SUPER_ADMIN']}
-                            >
-                                <AdminUsagePage />
-                            </ProtectedRoute>
-                        }
-                    />
+                        <Route
+                            path="/admin/usage"
+                            element={
+                                <ProtectedRoute
+                                    roles={[
+                                        'ADMIN',
+                                        'SUPER_ADMIN',
+                                    ]}
+                                >
+                                    <AdminUsagePage />
+                                </ProtectedRoute>
+                            }
+                        />
 
-                    <Route
-                        path="*"
-                        element={<Navigate to="/" replace />}
-                    />
-                </Routes>
+                        <Route
+                            path="*"
+                            element={<NotFoundRoute />}
+                        />
+                    </Routes>
+                </Suspense>
             </main>
         </div>
     )
@@ -357,4 +442,3 @@ function App() {
 }
 
 export default App
-

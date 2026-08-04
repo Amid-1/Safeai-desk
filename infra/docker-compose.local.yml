@@ -1,5 +1,11 @@
-# /infra/ docker-compose.local.yml
+# SafeAI-Desk/infra/docker-compose.local.yml
 name: safeai-local
+
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   backend:
@@ -10,22 +16,27 @@ services:
     profiles:
       - full
 
+    # Для интерполяции ${...} запускать Compose с:
+    # --env-file ../backend/.env
     env_file:
       - ../backend/.env
 
     environment:
-      SPRING_PROFILES_ACTIVE: "local"
+      SPRING_PROFILES_ACTIVE: local
 
-      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/safeai"
-      SPRING_DATASOURCE_USERNAME: "${POSTGRES_USER:-safeai}"
-      SPRING_DATASOURCE_PASSWORD: "${POSTGRES_PASSWORD:-safeai_password}"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
+      SPRING_DATASOURCE_USERNAME: "${POSTGRES_USER}"
+      SPRING_DATASOURCE_PASSWORD: "${POSTGRES_PASSWORD}"
 
-      REDIS_HOST: "redis"
+      REDIS_HOST: redis
       REDIS_PORT: "6379"
-      REDIS_PASSWORD: "${REDIS_PASSWORD:-safeai_redis_password}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
 
     ports:
-      - "127.0.0.1:8080:8080"
+      - target: 8080
+        published: "8080"
+        host_ip: 127.0.0.1
+        protocol: tcp
 
     depends_on:
       postgres:
@@ -34,7 +45,9 @@ services:
         condition: service_healthy
 
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+      test: >-
+        curl -fsS http://localhost:8080/actuator/health/readiness
+        | grep -q '"status":"UP"'
       interval: 10s
       timeout: 5s
       retries: 10
@@ -43,25 +56,31 @@ services:
     networks:
       - safeai_local
 
+    init: true
+    stop_grace_period: 75s
+    logging: *default-logging
     restart: unless-stopped
 
-
   postgres:
-    image: "postgres:16"
+    image: postgres:16
 
     environment:
-      POSTGRES_DB: "${POSTGRES_DB:-safeai}"
-      POSTGRES_USER: "${POSTGRES_USER:-safeai}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-safeai_password}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
 
     ports:
-      - "127.0.0.1:5432:5432"
+      - target: 5432
+        published: "5432"
+        host_ip: 127.0.0.1
+        protocol: tcp
 
     volumes:
       - safeai_postgres_local_data:/var/lib/postgresql/data
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      test: >-
+        pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
       interval: 5s
       timeout: 5s
       retries: 10
@@ -70,29 +89,36 @@ services:
     networks:
       - safeai_local
 
+    logging: *default-logging
     restart: unless-stopped
 
-
   redis:
-    image: "redis:7"
+    image: redis:7
+
+    entrypoint:
+      - /bin/sh
+      - -euc
 
     command:
-      - sh
-      - -c
       - |
-        exec redis-server \
+        exec /usr/local/bin/docker-entrypoint.sh redis-server \
           --requirepass "$${REDIS_PASSWORD}" \
           --save "" \
           --appendonly no
 
     environment:
-      REDIS_PASSWORD: "${REDIS_PASSWORD:-safeai_redis_password}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
 
     ports:
-      - "127.0.0.1:6379:6379"
+      - target: 6379
+        published: "6379"
+        host_ip: 127.0.0.1
+        protocol: tcp
 
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      test: >-
+        redis-cli --no-auth-warning -a "$${REDIS_PASSWORD}" ping
+        | grep -q PONG
       interval: 5s
       timeout: 3s
       retries: 10
@@ -101,15 +127,18 @@ services:
     networks:
       - safeai_local
 
+    logging: *default-logging
     restart: unless-stopped
-
 
 volumes:
   safeai_postgres_local_data:
     name: safeai_postgres_local_data
 
-
 networks:
   safeai_local:
     name: safeai_local
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1

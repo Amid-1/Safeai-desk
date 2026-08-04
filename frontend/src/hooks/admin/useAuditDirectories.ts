@@ -1,184 +1,340 @@
-// ============================================================
-// frontend/src/hooks/admin/useAuditDirectories.ts
-// ============================================================
 import {
+    useCallback,
     useEffect,
     useRef,
     useState,
 } from 'react'
-
 import {
-    getCurrentOrganization,
-    getOrganizations,
-} from '../../api/organizationApi'
-
+    getAuditEventTypes,
+    searchAuditActors,
+    searchAuditTargetOrganizations,
+} from '../../api/adminApi'
 import type {
-    Organization,
-} from '../../api/organizationApi'
-
+    AuditActorDirectoryItem,
+    AuditTargetOrganizationDirectoryItem,
+} from '../../api/adminApi'
 import {
-    getUsers,
-} from '../../api/userApi'
-
-import type {
-    User,
-} from '../../api/userApi'
-
-import {
+    ApiError,
     getApiErrorMessage,
 } from '../../api/http'
-
 import {
-    normalizePageResponse,
-} from '../../utils/page'
+    AUDIT_EVENT_TYPES,
+} from '../../constants/auditEvents'
 
-import type {
-    PageResponse,
-} from '../../utils/page'
-
-const DIRECTORY_PAGE_SIZE = 200
+const DIRECTORY_LIMIT = 20
 
 type UseAuditDirectoriesResult = {
-    organizations: Organization[]
-    users: User[]
+    eventTypes: string[]
+    organizations:
+        AuditTargetOrganizationDirectoryItem[]
+    actors: AuditActorDirectoryItem[]
+
     loading: boolean
-    error: string
+
+    eventTypesError: string
+    organizationsError: string
+    actorsError: string
+
+    searchOrganizations:
+        (query: string) => Promise<void>
+
+    searchActors: (
+        query: string,
+        targetOrganizationId?: string,
+    ) => Promise<void>
 }
 
 function useAuditDirectories(
     superAdmin: boolean,
 ): UseAuditDirectoriesResult {
-    const [organizations, setOrganizations] =
-        useState<Organization[]>([])
+    const [
+        eventTypes,
+        setEventTypes,
+    ] = useState<string[]>([
+        ...AUDIT_EVENT_TYPES,
+    ])
 
-    const [users, setUsers] =
-        useState<User[]>([])
+    const [
+        organizations,
+        setOrganizations,
+    ] = useState<
+        AuditTargetOrganizationDirectoryItem[]
+    >([])
+
+    const [actors, setActors] =
+        useState<AuditActorDirectoryItem[]>(
+            [],
+        )
 
     const [loading, setLoading] =
         useState(true)
 
-    const [error, setError] =
-        useState('')
+    const [
+        eventTypesError,
+        setEventTypesError,
+    ] = useState('')
 
-    const requestSequenceRef =
+    const [
+        organizationsError,
+        setOrganizationsError,
+    ] = useState('')
+
+    const [
+        actorsError,
+        setActorsError,
+    ] = useState('')
+
+    const eventTypesControllerRef =
+        useRef<AbortController | null>(
+            null,
+        )
+
+    const organizationControllerRef =
+        useRef<AbortController | null>(
+            null,
+        )
+
+    const actorControllerRef =
+        useRef<AbortController | null>(
+            null,
+        )
+
+    const organizationSequenceRef =
         useRef(0)
 
+    const actorSequenceRef =
+        useRef(0)
+
+    const searchOrganizations =
+        useCallback(
+            async (query: string) => {
+                if (!superAdmin) {
+                    setOrganizations([])
+                    setOrganizationsError('')
+                    return
+                }
+
+                const sequence =
+                    ++organizationSequenceRef.current
+
+                organizationControllerRef.current
+                    ?.abort()
+
+                const controller =
+                    new AbortController()
+
+                organizationControllerRef.current =
+                    controller
+
+                setOrganizationsError('')
+
+                try {
+                    const result =
+                        await searchAuditTargetOrganizations(
+                            query,
+                            DIRECTORY_LIMIT,
+                            {
+                                signal:
+                                    controller.signal,
+                            },
+                        )
+
+                    if (
+                        sequence
+                        === organizationSequenceRef.current
+                    ) {
+                        setOrganizations(
+                            result,
+                        )
+                    }
+                } catch (error) {
+                    if (
+                        sequence
+                        === organizationSequenceRef.current
+                        && !isRequestAborted(
+                            error,
+                        )
+                    ) {
+                        setOrganizations([])
+                        setOrganizationsError(
+                            getApiErrorMessage(
+                                error,
+                                'Не удалось загрузить исторический каталог организаций аудита.',
+                            ),
+                        )
+                    }
+                }
+            },
+            [superAdmin],
+        )
+
+    const searchActors =
+        useCallback(
+            async (
+                query: string,
+                targetOrganizationId?: string,
+            ) => {
+                const sequence =
+                    ++actorSequenceRef.current
+
+                actorControllerRef.current
+                    ?.abort()
+
+                const controller =
+                    new AbortController()
+
+                actorControllerRef.current =
+                    controller
+
+                setActorsError('')
+
+                try {
+                    const result =
+                        await searchAuditActors(
+                            query,
+                            targetOrganizationId,
+                            DIRECTORY_LIMIT,
+                            {
+                                signal:
+                                    controller.signal,
+                            },
+                        )
+
+                    if (
+                        sequence
+                        === actorSequenceRef.current
+                    ) {
+                        setActors(result)
+                    }
+                } catch (error) {
+                    if (
+                        sequence
+                        === actorSequenceRef.current
+                        && !isRequestAborted(
+                            error,
+                        )
+                    ) {
+                        setActors([])
+                        setActorsError(
+                            getApiErrorMessage(
+                                error,
+                                'Не удалось загрузить исторический каталог акторов.',
+                            ),
+                        )
+                    }
+                }
+            },
+            [],
+        )
+
     useEffect(() => {
-        const sequence =
-            ++requestSequenceRef.current
+        eventTypesControllerRef.current
+            ?.abort()
 
-        async function loadDirectories(): Promise<void> {
+        const controller =
+            new AbortController()
+
+        eventTypesControllerRef.current =
+            controller
+
+        let active = true
+
+        async function loadInitial() {
             setLoading(true)
-            setError('')
+            setEventTypesError('')
 
-            try {
-                const [
-                    loadedOrganizations,
-                    loadedUsers,
-                ] = await Promise.all([
-                    superAdmin
-                        ? loadAllOrganizations()
-                        : loadCurrentOrganization(),
-
-                    loadAllUsers(),
+            const results =
+                await Promise.allSettled([
+                    getAuditEventTypes({
+                        signal:
+                            controller.signal,
+                    }),
+                    searchOrganizations(''),
+                    searchActors(''),
                 ])
 
-                if (
-                    sequence !==
-                    requestSequenceRef.current
-                ) {
-                    return
-                }
+            if (
+                !active
+                || controller.signal.aborted
+            ) {
+                return
+            }
 
-                setOrganizations(
-                    loadedOrganizations,
+            const eventTypeResult =
+                results[0]
+
+            if (
+                eventTypeResult.status
+                    === 'fulfilled'
+            ) {
+                setEventTypes(
+                    eventTypeResult.value,
                 )
-                setUsers(loadedUsers)
-            } catch (loadError) {
-                if (
-                    sequence !==
-                    requestSequenceRef.current
-                ) {
-                    return
-                }
-
-                setOrganizations([])
-                setUsers([])
-
-                setError(
+            } else if (
+                !isRequestAborted(
+                    eventTypeResult.reason,
+                )
+            ) {
+                // Известный static список остаётся fallback,
+                // но ошибка не скрывается.
+                setEventTypes([
+                    ...AUDIT_EVENT_TYPES,
+                ])
+                setEventTypesError(
                     getApiErrorMessage(
-                        loadError,
-                        'Не удалось загрузить пользователей и организации.',
+                        eventTypeResult.reason,
+                        'Не удалось загрузить справочник типов событий. Используется ограниченный fallback-список.',
                     ),
                 )
-            } finally {
-                if (
-                    sequence ===
-                    requestSequenceRef.current
-                ) {
-                    setLoading(false)
-                }
             }
+
+            setLoading(false)
         }
 
-        void loadDirectories()
+        void loadInitial()
 
         return () => {
-            requestSequenceRef.current += 1
+            active = false
+            controller.abort()
+
+            eventTypesControllerRef.current
+                ?.abort()
+            organizationControllerRef.current
+                ?.abort()
+            actorControllerRef.current
+                ?.abort()
+
+            organizationSequenceRef.current
+                += 1
+            actorSequenceRef.current += 1
         }
-    }, [superAdmin])
+    }, [
+        searchOrganizations,
+        searchActors,
+    ])
 
     return {
+        eventTypes,
         organizations,
-        users,
+        actors,
+
         loading,
-        error,
+
+        eventTypesError,
+        organizationsError,
+        actorsError,
+
+        searchOrganizations,
+        searchActors,
     }
 }
 
-async function loadCurrentOrganization(): Promise<Organization[]> {
-    return [await getCurrentOrganization()]
-}
-
-async function loadAllOrganizations(): Promise<Organization[]> {
-    return loadAllPages<Organization>((page) =>
-        getOrganizations(
-            page,
-            DIRECTORY_PAGE_SIZE,
-        ),
-    )
-}
-
-async function loadAllUsers(): Promise<User[]> {
-    return loadAllPages<User>((page) =>
-        getUsers(
-            page,
-            DIRECTORY_PAGE_SIZE,
-        ),
-    )
-}
-
-async function loadAllPages<T>(
-    loader: (page: number) => Promise<PageResponse<T>>,
-): Promise<T[]> {
-    const result: T[] = []
-
-    let page = 0
-    let totalPages = 1
-
-    while (page < totalPages) {
-        const response = await loader(page)
-        const normalized =
-            normalizePageResponse(response)
-
-        result.push(...normalized.content)
-
-        totalPages = normalized.totalPages
-        page += 1
-    }
-
-    return result
+function isRequestAborted(
+    error: unknown,
+): boolean {
+    return error instanceof ApiError
+        && error.errorCode
+            === 'REQUEST_ABORTED'
 }
 
 export default useAuditDirectories
-

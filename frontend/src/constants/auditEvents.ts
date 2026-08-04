@@ -76,8 +76,33 @@ export function getAuditEventTypeLabel(
     ) {
         return AUDIT_EVENT_TYPE_LABELS[
             eventType as AuditEventType
-            ]
+        ]
     }
 
     return eventType
+}
+
+export function mergeAuditEventTypes(
+    serverEventTypes: readonly string[],
+    selectedEventType = '',
+): string[] {
+    const result = new Set<string>([
+        ...AUDIT_EVENT_TYPES,
+        ...serverEventTypes,
+    ])
+
+    if (selectedEventType) {
+        result.add(selectedEventType)
+    }
+
+    return [...result].sort(
+        (first, second) =>
+            getAuditEventTypeLabel(first)
+                .localeCompare(
+                    getAuditEventTypeLabel(
+                        second,
+                    ),
+                    'ru',
+                ),
+    )
 }

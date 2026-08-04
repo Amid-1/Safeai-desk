@@ -1,15 +1,34 @@
-// ============================================================
-// frontend/src/api/userApi.ts
-// ============================================================
-import { apiRequest } from './http'
+import {
+    API_TIMEOUTS,
+    apiRequest,
+} from './http'
 import {
     buildQueryString,
     normalizePage,
     normalizePageSize,
-    pathSegment,
+    uuidPathSegment,
 } from './query'
 import type { UserRole } from './types'
+import {
+    contractError,
+    expectBoolean,
+    expectInstant,
+    expectNullableInstant,
+    expectNullableString,
+    expectOptionalNonNegativeInteger,
+    expectRecord,
+    expectString,
+    expectStringArray,
+    expectUuid,
+    parsePageResponse,
+} from './runtime'
 import type { PageResponse } from '../utils/page'
+
+const USER_ROLES: readonly UserRole[] = [
+    'SUPER_ADMIN',
+    'ADMIN',
+    'USER',
+]
 
 export type User = {
     id: string
@@ -18,6 +37,7 @@ export type User = {
     fullName: string | null
     enabled: boolean
     roles: UserRole[]
+    version: number | null
     createdAt: string
     updatedAt: string
     lastLoginAt: string | null
@@ -33,143 +53,464 @@ export type UserStatistics = {
     disabled: number
 }
 
-export type UserListRoleFilter = 'ADMIN' | 'USER'
+export type UserDirectoryItem = {
+    id: string
+    organizationId: string
+    email: string
+    fullName: string | null
+    enabled: boolean
+}
+
+export type UserListRoleFilter =
+    | 'ADMIN'
+    | 'USER'
 
 export type CreateUserRequest = {
     organizationId: string
     email: string
     password: string
     fullName: string | null
-    roles: Exclude<UserRole, 'SUPER_ADMIN'>[]
+    roles: Exclude<
+        UserRole,
+        'SUPER_ADMIN'
+    >[]
 }
 
 export type UpdateUserRequest = {
     email: string
     fullName: string | null
+    expectedVersion?: number
 }
 
 export type UpdateUserEnabledRequest = {
     enabled: boolean
+    expectedVersion?: number
 }
 
 export type UpdateUserRolesRequest = {
-    roles: Exclude<UserRole, 'SUPER_ADMIN'>[]
+    roles: Exclude<
+        UserRole,
+        'SUPER_ADMIN'
+    >[]
+    expectedVersion?: number
 }
 
 export type ResetUserPasswordRequest = {
     password: string
+    expectedVersion?: number
 }
 
 export type PermanentDeleteUserRequest = {
     confirmationEmail: string
+    expectedVersion?: number
 }
 
-const USER_REQUEST_TIMEOUT_MS = 30_000
-
-function userPath(userId: string, suffix = ''): string {
-    return `/api/users/${pathSegment(userId)}${suffix}`
+type RequestOptions = {
+    signal?: AbortSignal
 }
 
-function get<T>(url: string): Promise<T> {
-    return apiRequest<T>(url, {
-        method: 'GET',
-        timeoutMs: USER_REQUEST_TIMEOUT_MS,
-    })
+function userPath(
+    userId: string,
+    suffix = '',
+): string {
+    return (
+        `/api/users/${uuidPathSegment(userId)}`
+        + suffix
+    )
 }
 
-function sendJson<TResponse, TRequest>(
-    url: string,
-    method: 'POST' | 'PATCH',
-    request: TRequest,
-): Promise<TResponse> {
-    return apiRequest<TResponse>(url, {
-        method,
-        body: JSON.stringify(request),
-        timeoutMs: USER_REQUEST_TIMEOUT_MS,
-    })
-}
-
-export function getUsers(
+export async function getUsers(
     page = 0,
     size = 50,
     role?: UserListRoleFilter,
+    options: RequestOptions = {},
 ): Promise<PageResponse<User>> {
     const query = buildQueryString({
         page: normalizePage(page),
-        size: normalizePageSize(size, 50, 200),
+        size: normalizePageSize(
+            size,
+            50,
+            200,
+        ),
         role,
     })
 
-    return get<PageResponse<User>>(`/api/users${query}`)
-}
+    const response = await apiRequest<unknown>(
+        `/api/users${query}`,
+        {
+            method: 'GET',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
 
-export function getUserDetails(userId: string): Promise<UserDetails> {
-    return get<UserDetails>(userPath(userId))
-}
-
-export function getUserStatistics(): Promise<UserStatistics> {
-    return get<UserStatistics>('/api/users/statistics')
-}
-
-export function createUser(request: CreateUserRequest): Promise<User> {
-    return sendJson<User, CreateUserRequest>(
-        '/api/users',
-        'POST',
-        request,
+    return parsePageResponse(
+        response,
+        parseUser,
     )
 }
 
-export function updateUser(
+export async function getUserDetails(
+    userId: string,
+    options: RequestOptions = {},
+): Promise<UserDetails> {
+    const response = await apiRequest<unknown>(
+        userPath(userId),
+        {
+            method: 'GET',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseUser(response)
+}
+
+export async function getUserStatistics(
+    options: RequestOptions = {},
+): Promise<UserStatistics> {
+    const response = await apiRequest<unknown>(
+        '/api/users/statistics',
+        {
+            method: 'GET',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseUserStatistics(response)
+}
+
+export async function searchUserDirectory(
+    query: string,
+    organizationId?: string,
+    limit = 20,
+    options: RequestOptions = {},
+): Promise<UserDirectoryItem[]> {
+    const search = buildQueryString({
+        query: query.trim(),
+        organizationId:
+            organizationId
+                ? uuidPathSegment(
+                    organizationId,
+                )
+                : undefined,
+        limit: normalizePageSize(
+            limit,
+            20,
+            50,
+        ),
+    })
+
+    const response = await apiRequest<unknown>(
+        `/api/users/directory${search}`,
+        {
+            method: 'GET',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    if (!Array.isArray(response)) {
+        throw contractError(
+            'userDirectory должен быть массивом',
+        )
+    }
+
+    return response.map(
+        (item, index) =>
+            parseUserDirectoryItem(
+                item,
+                `userDirectory[${index}]`,
+            ),
+    )
+}
+
+export async function createUser(
+    request: CreateUserRequest,
+    options: RequestOptions = {},
+): Promise<User> {
+    const response = await apiRequest<unknown>(
+        '/api/users',
+        {
+            method: 'POST',
+            json: request,
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseUser(response)
+}
+
+export async function updateUser(
     userId: string,
     request: UpdateUserRequest,
+    options: RequestOptions = {},
 ): Promise<User> {
-    return sendJson<User, UpdateUserRequest>(
+    return sendUserMutation(
         userPath(userId),
         'PATCH',
         request,
+        options,
     )
 }
 
-export function updateUserEnabled(
+export async function updateUserEnabled(
     userId: string,
     request: UpdateUserEnabledRequest,
+    options: RequestOptions = {},
 ): Promise<User> {
-    return sendJson<User, UpdateUserEnabledRequest>(
+    return sendUserMutation(
         userPath(userId, '/enabled'),
         'PATCH',
         request,
+        options,
     )
 }
 
-export function updateUserRoles(
+export async function updateUserRoles(
     userId: string,
     request: UpdateUserRolesRequest,
+    options: RequestOptions = {},
 ): Promise<User> {
-    return sendJson<User, UpdateUserRolesRequest>(
+    return sendUserMutation(
         userPath(userId, '/roles'),
         'PATCH',
         request,
+        options,
     )
 }
 
 export function resetUserPassword(
     userId: string,
     request: ResetUserPasswordRequest,
+    options: RequestOptions = {},
 ): Promise<void> {
-    return sendJson<void, ResetUserPasswordRequest>(
+    return apiRequest<void>(
         userPath(userId, '/reset-password'),
-        'POST',
-        request,
+        {
+            method: 'POST',
+            json: request,
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
     )
 }
 
 export function permanentlyDeleteUser(
     userId: string,
     request: PermanentDeleteUserRequest,
+    options: RequestOptions = {},
 ): Promise<void> {
-    return sendJson<void, PermanentDeleteUserRequest>(
-        userPath(userId, '/permanent-deletion'),
-        'POST',
-        request,
+    return apiRequest<void>(
+        userPath(
+            userId,
+            '/permanent-deletion',
+        ),
+        {
+            method: 'POST',
+            json: request,
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
     )
+}
+
+export function parseUser(
+    value: unknown,
+    field = 'user',
+): User {
+    const record = expectRecord(value, field)
+
+    const email = expectString(
+        record.email,
+        `${field}.email`,
+        {
+            maxLength: 255,
+        },
+    )
+
+    if (
+        email !== email.trim()
+        || email !== email.toLowerCase()
+        || !email.includes('@')
+    ) {
+        throw contractError(
+            `${field}.email не канонизирован`,
+        )
+    }
+
+    const roles = expectStringArray(
+        record.roles,
+        `${field}.roles`,
+        USER_ROLES,
+    )
+
+    if (roles.length === 0) {
+        throw contractError(
+            `${field}.roles не должен быть пустым`,
+        )
+    }
+
+    return {
+        id: expectUuid(
+            record.id,
+            `${field}.id`,
+        ),
+        organizationId: expectUuid(
+            record.organizationId,
+            `${field}.organizationId`,
+        ),
+        email,
+        fullName: expectNullableString(
+            record.fullName ?? null,
+            `${field}.fullName`,
+            {
+                maxLength: 255,
+            },
+        ),
+        enabled: expectBoolean(
+            record.enabled,
+            `${field}.enabled`,
+        ),
+        roles,
+        version:
+            expectOptionalNonNegativeInteger(
+                record.version,
+                `${field}.version`,
+            ),
+        createdAt: expectInstant(
+            record.createdAt,
+            `${field}.createdAt`,
+        ),
+        updatedAt: expectInstant(
+            record.updatedAt,
+            `${field}.updatedAt`,
+        ),
+        lastLoginAt: expectNullableInstant(
+            record.lastLoginAt ?? null,
+            `${field}.lastLoginAt`,
+        ),
+    }
+}
+
+export function parseUserStatistics(
+    value: unknown,
+    field = 'userStatistics',
+): UserStatistics {
+    const record = expectRecord(value, field)
+
+    const total = parseCount(
+        record.total,
+        `${field}.total`,
+    )
+    const administrators = parseCount(
+        record.administrators,
+        `${field}.administrators`,
+    )
+    const users = parseCount(
+        record.users,
+        `${field}.users`,
+    )
+    const enabled = parseCount(
+        record.enabled,
+        `${field}.enabled`,
+    )
+    const disabled = parseCount(
+        record.disabled,
+        `${field}.disabled`,
+    )
+
+    if (
+        administrators > total
+        || users > total
+        || enabled + disabled !== total
+    ) {
+        throw contractError(
+            `${field} содержит несогласованные значения`,
+        )
+    }
+
+    return {
+        total,
+        administrators,
+        users,
+        enabled,
+        disabled,
+    }
+}
+
+async function sendUserMutation<
+    TRequest extends object,
+>(
+    path: string,
+    method: 'POST' | 'PATCH',
+    request: TRequest,
+    options: RequestOptions,
+): Promise<User> {
+    const response = await apiRequest<unknown>(
+        path,
+        {
+            method,
+            json: request,
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseUser(response)
+}
+
+function parseUserDirectoryItem(
+    value: unknown,
+    field: string,
+): UserDirectoryItem {
+    const record = expectRecord(value, field)
+
+    return {
+        id: expectUuid(
+            record.id,
+            `${field}.id`,
+        ),
+        organizationId: expectUuid(
+            record.organizationId,
+            `${field}.organizationId`,
+        ),
+        email: expectString(
+            record.email,
+            `${field}.email`,
+            {
+                maxLength: 255,
+            },
+        ),
+        fullName: expectNullableString(
+            record.fullName ?? null,
+            `${field}.fullName`,
+            {
+                maxLength: 255,
+            },
+        ),
+        enabled: expectBoolean(
+            record.enabled,
+            `${field}.enabled`,
+        ),
+    }
+}
+
+function parseCount(
+    value: unknown,
+    field: string,
+): number {
+    if (
+        typeof value !== 'number'
+        || !Number.isInteger(value)
+        || value < 0
+    ) {
+        throw contractError(
+            `${field} должен быть неотрицательным целым числом`,
+        )
+    }
+
+    return value
 }

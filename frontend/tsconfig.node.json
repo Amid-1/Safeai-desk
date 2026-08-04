@@ -7,13 +7,18 @@
     ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "moduleDetection": "force",
     "skipLibCheck": true,
     "types": [
-      "node",
-      "vitest/config"
+      "node"
     ],
     "allowSyntheticDefaultImports": true,
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "verbatimModuleSyntax": true,
     "noEmit": true
   },
   "include": [

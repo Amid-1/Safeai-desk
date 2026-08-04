@@ -1,0 +1,187 @@
+/*
+ * Импортировать после основного index.css:
+ *
+ * import './styles/production-hardening.css'
+ */
+
+body.modal-open {
+    overflow: hidden;
+}
+
+#modal-root {
+    position: relative;
+    z-index: 1000;
+}
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    overflow: auto;
+    background: rgb(0 0 0 / 55%);
+}
+
+.modal-card {
+    width: min(100%, 720px);
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    border-radius: 12px;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: 0 24px 70px rgb(0 0 0 / 35%);
+}
+
+.modal-card--sm {
+    max-width: 460px;
+}
+
+.modal-card--md {
+    max-width: 720px;
+}
+
+.modal-card--lg {
+    max-width: 1040px;
+}
+
+.modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 24px;
+    background: inherit;
+    border-bottom: 1px solid rgb(127 127 127 / 25%);
+}
+
+.modal-body {
+    padding: 24px;
+}
+
+.modal-close-button {
+    min-width: 44px;
+    min-height: 44px;
+    border: 0;
+    background: transparent;
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.modal-close-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.modal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.warning {
+    padding: 12px 14px;
+    border: 1px solid rgb(180 120 0 / 45%);
+    border-radius: 8px;
+    background: rgb(255 190 0 / 12%);
+}
+
+.state-block--inline {
+    padding: 20px;
+}
+
+.admin-table-wrapper,
+.users-table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+}
+
+.audit-monospace {
+    overflow-wrap: anywhere;
+    font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Monaco,
+        Consolas,
+        monospace;
+}
+
+.audit-json {
+    max-height: 420px;
+    overflow: auto;
+    padding: 16px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    border-radius: 8px;
+    background: rgb(127 127 127 / 10%);
+}
+
+.audit-actor,
+.audit-organization {
+    display: grid;
+    gap: 4px;
+}
+
+:where(
+    button,
+    input,
+    select,
+    textarea,
+    a[href],
+    [tabindex]
+):focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 3px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    white-space: nowrap;
+    border: 0;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+}
+
+@media (max-width: 720px) {
+    .modal-backdrop {
+        align-items: end;
+        padding: 0;
+    }
+
+    .modal-card {
+        width: 100%;
+        max-width: none;
+        max-height: 92vh;
+        border-radius: 16px 16px 0 0;
+    }
+
+    .modal-header,
+    .modal-body {
+        padding-inline: 16px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

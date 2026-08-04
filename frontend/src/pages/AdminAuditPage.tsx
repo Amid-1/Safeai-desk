@@ -1,55 +1,57 @@
 // frontend/src/pages/AdminAuditPage.tsx
 import {
     useCallback,
+    useEffect,
     useMemo,
     useState,
 } from 'react'
-
 import type {
     AuditEvent,
-    AuditEventFilter,
 } from '../api/adminApi'
-
 import {
     useAuth,
 } from '../auth/AuthContext'
-
-import {
-    toUtcExclusiveEndOfDayIso,
-    toUtcStartOfDayIso,
-} from '../utils/date'
-
 import {
     EmptyState,
     ErrorState,
     LoadingState,
 } from '../components/StateBlock'
-
+import PageErrorBoundary
+    from '../components/PageErrorBoundary'
 import AuditDetailsModal
     from '../components/admin/audit/AuditDetailsModal'
-
 import AuditFilters
     from '../components/admin/audit/AuditFilters'
-
 import AuditTable
     from '../components/admin/audit/AuditTable'
-
 import {
-    EMPTY_AUDIT_DRAFT_FILTER,
+    auditDraftFiltersEqual,
 } from '../components/admin/audit/types'
-
 import type {
     AuditDraftFilter,
     DatePreset,
 } from '../components/admin/audit/types'
-
 import useAuditDirectories
     from '../hooks/admin/useAuditDirectories'
-
 import useAuditEvents
     from '../hooks/admin/useAuditEvents'
+import {
+    applyAuditDatePreset,
+    buildAuditSearch,
+    createResetAuditFilter,
+    readAuditUrlState,
+    toAuditEventFilter,
+} from './adminAudit.helpers'
 
 function AdminAuditPage() {
+    return (
+        <PageErrorBoundary>
+            <AdminAuditPageContent />
+        </PageErrorBoundary>
+    )
+}
+
+function AdminAuditPageContent() {
     const { currentUser } = useAuth()
 
     const superAdmin =
@@ -57,48 +59,94 @@ function AdminAuditPage() {
             'SUPER_ADMIN',
         ) ?? false
 
-    const [selectedEvent, setSelectedEvent] =
-        useState<AuditEvent | null>(null)
+    const initialState = useMemo(
+        () =>
+            readAuditUrlState(
+                window.location.search,
+                superAdmin,
+            ),
+        [superAdmin],
+    )
+
+    const [
+        selectedEvent,
+        setSelectedEvent,
+    ] = useState<AuditEvent | null>(
+        null,
+    )
 
     const [page, setPage] =
-        useState(0)
+        useState(initialState.page)
 
-    const [reloadToken, setReloadToken] =
-        useState(0)
+    const [
+        reloadToken,
+        setReloadToken,
+    ] = useState(0)
 
-    const [filterError, setFilterError] =
-        useState('')
+    const [
+        requestTransitioning,
+        setRequestTransitioning,
+    ] = useState(false)
 
-    const [draftFilter, setDraftFilter] =
-        useState<AuditDraftFilter>(
-            EMPTY_AUDIT_DRAFT_FILTER,
-        )
+    const [
+        filterError,
+        setFilterError,
+    ] = useState('')
+
+    const [
+        draftFilter,
+        setDraftFilter,
+    ] = useState<AuditDraftFilter>(
+        initialState.draftFilter,
+    )
 
     const [
         appliedDraftFilter,
         setAppliedDraftFilter,
     ] = useState<AuditDraftFilter>(
-        EMPTY_AUDIT_DRAFT_FILTER,
+        initialState.draftFilter,
     )
 
-    const [appliedFilter, setAppliedFilter] =
-        useState<AuditEventFilter>({})
+    const [
+        appliedFilter,
+        setAppliedFilter,
+    ] = useState(
+        () =>
+            toAuditEventFilter(
+                initialState.draftFilter,
+                superAdmin,
+            ).filter,
+    )
 
     const {
+        eventTypes,
         organizations,
-        users,
-        loading: directoriesLoading,
-        error: directoriesError,
-    } = useAuditDirectories(superAdmin)
+        actors,
+
+        loading:
+            directoriesLoading,
+
+        eventTypesError,
+        organizationsError,
+        actorsError,
+
+        searchOrganizations,
+        searchActors,
+    } = useAuditDirectories(
+        superAdmin,
+    )
 
     const handlePageOutOfRange =
-        useCallback((correctedPage: number) => {
-            setPage(correctedPage)
-        }, [])
+        useCallback(
+            (correctedPage: number) => {
+                setPage(correctedPage)
+            },
+            [],
+        )
 
     const {
         events,
-        totalPages,
+        pageResponse,
         loading,
         error: loadError,
     } = useAuditEvents({
@@ -106,377 +154,366 @@ function AdminAuditPage() {
         filter: appliedFilter,
         reloadToken,
         onPageOutOfRange:
-        handlePageOutOfRange,
+            handlePageOutOfRange,
     })
 
-    const closeDetailsModal =
-        useCallback(() => {
-            setSelectedEvent(null)
-        }, [])
+    const effectiveLoading =
+        loading || requestTransitioning
 
-    const filtersDirty = useMemo(() => {
-        return (
-            draftFilter.eventType !==
-            appliedDraftFilter.eventType ||
-            draftFilter.userId !==
-            appliedDraftFilter.userId ||
-            draftFilter.dateFrom !==
-            appliedDraftFilter.dateFrom ||
-            draftFilter.dateTo !==
-            appliedDraftFilter.dateTo ||
-            draftFilter.organizationId !==
-            appliedDraftFilter.organizationId
+    useEffect(() => {
+        if (loading) {
+            setRequestTransitioning(
+                false,
+            )
+        }
+    }, [loading])
+
+    const filtersDirty =
+        useMemo(
+            () =>
+                !auditDraftFiltersEqual(
+                    draftFilter,
+                    appliedDraftFilter,
+                ),
+            [
+                draftFilter,
+                appliedDraftFilter,
+            ],
         )
-    }, [
-        draftFilter,
-        appliedDraftFilter,
-    ])
 
     const organizationNameById =
-        useMemo(() => {
-            return new Map(
-                organizations.map(
-                    (organization) => [
-                        organization.id,
-                        organization.name,
-                    ],
+        useMemo(
+            () =>
+                new Map(
+                    organizations.map(
+                        (organization) => [
+                            organization
+                                .targetOrganizationId,
+                            organization
+                                .targetOrganizationName,
+                        ],
+                    ),
                 ),
+            [organizations],
+        )
+
+    useEffect(() => {
+        if (superAdmin) {
+            return
+        }
+
+        setDraftFilter(
+            (current) => ({
+                ...current,
+                targetOrganizationId:
+                    '',
+            }),
+        )
+
+        setAppliedDraftFilter(
+            (current) => ({
+                ...current,
+                targetOrganizationId:
+                    '',
+            }),
+        )
+
+        setAppliedFilter(
+            (current) => ({
+                ...current,
+                targetOrganizationId:
+                    undefined,
+            }),
+        )
+    }, [superAdmin])
+
+    useEffect(() => {
+        const search =
+            buildAuditSearch(
+                appliedDraftFilter,
+                page,
+                superAdmin,
             )
-        }, [organizations])
 
-    const visibleUsers = useMemo(() => {
-        const effectiveOrganizationId =
-            superAdmin
-                ? draftFilter.organizationId
-                : currentUser?.organizationId ?? ''
+        const nextUrl =
+            `${window.location.pathname}`
+            + search
+            + window.location.hash
 
-        return users
-            .filter((user) => {
-                if (!effectiveOrganizationId) {
-                    return true
-                }
-
-                return (
-                    user.organizationId ===
-                    effectiveOrganizationId
-                )
-            })
-            .sort((left, right) =>
-                left.email.localeCompare(
-                    right.email,
-                    'ru',
-                    {
-                        sensitivity: 'base',
-                    },
-                ),
-            )
+        window.history.replaceState(
+            window.history.state,
+            '',
+            nextUrl,
+        )
     }, [
-        users,
+        appliedDraftFilter,
+        page,
         superAdmin,
-        draftFilter.organizationId,
-        currentUser?.organizationId,
     ])
 
-    function applyFilters(): void {
+    function applyFilters() {
         setFilterError('')
 
-        if (
-            draftFilter.dateFrom &&
-            draftFilter.dateTo &&
-            draftFilter.dateFrom >
-            draftFilter.dateTo
-        ) {
-            setFilterError(
-                'Дата начала периода не может быть позже даты окончания.',
-            )
-            return
-        }
-
-        if (
-            draftFilter.userId &&
-            !visibleUsers.some(
-                (user) =>
-                    user.id ===
-                    draftFilter.userId,
-            )
-        ) {
-            setFilterError(
-                'Выбранный пользователь не относится к выбранной организации.',
-            )
-            return
-        }
-
         try {
-            const nextFilter:
-                AuditEventFilter = {
-                eventType:
-                    draftFilter.eventType ||
-                    undefined,
+            const normalized =
+                toAuditEventFilter(
+                    draftFilter,
+                    superAdmin,
+                )
 
-                userId:
-                    draftFilter.userId ||
-                    undefined,
-
-                dateFrom:
-                    draftFilter.dateFrom
-                        ? toUtcStartOfDayIso(
-                            draftFilter.dateFrom,
-                        )
-                        : undefined,
-
-                dateTo:
-                    draftFilter.dateTo
-                        ? toUtcExclusiveEndOfDayIso(
-                            draftFilter.dateTo,
-                        )
-                        : undefined,
-
-                organizationId:
-                    superAdmin
-                        ? draftFilter
-                            .organizationId ||
-                        undefined
-                        : undefined,
-            }
-
+            setRequestTransitioning(
+                true,
+            )
             setPage(0)
-            setAppliedDraftFilter({
-                ...draftFilter,
-            })
-            setAppliedFilter(nextFilter)
+            setDraftFilter(
+                normalized.draft,
+            )
+            setAppliedDraftFilter(
+                normalized.draft,
+            )
+            setAppliedFilter(
+                normalized.filter,
+            )
+            setReloadToken(
+                (value) => value + 1,
+            )
         } catch (error) {
             setFilterError(
                 error instanceof Error
                     ? error.message
-                    : 'Некорректный диапазон дат.',
+                    : (
+                        'Некорректные '
+                        + 'фильтры аудита.'
+                    ),
             )
         }
     }
 
-    function resetFilters(): void {
+    function resetFilters() {
+        const reset =
+            createResetAuditFilter()
+
+        const normalized =
+            toAuditEventFilter(
+                reset,
+                superAdmin,
+            )
+
+        setRequestTransitioning(
+            true,
+        )
         setDraftFilter(
-            EMPTY_AUDIT_DRAFT_FILTER,
+            normalized.draft,
         )
         setAppliedDraftFilter(
-            EMPTY_AUDIT_DRAFT_FILTER,
+            normalized.draft,
         )
-        setAppliedFilter({})
+        setAppliedFilter(
+            normalized.filter,
+        )
         setFilterError('')
         setPage(0)
-    }
-
-    function changeOrganization(
-        organizationId: string,
-    ): void {
-        setDraftFilter((current) => ({
-            ...current,
-            organizationId,
-            userId: '',
-        }))
+        setReloadToken(
+            (value) => value + 1,
+        )
     }
 
     function applyDatePreset(
         preset: DatePreset,
-    ): void {
+    ) {
         setFilterError('')
 
-        if (preset === 'all') {
-            setDraftFilter((current) => ({
-                ...current,
-                dateFrom: '',
-                dateTo: '',
-            }))
-            return
-        }
-
-        const today =
-            startOfLocalDay(new Date())
-
-        if (preset === 'today') {
-            const value =
-                toDateInputValue(today)
-
-            setDraftFilter((current) => ({
-                ...current,
-                dateFrom: value,
-                dateTo: value,
-            }))
-            return
-        }
-
-        if (preset === 'yesterday') {
-            const yesterday =
-                addDays(today, -1)
-
-            const value =
-                toDateInputValue(yesterday)
-
-            setDraftFilter((current) => ({
-                ...current,
-                dateFrom: value,
-                dateTo: value,
-            }))
-            return
-        }
-
-        const daysBack =
-            preset === 'last7Days'
-                ? 6
-                : 29
-
-        setDraftFilter((current) => ({
-            ...current,
-            dateFrom:
-                toDateInputValue(
-                    addDays(
-                        today,
-                        -daysBack,
-                    ),
+        setDraftFilter(
+            (current) =>
+                applyAuditDatePreset(
+                    current,
+                    preset,
                 ),
-            dateTo:
-                toDateInputValue(today),
-        }))
+        )
     }
+
+    const selectedOrganizationFallback =
+        selectedEvent
+            ? organizationNameById.get(
+                selectedEvent
+                    .targetOrganizationId,
+            ) ?? undefined
+            : undefined
 
     return (
         <div className="page">
             <h1>Аудит событий</h1>
 
+            <p className="muted">
+                Время отображается в
+                часовом поясе браузера.
+                Actor и target organization
+                являются независимыми
+                измерениями.
+            </p>
+
             <AuditFilters
-                draftFilter={draftFilter}
-                organizations={organizations}
-                visibleUsers={visibleUsers}
-                organizationNameById={
-                    organizationNameById
+                draftFilter={
+                    draftFilter
                 }
-                superAdmin={superAdmin}
-                loading={loading}
+
+                eventTypes={
+                    eventTypes
+                }
+                organizations={
+                    organizations
+                }
+                actors={actors}
+
+                superAdmin={
+                    superAdmin
+                }
+                loading={
+                    effectiveLoading
+                }
                 directoriesLoading={
                     directoriesLoading
                 }
-                directoriesError={
-                    directoriesError
+
+                eventTypesError={
+                    eventTypesError
                 }
-                filterError={filterError}
-                filtersDirty={filtersDirty}
+                organizationsError={
+                    organizationsError
+                }
+                actorsError={
+                    actorsError
+                }
+                filterError={
+                    filterError
+                }
+                filtersDirty={
+                    filtersDirty
+                }
+
                 onFilterChange={
                     setDraftFilter
                 }
-                onOrganizationChange={
-                    changeOrganization
+                onActorSearch={
+                    searchActors
+                }
+                onOrganizationSearch={
+                    searchOrganizations
                 }
                 onDatePreset={
                     applyDatePreset
                 }
-                onApply={applyFilters}
-                onReset={resetFilters}
+                onApply={
+                    applyFilters
+                }
+                onReset={
+                    resetFilters
+                }
             />
 
-            {loading && (
-                <LoadingState message="Загрузка событий аудита..." />
-            )}
-
-            {!loading && loadError && (
-                <ErrorState
-                    title="Ошибка загрузки"
-                    message={loadError}
-                    action={
-                        <button
-                            type="button"
-                            onClick={() =>
-                                setReloadToken(
-                                    (value) =>
-                                        value + 1,
-                                )
-                            }
-                        >
-                            Повторить
-                        </button>
+            {effectiveLoading && (
+                <LoadingState
+                    message={
+                        'Загрузка событий аудита...'
                     }
                 />
             )}
 
-            {!loading &&
-                !loadError &&
-                events.length === 0 && (
-                    <EmptyState message="События аудита не найдены." />
+            {!effectiveLoading
+                && loadError
+                && (
+                    <ErrorState
+                        title="Ошибка загрузки"
+                        message={
+                            loadError
+                        }
+                        action={
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setRequestTransitioning(
+                                        true,
+                                    )
+                                    setReloadToken(
+                                        (value) =>
+                                            value + 1,
+                                    )
+                                }}
+                            >
+                                Повторить
+                            </button>
+                        }
+                    />
                 )}
 
-            {!loading &&
-                !loadError &&
-                events.length > 0 && (
+            {!effectiveLoading
+                && !loadError
+                && events.length === 0
+                && (
+                    <EmptyState
+                        message={
+                            'События аудита '
+                            + 'не найдены.'
+                        }
+                    />
+                )}
+
+            {!effectiveLoading
+                && !loadError
+                && events.length > 0
+                && (
                     <AuditTable
                         events={events}
-                        organizationNameById={
-                            organizationNameById
+                        organizations={
+                            organizations
                         }
-                        page={page}
-                        totalPages={totalPages}
-                        loading={loading}
+
+                        page={
+                            pageResponse.page
+                        }
+                        totalPages={
+                            pageResponse
+                                .totalPages
+                        }
+                        totalElements={
+                            pageResponse
+                                .totalElements
+                        }
+                        loading={
+                            effectiveLoading
+                        }
+
                         onOpenDetails={
                             setSelectedEvent
                         }
-                        onPageChange={setPage}
+                        onPageChange={
+                            (nextPage) => {
+                                setRequestTransitioning(
+                                    true,
+                                )
+                                setPage(nextPage)
+                            }
+                        }
                     />
                 )}
 
             {selectedEvent && (
                 <AuditDetailsModal
-                    event={selectedEvent}
-                    organizationName={
-                        organizationNameById.get(
-                            selectedEvent
-                                .organizationId,
-                        ) ??
+                    event={
                         selectedEvent
-                            .organizationId
                     }
-                    onClose={
-                        closeDetailsModal
+                    organizationFallbackName={
+                        selectedOrganizationFallback
+                    }
+                    onClose={() =>
+                        setSelectedEvent(
+                            null,
+                        )
                     }
                 />
             )}
         </div>
     )
-}
-
-function startOfLocalDay(
-    date: Date,
-): Date {
-    return new Date(
-        date.getFullYear(),
-        date.getMonth(),
-        date.getDate(),
-    )
-}
-
-function addDays(
-    date: Date,
-    days: number,
-): Date {
-    const result = new Date(date)
-
-    result.setDate(
-        result.getDate() + days,
-    )
-
-    return result
-}
-
-function toDateInputValue(
-    date: Date,
-): string {
-    const year = date.getFullYear()
-
-    const month = String(
-        date.getMonth() + 1,
-    ).padStart(2, '0')
-
-    const day = String(
-        date.getDate(),
-    ).padStart(2, '0')
-
-    return `${year}-${month}-${day}`
 }
 
 export default AdminAuditPage

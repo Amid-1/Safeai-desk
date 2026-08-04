@@ -1,12 +1,37 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    />
+    <meta
+        name="description"
+        content="SafeAI Desk — корпоративный доступ к AI"
+    />
+    <meta
+        name="color-scheme"
+        content="light"
+    />
     <title>SafeAI Desk</title>
 </head>
 <body>
+<noscript>
+    Для работы SafeAI Desk необходимо включить JavaScript.
+</noscript>
+
 <div id="root"></div>
-<script type="module" src="./src/main.tsx"></script>
+
+<!--
+    Modal portal обязан находиться вне #root.
+    Пока открыт хотя бы один dialog, #root получает inert.
+-->
+<div id="modal-root"></div>
+
+<script
+    type="module"
+    src="/src/main.tsx"
+></script>
 </body>
 </html>

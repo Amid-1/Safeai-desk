@@ -1,4 +1,4 @@
-/*  frontend/src/index.css */
+/* frontend/src/index.css */
 * {
     box-sizing: border-box;
 }
@@ -174,12 +174,20 @@ pre {
     max-width: 420px;
 }
 
+
+.route-state {
+    min-height: 240px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .card {
     background: white;
     border-radius: 14px;
     padding: 20px;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-    overflow-x: auto;
+    overflow: visible;
 }
 
 .form-card {
