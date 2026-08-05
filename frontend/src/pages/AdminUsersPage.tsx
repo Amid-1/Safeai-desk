@@ -1,10 +1,11 @@
+// frontend/src/pages/AdminUsersPage.tsx
 import {
     useEffect,
     useRef,
     useState,
 } from 'react'
 import type {
-    FormEvent,
+    SyntheticEvent,
 } from 'react'
 import {
     createUser,
@@ -512,7 +513,7 @@ function AdminUsersPageContent({
     }
 
     async function handleCreateUser(
-        event: FormEvent<HTMLFormElement>,
+        event: SyntheticEvent<HTMLFormElement>,
     ) {
         event.preventDefault()
 
@@ -759,7 +760,7 @@ function AdminUsersPageContent({
     }
 
     async function submitEditUser(
-        event: FormEvent<HTMLFormElement>,
+        event: SyntheticEvent<HTMLFormElement>,
     ) {
         event.preventDefault()
 
@@ -814,7 +815,7 @@ function AdminUsersPageContent({
     }
 
     async function submitRoles(
-        event: FormEvent<HTMLFormElement>,
+        event: SyntheticEvent<HTMLFormElement>,
     ) {
         event.preventDefault()
 
@@ -892,7 +893,7 @@ function AdminUsersPageContent({
     }
 
     async function submitResetPassword(
-        event: FormEvent<HTMLFormElement>,
+        event: SyntheticEvent<HTMLFormElement>,
     ) {
         event.preventDefault()
 
@@ -961,7 +962,7 @@ function AdminUsersPageContent({
     }
 
     async function submitPermanentDelete(
-        event: FormEvent<HTMLFormElement>,
+        event: SyntheticEvent<HTMLFormElement>,
     ) {
         event.preventDefault()
 

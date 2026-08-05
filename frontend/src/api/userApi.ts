@@ -53,14 +53,6 @@ export type UserStatistics = {
     disabled: number
 }
 
-export type UserDirectoryItem = {
-    id: string
-    organizationId: string
-    email: string
-    fullName: string | null
-    enabled: boolean
-}
-
 export type UserListRoleFilter =
     | 'ADMIN'
     | 'USER'
@@ -179,51 +171,6 @@ export async function getUserStatistics(
     )
 
     return parseUserStatistics(response)
-}
-
-export async function searchUserDirectory(
-    query: string,
-    organizationId?: string,
-    limit = 20,
-    options: RequestOptions = {},
-): Promise<UserDirectoryItem[]> {
-    const search = buildQueryString({
-        query: query.trim(),
-        organizationId:
-            organizationId
-                ? uuidPathSegment(
-                    organizationId,
-                )
-                : undefined,
-        limit: normalizePageSize(
-            limit,
-            20,
-            50,
-        ),
-    })
-
-    const response = await apiRequest<unknown>(
-        `/api/users/directory${search}`,
-        {
-            method: 'GET',
-            signal: options.signal,
-            timeoutMs: API_TIMEOUTS.default,
-        },
-    )
-
-    if (!Array.isArray(response)) {
-        throw contractError(
-            'userDirectory должен быть массивом',
-        )
-    }
-
-    return response.map(
-        (item, index) =>
-            parseUserDirectoryItem(
-                item,
-                `userDirectory[${index}]`,
-            ),
-    )
 }
 
 export async function createUser(
@@ -460,42 +407,6 @@ async function sendUserMutation<
     )
 
     return parseUser(response)
-}
-
-function parseUserDirectoryItem(
-    value: unknown,
-    field: string,
-): UserDirectoryItem {
-    const record = expectRecord(value, field)
-
-    return {
-        id: expectUuid(
-            record.id,
-            `${field}.id`,
-        ),
-        organizationId: expectUuid(
-            record.organizationId,
-            `${field}.organizationId`,
-        ),
-        email: expectString(
-            record.email,
-            `${field}.email`,
-            {
-                maxLength: 255,
-            },
-        ),
-        fullName: expectNullableString(
-            record.fullName ?? null,
-            `${field}.fullName`,
-            {
-                maxLength: 255,
-            },
-        ),
-        enabled: expectBoolean(
-            record.enabled,
-            `${field}.enabled`,
-        ),
-    }
 }
 
 function parseCount(

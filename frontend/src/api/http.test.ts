@@ -14,20 +14,81 @@ import {
     validateApiBasePath,
 } from './http'
 
+type FetchImplementation = (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+) => Promise<Response>
+
+type FetchMock = ReturnType<
+    typeof createFetchMock
+>
+
+function createFetchMock(
+    implementation: FetchImplementation,
+) {
+    return vi.fn(implementation)
+}
+
+function requireFetchCall(
+    fetchMock: FetchMock,
+    index = 0,
+): [
+    input: RequestInfo | URL,
+    init?: RequestInit,
+] {
+    const call =
+        fetchMock.mock.calls[index]
+
+    if (!call) {
+        throw new Error(
+            `Ожидался fetch-вызов с индексом ${index}`,
+        )
+    }
+
+    return call
+}
+
+function requireRequestInit(
+    fetchMock: FetchMock,
+    index = 0,
+): RequestInit {
+    const [, init] =
+        requireFetchCall(
+            fetchMock,
+            index,
+        )
+
+    if (!init) {
+        throw new Error(
+            `Fetch-вызов с индексом ${index} не содержит RequestInit`,
+        )
+    }
+
+    return init
+}
+
 function jsonResponse(
     body: unknown,
     init: ResponseInit = {},
 ): Response {
+    const headers =
+        new Headers(init.headers)
+
+    if (
+        !headers.has('Content-Type')
+    ) {
+        headers.set(
+            'Content-Type',
+            'application/json',
+        )
+    }
+
     return new Response(
         JSON.stringify(body),
         {
-            status: 200,
-            headers: {
-                'Content-Type':
-                    'application/json',
-                ...init.headers,
-            },
             ...init,
+            status: init.status ?? 200,
+            headers,
         },
     )
 }
@@ -70,6 +131,8 @@ describe('http API client', () => {
 
     afterEach(() => {
         vi.useRealTimers()
+        vi.unstubAllGlobals()
+        clearCookies()
     })
 
     it.each([
@@ -110,7 +173,7 @@ describe('http API client', () => {
     })
 
     it('fetch использует same-origin и credentials include', async () => {
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async () => jsonResponse({
                 ok: true,
             }),
@@ -132,7 +195,7 @@ describe('http API client', () => {
     it('unsafe request получает существующий CSRF header', async () => {
         setCsrfCookie('csrf-token')
 
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async () => new Response(null, {
                 status: 204,
             }),
@@ -147,7 +210,7 @@ describe('http API client', () => {
             },
         })
 
-        const init = fetchMock.mock.calls[0][1] as RequestInit
+        const init = requireRequestInit(fetchMock)
 
         expect(
             new Headers(init.headers).get(
@@ -157,7 +220,7 @@ describe('http API client', () => {
     })
 
     it('при отсутствии cookie вызывает CSRF bootstrap', async () => {
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async (input: RequestInfo | URL) => {
                 if (
                     String(input)
@@ -185,13 +248,13 @@ describe('http API client', () => {
         })
 
         expect(fetchMock).toHaveBeenCalledTimes(2)
-        expect(fetchMock.mock.calls[0][0]).toBe(
+        expect(requireFetchCall(fetchMock)[0]).toBe(
             '/api/auth/csrf',
         )
     })
 
     it('не отправляет mutation, если CSRF cookie не появилась', async () => {
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async () => new Response(null, {
                 status: 204,
             }),
@@ -211,7 +274,7 @@ describe('http API client', () => {
         })
 
         expect(fetchMock).toHaveBeenCalledTimes(1)
-        expect(fetchMock.mock.calls[0][0]).toBe(
+        expect(requireFetchCall(fetchMock)[0]).toBe(
             '/api/auth/csrf',
         )
     })
@@ -219,7 +282,7 @@ describe('http API client', () => {
     it('FormData не получает ручной Content-Type', async () => {
         setCsrfCookie('csrf-token')
 
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async () => new Response(null, {
                 status: 204,
             }),
@@ -236,7 +299,7 @@ describe('http API client', () => {
             body: formData,
         })
 
-        const init = fetchMock.mock.calls[0][1] as RequestInit
+        const init = requireRequestInit(fetchMock)
 
         expect(
             new Headers(init.headers).has(
@@ -250,7 +313,7 @@ describe('http API client', () => {
 
         let mutationCount = 0
 
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async (input: RequestInfo | URL) => {
                 if (
                     String(input)
@@ -299,7 +362,7 @@ describe('http API client', () => {
     it('не повторяет обычный 403', async () => {
         setCsrfCookie('valid')
 
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async () => jsonResponse(
                 {
                     error: 'ACCESS_DENIED',
@@ -334,7 +397,7 @@ describe('http API client', () => {
         let refreshCount = 0
         let probeCount = 0
 
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async (input: RequestInfo | URL) => {
                 const url = String(input)
 
@@ -401,7 +464,7 @@ describe('http API client', () => {
         let refreshCount = 0
         let probeCount = 0
 
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async (input: RequestInfo | URL) => {
                 const url = String(input)
 
@@ -450,7 +513,7 @@ describe('http API client', () => {
         const controller =
             new AbortController()
 
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             (
                 _input: RequestInfo | URL,
                 init?: RequestInit,
@@ -494,7 +557,7 @@ describe('http API client', () => {
     it('timeout даёт REQUEST_TIMEOUT', async () => {
         vi.useFakeTimers()
 
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             (
                 _input: RequestInfo | URL,
                 init?: RequestInit,
@@ -565,7 +628,7 @@ describe('http API client', () => {
     })
 
     it('сохраняет request ID из response header', async () => {
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async () => jsonResponse(
                 {
                     error: 'HTTP_ERROR',
@@ -591,9 +654,9 @@ describe('http API client', () => {
     })
 
     it('не показывает HTML error page пользователю целиком', async () => {
-        const fetchMock = vi.fn(
+        const fetchMock = createFetchMock(
             async () => new Response(
-                '<html><body>proxy stack trace</body></html>',
+                '<html lang="en"><body>proxy stack trace</body></html>',
                 {
                     status: 502,
                     headers: {

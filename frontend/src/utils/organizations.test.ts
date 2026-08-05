@@ -1,3 +1,4 @@
+// frontend/src/utils/organizations.test.ts
 import {
     beforeEach,
     describe,
@@ -5,9 +6,11 @@ import {
     it,
     vi,
 } from 'vitest'
+
 import {
     loadAllOrganizations,
 } from './organizations'
+
 import {
     getOrganizations,
 } from '../api/organizationApi'
@@ -30,18 +33,27 @@ function page(
                     `00000000-0000-0000-0000-${String(
                         currentPage + 1,
                     ).padStart(12, '0')}`,
+
                 name:
                     `Organization ${currentPage}`,
+
                 enabled: true,
-                type: 'TENANT' as const,
+
+                type:
+                    'TENANT' as const,
+
                 protected: false,
+
                 version: 1,
+
                 createdAt:
                     '2026-08-04T10:00:00Z',
+
                 updatedAt:
                     '2026-08-04T10:00:00Z',
             },
         ],
+
         page: currentPage,
         size: 200,
         totalElements: totalPages,
@@ -57,8 +69,13 @@ describe('loadAllOrganizations', () => {
     it('останавливается по maxPages', async () => {
         getOrganizationsMock
             .mockImplementation(
-                async (pageNumber) =>
-                    page(pageNumber, 100),
+                async (
+                    pageNumber = 0,
+                ) =>
+                    page(
+                        pageNumber,
+                        100,
+                    ),
             )
 
         await expect(
@@ -83,10 +100,12 @@ describe('loadAllOrganizations', () => {
 
         await expect(
             loadAllOrganizations({
-                signal: controller.signal,
+                signal:
+                    controller.signal,
             }),
         ).rejects.toMatchObject({
-            errorCode: 'REQUEST_ABORTED',
+            errorCode:
+                'REQUEST_ABORTED',
         })
 
         expect(

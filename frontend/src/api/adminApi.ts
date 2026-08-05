@@ -1754,4 +1754,3 @@ function isSensitiveAuditKey(
         normalized,
     )
 }
-}

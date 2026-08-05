@@ -1,5 +1,5 @@
 // ============================================================
-// frontend/src/api/AuthContext.test.tsx
+// frontend/src/auth/AuthContext.test.tsx
 // ============================================================
 import {
     StrictMode,
@@ -25,65 +25,207 @@ import {
     useAuth,
 } from './AuthContext'
 
+type AuthApiModule =
+    typeof import('../api/authApi')
+
+type AuthCoordinatorModule =
+    typeof import('../api/authCoordinator')
+
+type HttpModule =
+    typeof import('../api/http')
+
+type AuthEventHandler =
+    Parameters<
+        AuthCoordinatorModule[
+            'subscribeAuthEvents'
+        ]
+    >[0]
+
+type AuthChannelEvent =
+    Parameters<AuthEventHandler>[0]
+
+type UnauthorizedHandler =
+    Parameters<
+        HttpModule[
+            'subscribeUnauthorized'
+        ]
+    >[0]
+
+type UnauthorizedReason =
+    Parameters<UnauthorizedHandler>[0]
+
 const apiMock = vi.hoisted(() => ({
-    getCurrentUser: vi.fn(),
-    login: vi.fn(),
-    logout: vi.fn(),
+    getCurrentUser:
+        vi.fn<
+            AuthApiModule[
+                'getCurrentUser'
+            ]
+        >(),
+
+    login:
+        vi.fn<
+            AuthApiModule[
+                'login'
+            ]
+        >(),
+
+    logout:
+        vi.fn<
+            AuthApiModule[
+                'logout'
+            ]
+        >(),
 }))
 
 const eventMock = vi.hoisted(() => ({
     unauthorizedHandler:
-        null as (() => void) | null,
+        null as UnauthorizedHandler | null,
+
     authEventHandler:
-        null as ((event: {
-            type:
-                | 'REFRESH_SUCCEEDED'
-                | 'LOGOUT'
-                | 'SESSION_REJECTED'
-                | 'AUTH_USER_CHANGED'
-        }) => void) | null,
-    publishAuthEvent: vi.fn(),
-}))
+        null as AuthEventHandler | null,
 
-vi.mock('../api/authApi', () => ({
-    getCurrentUser: apiMock.getCurrentUser,
-    login: apiMock.login,
-    logout: apiMock.logout,
-}))
-
-vi.mock('../api/authCoordinator', () => ({
     publishAuthEvent:
-        eventMock.publishAuthEvent,
-    subscribeAuthEvents: (
-        handler: typeof eventMock.authEventHandler,
-    ) => {
-        eventMock.authEventHandler = handler
-
-        return () => {
-            eventMock.authEventHandler = null
-        }
-    },
+        vi.fn<
+            AuthCoordinatorModule[
+                'publishAuthEvent'
+            ]
+        >(),
 }))
 
-vi.mock('../api/http', async (importOriginal) => {
-    const actual =
-        await importOriginal<typeof import('../api/http')>()
-
-    return {
-        ...actual,
-        subscribeUnauthorized: (
-            handler: () => void,
-        ) => {
-            eventMock.unauthorizedHandler =
-                handler
-
-            return () => {
-                eventMock.unauthorizedHandler =
-                    null
-            }
-        },
+vi.mock('../api/authApi', () => {
+    const moduleMock: Pick<
+        AuthApiModule,
+        | 'getCurrentUser'
+        | 'login'
+        | 'logout'
+    > = {
+        getCurrentUser:
+            apiMock.getCurrentUser,
+        login:
+            apiMock.login,
+        logout:
+            apiMock.logout,
     }
+
+    return moduleMock
 })
+
+vi.mock(
+    '../api/authCoordinator',
+    () => {
+        const subscribeAuthEvents:
+            AuthCoordinatorModule[
+                'subscribeAuthEvents'
+            ] = (handler) => {
+                eventMock.authEventHandler =
+                    handler
+
+                return () => {
+                    if (
+                        eventMock
+                            .authEventHandler
+                        === handler
+                    ) {
+                        eventMock
+                            .authEventHandler =
+                            null
+                    }
+                }
+            }
+
+        const moduleMock: Pick<
+            AuthCoordinatorModule,
+            | 'publishAuthEvent'
+            | 'subscribeAuthEvents'
+        > = {
+            publishAuthEvent:
+                eventMock.publishAuthEvent,
+            subscribeAuthEvents,
+        }
+
+        return moduleMock
+    },
+)
+
+vi.mock(
+    '../api/http',
+    async (importOriginal) => {
+        const actual =
+            await importOriginal<
+                HttpModule
+            >()
+
+        const subscribeUnauthorized:
+            HttpModule[
+                'subscribeUnauthorized'
+            ] = (handler) => {
+                eventMock
+                    .unauthorizedHandler =
+                    handler
+
+                return () => {
+                    if (
+                        eventMock
+                            .unauthorizedHandler
+                        === handler
+                    ) {
+                        eventMock
+                            .unauthorizedHandler =
+                            null
+                    }
+                }
+            }
+
+        const moduleMock:
+            HttpModule = {
+            ...actual,
+            subscribeUnauthorized,
+        }
+
+        return moduleMock
+    },
+)
+
+function emitAuthEvent(
+    type: AuthChannelEvent['type'],
+): void {
+    const handler =
+        eventMock.authEventHandler
+
+    if (!handler) {
+        throw new Error(
+            'Auth event handler не зарегистрирован',
+        )
+    }
+
+    const event:
+        AuthChannelEvent = {
+        type,
+        sourceTabId:
+            'other-test-tab',
+        occurredAt:
+            Date.now(),
+    }
+
+    handler(event)
+}
+
+function emitUnauthorized(
+    reason:
+        UnauthorizedReason =
+        'request-unauthorized',
+): void {
+    const handler =
+        eventMock.unauthorizedHandler
+
+    if (!handler) {
+        throw new Error(
+            'Unauthorized handler не зарегистрирован',
+        )
+    }
+
+    handler(reason)
+}
 
 const USER: AuthUser = {
     id: '11111111-1111-1111-1111-111111111111',
@@ -330,7 +472,7 @@ describe('AuthContext concurrency and logout', () => {
         renderProvider()
 
         act(() => {
-            eventMock.unauthorizedHandler?.()
+            emitUnauthorized()
         })
 
         expect(screen.getByTestId('status'))
@@ -466,9 +608,7 @@ describe('AuthContext concurrency and logout', () => {
         await screen.findByText('user@safeai.test')
 
         act(() => {
-            eventMock.authEventHandler?.({
-                type: 'LOGOUT',
-            })
+            emitAuthEvent('LOGOUT')
         })
 
         expect(screen.getByTestId('status'))
@@ -487,9 +627,9 @@ describe('AuthContext concurrency and logout', () => {
         await screen.findByText('user@safeai.test')
 
         act(() => {
-            eventMock.authEventHandler?.({
-                type: 'AUTH_USER_CHANGED',
-            })
+            emitAuthEvent(
+                'AUTH_USER_CHANGED',
+            )
         })
 
         expect(

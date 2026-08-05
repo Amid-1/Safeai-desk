@@ -27,81 +27,113 @@ type AuditTableProps = {
 }
 
 function AuditTable({
-                        events,
-                        organizationNameById,
-                        page,
-                        totalPages,
-                        loading,
-                        onOpenDetails,
-                        onPageChange,
-                    }: AuditTableProps) {
+    events,
+    organizationNameById,
+    page,
+    totalPages,
+    loading,
+    onOpenDetails,
+    onPageChange,
+}: AuditTableProps) {
     return (
         <div className="card table-card">
             <div className="admin-table-wrapper">
-                <table className="admin-table audit-table">
+                <table
+                    className="admin-table audit-table"
+                    aria-busy={loading}
+                >
                     <thead>
-                    <tr>
-                        <th>Дата и время</th>
-                        <th>Организация</th>
-                        <th>Пользователь</th>
-                        <th>Тип события</th>
-                        <th>Детали</th>
-                    </tr>
+                        <tr>
+                            <th scope="col">
+                                Дата и время
+                            </th>
+
+                            <th scope="col">
+                                Целевая организация
+                            </th>
+
+                            <th scope="col">
+                                Инициатор
+                            </th>
+
+                            <th scope="col">
+                                Тип события
+                            </th>
+
+                            <th scope="col">
+                                Детали
+                            </th>
+                        </tr>
                     </thead>
 
                     <tbody>
-                    {events.map((event) => (
-                        <tr key={event.id}>
-                            <td>
-                                {formatDateTime(
-                                    event.createdAt,
-                                )}
-                            </td>
+                        {events.map((event) => {
+                            const eventLabel =
+                                getAuditEventTypeLabel(
+                                    event.eventType,
+                                )
 
-                            <td>
-                                <OrganizationCell
-                                    organizationId={
-                                        event.organizationId
-                                    }
-                                    organizationNameById={
-                                        organizationNameById
-                                    }
-                                />
-                            </td>
+                            return (
+                                <tr key={event.id}>
+                                    <td>
+                                        {formatDateTime(
+                                            event.createdAt,
+                                        )}
+                                    </td>
 
-                            <td>
-                                <AuditActor event={event} />
-                            </td>
+                                    <td>
+                                        <OrganizationCell
+                                            organizationId={
+                                                event
+                                                    .targetOrganizationId
+                                            }
+                                            organizationSnapshotName={
+                                                event
+                                                    .targetOrganizationName
+                                            }
+                                            organizationNameById={
+                                                organizationNameById
+                                            }
+                                        />
+                                    </td>
 
-                            <td>
-                                <span className="event-type-badge">
-                                    {getAuditEventTypeLabel(
-                                        event.eventType,
-                                    )}
-                                </span>
-                            </td>
+                                    <td>
+                                        <AuditActor
+                                            event={event}
+                                        />
+                                    </td>
 
-                            <td>
-                                {Object.keys(
-                                    event.details,
-                                ).length === 0 ? (
-                                    <span className="muted">
-                                        —
-                                    </span>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        className="secondary-button"
-                                        onClick={() =>
-                                            onOpenDetails(event)
-                                        }
-                                    >
-                                        Показать детали
-                                    </button>
-                                )}
-                            </td>
-                        </tr>
-                    ))}
+                                    <td>
+                                        <span className="event-type-badge">
+                                            {eventLabel}
+                                        </span>
+                                    </td>
+
+                                    <td>
+                                        {hasDetails(event) ? (
+                                            <button
+                                                type="button"
+                                                className="secondary-button"
+                                                aria-label={
+                                                    `Показать детали события «${eventLabel}»`
+                                                }
+                                                onClick={() => {
+                                                    onOpenDetails(
+                                                        event,
+                                                    )
+                                                }}
+                                            >
+                                                Показать детали
+                                            </button>
+                                        ) : (
+                                            <span className="muted">
+                                                —
+                                            </span>
+                                        )}
+                                    </td>
+                                </tr>
+                            )
+                        })}
                     </tbody>
                 </table>
             </div>
@@ -118,28 +150,83 @@ function AuditTable({
 
 type OrganizationCellProps = {
     organizationId: string
+    organizationSnapshotName: string | null
     organizationNameById: Map<string, string>
 }
 
 function OrganizationCell({
-                              organizationId,
-                              organizationNameById,
-                          }: OrganizationCellProps) {
+    organizationId,
+    organizationSnapshotName,
+    organizationNameById,
+}: OrganizationCellProps) {
+    /*
+     * Для исторического аудита snapshot имеет приоритет:
+     * текущее название организации могло измениться после события.
+     */
+    const snapshotName =
+        normalizeOptionalText(
+            organizationSnapshotName,
+        )
+
+    const currentName =
+        normalizeOptionalText(
+            organizationNameById.get(
+                organizationId,
+            ) ?? null,
+        )
+
     const organizationName =
-        organizationNameById.get(organizationId)
+        snapshotName ?? currentName
+
+    if (!organizationName) {
+        return (
+            <span
+                className="muted"
+                title={organizationId}
+            >
+                <code>
+                    {organizationId}
+                </code>
+            </span>
+        )
+    }
 
     return (
-        <span
-            className={
-                organizationName
-                    ? undefined
-                    : 'muted'
-            }
-            title={organizationId}
-        >
-            {organizationName ?? organizationId}
-        </span>
+        <div className="audit-organization">
+            <span title={organizationId}>
+                {organizationName}
+            </span>
+
+            <span className="muted">
+                <code>
+                    {organizationId}
+                </code>
+            </span>
+        </div>
     )
+}
+
+function hasDetails(
+    event: AuditEvent,
+): boolean {
+    return (
+        Object.keys(event.details).length > 0
+        || event.detailsTruncated
+        || event.detailsInvalid
+    )
+}
+
+function normalizeOptionalText(
+    value: string | null,
+): string | null {
+    if (value === null) {
+        return null
+    }
+
+    const normalized =
+        value.trim()
+
+    return normalized || null
 }
 
 export default AuditTable

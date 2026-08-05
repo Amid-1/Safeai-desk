@@ -1,3 +1,4 @@
+// frontend/src/pages/LoginPage.tsx
 import {
     useEffect,
     useMemo,
@@ -5,8 +6,8 @@ import {
     useState,
 } from 'react'
 import type {
-    FormEvent,
     KeyboardEvent,
+    SyntheticEvent,
 } from 'react'
 import {
     ApiError,
@@ -98,8 +99,8 @@ function LoginPage() {
     ])
 
     async function handleSubmit(
-        event: FormEvent<HTMLFormElement>,
-    ) {
+        event: SyntheticEvent<HTMLFormElement>,
+    ): Promise<void> {
         event.preventDefault()
 
         if (
@@ -162,12 +163,14 @@ function LoginPage() {
                 && loginError.status === 429
                 && loginError.retryAfterSeconds
             ) {
+                const currentTime = Date.now()
+
                 setRetryUntil(
-                    Date.now()
+                    currentTime
                     + loginError.retryAfterSeconds
                     * 1_000,
                 )
-                setNow(Date.now())
+                setNow(currentTime)
                 setError(
                     'Слишком много попыток входа.',
                 )
@@ -186,7 +189,7 @@ function LoginPage() {
         }
     }
 
-    async function retryLogout() {
+    async function retryLogout(): Promise<void> {
         try {
             await logoutUser()
         } catch {
@@ -196,7 +199,7 @@ function LoginPage() {
 
     function preventSubmitOnRetry(
         event: KeyboardEvent<HTMLButtonElement>,
-    ) {
+    ): void {
         if (
             retryAfterSeconds > 0
             && (

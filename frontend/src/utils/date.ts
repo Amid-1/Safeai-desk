@@ -120,37 +120,11 @@ export function toLocalExclusiveEndOfDayIso(
     ).toISOString()
 }
 
-export function toStartOfDayIso(
-    dateValue: string,
-    mode: DateBoundaryMode,
-): string {
-    return mode === 'UTC'
-        ? toUtcStartOfDayIso(dateValue)
-        : toLocalStartOfDayIso(
-            dateValue,
-        )
-}
-
-export function toExclusiveEndOfDayIso(
-    dateValue: string,
-    mode: DateBoundaryMode,
-): string {
-    return mode === 'UTC'
-        ? toUtcExclusiveEndOfDayIso(
-            dateValue,
-        )
-        : toLocalExclusiveEndOfDayIso(
-            dateValue,
-        )
-}
-
 export function addCalendarDays(
     dateValue: string,
     days: number,
 ): string {
-    if (
-        !Number.isSafeInteger(days)
-    ) {
+    if (!Number.isSafeInteger(days)) {
         throw new Error(
             'Количество дней должно быть целым безопасным числом.',
         )

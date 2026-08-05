@@ -241,21 +241,6 @@ export async function enableOrganization(
     return parseOrganization(response)
 }
 
-export async function getCurrentOrganization(
-    options: RequestOptions = {},
-): Promise<Organization> {
-    const response = await apiRequest<unknown>(
-        '/api/organizations/me',
-        {
-            method: 'GET',
-            signal: options.signal,
-            timeoutMs: API_TIMEOUTS.auth,
-        },
-    )
-
-    return parseOrganization(response)
-}
-
 export function parseOrganization(
     value: unknown,
     field = 'organization',

@@ -1,40 +1,54 @@
+// ============================================================
 // frontend/src/pages/AdminAuditPage.tsx
+// ============================================================
 import {
     useCallback,
     useEffect,
     useMemo,
     useState,
 } from 'react'
+
 import type {
     AuditEvent,
 } from '../api/adminApi'
+
 import {
     useAuth,
 } from '../auth/AuthContext'
+
 import {
     EmptyState,
     ErrorState,
     LoadingState,
 } from '../components/StateBlock'
+
 import PageErrorBoundary
     from '../components/PageErrorBoundary'
+
 import AuditDetailsModal
     from '../components/admin/audit/AuditDetailsModal'
+
 import AuditFilters
     from '../components/admin/audit/AuditFilters'
+
 import AuditTable
     from '../components/admin/audit/AuditTable'
+
 import {
     auditDraftFiltersEqual,
 } from '../components/admin/audit/types'
+
 import type {
     AuditDraftFilter,
     DatePreset,
 } from '../components/admin/audit/types'
+
 import useAuditDirectories
     from '../hooks/admin/useAuditDirectories'
+
 import useAuditEvents
     from '../hooks/admin/useAuditEvents'
+
 import {
     applyAuditDatePreset,
     buildAuditSearch,
@@ -182,20 +196,31 @@ function AdminAuditPageContent() {
         )
 
     const organizationNameById =
-        useMemo(
-            () =>
-                new Map(
-                    organizations.map(
-                        (organization) => [
-                            organization
-                                .targetOrganizationId,
-                            organization
-                                .targetOrganizationName,
-                        ],
-                    ),
-                ),
-            [organizations],
-        )
+        useMemo(() => {
+            const result =
+                new Map<string, string>()
+
+            for (
+                const organization
+                of organizations
+            ) {
+                const name =
+                    normalizeOptionalText(
+                        organization
+                            .targetOrganizationName,
+                    )
+                    ?? organization
+                        .targetOrganizationId
+
+                result.set(
+                    organization
+                        .targetOrganizationId,
+                    name,
+                )
+            }
+
+            return result
+        }, [organizations])
 
     useEffect(() => {
         if (superAdmin) {
@@ -236,7 +261,7 @@ function AdminAuditPageContent() {
             )
 
         const nextUrl =
-            `${window.location.pathname}`
+            window.location.pathname
             + search
             + window.location.hash
 
@@ -251,7 +276,7 @@ function AdminAuditPageContent() {
         superAdmin,
     ])
 
-    function applyFilters() {
+    function applyFilters(): void {
         setFilterError('')
 
         try {
@@ -289,38 +314,49 @@ function AdminAuditPageContent() {
         }
     }
 
-    function resetFilters() {
-        const reset =
-            createResetAuditFilter()
+    function resetFilters(): void {
+        try {
+            const reset =
+                createResetAuditFilter()
 
-        const normalized =
-            toAuditEventFilter(
-                reset,
-                superAdmin,
+            const normalized =
+                toAuditEventFilter(
+                    reset,
+                    superAdmin,
+                )
+
+            setRequestTransitioning(
+                true,
             )
-
-        setRequestTransitioning(
-            true,
-        )
-        setDraftFilter(
-            normalized.draft,
-        )
-        setAppliedDraftFilter(
-            normalized.draft,
-        )
-        setAppliedFilter(
-            normalized.filter,
-        )
-        setFilterError('')
-        setPage(0)
-        setReloadToken(
-            (value) => value + 1,
-        )
+            setDraftFilter(
+                normalized.draft,
+            )
+            setAppliedDraftFilter(
+                normalized.draft,
+            )
+            setAppliedFilter(
+                normalized.filter,
+            )
+            setFilterError('')
+            setPage(0)
+            setReloadToken(
+                (value) => value + 1,
+            )
+        } catch (error) {
+            setFilterError(
+                error instanceof Error
+                    ? error.message
+                    : (
+                        'Не удалось сбросить '
+                        + 'фильтры аудита.'
+                    ),
+            )
+        }
     }
 
     function applyDatePreset(
         preset: DatePreset,
-    ) {
+    ): void {
         setFilterError('')
 
         setDraftFilter(
@@ -332,13 +368,21 @@ function AdminAuditPageContent() {
         )
     }
 
-    const selectedOrganizationFallback =
+    const selectedOrganizationName =
         selectedEvent
-            ? organizationNameById.get(
-                selectedEvent
-                    .targetOrganizationId,
-            ) ?? undefined
-            : undefined
+            ? (
+                normalizeOptionalText(
+                    selectedEvent
+                        .targetOrganizationName,
+                )
+                ?? organizationNameById.get(
+                    selectedEvent
+                        .targetOrganizationId,
+                )
+                ?? selectedEvent
+                    .targetOrganizationId
+            )
+            : ''
 
     return (
         <div className="page">
@@ -363,7 +407,9 @@ function AdminAuditPageContent() {
                 organizations={
                     organizations
                 }
-                actors={actors}
+                actors={
+                    actors
+                }
 
                 superAdmin={
                     superAdmin
@@ -462,39 +508,48 @@ function AdminAuditPageContent() {
                 && !loadError
                 && events.length > 0
                 && (
-                    <AuditTable
-                        events={events}
-                        organizations={
-                            organizations
-                        }
-
-                        page={
-                            pageResponse.page
-                        }
-                        totalPages={
-                            pageResponse
-                                .totalPages
-                        }
-                        totalElements={
-                            pageResponse
-                                .totalElements
-                        }
-                        loading={
-                            effectiveLoading
-                        }
-
-                        onOpenDetails={
-                            setSelectedEvent
-                        }
-                        onPageChange={
-                            (nextPage) => {
-                                setRequestTransitioning(
-                                    true,
-                                )
-                                setPage(nextPage)
+                    <>
+                        <p className="muted">
+                            Всего событий:
+                            {' '}
+                            {
+                                pageResponse
+                                    .totalElements
                             }
-                        }
-                    />
+                        </p>
+
+                        <AuditTable
+                            events={
+                                events
+                            }
+                            organizationNameById={
+                                organizationNameById
+                            }
+                            page={
+                                pageResponse.page
+                            }
+                            totalPages={
+                                pageResponse
+                                    .totalPages
+                            }
+                            loading={
+                                effectiveLoading
+                            }
+                            onOpenDetails={
+                                setSelectedEvent
+                            }
+                            onPageChange={
+                                (nextPage) => {
+                                    setRequestTransitioning(
+                                        true,
+                                    )
+                                    setPage(
+                                        nextPage,
+                                    )
+                                }
+                            }
+                        />
+                    </>
                 )}
 
             {selectedEvent && (
@@ -502,18 +557,31 @@ function AdminAuditPageContent() {
                     event={
                         selectedEvent
                     }
-                    organizationFallbackName={
-                        selectedOrganizationFallback
+                    organizationName={
+                        selectedOrganizationName
                     }
-                    onClose={() =>
+                    onClose={() => {
                         setSelectedEvent(
                             null,
                         )
-                    }
+                    }}
                 />
             )}
         </div>
     )
+}
+
+function normalizeOptionalText(
+    value: string | null,
+): string | null {
+    if (value === null) {
+        return null
+    }
+
+    const normalized =
+        value.trim()
+
+    return normalized || null
 }
 
 export default AdminAuditPage

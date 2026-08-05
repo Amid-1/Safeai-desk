@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/hooks/admin/useAuditDirectories.ts
+// ============================================================
 import {
     useCallback,
     useEffect,

@@ -1,5 +1,5 @@
 // ============================================================
-// frontend/src/api/AuthContext.tsx
+// frontend/src/auth/AuthContext.tsx
 // ============================================================
 import {
     createContext,

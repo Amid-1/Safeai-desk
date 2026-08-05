@@ -1,9 +1,10 @@
+// frontend/src/pages/AdminOrganizationsPage.tsx
 import {
     useEffect,
     useRef,
     useState,
 } from 'react'
-import type { FormEvent } from 'react'
+import type { SyntheticEvent } from 'react'
 import {
     createOrganization,
     disableOrganization,
@@ -267,7 +268,7 @@ function AdminOrganizationsPageContent() {
     }
 
     async function submitCreateOrganization(
-        event: FormEvent<HTMLFormElement>,
+        event: SyntheticEvent<HTMLFormElement>,
     ) {
         event.preventDefault()
 
@@ -352,7 +353,7 @@ function AdminOrganizationsPageContent() {
     }
 
     async function submitRenameOrganization(
-        event: FormEvent<HTMLFormElement>,
+        event: SyntheticEvent<HTMLFormElement>,
     ) {
         event.preventDefault()
 
@@ -526,7 +527,7 @@ function AdminOrganizationsPageContent() {
     }
 
     async function confirmDisableOrganization(
-        event: FormEvent<HTMLFormElement>,
+        event: SyntheticEvent<HTMLFormElement>,
     ) {
         event.preventDefault()
 
