@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.util.Objects;
 import java.util.UUID;
 
 @Repository
@@ -13,47 +14,87 @@ public class OrganizationImpactQueryRepository {
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
-    public ImpactSnapshot load(UUID organizationId) {
-        MapSqlParameterSource parameters = new MapSqlParameterSource(
-                "organizationId",
-                organizationId
+    public ImpactSnapshot load(
+            UUID organizationId
+    ) {
+        Objects.requireNonNull(
+                organizationId,
+                "organizationId не должен быть null"
         );
 
-        return jdbcTemplate.queryForObject(
-                """
-                select
-                    (select count(*)
-                       from users u
-                      where u.organization_id = :organizationId
-                        and u.enabled = true) as enabled_users,
+        MapSqlParameterSource parameters =
+                new MapSqlParameterSource(
+                        "organizationId",
+                        organizationId
+                );
 
-                    (select count(distinct u.id)
-                       from users u
-                       join user_roles ur on ur.user_id = u.id
-                       join roles r on r.id = ur.role_id
-                      where u.organization_id = :organizationId
-                        and u.enabled = true
-                        and r.name = 'ADMIN') as administrators,
+        ImpactSnapshot snapshot =
+                jdbcTemplate.queryForObject(
+                        """
+                        select
+                            (
+                                select count(*)
+                                from users app_user
+                                where app_user.organization_id =
+                                      :organizationId
+                                  and app_user.enabled = true
+                            ) as enabled_users,
 
-                    (select count(*)
-                       from refresh_tokens rt
-                       join users u on u.id = rt.user_id
-                      where u.organization_id = :organizationId
-                        and rt.revoked_at is null
-                        and rt.expires_at > current_timestamp) as active_refresh_sessions,
+                            (
+                                select count(distinct app_user.id)
+                                from users app_user
+                                join user_roles user_role
+                                  on user_role.user_id = app_user.id
+                                join roles role
+                                  on role.id = user_role.role_id
+                                where app_user.organization_id =
+                                      :organizationId
+                                  and app_user.enabled = true
+                                  and role.name = 'ADMIN'
+                            ) as administrators,
 
-                    (select count(*)
-                       from chat_turns ct
-                      where ct.organization_id = :organizationId
-                        and ct.state = 'PROCESSING') as active_chat_operations
-                """,
-                parameters,
-                (resultSet, rowNum) -> new ImpactSnapshot(
-                        resultSet.getLong("enabled_users"),
-                        resultSet.getLong("administrators"),
-                        resultSet.getLong("active_refresh_sessions"),
-                        resultSet.getLong("active_chat_operations")
-                )
+                            (
+                                select count(*)
+                                from refresh_tokens refresh_token
+                                join users app_user
+                                  on app_user.id =
+                                     refresh_token.user_id
+                                where app_user.organization_id =
+                                      :organizationId
+                                  and refresh_token.revoked_at is null
+                                  and refresh_token.expires_at >
+                                      current_timestamp
+                            ) as active_refresh_sessions,
+
+                            (
+                                select count(*)
+                                from chat_turns chat_turn
+                                where chat_turn.organization_id =
+                                      :organizationId
+                                  and chat_turn.state = 'PROCESSING'
+                            ) as active_chat_operations
+                        """,
+                        parameters,
+                        (resultSet, rowNumber) ->
+                                new ImpactSnapshot(
+                                        resultSet.getLong(
+                                                "enabled_users"
+                                        ),
+                                        resultSet.getLong(
+                                                "administrators"
+                                        ),
+                                        resultSet.getLong(
+                                                "active_refresh_sessions"
+                                        ),
+                                        resultSet.getLong(
+                                                "active_chat_operations"
+                                        )
+                                )
+                );
+
+        return Objects.requireNonNull(
+                snapshot,
+                "Impact query returned null"
         );
     }
 
@@ -63,5 +104,34 @@ public class OrganizationImpactQueryRepository {
             long activeRefreshSessions,
             long activeChatOperations
     ) {
+        public ImpactSnapshot {
+            requireNonNegative(
+                    enabledUsers,
+                    "enabledUsers"
+            );
+            requireNonNegative(
+                    administrators,
+                    "administrators"
+            );
+            requireNonNegative(
+                    activeRefreshSessions,
+                    "activeRefreshSessions"
+            );
+            requireNonNegative(
+                    activeChatOperations,
+                    "activeChatOperations"
+            );
+        }
+
+        private static void requireNonNegative(
+                long value,
+                String field
+        ) {
+            if (value < 0L) {
+                throw new IllegalArgumentException(
+                        field + " не может быть отрицательным"
+                );
+            }
+        }
     }
 }

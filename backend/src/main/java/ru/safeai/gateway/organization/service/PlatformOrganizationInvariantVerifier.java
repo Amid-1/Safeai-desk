@@ -19,51 +19,84 @@ import ru.safeai.gateway.user.repository.UserRepository;
 public class PlatformOrganizationInvariantVerifier
         implements ApplicationRunner {
 
-    private final PlatformProperties platformProperties;
-    private final OrganizationRepository organizationRepository;
-    private final UserRepository userRepository;
+    private final PlatformProperties
+            platformProperties;
+
+    private final OrganizationRepository
+            organizationRepository;
+
+    private final UserRepository
+            userRepository;
 
     @Override
     @Transactional(readOnly = true)
     public void run(
             @NonNull ApplicationArguments args
     ) {
-        OrganizationEntity platform = organizationRepository
-                .findById(
-                        platformProperties.organizationId()
-                )
-                .orElseThrow(() -> new IllegalStateException(
-                        "Platform organization отсутствует: "
-                                + platformProperties.organizationId()
-                ));
+        OrganizationEntity platform =
+                organizationRepository
+                        .findById(
+                                platformProperties
+                                        .organizationId()
+                        )
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Platform organization "
+                                                + "отсутствует: "
+                                                + platformProperties
+                                                        .organizationId()
+                                )
+                        );
 
         if (!platform.isEnabled()) {
             throw new IllegalStateException(
-                    "Platform organization должна быть включена"
+                    "Platform organization должна "
+                            + "быть включена"
             );
         }
 
-        long users = userRepository.countByOrganization_Id(
-                platform.getId()
-        );
+        if (platform.getAuthVersion() < 0L) {
+            throw new IllegalStateException(
+                    "Platform organization authVersion "
+                            + "не может быть отрицательной"
+            );
+        }
+
+        if (platform.getVersion() < 0L) {
+            throw new IllegalStateException(
+                    "Platform organization version "
+                            + "не может быть отрицательной"
+            );
+        }
+
+        long users =
+                userRepository
+                        .countByOrganization_Id(
+                                platform.getId()
+                        );
 
         long superAdmins =
-                userRepository.countByOrganizationIdAndRole(
-                        platform.getId(),
-                        SystemRole.SUPER_ADMIN.roleName()
-                );
+                userRepository
+                        .countByOrganizationIdAndRole(
+                                platform.getId(),
+                                SystemRole.SUPER_ADMIN
+                                        .roleName()
+                        );
 
-        if (users == 0L) {
+        if (users < 1L || superAdmins < 1L) {
             throw new IllegalStateException(
-                    "Platform organization не содержит SUPER_ADMIN"
+                    "Platform organization не содержит "
+                            + "SUPER_ADMIN"
             );
         }
 
         if (users != superAdmins) {
             throw new IllegalStateException(
-                    "Platform organization должна содержать только "
-                            + "SUPER_ADMIN: users=" + users
-                            + ", superAdmins=" + superAdmins
+                    "Platform organization должна содержать "
+                            + "только SUPER_ADMIN: users="
+                            + users
+                            + ", superAdmins="
+                            + superAdmins
             );
         }
     }

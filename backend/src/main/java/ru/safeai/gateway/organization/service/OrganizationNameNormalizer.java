@@ -6,10 +6,14 @@ import java.util.Locale;
 
 public final class OrganizationNameNormalizer {
 
+    private static final int MAX_NAME_LENGTH = 255;
+
     private OrganizationNameNormalizer() {
     }
 
-    public static String canonicalize(String value) {
+    public static String canonicalize(
+            String value
+    ) {
         if (value == null || value.isBlank()) {
             throw new BadRequestException(
                     "Название организации не должно быть пустым"
@@ -18,7 +22,10 @@ public final class OrganizationNameNormalizer {
 
         String canonical = value
                 .strip()
-                .replaceAll("[\\p{Z}\\s]+", " ");
+                .replaceAll(
+                        "[\\p{Z}\\s]+",
+                        " "
+                );
 
         if (canonical.isBlank()) {
             throw new BadRequestException(
@@ -26,16 +33,21 @@ public final class OrganizationNameNormalizer {
             );
         }
 
-        if (canonical.length() > 255) {
+        if (canonical.length() > MAX_NAME_LENGTH) {
             throw new BadRequestException(
-                    "Название организации не должно превышать 255 символов"
+                    "Название организации не должно превышать "
+                            + MAX_NAME_LENGTH
+                            + " символов"
             );
         }
 
         return canonical;
     }
 
-    public static String normalize(String canonicalName) {
-        return canonicalize(canonicalName).toLowerCase(Locale.ROOT);
+    public static String normalize(
+            String value
+    ) {
+        return canonicalize(value)
+                .toLowerCase(Locale.ROOT);
     }
 }

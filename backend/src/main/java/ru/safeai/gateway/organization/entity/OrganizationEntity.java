@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.Getter;
@@ -24,7 +25,11 @@ public class OrganizationEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    @Column(name = "name", nullable = false, length = 255)
+    @Column(
+            name = "name",
+            nullable = false,
+            length = 255
+    )
     private String name;
 
     @Column(
@@ -67,9 +72,37 @@ public class OrganizationEntity {
         if (id == null) {
             id = UUID.randomUUID();
         }
-        if (authVersion < 0) {
+
+        validateInvariant();
+    }
+
+    @PreUpdate
+    void preUpdate() {
+        validateInvariant();
+    }
+
+    private void validateInvariant() {
+        if (name == null || name.isBlank()) {
+            throw new IllegalStateException(
+                    "OrganizationEntity.name не должен быть пустым"
+            );
+        }
+
+        if (name.length() > 255) {
+            throw new IllegalStateException(
+                    "OrganizationEntity.name не должен превышать 255 символов"
+            );
+        }
+
+        if (authVersion < 0L) {
             throw new IllegalStateException(
                     "OrganizationEntity.authVersion не может быть отрицательным"
+            );
+        }
+
+        if (version < 0L) {
+            throw new IllegalStateException(
+                    "OrganizationEntity.version не может быть отрицательной"
             );
         }
     }

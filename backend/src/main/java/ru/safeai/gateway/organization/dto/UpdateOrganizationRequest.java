@@ -14,7 +14,4 @@ public record UpdateOrganizationRequest(
         @PositiveOrZero
         Long expectedVersion
 ) {
-    public UpdateOrganizationRequest(String name) {
-        this(name, 0L);
-    }
 }

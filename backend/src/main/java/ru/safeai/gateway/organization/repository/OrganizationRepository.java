@@ -21,7 +21,8 @@ public interface OrganizationRepository
             where organization.normalizedName = :normalizedName
             """)
     boolean existsByNormalizedName(
-            @Param("normalizedName") String normalizedName
+            @Param("normalizedName")
+            String normalizedName
     );
 
     @Query("""
@@ -31,8 +32,10 @@ public interface OrganizationRepository
               and organization.id <> :id
             """)
     boolean existsByNormalizedNameAndIdNot(
-            @Param("normalizedName") String normalizedName,
-            @Param("id") UUID id
+            @Param("normalizedName")
+            String normalizedName,
+            @Param("id")
+            UUID id
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -42,24 +45,27 @@ public interface OrganizationRepository
             where organization.id = :id
             """)
     Optional<OrganizationEntity> findByIdForSecurityUpdate(
-            @Param("id") UUID id
+            @Param("id")
+            UUID id
     );
 
     @Query("""
             select organization
             from OrganizationEntity organization
-            order by organization.createdAt desc, organization.id desc
             """)
-    Page<OrganizationEntity> findAllStable(Pageable pageable);
+    Page<OrganizationEntity> findAllStable(
+            Pageable pageable
+    );
 
     @Query("""
             select organization
             from OrganizationEntity organization
-            where lower(organization.name) like lower(concat('%', :query, '%'))
-            order by organization.name asc, organization.id asc
+            where lower(organization.name)
+                  like lower(concat('%', :query, '%'))
             """)
     Page<OrganizationEntity> searchDirectoryByName(
-            @Param("query") String query,
+            @Param("query")
+            String query,
             Pageable pageable
     );
 }

@@ -11,7 +11,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.auth.service.RefreshTokenService;
 import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.organization.dto.UpdateOrganizationEnabledRequest;
+import ru.safeai.gateway.organization.dto.DisableOrganizationRequest;
+import ru.safeai.gateway.organization.dto.EnableOrganizationRequest;
 import ru.safeai.gateway.testsupport.AbstractPostgresIntegrationTest;
 import ru.safeai.gateway.user.dto.UpdateUserRolesRequest;
 import ru.safeai.gateway.user.entity.UserEntity;
@@ -103,56 +104,66 @@ class OrganizationSecurityEpochPostgresIntegrationTest
         RefreshTokenService.CreatedRefreshToken token =
                 createLoginToken();
 
-        organizationService.updateEnabled(
-                ORGANIZATION_ID,
-                new UpdateOrganizationEnabledRequest(false),
-                superAdminPrincipal()
-        );
+        disableOrganization();
 
-        assertThat(organizationEnabled()).isFalse();
-        assertThat(organizationAuthVersion()).isEqualTo(1L);
-        assertThat(activeRefreshTokenCount()).isZero();
+        assertThat(organizationEnabled())
+                .isFalse();
 
-        String reason = jdbcTemplate.queryForObject("""
-                select revocation_reason
-                from public.refresh_tokens
-                where id = ?
-                """,
-                String.class,
-                token.id()
-        );
+        assertThat(organizationAuthVersion())
+                .isEqualTo(1L);
+
+        assertThat(activeRefreshTokenCount())
+                .isZero();
+
+        String reason =
+                jdbcTemplate.queryForObject("""
+                        select revocation_reason
+                        from public.refresh_tokens
+                        where id = ?
+                        """,
+                        String.class,
+                        token.id()
+                );
 
         assertThat(reason)
-                .isEqualTo("ORGANIZATION_DISABLED");
+                .isEqualTo(
+                        "ORGANIZATION_DISABLED"
+                );
     }
 
     @Test
     void disableInvalidatesAccessSecurityStateImmediatelyWithCacheDisabled() {
         UserSecurityStatus before =
-                userStatusCacheService.getStatus(USER_ID)
+                userStatusCacheService
+                        .getStatus(USER_ID)
                         .orElseThrow();
 
-        assertThat(before.organizationEnabled()).isTrue();
-        assertThat(before.organizationAuthVersion()).isZero();
+        assertThat(before.organizationEnabled())
+                .isTrue();
 
-        organizationService.updateEnabled(
-                ORGANIZATION_ID,
-                new UpdateOrganizationEnabledRequest(false),
-                superAdminPrincipal()
-        );
+        assertThat(
+                before.organizationAuthVersion()
+        ).isZero();
+
+        disableOrganization();
 
         UserSecurityStatus after =
-                userStatusCacheService.getStatus(USER_ID)
+                userStatusCacheService
+                        .getStatus(USER_ID)
                         .orElseThrow();
 
-        assertThat(after.organizationEnabled()).isFalse();
-        assertThat(after.organizationAuthVersion())
-                .isEqualTo(1L);
+        assertThat(after.organizationEnabled())
+                .isFalse();
 
-        assertThat(after.organizationAuthVersion())
-                .isNotEqualTo(
-                        before.organizationAuthVersion()
-                );
+        assertThat(
+                after.organizationAuthVersion()
+        ).isEqualTo(1L);
+
+        assertThat(
+                after.organizationAuthVersion()
+        ).isNotEqualTo(
+                before.organizationAuthVersion()
+        );
     }
 
     @Test
@@ -163,9 +174,14 @@ class OrganizationSecurityEpochPostgresIntegrationTest
         disableOrganization();
         enableOrganization();
 
-        assertThat(organizationEnabled()).isTrue();
-        assertThat(organizationAuthVersion()).isEqualTo(1L);
-        assertThat(activeRefreshTokenCount()).isZero();
+        assertThat(organizationEnabled())
+                .isTrue();
+
+        assertThat(organizationAuthVersion())
+                .isEqualTo(1L);
+
+        assertThat(activeRefreshTokenCount())
+                .isZero();
 
         assertThatThrownBy(() ->
                 refreshTokenService.rotate(
@@ -183,149 +199,206 @@ class OrganizationSecurityEpochPostgresIntegrationTest
         RefreshTokenService.CreatedRefreshToken original =
                 createLoginToken();
 
-        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch start =
+                new CountDownLatch(1);
 
-        try (ExecutorService executor =
-                     Executors.newFixedThreadPool(2)) {
+        try (
+                ExecutorService executor =
+                        Executors.newFixedThreadPool(2)
+        ) {
+            try {
+                Future<?> refreshFuture =
+                        executor.submit(() -> {
+                            await(start);
 
-            Future<?> refreshFuture = executor.submit(() -> {
-                await(start);
+                            try {
+                                refreshTokenService.rotate(
+                                        original.rawToken(),
+                                        request()
+                                );
+                            } catch (
+                                    InvalidRefreshTokenException ignored
+                            ) {
+                                /*
+                                 * Disable может выиграть race.
+                                 * Оба результата безопасны.
+                                 */
+                            }
+                        });
 
-                try {
-                    refreshTokenService.rotate(
-                            original.rawToken(),
-                            request()
-                    );
-                } catch (InvalidRefreshTokenException ignored) {
-                    // Disable may win the race. Both outcomes are safe.
-                }
-            });
+                Future<?> disableFuture =
+                        executor.submit(() -> {
+                            await(start);
+                            disableOrganization();
+                        });
 
-            Future<?> disableFuture = executor.submit(() -> {
-                await(start);
-                disableOrganization();
-            });
+                start.countDown();
 
-            start.countDown();
+                refreshFuture.get(
+                        20,
+                        TimeUnit.SECONDS
+                );
 
-            refreshFuture.get(20, TimeUnit.SECONDS);
-            disableFuture.get(20, TimeUnit.SECONDS);
+                disableFuture.get(
+                        20,
+                        TimeUnit.SECONDS
+                );
 
-            enableOrganization();
+                enableOrganization();
 
-            assertThat(organizationAuthVersion())
-                    .isEqualTo(1L);
+                assertThat(
+                        organizationAuthVersion()
+                ).isEqualTo(1L);
 
-            assertThat(usableActiveRefreshTokenCount())
-                    .isZero();
-        } finally {
-            start.countDown();
+                assertThat(
+                        usableActiveRefreshTokenCount()
+                ).isZero();
+            } finally {
+                start.countDown();
+            }
         }
     }
 
     @Test
     void concurrentLoginAndDisableMayInsertStaleTokenButItIsNeverUsable()
             throws Exception {
-        CountDownLatch userLoaded = new CountDownLatch(1);
-        CountDownLatch continueLogin = new CountDownLatch(1);
+        CountDownLatch userLoaded =
+                new CountDownLatch(1);
 
-        try (ExecutorService executor =
-                     Executors.newFixedThreadPool(2)) {
+        CountDownLatch continueLogin =
+                new CountDownLatch(1);
 
-            Future<?> loginFuture = executor.submit(() -> {
-                TransactionTemplate transaction =
-                        new TransactionTemplate(
-                                transactionManager
-                        );
+        try (
+                ExecutorService executor =
+                        Executors.newFixedThreadPool(2)
+        ) {
+            try {
+                Future<?> loginFuture =
+                        executor.submit(() -> {
+                            TransactionTemplate transaction =
+                                    new TransactionTemplate(
+                                            transactionManager
+                                    );
 
-                transaction.executeWithoutResult(status -> {
-                    UserEntity user = userRepository
-                            .findByIdWithRolesAndOrganization(
-                                    USER_ID
-                            )
-                            .orElseThrow();
+                            transaction.executeWithoutResult(
+                                    status -> {
+                                        UserEntity user =
+                                                userRepository
+                                                        .findByIdWithRolesAndOrganization(
+                                                                USER_ID
+                                                        )
+                                                        .orElseThrow();
 
-                    userLoaded.countDown();
-                    await(continueLogin);
+                                        userLoaded.countDown();
+                                        await(continueLogin);
 
-                    refreshTokenService.createForLogin(
-                            user,
-                            request(),
-                            Instant.now()
-                    );
-                });
-            });
+                                        refreshTokenService
+                                                .createForLogin(
+                                                        user,
+                                                        request(),
+                                                        Instant.now()
+                                                );
+                                    }
+                            );
+                        });
 
-            assertThat(userLoaded.await(
-                    10,
-                    TimeUnit.SECONDS
-            )).isTrue();
+                assertThat(userLoaded.await(
+                        10,
+                        TimeUnit.SECONDS
+                )).isTrue();
 
-            disableOrganization();
-            continueLogin.countDown();
+                disableOrganization();
+                continueLogin.countDown();
 
-            loginFuture.get(20, TimeUnit.SECONDS);
+                loginFuture.get(
+                        20,
+                        TimeUnit.SECONDS
+                );
 
-            enableOrganization();
+                enableOrganization();
 
-            assertThat(organizationAuthVersion())
-                    .isEqualTo(1L);
+                assertThat(
+                        organizationAuthVersion()
+                ).isEqualTo(1L);
 
-            assertThat(usableActiveRefreshTokenCount())
-                    .isZero();
-        } finally {
-            userLoaded.countDown();
-            continueLogin.countDown();
+                assertThat(
+                        usableActiveRefreshTokenCount()
+                ).isZero();
+            } finally {
+                /*
+                 * ExecutorService.close() ожидает завершения задач,
+                 * поэтому сначала освобождаем ожидающий поток.
+                 */
+                continueLogin.countDown();
+            }
         }
     }
 
     @Test
     void concurrentRoleChangeAndDisableKeepIndependentEpochs()
             throws Exception {
-        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch start =
+                new CountDownLatch(1);
 
-        try (ExecutorService executor =
-                     Executors.newFixedThreadPool(2)) {
+        long expectedUserVersion =
+                userVersion();
 
-            Future<?> roleChangeFuture = executor.submit(() -> {
-                await(start);
+        try (
+                ExecutorService executor =
+                        Executors.newFixedThreadPool(2)
+        ) {
+            try {
+                Future<?> roleChangeFuture =
+                        executor.submit(() -> {
+                            await(start);
 
-                userService.updateRoles(
-                        USER_ID,
-                        new UpdateUserRolesRequest(
-                                Set.of("ADMIN")
-                        ),
-                        superAdminPrincipal()
+                            userService.updateRoles(
+                                    USER_ID,
+                                    new UpdateUserRolesRequest(
+                                            Set.of("ADMIN"),
+                                            expectedUserVersion
+                                    ),
+                                    superAdminPrincipal()
+                            );
+                        });
+
+                Future<?> disableFuture =
+                        executor.submit(() -> {
+                            await(start);
+                            disableOrganization();
+                        });
+
+                start.countDown();
+
+                roleChangeFuture.get(
+                        20,
+                        TimeUnit.SECONDS
                 );
-            });
 
-            Future<?> disableFuture = executor.submit(() -> {
-                await(start);
-                disableOrganization();
-            });
+                disableFuture.get(
+                        20,
+                        TimeUnit.SECONDS
+                );
 
-            start.countDown();
+                Long userTokenVersion =
+                        jdbcTemplate.queryForObject("""
+                                select token_version
+                                from public.users
+                                where id = ?
+                                """,
+                                Long.class,
+                                USER_ID
+                        );
 
-            roleChangeFuture.get(20, TimeUnit.SECONDS);
-            disableFuture.get(20, TimeUnit.SECONDS);
+                assertThat(userTokenVersion)
+                        .isEqualTo(1L);
 
-            Long userTokenVersion =
-                    jdbcTemplate.queryForObject("""
-                            select token_version
-                            from public.users
-                            where id = ?
-                            """,
-                            Long.class,
-                            USER_ID
-                    );
-
-            assertThat(userTokenVersion)
-                    .isEqualTo(1L);
-
-            assertThat(organizationAuthVersion())
-                    .isEqualTo(1L);
-        } finally {
-            start.countDown();
+                assertThat(
+                        organizationAuthVersion()
+                ).isEqualTo(1L);
+            } finally {
+                start.countDown();
+            }
         }
     }
 
@@ -338,17 +411,19 @@ class OrganizationSecurityEpochPostgresIntegrationTest
 
         RefreshTokenService.CreatedRefreshToken token =
                 transaction.execute(status -> {
-                    UserEntity user = userRepository
-                            .findByIdWithRolesAndOrganization(
-                                    USER_ID
-                            )
-                            .orElseThrow();
+                    UserEntity user =
+                            userRepository
+                                    .findByIdWithRolesAndOrganization(
+                                            USER_ID
+                                    )
+                                    .orElseThrow();
 
-                    return refreshTokenService.createForLogin(
-                            user,
-                            request(),
-                            Instant.now()
-                    );
+                    return refreshTokenService
+                            .createForLogin(
+                                    user,
+                                    request(),
+                                    Instant.now()
+                            );
                 });
 
         if (token == null) {
@@ -361,82 +436,132 @@ class OrganizationSecurityEpochPostgresIntegrationTest
     }
 
     private void disableOrganization() {
-        organizationService.updateEnabled(
+        organizationService.disable(
                 ORGANIZATION_ID,
-                new UpdateOrganizationEnabledRequest(false),
+                new DisableOrganizationRequest(
+                        organizationVersion(),
+                        "Security Tenant"
+                ),
                 superAdminPrincipal()
         );
     }
 
     private void enableOrganization() {
-        organizationService.updateEnabled(
+        /*
+         * Disable увеличивает JPA @Version организации.
+         * Re-enable обязан использовать свежую версию.
+         */
+        organizationService.enable(
                 ORGANIZATION_ID,
-                new UpdateOrganizationEnabledRequest(true),
+                new EnableOrganizationRequest(
+                        organizationVersion()
+                ),
                 superAdminPrincipal()
         );
     }
 
     private boolean organizationEnabled() {
-        Boolean enabled = jdbcTemplate.queryForObject("""
-                select enabled
-                from public.organizations
-                where id = ?
-                """,
-                Boolean.class,
-                ORGANIZATION_ID
-        );
+        Boolean enabled =
+                jdbcTemplate.queryForObject("""
+                        select enabled
+                        from public.organizations
+                        where id = ?
+                        """,
+                        Boolean.class,
+                        ORGANIZATION_ID
+                );
 
         return Boolean.TRUE.equals(enabled);
     }
 
     private long organizationAuthVersion() {
-        Long version = jdbcTemplate.queryForObject("""
-                select auth_version
-                from public.organizations
-                where id = ?
-                """,
-                Long.class,
-                ORGANIZATION_ID
-        );
+        Long version =
+                jdbcTemplate.queryForObject("""
+                        select auth_version
+                        from public.organizations
+                        where id = ?
+                        """,
+                        Long.class,
+                        ORGANIZATION_ID
+                );
 
-        return version == null ? -1L : version;
+        return requireVersion(
+                version,
+                "organization auth_version"
+        );
+    }
+
+    private long organizationVersion() {
+        Long version =
+                jdbcTemplate.queryForObject("""
+                        select version
+                        from public.organizations
+                        where id = ?
+                        """,
+                        Long.class,
+                        ORGANIZATION_ID
+                );
+
+        return requireVersion(
+                version,
+                "organization version"
+        );
+    }
+
+    private long userVersion() {
+        Long version =
+                jdbcTemplate.queryForObject("""
+                        select version
+                        from public.users
+                        where id = ?
+                        """,
+                        Long.class,
+                        USER_ID
+                );
+
+        return requireVersion(
+                version,
+                "user version"
+        );
     }
 
     private long activeRefreshTokenCount() {
-        Long count = jdbcTemplate.queryForObject("""
-                select count(*)
-                from public.refresh_tokens token
-                where token.user_id = ?
-                  and token.revoked_at is null
-                """,
-                Long.class,
-                USER_ID
-        );
+        Long count =
+                jdbcTemplate.queryForObject("""
+                        select count(*)
+                        from public.refresh_tokens token
+                        where token.user_id = ?
+                          and token.revoked_at is null
+                        """,
+                        Long.class,
+                        USER_ID
+                );
 
         return count == null ? 0L : count;
     }
 
     private long usableActiveRefreshTokenCount() {
-        Long count = jdbcTemplate.queryForObject("""
-                select count(*)
-                from public.refresh_tokens token
-                join public.users app_user
-                  on app_user.id = token.user_id
-                join public.organizations organization
-                  on organization.id =
-                     app_user.organization_id
-                where token.user_id = ?
-                  and token.revoked_at is null
-                  and app_user.enabled = true
-                  and organization.enabled = true
-                  and token.issued_token_version =
-                      app_user.token_version
-                  and token.issued_organization_auth_version =
-                      organization.auth_version
-                """,
-                Long.class,
-                USER_ID
-        );
+        Long count =
+                jdbcTemplate.queryForObject("""
+                        select count(*)
+                        from public.refresh_tokens token
+                        join public.users app_user
+                          on app_user.id = token.user_id
+                        join public.organizations organization
+                          on organization.id =
+                             app_user.organization_id
+                        where token.user_id = ?
+                          and token.revoked_at is null
+                          and app_user.enabled = true
+                          and organization.enabled = true
+                          and token.issued_token_version =
+                              app_user.token_version
+                          and token.issued_organization_auth_version =
+                              organization.auth_version
+                        """,
+                        Long.class,
+                        USER_ID
+                );
 
         return count == null ? 0L : count;
     }
@@ -445,7 +570,10 @@ class OrganizationSecurityEpochPostgresIntegrationTest
         MockHttpServletRequest request =
                 new MockHttpServletRequest();
 
-        request.setRemoteAddr("127.0.0.1");
+        request.setRemoteAddr(
+                "127.0.0.1"
+        );
+
         request.addHeader(
                 "User-Agent",
                 "organization-security-integration-test"
@@ -455,30 +583,55 @@ class OrganizationSecurityEpochPostgresIntegrationTest
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
-        return SafeAiUserPrincipal.accessTokenPrincipal(
-                SUPER_ADMIN_ID,
-                PLATFORM_ORGANIZATION_ID,
-                "superadmin@test.com",
-                0L,
-                0L,
-                Set.of(
-                        new org.springframework.security.core.authority
-                                .SimpleGrantedAuthority(
-                                "ROLE_SUPER_ADMIN"
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        SUPER_ADMIN_ID,
+                        PLATFORM_ORGANIZATION_ID,
+                        "superadmin@test.com",
+                        0L,
+                        0L,
+                        Set.of(
+                                new org.springframework
+                                        .security.core.authority
+                                        .SimpleGrantedAuthority(
+                                                "ROLE_SUPER_ADMIN"
+                                        )
                         )
-                )
-        );
+                );
     }
 
-    private static void await(CountDownLatch latch) {
+    private static long requireVersion(
+            Long value,
+            String field
+    ) {
+        if (value == null || value < 0L) {
+            throw new IllegalStateException(
+                    field
+                            + " должен быть неотрицательным"
+            );
+        }
+
+        return value;
+    }
+
+    private static void await(
+            CountDownLatch latch
+    ) {
         try {
-            if (!latch.await(15, TimeUnit.SECONDS)) {
+            if (!latch.await(
+                    15,
+                    TimeUnit.SECONDS
+            )) {
                 throw new IllegalStateException(
                         "Concurrency barrier timeout"
                 );
             }
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
+        } catch (
+                InterruptedException exception
+        ) {
+            Thread.currentThread()
+                    .interrupt();
+
             throw new IllegalStateException(
                     "Concurrency test interrupted",
                     exception

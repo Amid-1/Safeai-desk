@@ -1,5 +1,39 @@
 # Git: проверка изменений, создание коммита и отправка в удалённый репозиторий
 
+
+Обновление из GitHub:
+```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk
+git status
+git pull origin main
+```
+
+Если локальных изменений нет
+```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk
+git pull
+```
+
+Если Git сообщит о незакоммиченных изменениях
+```bash
+git stash
+git pull origin main
+git stash pop
+```
+
+
+```bash
+
+
+```
+
+
+```bash
+
+
+```
+
+
 ## Общая последовательность
 
 Безопасная последовательность работы выглядит так:

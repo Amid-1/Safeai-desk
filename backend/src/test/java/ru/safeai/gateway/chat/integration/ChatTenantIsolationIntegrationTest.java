@@ -10,6 +10,7 @@ import org.springframework.test.context.ActiveProfiles;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.service.ChatService;
 import ru.safeai.gateway.chat.service.ChatTurnReservationService;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
@@ -38,8 +39,14 @@ class ChatTenantIsolationIntegrationTest
     void userCannotReadForeignTenantChat() {
         assertThatThrownBy(() -> chatService.findById(
                 OTHER_CHAT_ID,
-                principal(USER_ID, ORGANIZATION_ID, "ROLE_USER")
-        )).isInstanceOf(ResourceNotFoundException.class);
+                principal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        "ROLE_USER"
+                )
+        )).isInstanceOf(
+                ResourceNotFoundException.class
+        );
     }
 
     @Test
@@ -47,29 +54,54 @@ class ChatTenantIsolationIntegrationTest
         assertThatThrownBy(() -> chatService.findMessages(
                 OTHER_CHAT_ID,
                 PageRequest.of(0, 50),
-                principal(USER_ID, ORGANIZATION_ID, "ROLE_USER")
-        )).isInstanceOf(ResourceNotFoundException.class);
+                principal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        "ROLE_USER"
+                )
+        )).isInstanceOf(
+                ResourceNotFoundException.class
+        );
     }
 
     @Test
     void userCannotReserveTurnInForeignTenantChat() {
-        assertThatThrownBy(() -> reservationService.reserveOrReplay(
-                OTHER_CHAT_ID,
-                new SendMessageRequest("Question", UUID.randomUUID()),
-                principal(USER_ID, ORGANIZATION_ID, "ROLE_USER")
-        )).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() ->
+                reservationService.reserveOrReplay(
+                        OTHER_CHAT_ID,
+                        new SendMessageRequest(
+                                "Question",
+                                UUID.randomUUID()
+                        ),
+                        principal(
+                                USER_ID,
+                                ORGANIZATION_ID,
+                                "ROLE_USER"
+                        )
+                )
+        ).isInstanceOf(
+                ResourceNotFoundException.class
+        );
     }
 
     @Test
-    void superAdminRoleDoesNotImplicitlyBypassPrivateChatOwnership() {
+    void superAdminCannotAccessTenantChat() {
         assertThatThrownBy(() -> chatService.findById(
                 CHAT_ID,
                 principal(
-                        UUID.fromString("00000000-0000-0000-0000-000000000101"),
+                        UUID.fromString(
+                                "00000000-0000-0000-0000-000000000101"
+                        ),
                         PLATFORM_ORGANIZATION_ID,
                         "ROLE_SUPER_ADMIN"
                 )
-        )).isInstanceOf(ResourceNotFoundException.class);
+        ))
+                .isInstanceOf(
+                        ForbiddenOperationException.class
+                )
+                .hasMessageContaining(
+                        "не имеет доступа к tenant-chat"
+                );
     }
 
     private SafeAiUserPrincipal principal(
@@ -82,7 +114,9 @@ class ChatTenantIsolationIntegrationTest
                 organizationId,
                 "principal@test.example",
                 0L,
-                List.of(new SimpleGrantedAuthority(role))
+                List.of(
+                        new SimpleGrantedAuthority(role)
+                )
         );
     }
 }

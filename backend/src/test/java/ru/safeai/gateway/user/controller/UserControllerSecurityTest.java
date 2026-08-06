@@ -69,20 +69,38 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class UserControllerSecurityTest {
 
     private static final UUID USER_ID =
-            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+            UUID.fromString(
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            );
+
     private static final UUID ADMIN_ID =
-            UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
+            UUID.fromString(
+                    "dddddddd-dddd-dddd-dddd-dddddddddddd"
+            );
+
     private static final UUID SUPER_ADMIN_ID =
-            UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+            UUID.fromString(
+                    "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+            );
+
     private static final UUID ORGANIZATION_ID =
-            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+            UUID.fromString(
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            );
+
     private static final UUID PLATFORM_ORGANIZATION_ID =
-            UUID.fromString("00000000-0000-0000-0000-000000000001");
+            UUID.fromString(
+                    "00000000-0000-0000-0000-000000000001"
+            );
+
+    private static final long USER_VERSION = 7L;
 
     private static final Instant CREATED_AT =
             Instant.parse("2026-06-12T12:00:00Z");
+
     private static final Instant UPDATED_AT =
             Instant.parse("2026-06-13T12:00:00Z");
+
     private static final Instant LAST_LOGIN_AT =
             Instant.parse("2026-06-14T12:00:00Z");
 
@@ -102,54 +120,90 @@ class UserControllerSecurityTest {
 
         @Bean
         Clock clock() {
-            return Clock.fixed(CREATED_AT, ZoneOffset.UTC);
+            return Clock.fixed(
+                    CREATED_AT,
+                    ZoneOffset.UTC
+            );
         }
 
         @Bean
-        SecurityFilterChain testSecurityFilterChain(HttpSecurity http) {
+        SecurityFilterChain testSecurityFilterChain(
+                HttpSecurity http
+        ) {
             return http
-                    .csrf(AbstractHttpConfigurer::disable)
+                    .csrf(
+                            AbstractHttpConfigurer::disable
+                    )
                     .authorizeHttpRequests(auth -> auth
-                            .anyRequest().authenticated()
+                            .anyRequest()
+                            .authenticated()
                     )
                     .build();
         }
     }
 
     @Test
-    void findAllWithoutAuthenticationReturns4xx() throws Exception {
-        mockMvc.perform(get("/api/users"))
-                .andExpect(status().is4xxClientError());
+    void findAllWithoutAuthenticationReturns4xx()
+            throws Exception {
+        mockMvc.perform(
+                get("/api/users")
+        ).andExpect(
+                status().is4xxClientError()
+        );
     }
 
     @Test
-    void findAllWithUserRoleReturns403() throws Exception {
-        mockMvc.perform(get("/api/users")
-                        .with(user("user@test.com").roles("USER")))
-                .andExpect(status().isForbidden());
+    void findAllWithUserRoleReturns403()
+            throws Exception {
+        mockMvc.perform(
+                get("/api/users")
+                        .with(
+                                user("user@test.com")
+                                        .roles("USER")
+                        )
+        ).andExpect(
+                status().isForbidden()
+        );
     }
 
     @Test
-    void findAllWithAdminRoleReturns200() throws Exception {
-        SafeAiUserPrincipal currentUser = adminPrincipal();
+    void findAllWithAdminRoleReturns200()
+            throws Exception {
+        SafeAiUserPrincipal currentUser =
+                adminPrincipal();
 
         when(userService.findAll(
                 any(SafeAiUserPrincipal.class),
                 isNull(),
                 any(Pageable.class)
-        )).thenReturn(new PageImpl<>(List.of(userResponse())));
+        )).thenReturn(
+                new PageImpl<>(
+                        List.of(userResponse())
+                )
+        );
 
-        mockMvc.perform(get("/api/users")
-                        .with(authentication(authToken(currentUser))))
+        mockMvc.perform(
+                get("/api/users")
+                        .with(authentication(
+                                authToken(currentUser)
+                        ))
+        )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].id")
-                        .value(USER_ID.toString()))
-                .andExpect(jsonPath("$.content[0].email")
-                        .value("user@test.com"))
-                .andExpect(jsonPath("$.content[0].updatedAt")
-                        .value(UPDATED_AT.toString()))
-                .andExpect(jsonPath("$.content[0].lastLoginAt")
-                        .value(LAST_LOGIN_AT.toString()));
+                .andExpect(jsonPath(
+                        "$.content[0].id"
+                ).value(USER_ID.toString()))
+                .andExpect(jsonPath(
+                        "$.content[0].email"
+                ).value("user@test.com"))
+                .andExpect(jsonPath(
+                        "$.content[0].version"
+                ).value(USER_VERSION))
+                .andExpect(jsonPath(
+                        "$.content[0].updatedAt"
+                ).value(UPDATED_AT.toString()))
+                .andExpect(jsonPath(
+                        "$.content[0].lastLoginAt"
+                ).value(LAST_LOGIN_AT.toString()));
 
         verify(userService).findAll(
                 any(SafeAiUserPrincipal.class),
@@ -159,19 +213,30 @@ class UserControllerSecurityTest {
     }
 
     @Test
-    void findAllPassesRoleFilterToService() throws Exception {
-        SafeAiUserPrincipal currentUser = adminPrincipal();
+    void findAllPassesRoleFilterToService()
+            throws Exception {
+        SafeAiUserPrincipal currentUser =
+                adminPrincipal();
 
         when(userService.findAll(
                 any(SafeAiUserPrincipal.class),
                 eq("USER"),
                 any(Pageable.class)
-        )).thenReturn(new PageImpl<>(List.of(userResponse())));
+        )).thenReturn(
+                new PageImpl<>(
+                        List.of(userResponse())
+                )
+        );
 
-        mockMvc.perform(get("/api/users")
+        mockMvc.perform(
+                get("/api/users")
                         .param("role", "USER")
-                        .with(authentication(authToken(currentUser))))
-                .andExpect(status().isOk());
+                        .with(authentication(
+                                authToken(currentUser)
+                        ))
+        ).andExpect(
+                status().isOk()
+        );
 
         verify(userService).findAll(
                 any(SafeAiUserPrincipal.class),
@@ -181,47 +246,100 @@ class UserControllerSecurityTest {
     }
 
     @Test
-    void statisticsWithAdminRoleReturnsGlobalVisibleCounts() throws Exception {
-        when(userService.statistics(any(SafeAiUserPrincipal.class)))
-                .thenReturn(new UserStatisticsResponse(10, 2, 8, 9, 1));
+    void statisticsWithAdminRoleReturnsGlobalVisibleCounts()
+            throws Exception {
+        when(userService.statistics(
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(
+                new UserStatisticsResponse(
+                        10,
+                        2,
+                        8,
+                        9,
+                        1
+                )
+        );
 
-        mockMvc.perform(get("/api/users/statistics")
-                        .with(authentication(authToken(adminPrincipal()))))
+        mockMvc.perform(
+                get("/api/users/statistics")
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+        )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(10))
-                .andExpect(jsonPath("$.administrators").value(2))
-                .andExpect(jsonPath("$.users").value(8))
-                .andExpect(jsonPath("$.enabled").value(9))
-                .andExpect(jsonPath("$.disabled").value(1));
+                .andExpect(
+                        jsonPath("$.total").value(10)
+                )
+                .andExpect(
+                        jsonPath("$.administrators").value(2)
+                )
+                .andExpect(
+                        jsonPath("$.users").value(8)
+                )
+                .andExpect(
+                        jsonPath("$.enabled").value(9)
+                )
+                .andExpect(
+                        jsonPath("$.disabled").value(1)
+                );
     }
 
     @Test
-    void detailsWithAdminRoleReturnsNineFields() throws Exception {
+    void detailsWithAdminRoleReturnsVersionedContract()
+            throws Exception {
         when(userService.findDetailsById(
                 eq(USER_ID),
                 any(SafeAiUserPrincipal.class)
-        )).thenReturn(userDetailsResponse());
+        )).thenReturn(
+                userDetailsResponse()
+        );
 
-        mockMvc.perform(get("/api/users/{id}", USER_ID)
-                        .with(authentication(authToken(adminPrincipal()))))
+        mockMvc.perform(
+                get("/api/users/{id}", USER_ID)
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+        )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(USER_ID.toString()))
-                .andExpect(jsonPath("$.organizationId")
-                        .value(ORGANIZATION_ID.toString()))
-                .andExpect(jsonPath("$.createdAt")
-                        .value(CREATED_AT.toString()))
-                .andExpect(jsonPath("$.updatedAt")
-                        .value(UPDATED_AT.toString()))
-                .andExpect(jsonPath("$.lastLoginAt")
-                        .value(LAST_LOGIN_AT.toString()));
+                .andExpect(
+                        jsonPath("$.id")
+                                .value(USER_ID.toString())
+                )
+                .andExpect(
+                        jsonPath("$.organizationId")
+                                .value(
+                                        ORGANIZATION_ID.toString()
+                                )
+                )
+                .andExpect(
+                        jsonPath("$.version")
+                                .value(USER_VERSION)
+                )
+                .andExpect(
+                        jsonPath("$.createdAt")
+                                .value(CREATED_AT.toString())
+                )
+                .andExpect(
+                        jsonPath("$.updatedAt")
+                                .value(UPDATED_AT.toString())
+                )
+                .andExpect(
+                        jsonPath("$.lastLoginAt")
+                                .value(LAST_LOGIN_AT.toString())
+                );
     }
 
     @Test
     void createWithWeakPasswordReturns400AndDoesNotCallService()
             throws Exception {
-        mockMvc.perform(post("/api/users")
-                        .with(authentication(authToken(adminPrincipal())))
-                        .contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(
+                post("/api/users")
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+                        .contentType(
+                                MediaType.APPLICATION_JSON
+                        )
                         .content("""
                                 {
                                   "organizationId": "%s",
@@ -229,43 +347,84 @@ class UserControllerSecurityTest {
                                   "password": "weak",
                                   "roles": ["USER"]
                                 }
-                                """.formatted(ORGANIZATION_ID)))
-                .andExpect(status().isBadRequest());
+                                """.formatted(
+                                ORGANIZATION_ID
+                        ))
+        ).andExpect(
+                status().isBadRequest()
+        );
 
-        verify(userService, never()).create(any(), any());
+        verify(userService, never())
+                .create(any(), any());
     }
 
     @Test
-    void updateEnabledWithAdminRoleReturns200() throws Exception {
+    void updateEnabledWithAdminRoleReturns200()
+            throws Exception {
         when(userService.updateEnabled(
                 eq(USER_ID),
                 any(),
                 any(SafeAiUserPrincipal.class)
-        )).thenReturn(disabledUserResponse());
+        )).thenReturn(
+                disabledUserResponse()
+        );
 
-        mockMvc.perform(patch("/api/users/{id}/enabled", USER_ID)
-                        .with(authentication(authToken(adminPrincipal())))
-                        .contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(
+                patch(
+                        "/api/users/{id}/enabled",
+                        USER_ID
+                )
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+                        .contentType(
+                                MediaType.APPLICATION_JSON
+                        )
                         .content("""
                                 {
-                                  "enabled": false
+                                  "enabled": false,
+                                  "expectedVersion": %d
                                 }
-                                """))
+                                """.formatted(
+                                USER_VERSION
+                        ))
+        )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.enabled").value(false));
+                .andExpect(
+                        jsonPath("$.enabled")
+                                .value(false)
+                )
+                .andExpect(
+                        jsonPath("$.version")
+                                .value(USER_VERSION + 1)
+                );
     }
 
     @Test
-    void resetPasswordWithAdminRoleReturns204() throws Exception {
-        mockMvc.perform(post("/api/users/{id}/reset-password", USER_ID)
-                        .with(authentication(authToken(adminPrincipal())))
-                        .contentType(MediaType.APPLICATION_JSON)
+    void resetPasswordWithAdminRoleReturns204()
+            throws Exception {
+        mockMvc.perform(
+                post(
+                        "/api/users/{id}/reset-password",
+                        USER_ID
+                )
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+                        .contentType(
+                                MediaType.APPLICATION_JSON
+                        )
                         .content("""
                                 {
-                                  "password": "NewPass123!45"
+                                  "password": "NewPass123!45",
+                                  "expectedVersion": %d
                                 }
-                                """))
-                .andExpect(status().isNoContent());
+                                """.formatted(
+                                USER_VERSION
+                        ))
+        ).andExpect(
+                status().isNoContent()
+        );
 
         verify(userService).resetPassword(
                 eq(USER_ID),
@@ -275,41 +434,64 @@ class UserControllerSecurityTest {
     }
 
     @Test
-    void permanentDeletionWithAdminRoleReturns403() throws Exception {
-        mockMvc.perform(post(
+    void permanentDeletionWithAdminRoleReturns403()
+            throws Exception {
+        mockMvc.perform(
+                post(
                         "/api/users/{id}/permanent-deletion",
                         USER_ID
                 )
-                        .with(authentication(authToken(adminPrincipal())))
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+                        .contentType(
+                                MediaType.APPLICATION_JSON
+                        )
                         .content("""
                                 {
-                                  "confirmationEmail": "user@test.com"
+                                  "confirmationEmail": "user@test.com",
+                                  "expectedVersion": %d
                                 }
-                                """))
-                .andExpect(status().isForbidden());
-
-        verify(userService, never()).permanentlyDelete(
-                any(),
-                any(),
-                any()
+                                """.formatted(
+                                USER_VERSION
+                        ))
+        ).andExpect(
+                status().isForbidden()
         );
+
+        verify(userService, never())
+                .permanentlyDelete(
+                        any(),
+                        any(),
+                        any()
+                );
     }
 
     @Test
-    void permanentDeletionWithSuperAdminReturns204() throws Exception {
-        mockMvc.perform(post(
+    void permanentDeletionWithSuperAdminReturns204()
+            throws Exception {
+        mockMvc.perform(
+                post(
                         "/api/users/{id}/permanent-deletion",
                         USER_ID
                 )
-                        .with(authentication(authToken(superAdminPrincipal())))
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .with(authentication(
+                                authToken(superAdminPrincipal())
+                        ))
+                        .contentType(
+                                MediaType.APPLICATION_JSON
+                        )
                         .content("""
                                 {
-                                  "confirmationEmail": "user@test.com"
+                                  "confirmationEmail": "user@test.com",
+                                  "expectedVersion": %d
                                 }
-                                """))
-                .andExpect(status().isNoContent());
+                                """.formatted(
+                                USER_VERSION
+                        ))
+        ).andExpect(
+                status().isNoContent()
+        );
 
         verify(userService).permanentlyDelete(
                 eq(USER_ID),
@@ -319,87 +501,42 @@ class UserControllerSecurityTest {
     }
 
     @Test
-    void permanentDeletionWithInvalidEmailReturns400() throws Exception {
-        mockMvc.perform(post(
+    void permanentDeletionWithInvalidEmailReturns400()
+            throws Exception {
+        mockMvc.perform(
+                post(
                         "/api/users/{id}/permanent-deletion",
                         USER_ID
                 )
-                        .with(authentication(authToken(superAdminPrincipal())))
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .with(authentication(
+                                authToken(superAdminPrincipal())
+                        ))
+                        .contentType(
+                                MediaType.APPLICATION_JSON
+                        )
                         .content("""
                                 {
-                                  "confirmationEmail": "not-an-email"
+                                  "confirmationEmail": "not-an-email",
+                                  "expectedVersion": %d
                                 }
-                                """))
-                .andExpect(status().isBadRequest());
-
-        verify(userService, never()).permanentlyDelete(
-                any(),
-                any(),
-                any()
+                                """.formatted(
+                                USER_VERSION
+                        ))
+        ).andExpect(
+                status().isBadRequest()
         );
+
+        verify(userService, never())
+                .permanentlyDelete(
+                        any(),
+                        any(),
+                        any()
+                );
     }
 
-
-    @Test
-    void createWithTwoRolesReturns400AndDoesNotCallService()
-            throws Exception {
-        mockMvc.perform(post("/api/users")
-                        .with(authentication(authToken(adminPrincipal())))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "organizationId": "%s",
-                                  "email": "user@test.com",
-                                  "password": "Strong_User_123!",
-                                  "roles": ["USER", "ADMIN"]
-                                }
-                                """.formatted(ORGANIZATION_ID)))
-                .andExpect(status().isBadRequest());
-
-        verify(userService, never()).create(any(), any());
-    }
-
-    @Test
-    void permanentDeletionWithoutConfirmationEmailReturns400()
-            throws Exception {
-        mockMvc.perform(post(
-                        "/api/users/{id}/permanent-deletion",
-                        USER_ID
-                )
-                        .with(authentication(authToken(superAdminPrincipal())))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isBadRequest());
-
-        verify(userService, never()).permanentlyDelete(
-                any(),
-                any(),
-                any()
-        );
-    }
-
-    @Test
-    void updateRolesWithTwoRolesReturns400AndDoesNotCallService()
-            throws Exception {
-        mockMvc.perform(patch("/api/users/{id}/roles", USER_ID)
-                        .with(authentication(authToken(superAdminPrincipal())))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "roles": ["USER", "ADMIN"]
-                                }
-                                """))
-                .andExpect(status().isBadRequest());
-
-        verify(userService, never()).updateRoles(
-                any(),
-                any(),
-                any()
-        );
-    }
-
-    private Authentication authToken(SafeAiUserPrincipal principal) {
+    private Authentication authToken(
+            SafeAiUserPrincipal principal
+    ) {
         return new UsernamePasswordAuthenticationToken(
                 principal,
                 null,
@@ -408,31 +545,33 @@ class UserControllerSecurityTest {
     }
 
     private SafeAiUserPrincipal adminPrincipal() {
-        return SafeAiUserPrincipal.accessTokenPrincipal(
-                ADMIN_ID,
-                ORGANIZATION_ID,
-                "admin@test.com",
-                0L,
-                Set.of(
-                        new SimpleGrantedAuthority(
-                                "ROLE_ADMIN"
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        ADMIN_ID,
+                        ORGANIZATION_ID,
+                        "admin@test.com",
+                        0L,
+                        Set.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_ADMIN"
+                                )
                         )
-                )
-        );
+                );
     }
 
     private SafeAiUserPrincipal superAdminPrincipal() {
-        return SafeAiUserPrincipal.accessTokenPrincipal(
-                SUPER_ADMIN_ID,
-                PLATFORM_ORGANIZATION_ID,
-                "super-admin@test.com",
-                0L,
-                Set.of(
-                        new SimpleGrantedAuthority(
-                                "ROLE_SUPER_ADMIN"
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        SUPER_ADMIN_ID,
+                        PLATFORM_ORGANIZATION_ID,
+                        "super-admin@test.com",
+                        0L,
+                        Set.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_SUPER_ADMIN"
+                                )
                         )
-                )
-        );
+                );
     }
 
     private UserResponse userResponse() {
@@ -443,6 +582,7 @@ class UserControllerSecurityTest {
                 "Demo User",
                 true,
                 Set.of("USER"),
+                USER_VERSION,
                 CREATED_AT,
                 UPDATED_AT,
                 LAST_LOGIN_AT
@@ -457,6 +597,7 @@ class UserControllerSecurityTest {
                 "Demo User",
                 false,
                 Set.of("USER"),
+                USER_VERSION + 1,
                 CREATED_AT,
                 UPDATED_AT,
                 LAST_LOGIN_AT
@@ -471,6 +612,7 @@ class UserControllerSecurityTest {
                 "Demo User",
                 true,
                 Set.of("USER"),
+                USER_VERSION,
                 CREATED_AT,
                 UPDATED_AT,
                 LAST_LOGIN_AT

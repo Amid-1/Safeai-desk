@@ -5,12 +5,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import ru.safeai.gateway.organization.event
-        .OrganizationSecurityStateChangedEvent;
+import org.springframework.data.domain.SliceImpl;
+import ru.safeai.gateway.organization.event.OrganizationSecurityStateChangedEvent;
 import ru.safeai.gateway.user.repository.UserRepository;
 import ru.safeai.gateway.user.service.UserStatusCacheService;
 
@@ -22,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -41,103 +39,171 @@ class OrganizationStatusCacheInvalidationListenerTest {
     private UserRepository userRepository;
 
     @Mock
-    private UserStatusCacheService userStatusCacheService;
+    private UserStatusCacheService
+            userStatusCacheService;
 
     @Test
-    void paginatesLargeOrganizationWithoutLoadingAllIdsAtOnce() {
-        List<UUID> firstBatch = IntStream
-                .range(0, PAGE_SIZE)
-                .mapToObj(index -> UUID.randomUUID())
-                .toList();
+    void paginatesLargeOrganizationWithStableIdSort() {
+        List<UUID> firstBatch =
+                IntStream.range(
+                                0,
+                                PAGE_SIZE
+                        )
+                        .mapToObj(index ->
+                                UUID.randomUUID()
+                        )
+                        .toList();
 
         List<UUID> secondBatch =
-                List.of(UUID.randomUUID());
-
-        Page<UUID> firstPage = new PageImpl<>(
-                firstBatch,
-                PageRequest.of(0, PAGE_SIZE),
-                PAGE_SIZE + 1L
-        );
-
-        Page<UUID> secondPage = new PageImpl<>(
-                secondBatch,
-                PageRequest.of(1, PAGE_SIZE),
-                PAGE_SIZE + 1L
-        );
-
-        when(userRepository.findIdsByOrganizationId(
-                eq(ORGANIZATION_ID),
-                any(Pageable.class)
-        ))
-                .thenReturn(firstPage)
-                .thenReturn(secondPage);
-
-        OrganizationStatusCacheInvalidationListener listener =
-                new OrganizationStatusCacheInvalidationListener(
-                        userRepository,
-                        userStatusCacheService
+                List.of(
+                        UUID.randomUUID()
                 );
 
-        listener.onOrganizationSecurityStateChanged(
-                new OrganizationSecurityStateChangedEvent(
-                        ORGANIZATION_ID,
-                        9L
+        when(
+                userRepository
+                        .findIdsByOrganizationId(
+                                eq(ORGANIZATION_ID),
+                                any(Pageable.class)
+                        )
+        )
+                .thenAnswer(invocation ->
+                        new SliceImpl<>(
+                                firstBatch,
+                                invocation.getArgument(1),
+                                true
+                        )
                 )
-        );
+                .thenAnswer(invocation ->
+                        new SliceImpl<>(
+                                secondBatch,
+                                invocation.getArgument(1),
+                                false
+                        )
+                );
 
-        verify(userStatusCacheService)
-                .evictAll(firstBatch);
+        listener()
+                .onOrganizationSecurityStateChanged(
+                        new OrganizationSecurityStateChangedEvent(
+                                ORGANIZATION_ID,
+                                9L
+                        )
+                );
 
-        verify(userStatusCacheService)
-                .evictAll(secondBatch);
+        verify(
+                userStatusCacheService
+        ).evictAll(firstBatch);
 
-        ArgumentCaptor<Pageable> pageableCaptor =
-                ArgumentCaptor.forClass(Pageable.class);
+        verify(
+                userStatusCacheService
+        ).evictAll(secondBatch);
+
+        ArgumentCaptor<Pageable> captor =
+                ArgumentCaptor.forClass(
+                        Pageable.class
+                );
 
         verify(
                 userRepository,
                 times(2)
         ).findIdsByOrganizationId(
                 eq(ORGANIZATION_ID),
-                pageableCaptor.capture()
+                captor.capture()
         );
 
-        assertThat(pageableCaptor.getAllValues())
-                .extracting(Pageable::getPageNumber)
-                .containsExactly(0, 1);
+        assertThat(
+                captor.getAllValues()
+        )
+                .extracting(
+                        Pageable::getPageNumber
+                )
+                .containsExactly(
+                        0,
+                        1
+                );
 
-        assertThat(pageableCaptor.getAllValues())
-                .extracting(Pageable::getPageSize)
-                .containsOnly(PAGE_SIZE);
+        assertThat(
+                captor.getAllValues()
+        )
+                .extracting(
+                        Pageable::getPageSize
+                )
+                .containsOnly(
+                        PAGE_SIZE
+                );
+
+        assertThat(
+                captor.getAllValues()
+        ).allSatisfy(pageable ->
+                assertThat(
+                        pageable.getSort()
+                                .getOrderFor("id")
+                ).isNotNull()
+        );
+    }
+
+    @Test
+    void emptyOrganizationDoesNotCallCache() {
+        when(
+                userRepository
+                        .findIdsByOrganizationId(
+                                eq(ORGANIZATION_ID),
+                                any(Pageable.class)
+                        )
+        ).thenAnswer(invocation ->
+                new SliceImpl<>(
+                        List.of(),
+                        invocation.getArgument(1),
+                        false
+                )
+        );
+
+        listener()
+                .onOrganizationSecurityStateChanged(
+                        new OrganizationSecurityStateChangedEvent(
+                                ORGANIZATION_ID,
+                                10L
+                        )
+                );
+
+        verify(
+                userStatusCacheService,
+                never()
+        ).evictAll(any());
     }
 
     @Test
     void repositoryFailureIsBestEffortAndDoesNotEscape() {
-        when(userRepository.findIdsByOrganizationId(
-                eq(ORGANIZATION_ID),
-                any(Pageable.class)
-        )).thenThrow(
+        when(
+                userRepository
+                        .findIdsByOrganizationId(
+                                eq(ORGANIZATION_ID),
+                                any(Pageable.class)
+                        )
+        ).thenThrow(
                 new IllegalStateException(
                         "PostgreSQL unavailable"
                 )
         );
 
-        OrganizationStatusCacheInvalidationListener listener =
-                new OrganizationStatusCacheInvalidationListener(
-                        userRepository,
-                        userStatusCacheService
-                );
-
         assertThatCode(() ->
-                listener.onOrganizationSecurityStateChanged(
-                        new OrganizationSecurityStateChangedEvent(
-                                ORGANIZATION_ID,
-                                10L
+                listener()
+                        .onOrganizationSecurityStateChanged(
+                                new OrganizationSecurityStateChangedEvent(
+                                        ORGANIZATION_ID,
+                                        11L
+                                )
                         )
-                )
         ).doesNotThrowAnyException();
 
         verifyNoInteractions(
+                userStatusCacheService
+        );
+    }
+
+    private OrganizationStatusCacheInvalidationListener
+    listener() {
+        return new OrganizationStatusCacheInvalidationListener(
+                userRepository,
                 userStatusCacheService
         );
     }

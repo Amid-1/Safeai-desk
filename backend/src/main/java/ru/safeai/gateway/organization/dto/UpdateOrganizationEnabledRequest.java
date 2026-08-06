@@ -11,7 +11,4 @@ public record UpdateOrganizationEnabledRequest(
         @PositiveOrZero
         Long expectedVersion
 ) {
-    public UpdateOrganizationEnabledRequest(Boolean enabled) {
-        this(enabled, 0L);
-    }
 }
