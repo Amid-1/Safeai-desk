@@ -2,6 +2,7 @@ package ru.safeai.gateway.chat.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,8 +27,10 @@ import ru.safeai.gateway.chat.exception.ChatTurnFailedException;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.common.exception.ChatLockUnavailableException;
+import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.common.security.SystemRole;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
 
@@ -464,5 +467,22 @@ public class ChatService {
                 currentUser,
                 "currentUser не должен быть null"
         );
+
+        boolean superAdmin = currentUser.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(SystemRole.SUPER_ADMIN.authority()::equals);
+
+        boolean tenantChatRole = currentUser.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(authority ->
+                        SystemRole.ADMIN.authority().equals(authority)
+                                || SystemRole.USER.authority().equals(authority)
+                );
+
+        if (superAdmin || !tenantChatRole) {
+            throw new ForbiddenOperationException(
+                    "Платформенный администратор не имеет доступа к tenant-chat"
+            );
+        }
     }
 }

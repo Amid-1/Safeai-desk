@@ -24,6 +24,7 @@ import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.exception.UserVersionConflictException;
 import ru.safeai.gateway.common.persistence.DatabaseConstraintClassifier;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -325,6 +326,8 @@ public class UserService {
 
         UserEntity user = findUserForSecurityMutation(id, currentUser);
 
+        requireExpectedVersion(user, request.expectedVersion());
+
         rejectSuperAdminMutation(user);
         rejectSelfManagement(user, currentUser, "редактировать");
         rejectAdminManagingAdmin(user, currentUser);
@@ -405,6 +408,8 @@ public class UserService {
 
         UserEntity user = findUserForSecurityMutation(id, currentUser);
 
+        requireExpectedVersion(user, request.expectedVersion());
+
         rejectSuperAdminMutation(user);
 
         boolean oldEnabled = user.isEnabled();
@@ -471,6 +476,8 @@ public class UserService {
         Objects.requireNonNull(request, "request не должен быть null");
 
         UserEntity user = findUserForSecurityMutation(id, currentUser);
+
+        requireExpectedVersion(user, request.expectedVersion());
 
         rejectSuperAdminMutation(user);
         rejectSelfManagement(user, currentUser, "менять собственные роли");
@@ -549,6 +556,8 @@ public class UserService {
 
         UserEntity user = findUserForSecurityMutation(id, currentUser);
 
+        requireExpectedVersion(user, request.expectedVersion());
+
         rejectSuperAdminMutation(user);
         rejectAdminManagingAdmin(user, currentUser);
 
@@ -598,6 +607,8 @@ public class UserService {
         }
 
         UserEntity user = findUserForSecurityMutation(id, currentUser);
+
+        requireExpectedVersion(user, request.expectedVersion());
 
         if (user.getId().equals(currentUser.getId())) {
             throw new ForbiddenOperationException(
@@ -996,6 +1007,26 @@ public class UserService {
         }
     }
 
+
+    private void requireExpectedVersion(
+            UserEntity user,
+            Long expectedVersion
+    ) {
+        if (expectedVersion == null || expectedVersion < 0L) {
+            throw new BadRequestException(
+                    "expectedVersion должен быть неотрицательным числом"
+            );
+        }
+
+        if (user.getVersion() != expectedVersion) {
+            throw new UserVersionConflictException(
+                    user.getId(),
+                    expectedVersion,
+                    user.getVersion()
+            );
+        }
+    }
+
     private void incrementTokenVersion(UserEntity user) {
         user.setTokenVersion(
                 Math.addExact(user.getTokenVersion(), 1L)
@@ -1028,6 +1059,7 @@ public class UserService {
                 entity.getFullName(),
                 entity.isEnabled(),
                 UserRoleMapper.toRoleNames(entity),
+                entity.getVersion(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
                 entity.getLastLoginAt()
@@ -1042,6 +1074,7 @@ public class UserService {
                 entity.getFullName(),
                 entity.isEnabled(),
                 UserRoleMapper.toRoleNames(entity),
+                entity.getVersion(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
                 entity.getLastLoginAt()

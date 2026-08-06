@@ -248,6 +248,7 @@ HTTP/1.1 200
 
 Открыть отдельное CMD-окно:
 
+
 ```bat
 cd /d "D:\Java projects\Safeai-desk\frontend"
 npm run dev

@@ -5,16 +5,13 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
-public record UpdateOrganizationRequest(
-        @NotBlank
-        @Size(max = 255)
-        String name,
-
+public record DisableOrganizationRequest(
         @NotNull
         @PositiveOrZero
-        Long expectedVersion
+        Long expectedVersion,
+
+        @NotBlank
+        @Size(max = 255)
+        String confirmationName
 ) {
-    public UpdateOrganizationRequest(String name) {
-        this(name, 0L);
-    }
 }

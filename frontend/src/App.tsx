@@ -58,6 +58,12 @@ function isSuperAdmin(user: AuthUser | null): boolean {
     return user?.roles.includes('SUPER_ADMIN') ?? false
 }
 
+function getDefaultAuthenticatedRoute(user: AuthUser): string {
+    return isSuperAdmin(user)
+        ? '/admin/users'
+        : '/chat'
+}
+
 function getDisplayRole(user: AuthUser | null): UserRole | null {
     if (!user) {
         return null
@@ -178,7 +184,11 @@ function RootRedirect() {
 
     return (
         <Navigate
-            to={currentUser ? '/chat' : '/login'}
+            to={
+                currentUser
+                    ? getDefaultAuthenticatedRoute(currentUser)
+                    : '/login'
+            }
             replace
         />
     )
@@ -199,7 +209,12 @@ function LoginRoute() {
     }
 
     if (currentUser) {
-        return <Navigate to="/chat" replace />
+        return (
+            <Navigate
+                to={getDefaultAuthenticatedRoute(currentUser)}
+                replace
+            />
+        )
     }
 
     return <LoginPage />
@@ -235,6 +250,10 @@ function AppLayout() {
     const [logoutPending, setLogoutPending] = useState(false)
 
     const isAuthenticated = currentUser !== null
+    const canAccessChat = hasAnyRole(
+        currentUser,
+        ['ADMIN', 'USER'],
+    )
     const canAccessAdmin = hasAnyRole(
         currentUser,
         [
@@ -269,12 +288,14 @@ function AppLayout() {
                     <div className="logo">SafeAI Desk</div>
 
                     <nav aria-label="Основная навигация">
-                        <NavLink
-                            to="/chat"
-                            className={getNavLinkClass}
-                        >
-                            Чат
-                        </NavLink>
+                        {canAccessChat && (
+                            <NavLink
+                                to="/chat"
+                                className={getNavLinkClass}
+                            >
+                                Чат
+                            </NavLink>
+                        )}
 
                         {canAccessAdmin && (
                             <>
@@ -359,7 +380,9 @@ function AppLayout() {
                         <Route
                             path="/chat"
                             element={
-                                <ProtectedRoute>
+                                <ProtectedRoute
+                                    roles={['ADMIN', 'USER']}
+                                >
                                     <ChatPage />
                                 </ProtectedRoute>
                             }

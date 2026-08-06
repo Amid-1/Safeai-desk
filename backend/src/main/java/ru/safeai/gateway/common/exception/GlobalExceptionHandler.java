@@ -230,10 +230,10 @@ public class GlobalExceptionHandler implements Ordered {
             HttpServletRequest request
     ) {
         return build(
-                HttpStatus.CONFLICT,
-                ApiErrorCode.CONFLICT,
+                exception.getStatus(),
+                exception.getErrorCode(),
                 safeMessage(
-                        exception.getMessage(),
+                        exception.getPublicMessage(),
                         "Конфликт данных"
                 ),
                 request,

@@ -204,7 +204,10 @@ public class SecurityConfig {
                         )
 
                         .requestMatchers("/api/chats/**")
-                        .authenticated()
+                        .hasAnyRole(
+                                "ADMIN",
+                                "USER"
+                        )
 
                         .anyRequest()
                         .authenticated()

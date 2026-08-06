@@ -51,4 +51,15 @@ public interface OrganizationRepository
             order by organization.createdAt desc, organization.id desc
             """)
     Page<OrganizationEntity> findAllStable(Pageable pageable);
+
+    @Query("""
+            select organization
+            from OrganizationEntity organization
+            where lower(organization.name) like lower(concat('%', :query, '%'))
+            order by organization.name asc, organization.id asc
+            """)
+    Page<OrganizationEntity> searchDirectoryByName(
+            @Param("query") String query,
+            Pageable pageable
+    );
 }

@@ -29,6 +29,7 @@ import ru.safeai.gateway.organization.dto.UpdateOrganizationRequest;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.event.OrganizationSecurityStateChangedEvent;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
+import ru.safeai.gateway.organization.repository.OrganizationImpactQueryRepository;
 
 import java.time.Instant;
 import java.util.List;
@@ -89,6 +90,10 @@ class OrganizationServiceTest {
     private OrganizationRepository organizationRepository;
 
     @Mock
+    private OrganizationImpactQueryRepository
+            impactQueryRepository;
+
+    @Mock
     private AuditEventService auditEventService;
 
     @Mock
@@ -107,6 +112,7 @@ class OrganizationServiceTest {
     void setUp() {
         organizationService = new OrganizationService(
                 organizationRepository,
+                impactQueryRepository,
                 auditEventService,
                 eventPublisher,
                 new PlatformProperties(
@@ -155,6 +161,18 @@ class OrganizationServiceTest {
 
         assertThat(response.enabled())
                 .isTrue();
+
+        assertThat(response.type())
+                .isEqualTo(
+                        ru.safeai.gateway.organization.dto
+                                .OrganizationType.TENANT
+                );
+
+        assertThat(response.protectedOrganization())
+                .isFalse();
+
+        assertThat(response.version())
+                .isZero();
 
         assertThat(response.createdAt())
                 .isEqualTo(CREATED_AT);

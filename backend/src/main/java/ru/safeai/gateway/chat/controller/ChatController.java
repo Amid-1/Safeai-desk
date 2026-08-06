@@ -2,6 +2,7 @@ package ru.safeai.gateway.chat.controller;
 
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -29,6 +30,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/chats")
+@PreAuthorize("hasAnyRole('ADMIN', 'USER')")
 public class ChatController {
 
     private final ChatService chatService;

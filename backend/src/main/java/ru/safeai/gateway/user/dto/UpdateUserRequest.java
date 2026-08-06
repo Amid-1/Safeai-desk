@@ -2,6 +2,8 @@ package ru.safeai.gateway.user.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 public record UpdateUserRequest(
@@ -11,6 +13,13 @@ public record UpdateUserRequest(
         String email,
 
         @Size(max = 255)
-        String fullName
+        String fullName,
+
+        @NotNull
+        @PositiveOrZero
+        Long expectedVersion
 ) {
+    public UpdateUserRequest(String email, String fullName) {
+        this(email, fullName, 0L);
+    }
 }

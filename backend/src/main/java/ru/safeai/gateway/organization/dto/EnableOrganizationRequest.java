@@ -3,15 +3,9 @@ package ru.safeai.gateway.organization.dto;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 
-public record UpdateOrganizationEnabledRequest(
-        @NotNull
-        Boolean enabled,
-
+public record EnableOrganizationRequest(
         @NotNull
         @PositiveOrZero
         Long expectedVersion
 ) {
-    public UpdateOrganizationEnabledRequest(Boolean enabled) {
-        this(enabled, 0L);
-    }
 }

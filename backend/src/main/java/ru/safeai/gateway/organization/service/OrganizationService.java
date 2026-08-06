@@ -21,16 +21,23 @@ import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.exception.OrganizationVersionConflictException;
 import ru.safeai.gateway.common.persistence.DatabaseConstraintClassifier;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
+import ru.safeai.gateway.organization.dto.DisableOrganizationRequest;
+import ru.safeai.gateway.organization.dto.EnableOrganizationRequest;
+import ru.safeai.gateway.organization.dto.OrganizationDirectoryResponse;
+import ru.safeai.gateway.organization.dto.OrganizationDisableImpactResponse;
+import ru.safeai.gateway.organization.dto.OrganizationType;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
 import ru.safeai.gateway.organization.dto.UpdateOrganizationEnabledRequest;
 import ru.safeai.gateway.organization.dto.UpdateOrganizationRequest;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.event.OrganizationSecurityStateChangedEvent;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
+import ru.safeai.gateway.organization.repository.OrganizationImpactQueryRepository;
 
 import java.util.List;
 import java.util.Map;
@@ -53,6 +60,7 @@ public class OrganizationService {
             );
 
     private final OrganizationRepository organizationRepository;
+    private final OrganizationImpactQueryRepository impactQueryRepository;
     private final AuditEventService auditEventService;
     private final ApplicationEventPublisher eventPublisher;
     private final PlatformProperties platformProperties;
@@ -140,6 +148,53 @@ public class OrganizationService {
         );
     }
 
+
+    @Transactional(readOnly = true)
+    public List<OrganizationDirectoryResponse> findDirectory(
+            String query,
+            int limit,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        requireSuperAdmin(currentUser);
+
+        String normalizedQuery = query == null ? "" : query.trim();
+        if (normalizedQuery.length() > 255) {
+            throw new BadRequestException(
+                    "Поисковый запрос не должен превышать 255 символов"
+            );
+        }
+
+        int safeLimit = Math.min(Math.max(limit, 1), 50);
+        Pageable pageable = PageRequest.of(
+                0,
+                safeLimit,
+                Sort.by(
+                        Sort.Order.asc("name"),
+                        Sort.Order.asc("id")
+                )
+        );
+
+        UUID exactId = parseUuidOrNull(normalizedQuery);
+        if (exactId != null) {
+            return organizationRepository.findById(exactId)
+                    .map(this::toDirectoryResponse)
+                    .map(List::of)
+                    .orElseGet(List::of);
+        }
+
+        Page<OrganizationEntity> page = normalizedQuery.isEmpty()
+                ? organizationRepository.findAll(pageable)
+                : organizationRepository.searchDirectoryByName(
+                        normalizedQuery,
+                        pageable
+                );
+
+        return page.getContent().stream()
+                .map(this::toDirectoryResponse)
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public OrganizationResponse findCurrentOrganization(
             SafeAiUserPrincipal currentUser
@@ -182,6 +237,8 @@ public class OrganizationService {
 
         OrganizationEntity entity =
                 findMutableOrganizationForSuperAdmin(id, currentUser);
+
+        requireExpectedVersion(entity, request.expectedVersion());
 
         String canonicalName =
                 OrganizationNameNormalizer.canonicalize(request.name());
@@ -227,6 +284,7 @@ public class OrganizationService {
         return toResponse(saved);
     }
 
+
     @Transactional
     public OrganizationResponse updateEnabled(
             UUID id,
@@ -238,15 +296,92 @@ public class OrganizationService {
         OrganizationEntity entity =
                 findMutableOrganizationForSuperAdmin(id, currentUser);
 
+        requireExpectedVersion(entity, request.expectedVersion());
+
+        return changeEnabled(
+                entity,
+                Boolean.TRUE.equals(request.enabled()),
+                currentUser
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public OrganizationDisableImpactResponse getDisableImpact(
+            UUID id,
+            SafeAiUserPrincipal currentUser
+    ) {
+        OrganizationEntity entity = findMutableOrganizationSnapshot(
+                id,
+                currentUser
+        );
+
+        OrganizationImpactQueryRepository.ImpactSnapshot impact =
+                impactQueryRepository.load(id);
+
+        return new OrganizationDisableImpactResponse(
+                entity.getId(),
+                entity.getVersion(),
+                impact.enabledUsers(),
+                impact.administrators(),
+                impact.activeRefreshSessions(),
+                impact.activeChatOperations()
+        );
+    }
+
+    @Transactional
+    public OrganizationResponse disable(
+            UUID id,
+            DisableOrganizationRequest request,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(request, "request не должен быть null");
+
+        OrganizationEntity entity =
+                findMutableOrganizationForSuperAdmin(id, currentUser);
+
+        requireExpectedVersion(entity, request.expectedVersion());
+
+        String confirmationName = OrganizationNameNormalizer.canonicalize(
+                request.confirmationName()
+        );
+
+        if (!entity.getName().equals(confirmationName)) {
+            throw new BadRequestException(
+                    "Название организации для подтверждения не совпадает"
+            );
+        }
+
+        return changeEnabled(entity, false, currentUser);
+    }
+
+    @Transactional
+    public OrganizationResponse enable(
+            UUID id,
+            EnableOrganizationRequest request,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(request, "request не должен быть null");
+
+        OrganizationEntity entity =
+                findMutableOrganizationForSuperAdmin(id, currentUser);
+
+        requireExpectedVersion(entity, request.expectedVersion());
+
+        return changeEnabled(entity, true, currentUser);
+    }
+
+    private OrganizationResponse changeEnabled(
+            OrganizationEntity entity,
+            boolean newEnabled,
+            SafeAiUserPrincipal currentUser
+    ) {
         boolean oldEnabled = entity.isEnabled();
-        boolean newEnabled = Boolean.TRUE.equals(request.enabled());
 
         if (oldEnabled == newEnabled) {
             return toResponse(entity);
         }
 
         long oldAuthVersion = entity.getAuthVersion();
-
         entity.setEnabled(newEnabled);
 
         if (!newEnabled) {
@@ -288,6 +423,21 @@ public class OrganizationService {
         );
 
         return toResponse(saved);
+    }
+
+
+    private OrganizationEntity findMutableOrganizationSnapshot(
+            UUID id,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(id, "id не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        requireSuperAdmin(currentUser);
+        rejectPlatformOrganizationMutation(id);
+
+        return organizationRepository.findById(id)
+                .orElseThrow(() -> organizationNotFound(id));
     }
 
     private OrganizationEntity findMutableOrganizationForSuperAdmin(
@@ -347,13 +497,77 @@ public class OrganizationService {
     private OrganizationResponse toResponse(
             OrganizationEntity organization
     ) {
+        boolean protectedOrganization = isPlatformOrganization(
+                organization.getId()
+        );
+
         return new OrganizationResponse(
                 organization.getId(),
                 organization.getName(),
                 organization.isEnabled(),
+                protectedOrganization
+                        ? OrganizationType.PLATFORM
+                        : OrganizationType.TENANT,
+                protectedOrganization,
+                organization.getVersion(),
                 organization.getCreatedAt(),
                 organization.getUpdatedAt()
         );
+    }
+
+
+    private OrganizationDirectoryResponse toDirectoryResponse(
+            OrganizationEntity organization
+    ) {
+        boolean protectedOrganization = isPlatformOrganization(
+                organization.getId()
+        );
+
+        return new OrganizationDirectoryResponse(
+                organization.getId(),
+                organization.getName(),
+                organization.isEnabled(),
+                protectedOrganization
+                        ? OrganizationType.PLATFORM
+                        : OrganizationType.TENANT,
+                protectedOrganization,
+                organization.getVersion()
+        );
+    }
+
+    private void requireExpectedVersion(
+            OrganizationEntity organization,
+            Long expectedVersion
+    ) {
+        if (expectedVersion == null || expectedVersion < 0L) {
+            throw new BadRequestException(
+                    "expectedVersion должен быть неотрицательным числом"
+            );
+        }
+
+        if (organization.getVersion() != expectedVersion) {
+            throw new OrganizationVersionConflictException(
+                    organization.getId(),
+                    expectedVersion,
+                    organization.getVersion()
+            );
+        }
+    }
+
+    private boolean isPlatformOrganization(UUID organizationId) {
+        return platformProperties.organizationId().equals(organizationId);
+    }
+
+    private UUID parseUuidOrNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
     }
 
     private boolean isSuperAdmin(SafeAiUserPrincipal currentUser) {
