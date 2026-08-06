@@ -46,7 +46,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -157,12 +156,22 @@ class UserControllerSecurityTest {
             throws Exception {
         mockMvc.perform(
                 get("/api/users")
-                        .with(
-                                user("user@test.com")
-                                        .roles("USER")
-                        )
+                        .with(authentication(
+                                authToken(
+                                        userPrincipal()
+                                )
+                        ))
         ).andExpect(
                 status().isForbidden()
+        );
+
+        verify(
+                userService,
+                never()
+        ).findAll(
+                any(SafeAiUserPrincipal.class),
+                isNull(),
+                any(Pageable.class)
         );
     }
 
@@ -542,6 +551,21 @@ class UserControllerSecurityTest {
                 null,
                 principal.getAuthorities()
         );
+    }
+
+    private SafeAiUserPrincipal userPrincipal() {
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        "user@test.com",
+                        0L,
+                        Set.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_USER"
+                                )
+                        )
+                );
     }
 
     private SafeAiUserPrincipal adminPrincipal() {

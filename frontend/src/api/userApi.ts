@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/api/userApi.ts
+// ============================================================
 import {
     API_TIMEOUTS,
     apiRequest,
@@ -36,8 +39,8 @@ export type User = {
     email: string
     fullName: string | null
     enabled: boolean
-    roles: UserRole[]
-    version: number | null
+    roles: [UserRole]
+    version: number
     createdAt: string
     updatedAt: string
     lastLoginAt: string | null
@@ -62,39 +65,38 @@ export type CreateUserRequest = {
     email: string
     password: string
     fullName: string | null
-    roles: Exclude<
-        UserRole,
-        'SUPER_ADMIN'
-    >[]
+
+    /**
+     * Wire contract remains an array for backward compatibility,
+     * but both frontend policy and backend require exactly one role.
+     */
+    roles: [Exclude<UserRole, 'SUPER_ADMIN'>]
 }
 
 export type UpdateUserRequest = {
     email: string
     fullName: string | null
-    expectedVersion?: number
+    expectedVersion: number
 }
 
 export type UpdateUserEnabledRequest = {
     enabled: boolean
-    expectedVersion?: number
+    expectedVersion: number
 }
 
 export type UpdateUserRolesRequest = {
-    roles: Exclude<
-        UserRole,
-        'SUPER_ADMIN'
-    >[]
-    expectedVersion?: number
+    roles: [Exclude<UserRole, 'SUPER_ADMIN'>]
+    expectedVersion: number
 }
 
 export type ResetUserPasswordRequest = {
     password: string
-    expectedVersion?: number
+    expectedVersion: number
 }
 
 export type PermanentDeleteUserRequest = {
     confirmationEmail: string
-    expectedVersion?: number
+    expectedVersion: number
 }
 
 type RequestOptions = {
@@ -294,11 +296,13 @@ export function parseUser(
         USER_ROLES,
     )
 
-    if (roles.length === 0) {
+    if (roles.length !== 1) {
         throw contractError(
-            `${field}.roles не должен быть пустым`,
+            `${field}.roles должен содержать ровно одну системную роль`,
         )
     }
+
+    const singleRole = roles as [UserRole]
 
     return {
         id: expectUuid(
@@ -321,12 +325,11 @@ export function parseUser(
             record.enabled,
             `${field}.enabled`,
         ),
-        roles,
-        version:
-            expectOptionalNonNegativeInteger(
-                record.version,
-                `${field}.version`,
-            ),
+        roles: singleRole,
+        version: parseRequiredVersion(
+            record.version,
+            `${field}.version`,
+        ),
         createdAt: expectInstant(
             record.createdAt,
             `${field}.createdAt`,
@@ -407,6 +410,25 @@ async function sendUserMutation<
     )
 
     return parseUser(response)
+}
+
+function parseRequiredVersion(
+    value: unknown,
+    field: string,
+): number {
+    const version =
+        expectOptionalNonNegativeInteger(
+            value,
+            field,
+        )
+
+    if (version === null) {
+        throw contractError(
+            `${field} обязателен`,
+        )
+    }
+
+    return version
 }
 
 function parseCount(

@@ -3,7 +3,6 @@
 // ============================================================
 import {
     useEffect,
-    useId,
     useRef,
     useState,
 } from 'react'
@@ -11,6 +10,14 @@ import {
 type UserActionsMenuProps = {
     disabled?: boolean
     canManage: boolean
+
+    /**
+     * Необязательный флаг для обратной совместимости.
+     * При отсутствии сохраняется прежнее поведение:
+     * управляемому пользователю доступно изменение роли.
+     */
+    canChangeRole?: boolean
+
     canDelete: boolean
     enabled: boolean
     onDetails: () => void
@@ -24,6 +31,7 @@ type UserActionsMenuProps = {
 function UserActionsMenu({
     disabled = false,
     canManage,
+    canChangeRole,
     canDelete,
     enabled,
     onDetails,
@@ -36,17 +44,17 @@ function UserActionsMenu({
     const [open, setOpen] =
         useState(false)
 
-    const containerRef =
-        useRef<HTMLDivElement | null>(null)
-    const triggerRef =
-        useRef<HTMLButtonElement | null>(null)
-    const popupId = useId()
+    const menuRef =
+        useRef<HTMLDivElement | null>(
+            null,
+        )
 
-    useEffect(() => {
-        if (disabled) {
-            setOpen(false)
-        }
-    }, [disabled])
+    const roleActionAvailable =
+        canManage
+        && (canChangeRole ?? true)
+
+    const hasSecondaryActions =
+        canManage || canDelete
 
     useEffect(() => {
         if (!open) {
@@ -57,11 +65,11 @@ function UserActionsMenu({
             event: PointerEvent,
         ) {
             if (
-                !containerRef.current?.contains(
+                !menuRef.current?.contains(
                     event.target as Node,
                 )
             ) {
-                closeAndReturnFocus(false)
+                setOpen(false)
             }
         }
 
@@ -69,19 +77,6 @@ function UserActionsMenu({
             event: KeyboardEvent,
         ) {
             if (event.key === 'Escape') {
-                event.preventDefault()
-                closeAndReturnFocus(true)
-            }
-        }
-
-        function handleFocusIn(
-            event: FocusEvent,
-        ) {
-            if (
-                !containerRef.current?.contains(
-                    event.target as Node,
-                )
-            ) {
                 setOpen(false)
             }
         }
@@ -94,10 +89,6 @@ function UserActionsMenu({
             'keydown',
             handleKeyDown,
         )
-        document.addEventListener(
-            'focusin',
-            handleFocusIn,
-        )
 
         return () => {
             document.removeEventListener(
@@ -108,32 +99,24 @@ function UserActionsMenu({
                 'keydown',
                 handleKeyDown,
             )
-            document.removeEventListener(
-                'focusin',
-                handleFocusIn,
-            )
         }
     }, [open])
 
-    function closeAndReturnFocus(
-        restoreFocus: boolean,
+    useEffect(() => {
+        if (
+            disabled
+            || !hasSecondaryActions
+        ) {
+            setOpen(false)
+        }
+    }, [
+        disabled,
+        hasSecondaryActions,
+    ])
+
+    function run(
+        action: () => void,
     ) {
-        setOpen(false)
-
-        if (restoreFocus) {
-            window.requestAnimationFrame(
-                () => {
-                    triggerRef.current?.focus()
-                },
-            )
-        }
-    }
-
-    function run(action: () => void) {
-        if (disabled) {
-            return
-        }
-
         setOpen(false)
         action()
     }
@@ -160,25 +143,19 @@ function UserActionsMenu({
                 </button>
             )}
 
-            {(canManage || canDelete) && (
+            {hasSecondaryActions && (
                 <div
-                    ref={containerRef}
                     className="action-menu"
+                    ref={menuRef}
                 >
                     <button
-                        ref={triggerRef}
                         type="button"
                         className="action-menu__trigger"
                         aria-label={
                             'Дополнительные действия'
                         }
-                        aria-haspopup="dialog"
+                        aria-haspopup="menu"
                         aria-expanded={open}
-                        aria-controls={
-                            open
-                                ? popupId
-                                : undefined
-                        }
                         disabled={disabled}
                         onClick={() =>
                             setOpen(
@@ -186,40 +163,31 @@ function UserActionsMenu({
                             )
                         }
                     >
-                        ⋮
+                        ⋯
                     </button>
 
                     {open && (
                         <div
-                            id={popupId}
-                            className={
-                                'action-menu__popup'
-                            }
-                            aria-label={
-                                'Дополнительные действия пользователя'
-                            }
+                            className="action-menu__popup"
+                            role="menu"
                         >
+                            {roleActionAvailable && (
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() =>
+                                        run(onRoles)
+                                    }
+                                >
+                                    Изменить роль
+                                </button>
+                            )}
+
                             {canManage && (
                                 <>
                                     <button
                                         type="button"
-                                        disabled={
-                                            disabled
-                                        }
-                                        onClick={() =>
-                                            run(
-                                                onRoles,
-                                            )
-                                        }
-                                    >
-                                        Управление ролями
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        disabled={
-                                            disabled
-                                        }
+                                        role="menuitem"
                                         onClick={() =>
                                             run(
                                                 onResetPassword,
@@ -231,9 +199,7 @@ function UserActionsMenu({
 
                                     <button
                                         type="button"
-                                        disabled={
-                                            disabled
-                                        }
+                                        role="menuitem"
                                         onClick={() =>
                                             run(
                                                 onToggleEnabled,
@@ -241,14 +207,8 @@ function UserActionsMenu({
                                         }
                                     >
                                         {enabled
-                                            ? (
-                                                'Отключить '
-                                                + 'пользователя'
-                                            )
-                                            : (
-                                                'Включить '
-                                                + 'пользователя'
-                                            )}
+                                            ? 'Отключить пользователя'
+                                            : 'Включить пользователя'}
                                     </button>
                                 </>
                             )}
@@ -256,10 +216,10 @@ function UserActionsMenu({
                             {canDelete && (
                                 <button
                                     type="button"
+                                    role="menuitem"
                                     className={
                                         'action-menu__danger'
                                     }
-                                    disabled={disabled}
                                     onClick={() =>
                                         run(onDelete)
                                     }

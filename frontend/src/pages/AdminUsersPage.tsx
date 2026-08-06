@@ -52,6 +52,14 @@ import UserActionsMenu from '../components/admin/UserActionsMenu'
 import UserIdentityCell from '../components/admin/UserIdentityCell'
 import UserRoleBadge from '../components/admin/UserRoleBadge'
 import {
+    FixedUserRole,
+    UserRoleSelector,
+} from '../components/admin/UserRoleSelector'
+import {
+    getUserManagementRolePolicy,
+    resolveManagedUserRole,
+} from '../domain/userManagementRolePolicy'
+import {
     EmptyState,
     ErrorState,
     LoadingState,
@@ -177,11 +185,11 @@ function AdminUsersPageContent({
     const [fullName, setFullName] =
         useState('')
     const [
-        createRoles,
-        setCreateRoles,
-    ] = useState<AssignableRole[]>([
+        createRole,
+        setCreateRole,
+    ] = useState<AssignableRole>(
         'USER',
-    ])
+    )
     const [
         selectedOrganizationId,
         setSelectedOrganizationId,
@@ -212,9 +220,11 @@ function AdminUsersPageContent({
     const [rolesUser, setRolesUser] =
         useState<User | null>(null)
     const [
-        selectedRoles,
-        setSelectedRoles,
-    ] = useState<AssignableRole[]>([])
+        selectedRole,
+        setSelectedRole,
+    ] = useState<AssignableRole>(
+        'USER',
+    )
     const [
         adminElevationConfirmed,
         setAdminElevationConfirmed,
@@ -258,10 +268,13 @@ function AdminUsersPageContent({
     const pendingMutationRef =
         useRef<PendingMutation>(null)
 
-    const currentUserIsSuperAdmin =
-        currentUser.roles.includes(
-            'SUPER_ADMIN',
+    const rolePolicy =
+        getUserManagementRolePolicy(
+            currentUser.roles,
         )
+
+    const currentUserIsSuperAdmin =
+        rolePolicy.canChooseRole
 
     const hasPendingMutation =
         pendingMutation !== null
@@ -496,7 +509,7 @@ function AdminUsersPageContent({
         clearCreateSensitiveFields()
         setEmail('')
         setFullName('')
-        setCreateRoles(['USER'])
+        setCreateRole('USER')
         setSelectedOrganizationId('')
         setCreateError('')
         setCreateModalOpen(true)
@@ -560,24 +573,11 @@ function AdminUsersPageContent({
             return
         }
 
-        if (createRoles.length === 0) {
-            setCreateError(
-                'Выберите хотя бы одну роль.',
+        const requestedRole =
+            resolveManagedUserRole(
+                currentUser.roles,
+                createRole,
             )
-            return
-        }
-
-        if (
-            !currentUserIsSuperAdmin
-            && createRoles.some(
-                (role) => role !== 'USER',
-            )
-        ) {
-            setCreateError(
-                'ADMIN может назначать только роль USER.',
-            )
-            return
-        }
 
         creatingRef.current = true
         setCreating(true)
@@ -592,13 +592,13 @@ function AdminUsersPageContent({
                     normalizeOptionalText(
                         fullName,
                     ),
-                roles: createRoles,
+                roles: [requestedRole],
             })
 
             clearCreateSensitiveFields()
             setEmail('')
             setFullName('')
-            setCreateRoles(['USER'])
+            setCreateRole('USER')
             setSelectedOrganizationId('')
             setCreateModalOpen(false)
             setSuccess(
@@ -700,21 +700,30 @@ function AdminUsersPageContent({
     }
 
     function openRolesModal(user: User) {
+        if (!currentUserIsSuperAdmin) {
+            setMutationError(
+                'Только SUPER_ADMIN может изменять системную роль пользователя.',
+            )
+            return
+        }
+
         if (!ensureVersionAvailable(user)) {
+            return
+        }
+
+        const role = getAssignableRole(user)
+
+        if (!role) {
+            setMutationError(
+                'Роль пользователя недоступна для изменения через user-management.',
+            )
             return
         }
 
         closeMutationModals()
 
         setRolesUser(user)
-        setSelectedRoles(
-            user.roles.filter(
-                (
-                    role,
-                ): role is AssignableRole =>
-                    role !== 'SUPER_ADMIN',
-            ),
-        )
+        setSelectedRole(role)
         setAdminElevationConfirmed(false)
         setModalError('')
     }
@@ -830,28 +839,15 @@ function AdminUsersPageContent({
             return
         }
 
-        if (selectedRoles.length === 0) {
+        if (!currentUserIsSuperAdmin) {
             setModalError(
-                'У пользователя должна быть хотя бы одна роль.',
-            )
-            return
-        }
-
-        if (
-            !currentUserIsSuperAdmin
-            && selectedRoles.some(
-                (role) => role !== 'USER',
-            )
-        ) {
-            setModalError(
-                'ADMIN может назначать только роль USER.',
+                'Только SUPER_ADMIN может изменять системную роль пользователя.',
             )
             return
         }
 
         const addingAdmin =
-            currentUserIsSuperAdmin
-            && selectedRoles.includes('ADMIN')
+            selectedRole === 'ADMIN'
             && !rolesUser.roles.includes(
                 'ADMIN',
             )
@@ -876,7 +872,7 @@ function AdminUsersPageContent({
                 await updateUserRoles(
                     rolesUser.id,
                     {
-                        roles: selectedRoles,
+                        roles: [selectedRole],
                         expectedVersion,
                     },
                 )
@@ -884,7 +880,7 @@ function AdminUsersPageContent({
                 setRolesUser(null)
                 setAdminElevationConfirmed(false)
                 setSuccess(
-                    `Роли пользователя ${rolesUser.email} изменены. `
+                    `Роль пользователя ${rolesUser.email} изменена. `
                     + 'Активные сессии должны быть завершены backend.',
                 )
                 requestReloadFromFirstPage()
@@ -1205,26 +1201,6 @@ function AdminUsersPageContent({
         return null
     }
 
-    function toggleCreateRole(
-        role: AssignableRole,
-    ) {
-        setCreateRoles((current) =>
-            toggleRole(current, role),
-        )
-    }
-
-    function toggleSelectedRole(
-        role: AssignableRole,
-    ) {
-        setSelectedRoles((current) =>
-            toggleRole(current, role),
-        )
-
-        if (role === 'ADMIN') {
-            setAdminElevationConfirmed(false)
-        }
-    }
-
     function clearCreateSensitiveFields() {
         setPassword('')
         setPasswordConfirm('')
@@ -1478,6 +1454,10 @@ function AdminUsersPageContent({
                                                             canManage={
                                                                 manageable
                                                             }
+                                                            canChangeRole={
+                                                                currentUserIsSuperAdmin
+                                                                && manageable
+                                                            }
                                                             canDelete={
                                                                 canPermanentlyDelete(
                                                                     user,
@@ -1581,7 +1561,7 @@ function AdminUsersPageContent({
                     title="Создать пользователя"
                     onClose={closeCreateModal}
                     closeDisabled={creating}
-                    size="lg"
+                    size="md"
                 >
                     <form
                         className="form users-create-form"
@@ -1589,130 +1569,136 @@ function AdminUsersPageContent({
                             handleCreateUser
                         }
                     >
-                        <label>
-                            Email
-                            <input
-                                value={email}
-                                onChange={(event) =>
-                                    setEmail(
-                                        event.target.value,
-                                    )
-                                }
-                                type="email"
-                                autoComplete="username"
-                                maxLength={255}
-                                required
-                                disabled={creating}
-                            />
-                        </label>
-
-                        <label>
-                            Полное имя
-                            <input
-                                value={fullName}
-                                onChange={(event) =>
-                                    setFullName(
-                                        event.target.value,
-                                    )
-                                }
-                                maxLength={255}
-                                disabled={creating}
-                            />
-                        </label>
-
-                        <PasswordFields
-                            password={password}
-                            passwordConfirm={
-                                passwordConfirm
-                            }
-                            onPasswordChange={
-                                setPassword
-                            }
-                            onPasswordConfirmChange={
-                                setPasswordConfirm
-                            }
-                            disabled={creating}
-                        />
-
-                        {currentUserIsSuperAdmin && (
+                        <div className="users-create-form__grid">
                             <label>
-                                Организация
-                                <select
-                                    value={
-                                        selectedOrganizationId
-                                    }
+                                Email
+                                <input
+                                    value={email}
                                     onChange={(event) =>
-                                        setSelectedOrganizationId(
+                                        setEmail(
                                             event.target.value,
                                         )
                                     }
-                                    disabled={
-                                        creating
-                                        || organizationsLoading
-                                    }
+                                    type="email"
+                                    autoComplete="username"
+                                    maxLength={255}
+                                    placeholder="user@company.ru"
                                     required
-                                >
-                                    <option value="">
-                                        Выберите организацию
-                                    </option>
-                                    {organizations.map(
-                                        (
-                                            organization,
-                                        ) => (
-                                            <option
-                                                key={
-                                                    organization.id
-                                                }
-                                                value={
-                                                    organization.id
-                                                }
-                                            >
-                                                {
-                                                    organization.name
-                                                }
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
+                                    disabled={creating}
+                                />
                             </label>
-                        )}
 
-                        <fieldset
-                            disabled={creating}
-                        >
-                            <legend>Роли</legend>
+                            <label>
+                                Полное имя
+                                <input
+                                    value={fullName}
+                                    onChange={(event) =>
+                                        setFullName(
+                                            event.target.value,
+                                        )
+                                    }
+                                    maxLength={255}
+                                    placeholder="Иван Иванов"
+                                    disabled={creating}
+                                />
+                            </label>
 
-                            <RoleCheckbox
-                                role="USER"
-                                checked={
-                                    createRoles.includes(
-                                        'USER',
-                                    )
+                            <PasswordFields
+                                password={password}
+                                passwordConfirm={
+                                    passwordConfirm
                                 }
-                                onChange={() =>
-                                    toggleCreateRole(
-                                        'USER',
-                                    )
+                                onPasswordChange={
+                                    setPassword
                                 }
+                                onPasswordConfirmChange={
+                                    setPasswordConfirm
+                                }
+                                disabled={creating}
                             />
 
-                            {currentUserIsSuperAdmin
-                                && (
-                                    <RoleCheckbox
-                                        role="ADMIN"
-                                        checked={
-                                            createRoles.includes(
-                                                'ADMIN',
+                            {currentUserIsSuperAdmin && (
+                                <label className="users-create-form__wide">
+                                    Организация
+                                    <select
+                                        value={
+                                            selectedOrganizationId
+                                        }
+                                        onChange={(event) =>
+                                            setSelectedOrganizationId(
+                                                event.target.value,
                                             )
                                         }
-                                        onChange={() =>
-                                            toggleCreateRole(
-                                                'ADMIN',
-                                            )
+                                        disabled={
+                                            creating
+                                            || organizationsLoading
                                         }
+                                        required
+                                    >
+                                        <option value="">
+                                            {organizationsLoading
+                                                ? 'Загрузка организаций...'
+                                                : 'Выберите организацию'}
+                                        </option>
+                                        {organizations.map(
+                                            (
+                                                organization,
+                                            ) => (
+                                                <option
+                                                    key={
+                                                        organization.id
+                                                    }
+                                                    value={
+                                                        organization.id
+                                                    }
+                                                >
+                                                    {
+                                                        organization.name
+                                                    }
+                                                </option>
+                                            ),
+                                        )}
+                                    </select>
+                                </label>
+                            )}
+                        </div>
+
+                        {currentUserIsSuperAdmin
+                            ? (
+                                <>
+                                    <UserRoleSelector
+                                        name="create-user-role"
+                                        value={createRole}
+                                        disabled={creating}
+                                        onChange={
+                                            setCreateRole
+                                        }
+                                        legend="Роль пользователя"
                                     />
-                                )}
-                        </fieldset>
+
+                                    {createRole === 'ADMIN' && (
+                                        <div
+                                            className="users-privilege-notice"
+                                            role="note"
+                                        >
+                                            Администратор сможет управлять
+                                            пользователями выбранной организации,
+                                            но не сможет создавать других
+                                            администраторов.
+                                        </div>
+                                    )}
+                                </>
+                            )
+                            : (
+                                <FixedUserRole
+                                    role="USER"
+                                    title="Роль пользователя"
+                                    description={
+                                        'Пользователь будет создан '
+                                        + 'в вашей организации.'
+                                    }
+                                />
+                            )}
 
                         {createError && (
                             <div
@@ -1920,7 +1906,7 @@ function AdminUsersPageContent({
                 </Modal>
             )}
 
-            {rolesUser && (
+            {rolesUser && currentUserIsSuperAdmin && (
                 <Modal
                     title="Роли и доступ"
                     size="sm"
@@ -1935,51 +1921,26 @@ function AdminUsersPageContent({
                         className="form"
                         onSubmit={submitRoles}
                     >
-                        <fieldset
+                        <p className="modal-subtitle">
+                            {rolesUser.email}
+                        </p>
+
+                        <UserRoleSelector
+                            name="edit-user-role"
+                            value={selectedRole}
                             disabled={
                                 hasPendingMutation
                             }
-                        >
-                            <legend>
-                                Назначенные роли
-                            </legend>
+                            onChange={(role) => {
+                                setSelectedRole(role)
+                                setAdminElevationConfirmed(
+                                    false,
+                                )
+                            }}
+                            legend="Системная роль"
+                        />
 
-                            <RoleCheckbox
-                                role="USER"
-                                checked={
-                                    selectedRoles.includes(
-                                        'USER',
-                                    )
-                                }
-                                onChange={() =>
-                                    toggleSelectedRole(
-                                        'USER',
-                                    )
-                                }
-                            />
-
-                            {currentUserIsSuperAdmin
-                                && (
-                                    <RoleCheckbox
-                                        role="ADMIN"
-                                        checked={
-                                            selectedRoles.includes(
-                                                'ADMIN',
-                                            )
-                                        }
-                                        onChange={() =>
-                                            toggleSelectedRole(
-                                                'ADMIN',
-                                            )
-                                        }
-                                    />
-                                )}
-                        </fieldset>
-
-                        {currentUserIsSuperAdmin
-                            && selectedRoles.includes(
-                                'ADMIN',
-                            )
+                        {selectedRole === 'ADMIN'
                             && !rolesUser.roles.includes(
                                 'ADMIN',
                             )
@@ -2295,30 +2256,6 @@ function Pagination({
     )
 }
 
-type RoleCheckboxProps = {
-    role: AssignableRole
-    checked: boolean
-    onChange: () => void
-}
-
-function RoleCheckbox({
-    role,
-    checked,
-    onChange,
-}: RoleCheckboxProps) {
-    return (
-        <label>
-            <input
-                type="checkbox"
-                checked={checked}
-                onChange={onChange}
-            />
-            {' '}
-            {role}
-        </label>
-    )
-}
-
 type PasswordFieldsProps = {
     password: string
     passwordConfirm: string
@@ -2459,15 +2396,16 @@ function Detail({
     )
 }
 
-function toggleRole(
-    current: AssignableRole[],
-    role: AssignableRole,
-): AssignableRole[] {
-    return current.includes(role)
-        ? current.filter(
-            (value) => value !== role,
-        )
-        : [...current, role]
+function getAssignableRole(
+    user: User,
+): AssignableRole | null {
+    const role = user.roles[0]
+
+    if (role === 'USER' || role === 'ADMIN') {
+        return role
+    }
+
+    return null
 }
 
 function getOrganizationName(

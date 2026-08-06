@@ -131,13 +131,13 @@ public class UserService {
             throw duplicateEmail(email);
         }
 
-        Set<String> requestedRoles =
-                request.roles() == null || request.roles().isEmpty()
-                        ? Set.of(SystemRole.USER.roleName())
-                        : request.roles();
-
+        /*
+         * Роль не выводится из контекста и не подставляется молча.
+         * API-контракт требует ровно одну роль, а service повторно
+         * проверяет инвариант для прямых вызовов вне MVC.
+         */
         Set<RoleEntity> roles = resolveUserManagementRoles(
-                requestedRoles,
+                request.roles(),
                 currentUser
         );
 
@@ -484,6 +484,7 @@ public class UserService {
         rejectAdminManagingAdmin(user, currentUser);
 
         Set<String> oldRoles = UserRoleMapper.toRoleNames(user);
+        requireExactlyOneRequestedRole(request.roles());
         Set<SystemRole> requestedRoles = normalizeRoles(request.roles());
 
         if (requestedRoles.size() != 1) {
@@ -854,6 +855,8 @@ public class UserService {
             Set<String> requestedRoles,
             SafeAiUserPrincipal currentUser
     ) {
+        requireExactlyOneRequestedRole(requestedRoles);
+
         Set<SystemRole> normalizedRoles = normalizeRoles(requestedRoles);
 
         if (normalizedRoles.size() != 1) {
@@ -944,14 +947,29 @@ public class UserService {
 
         try {
             return roles.stream()
-                    .filter(Objects::nonNull)
-                    .map(String::trim)
-                    .filter(role -> !role.isBlank())
-                    .map(SystemRole::parse)
+                    .map(role -> {
+                        if (role == null || role.isBlank()) {
+                            throw new IllegalArgumentException(
+                                    "Пустая системная роль"
+                            );
+                        }
+
+                        return SystemRole.parse(role.trim());
+                    })
                     .collect(Collectors.toUnmodifiableSet());
         } catch (IllegalArgumentException exception) {
             throw new ConflictException(
-                    "Передана неизвестная системная роль"
+                    "Передана неизвестная или пустая системная роль"
+            );
+        }
+    }
+
+    private void requireExactlyOneRequestedRole(
+            Set<String> roles
+    ) {
+        if (roles == null || roles.size() != 1) {
+            throw new ConflictException(
+                    "У пользователя должна быть ровно одна роль"
             );
         }
     }

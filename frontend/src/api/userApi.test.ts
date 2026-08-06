@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/api/userApi.test.ts
+// ============================================================
 import {
     beforeEach,
     describe,
@@ -59,6 +62,31 @@ describe('userApi', () => {
         )
     })
 
+    it('runtime parser отклоняет несколько ролей', () => {
+        expect(() =>
+            parseUser({
+                ...USER,
+                roles: [
+                    'USER',
+                    'ADMIN',
+                ],
+            }),
+        ).toThrow(
+            'ровно одну системную роль',
+        )
+    })
+
+    it('runtime parser отклоняет пустой набор ролей', () => {
+        expect(() =>
+            parseUser({
+                ...USER,
+                roles: [],
+            }),
+        ).toThrow(
+            'ровно одну системную роль',
+        )
+    })
+
     it('runtime parser отклоняет неканонический email', () => {
         expect(() =>
             parseUser({
@@ -71,23 +99,17 @@ describe('userApi', () => {
         )
     })
 
-    it('roles mutation передаёт expectedVersion', async () => {
+    it('roles mutation передаёт одну роль и expectedVersion', async () => {
         requestMock.mockResolvedValue({
             ...USER,
-            roles: [
-                'USER',
-                'ADMIN',
-            ],
+            roles: ['ADMIN'],
             version: 6,
         })
 
         await updateUserRoles(
             USER.id,
             {
-                roles: [
-                    'USER',
-                    'ADMIN',
-                ],
+                roles: ['ADMIN'],
                 expectedVersion: 5,
             },
         )
@@ -98,10 +120,7 @@ describe('userApi', () => {
                 expect.objectContaining({
                     method: 'PATCH',
                     json: {
-                        roles: [
-                            'USER',
-                            'ADMIN',
-                        ],
+                        roles: ['ADMIN'],
                         expectedVersion: 5,
                     },
                 }),

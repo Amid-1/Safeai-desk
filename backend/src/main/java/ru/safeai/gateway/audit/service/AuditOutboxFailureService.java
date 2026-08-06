@@ -74,8 +74,7 @@ public class AuditOutboxFailureService {
         Duration maximum =
                 properties.effectiveMaxBackoff();
 
-        int exponent = Math.min(
-                Math.max(attemptCount - 1, 0),
+        int exponent = Math.clamp(attemptCount - 1, 0,
                 30
         );
 

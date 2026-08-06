@@ -44,14 +44,16 @@ public class UserController {
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse create(
             @Valid @RequestBody CreateUserRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return userService.create(request, currentUser);
     }
 
     @GetMapping
     public Page<UserResponse> findAll(
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser,
             @RequestParam(required = false) String role,
             @PageableDefault(
                     size = 20,
@@ -64,7 +66,8 @@ public class UserController {
 
     @GetMapping("/statistics")
     public UserStatisticsResponse statistics(
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return userService.statistics(currentUser);
     }
@@ -72,7 +75,8 @@ public class UserController {
     @GetMapping("/{id}")
     public UserDetailsResponse findById(
             @PathVariable UUID id,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return userService.findDetailsById(id, currentUser);
     }
@@ -81,7 +85,8 @@ public class UserController {
     public UserResponse updateUser(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateUserRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return userService.updateUser(id, request, currentUser);
     }
@@ -90,7 +95,8 @@ public class UserController {
     public UserResponse updateEnabled(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateUserEnabledRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return userService.updateEnabled(id, request, currentUser);
     }
@@ -99,7 +105,8 @@ public class UserController {
     public UserResponse updateRoles(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateUserRolesRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return userService.updateRoles(id, request, currentUser);
     }
@@ -109,7 +116,8 @@ public class UserController {
     public void resetPassword(
             @PathVariable UUID id,
             @Valid @RequestBody ResetUserPasswordRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         userService.resetPassword(id, request, currentUser);
     }
@@ -120,7 +128,8 @@ public class UserController {
     public void permanentlyDelete(
             @PathVariable UUID id,
             @Valid @RequestBody PermanentDeleteUserRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         userService.permanentlyDelete(id, request, currentUser);
     }

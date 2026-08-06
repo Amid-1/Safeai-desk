@@ -891,3 +891,335 @@ body.modal-open {
         grid-column: auto;
     }
 }
+
+/* ============================================================
+   Production role selection and modal layout
+   ============================================================ */
+
+.modal-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.modal-header {
+    position: relative;
+    top: auto;
+    flex: 0 0 auto;
+}
+
+.modal-close-button {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    padding: 0;
+    place-items: center;
+    border: 1px solid var(--users-border);
+    border-radius: 11px;
+    background: #f0f2f6;
+    color: #263248;
+    font-size: 25px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: none;
+}
+
+.modal-close-button:hover:not(:disabled) {
+    background: #e7ebf1;
+}
+
+.modal-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/*
+ * Global input rules must not stretch checkbox/radio controls.
+ * This also fixes the oversized blue checkbox from the old form.
+ */
+.modal-body input[type="checkbox"],
+.modal-body input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    min-height: 0;
+    padding: 0;
+    border-radius: 4px;
+    flex: 0 0 18px;
+    accent-color: var(--users-primary);
+}
+
+.users-create-form {
+    gap: 18px;
+}
+
+.users-create-form__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 15px 16px;
+}
+
+.users-create-form__grid > label {
+    min-width: 0;
+}
+
+.users-create-form__wide {
+    grid-column: 1 / -1;
+}
+
+.users-role-selector {
+    min-width: 0;
+    margin: 0;
+    padding: 12px;
+    border: 1px solid var(--users-border-strong);
+    border-radius: 14px;
+    background: #fbfcff;
+}
+
+.users-role-selector legend {
+    padding: 0 7px;
+    color: #344054;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.users-role-selector__options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.modal-body .users-role-option {
+    position: relative;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: center;
+    gap: 11px;
+    min-height: 72px;
+    padding: 11px 12px;
+    border: 1px solid var(--users-border);
+    border-radius: 12px;
+    background: #fff;
+    cursor: pointer;
+    transition:
+        border-color .15s ease,
+        background-color .15s ease,
+        box-shadow .15s ease,
+        transform .15s ease;
+}
+
+.modal-body .users-role-option:hover {
+    border-color: #c8d2e2;
+    transform: translateY(-1px);
+}
+
+.modal-body .users-role-option:focus-within {
+    outline: 3px solid rgba(37, 99, 235, .18);
+    outline-offset: 2px;
+}
+
+.modal-body .users-role-option input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.users-role-option__marker {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.users-role-option.is-selected .users-role-option__marker::after {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    content: "";
+}
+
+.users-role-option__content {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.users-role-option strong {
+    color: #253047;
+    font-size: 14px;
+    line-height: 1.25;
+}
+
+.users-role-option small {
+    color: var(--users-muted);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+}
+
+.users-role-option--user {
+    color: var(--users-primary);
+}
+
+.users-role-option--admin {
+    color: var(--users-warning);
+}
+
+.users-role-option--user.is-selected {
+    border-color: #b7ccff;
+    background: var(--users-primary-soft);
+    box-shadow: 0 5px 16px rgba(37, 99, 235, .10);
+}
+
+.users-role-option--admin.is-selected {
+    border-color: #ffc978;
+    background: var(--users-warning-soft);
+    box-shadow: 0 5px 16px rgba(217, 119, 6, .10);
+}
+
+.users-role-selector__hint {
+    margin: 9px 2px 0;
+    color: var(--users-muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.users-fixed-role {
+    display: grid;
+    gap: 8px;
+    padding: 13px 14px;
+    border: 1px solid #cddcff;
+    border-radius: 13px;
+    background: var(--users-primary-soft);
+}
+
+.users-fixed-role__eyebrow {
+    color: #4c5d7a;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .035em;
+}
+
+.users-fixed-role__row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+}
+
+.users-fixed-role__row > span:last-child {
+    display: grid;
+    gap: 2px;
+}
+
+.users-fixed-role__row strong {
+    color: #163f9f;
+    font-size: 14px;
+}
+
+.users-fixed-role__row small {
+    color: #53637e;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.users-fixed-role__icon {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--users-primary);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.modal-body .danger-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.modal-body .danger-notice input[type="checkbox"] {
+    margin: 2px 0 0;
+}
+
+.users-create-form > .modal-actions {
+    position: sticky;
+    z-index: 1;
+    bottom: -24px;
+    margin: 2px -24px -24px;
+    padding: 16px 24px 24px;
+    border-top: 1px solid var(--users-border);
+    background:
+        linear-gradient(
+            to bottom,
+            rgba(255, 255, 255, .94),
+            #fff 16px
+        );
+    backdrop-filter: blur(8px);
+}
+
+@media (max-width: 720px) {
+    .users-create-form__grid,
+    .users-role-selector__options {
+        grid-template-columns: 1fr;
+    }
+
+    .users-create-form__wide {
+        grid-column: auto;
+    }
+}
+
+@media (max-width: 560px) {
+    .modal-card {
+        border-radius: 16px;
+    }
+
+    .users-create-form > .modal-actions {
+        bottom: -24px;
+        margin-right: -18px;
+        margin-left: -18px;
+        padding-right: 18px;
+        padding-left: 18px;
+    }
+}
+
+.users-privilege-notice {
+    padding: 11px 13px;
+    border: 1px solid #ffd29a;
+    border-radius: 11px;
+    background: var(--users-warning-soft);
+    color: #7a4304;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.45;
+}
+
+/* Neutralize legacy grid/selected-marker declarations above. */
+.users-role-selector {
+    display: block;
+}
+
+.users-role-option.is-selected .users-role-option__marker {
+    background: #fff;
+    box-shadow: none;
+}
+
+.modal-body .users-role-option input:focus {
+    box-shadow: none;
+}
