@@ -1,3 +1,4 @@
+
 package ru.safeai.gateway.audit.controller;
 
 import lombok.RequiredArgsConstructor;
@@ -35,7 +36,9 @@ public class AuditController {
 
     @GetMapping
     public Page<AuditEventResponse> findAll(
-            @AuthenticationPrincipal
+            @AuthenticationPrincipal(
+                    errorOnInvalidType = true
+            )
             SafeAiUserPrincipal currentUser,
 
             @ModelAttribute
@@ -57,7 +60,9 @@ public class AuditController {
 
     @GetMapping("/cursor")
     public AuditEventCursorResponse findAllByCursor(
-            @AuthenticationPrincipal
+            @AuthenticationPrincipal(
+                    errorOnInvalidType = true
+            )
             SafeAiUserPrincipal currentUser,
 
             @ModelAttribute
@@ -82,7 +87,9 @@ public class AuditController {
             @PathVariable
             UUID userId,
 
-            @AuthenticationPrincipal
+            @AuthenticationPrincipal(
+                    errorOnInvalidType = true
+            )
             SafeAiUserPrincipal currentUser,
 
             @PageableDefault(

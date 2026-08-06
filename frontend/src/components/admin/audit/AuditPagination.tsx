@@ -4,25 +4,37 @@
 type AuditPaginationProps = {
     page: number
     totalPages: number
+    totalElements: number
     loading: boolean
     onPageChange: (page: number) => void
 }
 
 function AuditPagination({
-                             page,
-                             totalPages,
-                             loading,
-                             onPageChange,
-                         }: AuditPaginationProps) {
+    page,
+    totalPages,
+    totalElements,
+    loading,
+    onPageChange,
+}: AuditPaginationProps) {
     return (
-        <div className="pagination">
+        <nav
+            className="pagination"
+            aria-label={
+                'Пагинация событий аудита'
+            }
+        >
             <button
                 type="button"
                 className="secondary-button"
-                disabled={page === 0 || loading}
+                disabled={
+                    page === 0 || loading
+                }
                 onClick={() =>
                     onPageChange(
-                        Math.max(0, page - 1),
+                        Math.max(
+                            0,
+                            page - 1,
+                        ),
                     )
                 }
             >
@@ -30,17 +42,28 @@ function AuditPagination({
             </button>
 
             <span>
-                Страница {page + 1} из{' '}
+                Страница
+                {' '}
+                {page + 1}
+                {' '}
+                из
+                {' '}
                 {Math.max(totalPages, 1)}
+                .
+                {' '}
+                Всего событий:
+                {' '}
+                {totalElements}
             </span>
 
             <button
                 type="button"
                 className="secondary-button"
                 disabled={
-                    loading ||
-                    totalPages === 0 ||
-                    page + 1 >= totalPages
+                    loading
+                    || totalPages === 0
+                    || page + 1
+                        >= totalPages
                 }
                 onClick={() =>
                     onPageChange(page + 1)
@@ -48,7 +71,7 @@ function AuditPagination({
             >
                 Вперёд
             </button>
-        </div>
+        </nav>
     )
 }
 

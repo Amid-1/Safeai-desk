@@ -61,8 +61,6 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request
         .SecurityMockMvcRequestPostProcessors.authentication;
-import static org.springframework.security.test.web.servlet.request
-        .SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request
         .MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result
@@ -195,11 +193,17 @@ class AuditControllerSecurityTest {
     @Test
     void allEndpointsReturn403ForOrdinaryUser()
             throws Exception {
+        Authentication userAuthentication =
+                authToken(
+                        userPrincipal()
+                );
+
         mockMvc.perform(
                         get("/api/admin/audit-events")
                                 .with(
-                                        user("user@test.com")
-                                                .roles("USER")
+                                        authentication(
+                                                userAuthentication
+                                        )
                                 )
                 )
                 .andExpect(status().isForbidden());
@@ -209,8 +213,9 @@ class AuditControllerSecurityTest {
                                 "/api/admin/audit-events/cursor"
                         )
                                 .with(
-                                        user("user@test.com")
-                                                .roles("USER")
+                                        authentication(
+                                                userAuthentication
+                                        )
                                 )
                 )
                 .andExpect(status().isForbidden());
@@ -221,8 +226,9 @@ class AuditControllerSecurityTest {
                                 USER_ID
                         )
                                 .with(
-                                        user("user@test.com")
-                                                .roles("USER")
+                                        authentication(
+                                                userAuthentication
+                                        )
                                 )
                 )
                 .andExpect(status().isForbidden());
@@ -638,6 +644,21 @@ class AuditControllerSecurityTest {
                         principal,
                         null,
                         principal.getAuthorities()
+                );
+    }
+
+    private SafeAiUserPrincipal userPrincipal() {
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        "user@test.com",
+                        0L,
+                        List.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_USER"
+                                )
+                        )
                 );
     }
 

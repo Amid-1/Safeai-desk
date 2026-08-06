@@ -1,6 +1,11 @@
 // ============================================================
 // frontend/src/components/admin/audit/AuditFilters.tsx
 // ============================================================
+import {
+    useEffect,
+    useRef,
+    useState,
+} from 'react'
 import type {
     Dispatch,
     SetStateAction,
@@ -19,6 +24,8 @@ import type {
     AuditDraftFilter,
     DatePreset,
 } from './types'
+
+const DIRECTORY_SEARCH_DELAY_MS = 300
 
 type AuditFiltersProps = {
     draftFilter: AuditDraftFilter
@@ -48,8 +55,10 @@ type AuditFiltersProps = {
             >
         >
 
-    onActorSearch:
-        (query: string) => Promise<void>
+    onActorSearch: (
+        query: string,
+        targetOrganizationId?: string,
+    ) => Promise<void>
 
     onOrganizationSearch:
         (query: string) => Promise<void>
@@ -85,6 +94,34 @@ function AuditFilters({
     onApply,
     onReset,
 }: AuditFiltersProps) {
+    const [
+        organizationQuery,
+        setOrganizationQuery,
+    ] = useState('')
+
+    const [
+        actorQuery,
+        setActorQuery,
+    ] = useState('')
+
+    const organizationSearchTimerRef =
+        useRef<number | null>(null)
+
+    const actorSearchTimerRef =
+        useRef<number | null>(null)
+
+    useEffect(() => {
+        return () => {
+            clearSearchTimer(
+                organizationSearchTimerRef,
+            )
+
+            clearSearchTimer(
+                actorSearchTimerRef,
+            )
+        }
+    }, [])
+
     const visibleEventTypes =
         buildVisibleEventTypes(
             eventTypes,
@@ -104,24 +141,79 @@ function AuditFilters({
                 .targetOrganizationId,
         )
 
+    function scheduleOrganizationSearch(
+        query: string,
+    ) {
+        setOrganizationQuery(query)
+
+        clearSearchTimer(
+            organizationSearchTimerRef,
+        )
+
+        organizationSearchTimerRef.current =
+            window.setTimeout(
+                () => {
+                    void onOrganizationSearch(
+                        query,
+                    )
+                },
+                DIRECTORY_SEARCH_DELAY_MS,
+            )
+    }
+
+    function scheduleActorSearch(
+        query: string,
+    ) {
+        setActorQuery(query)
+
+        clearSearchTimer(
+            actorSearchTimerRef,
+        )
+
+        /*
+         * Инициатор и целевая организация являются
+         * независимыми измерениями аудита.
+         *
+         * Поэтому targetOrganizationId намеренно
+         * не передаётся в справочный поиск инициатора.
+         * Фильтрация событий выполняется отдельно
+         * при нажатии «Применить фильтры».
+         */
+        actorSearchTimerRef.current =
+            window.setTimeout(
+                () => {
+                    void onActorSearch(query)
+                },
+                DIRECTORY_SEARCH_DELAY_MS,
+            )
+    }
+
     return (
-        <div className="card form-card">
+        <section
+            className={
+                'card form-card '
+                + 'audit-filters'
+            }
+            aria-labelledby={
+                'audit-filters-title'
+            }
+        >
+            <h2 id="audit-filters-title">
+                Фильтры аудита
+            </h2>
+
             <div className="form">
                 <label>
                     Тип события
 
                     <select
                         value={
-                            draftFilter
-                                .eventType
+                            draftFilter.eventType
                         }
-                        disabled={
-                            loading
-                        }
+                        disabled={loading}
                         onChange={(event) => {
                             const eventType =
-                                event.target
-                                    .value
+                                event.target.value
 
                             onFilterChange(
                                 (current) => ({
@@ -138,12 +230,8 @@ function AuditFilters({
                         {visibleEventTypes.map(
                             (eventType) => (
                                 <option
-                                    key={
-                                        eventType
-                                    }
-                                    value={
-                                        eventType
-                                    }
+                                    key={eventType}
+                                    value={eventType}
                                 >
                                     {
                                         getAuditEventTypeLabel(
@@ -156,13 +244,11 @@ function AuditFilters({
                     </select>
                 </label>
 
-                {eventTypesError && (
-                    <DirectoryError
-                        message={
-                            eventTypesError
-                        }
-                    />
-                )}
+                <DirectoryWarning
+                    message={
+                        eventTypesError
+                    }
+                />
 
                 {superAdmin && (
                     <>
@@ -172,24 +258,31 @@ function AuditFilters({
 
                             <input
                                 type="search"
-                                disabled={
-                                    loading
+                                value={
+                                    organizationQuery
                                 }
+                                maxLength={255}
+                                disabled={loading}
+                                autoComplete="off"
                                 placeholder={
-                                    'Название или ID'
+                                    'Название или UUID'
                                 }
-                                onChange={(event) => {
-                                    void onOrganizationSearch(
-                                        event.target
-                                            .value,
+                                onChange={(event) =>
+                                    scheduleOrganizationSearch(
+                                        event.target.value,
                                     )
-                                }}
+                                }
                             />
+
+                            <small className="muted">
+                                Поиск обновляет список.
+                                Фильтр применяется после
+                                выбора организации.
+                            </small>
                         </label>
 
                         <label>
-                            Целевая
-                            организация
+                            Целевая организация
 
                             <select
                                 value={
@@ -202,8 +295,7 @@ function AuditFilters({
                                 }
                                 onChange={(event) => {
                                     const targetOrganizationId =
-                                        event.target
-                                            .value
+                                        event.target.value
 
                                     onFilterChange(
                                         (current) => ({
@@ -214,65 +306,65 @@ function AuditFilters({
                                 }}
                             >
                                 <option value="">
-                                    Все организации
+                                    Все целевые организации
                                 </option>
 
-                                {
-                                    visibleOrganizations
-                                        .map(
-                                            (
-                                                organization,
-                                            ) => (
-                                                <option
-                                                    key={
-                                                        organization
-                                                            .targetOrganizationId
-                                                    }
-                                                    value={
-                                                        organization
-                                                            .targetOrganizationId
-                                                    }
-                                                >
-                                                    {
-                                                        formatOrganizationOption(
-                                                            organization,
-                                                        )
-                                                    }
-                                                </option>
-                                            ),
-                                        )
-                                }
+                                {visibleOrganizations.map(
+                                    (organization) => (
+                                        <option
+                                            key={
+                                                organization
+                                                    .targetOrganizationId
+                                            }
+                                            value={
+                                                organization
+                                                    .targetOrganizationId
+                                            }
+                                        >
+                                            {
+                                                formatOrganizationOption(
+                                                    organization,
+                                                )
+                                            }
+                                        </option>
+                                    ),
+                                )}
                             </select>
                         </label>
 
-                        {organizationsError && (
-                            <DirectoryError
-                                message={
-                                    organizationsError
-                                }
-                            />
-                        )}
+                        <DirectoryWarning
+                            message={
+                                organizationsError
+                            }
+                        />
                     </>
                 )}
 
                 <label>
-                    Поиск инициатора
+                    Поиск по справочнику
+                    инициаторов
 
                     <input
                         type="search"
-                        disabled={
-                            loading
-                        }
+                        value={actorQuery}
+                        maxLength={320}
+                        disabled={loading}
+                        autoComplete="off"
                         placeholder={
-                            'Email или имя'
+                            'Email, имя или UUID'
                         }
-                        onChange={(event) => {
-                            void onActorSearch(
-                                event.target
-                                    .value,
+                        onChange={(event) =>
+                            scheduleActorSearch(
+                                event.target.value,
                             )
-                        }}
+                        }
                     />
+
+                    <small className="muted">
+                        Поиск обновляет список.
+                        Он не изменяет фильтр
+                        автоматически.
+                    </small>
                 </label>
 
                 <label>
@@ -280,8 +372,7 @@ function AuditFilters({
 
                     <select
                         value={
-                            draftFilter
-                                .actorUserId
+                            draftFilter.actorUserId
                         }
                         disabled={
                             loading
@@ -289,8 +380,7 @@ function AuditFilters({
                         }
                         onChange={(event) => {
                             const actorUserId =
-                                event.target
-                                    .value
+                                event.target.value
 
                             onFilterChange(
                                 (current) => ({
@@ -308,12 +398,10 @@ function AuditFilters({
                             (actor) => (
                                 <option
                                     key={
-                                        actor
-                                            .actorUserId
+                                        actor.actorUserId
                                     }
                                     value={
-                                        actor
-                                            .actorUserId
+                                        actor.actorUserId
                                     }
                                 >
                                     {
@@ -334,21 +422,17 @@ function AuditFilters({
                     <input
                         type="search"
                         value={
-                            draftFilter
-                                .actorEmail
-                        }
-                        disabled={
-                            loading
+                            draftFilter.actorEmail
                         }
                         maxLength={320}
+                        disabled={loading}
                         autoComplete="off"
                         placeholder={
                             'admin@safeai.test'
                         }
                         onChange={(event) => {
                             const actorEmail =
-                                event.target
-                                    .value
+                                event.target.value
 
                             onFilterChange(
                                 (current) => ({
@@ -360,78 +444,74 @@ function AuditFilters({
                     />
                 </label>
 
-                {actorsError && (
-                    <DirectoryError
-                        message={
-                            actorsError
-                        }
-                    />
-                )}
+                <DirectoryWarning
+                    message={
+                        actorsError
+                    }
+                />
 
                 <div className="audit-date-presets">
-                    <span className="audit-date-presets__label">
+                    <span
+                        className={
+                            'audit-date-presets__label'
+                        }
+                    >
                         Быстрый период
                     </span>
 
-                    <div className="audit-date-presets__actions">
+                    <div
+                        className={
+                            'audit-date-presets__actions'
+                        }
+                    >
                         <PresetButton
                             label="Сегодня"
-                            disabled={
-                                loading
-                            }
-                            onClick={() => {
+                            disabled={loading}
+                            onClick={() =>
                                 onDatePreset(
                                     'today',
                                 )
-                            }}
+                            }
                         />
 
                         <PresetButton
                             label="Вчера"
-                            disabled={
-                                loading
-                            }
-                            onClick={() => {
+                            disabled={loading}
+                            onClick={() =>
                                 onDatePreset(
                                     'yesterday',
                                 )
-                            }}
+                            }
                         />
 
                         <PresetButton
                             label="7 дней"
-                            disabled={
-                                loading
-                            }
-                            onClick={() => {
+                            disabled={loading}
+                            onClick={() =>
                                 onDatePreset(
                                     'last7Days',
                                 )
-                            }}
+                            }
                         />
 
                         <PresetButton
                             label="30 дней"
-                            disabled={
-                                loading
-                            }
-                            onClick={() => {
+                            disabled={loading}
+                            onClick={() =>
                                 onDatePreset(
                                     'last30Days',
                                 )
-                            }}
+                            }
                         />
 
                         <PresetButton
                             label="365 дней"
-                            disabled={
-                                loading
-                            }
-                            onClick={() => {
+                            disabled={loading}
+                            onClick={() =>
                                 onDatePreset(
                                     'last365Days',
                                 )
-                            }}
+                            }
                         />
                     </div>
                 </div>
@@ -442,21 +522,17 @@ function AuditFilters({
                     <input
                         type="date"
                         value={
-                            draftFilter
-                                .dateFrom
+                            draftFilter.dateFrom
                         }
                         max={
-                            draftFilter
-                                .dateTo
+                            draftFilter.dateTo
                             || undefined
                         }
-                        disabled={
-                            loading
-                        }
+                        required
+                        disabled={loading}
                         onChange={(event) => {
                             const dateFrom =
-                                event.target
-                                    .value
+                                event.target.value
 
                             onFilterChange(
                                 (current) => ({
@@ -474,21 +550,17 @@ function AuditFilters({
                     <input
                         type="date"
                         value={
-                            draftFilter
-                                .dateTo
+                            draftFilter.dateTo
                         }
                         min={
-                            draftFilter
-                                .dateFrom
+                            draftFilter.dateFrom
                             || undefined
                         }
-                        disabled={
-                            loading
-                        }
+                        required
+                        disabled={loading}
                         onChange={(event) => {
                             const dateTo =
-                                event.target
-                                    .value
+                                event.target.value
 
                             onFilterChange(
                                 (current) => ({
@@ -500,10 +572,21 @@ function AuditFilters({
                     />
                 </label>
 
+                <small className="muted">
+                    Период трактуется как
+                    локальные календарные дни
+                    часового пояса браузера.
+                    Конечная дата включается
+                    полностью.
+                </small>
+
                 {filtersDirty && (
                     <div
-                        className="audit-filter-notice"
+                        className={
+                            'audit-filter-notice'
+                        }
                         role="status"
+                        aria-live="polite"
                     >
                         Фильтры изменены.
                         Нажмите
@@ -511,10 +594,22 @@ function AuditFilters({
                     </div>
                 )}
 
+                {directoriesLoading && (
+                    <div
+                        className="muted"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        Загружаются справочники
+                        аудита…
+                    </div>
+                )}
+
                 {filterError && (
                     <div
                         className="error"
                         role="alert"
+                        aria-live="assertive"
                     >
                         {filterError}
                     </div>
@@ -527,28 +622,24 @@ function AuditFilters({
                             loading
                             || !filtersDirty
                         }
-                        onClick={
-                            onApply
-                        }
+                        onClick={onApply}
                     >
                         Применить фильтры
                     </button>
 
                     <button
                         type="button"
-                        className="secondary-button"
-                        disabled={
-                            loading
+                        className={
+                            'secondary-button'
                         }
-                        onClick={
-                            onReset
-                        }
+                        disabled={loading}
+                        onClick={onReset}
                     >
-                        Сбросить фильтры
+                        Сбросить к 30 дням
                     </button>
                 </div>
             </div>
-        </div>
+        </section>
     )
 }
 
@@ -575,39 +666,40 @@ function PresetButton({
     )
 }
 
-type DirectoryErrorProps = {
-    message: string
-}
-
-function DirectoryError({
+function DirectoryWarning({
     message,
-}: DirectoryErrorProps) {
-    return (
+}: {
+    message: string
+}) {
+    return message ? (
         <div
-            className="error"
-            role="alert"
+            className={
+                'audit-directory-warning'
+            }
+            role="status"
+            aria-live="polite"
         >
             {message}
         </div>
-    )
+    ) : null
 }
 
 function buildVisibleEventTypes(
     eventTypes: readonly string[],
     selectedEventType: string,
 ): string[] {
-    const result =
+    const uniqueEventTypes =
         new Set<string>(
             eventTypes,
         )
 
     if (selectedEventType) {
-        result.add(
+        uniqueEventTypes.add(
             selectedEventType,
         )
     }
 
-    return [...result].sort(
+    return [...uniqueEventTypes].sort(
         (first, second) =>
             getAuditEventTypeLabel(
                 first,
@@ -767,17 +859,17 @@ function formatActorOption(
         actor.actorUserId
         ?? 'unknown-user'
 
-    if (email && displayName) {
-        return (
-            `${email} — ${displayName}`
-            + ` (${actorUserId})`
-        )
-    }
+    const identity =
+        email && displayName
+            ? `${email} — ${displayName}`
+            : (
+                email
+                ?? displayName
+                ?? 'Инициатор без имени'
+            )
 
     return (
-        email
-        ?? displayName
-        ?? actorUserId
+        `${identity} (${actorUserId})`
     )
 }
 
@@ -792,8 +884,11 @@ function formatOrganizationOption(
         )
 
     if (!name) {
-        return organization
-            .targetOrganizationId
+        return (
+            'Название недоступно — '
+            + organization
+                .targetOrganizationId
+        )
     }
 
     return (
@@ -814,6 +909,24 @@ function normalizeOptionalText(
         value.trim()
 
     return normalized || null
+}
+
+type SearchTimerRef = {
+    current: number | null
+}
+
+function clearSearchTimer(
+    timerRef: SearchTimerRef,
+) {
+    if (timerRef.current === null) {
+        return
+    }
+
+    window.clearTimeout(
+        timerRef.current,
+    )
+
+    timerRef.current = null
 }
 
 export default AuditFilters

@@ -24,7 +24,7 @@ import {
     AUDIT_EVENT_TYPES,
 } from '../../constants/auditEvents'
 
-const DIRECTORY_LIMIT = 20
+const DIRECTORY_LIMIT = 50
 
 type UseAuditDirectoriesResult = {
     eventTypes: string[]
@@ -162,7 +162,7 @@ function useAuditDirectories(
                         setOrganizationsError(
                             getApiErrorMessage(
                                 error,
-                                'Не удалось загрузить исторический каталог организаций аудита.',
+                                'Справочник целевых организаций временно недоступен. Поиск по UUID остаётся доступен.',
                             ),
                         )
                     }
@@ -221,7 +221,7 @@ function useAuditDirectories(
                         setActorsError(
                             getApiErrorMessage(
                                 error,
-                                'Не удалось загрузить исторический каталог акторов.',
+                                'Справочник инициаторов временно недоступен. Фильтрация по UUID и email остаётся доступна.',
                             ),
                         )
                     }
@@ -286,7 +286,7 @@ function useAuditDirectories(
                 setEventTypesError(
                     getApiErrorMessage(
                         eventTypeResult.reason,
-                        'Не удалось загрузить справочник типов событий. Используется ограниченный fallback-список.',
+                        'Справочник типов событий временно недоступен. Используется встроенный список.',
                     ),
                 )
             }

@@ -1,104 +1,119 @@
 // ============================================================
 // frontend/src/components/admin/audit/AuditActor.tsx
 // ============================================================
+
 import type {
     AuditEvent,
 } from '../../../api/adminApi'
 
 type AuditActorProps = {
     event: AuditEvent
+    showIds?: boolean
 }
 
 function AuditActor({
     event,
+    showIds = false,
 }: AuditActorProps) {
-    const email =
-        normalizeOptionalText(
-            event.actorEmail,
-        )
-
     const displayName =
-        normalizeOptionalText(
-            event.actorDisplayName,
+        event.actorDisplayName?.trim()
+        || null
+
+    const systemDisplayName =
+        displayName?.toUpperCase()
+        === 'SYSTEM'
+
+    const isSystem =
+        event.actorUserId === null
+        && event.actorEmail === null
+        && event.actorOrganizationId
+            === null
+        && (
+            displayName === null
+            || systemDisplayName
         )
 
-    const {
-        actorUserId,
-        actorOrganizationId,
-    } = event
-
-    const isSystemActor =
-        email === null
-        && displayName === null
-        && actorUserId === null
-        && actorOrganizationId === null
-
-    if (isSystemActor) {
+    if (isSystem) {
         return (
-            <span className="muted">
+            <span className="audit-identity__system">
                 Система
             </span>
         )
     }
 
-    const primaryLabel =
+    const email =
+        event.actorEmail?.trim()
+        || null
+
+    const hasReadableIdentity =
+        Boolean(email || displayName)
+
+    const primaryText =
         email
         ?? displayName
         ?? (
-            actorUserId
-                ? 'Пользователь'
-                : 'Организация'
+            'Инициатор без '
+            + 'пользовательского snapshot'
         )
 
-    const shouldShowDisplayName =
-        displayName !== null
-        && displayName !== primaryLabel
+    const secondaryText =
+        email && displayName
+            ? displayName
+            : null
 
     return (
-        <div className="audit-actor">
-            <span>
-                {primaryLabel}
-            </span>
+        <div className="audit-actor audit-identity">
+            <strong
+                className={
+                    'audit-identity__primary'
+                }
+            >
+                {primaryText}
+            </strong>
 
-            {shouldShowDisplayName && (
-                <span className="muted">
-                    {displayName}
+            {secondaryText && (
+                <span
+                    className={
+                        'audit-identity__secondary'
+                    }
+                >
+                    {secondaryText}
                 </span>
             )}
 
-            {actorUserId && (
-                <span className="muted">
-                    Пользователь:
-                    {' '}
-                    <code>
-                        {actorUserId}
-                    </code>
-                </span>
-            )}
+            {(showIds || !hasReadableIdentity)
+                && event.actorUserId
+                && (
+                    <span
+                        className={
+                            'audit-identity__meta '
+                            + 'audit-monospace'
+                        }
+                    >
+                        Пользователь:
+                        {' '}
+                        {event.actorUserId}
+                    </span>
+                )}
 
-            {actorOrganizationId && (
-                <span className="muted">
-                    Организация:
-                    {' '}
-                    <code>
-                        {actorOrganizationId}
-                    </code>
-                </span>
-            )}
+            {showIds
+                && event.actorOrganizationId
+                && (
+                    <span
+                        className={
+                            'audit-identity__meta '
+                            + 'audit-monospace'
+                        }
+                    >
+                        Организация инициатора:
+                        {' '}
+                        {
+                            event.actorOrganizationId
+                        }
+                    </span>
+                )}
         </div>
     )
-}
-
-function normalizeOptionalText(
-    value: string | null,
-): string | null {
-    if (value === null) {
-        return null
-    }
-
-    const normalized = value.trim()
-
-    return normalized || null
 }
 
 export default AuditActor

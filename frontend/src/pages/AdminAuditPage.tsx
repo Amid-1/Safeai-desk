@@ -7,48 +7,37 @@ import {
     useMemo,
     useState,
 } from 'react'
-
 import type {
     AuditEvent,
 } from '../api/adminApi'
-
 import {
     useAuth,
 } from '../auth/AuthContext'
-
 import {
     EmptyState,
     ErrorState,
     LoadingState,
 } from '../components/StateBlock'
-
 import PageErrorBoundary
     from '../components/PageErrorBoundary'
-
 import AuditDetailsModal
     from '../components/admin/audit/AuditDetailsModal'
-
 import AuditFilters
     from '../components/admin/audit/AuditFilters'
-
 import AuditTable
     from '../components/admin/audit/AuditTable'
-
 import {
     auditDraftFiltersEqual,
 } from '../components/admin/audit/types'
-
 import type {
     AuditDraftFilter,
     DatePreset,
 } from '../components/admin/audit/types'
-
 import useAuditDirectories
     from '../hooks/admin/useAuditDirectories'
-
 import useAuditEvents
     from '../hooks/admin/useAuditEvents'
-
+import './AdminAuditPage.css'
 import {
     applyAuditDatePreset,
     buildAuditSearch,
@@ -196,31 +185,20 @@ function AdminAuditPageContent() {
         )
 
     const organizationNameById =
-        useMemo(() => {
-            const result =
-                new Map<string, string>()
-
-            for (
-                const organization
-                of organizations
-            ) {
-                const name =
-                    normalizeOptionalText(
-                        organization
-                            .targetOrganizationName,
-                    )
-                    ?? organization
-                        .targetOrganizationId
-
-                result.set(
-                    organization
-                        .targetOrganizationId,
-                    name,
-                )
-            }
-
-            return result
-        }, [organizations])
+        useMemo(
+            () =>
+                new Map(
+                    organizations.map(
+                        (organization) => [
+                            organization
+                                .targetOrganizationId,
+                            organization
+                                .targetOrganizationName,
+                        ],
+                    ),
+                ),
+            [organizations],
+        )
 
     useEffect(() => {
         if (superAdmin) {
@@ -261,7 +239,7 @@ function AdminAuditPageContent() {
             )
 
         const nextUrl =
-            window.location.pathname
+            `${window.location.pathname}`
             + search
             + window.location.hash
 
@@ -276,7 +254,7 @@ function AdminAuditPageContent() {
         superAdmin,
     ])
 
-    function applyFilters(): void {
+    function applyFilters() {
         setFilterError('')
 
         try {
@@ -314,49 +292,38 @@ function AdminAuditPageContent() {
         }
     }
 
-    function resetFilters(): void {
-        try {
-            const reset =
-                createResetAuditFilter()
+    function resetFilters() {
+        const reset =
+            createResetAuditFilter()
 
-            const normalized =
-                toAuditEventFilter(
-                    reset,
-                    superAdmin,
-                )
+        const normalized =
+            toAuditEventFilter(
+                reset,
+                superAdmin,
+            )
 
-            setRequestTransitioning(
-                true,
-            )
-            setDraftFilter(
-                normalized.draft,
-            )
-            setAppliedDraftFilter(
-                normalized.draft,
-            )
-            setAppliedFilter(
-                normalized.filter,
-            )
-            setFilterError('')
-            setPage(0)
-            setReloadToken(
-                (value) => value + 1,
-            )
-        } catch (error) {
-            setFilterError(
-                error instanceof Error
-                    ? error.message
-                    : (
-                        'Не удалось сбросить '
-                        + 'фильтры аудита.'
-                    ),
-            )
-        }
+        setRequestTransitioning(
+            true,
+        )
+        setDraftFilter(
+            normalized.draft,
+        )
+        setAppliedDraftFilter(
+            normalized.draft,
+        )
+        setAppliedFilter(
+            normalized.filter,
+        )
+        setFilterError('')
+        setPage(0)
+        setReloadToken(
+            (value) => value + 1,
+        )
     }
 
     function applyDatePreset(
         preset: DatePreset,
-    ): void {
+    ) {
         setFilterError('')
 
         setDraftFilter(
@@ -368,32 +335,22 @@ function AdminAuditPageContent() {
         )
     }
 
-    const selectedOrganizationName =
+    const selectedOrganizationFallback =
         selectedEvent
-            ? (
-                normalizeOptionalText(
-                    selectedEvent
-                        .targetOrganizationName,
-                )
-                ?? organizationNameById.get(
-                    selectedEvent
-                        .targetOrganizationId,
-                )
-                ?? selectedEvent
-                    .targetOrganizationId
-            )
-            : ''
+            ? organizationNameById.get(
+                selectedEvent
+                    .targetOrganizationId,
+            ) ?? undefined
+            : undefined
 
     return (
-        <div className="page">
+        <div className="page audit-page">
             <h1>Аудит событий</h1>
 
-            <p className="muted">
-                Время отображается в
-                часовом поясе браузера.
-                Actor и target organization
-                являются независимыми
-                измерениями.
+            <p className="muted audit-page__intro">
+                Время отображается в часовом поясе браузера.
+                Инициатор события и целевая организация являются
+                независимыми измерениями аудита.
             </p>
 
             <AuditFilters
@@ -407,9 +364,7 @@ function AdminAuditPageContent() {
                 organizations={
                     organizations
                 }
-                actors={
-                    actors
-                }
+                actors={actors}
 
                 superAdmin={
                     superAdmin
@@ -508,48 +463,39 @@ function AdminAuditPageContent() {
                 && !loadError
                 && events.length > 0
                 && (
-                    <>
-                        <p className="muted">
-                            Всего событий:
-                            {' '}
-                            {
-                                pageResponse
-                                    .totalElements
-                            }
-                        </p>
+                    <AuditTable
+                        events={events}
+                        organizations={
+                            organizations
+                        }
 
-                        <AuditTable
-                            events={
-                                events
+                        page={
+                            pageResponse.page
+                        }
+                        totalPages={
+                            pageResponse
+                                .totalPages
+                        }
+                        totalElements={
+                            pageResponse
+                                .totalElements
+                        }
+                        loading={
+                            effectiveLoading
+                        }
+
+                        onOpenDetails={
+                            setSelectedEvent
+                        }
+                        onPageChange={
+                            (nextPage) => {
+                                setRequestTransitioning(
+                                    true,
+                                )
+                                setPage(nextPage)
                             }
-                            organizationNameById={
-                                organizationNameById
-                            }
-                            page={
-                                pageResponse.page
-                            }
-                            totalPages={
-                                pageResponse
-                                    .totalPages
-                            }
-                            loading={
-                                effectiveLoading
-                            }
-                            onOpenDetails={
-                                setSelectedEvent
-                            }
-                            onPageChange={
-                                (nextPage) => {
-                                    setRequestTransitioning(
-                                        true,
-                                    )
-                                    setPage(
-                                        nextPage,
-                                    )
-                                }
-                            }
-                        />
-                    </>
+                        }
+                    />
                 )}
 
             {selectedEvent && (
@@ -557,31 +503,18 @@ function AdminAuditPageContent() {
                     event={
                         selectedEvent
                     }
-                    organizationName={
-                        selectedOrganizationName
+                    organizationFallbackName={
+                        selectedOrganizationFallback
                     }
-                    onClose={() => {
+                    onClose={() =>
                         setSelectedEvent(
                             null,
                         )
-                    }}
+                    }
                 />
             )}
         </div>
     )
-}
-
-function normalizeOptionalText(
-    value: string | null,
-): string | null {
-    if (value === null) {
-        return null
-    }
-
-    const normalized =
-        value.trim()
-
-    return normalized || null
 }
 
 export default AdminAuditPage
