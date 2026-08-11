@@ -1,0 +1,221 @@
+/* ============================================================
+   frontend/src/pages/AdminOrganizationsPage.css
+   ============================================================ */
+
+:root {
+    --org-border: #e4eaf2;
+    --org-text: #172033;
+    --org-muted: #6b768a;
+    --org-primary: #2563eb;
+    --org-primary-soft: #eef4ff;
+    --org-success: #15803d;
+    --org-success-soft: #eaf9f0;
+    --org-danger: #dc2626;
+    --org-danger-soft: #fff0f0;
+    --org-platform: #6d28d9;
+    --org-platform-soft: #f4efff;
+}
+
+.organizations-table__row--disabled {
+    background: #fffafa;
+}
+
+.organizations-table__row--disabled:hover {
+    background: #fff4f4 !important;
+}
+
+.organizations-table__row--platform {
+    background: #fcfaff;
+}
+
+.organization-status,
+.organization-type,
+.organization-version {
+    display: inline-flex;
+    align-items: center;
+    width: max-content;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.organization-status {
+    gap: 6px;
+    min-height: 27px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.organization-status__dot {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.organization-status--enabled {
+    border-color: #c7efd5;
+    background: var(--org-success-soft);
+    color: var(--org-success);
+}
+
+.organization-status--disabled {
+    border-color: #ffd0d0;
+    background: var(--org-danger-soft);
+    color: var(--org-danger);
+}
+
+.organization-type {
+    min-height: 27px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.organization-type--tenant {
+    border-color: #cddcff;
+    background: var(--org-primary-soft);
+    color: var(--org-primary);
+}
+
+.organization-type--platform {
+    border-color: #dacaff;
+    background: var(--org-platform-soft);
+    color: var(--org-platform);
+}
+
+.organization-version {
+    min-height: 27px;
+    padding: 0 9px;
+    border: 1px solid var(--org-border);
+    background: #f7f9fc;
+    color: #566176;
+    font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Monaco,
+        Consolas,
+        "Liberation Mono",
+        monospace;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.organization-actions {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.organization-details-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 18px;
+    padding: 15px 16px;
+    border: 1px solid var(--org-border);
+    border-radius: 13px;
+    background: #fbfcfe;
+}
+
+.organization-details-heading > div {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+}
+
+.organization-details-heading strong {
+    color: var(--org-text);
+    font-size: 17px;
+}
+
+.organization-details-heading span {
+    overflow-wrap: anywhere;
+    color: var(--org-muted);
+    font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Monaco,
+        Consolas,
+        "Liberation Mono",
+        monospace;
+    font-size: 11px;
+}
+
+.organization-details {
+    display: grid;
+    gap: 0;
+    margin: 0;
+}
+
+.organization-details__row {
+    display: grid;
+    grid-template-columns:
+        minmax(150px, .8fr)
+        minmax(0, 1.5fr);
+    gap: 18px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--org-border);
+    align-items: center;
+}
+
+.organization-details__row:last-child {
+    border-bottom: 0;
+}
+
+.organization-details dt {
+    color: var(--org-muted);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.organization-details dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: var(--org-text);
+    font-weight: 650;
+}
+
+.organization-platform-note {
+    margin-top: 18px;
+    padding: 11px 13px;
+    border: 1px solid #dacaff;
+    border-radius: 11px;
+    background: var(--org-platform-soft);
+    color: #5a2a9e;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+@media (max-width: 560px) {
+    .organization-details-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .organization-details__row {
+        grid-template-columns: 1fr;
+        gap: 5px;
+    }
+}
+
+.organization-confirmation-hint {
+    display: block;
+    margin-top: 8px;
+    color: var(--org-muted);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+.organization-confirmation-hint strong {
+    color: #465166;
+    font-weight: 750;
+}

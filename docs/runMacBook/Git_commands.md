@@ -23,7 +23,11 @@ git stash pop
 
 
 ```bash
-
+git add -A -- . ':(exclude)commit-message.txt'
+git status
+git diff --cached --stat
+git commit -F commit-message.txt
+git push
 
 ```
 

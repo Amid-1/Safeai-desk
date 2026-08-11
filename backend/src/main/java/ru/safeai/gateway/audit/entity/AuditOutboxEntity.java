@@ -25,28 +25,54 @@ public class AuditOutboxEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    @Column(name = "actor_user_id")
+    @Column(name = "actor_user_id", updatable = false)
     private UUID actorUserId;
 
-    @Column(name = "actor_organization_id")
+    @Column(
+            name = "actor_organization_id",
+            updatable = false
+    )
     private UUID actorOrganizationId;
 
-    @Column(name = "actor_email", length = 255)
+    @Column(
+            name = "actor_email",
+            length = 255,
+            updatable = false
+    )
     private String actorEmail;
 
-    @Column(name = "actor_display_name", length = 255)
+    @Column(
+            name = "actor_display_name",
+            length = 255,
+            updatable = false
+    )
     private String actorDisplayName;
 
     /**
-     * Существующий organization_id из V24 является target organization.
+     * organization_id — target organization события.
      */
-    @Column(name = "organization_id", nullable = false)
+    @Column(
+            name = "organization_id",
+            nullable = false,
+            updatable = false
+    )
     private UUID targetOrganizationId;
+
+    /**
+     * Immutable snapshot имени target organization, захваченный при enqueue.
+     */
+    @Column(
+            name = "target_organization_name",
+            length = 255,
+            updatable = false
+    )
+    private String targetOrganizationName;
 
     @Column(
             name = "event_type",
             nullable = false,
-            length = 100
+            length = 100,
+            updatable = false
     )
     private String eventType;
 
@@ -54,7 +80,8 @@ public class AuditOutboxEntity {
     @Column(
             name = "details",
             nullable = false,
-            columnDefinition = "jsonb"
+            columnDefinition = "jsonb",
+            updatable = false
     )
     private Map<String, Object> details = Map.of();
 
@@ -93,6 +120,12 @@ public class AuditOutboxEntity {
             );
         }
 
+        if (targetOrganizationId == null) {
+            throw new IllegalStateException(
+                    "AuditOutboxEntity.targetOrganizationId должен быть установлен service layer"
+            );
+        }
+
         if (occurredAt == null) {
             throw new IllegalStateException(
                     "AuditOutboxEntity.occurredAt должен быть установлен service layer"
@@ -102,6 +135,12 @@ public class AuditOutboxEntity {
         if (createdAt == null) {
             throw new IllegalStateException(
                     "AuditOutboxEntity.createdAt должен быть установлен service layer"
+            );
+        }
+
+        if (eventType == null || eventType.isBlank()) {
+            throw new IllegalStateException(
+                    "AuditOutboxEntity.eventType должен быть установлен service layer"
             );
         }
 

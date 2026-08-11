@@ -11,7 +11,10 @@ import {
 export type ApiErrorBody = {
     timestamp?: string
     status?: number
+    /** Standard application error code used by the common API envelope. */
     error?: string
+    /** Domain error code used by ChatErrorResponse and newer endpoints. */
+    code?: string
     message?: string
     path?: string
     requestId?: string
@@ -36,7 +39,7 @@ export class ApiError extends Error {
 
         this.name = 'ApiError'
         this.status = status
-        this.errorCode = body.error
+        this.errorCode = body.code ?? body.error
         this.path = body.path
         this.requestId = body.requestId
         this.fieldErrors = body.fieldErrors
@@ -81,7 +84,8 @@ export const API_TIMEOUTS = {
     default: 30_000,
     auth: 20_000,
 
-    // Немного больше Nginx proxy timeout 90s, чтобы frontend получил контролируемый proxy response.
+    // Немного больше Nginx proxy timeout 90s, чтобы frontend получил
+    // контролируемый proxy/backend response.
     chat: 95_000,
 
     report: 30_000,
@@ -111,7 +115,6 @@ const CSRF_RETRYABLE_ERROR_CODES = new Set([
 ])
 
 const PUBLIC_MESSAGE_ERROR_CODES = new Set([
-    'INVALID_AUTH_RESPONSE',
     'VALIDATION_ERROR',
     'CONSTRAINT_VIOLATION',
     'BAD_REQUEST',
@@ -119,8 +122,14 @@ const PUBLIC_MESSAGE_ERROR_CODES = new Set([
     'TOO_MANY_REQUESTS',
     'QUOTA_EXCEEDED',
     'CHAT_QUOTA_EXCEEDED',
+    'AI_QUOTA_EXCEEDED',
     'CHAT_BUSY',
     'CHAT_TURN_IN_PROGRESS',
+    'IDEMPOTENCY_KEY_REUSED',
+    'AI_OUTCOME_AMBIGUOUS',
+    'CHAT_ACCESS_REVOKED_DURING_PROCESSING',
+    'CHAT_LEASE_UNAVAILABLE',
+    'CHAT_PROCESSOR_FENCED',
     'RESOURCE_CONFLICT',
 ])
 
@@ -973,7 +982,7 @@ async function parseErrorBody(
             REQUEST_ID_HEADER_NAME,
         ) ?? undefined
 
-    const retryAfterSeconds = parseRetryAfter(
+    const retryAfterFromHeader = parseRetryAfter(
         response.headers.get('Retry-After'),
     )
 
@@ -990,7 +999,7 @@ async function parseErrorBody(
                 message:
                     `Запрос завершился с кодом ${response.status}`,
                 requestId: responseRequestId,
-                retryAfterSeconds,
+                retryAfterSeconds: retryAfterFromHeader,
             }
         }
 
@@ -1000,9 +1009,16 @@ async function parseErrorBody(
             return invalidErrorBody(
                 response,
                 responseRequestId,
-                retryAfterSeconds,
+                retryAfterFromHeader,
             )
         }
+
+        const code = asOptionalString(parsed.code)
+        const error = asOptionalString(parsed.error)
+        const retryAfterFromBody =
+            asOptionalNonNegativeNumber(
+                parsed.retryAfterSeconds,
+            )
 
         return {
             timestamp: asOptionalString(
@@ -1011,7 +1027,8 @@ async function parseErrorBody(
             status:
                 asOptionalNumber(parsed.status)
                 ?? response.status,
-            error: asOptionalString(parsed.error),
+            code,
+            error: error ?? code,
             message: asOptionalString(
                 parsed.message,
             ),
@@ -1022,13 +1039,15 @@ async function parseErrorBody(
             fieldErrors: parseFieldErrors(
                 parsed.fieldErrors,
             ),
-            retryAfterSeconds,
+            retryAfterSeconds:
+                retryAfterFromHeader
+                ?? retryAfterFromBody,
         }
     } catch {
         return invalidErrorBody(
             response,
             responseRequestId,
-            retryAfterSeconds,
+            retryAfterFromHeader,
         )
     }
 }
@@ -1219,7 +1238,6 @@ function createRequestId(): string {
     return createSecureUuid()
 }
 
-
 function createAbortedApiError(
     requestId?: string,
 ): ApiError {
@@ -1337,6 +1355,16 @@ function asOptionalNumber(
         && Number.isFinite(value)
     )
         ? value
+        : undefined
+}
+
+function asOptionalNonNegativeNumber(
+    value: unknown,
+): number | undefined {
+    const parsed = asOptionalNumber(value)
+
+    return parsed !== undefined && parsed >= 0
+        ? parsed
         : undefined
 }
 

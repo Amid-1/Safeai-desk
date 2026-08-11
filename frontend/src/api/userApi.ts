@@ -46,7 +46,9 @@ export type User = {
     lastLoginAt: string | null
 }
 
-export type UserDetails = User
+export type UserDetails = User & {
+    organizationName: string | null
+}
 
 export type UserStatistics = {
     total: number
@@ -157,7 +159,7 @@ export async function getUserDetails(
         },
     )
 
-    return parseUser(response)
+    return parseUserDetails(response)
 }
 
 export async function getUserStatistics(
@@ -342,6 +344,42 @@ export function parseUser(
             record.lastLoginAt ?? null,
             `${field}.lastLoginAt`,
         ),
+    }
+}
+
+export function parseUserDetails(
+    value: unknown,
+    field = 'userDetails',
+): UserDetails {
+    const record = expectRecord(value, field)
+
+    const user = parseUser(
+        record,
+        field,
+    )
+
+    const organizationName =
+        expectNullableString(
+            record.organizationName ?? null,
+            `${field}.organizationName`,
+            {
+                maxLength: 255,
+            },
+        )
+
+    if (
+        organizationName !== null
+        && organizationName.trim()
+            !== organizationName
+    ) {
+        throw contractError(
+            `${field}.organizationName не нормализован`,
+        )
+    }
+
+    return {
+        ...user,
+        organizationName,
     }
 }
 

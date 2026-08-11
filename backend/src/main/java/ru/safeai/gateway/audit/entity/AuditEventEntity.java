@@ -24,28 +24,55 @@ public class AuditEventEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    @Column(name = "actor_user_id")
+    @Column(name = "actor_user_id", updatable = false)
     private UUID actorUserId;
 
-    @Column(name = "actor_organization_id")
+    @Column(
+            name = "actor_organization_id",
+            updatable = false
+    )
     private UUID actorOrganizationId;
 
-    @Column(name = "actor_email", length = 255)
+    @Column(
+            name = "actor_email",
+            length = 255,
+            updatable = false
+    )
     private String actorEmail;
 
-    @Column(name = "actor_display_name", length = 255)
+    @Column(
+            name = "actor_display_name",
+            length = 255,
+            updatable = false
+    )
     private String actorDisplayName;
 
     /**
-     * Целевая организация события.
+     * Target organization события.
      */
-    @Column(name = "organization_id", nullable = false)
+    @Column(
+            name = "organization_id",
+            nullable = false,
+            updatable = false
+    )
     private UUID organizationId;
+
+    /**
+     * Immutable snapshot имени target organization на момент события.
+     * Nullable только для legacy rows / аварийного best-effort snapshot.
+     */
+    @Column(
+            name = "target_organization_name",
+            length = 255,
+            updatable = false
+    )
+    private String targetOrganizationName;
 
     @Column(
             name = "event_type",
             nullable = false,
-            length = 100
+            length = 100,
+            updatable = false
     )
     private String eventType;
 
@@ -53,7 +80,8 @@ public class AuditEventEntity {
     @Column(
             name = "details",
             nullable = false,
-            columnDefinition = "jsonb"
+            columnDefinition = "jsonb",
+            updatable = false
     )
     private Map<String, Object> details = Map.of();
 
@@ -69,6 +97,18 @@ public class AuditEventEntity {
         if (id == null) {
             throw new IllegalStateException(
                     "AuditEventEntity.id должен быть установлен явно"
+            );
+        }
+
+        if (organizationId == null) {
+            throw new IllegalStateException(
+                    "AuditEventEntity.organizationId должен быть установлен явно"
+            );
+        }
+
+        if (eventType == null || eventType.isBlank()) {
+            throw new IllegalStateException(
+                    "AuditEventEntity.eventType должен быть установлен явно"
             );
         }
 

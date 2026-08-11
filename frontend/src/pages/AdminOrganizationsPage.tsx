@@ -4,15 +4,16 @@ import {
     useRef,
     useState,
 } from 'react'
-import type { SyntheticEvent } from 'react'
+import type { ReactNode, SyntheticEvent } from 'react'
 import {
     createOrganization,
     disableOrganization,
     enableOrganization,
+    getOrganizationDetails,
     getOrganizationDisableImpact,
     getOrganizations,
-    isOrganizationProtectionKnown,
     isProtectedOrganization,
+    normalizeOrganizationConfirmation,
     normalizeOrganizationName,
     updateOrganizationName,
 } from '../api/organizationApi'
@@ -39,6 +40,7 @@ import {
 } from '../components/StateBlock'
 import PageErrorBoundary
     from '../components/PageErrorBoundary'
+import './AdminOrganizationsPage.css'
 
 const PAGE_SIZE = 50
 const SUCCESS_MESSAGE_TIMEOUT_MS = 4_000
@@ -127,11 +129,25 @@ function AdminOrganizationsPageContent() {
         setDisableDialog,
     ] = useState<DisableDialogState>(null)
 
+    const [
+        detailsOrganization,
+        setDetailsOrganization,
+    ] = useState<Organization | null>(null)
+    const [
+        detailsLoadingId,
+        setDetailsLoadingId,
+    ] = useState<string | null>(null)
+    const [detailsError, setDetailsError] =
+        useState('')
+
     const loadSequenceRef = useRef(0)
     const loadControllerRef =
         useRef<AbortController | null>(null)
     const impactSequenceRef = useRef(0)
     const impactControllerRef =
+        useRef<AbortController | null>(null)
+    const detailsSequenceRef = useRef(0)
+    const detailsControllerRef =
         useRef<AbortController | null>(null)
 
     const creatingRef = useRef(false)
@@ -248,6 +264,7 @@ function AdminOrganizationsPageContent() {
         return () => {
             loadControllerRef.current?.abort()
             impactControllerRef.current?.abort()
+            detailsControllerRef.current?.abort()
         }
     }, [])
 
@@ -315,6 +332,81 @@ function AdminOrganizationsPageContent() {
         }
     }
 
+    async function openDetailsModal(
+        organization: Organization,
+    ) {
+        const sequence =
+            ++detailsSequenceRef.current
+
+        detailsControllerRef.current?.abort()
+
+        const controller =
+            new AbortController()
+
+        detailsControllerRef.current =
+            controller
+
+        setDetailsLoadingId(
+            organization.id,
+        )
+        setDetailsError('')
+
+        try {
+            const details =
+                await getOrganizationDetails(
+                    organization.id,
+                    {
+                        signal:
+                            controller.signal,
+                    },
+                )
+
+            if (
+                sequence
+                !== detailsSequenceRef.current
+            ) {
+                return
+            }
+
+            setDetailsOrganization(details)
+        } catch (error) {
+            if (
+                sequence
+                === detailsSequenceRef.current
+                && !isRequestAborted(error)
+            ) {
+                setDetailsError(
+                    getApiErrorMessage(
+                        error,
+                        'Не удалось загрузить сведения об организации.',
+                    ),
+                )
+
+                // Fallback на уже показанный page snapshot:
+                // пользователь всё равно увидит сведения,
+                // но предупреждение останется видимым.
+                setDetailsOrganization(
+                    organization,
+                )
+            }
+        } finally {
+            if (
+                sequence
+                === detailsSequenceRef.current
+            ) {
+                setDetailsLoadingId(null)
+            }
+        }
+    }
+
+    function closeDetailsModal() {
+        detailsSequenceRef.current += 1
+        detailsControllerRef.current?.abort()
+        setDetailsOrganization(null)
+        setDetailsLoadingId(null)
+        setDetailsError('')
+    }
+
     function openRenameModal(
         organization: Organization,
     ) {
@@ -361,16 +453,6 @@ function AdminOrganizationsPageContent() {
             return
         }
 
-        const expectedVersion =
-            requireOrganizationVersion(
-                renameOrganization,
-                setRenameError,
-            )
-
-        if (expectedVersion === null) {
-            return
-        }
-
         const normalizedName =
             normalizeOrganizationName(
                 renameValue,
@@ -403,7 +485,8 @@ function AdminOrganizationsPageContent() {
                         renameOrganization.id,
                         {
                             name: normalizedName,
-                            expectedVersion,
+                            expectedVersion:
+                                renameOrganization.version,
                         },
                     )
 
@@ -443,14 +526,7 @@ function AdminOrganizationsPageContent() {
         }
 
         const expectedVersion =
-            requireOrganizationVersion(
-                organization,
-                setMutationError,
-            )
-
-        if (expectedVersion === null) {
-            return
-        }
+            organization.version
 
         const sequence =
             ++impactSequenceRef.current
@@ -542,13 +618,18 @@ function AdminOrganizationsPageContent() {
         } = disableDialog
 
         if (
-            normalizeOrganizationName(
+            normalizeOrganizationConfirmation(
                 confirmationName,
             )
-            !== organization.name
+            !== normalizeOrganizationConfirmation(
+                organization.name,
+            )
         ) {
             setMutationError(
-                'Введите название организации точно.',
+                'Название организации не совпадает. '
+                + 'Регистр, кавычки и лишние пробелы '
+                + 'можно не повторять, но слова должны '
+                + 'совпадать без опечаток.',
             )
             return
         }
@@ -566,8 +647,10 @@ function AdminOrganizationsPageContent() {
                         {
                             expectedVersion:
                                 impact.organizationVersion,
-                            confirmationName:
-                                organization.name,
+                            // Backend должен проверять именно
+                            // то, что фактически ввёл оператор,
+                            // а не известное frontend-у правильное имя.
+                            confirmationName,
                         },
                     )
 
@@ -592,14 +675,7 @@ function AdminOrganizationsPageContent() {
             enableOrganizationTarget
 
         const expectedVersion =
-            requireOrganizationVersion(
-                organization,
-                setMutationError,
-            )
-
-        if (expectedVersion === null) {
-            return
-        }
+            organization.version
 
         await runOrganizationAction(
             {
@@ -675,10 +751,9 @@ function AdminOrganizationsPageContent() {
     function canMutateOrganization(
         organization: Organization,
     ): boolean {
-        return organization.version !== null
-            && !isProtectedOrganization(
-                organization,
-            )
+        return !isProtectedOrganization(
+            organization,
+        )
     }
 
     return (
@@ -803,7 +878,7 @@ function AdminOrganizationsPageContent() {
                                             Статус
                                         </th>
                                         <th>
-                                            Version
+                                            Версия
                                         </th>
                                         <th>
                                             Создана
@@ -828,6 +903,13 @@ function AdminOrganizationsPageContent() {
                                                     key={
                                                         organization.id
                                                     }
+                                                    className={
+                                                        !organization.enabled
+                                                            ? 'organizations-table__row--disabled'
+                                                            : organization.type === 'PLATFORM'
+                                                                ? 'organizations-table__row--platform'
+                                                                : undefined
+                                                    }
                                                 >
                                                     <td>
                                                         {
@@ -840,22 +922,23 @@ function AdminOrganizationsPageContent() {
                                                         }
                                                     </td>
                                                     <td>
-                                                        {
-                                                            organization.type
-                                                        }
+                                                        <OrganizationTypeBadge
+                                                            type={
+                                                                organization.type
+                                                            }
+                                                        />
                                                     </td>
                                                     <td>
-                                                        {
-                                                            organization.enabled
-                                                                ? 'включена'
-                                                                : 'отключена'
-                                                        }
+                                                        <OrganizationStatusBadge
+                                                            enabled={
+                                                                organization.enabled
+                                                            }
+                                                        />
                                                     </td>
                                                     <td>
-                                                        {
-                                                            organization.version
-                                                            ?? '—'
-                                                        }
+                                                        <span className="organization-version">
+                                                            v{organization.version}
+                                                        </span>
                                                     </td>
                                                     <td>
                                                         {
@@ -865,6 +948,27 @@ function AdminOrganizationsPageContent() {
                                                         }
                                                     </td>
                                                     <td className="actions-cell">
+                                                        <div className="organization-actions">
+                                                            <button
+                                                                type="button"
+                                                                className="secondary-button"
+                                                                disabled={
+                                                                    detailsLoadingId
+                                                                    === organization.id
+                                                                }
+                                                                onClick={() =>
+                                                                    void openDetailsModal(
+                                                                        organization,
+                                                                    )
+                                                                }
+                                                            >
+                                                                {detailsLoadingId
+                                                                    === organization.id
+                                                                    ? 'Загрузка...'
+                                                                    : 'Подробнее'}
+                                                            </button>
+                                                        </div>
+
                                                         {!mutable
                                                             ? (
                                                                 <span className="muted">
@@ -993,6 +1097,97 @@ function AdminOrganizationsPageContent() {
                     </div>
                 )}
 
+            {detailsOrganization && (
+                <Modal
+                    title="Подробнее об организации"
+                    onClose={
+                        closeDetailsModal
+                    }
+                    size="md"
+                >
+                    {detailsError && (
+                        <div
+                            className="error"
+                            role="alert"
+                        >
+                            {detailsError}
+                        </div>
+                    )}
+
+                    <div className="organization-details-heading">
+                        <div>
+                            <strong>
+                                {detailsOrganization.name}
+                            </strong>
+                            <span>
+                                {detailsOrganization.id}
+                            </span>
+                        </div>
+
+                        <OrganizationStatusBadge
+                            enabled={
+                                detailsOrganization.enabled
+                            }
+                        />
+                    </div>
+
+                    <dl className="organization-details">
+                        <OrganizationDetail
+                            term="Тип"
+                            value={
+                                <OrganizationTypeBadge
+                                    type={
+                                        detailsOrganization.type
+                                    }
+                                />
+                            }
+                        />
+                        <OrganizationDetail
+                            term="Защита"
+                            value={
+                                detailsOrganization.protected
+                                    ? 'Защищённая системная организация'
+                                    : 'Обычная клиентская организация'
+                            }
+                        />
+                        <OrganizationDetail
+                            term="Версия"
+                            value={
+                                `v${detailsOrganization.version}`
+                            }
+                        />
+                        <OrganizationDetail
+                            term="Дата создания"
+                            value={
+                                formatDateTime(
+                                    detailsOrganization.createdAt,
+                                )
+                            }
+                        />
+                        <OrganizationDetail
+                            term="Последнее изменение"
+                            value={
+                                detailsOrganization.updatedAt
+                                    ? formatDateTime(
+                                        detailsOrganization.updatedAt,
+                                    )
+                                    : '—'
+                            }
+                        />
+                    </dl>
+
+                    {detailsOrganization.type
+                        === 'PLATFORM'
+                        && (
+                            <div className="organization-platform-note">
+                                PLATFORM используется самой платформой
+                                SafeAI Desk и защищена от обычных
+                                переименований, включения и отключения.
+                            </div>
+                        )}
+                </Modal>
+            )}
+
             {renameOrganization && (
                 <Modal
                     title={
@@ -1111,7 +1306,7 @@ function AdminOrganizationsPageContent() {
                             }
                         />
                         <Impact
-                            term="Активных chat operations"
+                            term="Активных операций чата"
                             value={
                                 disableDialog.impact.activeChatOperations
                             }
@@ -1156,6 +1351,30 @@ function AdminOrganizationsPageContent() {
                                     hasPendingAction
                                 }
                             />
+
+                            <span className="organization-confirmation-hint">
+                                Регистр, вид кавычек и лишние
+                                пробелы не учитываются. Например:
+                                {' '}
+                                <strong>
+                                    ООО &quot;Зил&quot;
+                                </strong>
+                                {' '}
+                                можно ввести как
+                                {' '}
+                                <strong>
+                                    ооо зил
+                                </strong>
+                                {' '}
+                                или
+                                {' '}
+                                <strong>
+                                    ООО «ЗИЛ»
+                                </strong>
+                                . При этом ООО/АО и само
+                                название должны совпадать
+                                без опечаток.
+                            </span>
                         </label>
 
                         <div className="modal-actions">
@@ -1179,10 +1398,12 @@ function AdminOrganizationsPageContent() {
                                 className="danger-button"
                                 disabled={
                                     hasPendingAction
-                                    || normalizeOrganizationName(
+                                    || normalizeOrganizationConfirmation(
                                         disableDialog.confirmationName,
                                     )
-                                        !== disableDialog.organization.name
+                                        !== normalizeOrganizationConfirmation(
+                                            disableDialog.organization.name,
+                                        )
                                 }
                             >
                                 {hasPendingAction
@@ -1271,63 +1492,88 @@ function Impact({
     )
 }
 
-function requireOrganizationVersion(
-    organization: Organization,
-    setError:
-        (message: string) => void,
-): number | null {
-    if (organization.version !== null) {
-        return organization.version
-    }
-
-    setError(
-        'Backend не вернул version организации. '
-        + 'Операция заблокирована fail-closed.',
-    )
-    return null
-}
-
 function getProtectionError(
     organization: Organization,
 ): string {
-    if (
-        !isOrganizationProtectionKnown(
-            organization,
+    return isProtectedOrganization(
+        organization,
+    )
+        ? (
+            'Платформенная организация защищена '
+            + 'и не изменяется через обычный '
+            + 'organization-management.'
         )
-    ) {
-        return (
-            'Backend не вернул type/protected. '
-            + 'Mutation заблокирована fail-closed.'
-        )
-    }
-
-    return 'Защищённую организацию изменять нельзя.'
+        : 'Организация недоступна для изменения.'
 }
 
 function getProtectionLabel(
     organization: Organization,
 ): string {
-    if (
-        !isOrganizationProtectionKnown(
-            organization,
-        )
-    ) {
-        return 'Контракт защиты неизвестен'
-    }
+    return isProtectedOrganization(
+        organization,
+    )
+        ? 'Защищённая системная организация'
+        : 'Недоступно'
+}
 
-    if (
-        isProtectedOrganization(
-            organization,
-        )
-    ) {
-        return 'Защищённая организация'
-    }
+function OrganizationStatusBadge({
+    enabled,
+}: {
+    enabled: boolean
+}) {
+    return (
+        <span
+            className={
+                enabled
+                    ? 'organization-status organization-status--enabled'
+                    : 'organization-status organization-status--disabled'
+            }
+        >
+            <span
+                className="organization-status__dot"
+                aria-hidden="true"
+            />
+            {enabled
+                ? 'Включена'
+                : 'Отключена'}
+        </span>
+    )
+}
 
-    if (organization.version === null) {
-        return 'Version отсутствует'
-    }
+function OrganizationTypeBadge({
+    type,
+}: {
+    type: Organization['type']
+}) {
+    return (
+        <span
+            className={
+                type === 'PLATFORM'
+                    ? 'organization-type organization-type--platform'
+                    : 'organization-type organization-type--tenant'
+            }
+            title={type}
+        >
+            {type === 'PLATFORM'
+                ? 'Платформенная'
+                : 'Клиентская'}
+        </span>
+    )
+}
 
-    return 'Недоступно'
+function OrganizationDetail({
+    term,
+    value,
+}: {
+    term: string
+    value: ReactNode
+}) {
+    return (
+        <div className="organization-details__row">
+            <dt>{term}</dt>
+            <dd>{value}</dd>
+        </div>
+    )
 }
 
 function isVersionConflict(

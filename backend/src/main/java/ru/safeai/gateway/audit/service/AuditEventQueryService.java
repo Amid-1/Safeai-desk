@@ -183,6 +183,7 @@ public class AuditEventQueryService {
                 entity.getActorUserId(),
                 entity.getActorOrganizationId(),
                 entity.getOrganizationId(),
+                entity.getTargetOrganizationName(),
                 entity.getActorEmail(),
                 entity.getActorDisplayName(),
                 entity.getEventType(),

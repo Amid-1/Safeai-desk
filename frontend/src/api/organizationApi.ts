@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/api/organizationApi.ts
+// ============================================================
 import {
     API_TIMEOUTS,
     apiRequest,
@@ -13,7 +16,7 @@ import {
     expectBoolean,
     expectEnum,
     expectInstant,
-    expectOptionalNonNegativeInteger,
+    expectNonNegativeInteger,
     expectRecord,
     expectString,
     expectUuid,
@@ -26,24 +29,21 @@ const ORGANIZATION_TYPES = [
     'TENANT',
 ] as const
 
+const ORGANIZATION_CONFIRMATION_QUOTES =
+    /["'«»„“”‘’‚‛‹›`´]+/g
+
 export type OrganizationType =
-    | 'PLATFORM'
-    | 'TENANT'
-    | 'UNKNOWN'
+    typeof ORGANIZATION_TYPES[number]
 
 export type Organization = {
     id: string
     name: string
     enabled: boolean
-
-    // UNKNOWN/null поддерживают чтение старого DTO.
-    // Mutations при неизвестной защите блокируются fail-closed.
     type: OrganizationType
-    protected: boolean | null
-    version: number | null
-
+    protected: boolean
+    version: number
     createdAt: string
-    updatedAt: string | null
+    updatedAt: string
 }
 
 export type OrganizationDirectoryItem = {
@@ -51,7 +51,8 @@ export type OrganizationDirectoryItem = {
     name: string
     enabled: boolean
     type: OrganizationType
-    protected: boolean | null
+    protected: boolean
+    version: number
 }
 
 export type OrganizationDisableImpact = {
@@ -85,6 +86,25 @@ type RequestOptions = {
     signal?: AbortSignal
 }
 
+type ParsedOrganizationCore = {
+    id: string
+    name: string
+    enabled: boolean
+    type: OrganizationType
+    protected: boolean
+    version: number
+}
+
+function organizationPath(
+    organizationId: string,
+    suffix = '',
+): string {
+    return (
+        `/api/organizations/${uuidPathSegment(organizationId)}`
+        + suffix
+    )
+}
+
 export async function getOrganizations(
     page = 0,
     size = 50,
@@ -95,7 +115,7 @@ export async function getOrganizations(
         size: normalizePageSize(
             size,
             50,
-            200,
+            100,
         ),
     })
 
@@ -111,6 +131,25 @@ export async function getOrganizations(
     return parsePageResponse(
         response,
         parseOrganization,
+    )
+}
+
+export async function getOrganizationDetails(
+    organizationId: string,
+    options: RequestOptions = {},
+): Promise<Organization> {
+    const response = await apiRequest<unknown>(
+        organizationPath(organizationId),
+        {
+            method: 'GET',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseOrganization(
+        response,
+        'organizationDetails',
     )
 }
 
@@ -175,7 +214,7 @@ export async function updateOrganizationName(
     options: RequestOptions = {},
 ): Promise<Organization> {
     const response = await apiRequest<unknown>(
-        `/api/organizations/${uuidPathSegment(organizationId)}`,
+        organizationPath(organizationId),
         {
             method: 'PATCH',
             json: request,
@@ -192,7 +231,10 @@ export async function getOrganizationDisableImpact(
     options: RequestOptions = {},
 ): Promise<OrganizationDisableImpact> {
     const response = await apiRequest<unknown>(
-        `/api/organizations/${uuidPathSegment(organizationId)}/disable-impact`,
+        organizationPath(
+            organizationId,
+            '/disable-impact',
+        ),
         {
             method: 'GET',
             signal: options.signal,
@@ -211,7 +253,10 @@ export async function disableOrganization(
     options: RequestOptions = {},
 ): Promise<Organization> {
     const response = await apiRequest<unknown>(
-        `/api/organizations/${uuidPathSegment(organizationId)}/disable`,
+        organizationPath(
+            organizationId,
+            '/disable',
+        ),
         {
             method: 'POST',
             json: request,
@@ -229,7 +274,10 @@ export async function enableOrganization(
     options: RequestOptions = {},
 ): Promise<Organization> {
     const response = await apiRequest<unknown>(
-        `/api/organizations/${uuidPathSegment(organizationId)}/enable`,
+        organizationPath(
+            organizationId,
+            '/enable',
+        ),
         {
             method: 'POST',
             json: request,
@@ -246,70 +294,34 @@ export function parseOrganization(
     field = 'organization',
 ): Organization {
     const record = expectRecord(value, field)
-
-    const rawType = record.type
-    const type = rawType === undefined
-        ? 'UNKNOWN'
-        : expectEnum(
-            rawType,
-            `${field}.type`,
-            ORGANIZATION_TYPES,
-        )
-
-    const protectedValue =
-        record.protected === undefined
-            ? null
-            : expectBoolean(
-                record.protected,
-                `${field}.protected`,
-            )
+    const core = parseOrganizationCore(
+        record,
+        field,
+    )
 
     return {
-        id: expectUuid(
-            record.id,
-            `${field}.id`,
-        ),
-        name: expectString(
-            record.name,
-            `${field}.name`,
-            {
-                maxLength: 255,
-            },
-        ),
-        enabled: expectBoolean(
-            record.enabled,
-            `${field}.enabled`,
-        ),
-        type,
-        protected: protectedValue,
-        version:
-            expectOptionalNonNegativeInteger(
-                record.version,
-                `${field}.version`,
-            ),
+        ...core,
         createdAt: expectInstant(
             record.createdAt,
             `${field}.createdAt`,
         ),
-        updatedAt:
-            record.updatedAt === undefined
-            || record.updatedAt === null
-                ? null
-                : expectInstant(
-                    record.updatedAt,
-                    `${field}.updatedAt`,
-                ),
+        updatedAt: expectInstant(
+            record.updatedAt,
+            `${field}.updatedAt`,
+        ),
     }
 }
 
-export function isOrganizationProtectionKnown(
-    organization: Pick<
-        Organization,
-        'type' | 'protected'
-    >,
-): boolean {
-    return organization.type !== 'UNKNOWN'
-        && organization.protected !== null
+export function parseOrganizationDirectoryItem(
+    value: unknown,
+    field = 'organizationDirectoryItem',
+): OrganizationDirectoryItem {
+    const record = expectRecord(value, field)
+
+    return parseOrganizationCore(
+        record,
+        field,
+    )
 }
 
 export function isProtectedOrganization(
@@ -318,11 +330,7 @@ export function isProtectedOrganization(
         'type' | 'protected'
     >,
 ): boolean {
-    // Fail-closed: неизвестный contract не даёт mutation-кнопок.
-    return !isOrganizationProtectionKnown(
-        organization,
-    )
-        || organization.protected === true
+    return organization.protected
         || organization.type === 'PLATFORM'
 }
 
@@ -334,27 +342,104 @@ export function normalizeOrganizationName(
         .replace(/\s+/g, ' ')
 }
 
-function parseOrganizationDirectoryItem(
-    value: unknown,
+/**
+ * Нормализация только для typed confirmation опасной операции.
+ *
+ * Не используется для сохранения/переименования организации:
+ * уникальность имени на backend имеет отдельную семантику.
+ */
+export function normalizeOrganizationConfirmation(
+    value: string,
+): string {
+    return normalizeOrganizationName(
+        value
+            .normalize('NFKC')
+            .replace(
+                ORGANIZATION_CONFIRMATION_QUOTES,
+                ' ',
+            ),
+    ).toLowerCase()
+}
+
+function parseOrganizationCore(
+    record: Record<string, unknown>,
     field: string,
-): OrganizationDirectoryItem {
-    const record = expectRecord(value, field)
-    const parsed = parseOrganization(
-        {
-            ...record,
-            createdAt:
-                record.createdAt
-                ?? '1970-01-01T00:00:00Z',
-        },
+): ParsedOrganizationCore {
+    const type = expectEnum(
+        record.type,
+        `${field}.type`,
+        ORGANIZATION_TYPES,
+    )
+
+    const protectedOrganization =
+        expectBoolean(
+            record.protected,
+            `${field}.protected`,
+        )
+
+    validateProtectionContract(
+        type,
+        protectedOrganization,
         field,
     )
 
+    const name = expectString(
+        record.name,
+        `${field}.name`,
+        {
+            maxLength: 255,
+        },
+    )
+
+    if (
+        normalizeOrganizationName(name)
+        !== name
+    ) {
+        throw contractError(
+            `${field}.name не канонизирован`,
+        )
+    }
+
     return {
-        id: parsed.id,
-        name: parsed.name,
-        enabled: parsed.enabled,
-        type: parsed.type,
-        protected: parsed.protected,
+        id: expectUuid(
+            record.id,
+            `${field}.id`,
+        ),
+        name,
+        enabled: expectBoolean(
+            record.enabled,
+            `${field}.enabled`,
+        ),
+        type,
+        protected: protectedOrganization,
+        version: expectNonNegativeInteger(
+            record.version,
+            `${field}.version`,
+        ),
+    }
+}
+
+function validateProtectionContract(
+    type: OrganizationType,
+    protectedOrganization: boolean,
+    field: string,
+): void {
+    if (
+        type === 'PLATFORM'
+        && !protectedOrganization
+    ) {
+        throw contractError(
+            `${field}: PLATFORM должна быть protected`,
+        )
+    }
+
+    if (
+        type === 'TENANT'
+        && protectedOrganization
+    ) {
+        throw contractError(
+            `${field}: TENANT не может быть protected`,
+        )
     }
 }
 
@@ -372,42 +457,29 @@ function parseOrganizationDisableImpact(
             'organizationDisableImpact.organizationId',
         ),
         organizationVersion:
-            parseCount(
+            expectNonNegativeInteger(
                 record.organizationVersion,
                 'organizationDisableImpact.organizationVersion',
             ),
-        enabledUsers: parseCount(
-            record.enabledUsers,
-            'organizationDisableImpact.enabledUsers',
-        ),
-        administrators: parseCount(
-            record.administrators,
-            'organizationDisableImpact.administrators',
-        ),
-        activeRefreshSessions: parseCount(
-            record.activeRefreshSessions,
-            'organizationDisableImpact.activeRefreshSessions',
-        ),
-        activeChatOperations: parseCount(
-            record.activeChatOperations,
-            'organizationDisableImpact.activeChatOperations',
-        ),
+        enabledUsers:
+            expectNonNegativeInteger(
+                record.enabledUsers,
+                'organizationDisableImpact.enabledUsers',
+            ),
+        administrators:
+            expectNonNegativeInteger(
+                record.administrators,
+                'organizationDisableImpact.administrators',
+            ),
+        activeRefreshSessions:
+            expectNonNegativeInteger(
+                record.activeRefreshSessions,
+                'organizationDisableImpact.activeRefreshSessions',
+            ),
+        activeChatOperations:
+            expectNonNegativeInteger(
+                record.activeChatOperations,
+                'organizationDisableImpact.activeChatOperations',
+            ),
     }
-}
-
-function parseCount(
-    value: unknown,
-    field: string,
-): number {
-    if (
-        typeof value !== 'number'
-        || !Number.isInteger(value)
-        || value < 0
-    ) {
-        throw contractError(
-            `${field} должен быть неотрицательным целым числом`,
-        )
-    }
-
-    return value
 }

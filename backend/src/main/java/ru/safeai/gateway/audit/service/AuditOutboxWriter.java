@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.entity.AuditOutboxEntity;
 import ru.safeai.gateway.audit.model.AuditActor;
 import ru.safeai.gateway.audit.repository.AuditOutboxRepository;
+import ru.safeai.gateway.audit.spi.AuditTargetOrganizationSnapshotProvider;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -16,6 +17,8 @@ import java.time.Instant;
 public class AuditOutboxWriter {
 
     private final AuditOutboxRepository repository;
+    private final AuditTargetOrganizationSnapshotProvider
+            targetOrganizationSnapshotProvider;
     private final Clock clock;
 
     @Transactional(propagation = Propagation.REQUIRED)
@@ -48,6 +51,15 @@ public class AuditOutboxWriter {
         entity.setTargetOrganizationId(
                 command.targetOrganizationId()
         );
+
+        entity.setTargetOrganizationName(
+                targetOrganizationSnapshotProvider
+                        .findName(
+                                command.targetOrganizationId()
+                        )
+                        .orElse(null)
+        );
+
         entity.setEventType(command.eventType().name());
         entity.setDetails(command.details());
         entity.setOccurredAt(command.occurredAt());

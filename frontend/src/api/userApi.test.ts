@@ -10,6 +10,7 @@ import {
 } from 'vitest'
 import {
     parseUser,
+    parseUserDetails,
     parseUserStatistics,
     updateUserRoles,
 } from './userApi'
@@ -96,6 +97,42 @@ describe('userApi', () => {
             }),
         ).toThrow(
             'не канонизирован',
+        )
+    })
+
+    it('details parser принимает название организации', () => {
+        const details =
+            parseUserDetails({
+                ...USER,
+                organizationName:
+                    'ZIL Production',
+            })
+
+        expect(
+            details.organizationName,
+        ).toBe(
+            'ZIL Production',
+        )
+    })
+
+    it('details parser допускает старый ответ без названия организации', () => {
+        const details =
+            parseUserDetails(USER)
+
+        expect(
+            details.organizationName,
+        ).toBeNull()
+    })
+
+    it('details parser отклоняет ненормализованное название организации', () => {
+        expect(() =>
+            parseUserDetails({
+                ...USER,
+                organizationName:
+                    ' ZIL Production ',
+            }),
+        ).toThrow(
+            'organizationName не нормализован',
         )
     })
 

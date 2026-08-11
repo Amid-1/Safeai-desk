@@ -1,3 +1,5 @@
+// frontend/src/pages/adminUsage.helpers.ts
+
 import type {
     UsageFilter,
 } from '../api/adminApi'
@@ -34,7 +36,7 @@ export const MAX_USAGE_RANGE_DAYS =
     366
 
 const USAGE_TABS:
-    readonly UsageTab[] = [
+readonly UsageTab[] = [
     'summary',
     'users',
     'models',
@@ -141,7 +143,7 @@ export function toUsageFilter(
     organizationId: string
 } {
     const normalized:
-        UsageDraftFilter = {
+    UsageDraftFilter = {
         dateFrom:
             draft.dateFrom.trim(),
         dateTo:
@@ -191,66 +193,6 @@ export function toUsageFilter(
         organizationId:
             normalized.organizationId,
     }
-}
-
-export function buildUsageSearch(
-    tab: UsageTab,
-    draft: UsageDraftFilter,
-    page: number,
-    superAdmin: boolean,
-): string {
-    const params =
-        new URLSearchParams()
-
-    params.set('report', tab)
-    params.set(
-        'dateFrom',
-        draft.dateFrom,
-    )
-    params.set(
-        'dateTo',
-        draft.dateTo,
-    )
-
-    if (draft.model) {
-        params.set(
-            'model',
-            draft.model,
-        )
-    }
-
-    if (
-        superAdmin
-        && draft.organizationId
-    ) {
-        params.set(
-            'organizationId',
-            draft.organizationId,
-        )
-    }
-
-    if (page > 0) {
-        params.set(
-            'page',
-            String(page),
-        )
-    }
-
-    return `?${params.toString()}`
-}
-
-export function usageDraftFiltersEqual(
-    first: UsageDraftFilter,
-    second: UsageDraftFilter,
-): boolean {
-    return first.dateFrom
-        === second.dateFrom
-        && first.dateTo
-            === second.dateTo
-        && first.model
-            === second.model
-        && first.organizationId
-            === second.organizationId
 }
 
 function normalizeModel(

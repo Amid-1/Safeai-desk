@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/api/organizationApi.test.ts
+// ============================================================
 import {
     beforeEach,
     describe,
@@ -7,9 +10,13 @@ import {
 } from 'vitest'
 import {
     disableOrganization,
+    enableOrganization,
+    getOrganizationDetails,
     isProtectedOrganization,
+    normalizeOrganizationConfirmation,
     normalizeOrganizationName,
     parseOrganization,
+    parseOrganizationDirectoryItem,
     updateOrganizationName,
 } from './organizationApi'
 import { apiRequest } from './http'
@@ -47,26 +54,22 @@ describe('organizationApi', () => {
         vi.clearAllMocks()
     })
 
-    it('неизвестный protection contract считается защищённым', () => {
-        const parsed =
-            parseOrganization({
-                id: ORGANIZATION.id,
-                name: ORGANIZATION.name,
-                enabled: true,
-                createdAt:
-                    ORGANIZATION.createdAt,
-            })
+    it('отклоняет ответ без type', () => {
+        const {
+            type: _type,
+            ...withoutType
+        } = ORGANIZATION
 
-        expect(parsed.type).toBe('UNKNOWN')
-        expect(parsed.protected).toBeNull()
-        expect(
-            isProtectedOrganization(
-                parsed,
+        expect(() =>
+            parseOrganization(
+                withoutType,
             ),
-        ).toBe(true)
+        ).toThrow(
+            'неизвестное значение',
+        )
     })
 
-    it('неизвестный organization type отклоняется', () => {
+    it('отклоняет неизвестный organization type', () => {
         expect(() =>
             parseOrganization({
                 ...ORGANIZATION,
@@ -74,6 +77,29 @@ describe('organizationApi', () => {
             }),
         ).toThrow(
             'неизвестное значение',
+        )
+    })
+
+    it('отклоняет PLATFORM без protected', () => {
+        expect(() =>
+            parseOrganization({
+                ...ORGANIZATION,
+                type: 'PLATFORM',
+                protected: false,
+            }),
+        ).toThrow(
+            'PLATFORM должна быть protected',
+        )
+    })
+
+    it('отклоняет TENANT с protected=true', () => {
+        expect(() =>
+            parseOrganization({
+                ...ORGANIZATION,
+                protected: true,
+            }),
+        ).toThrow(
+            'TENANT не может быть protected',
         )
     })
 
@@ -94,6 +120,109 @@ describe('organizationApi', () => {
                 '  Demo   Company  ',
             ),
         ).toBe('Demo Company')
+    })
+
+
+    it('confirmation игнорирует регистр, кавычки и лишние пробелы', () => {
+        const expected =
+            normalizeOrganizationConfirmation(
+                'ООО "Зил"',
+            )
+
+        const accepted = [
+            'ООО "Зил"',
+            'ооо "зил"',
+            'ООО «ЗИЛ»',
+            "ООО 'Зил'",
+            'ООО Зил',
+            '  ООО   «Зил»  ',
+            'ООО „Зил“',
+            'ООО “Зил”',
+        ]
+
+        accepted.forEach((value) => {
+            expect(
+                normalizeOrganizationConfirmation(
+                    value,
+                ),
+            ).toBe(expected)
+        })
+    })
+
+    it('confirmation не допускает смысловые опечатки', () => {
+        const expected =
+            normalizeOrganizationConfirmation(
+                'ООО "Зил"',
+            )
+
+        const rejected = [
+            'Зил',
+            'ООО Зел',
+            'ООО Зилл',
+            'ООО Зио',
+            'АО Зил',
+            'ООО З И Л',
+            'ООО-Зил',
+        ]
+
+        rejected.forEach((value) => {
+            expect(
+                normalizeOrganizationConfirmation(
+                    value,
+                ),
+            ).not.toBe(expected)
+        })
+    })
+
+    it('directory parser не фабрикует createdAt', () => {
+        const parsed =
+            parseOrganizationDirectoryItem({
+                id: ORGANIZATION.id,
+                name: ORGANIZATION.name,
+                enabled: true,
+                type: 'TENANT',
+                protected: false,
+                version: 12,
+            })
+
+        expect(parsed.version).toBe(12)
+        expect(parsed.type).toBe('TENANT')
+    })
+
+    it('PLATFORM считается защищённой', () => {
+        expect(
+            isProtectedOrganization({
+                type: 'PLATFORM',
+                protected: true,
+            }),
+        ).toBe(true)
+    })
+
+    it('TENANT считается изменяемой', () => {
+        expect(
+            isProtectedOrganization({
+                type: 'TENANT',
+                protected: false,
+            }),
+        ).toBe(false)
+    })
+
+    it('details использует отдельный GET endpoint', async () => {
+        requestMock.mockResolvedValue(
+            ORGANIZATION,
+        )
+
+        await getOrganizationDetails(
+            ORGANIZATION.id,
+        )
+
+        expect(requestMock)
+            .toHaveBeenCalledWith(
+                `/api/organizations/${ORGANIZATION.id}`,
+                expect.objectContaining({
+                    method: 'GET',
+                }),
+            )
     })
 
     it('rename передаёт expectedVersion', async () => {
@@ -122,19 +251,22 @@ describe('organizationApi', () => {
             )
     })
 
-    it('disable требует typed confirmation и expectedVersion', async () => {
+    it('disable передаёт введённое confirmationName без подмены', async () => {
         requestMock.mockResolvedValue({
             ...ORGANIZATION,
             enabled: false,
             version: 13,
         })
 
+        const typedConfirmation =
+            '  demo   company  '
+
         await disableOrganization(
             ORGANIZATION.id,
             {
                 expectedVersion: 12,
                 confirmationName:
-                    ORGANIZATION.name,
+                    typedConfirmation,
             },
         )
 
@@ -146,7 +278,33 @@ describe('organizationApi', () => {
                     json: {
                         expectedVersion: 12,
                         confirmationName:
-                            ORGANIZATION.name,
+                            typedConfirmation,
+                    },
+                }),
+            )
+    })
+
+    it('enable передаёт expectedVersion', async () => {
+        requestMock.mockResolvedValue({
+            ...ORGANIZATION,
+            enabled: true,
+            version: 14,
+        })
+
+        await enableOrganization(
+            ORGANIZATION.id,
+            {
+                expectedVersion: 13,
+            },
+        )
+
+        expect(requestMock)
+            .toHaveBeenCalledWith(
+                `/api/organizations/${ORGANIZATION.id}/enable`,
+                expect.objectContaining({
+                    method: 'POST',
+                    json: {
+                        expectedVersion: 13,
                     },
                 }),
             )

@@ -1,3 +1,4 @@
+// frontend/src/pages/ChatPage.tsx
 import {
     useCallback,
     useEffect,
@@ -10,6 +11,7 @@ import type { KeyboardEvent } from 'react'
 import {
     createChat,
     getChatById,
+    getChatCapabilities,
     getChatMessages,
     getChats,
     getChatTurnStatus,
@@ -17,15 +19,16 @@ import {
 } from '../api/chatApi'
 import type {
     Chat,
+    ChatCapabilities,
     ChatDetails,
+    ChatMessage,
+    ChatTurnStatus,
+    SendMessageResponse,
 } from '../api/chatApi'
 import {
     ApiError,
     getApiErrorMessage,
 } from '../api/http'
-import {
-    normalizePageResponse,
-} from '../utils/page'
 import {
     EmptyState,
     ErrorState,
@@ -40,6 +43,8 @@ import {
     formatUsage,
     getAiResponseLabel,
     hasMeaningfulContent,
+    isProcessingPendingStatus,
+    isSafeToPrepareNewRequest,
     mergeChatDetails,
     mergeChats,
     mergeMessages,
@@ -48,15 +53,24 @@ import {
 } from './chatPage.helpers'
 import type {
     PendingTurn,
-    PendingTurnStatus,
 } from './chatPage.helpers'
+import {
+    createSecureUuid,
+} from '../utils/secureUuid'
 
-const CHAT_PAGE_SIZE = 50
-const MESSAGE_PAGE_SIZE = 50
-const MESSAGE_MAX_LENGTH = 10_000
+const DEFAULT_CHAT_PAGE_SIZE = 50
+const DEFAULT_MESSAGE_PAGE_SIZE = 50
+const DEFAULT_MESSAGE_MAX_LENGTH = 16_000
 
 const RECONCILIATION_ATTEMPTS = 12
 const RECONCILIATION_DELAY_MS = 2_500
+
+const DEFAULT_CAPABILITIES: ChatCapabilities = {
+    maxMessageChars: DEFAULT_MESSAGE_MAX_LENGTH,
+    maxChatPageSize: 100,
+    maxMessagePageSize: 100,
+    detailsMessageLimit: 50,
+}
 
 type ScrollIntent =
     | { type: 'BOTTOM' }
@@ -76,6 +90,11 @@ function ChatPage() {
 }
 
 function ChatPageContent() {
+    const [capabilities, setCapabilities] =
+        useState<ChatCapabilities>(
+            DEFAULT_CAPABILITIES,
+        )
+
     const [chats, setChats] =
         useState<Chat[]>([])
     const [activeChat, setActiveChat] =
@@ -99,35 +118,23 @@ function ChatPageContent() {
 
     const [chatsLoading, setChatsLoading] =
         useState(true)
-    const [
-        moreChatsLoading,
-        setMoreChatsLoading,
-    ] = useState(false)
+    const [moreChatsLoading, setMoreChatsLoading] =
+        useState(false)
     const [chatCreating, setChatCreating] =
         useState(false)
-    const [
-        openingChatId,
-        setOpeningChatId,
-    ] = useState<string | null>(null)
-    const [
-        historyLoading,
-        setHistoryLoading,
-    ] = useState(false)
+    const [openingChatId, setOpeningChatId] =
+        useState<string | null>(null)
+    const [historyLoading, setHistoryLoading] =
+        useState(false)
 
     const [chatPage, setChatPage] =
         useState(0)
-    const [
-        chatTotalPages,
-        setChatTotalPages,
-    ] = useState(0)
-    const [
-        historyPage,
-        setHistoryPage,
-    ] = useState(1)
-    const [
-        historyTotalPages,
-        setHistoryTotalPages,
-    ] = useState<number | null>(null)
+    const [chatHasNext, setChatHasNext] =
+        useState(false)
+    const [historyPage, setHistoryPage] =
+        useState(1)
+    const [historyHasNext, setHistoryHasNext] =
+        useState(false)
     const [reloadToken, setReloadToken] =
         useState(0)
     const [clock, setClock] =
@@ -166,8 +173,7 @@ function ChatPageContent() {
         useRef<ScrollIntent>(null)
 
     useEffect(() => {
-        pendingTurnsRef.current =
-            pendingTurns
+        pendingTurnsRef.current = pendingTurns
     }, [pendingTurns])
 
     useEffect(() => {
@@ -189,10 +195,7 @@ function ChatPageContent() {
                 activePendingTurn,
             )
             : [],
-        [
-            activeChat,
-            activePendingTurn,
-        ],
+        [activeChat, activePendingTurn],
     )
 
     const activeChatHasPending =
@@ -200,17 +203,20 @@ function ChatPageContent() {
 
     const activeChatBusy = Boolean(
         activePendingTurn
-        && !isTerminalPendingStatus(
+        && isProcessingPendingStatus(
             activePendingTurn.status,
         ),
     )
 
-    const canLoadEarlier =
-        activeChat !== null
-        && (
-            historyTotalPages === null
-            || historyPage < historyTotalPages
-        )
+    const messagePageSize = Math.min(
+        DEFAULT_MESSAGE_PAGE_SIZE,
+        capabilities.maxMessagePageSize,
+    )
+
+    const chatPageSize = Math.min(
+        DEFAULT_CHAT_PAGE_SIZE,
+        capabilities.maxChatPageSize,
+    )
 
     const openChat = useCallback(
         async (chatId: string) => {
@@ -230,20 +236,31 @@ function ChatPageContent() {
             setChatError('')
             setSendError('')
             setHistoryPage(1)
-            setHistoryTotalPages(null)
+            setHistoryHasNext(false)
             setHistoryLoading(false)
 
             historyRequestSequenceRef.current += 1
 
             try {
-                const details =
-                    await getChatById(
-                        chatId,
-                        {
-                            signal:
-                                controller.signal,
-                        },
-                    )
+                const [details, firstMessageSlice] =
+                    await Promise.all([
+                        getChatById(
+                            chatId,
+                            {
+                                signal:
+                                    controller.signal,
+                            },
+                        ),
+                        getChatMessages(
+                            chatId,
+                            0,
+                            messagePageSize,
+                            {
+                                signal:
+                                    controller.signal,
+                            },
+                        ),
+                    ])
 
                 if (
                     sequence
@@ -256,7 +273,19 @@ function ChatPageContent() {
                     type: 'BOTTOM',
                 }
 
-                setActiveChat(details)
+                setActiveChat({
+                    ...details,
+                    // /messages is the source of truth for pagination.
+                    // mergeMessages restores chronological display order.
+                    messages: mergeMessages(
+                        [],
+                        firstMessageSlice.content,
+                    ),
+                })
+                setHistoryPage(1)
+                setHistoryHasNext(
+                    firstMessageSlice.hasNext,
+                )
             } catch (error) {
                 if (
                     sequence
@@ -279,7 +308,7 @@ function ChatPageContent() {
                 }
             }
         },
-        [],
+        [messagePageSize],
     )
 
     useEffect(() => {
@@ -299,9 +328,40 @@ function ChatPageContent() {
             setListError('')
 
             try {
+                // Capabilities were introduced together with this frontend.
+                // A 404 during a rolling deployment is safe: bounded defaults
+                // keep the older backend usable until all nodes are upgraded.
+                let runtimeCapabilities =
+                    DEFAULT_CAPABILITIES
+
+                try {
+                    runtimeCapabilities =
+                        await getChatCapabilities({
+                            signal: controller.signal,
+                        })
+                } catch (error) {
+                    if (isRequestAborted(error)) {
+                        return
+                    }
+                }
+
+                if (
+                    sequence
+                    !== listRequestSequenceRef.current
+                ) {
+                    return
+                }
+
+                setCapabilities(runtimeCapabilities)
+
+                const requestedSize = Math.min(
+                    DEFAULT_CHAT_PAGE_SIZE,
+                    runtimeCapabilities.maxChatPageSize,
+                )
+
                 const response = await getChats(
                     0,
-                    CHAT_PAGE_SIZE,
+                    requestedSize,
                     {
                         signal:
                             controller.signal,
@@ -315,22 +375,18 @@ function ChatPageContent() {
                     return
                 }
 
-                const normalized =
-                    normalizePageResponse(response)
-
-                setChats(normalized.content)
-                setChatPage(0)
-                setChatTotalPages(
-                    normalized.totalPages,
-                )
+                setChats(response.content)
+                setChatPage(response.page)
+                setChatHasNext(response.hasNext)
 
                 const firstChat =
-                    normalized.content[0]
+                    response.content[0]
 
                 if (firstChat) {
-                    await openChat(
-                        firstChat.id,
-                    )
+                    // messagePageSize will be updated on the following render;
+                    // using the conservative default here is still accepted by
+                    // every supported backend configuration (<=100).
+                    await openChat(firstChat.id)
                 } else {
                     setActiveChat(null)
                 }
@@ -364,10 +420,7 @@ function ChatPageContent() {
             listRequestSequenceRef.current += 1
             openRequestSequenceRef.current += 1
         }
-    }, [
-        reloadToken,
-        openChat,
-    ])
+    }, [reloadToken, openChat])
 
     useEffect(() => {
         const retryAfterUntil =
@@ -387,9 +440,7 @@ function ChatPageContent() {
         return () => {
             window.clearInterval(timerId)
         }
-    }, [
-        activePendingTurn?.retryAfterUntil,
-    ])
+    }, [activePendingTurn?.retryAfterUntil])
 
     useLayoutEffect(() => {
         const intent = scrollIntentRef.current
@@ -443,7 +494,7 @@ function ChatPageContent() {
     async function loadMoreChats() {
         if (
             moreChatsLoading
-            || chatPage + 1 >= chatTotalPages
+            || !chatHasNext
         ) {
             return
         }
@@ -456,22 +507,17 @@ function ChatPageContent() {
         try {
             const response = await getChats(
                 nextPage,
-                CHAT_PAGE_SIZE,
+                chatPageSize,
             )
-
-            const normalized =
-                normalizePageResponse(response)
 
             setChats((current) =>
                 mergeChats(
                     current,
-                    normalized.content,
+                    response.content,
                 ),
             )
-            setChatPage(nextPage)
-            setChatTotalPages(
-                normalized.totalPages,
-            )
+            setChatPage(response.page)
+            setChatHasNext(response.hasNext)
         } catch (error) {
             setListError(
                 getApiErrorMessage(
@@ -486,6 +532,17 @@ function ChatPageContent() {
 
     async function handleCreateChat() {
         if (createInFlightRef.current) {
+            return
+        }
+
+        // Не плодим пустые "Новый чат" при повторных кликах после
+        // сетевых/контрактных ошибок. Пользователь уже находится в пустом чате.
+        if (
+            activeChat
+            && activeChat.title === 'Новый чат'
+            && activeChat.messages.length === 0
+            && !pendingTurns[activeChat.id]
+        ) {
             return
         }
 
@@ -523,7 +580,7 @@ function ChatPageContent() {
                 messages: [],
             })
             setHistoryPage(1)
-            setHistoryTotalPages(1)
+            setHistoryHasNext(false)
         } catch (error) {
             setListError(
                 getApiErrorMessage(
@@ -544,15 +601,25 @@ function ChatPageContent() {
             return
         }
 
-        const rawDraft =
-            drafts[chat.id] ?? ''
-        const content =
-            normalizeMessageContent(rawDraft)
+        const rawDraft = drafts[chat.id] ?? ''
+        const content = normalizeMessageContent(
+            rawDraft,
+        )
 
         if (
             !hasMeaningfulContent(content)
             || pendingTurnsRef.current[chat.id]
         ) {
+            return
+        }
+
+        if (
+            content.length
+            > capabilities.maxMessageChars
+        ) {
+            setSendError(
+                `Сообщение не должно превышать ${capabilities.maxMessageChars} символов.`,
+            )
             return
         }
 
@@ -581,11 +648,10 @@ function ChatPageContent() {
             return
         }
 
-        const remaining =
-            getRetryAfterSeconds(
-                activePendingTurn,
-                clock,
-            )
+        const remaining = getRetryAfterSeconds(
+            activePendingTurn,
+            clock,
+        )
 
         if (
             activePendingTurn.status
@@ -614,7 +680,7 @@ function ChatPageContent() {
         })
 
         try {
-            const updated = await sendMessage(
+            const result = await sendMessage(
                 pending.chatId,
                 {
                     content: pending.content,
@@ -623,9 +689,9 @@ function ChatPageContent() {
                 },
             )
 
-            applySuccessfulChatUpdate(
+            applySendSuccess(
                 pending,
-                updated,
+                result,
             )
         } catch (error) {
             await handleSendFailure(
@@ -639,79 +705,113 @@ function ChatPageContent() {
         pending: PendingTurn,
         error: unknown,
     ) {
-        if (
-            error instanceof ApiError
-            && error.status === 429
-        ) {
-            const retryAfterSeconds =
-                error.retryAfterSeconds ?? 1
+        if (error instanceof ApiError) {
+            switch (error.errorCode) {
+                case 'AI_QUOTA_EXCEEDED':
+                case 'CHAT_QUOTA_EXCEEDED':
+                case 'QUOTA_EXCEEDED':
+                    putPendingTurn({
+                        ...pending,
+                        status: 'QUOTA_BLOCKED',
+                        error: error.message
+                            || 'Квота AI исчерпана.',
+                        retryAfterUntil: null,
+                    })
+                    setSendError(
+                        error.message
+                        || 'Квота AI исчерпана.',
+                    )
+                    return
 
-            putPendingTurn({
-                ...pending,
-                status: 'RATE_LIMITED',
-                error:
-                    'Лимит запросов временно исчерпан.',
-                retryAfterUntil:
-                    Date.now()
-                    + retryAfterSeconds
-                    * 1_000,
-            })
+                case 'AI_OUTCOME_AMBIGUOUS':
+                case 'CHAT_PROCESSOR_FENCED':
+                    putPendingTurn({
+                        ...pending,
+                        status: 'AMBIGUOUS',
+                        error:
+                            'Результат AI-вызова неоднозначен. '
+                            + 'Повтор с новым clientRequestId запрещён.',
+                        retryAfterUntil: null,
+                    })
+                    setSendError(
+                        'Проверьте состояние исходной операции. '
+                        + 'Новый запрос автоматически не создаётся.',
+                    )
+                    return
 
-            setClock(Date.now())
-            setSendError(
-                'Лимит запросов временно исчерпан. '
-                + 'Повтор будет выполнен только с тем же clientRequestId.',
-            )
-            return
+                case 'CHAT_ACCESS_REVOKED_DURING_PROCESSING':
+                    putPendingTurn({
+                        ...pending,
+                        status: 'ACCESS_REVOKED',
+                        error:
+                            'Доступ был отозван во время обработки.',
+                        retryAfterUntil: null,
+                    })
+                    setSendError(
+                        'Доступ к чату или организации отозван.',
+                    )
+                    return
+
+                case 'IDEMPOTENCY_KEY_REUSED':
+                    putPendingTurn({
+                        ...pending,
+                        status: 'IDEMPOTENCY_CONFLICT',
+                        error:
+                            'Этот clientRequestId уже связан с другим содержимым. '
+                            + 'Повторять запрос автоматически нельзя.',
+                        retryAfterUntil: null,
+                    })
+                    setSendError(
+                        'Обнаружен конфликт идемпотентности.',
+                    )
+                    return
+
+                case 'CHAT_TURN_IN_PROGRESS':
+                case 'CHAT_BUSY':
+                    putPendingTurn({
+                        ...pending,
+                        status: 'PROCESSING',
+                        error: null,
+                        retryAfterUntil: null,
+                    })
+                    await reconcilePendingTurn(pending)
+                    return
+
+                default:
+                    break
+            }
+
+            if (error.status === 429) {
+                const retryAfterSeconds =
+                    error.retryAfterSeconds ?? 1
+
+                putPendingTurn({
+                    ...pending,
+                    status: 'RATE_LIMITED',
+                    error:
+                        'Лимит запросов временно исчерпан.',
+                    retryAfterUntil:
+                        Date.now()
+                        + retryAfterSeconds * 1_000,
+                })
+                setClock(Date.now())
+                setSendError(
+                    'После Retry-After будет выполнен только повтор '
+                    + 'с тем же clientRequestId.',
+                )
+                return
+            }
         }
 
-        if (
-            error instanceof ApiError
-            && error.errorCode
-                === 'AI_OUTCOME_AMBIGUOUS'
-        ) {
-            putPendingTurn({
-                ...pending,
-                status: 'AMBIGUOUS',
-                error:
-                    'Результат AI-вызова неоднозначен. '
-                    + 'Автоматический повтор запрещён.',
-                retryAfterUntil: null,
-            })
-
-            setSendError(
-                'Результат AI-вызова неоднозначен. '
-                + 'Проверьте состояние операции.',
-            )
-            return
-        }
-
-        if (
-            error instanceof ApiError
-            && (
-                error.errorCode
-                    === 'CHAT_TURN_IN_PROGRESS'
-                || error.errorCode
-                    === 'CHAT_BUSY'
-            )
-        ) {
-            putPendingTurn({
-                ...pending,
-                status: 'PROCESSING',
-                error: null,
-                retryAfterUntil: null,
-            })
-        } else {
-            putPendingTurn({
-                ...pending,
-                status: 'SEND_UNKNOWN',
-                error: getApiErrorMessage(
-                    error,
-                    'Статус отправки неизвестен.',
-                ),
-                retryAfterUntil: null,
-            })
-        }
+        putPendingTurn({
+            ...pending,
+            status: 'SEND_UNKNOWN',
+            error: getApiErrorMessage(
+                error,
+                'Статус отправки неизвестен.',
+            ),
+            retryAfterUntil: null,
+        })
 
         await reconcilePendingTurn(pending)
     }
@@ -742,18 +842,23 @@ function ChatPageContent() {
                 }
 
                 try {
-                    const turn =
-                        await getChatTurnStatus(
-                            pending.chatId,
-                            pending.clientRequestId,
-                            {
-                                signal:
-                                    controller.signal,
-                            },
-                        )
+                    const turn = await getChatTurnStatus(
+                        pending.chatId,
+                        pending.clientRequestId,
+                        {
+                            signal:
+                                controller.signal,
+                        },
+                    )
+
+                    applyTurnMessages(
+                        pending.chatId,
+                        turn,
+                    )
 
                     if (
-                        turn.state === 'PROCESSING'
+                        turn.state === 'NEW'
+                        || turn.state === 'PROCESSING'
                     ) {
                         putPendingTurn({
                             ...pending,
@@ -769,49 +874,44 @@ function ChatPageContent() {
                         continue
                     }
 
-                    if (
-                        turn.state === 'SUCCEEDED'
-                    ) {
-                        const details =
-                            await getChatById(
-                                pending.chatId,
-                                {
-                                    signal:
-                                        controller.signal,
-                                },
+                    if (turn.state === 'SUCCEEDED') {
+                        if (
+                            turn.userMessage
+                            && turn.assistantMessage
+                        ) {
+                            applyTurnSuccess(
+                                pending,
+                                turn,
                             )
+                            return
+                        }
 
-                        applySuccessfulChatUpdate(
+                        const details = await getChatById(
+                            pending.chatId,
+                            {
+                                signal:
+                                    controller.signal,
+                            },
+                        )
+
+                        applyReloadedSuccess(
                             pending,
                             details,
                         )
                         return
                     }
 
-                    if (
-                        turn.state === 'FAILED'
-                    ) {
+                    if (turn.state === 'FAILED') {
+                        const message =
+                            failureMessage(turn)
+
                         putPendingTurn({
                             ...pending,
                             status: 'FAILED',
-                            error:
-                                turn.errorMessage
-                                ?? (
-                                    'AI-запрос '
-                                    + 'завершился '
-                                    + 'ошибкой.'
-                                ),
+                            error: message,
                             retryAfterUntil: null,
                         })
-
-                        setSendError(
-                            turn.errorMessage
-                            ?? (
-                                'AI-запрос '
-                                + 'завершился '
-                                + 'ошибкой.'
-                            ),
-                        )
+                        setSendError(message)
                         return
                     }
 
@@ -819,26 +919,17 @@ function ChatPageContent() {
                         ...pending,
                         status: 'AMBIGUOUS',
                         error:
-                            turn.errorMessage
-                            ?? (
-                                'Результат операции '
-                                + 'остался '
-                                + 'неоднозначным.'
-                            ),
+                            'Результат операции неоднозначен. '
+                            + 'Нельзя создавать автоматический повтор с новым ID.',
                         retryAfterUntil: null,
                     })
-
                     setSendError(
-                        'Результат операции '
-                        + 'неоднозначен. '
-                        + 'Не отправляйте новый '
-                        + 'запрос автоматически.',
+                        'Проверьте исходную операцию или закройте предупреждение '
+                        + 'без её повторной отправки.',
                     )
                     return
                 } catch (error) {
-                    if (
-                        isRequestAborted(error)
-                    ) {
+                    if (isRequestAborted(error)) {
                         return
                     }
 
@@ -848,14 +939,11 @@ function ChatPageContent() {
                     ) {
                         putPendingTurn({
                             ...pending,
-                            status:
-                                'SEND_UNKNOWN',
+                            status: 'SEND_UNKNOWN',
                             error:
-                                'Backend не нашёл '
-                                + 'turn по '
-                                + 'clientRequestId. '
-                                + 'Допустим только '
-                                + 'повтор с тем же ID.',
+                                'Backend пока не видит turn по clientRequestId. '
+                                + 'Безопасен только повтор исходного запроса '
+                                + 'с тем же clientRequestId.',
                             retryAfterUntil: null,
                         })
                         return
@@ -863,22 +951,15 @@ function ChatPageContent() {
 
                     if (
                         attempt
-                        === (
-                            RECONCILIATION_ATTEMPTS
-                            - 1
-                        )
+                        === RECONCILIATION_ATTEMPTS - 1
                     ) {
                         putPendingTurn({
                             ...pending,
-                            status:
-                                'SEND_UNKNOWN',
-                            error:
-                                getApiErrorMessage(
-                                    error,
-                                    'Не удалось '
-                                    + 'определить '
-                                    + 'состояние turn.',
-                                ),
+                            status: 'SEND_UNKNOWN',
+                            error: getApiErrorMessage(
+                                error,
+                                'Не удалось определить состояние turn.',
+                            ),
                             retryAfterUntil: null,
                         })
                         return
@@ -903,27 +984,21 @@ function ChatPageContent() {
         }
     }
 
-    function applySuccessfulChatUpdate(
+    function applySendSuccess(
         pending: PendingTurn,
-        updated: ChatDetails,
+        result: SendMessageResponse,
     ) {
-        reconciliationControllersRef.current
-            .get(pending.chatId)
-            ?.abort()
+        if (
+            result.chatId !== pending.chatId
+            || result.clientRequestId
+                !== pending.clientRequestId
+        ) {
+            throw new Error(
+                'Backend вернул SendMessageResponse для другого turn',
+            )
+        }
 
-        reconciliationControllersRef.current.delete(
-            pending.chatId,
-        )
-
-        setPendingTurns((current) => {
-            const next = {
-                ...current,
-            }
-
-            delete next[pending.chatId]
-
-            return next
-        })
+        finishPendingTurn(pending.chatId)
 
         setActiveChat((current) => {
             if (
@@ -933,23 +1008,172 @@ function ChatPageContent() {
                 return current
             }
 
+            const updated: ChatDetails = {
+                ...current,
+                updatedAt:
+                    result.chatUpdatedAt
+                    ?? current.updatedAt,
+                messages: mergeMessages(
+                    current.messages,
+                    [
+                        result.userMessage,
+                        result.assistantMessage,
+                    ],
+                ),
+            }
+
             scrollIntentRef.current = {
                 type: 'BOTTOM',
             }
 
+            setChats((chatList) =>
+                moveChatToTop(
+                    chatList,
+                    updated,
+                ),
+            )
+
+            return updated
+        })
+
+        setSendError('')
+    }
+
+    function applyTurnSuccess(
+        pending: PendingTurn,
+        turn: ChatTurnStatus,
+    ) {
+        /*
+         * Сохраняем nullable-поля в локальные const до передачи
+         * callback в setActiveChat. TypeScript не обязан сохранять
+         * narrowing для свойств объекта внутри отложенного callback,
+         * поэтому прямое использование turn.userMessage /
+         * turn.assistantMessage там приводит к TS2322.
+         */
+        const userMessage = turn.userMessage
+        const assistantMessage =
+            turn.assistantMessage
+
+        if (!userMessage || !assistantMessage) {
+            return
+        }
+
+        finishPendingTurn(pending.chatId)
+
+        setActiveChat((current) => {
+            if (
+                !current
+                || current.id !== pending.chatId
+            ) {
+                return current
+            }
+
+            const updated: ChatDetails = {
+                ...current,
+                updatedAt: turn.completedAt
+                    ?? turn.updatedAt,
+                messages: mergeMessages(
+                    current.messages,
+                    [
+                        userMessage,
+                        assistantMessage,
+                    ],
+                ),
+            }
+
+            scrollIntentRef.current = {
+                type: 'BOTTOM',
+            }
+
+            setChats((chatList) =>
+                moveChatToTop(
+                    chatList,
+                    updated,
+                ),
+            )
+
+            return updated
+        })
+
+        setSendError('')
+    }
+
+    function applyReloadedSuccess(
+        pending: PendingTurn,
+        details: ChatDetails,
+    ) {
+        finishPendingTurn(pending.chatId)
+
+        setActiveChat((current) => {
+            if (
+                !current
+                || current.id !== pending.chatId
+            ) {
+                return current
+            }
+
             return mergeChatDetails(
                 current,
-                updated,
+                details,
             )
         })
 
         setChats((current) =>
             moveChatToTop(
                 current,
-                updated,
+                details,
             ),
         )
         setSendError('')
+    }
+
+    function applyTurnMessages(
+        chatId: string,
+        turn: ChatTurnStatus,
+    ) {
+        const messages: ChatMessage[] = []
+
+        if (turn.userMessage) {
+            messages.push(turn.userMessage)
+        }
+
+        if (turn.assistantMessage) {
+            messages.push(turn.assistantMessage)
+        }
+
+        if (messages.length === 0) {
+            return
+        }
+
+        setActiveChat((current) => {
+            if (!current || current.id !== chatId) {
+                return current
+            }
+
+            return {
+                ...current,
+                updatedAt: turn.updatedAt,
+                messages: mergeMessages(
+                    current.messages,
+                    messages,
+                ),
+            }
+        })
+    }
+
+    function finishPendingTurn(chatId: string) {
+        reconciliationControllersRef.current
+            .get(chatId)
+            ?.abort()
+        reconciliationControllersRef.current.delete(
+            chatId,
+        )
+
+        setPendingTurns((current) => {
+            const next = { ...current }
+            delete next[chatId]
+            return next
+        })
     }
 
     async function loadEarlierHistory() {
@@ -958,11 +1182,7 @@ function ChatPageContent() {
         if (
             !chat
             || historyLoading
-            || (
-                historyTotalPages !== null
-                && historyPage
-                    >= historyTotalPages
-            )
+            || !historyHasNext
         ) {
             return
         }
@@ -997,16 +1217,15 @@ function ChatPageContent() {
         setChatError('')
 
         try {
-            const response =
-                await getChatMessages(
-                    chatId,
-                    pageToLoad,
-                    MESSAGE_PAGE_SIZE,
-                    {
-                        signal:
-                            controller.signal,
-                    },
-                )
+            const response = await getChatMessages(
+                chatId,
+                pageToLoad,
+                messagePageSize,
+                {
+                    signal:
+                        controller.signal,
+                },
+            )
 
             if (
                 sequence
@@ -1017,13 +1236,8 @@ function ChatPageContent() {
                 return
             }
 
-            const normalized =
-                normalizePageResponse(response)
-
-            setHistoryPage(pageToLoad + 1)
-            setHistoryTotalPages(
-                normalized.totalPages,
-            )
+            setHistoryPage(response.page + 1)
+            setHistoryHasNext(response.hasNext)
 
             setActiveChat((current) => {
                 if (
@@ -1036,7 +1250,7 @@ function ChatPageContent() {
                 return {
                     ...current,
                     messages: mergeMessages(
-                        normalized.content,
+                        response.content,
                         current.messages,
                     ),
                 }
@@ -1064,11 +1278,11 @@ function ChatPageContent() {
         }
     }
 
-    function clearTerminalPendingTurn() {
+    function prepareNewRequestFromPending() {
         if (
             !activeChat
             || !activePendingTurn
-            || !isTerminalPendingStatus(
+            || !isSafeToPrepareNewRequest(
                 activePendingTurn.status,
             )
         ) {
@@ -1079,9 +1293,40 @@ function ChatPageContent() {
             activeChat.id,
             activePendingTurn.content,
         )
-
-        removePendingTurn(activeChat.id)
+        finishPendingTurn(activeChat.id)
         setSendError('')
+    }
+
+    function dismissUnsafePending() {
+        if (!activeChat || !activePendingTurn) {
+            return
+        }
+
+        if (
+            activePendingTurn.status !== 'AMBIGUOUS'
+            && activePendingTurn.status !== 'IDEMPOTENCY_CONFLICT'
+        ) {
+            return
+        }
+
+        finishPendingTurn(activeChat.id)
+        setSendError('')
+    }
+
+    async function copyPendingText() {
+        if (!activePendingTurn) {
+            return
+        }
+
+        try {
+            await navigator.clipboard.writeText(
+                activePendingTurn.content,
+            )
+        } catch {
+            setSendError(
+                'Не удалось скопировать текст в буфер обмена.',
+            )
+        }
     }
 
     function setDraft(
@@ -1101,28 +1346,6 @@ function ChatPageContent() {
             ...current,
             [pending.chatId]: pending,
         }))
-    }
-
-    function removePendingTurn(
-        chatId: string,
-    ) {
-        reconciliationControllersRef.current
-            .get(chatId)
-            ?.abort()
-
-        reconciliationControllersRef.current.delete(
-            chatId,
-        )
-
-        setPendingTurns((current) => {
-            const next = {
-                ...current,
-            }
-
-            delete next[chatId]
-
-            return next
-        })
     }
 
     function handleTextareaKeyDown(
@@ -1159,8 +1382,7 @@ function ChatPageContent() {
                             type="button"
                             onClick={() =>
                                 setReloadToken(
-                                    (value) =>
-                                        value + 1,
+                                    (value) => value + 1,
                                 )
                             }
                         >
@@ -1195,9 +1417,7 @@ function ChatPageContent() {
                     {!chatsLoading
                         && chats.length === 0
                         && (
-                            <p>
-                                Чатов пока нет.
-                            </p>
+                            <p>Чатов пока нет.</p>
                         )}
 
                     {chats.map((chat) => {
@@ -1211,10 +1431,7 @@ function ChatPageContent() {
                                 className={
                                     activeChat?.id
                                         === chat.id
-                                        ? (
-                                            'chat-item '
-                                            + 'active'
-                                        )
+                                        ? 'chat-item active'
                                         : 'chat-item'
                                 }
                                 disabled={
@@ -1222,9 +1439,7 @@ function ChatPageContent() {
                                         === chat.id
                                 }
                                 onClick={() =>
-                                    void openChat(
-                                        chat.id,
-                                    )
+                                    void openChat(chat.id)
                                 }
                             >
                                 {openingChatId
@@ -1242,9 +1457,7 @@ function ChatPageContent() {
                                             )
                                         }
                                     >
-                                        {' '}
-                                        ·
-                                        {' '}
+                                        {' · '}
                                         {getPendingShortLabel(
                                             pending,
                                         )}
@@ -1254,29 +1467,20 @@ function ChatPageContent() {
                         )
                     })}
 
-                    {chatPage + 1
-                        < chatTotalPages
-                        && (
-                            <button
-                                type="button"
-                                className={
-                                    'secondary-button'
-                                }
-                                disabled={
-                                    moreChatsLoading
-                                }
-                                onClick={() =>
-                                    void loadMoreChats()
-                                }
-                            >
-                                {moreChatsLoading
-                                    ? 'Загрузка...'
-                                    : (
-                                        'Показать ещё '
-                                        + 'чаты'
-                                    )}
-                            </button>
-                        )}
+                    {chatHasNext && (
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={moreChatsLoading}
+                            onClick={() =>
+                                void loadMoreChats()
+                            }
+                        >
+                            {moreChatsLoading
+                                ? 'Загрузка...'
+                                : 'Показать ещё чаты'}
+                        </button>
+                    )}
                 </aside>
 
                 <section className="card chat-panel">
@@ -1291,17 +1495,14 @@ function ChatPageContent() {
                         && (
                             <EmptyState
                                 message={
-                                    'Создайте чат, '
-                                    + 'чтобы начать общение.'
+                                    'Создайте чат, чтобы начать общение.'
                                 }
                             />
                         )}
 
                     {activeChat && (
                         <>
-                            <h2>
-                                {activeChat.title}
-                            </h2>
+                            <h2>{activeChat.title}</h2>
 
                             {chatError && (
                                 <div
@@ -1325,9 +1526,7 @@ function ChatPageContent() {
 
                             {activePendingTurn && (
                                 <PendingTurnState
-                                    pending={
-                                        activePendingTurn
-                                    }
+                                    pending={activePendingTurn}
                                     retryAfterSeconds={
                                         retryAfterSeconds
                                     }
@@ -1340,53 +1539,43 @@ function ChatPageContent() {
                                         )
                                     }
                                     onPrepareNew={
-                                        clearTerminalPendingTurn
+                                        prepareNewRequestFromPending
+                                    }
+                                    onCopy={() =>
+                                        void copyPendingText()
+                                    }
+                                    onDismissUnsafe={
+                                        dismissUnsafePending
                                     }
                                 />
                             )}
 
-                            {canLoadEarlier && (
+                            {historyHasNext && (
                                 <button
                                     type="button"
-                                    className={
-                                        'secondary-button'
-                                    }
-                                    disabled={
-                                        historyLoading
-                                    }
+                                    className="secondary-button"
+                                    disabled={historyLoading}
                                     onClick={() =>
                                         void loadEarlierHistory()
                                     }
                                 >
                                     {historyLoading
-                                        ? (
-                                            'Загрузка '
-                                            + 'истории...'
-                                        )
-                                        : (
-                                            'Загрузить '
-                                            + 'более ранние '
-                                            + 'сообщения'
-                                        )}
+                                        ? 'Загрузка истории...'
+                                        : 'Загрузить более ранние сообщения'}
                                 </button>
                             )}
 
                             <div
-                                ref={
-                                    messagesContainerRef
-                                }
+                                ref={messagesContainerRef}
                                 className="messages"
-                                aria-busy={
-                                    activeChatBusy
-                                }
+                                aria-busy={activeChatBusy}
                             >
                                 {displayMessages.length
                                     === 0
                                     && !activeChatBusy
                                     && (
                                         <p>
-                                            Сообщений
-                                            пока нет.
+                                            Сообщений пока нет.
                                         </p>
                                     )}
 
@@ -1408,11 +1597,7 @@ function ChatPageContent() {
                                     )
                                     && (
                                         <div
-                                            className={
-                                                'message '
-                                                + 'assistant '
-                                                + 'pending'
-                                            }
+                                            className="message assistant pending"
                                             role="status"
                                             aria-live="polite"
                                         >
@@ -1422,84 +1607,54 @@ function ChatPageContent() {
                                             <p>
                                                 {activePendingTurn.status
                                                     === 'SENDING'
-                                                    ? (
-                                                        'Запрос '
-                                                        + 'отправляется...'
-                                                    )
-                                                    : (
-                                                        'Формируется '
-                                                        + 'ответ...'
-                                                    )}
+                                                    ? 'Запрос отправляется...'
+                                                    : 'Формируется ответ...'}
                                             </p>
                                         </div>
                                     )}
 
-                                <div
-                                    ref={messagesEndRef}
-                                />
+                                <div ref={messagesEndRef} />
                             </div>
 
                             <div className="message-form">
-                                <div
-                                    style={{
-                                        width: '100%',
-                                    }}
-                                >
-                                    <label
-                                        htmlFor={
-                                            'chat-message'
-                                        }
-                                    >
+                                <div style={{ width: '100%' }}>
+                                    <label htmlFor="chat-message">
                                         Сообщение
                                     </label>
 
                                     <textarea
                                         id="chat-message"
                                         rows={3}
-                                        value={
-                                            activeDraft
-                                        }
-                                        onChange={(
-                                            event,
-                                        ) =>
+                                        value={activeDraft}
+                                        onChange={(event) =>
                                             setDraft(
                                                 activeChat.id,
-                                                event.target
-                                                    .value,
+                                                event.target.value,
                                             )
                                         }
                                         onKeyDown={
                                             handleTextareaKeyDown
                                         }
                                         placeholder={
-                                            'Введите сообщение. '
-                                            + 'Ctrl+Enter — '
-                                            + 'отправить'
+                                            'Введите сообщение. Ctrl+Enter — отправить'
                                         }
                                         maxLength={
-                                            MESSAGE_MAX_LENGTH
+                                            capabilities.maxMessageChars
                                         }
                                         disabled={
                                             activeChatBusy
+                                            || activeChatHasPending
                                         }
-                                        aria-describedby={
-                                            'chat-message-counter'
-                                        }
+                                        aria-describedby="chat-message-counter"
                                     />
 
                                     <small
-                                        id={
-                                            'chat-message-counter'
-                                        }
+                                        id="chat-message-counter"
                                         className="muted"
                                     >
                                         {activeDraft.length}
-                                        {' '}
-                                        /
-                                        {' '}
-                                        {
-                                            MESSAGE_MAX_LENGTH
-                                        }
+                                        {' / '}
+                                        {capabilities.maxMessageChars}
                                     </small>
                                 </div>
 
@@ -1513,6 +1668,8 @@ function ChatPageContent() {
                                         || !hasMeaningfulContent(
                                             activeDraft,
                                         )
+                                        || activeDraft.length
+                                            > capabilities.maxMessageChars
                                     }
                                 >
                                     {activeChatBusy
@@ -1566,34 +1723,21 @@ function MessageView({
             <strong>{message.role}</strong>
 
             {message.status === 'FAILED' && (
-                <span
-                    className={
-                        'status-badge '
-                        + 'status-disabled'
-                    }
-                >
+                <span className="status-badge status-disabled">
                     Ошибка
                 </span>
             )}
 
             {message.uiStatus && (
-                <span
-                    className={
-                        'status-badge '
-                        + 'status-disabled'
-                    }
-                >
+                <span className="status-badge status-disabled">
                     {getPendingShortLabel({
-                        status:
-                            message.uiStatus,
+                        status: message.uiStatus,
                     })}
                 </span>
             )}
 
             {aiResponseLabel && (
-                <span
-                    className="status-badge"
-                >
+                <span className="status-badge">
                     {aiResponseLabel}
                 </span>
             )}
@@ -1602,16 +1746,10 @@ function MessageView({
 
             {message.role === 'ASSISTANT' && (
                 <small>
-                    модель:
-                    {' '}
-                    {message.model ?? '—'}
-                    {' '}
-                    |
-                    {' '}
+                    модель: {message.model ?? '—'}
+                    {' | '}
                     {formatUsage(message)}
-                    {' '}
-                    |
-                    {' '}
+                    {' | '}
                     {formatPricing(message)}
                 </small>
             )}
@@ -1625,6 +1763,8 @@ type PendingTurnStateProps = {
     onRetry: () => void
     onCheck: () => void
     onPrepareNew: () => void
+    onCopy: () => void
+    onDismissUnsafe: () => void
 }
 
 function PendingTurnState({
@@ -1633,11 +1773,27 @@ function PendingTurnState({
     onRetry,
     onCheck,
     onPrepareNew,
+    onCopy,
+    onDismissUnsafe,
 }: PendingTurnStateProps) {
-    const terminal =
-        isTerminalPendingStatus(
+    const canRetrySameId =
+        pending.status === 'SEND_UNKNOWN'
+        || pending.status === 'RATE_LIMITED'
+
+    const canCheck =
+        pending.status === 'PROCESSING'
+        || pending.status === 'SEND_UNKNOWN'
+        || pending.status === 'AMBIGUOUS'
+
+    const canPrepareNew =
+        isSafeToPrepareNewRequest(
             pending.status,
         )
+        && pending.status !== 'RATE_LIMITED'
+
+    const unsafeTerminal =
+        pending.status === 'AMBIGUOUS'
+        || pending.status === 'IDEMPOTENCY_CONFLICT'
 
     return (
         <div
@@ -1645,6 +1801,8 @@ function PendingTurnState({
             role={
                 pending.status === 'FAILED'
                 || pending.status === 'AMBIGUOUS'
+                || pending.status === 'ACCESS_REVOKED'
+                || pending.status === 'IDEMPOTENCY_CONFLICT'
                     ? 'alert'
                     : 'status'
             }
@@ -1667,52 +1825,53 @@ function PendingTurnState({
             )}
 
             <div className="modal-actions">
-                {(
-                    pending.status
-                        === 'SEND_UNKNOWN'
-                    || pending.status
-                        === 'RATE_LIMITED'
-                ) && (
+                {canRetrySameId && (
                     <button
                         type="button"
-                        disabled={
-                            retryAfterSeconds > 0
-                        }
+                        disabled={retryAfterSeconds > 0}
                         onClick={onRetry}
                     >
                         Повторить с тем же ID
                     </button>
                 )}
 
-                {(
-                    pending.status
-                        === 'PROCESSING'
-                    || pending.status
-                        === 'SEND_UNKNOWN'
-                    || pending.status
-                        === 'AMBIGUOUS'
-                ) && (
+                {canCheck && (
                     <button
                         type="button"
-                        className={
-                            'secondary-button'
-                        }
+                        className="secondary-button"
                         onClick={onCheck}
                     >
                         Проверить статус
                     </button>
                 )}
 
-                {terminal && (
+                {canPrepareNew && (
                     <button
                         type="button"
-                        className={
-                            'secondary-button'
-                        }
+                        className="secondary-button"
                         onClick={onPrepareNew}
                     >
-                        Вернуть текст в поле
+                        Вернуть текст как новый запрос
                     </button>
+                )}
+
+                {unsafeTerminal && (
+                    <>
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={onCopy}
+                        >
+                            Скопировать текст
+                        </button>
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={onDismissUnsafe}
+                        >
+                            Закрыть без повтора
+                        </button>
+                    </>
                 )}
             </div>
         </div>
@@ -1746,49 +1905,52 @@ function getPendingLabel(
             )
 
         case 'RATE_LIMITED': {
-            const seconds =
-                getRetryAfterSeconds(
-                    pending,
-                    now,
-                )
+            const seconds = getRetryAfterSeconds(
+                pending,
+                now,
+            )
 
             return seconds > 0
-                ? (
-                    'Повтор доступен через '
-                    + `${seconds} сек.`
-                )
+                ? `Повтор доступен через ${seconds} сек.`
                 : (
                     'Повтор разрешён с тем же '
                     + 'clientRequestId.'
                 )
         }
+
+        case 'QUOTA_BLOCKED':
+            return 'Квота AI не позволяет выполнить запрос.'
+
+        case 'ACCESS_REVOKED':
+            return 'Доступ к чату был отозван.'
+
+        case 'IDEMPOTENCY_CONFLICT':
+            return 'Обнаружен конфликт ключа идемпотентности.'
     }
 }
 
 function getPendingShortLabel(
-    pending: Pick<
-        PendingTurn,
-        'status'
-    >,
+    pending: Pick<PendingTurn, 'status'>,
 ): string {
     switch (pending.status) {
         case 'SENDING':
             return 'отправка'
-
         case 'PROCESSING':
             return 'обработка'
-
         case 'SEND_UNKNOWN':
             return 'статус неизвестен'
-
         case 'FAILED':
             return 'ошибка'
-
         case 'AMBIGUOUS':
             return 'неоднозначно'
-
         case 'RATE_LIMITED':
             return 'лимит'
+        case 'QUOTA_BLOCKED':
+            return 'квота'
+        case 'ACCESS_REVOKED':
+            return 'доступ отозван'
+        case 'IDEMPOTENCY_CONFLICT':
+            return 'конфликт ID'
     }
 }
 
@@ -1804,40 +1966,27 @@ function getRetryAfterSeconds(
         0,
         Math.ceil(
             (
-                pending.retryAfterUntil
-                - now
+                pending.retryAfterUntil - now
             ) / 1_000,
         ),
     )
 }
 
-function isTerminalPendingStatus(
-    status: PendingTurnStatus,
-): boolean {
-    return status === 'FAILED'
-        || status === 'AMBIGUOUS'
+function failureMessage(
+    turn: ChatTurnStatus,
+): string {
+    if (turn.failureCode) {
+        return `AI-запрос завершился ошибкой (${turn.failureCode}).`
+    }
+
+    return 'AI-запрос завершился ошибкой.'
 }
 
 function isRequestAborted(
     error: unknown,
 ): boolean {
     return error instanceof ApiError
-        && error.errorCode
-            === 'REQUEST_ABORTED'
-}
-
-function createSecureUuid(): string {
-    if (
-        typeof crypto === 'undefined'
-        || typeof crypto.randomUUID
-            !== 'function'
-    ) {
-        throw new Error(
-            'Браузер не поддерживает crypto.randomUUID()',
-        )
-    }
-
-    return crypto.randomUUID()
+        && error.errorCode === 'REQUEST_ABORTED'
 }
 
 async function delay(
@@ -1849,29 +1998,26 @@ async function delay(
     }
 
     await new Promise<void>((resolve) => {
-        const timeoutId =
-            window.setTimeout(
-                () => {
-                    signal.removeEventListener(
-                        'abort',
-                        abort,
-                    )
-                    resolve()
-                },
-                milliseconds,
-            )
-
         const abort = () => {
             window.clearTimeout(timeoutId)
             resolve()
         }
 
+        const timeoutId = window.setTimeout(
+            () => {
+                signal.removeEventListener(
+                    'abort',
+                    abort,
+                )
+                resolve()
+            },
+            milliseconds,
+        )
+
         signal.addEventListener(
             'abort',
             abort,
-            {
-                once: true,
-            },
+            { once: true },
         )
     })
 }

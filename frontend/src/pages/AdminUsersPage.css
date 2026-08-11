@@ -1223,3 +1223,57 @@ body.modal-open {
 .modal-body .users-role-option input:focus {
     box-shadow: none;
 }
+
+/* ============================================================
+   User status and details organization
+   ============================================================ */
+
+.users-table tbody tr.users-table__row--disabled {
+    background: #fffafa;
+}
+
+.users-table tbody tr.users-table__row--disabled:hover {
+    background: #fff4f4;
+}
+
+.users-table__row--disabled .user-identity {
+    opacity: .74;
+}
+
+.users-table__row--disabled .user-identity__name,
+.users-table__row--disabled .user-identity__email {
+    color: #7a8496;
+}
+
+.user-details__organization {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+
+.user-details__organization-name {
+    color: var(--users-text);
+    font-weight: 750;
+    line-height: 1.35;
+}
+
+.user-details__organization-id {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--users-muted);
+    font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Monaco,
+        Consolas,
+        "Liberation Mono",
+        monospace;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.35;
+}
+
+.user-details dd > .status-chip {
+    vertical-align: middle;
+}

@@ -5,6 +5,7 @@ import {
     useState,
 } from 'react'
 import type {
+    ReactNode,
     SyntheticEvent,
 } from 'react'
 import {
@@ -20,6 +21,7 @@ import {
 } from '../api/userApi'
 import type {
     User,
+    UserDetails,
     UserListRoleFilter,
     UserStatistics,
 } from '../api/userApi'
@@ -198,7 +200,7 @@ function AdminUsersPageContent({
     const [
         detailsUser,
         setDetailsUser,
-    ] = useState<User | null>(null)
+    ] = useState<UserDetails | null>(null)
     const [
         detailsLoadingUserId,
         setDetailsLoadingUserId,
@@ -665,7 +667,14 @@ function AdminUsersPageContent({
                         'Не удалось загрузить сведения о пользователе.',
                     ),
                 )
-                setDetailsUser(user)
+                setDetailsUser({
+                    ...user,
+                    organizationName:
+                        findOrganizationName(
+                            user.organizationId,
+                            organizations,
+                        ),
+                })
             }
         } finally {
             if (
@@ -1374,6 +1383,11 @@ function AdminUsersPageContent({
                                                     key={
                                                         user.id
                                                     }
+                                                    className={
+                                                        user.enabled
+                                                            ? undefined
+                                                            : 'users-table__row--disabled'
+                                                    }
                                                 >
                                                     <td>
                                                         <button
@@ -1435,9 +1449,11 @@ function AdminUsersPageContent({
                                                     </td>
 
                                                     <td>
-                                                        {user.enabled
-                                                            ? 'Включён'
-                                                            : 'Отключён'}
+                                                        <UserStatusBadge
+                                                            enabled={
+                                                                user.enabled
+                                                            }
+                                                        />
                                                     </td>
 
                                                     <td>
@@ -1776,10 +1792,22 @@ function AdminUsersPageContent({
                         <Detail
                             term="Организация"
                             value={
-                                getOrganizationName(
-                                    detailsUser.organizationId,
-                                    organizations,
-                                )
+                                <div className="user-details__organization">
+                                    <strong className="user-details__organization-name">
+                                        {
+                                            detailsUser.organizationName
+                                            ?? findOrganizationName(
+                                                detailsUser.organizationId,
+                                                organizations,
+                                            )
+                                            ?? 'Название недоступно'
+                                        }
+                                    </strong>
+
+                                    <span className="user-details__organization-id">
+                                        {detailsUser.organizationId}
+                                    </span>
+                                </div>
                             }
                         />
                         <Detail
@@ -1795,13 +1823,15 @@ function AdminUsersPageContent({
                         <Detail
                             term="Статус"
                             value={
-                                detailsUser.enabled
-                                    ? 'Включён'
-                                    : 'Отключён'
+                                <UserStatusBadge
+                                    enabled={
+                                        detailsUser.enabled
+                                    }
+                                />
                             }
                         />
                         <Detail
-                            term="Version"
+                            term="Версия"
                             value={
                                 detailsUser.version
                                     ?.toString()
@@ -2381,12 +2411,43 @@ function ModalError({
     ) : null
 }
 
+function UserStatusBadge({
+    enabled,
+}: {
+    enabled: boolean
+}) {
+    return (
+        <span
+            className={
+                enabled
+                    ? (
+                        'status-chip '
+                        + 'status-chip--enabled'
+                    )
+                    : (
+                        'status-chip '
+                        + 'status-chip--disabled'
+                    )
+            }
+        >
+            <span
+                className="status-chip__dot"
+                aria-hidden="true"
+            />
+
+            {enabled
+                ? 'Включён'
+                : 'Отключён'}
+        </span>
+    )
+}
+
 function Detail({
     term,
     value,
 }: {
     term: string
-    value: string
+    value: ReactNode
 }) {
     return (
         <div className="user-details__row">
@@ -2408,15 +2469,26 @@ function getAssignableRole(
     return null
 }
 
+function findOrganizationName(
+    id: string,
+    organizations:
+        OrganizationDirectoryItem[],
+): string | null {
+    return organizations.find(
+        (organization) =>
+            organization.id === id,
+    )?.name ?? null
+}
+
 function getOrganizationName(
     id: string,
     organizations:
         OrganizationDirectoryItem[],
 ): string {
-    return organizations.find(
-        (organization) =>
-            organization.id === id,
-    )?.name ?? id
+    return findOrganizationName(
+        id,
+        organizations,
+    ) ?? id
 }
 
 function getRoleLabel(

@@ -476,6 +476,7 @@ backend/
 │   │   │               │
 │   │   │               ├── ai/
 │   │   │               │   ├── config/
+│   │   │               │   │   ├── 
 │   │   │               │   │   ├── AiConfiguration
 │   │   │               │   │   ├── AiProductionConfigurationValidator
 │   │   │               │   │   ├── AnthropicProviderConfiguration
@@ -538,7 +539,8 @@ backend/
 │   │   │               │   │   ├── AuditRetentionConfiguration
 │   │   │               │   │   └── AuditRetentionProperties
 │   │   │               │   ├── controller/
-│   │   │               │   │   └── AuditController
+│   │   │               │   │   ├── AuditController
+│   │   │               │   │   └── AuditDirectoryController
 │   │   │               │   ├── details/
 │   │   │               │   │   ├── AiResponseAuditDetails
 │   │   │               │   │   ├── AuditDetails
@@ -546,9 +548,12 @@ backend/
 │   │   │               │   │   ├── RateLimitAuditDetails
 │   │   │               │   │   └── SecurityRefreshReuseAuditDetails
 │   │   │               │   ├── dto/
+│   │   │               │   │   ├── AuditActorDirectoryResponse
 │   │   │               │   │   ├── AuditEventCursorResponse
 │   │   │               │   │   ├── AuditEventFilter
-│   │   │               │   │   └── AuditEventResponse
+│   │   │               │   │   ├── AuditEventPageResponse
+│   │   │               │   │   ├── AuditEventResponse
+│   │   │               │   │   └── AuditTargetOrganizationDirectoryResponse
 │   │   │               │   ├── entity/
 │   │   │               │   │   ├── AuditEventEntity
 │   │   │               │   │   └── AuditOutboxEntity
@@ -557,6 +562,7 @@ backend/
 │   │   │               │   ├── model/
 │   │   │               │   │   └── AuditActor
 │   │   │               │   ├── repository/
+│   │   │               │   │   ├── AuditDirectoryQueryRepository
 │   │   │               │   │   ├── AuditEventCriteria
 │   │   │               │   │   ├── AuditEventCursorRepository
 │   │   │               │   │   ├── AuditEventCursorRepositoryImpl
@@ -567,6 +573,7 @@ backend/
 │   │   │               │   │   ├── AuditCommandFactory
 │   │   │               │   │   ├── AuditCursorCodec
 │   │   │               │   │   ├── AuditDetailsSanitizer
+│   │   │               │   │   ├── AuditDirectoryService
 │   │   │               │   │   ├── AuditEventCursorService
 │   │   │               │   │   ├── AuditEventQueryPolicy
 │   │   │               │   │   ├── AuditEventQueryService
@@ -579,6 +586,10 @@ backend/
 │   │   │               │   │   ├── AuditRetentionLockService
 │   │   │               │   │   ├── AuditRetentionService
 │   │   │               │   │   └── BestEffortStandaloneAuditService
+│   │   │               │   │ 
+│   │   │               │   ├── spi/
+│   │   │               │   │   └── AuditTargetOrganizationSnapshotProvider
+│   │   │               │   │ 
 │   │   │               │   └── AuditEventType
 │   │   │               │
 │   │   │               ├── auth/
@@ -748,6 +759,8 @@ backend/
 │   │   │               │       └── ApiFallbackController
 │   │   │               │
 │   │   │               ├── organization/
+│   │   │               │   ├── audit/
+│   │   │               │   │   └── OrganizationAuditSnapshotProvider
 │   │   │               │   ├── controller/
 │   │   │               │   │   └── OrganizationController
 │   │   │               │   ├── dto/
@@ -894,6 +907,7 @@ backend/
 │   │       │       ├── V34__chat_ambiguous_usage_quality.sql
 │   │       │       ├── V35__chat_turn_composite_integrity.sql
 │   │       │       ├── V36__validate_chat_composite_integrity.sql
+│   │       │       ├── V37__audit_target_organization_snapshots.sql
 │   │       │       └── README_DB.md
 │   │       ├── application.yaml
 │   │       ├── application-local.yaml

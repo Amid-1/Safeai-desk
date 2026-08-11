@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.chat.config.ChatProperties;
+import ru.safeai.gateway.chat.dto.ChatCapabilitiesResponse;
 import ru.safeai.gateway.chat.dto.ChatDetailsResponse;
 import ru.safeai.gateway.chat.dto.ChatPageRequest;
 import ru.safeai.gateway.chat.dto.ChatPageResponse;
@@ -44,18 +45,34 @@ public class ChatController {
         this.properties = properties;
     }
 
+    /**
+     * Runtime limits for the current deployment.
+     * The endpoint is authenticated by the class-level @PreAuthorize rule.
+     */
+    @GetMapping("/capabilities")
+    public ChatCapabilitiesResponse capabilities() {
+        return new ChatCapabilitiesResponse(
+                properties.maxMessageChars(),
+                properties.maxChatPageSize(),
+                properties.maxMessagePageSize(),
+                properties.detailsMessageLimit()
+        );
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ChatResponse create(
             @Valid @RequestBody CreateChatRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return chatService.create(request, currentUser);
     }
 
     @GetMapping
     public ChatPageResponse<ChatResponse> findAll(
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser,
             @Valid @ModelAttribute ChatPageRequest pageRequest
     ) {
         return ChatPageResponse.from(
@@ -71,7 +88,8 @@ public class ChatController {
     @GetMapping("/{chatId}")
     public ChatDetailsResponse findById(
             @PathVariable UUID chatId,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return chatService.findById(chatId, currentUser);
     }
@@ -80,7 +98,8 @@ public class ChatController {
     public SendMessageResponse sendMessage(
             @PathVariable UUID chatId,
             @Valid @RequestBody SendMessageRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return chatService.sendMessage(chatId, request, currentUser);
     }
@@ -89,7 +108,8 @@ public class ChatController {
     public ChatPageResponse<MessageResponse> findMessages(
             @PathVariable UUID chatId,
             @Valid @ModelAttribute MessagePageRequest pageRequest,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return ChatPageResponse.from(
                 chatService.findMessages(
@@ -102,11 +122,21 @@ public class ChatController {
         );
     }
 
-    @GetMapping("/{chatId}/turns/{clientRequestId}")
+    /**
+     * Canonical route is /turns/by-client-request/{clientRequestId}.
+     * The legacy short route is intentionally kept during rolling deployments
+     * so an already loaded frontend bundle remains compatible with a newer
+     * backend and vice versa.
+     */
+    @GetMapping({
+            "/{chatId}/turns/by-client-request/{clientRequestId}",
+            "/{chatId}/turns/{clientRequestId}"
+    })
     public ChatTurnStatusResponse findTurnStatus(
             @PathVariable UUID chatId,
             @PathVariable UUID clientRequestId,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return chatService.findTurnStatus(
                 chatId,

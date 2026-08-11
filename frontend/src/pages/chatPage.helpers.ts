@@ -1,3 +1,4 @@
+// frontend/src/pages/chatPage.helpers.ts
 import type {
     Chat,
     ChatDetails,
@@ -11,6 +12,9 @@ export type PendingTurnStatus =
     | 'FAILED'
     | 'AMBIGUOUS'
     | 'RATE_LIMITED'
+    | 'QUOTA_BLOCKED'
+    | 'ACCESS_REVOKED'
+    | 'IDEMPOTENCY_CONFLICT'
 
 export type PendingTurn = {
     chatId: string
@@ -220,7 +224,20 @@ export function mergeChats(
         byId.set(chat.id, chat)
     })
 
-    return [...byId.values()]
+    return [...byId.values()].sort(
+        (first, second) => {
+            const time =
+                second.updatedAt.localeCompare(
+                    first.updatedAt,
+                )
+
+            return time !== 0
+                ? time
+                : second.id.localeCompare(
+                    first.id,
+                )
+        },
+    )
 }
 
 export function moveChatToTop(
@@ -260,7 +277,7 @@ export function formatUsage(
 
         case 'PARTIAL':
             return (
-                `usage: неполные данные — вход `
+                'usage: неполные данные — вход '
                 + `${message.inputTokens ?? '—'}, `
                 + `выход ${message.outputTokens ?? '—'}`
             )
@@ -308,6 +325,22 @@ export function getAiResponseLabel(
         case null:
             return null
     }
+}
+
+export function isSafeToPrepareNewRequest(
+    status: PendingTurnStatus,
+): boolean {
+    return status === 'FAILED'
+        || status === 'QUOTA_BLOCKED'
+        || status === 'RATE_LIMITED'
+}
+
+export function isProcessingPendingStatus(
+    status: PendingTurnStatus,
+): boolean {
+    return status === 'SENDING'
+        || status === 'PROCESSING'
+        || status === 'SEND_UNKNOWN'
 }
 
 function formatMoney(

@@ -1085,9 +1085,13 @@ public class UserService {
     }
 
     private UserDetailsResponse toDetailsResponse(UserEntity entity) {
+        OrganizationEntity organization =
+                entity.getOrganization();
+
         return new UserDetailsResponse(
                 entity.getId(),
-                entity.getOrganization().getId(),
+                organization.getId(),
+                organization.getName(),
                 entity.getEmail(),
                 entity.getFullName(),
                 entity.isEnabled(),

@@ -10,6 +10,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,6 +42,15 @@ class AuditRepositoryContractTest {
                 new AuditEventEntity();
 
         entity.setId(UUID.randomUUID());
+        entity.setOrganizationId(UUID.randomUUID());
+        entity.setEventType("USER_LOGIN_SUCCESS");
+        entity.setDetails(Map.of());
+
+        /*
+         * createdAt намеренно не устанавливаем:
+         * тест проверяет, что persistence callback
+         * не подставляет системное время самостоятельно.
+         */
 
         Method callback =
                 AuditEventEntity.class

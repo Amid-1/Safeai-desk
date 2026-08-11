@@ -530,14 +530,22 @@ public class OrganizationService {
                 request.expectedVersion()
         );
 
-        String confirmationName =
-                OrganizationNameNormalizer.canonicalize(
-                        request.confirmationName()
-                );
+        String expectedConfirmation =
+                OrganizationNameNormalizer
+                        .normalizeForConfirmation(
+                                entity.getName()
+                        );
+
+        String actualConfirmation =
+                OrganizationNameNormalizer
+                        .normalizeForConfirmation(
+                                request.confirmationName()
+                        );
 
         if (
-                !entity.getName()
-                        .equals(confirmationName)
+                !expectedConfirmation.equals(
+                        actualConfirmation
+                )
         ) {
             throw new BadRequestException(
                     "Название организации для подтверждения "

@@ -6,10 +6,19 @@ import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.common.security.SystemRole;
 
+import java.time.Duration;
 import java.util.Objects;
 import java.util.UUID;
 
 public final class AuditEventQueryPolicy {
+
+    /*
+     * Frontend allows 366 local calendar days. Because conversion to Instant
+     * crosses DST boundaries, the server permits up to 367 * 24h as a
+     * defensive transport-level ceiling.
+     */
+    private static final Duration MAX_QUERY_WINDOW =
+            Duration.ofDays(367);
 
     private AuditEventQueryPolicy() {
     }
@@ -36,26 +45,36 @@ public final class AuditEventQueryPolicy {
                         SystemRole.SUPER_ADMIN.authority()
                 );
 
+        UUID ownOrganizationId = superAdmin
+                ? null
+                : requireTenantOrganizationId(currentUser);
+
         validateOrganizationFilter(
-                currentUser,
                 effectiveFilter,
-                superAdmin
+                superAdmin,
+                ownOrganizationId
         );
 
-        UUID organizationId = superAdmin
+        UUID enforcedOrganizationId = superAdmin
                 ? effectiveFilter.organizationId()
-                : currentUser.getOrganizationId();
+                : ownOrganizationId;
 
         return new QueryScope(
                 effectiveFilter,
-                organizationId
+                enforcedOrganizationId
         );
     }
 
+    private static UUID requireTenantOrganizationId(
+            SafeAiUserPrincipal currentUser
+    ) {
+        return currentUser.getOrganizationId();
+    }
+
     private static void validateOrganizationFilter(
-            SafeAiUserPrincipal currentUser,
             AuditEventFilter filter,
-            boolean superAdmin
+            boolean superAdmin,
+            UUID ownOrganizationId
     ) {
         if (superAdmin
                 || filter.organizationId() == null) {
@@ -63,7 +82,7 @@ public final class AuditEventQueryPolicy {
         }
 
         if (!filter.organizationId().equals(
-                currentUser.getOrganizationId()
+                ownOrganizationId
         )) {
             throw new ForbiddenOperationException(
                     "Нельзя фильтровать аудит другой организации"
@@ -74,13 +93,27 @@ public final class AuditEventQueryPolicy {
     private static void validateDateRange(
             AuditEventFilter filter
     ) {
-        if (filter.dateFrom() != null
-                && filter.dateTo() != null
-                && !filter.dateFrom().isBefore(
-                        filter.dateTo()
-                )) {
+        if (filter.dateFrom() == null
+                || filter.dateTo() == null) {
+            return;
+        }
+
+        if (!filter.dateFrom().isBefore(
+                filter.dateTo()
+        )) {
             throw new BadRequestException(
                     "dateFrom должен быть раньше dateTo"
+            );
+        }
+
+        Duration window = Duration.between(
+                filter.dateFrom(),
+                filter.dateTo()
+        );
+
+        if (window.compareTo(MAX_QUERY_WINDOW) > 0) {
+            throw new BadRequestException(
+                    "Период аудита не должен превышать 367 суток"
             );
         }
     }

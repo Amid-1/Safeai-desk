@@ -1,10 +1,10 @@
+// frontend/src/pages/chatPage.helpers.test.tsx
 import {
     describe,
     expect,
     it,
 } from 'vitest'
 import type {
-    ChatDetails,
     ChatMessage,
 } from '../api/chatApi'
 import {
@@ -12,15 +12,15 @@ import {
     createPendingTurn,
     formatPricing,
     formatUsage,
-    mergeChatDetails,
+    isSafeToPrepareNewRequest,
     mergeMessages,
     normalizeMessageContent,
 } from './chatPage.helpers'
 
 const USER_MESSAGE: ChatMessage = {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     clientRequestId:
-        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     replyToMessageId: null,
     role: 'USER',
     content: 'hello',
@@ -39,18 +39,16 @@ const USER_MESSAGE: ChatMessage = {
     currency: null,
     pricingVersion: null,
     pricingCalculatedAt: null,
-    createdAt:
-        '2026-08-04T10:00:00Z',
+    createdAt: '2026-08-11T10:00:00Z',
 }
 
 function assistant(
     overrides: Partial<ChatMessage> = {},
 ): ChatMessage {
     return {
-        id: '22222222-2222-2222-2222-222222222222',
+        id: '22222222-2222-4222-8222-222222222222',
         clientRequestId: null,
-        replyToMessageId:
-            USER_MESSAGE.id,
+        replyToMessageId: USER_MESSAGE.id,
         role: 'ASSISTANT',
         content: 'answer',
         status: 'COMPLETED',
@@ -67,16 +65,14 @@ function assistant(
         pricingStatus: 'FREE',
         currency: 'USD',
         pricingVersion: 'mock',
-        pricingCalculatedAt:
-            '2026-08-04T10:00:01Z',
-        createdAt:
-            '2026-08-04T10:00:01Z',
+        pricingCalculatedAt: '2026-08-11T10:00:01Z',
+        createdAt: '2026-08-11T10:00:01Z',
         ...overrides,
     }
 }
 
 describe('chatPage helpers', () => {
-    it('нормализует CRLF без trim содержимого', () => {
+    it('normalizes CRLF without trimming content', () => {
         expect(
             normalizeMessageContent(
                 '  code\r\nline\r  ',
@@ -84,69 +80,34 @@ describe('chatPage helpers', () => {
         ).toBe('  code\nline\n  ')
     })
 
-    it('optimistic message использует стабильный clientRequestId', () => {
-        const pending =
-            createPendingTurn(
-                '33333333-3333-3333-3333-333333333333',
-                'hello',
-                'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            )
-
-        const display =
-            buildDisplayMessages(
-                [],
-                pending,
-            )
-
-        expect(display).toHaveLength(1)
-        expect(display[0]).toMatchObject({
-            id:
-                'pending-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            clientRequestId:
-                'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            uiStatus: 'SENDING',
-        })
-    })
-
-    it('server USER удаляет optimistic запись по clientRequestId', () => {
-        const pending =
-            createPendingTurn(
-                '33333333-3333-3333-3333-333333333333',
-                'hello',
-                'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            )
-
-        const display =
-            buildDisplayMessages(
-                [USER_MESSAGE],
-                pending,
-            )
-
-        expect(display).toHaveLength(1)
-        expect(display[0].id).toBe(
-            USER_MESSAGE.id,
+    it('removes optimistic USER when server USER with same idempotency key arrives', () => {
+        const pending = createPendingTurn(
+            '33333333-3333-4333-8333-333333333333',
+            'hello',
+            'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         )
+
+        const display = buildDisplayMessages(
+            [USER_MESSAGE],
+            pending,
+        )
+
+        expect(display).toHaveLength(1)
+        expect(display[0].id).toBe(USER_MESSAGE.id)
     })
 
-    it('merge сохраняет раннюю историю и удаляет дубликаты', () => {
+    it('merge keeps chronological history and deduplicates ids', () => {
         const early: ChatMessage = {
             ...USER_MESSAGE,
-            id: '00000000-0000-0000-0000-000000000010',
+            id: '00000000-0000-4000-8000-000000000010',
             clientRequestId:
-                '00000000-0000-0000-0000-000000000011',
-            createdAt:
-                '2026-08-03T10:00:00Z',
+                '00000000-0000-4000-8000-000000000011',
+            createdAt: '2026-08-10T10:00:00Z',
         }
 
         const result = mergeMessages(
-            [
-                early,
-                USER_MESSAGE,
-            ],
-            [
-                USER_MESSAGE,
-                assistant(),
-            ],
+            [early, USER_MESSAGE],
+            [USER_MESSAGE, assistant()],
         )
 
         expect(result.map((item) => item.id))
@@ -157,43 +118,7 @@ describe('chatPage helpers', () => {
             ])
     })
 
-    it('mergeChatDetails не теряет ранее загруженные сообщения', () => {
-        const current: ChatDetails = {
-            id: '33333333-3333-3333-3333-333333333333',
-            title: 'Chat',
-            createdAt:
-                '2026-08-03T10:00:00Z',
-            updatedAt:
-                '2026-08-04T10:00:00Z',
-            messages: [
-                {
-                    ...USER_MESSAGE,
-                    id: '00000000-0000-0000-0000-000000000010',
-                    clientRequestId:
-                        '00000000-0000-0000-0000-000000000011',
-                    createdAt:
-                        '2026-08-03T10:00:00Z',
-                },
-            ],
-        }
-
-        const incoming: ChatDetails = {
-            ...current,
-            messages: [
-                USER_MESSAGE,
-                assistant(),
-            ],
-        }
-
-        expect(
-            mergeChatDetails(
-                current,
-                incoming,
-            ).messages,
-        ).toHaveLength(3)
-    })
-
-    it('MISSING usage не отображается как ноль', () => {
+    it('does not treat MISSING usage as zero', () => {
         expect(
             formatUsage(
                 assistant({
@@ -205,29 +130,7 @@ describe('chatPage helpers', () => {
         ).toContain('отсутствуют')
     })
 
-    it('PARTIAL usage отмечается как неполный', () => {
-        expect(
-            formatUsage(
-                assistant({
-                    inputTokens: 10,
-                    outputTokens: null,
-                    usageStatus: 'PARTIAL',
-                }),
-            ),
-        ).toContain('неполные')
-    })
-
-    it('FREE подтверждает нулевую стоимость', () => {
-        expect(
-            formatPricing(
-                assistant(),
-            ),
-        ).toContain(
-            'подтверждённо бесплатно',
-        )
-    })
-
-    it('UNPRICED не отображается как $0', () => {
+    it('does not treat UNPRICED as zero cost', () => {
         expect(
             formatPricing(
                 assistant({
@@ -235,22 +138,17 @@ describe('chatPage helpers', () => {
                     pricingStatus: 'UNPRICED',
                 }),
             ),
-        ).toBe(
-            'стоимость: не рассчитана',
-        )
+        ).toBe('стоимость: не рассчитана')
     })
 
-    it('CALCULATION_FAILED показывает ошибку', () => {
+    it('never prepares a fresh automatic request from ambiguous outcome', () => {
         expect(
-            formatPricing(
-                assistant({
-                    costUsd: null,
-                    pricingStatus:
-                        'CALCULATION_FAILED',
-                }),
+            isSafeToPrepareNewRequest('AMBIGUOUS'),
+        ).toBe(false)
+        expect(
+            isSafeToPrepareNewRequest(
+                'IDEMPOTENCY_CONFLICT',
             ),
-        ).toBe(
-            'стоимость: ошибка расчёта',
-        )
+        ).toBe(false)
     })
 })

@@ -1,4 +1,3 @@
-
 package ru.safeai.gateway.audit.repository;
 
 import lombok.RequiredArgsConstructor;
@@ -57,25 +56,41 @@ public class AuditDirectoryQueryRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * Returns the latest immutable target-organization snapshot present in
+     * audit history. Live organizations.name is used only as a legacy fallback
+     * for pre-snapshot rows.
+     */
     public List<AuditTargetOrganizationDirectoryResponse>
     findTargetOrganizations(
             String normalizedQuery,
             int limit
     ) {
         StringBuilder sql = new StringBuilder("""
-                select directory.target_organization_id,
-                       directory.target_organization_name
+                select latest.target_organization_id,
+                       coalesce(
+                           latest.target_organization_name,
+                           organization.name
+                       ) as target_organization_name
                 from (
-                    select audit_event.organization_id
+                    select distinct on (
+                               audit_event.organization_id
+                           )
+                           audit_event.organization_id
                                as target_organization_id,
-                           max(organization.name)
-                               as target_organization_name,
-                           max(audit_event.created_at)
-                               as last_seen_at
+                           audit_event.target_organization_name,
+                           audit_event.created_at
+                               as last_seen_at,
+                           audit_event.id
+                               as last_seen_id
                     from public.audit_events as audit_event
-                    left join public.organizations as organization
-                      on organization.id = audit_event.organization_id
-                    where 1 = 1
+                    order by audit_event.organization_id,
+                             audit_event.created_at desc,
+                             audit_event.id desc
+                ) as latest
+                left join public.organizations as organization
+                  on organization.id = latest.target_organization_id
+                where 1 = 1
                 """);
 
         List<Object> arguments = new ArrayList<>();
@@ -85,12 +100,19 @@ public class AuditDirectoryQueryRepository {
                       and (
                           position(
                               ? in lower(
-                                  coalesce(organization.name, '')
+                                  coalesce(
+                                      latest.target_organization_name,
+                                      organization.name,
+                                      ''
+                                  )
                               )
                           ) > 0
                           or position(
                               ? in lower(
-                                  cast(audit_event.organization_id as text)
+                                  cast(
+                                      latest.target_organization_id
+                                      as text
+                                  )
                               )
                           ) > 0
                       )
@@ -101,16 +123,16 @@ public class AuditDirectoryQueryRepository {
         }
 
         sql.append("""
-                    group by audit_event.organization_id
-                ) as directory
-                order by directory.last_seen_at desc,
+                order by latest.last_seen_at desc,
+                         latest.last_seen_id desc,
                          lower(
                              coalesce(
-                                 directory.target_organization_name,
+                                 latest.target_organization_name,
+                                 organization.name,
                                  ''
                              )
                          ),
-                         directory.target_organization_id
+                         latest.target_organization_id
                 limit ?
                 """);
 
@@ -123,6 +145,12 @@ public class AuditDirectoryQueryRepository {
         );
     }
 
+    /**
+     * One actor row per immutable actor id. Without a search query the latest
+     * actor snapshot wins. With a query, the latest matching historical
+     * snapshot wins, which lets an administrator find a user by an old email
+     * and then filter the audit by immutable actorUserId.
+     */
     public List<AuditActorDirectoryResponse> findActors(
             UUID enforcedTargetOrganizationId,
             String normalizedQuery,
@@ -134,17 +162,19 @@ public class AuditDirectoryQueryRepository {
                        directory.actor_email,
                        directory.actor_display_name
                 from (
-                    select audit_event.actor_user_id,
+                    select distinct on (
+                               audit_event.actor_user_id
+                           )
+                           audit_event.actor_user_id,
                            audit_event.actor_organization_id,
                            audit_event.actor_email,
                            audit_event.actor_display_name,
-                           max(audit_event.created_at)
-                               as last_seen_at
+                           audit_event.created_at
+                               as last_seen_at,
+                           audit_event.id
+                               as last_seen_id
                     from public.audit_events as audit_event
-                    where (
-                        audit_event.actor_user_id is not null
-                        or audit_event.actor_email is not null
-                    )
+                    where audit_event.actor_user_id is not null
                 """);
 
         List<Object> arguments = new ArrayList<>();
@@ -175,12 +205,9 @@ public class AuditDirectoryQueryRepository {
                           ) > 0
                           or position(
                               ? in lower(
-                                  coalesce(
-                                      cast(
-                                          audit_event.actor_user_id
-                                          as text
-                                      ),
-                                      ''
+                                  cast(
+                                      audit_event.actor_user_id
+                                      as text
                                   )
                               )
                           ) > 0
@@ -205,12 +232,12 @@ public class AuditDirectoryQueryRepository {
         }
 
         sql.append("""
-                    group by audit_event.actor_user_id,
-                             audit_event.actor_organization_id,
-                             audit_event.actor_email,
-                             audit_event.actor_display_name
+                    order by audit_event.actor_user_id,
+                             audit_event.created_at desc,
+                             audit_event.id desc
                 ) as directory
                 order by directory.last_seen_at desc,
+                         directory.last_seen_id desc,
                          lower(coalesce(directory.actor_email, '')),
                          lower(
                              coalesce(
@@ -218,7 +245,7 @@ public class AuditDirectoryQueryRepository {
                                  ''
                              )
                          ),
-                         directory.actor_user_id nulls last
+                         directory.actor_user_id
                 limit ?
                 """);
 

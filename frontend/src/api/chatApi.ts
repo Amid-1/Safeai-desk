@@ -28,9 +28,7 @@ import {
     expectString,
     expectUuid,
     parseDecimalString,
-    parsePageResponse,
 } from './runtime'
-import type { PageResponse } from '../utils/page'
 
 const CHAT_ROLES: readonly ChatMessageRole[] = [
     'USER',
@@ -66,6 +64,7 @@ const PRICING_STATUSES: readonly PricingStatus[] = [
 ]
 
 const TURN_STATES = [
+    'NEW',
     'PROCESSING',
     'SUCCEEDED',
     'FAILED',
@@ -116,38 +115,94 @@ export type ChatDetails = Chat & {
     messages: ChatMessage[]
 }
 
+export type ChatSliceResponse<T> = {
+    content: T[]
+    page: number
+    size: number
+    first: boolean
+    last: boolean
+    hasNext: boolean
+    hasPrevious: boolean
+}
+
+export type ChatCapabilities = {
+    maxMessageChars: number
+    maxChatPageSize: number
+    maxMessagePageSize: number
+    detailsMessageLimit: number
+}
+
 export type SendMessageRequest = {
     content: string
     clientRequestId: string
 }
 
+export type SendMessageResponse = {
+    chatId: string
+    turnId: string
+    clientRequestId: string
+    providerOperationId: string
+    state: 'SUCCEEDED'
+    replay: boolean
+    userMessage: ChatMessage
+    assistantMessage: ChatMessage
+    chatUpdatedAt: string | null
+    createdAt: string
+    completedAt: string
+}
+
 export type ChatTurnStatus = {
     chatId: string
+    turnId: string
     clientRequestId: string
+    providerOperationId: string
     state: ChatTurnState
-    userMessageId: string | null
-    assistantMessageId: string | null
-    errorCode: string | null
-    errorMessage: string | null
+    provider: string | null
+    requestedModel: string | null
+    resolvedModel: string | null
+    providerRequestId: string | null
+    providerErrorType: string | null
+    failureCode: string | null
+    outcomeAmbiguous: boolean
+    leaseUntil: string | null
+    providerCallStartedAt: string | null
     createdAt: string
     updatedAt: string
+    completedAt: string | null
+    userMessage: ChatMessage | null
+    assistantMessage: ChatMessage | null
 }
 
 type RequestOptions = {
     signal?: AbortSignal
 }
 
+export async function getChatCapabilities(
+    options: RequestOptions = {},
+): Promise<ChatCapabilities> {
+    const response = await apiRequest<unknown>(
+        '/api/chats/capabilities',
+        {
+            method: 'GET',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseChatCapabilities(response)
+}
+
 export async function getChats(
     page = 0,
     size = 50,
     options: RequestOptions = {},
-): Promise<PageResponse<Chat>> {
+): Promise<ChatSliceResponse<Chat>> {
     const query = buildQueryString({
         page: normalizePage(page),
         size: normalizePageSize(
             size,
             50,
-            200,
+            100,
         ),
     })
 
@@ -160,7 +215,7 @@ export async function getChats(
         },
     )
 
-    return parsePageResponse(
+    return parseChatSliceResponse(
         response,
         parseChat,
     )
@@ -187,7 +242,7 @@ export async function getChatMessages(
     page = 0,
     size = 50,
     options: RequestOptions = {},
-): Promise<PageResponse<ChatMessage>> {
+): Promise<ChatSliceResponse<ChatMessage>> {
     const query = buildQueryString({
         page: normalizePage(page),
         size: normalizePageSize(
@@ -206,7 +261,7 @@ export async function getChatMessages(
         },
     )
 
-    return parsePageResponse(
+    return parseChatSliceResponse(
         response,
         parseChatMessage,
     )
@@ -235,7 +290,7 @@ export async function sendMessage(
     chatId: string,
     request: SendMessageRequest,
     options: RequestOptions = {},
-): Promise<ChatDetails> {
+): Promise<SendMessageResponse> {
     const response = await apiRequest<unknown>(
         `/api/chats/${uuidPathSegment(chatId)}/messages`,
         {
@@ -243,14 +298,14 @@ export async function sendMessage(
             json: request,
             signal: options.signal,
 
-            // Должен быть немного больше внешнего proxy timeout 90s,
-            // чтобы frontend получил серверный 504/503, а не оборвал
-            // ожидание раньше reverse proxy.
+            // Немного больше reverse-proxy timeout 90s: клиент должен
+            // получить контролируемый ответ proxy/backend, а не оборвать
+            // соединение раньше него.
             timeoutMs: API_TIMEOUTS.chat,
         },
     )
 
-    return parseChatDetails(response)
+    return parseSendMessageResponse(response)
 }
 
 export async function getChatTurnStatus(
@@ -462,6 +517,68 @@ export function parseChatMessage(
     }
 }
 
+export function parseSendMessageResponse(
+    value: unknown,
+    field = 'sendMessageResponse',
+): SendMessageResponse {
+    const record = expectRecord(value, field)
+    const state = expectString(
+        record.state,
+        `${field}.state`,
+        { maxLength: 32 },
+    )
+
+    if (state !== 'SUCCEEDED') {
+        throw contractError(
+            `${field}.state должен быть SUCCEEDED для успешного HTTP-ответа`,
+        )
+    }
+
+    return {
+        chatId: expectUuid(
+            record.chatId,
+            `${field}.chatId`,
+        ),
+        turnId: expectUuid(
+            record.turnId,
+            `${field}.turnId`,
+        ),
+        clientRequestId: expectUuid(
+            record.clientRequestId,
+            `${field}.clientRequestId`,
+        ),
+        providerOperationId: expectUuid(
+            record.providerOperationId,
+            `${field}.providerOperationId`,
+        ),
+        state,
+        replay: expectBoolean(
+            record.replay,
+            `${field}.replay`,
+        ),
+        userMessage: parseChatMessage(
+            record.userMessage,
+            `${field}.userMessage`,
+        ),
+        assistantMessage: parseChatMessage(
+            record.assistantMessage,
+            `${field}.assistantMessage`,
+        ),
+        chatUpdatedAt: expectNullableInstant(
+            record.chatUpdatedAt ?? null,
+            `${field}.chatUpdatedAt`,
+        ),
+        createdAt: expectInstant(
+            record.createdAt,
+            `${field}.createdAt`,
+        ),
+        completedAt: expectInstant(
+            record.completedAt,
+            `${field}.completedAt`,
+        ),
+    }
+}
+
 export function parseChatTurnStatus(
     value: unknown,
     field = 'chatTurnStatus',
@@ -473,38 +590,64 @@ export function parseChatTurnStatus(
             record.chatId,
             `${field}.chatId`,
         ),
+        turnId: expectUuid(
+            record.turnId,
+            `${field}.turnId`,
+        ),
         clientRequestId: expectUuid(
             record.clientRequestId,
             `${field}.clientRequestId`,
+        ),
+        providerOperationId: expectUuid(
+            record.providerOperationId,
+            `${field}.providerOperationId`,
         ),
         state: expectEnum(
             record.state,
             `${field}.state`,
             TURN_STATES,
         ),
-        userMessageId: expectNullableUuid(
-            record.userMessageId ?? null,
-            `${field}.userMessageId`,
+        provider: expectNullableString(
+            record.provider ?? null,
+            `${field}.provider`,
+            { maxLength: 100 },
         ),
-        assistantMessageId:
-            expectNullableUuid(
-                record.assistantMessageId
-                    ?? null,
-                `${field}.assistantMessageId`,
-            ),
-        errorCode: expectNullableString(
-            record.errorCode ?? null,
-            `${field}.errorCode`,
-            {
-                maxLength: 100,
-            },
+        requestedModel: expectNullableString(
+            record.requestedModel ?? null,
+            `${field}.requestedModel`,
+            { maxLength: 100 },
         ),
-        errorMessage: expectNullableString(
-            record.errorMessage ?? null,
-            `${field}.errorMessage`,
-            {
-                maxLength: 1_000,
-            },
+        resolvedModel: expectNullableString(
+            record.resolvedModel ?? null,
+            `${field}.resolvedModel`,
+            { maxLength: 100 },
+        ),
+        providerRequestId: expectNullableString(
+            record.providerRequestId ?? null,
+            `${field}.providerRequestId`,
+            { maxLength: 255 },
+        ),
+        providerErrorType: expectNullableString(
+            record.providerErrorType ?? null,
+            `${field}.providerErrorType`,
+            { maxLength: 100 },
+        ),
+        failureCode: expectNullableString(
+            record.failureCode ?? null,
+            `${field}.failureCode`,
+            { maxLength: 100 },
+        ),
+        outcomeAmbiguous: expectBoolean(
+            record.outcomeAmbiguous,
+            `${field}.outcomeAmbiguous`,
+        ),
+        leaseUntil: expectNullableInstant(
+            record.leaseUntil ?? null,
+            `${field}.leaseUntil`,
+        ),
+        providerCallStartedAt: expectNullableInstant(
+            record.providerCallStartedAt ?? null,
+            `${field}.providerCallStartedAt`,
         ),
         createdAt: expectInstant(
             record.createdAt,
@@ -513,6 +656,124 @@ export function parseChatTurnStatus(
         updatedAt: expectInstant(
             record.updatedAt,
             `${field}.updatedAt`,
+        ),
+        completedAt: expectNullableInstant(
+            record.completedAt ?? null,
+            `${field}.completedAt`,
+        ),
+        userMessage: record.userMessage == null
+            ? null
+            : parseChatMessage(
+                record.userMessage,
+                `${field}.userMessage`,
+            ),
+        assistantMessage: record.assistantMessage == null
+            ? null
+            : parseChatMessage(
+                record.assistantMessage,
+                `${field}.assistantMessage`,
+            ),
+    }
+}
+
+export function parseChatSliceResponse<T>(
+    value: unknown,
+    itemParser: (
+        value: unknown,
+        field: string,
+    ) => T,
+    field = 'chatSlice',
+): ChatSliceResponse<T> {
+    const record = expectRecord(value, field)
+
+    if (!Array.isArray(record.content)) {
+        throw contractError(
+            `${field}.content должен быть массивом`,
+        )
+    }
+
+    const page = expectNonNegativeInteger(
+        record.page,
+        `${field}.page`,
+    )
+    const size = expectPositiveInteger(
+        record.size,
+        `${field}.size`,
+    )
+    const first = expectBoolean(
+        record.first,
+        `${field}.first`,
+    )
+    const last = expectBoolean(
+        record.last,
+        `${field}.last`,
+    )
+    const hasNext = expectBoolean(
+        record.hasNext,
+        `${field}.hasNext`,
+    )
+    const hasPrevious = expectBoolean(
+        record.hasPrevious,
+        `${field}.hasPrevious`,
+    )
+
+    if (first !== (page === 0)) {
+        throw contractError(
+            `${field}.first не согласован с page`,
+        )
+    }
+
+    if (last === hasNext) {
+        throw contractError(
+            `${field}.last не согласован с hasNext`,
+        )
+    }
+
+    if (hasPrevious !== (page > 0)) {
+        throw contractError(
+            `${field}.hasPrevious не согласован с page`,
+        )
+    }
+
+    return {
+        content: record.content.map(
+            (item, index) =>
+                itemParser(
+                    item,
+                    `${field}.content[${index}]`,
+                ),
+        ),
+        page,
+        size,
+        first,
+        last,
+        hasNext,
+        hasPrevious,
+    }
+}
+
+export function parseChatCapabilities(
+    value: unknown,
+    field = 'chatCapabilities',
+): ChatCapabilities {
+    const record = expectRecord(value, field)
+
+    return {
+        maxMessageChars: expectPositiveInteger(
+            record.maxMessageChars,
+            `${field}.maxMessageChars`,
+        ),
+        maxChatPageSize: expectPositiveInteger(
+            record.maxChatPageSize,
+            `${field}.maxChatPageSize`,
+        ),
+        maxMessagePageSize: expectPositiveInteger(
+            record.maxMessagePageSize,
+            `${field}.maxMessagePageSize`,
+        ),
+        detailsMessageLimit: expectPositiveInteger(
+            record.detailsMessageLimit,
+            `${field}.detailsMessageLimit`,
         ),
     }
 }
@@ -532,7 +793,7 @@ function parseUsageStatus(
         )
     }
 
-    // Обратная совместимость со старым DTO.
+    // Rolling-deployment compatibility with the pre-status DTO.
     if (role !== 'ASSISTANT') {
         return 'NOT_APPLICABLE'
     }
@@ -568,7 +829,7 @@ function parsePricingStatus(
         )
     }
 
-    // Обратная совместимость со старым DTO.
+    // Rolling-deployment compatibility with the pre-status DTO.
     if (role !== 'ASSISTANT') {
         return 'NOT_APPLICABLE'
     }
@@ -580,4 +841,52 @@ function parsePricingStatus(
     return Number(costUsd) === 0
         ? 'FREE'
         : 'PRICED'
+}
+
+function expectBoolean(
+    value: unknown,
+    field: string,
+): boolean {
+    if (typeof value !== 'boolean') {
+        throw contractError(
+            `${field} должен быть boolean`,
+        )
+    }
+
+    return value
+}
+
+function expectNonNegativeInteger(
+    value: unknown,
+    field: string,
+): number {
+    if (
+        typeof value !== 'number'
+        || !Number.isSafeInteger(value)
+        || value < 0
+    ) {
+        throw contractError(
+            `${field} должен быть неотрицательным целым числом`,
+        )
+    }
+
+    return value
+}
+
+function expectPositiveInteger(
+    value: unknown,
+    field: string,
+): number {
+    const parsed = expectNonNegativeInteger(
+        value,
+        field,
+    )
+
+    if (parsed < 1) {
+        throw contractError(
+            `${field} должен быть положительным`,
+        )
+    }
+
+    return parsed
 }

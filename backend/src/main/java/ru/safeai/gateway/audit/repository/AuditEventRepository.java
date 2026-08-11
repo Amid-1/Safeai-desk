@@ -41,6 +41,7 @@ public interface AuditEventRepository
                         actor_email,
                         actor_display_name,
                         organization_id,
+                        target_organization_name,
                         event_type,
                         details,
                         created_at
@@ -52,6 +53,7 @@ public interface AuditEventRepository
                            outbox.actor_email,
                            outbox.actor_display_name,
                            outbox.organization_id,
+                           outbox.target_organization_name,
                            outbox.event_type,
                            outbox.details,
                            outbox.occurred_at

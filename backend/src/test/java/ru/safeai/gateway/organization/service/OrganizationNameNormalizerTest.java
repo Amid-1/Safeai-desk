@@ -3,6 +3,7 @@ package ru.safeai.gateway.organization.service;
 import org.junit.jupiter.api.Test;
 import ru.safeai.gateway.common.exception.BadRequestException;
 
+import java.util.List;
 import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,6 +47,90 @@ class OrganizationNameNormalizerTest {
     }
 
     @Test
+    void confirmationIgnoresCaseQuotesAndWhitespace() {
+        String expected =
+                OrganizationNameNormalizer
+                        .normalizeForConfirmation(
+                                "ООО \"Зил\""
+                        );
+
+        List<String> acceptedVariants =
+                List.of(
+                        "ООО \"Зил\"",
+                        "ооо \"зил\"",
+                        "ООО «ЗИЛ»",
+                        "ООО 'Зил'",
+                        "ООО Зил",
+                        "  ООО   «Зил»  ",
+                        "ООО „Зил“",
+                        "ООО “Зил”"
+                );
+
+        assertThat(
+                acceptedVariants
+                        .stream()
+                        .map(
+                                OrganizationNameNormalizer
+                                        ::normalizeForConfirmation
+                        )
+        ).allMatch(expected::equals);
+    }
+
+    @Test
+    void confirmationKeepsSemanticIdentityStrict() {
+        String expected =
+                OrganizationNameNormalizer
+                        .normalizeForConfirmation(
+                                "ООО \"Зил\""
+                        );
+
+        List<String> rejectedVariants =
+                List.of(
+                        "Зил",
+                        "ООО Зел",
+                        "ООО Зилл",
+                        "ООО Зио",
+                        "АО Зил",
+                        "ООО З И Л",
+                        "ООО-Зил"
+                );
+
+        assertThat(
+                rejectedVariants
+                        .stream()
+                        .map(
+                                OrganizationNameNormalizer
+                                        ::normalizeForConfirmation
+                        )
+        ).noneMatch(expected::equals);
+    }
+
+    @Test
+    void confirmationUsesStableRootLocale() {
+        Locale previous =
+                Locale.getDefault();
+
+        try {
+            Locale.setDefault(
+                    Locale.forLanguageTag(
+                            "tr-TR"
+                    )
+            );
+
+            assertThat(
+                    OrganizationNameNormalizer
+                            .normalizeForConfirmation(
+                                    " INFORMATION "
+                            )
+            ).isEqualTo(
+                    "information"
+            );
+        } finally {
+            Locale.setDefault(previous);
+        }
+    }
+
+    @Test
     @SuppressWarnings("DataFlowIssue")
     void rejectsNullName() {
         assertThatThrownBy(() ->
@@ -73,6 +158,22 @@ class OrganizationNameNormalizerTest {
                 )
                 .hasMessageContaining(
                         "не должно быть пустым"
+                );
+    }
+
+    @Test
+    void rejectsConfirmationContainingOnlyQuotes() {
+        assertThatThrownBy(() ->
+                OrganizationNameNormalizer
+                        .normalizeForConfirmation(
+                                " « \" ' ” "
+                        )
+        )
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "подтверждения"
                 );
     }
 

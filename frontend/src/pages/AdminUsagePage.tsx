@@ -1,12 +1,12 @@
+/* frontend/src/pages/AdminUsagePage.tsx */
 import {
     useEffect,
     useMemo,
-    useRef,
     useState,
 } from 'react'
-import type {
-    ReactNode,
-} from 'react'
+import {
+    useSearchParams,
+} from 'react-router-dom'
 import {
     getOrganizationUsageDaily,
     getOrganizationUsageModels,
@@ -16,38 +16,20 @@ import {
     getUsageByUsers,
     getUsageDaily,
     getUsageSummary,
-} from '../api/adminApi'
+} from '../api/usageApi'
 import type {
+    UsageAmounts,
     UsageCoverage,
     UsageDailySummary,
-    UsageFilter,
     UsageModelSummary,
     UsageSummary,
     UsageUserSummary,
-} from '../api/adminApi'
+} from '../api/usageApi'
 import {
-    searchOrganizationDirectory,
-} from '../api/organizationApi'
-import type {
-    OrganizationDirectoryItem,
-} from '../api/organizationApi'
-import {
-    ApiError,
     getApiErrorMessage,
 } from '../api/http'
 import {
-    useAuth,
-} from '../auth/AuthContext'
-import {
-    formatDate,
-    formatIntegerValue,
-    formatUsd,
-} from '../utils/format'
-import type {
-    PageResponse,
-} from '../utils/page'
-import {
-    pageFromArray,
+    normalizePageResponse,
 } from '../utils/page'
 import {
     EmptyState,
@@ -57,46 +39,22 @@ import {
 import PageErrorBoundary
     from '../components/PageErrorBoundary'
 import {
-    buildUsageSearch,
-    createDefaultUsageDraftFilter,
-    readUsageUrlState,
-    toUsageFilter,
-    usageDraftFiltersEqual,
-} from './adminUsage.helpers'
-import type {
-    UsageDraftFilter,
-    UsageTab,
-} from './adminUsage.helpers'
+    useAuth,
+} from '../auth/AuthContext'
 
 const PAGE_SIZE = 50
+const UUID_PATTERN =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-type UsageRow =
-    | UsageSummary
-    | UsageUserSummary
-    | UsageModelSummary
-    | UsageDailySummary
+type Tab =
+    | 'summary'
+    | 'users'
+    | 'models'
+    | 'daily'
 
-type UsageReport =
-    | {
-        tab: 'summary'
-        page:
-            PageResponse<UsageSummary>
-    }
-    | {
-        tab: 'users'
-        page:
-            PageResponse<UsageUserSummary>
-    }
-    | {
-        tab: 'models'
-        page:
-            PageResponse<UsageModelSummary>
-    }
-    | {
-        tab: 'daily'
-        page:
-            PageResponse<UsageDailySummary>
-    }
+type PagedRows =
+    | UsageSummary[]
+    | UsageUserSummary[]
 
 function AdminUsagePage() {
     return (
@@ -108,554 +66,434 @@ function AdminUsagePage() {
 
 function AdminUsagePageContent() {
     const { currentUser } = useAuth()
+    const [searchParams, setSearchParams] =
+        useSearchParams()
 
-    const superAdmin =
-        currentUser?.roles.includes(
-            'SUPER_ADMIN',
-        ) ?? false
+    const isSuperAdmin = Boolean(
+        currentUser?.roles.includes('SUPER_ADMIN'),
+    )
 
-    const initialState =
-        useMemo(
-            () =>
-                readUsageUrlState(
-                    window.location.search,
-                    superAdmin,
-                ),
-            [superAdmin],
-        )
+    const initialRange = useMemo(
+        () => defaultUtcRange(),
+        [],
+    )
 
-    const initialApplied =
-        useMemo(
-            () =>
-                toUsageFilter(
-                    initialState.draft,
-                    superAdmin,
-                ),
-            [
-                initialState,
-                superAdmin,
-            ],
-        )
+    const initialTab = parseTab(
+        searchParams.get('report'),
+    )
 
     const [tab, setTab] =
-        useState<UsageTab>(
-            initialState.tab,
-        )
+        useState<Tab>(initialTab)
+    const [page, setPage] = useState(
+        parsePage(searchParams.get('page')),
+    )
+    const [hasNext, setHasNext] =
+        useState(false)
+    const [hasPrevious, setHasPrevious] =
+        useState(false)
 
-    const [page, setPage] =
-        useState(initialState.page)
-
-    const [report, setReport] =
-        useState<UsageReport | null>(
-            null,
-        )
+    const [rows, setRows] = useState<
+        PagedRows
+        | UsageModelSummary[]
+        | UsageDailySummary[]
+    >([])
 
     const [loading, setLoading] =
         useState(true)
+    const [error, setError] =
+        useState('')
+    const [filterError, setFilterError] =
+        useState('')
 
-    const [
-        loadError,
-        setLoadError,
-    ] = useState('')
-
-    const [
-        filterError,
-        setFilterError,
-    ] = useState('')
-
-    const [
-        reloadToken,
-        setReloadToken,
-    ] = useState(0)
-
-    const [
-        draftFilter,
-        setDraftFilter,
-    ] = useState<UsageDraftFilter>(
-        initialApplied.draft,
-    )
-
-    const [
-        appliedDraftFilter,
-        setAppliedDraftFilter,
-    ] = useState<UsageDraftFilter>(
-        initialApplied.draft,
-    )
-
-    const [
-        appliedFilter,
-        setAppliedFilter,
-    ] = useState<UsageFilter>(
-        initialApplied.filter,
-    )
-
-    const [
-        appliedOrganizationId,
-        setAppliedOrganizationId,
-    ] = useState(
-        initialApplied.organizationId,
-    )
-
-    const [
-        organizations,
-        setOrganizations,
-    ] = useState<
-        OrganizationDirectoryItem[]
-    >([])
-
-    const [
-        organizationSearch,
-        setOrganizationSearch,
-    ] = useState('')
-
-    const [
-        organizationsLoading,
-        setOrganizationsLoading,
-    ] = useState(false)
-
-    const [
-        organizationsError,
-        setOrganizationsError,
-    ] = useState('')
-
-    const requestSequenceRef =
-        useRef(0)
-
-    const organizationSequenceRef =
-        useRef(0)
-
-    const organizationControllerRef =
-        useRef<AbortController | null>(
-            null,
+    const [draftDateFrom, setDraftDateFrom] =
+        useState(
+            searchParams.get('dateFrom')
+            ?? initialRange.dateFrom,
+        )
+    const [draftDateTo, setDraftDateTo] =
+        useState(
+            searchParams.get('dateTo')
+            ?? initialRange.dateTo,
+        )
+    const [draftModel, setDraftModel] =
+        useState(searchParams.get('model') ?? '')
+    const [draftOrganizationId, setDraftOrganizationId] =
+        useState(
+            isSuperAdmin
+                ? searchParams.get('organizationId') ?? ''
+                : '',
         )
 
-    const filtersDirty =
-        useMemo(
-            () =>
-                !usageDraftFiltersEqual(
-                    draftFilter,
-                    appliedDraftFilter,
-                ),
-            [
-                draftFilter,
-                appliedDraftFilter,
-            ],
-        )
+    const [appliedDateFrom, setAppliedDateFrom] =
+        useState(draftDateFrom)
+    const [appliedDateTo, setAppliedDateTo] =
+        useState(draftDateTo)
+    const [appliedModel, setAppliedModel] =
+        useState(draftModel.trim())
+    const [appliedOrganizationId, setAppliedOrganizationId] =
+        useState(draftOrganizationId.trim())
+    const [reloadToken, setReloadToken] =
+        useState(0)
 
-    const selectedOrganization =
-        useMemo(
-            () =>
-                organizations.find(
-                    (organization) =>
-                        organization.id
-                        === appliedOrganizationId,
-                ) ?? null,
-            [
-                organizations,
-                appliedOrganizationId,
-            ],
-        )
+    const effectiveOrganizationId =
+        isSuperAdmin
+            ? appliedOrganizationId || null
+            : currentUser?.organizationId ?? null
 
     useEffect(() => {
-        if (!superAdmin) {
-            organizationControllerRef.current
-                ?.abort()
-            setOrganizations([])
-            setOrganizationsError('')
-            setOrganizationSearch('')
-            setDraftFilter(
-                (current) => ({
-                    ...current,
-                    organizationId: '',
-                }),
-            )
-            setAppliedDraftFilter(
-                (current) => ({
-                    ...current,
-                    organizationId: '',
-                }),
-            )
-            setAppliedOrganizationId('')
-            return
-        }
+        const controller = new AbortController()
 
-        const timerId =
-            window.setTimeout(
-                () => {
-                    const sequence =
-                        ++organizationSequenceRef.current
-
-                    organizationControllerRef.current
-                        ?.abort()
-
-                    const controller =
-                        new AbortController()
-
-                    organizationControllerRef.current =
-                        controller
-
-                    setOrganizationsLoading(
-                        true,
-                    )
-                    setOrganizationsError('')
-
-                    void searchOrganizationDirectory(
-                        organizationSearch,
-                        50,
-                        {
-                            signal:
-                                controller.signal,
-                        },
-                    )
-                        .then((result) => {
-                            if (
-                                sequence
-                                === organizationSequenceRef.current
-                            ) {
-                                setOrganizations(
-                                    result,
-                                )
-                            }
-                        })
-                        .catch((error) => {
-                            if (
-                                sequence
-                                === organizationSequenceRef.current
-                                && !isRequestAborted(
-                                    error,
-                                )
-                            ) {
-                                setOrganizationsError(
-                                    getApiErrorMessage(
-                                        error,
-                                        'Не удалось загрузить каталог организаций. Текущий scope не изменён.',
-                                    ),
-                                )
-                            }
-                        })
-                        .finally(() => {
-                            if (
-                                sequence
-                                === organizationSequenceRef.current
-                            ) {
-                                setOrganizationsLoading(
-                                    false,
-                                )
-                            }
-                        })
-                },
-                300,
-            )
-
-        return () => {
-            window.clearTimeout(
-                timerId,
-            )
-            organizationControllerRef.current
-                ?.abort()
-            organizationSequenceRef.current
-                += 1
-        }
-    }, [
-        superAdmin,
-        organizationSearch,
-    ])
-
-    useEffect(() => {
-        const sequence =
-            ++requestSequenceRef.current
-
-        const controller =
-            new AbortController()
-
-        async function loadReport() {
+        async function load() {
             setLoading(true)
-            setLoadError('')
+            setError('')
 
             try {
-                const loaded =
-                    await loadUsageReport(
-                        tab,
-                        page,
-                        appliedFilter,
-                        appliedOrganizationId,
-                        controller.signal,
-                    )
+                const dateFilter = {
+                    dateFrom: appliedDateFrom,
+                    dateTo: appliedDateTo,
+                }
 
-                if (
-                    sequence
-                    !== requestSequenceRef.current
-                ) {
+                if (tab === 'summary') {
+                    const filter = {
+                        ...dateFilter,
+                        model:
+                            appliedModel || undefined,
+                    }
+
+                    const response =
+                        effectiveOrganizationId
+                        && isSuperAdmin
+                            ? await getUsageByOrganization(
+                                effectiveOrganizationId,
+                                page,
+                                PAGE_SIZE,
+                                filter,
+                                {
+                                    signal:
+                                        controller.signal,
+                                },
+                            )
+                            : await getUsageSummary(
+                                page,
+                                PAGE_SIZE,
+                                filter,
+                                {
+                                    signal:
+                                        controller.signal,
+                                },
+                            )
+
+                    const normalized =
+                        normalizePageResponse(response)
+
+                    setRows(normalized.content)
+                    setHasNext(
+                        page + 1 < normalized.totalPages,
+                    )
+                    setHasPrevious(page > 0)
                     return
                 }
 
-                if (
-                    loaded.page.totalPages
-                        === 0
-                    && page !== 0
-                ) {
-                    setPage(0)
+                if (tab === 'users') {
+                    const response =
+                        effectiveOrganizationId
+                        && isSuperAdmin
+                            ? await getOrganizationUsageUsers(
+                                effectiveOrganizationId,
+                                page,
+                                PAGE_SIZE,
+                                dateFilter,
+                                {
+                                    signal:
+                                        controller.signal,
+                                },
+                            )
+                            : await getUsageByUsers(
+                                page,
+                                PAGE_SIZE,
+                                dateFilter,
+                                {
+                                    signal:
+                                        controller.signal,
+                                },
+                            )
+
+                    const normalized =
+                        normalizePageResponse(response)
+
+                    setRows(normalized.content)
+                    setHasNext(
+                        page + 1 < normalized.totalPages,
+                    )
+                    setHasPrevious(page > 0)
                     return
                 }
 
-                if (
-                    loaded.page.totalPages
-                        > 0
-                    && page
-                        >= loaded.page.totalPages
-                ) {
-                    setPage(
-                        loaded.page
-                            .totalPages - 1,
-                    )
+                if (tab === 'models') {
+                    const data =
+                        effectiveOrganizationId
+                        && isSuperAdmin
+                            ? await getOrganizationUsageModels(
+                                effectiveOrganizationId,
+                                dateFilter,
+                                {
+                                    signal:
+                                        controller.signal,
+                                },
+                            )
+                            : await getUsageByModels(
+                                dateFilter,
+                                {
+                                    signal:
+                                        controller.signal,
+                                },
+                            )
+
+                    setRows(data)
+                    setHasNext(false)
+                    setHasPrevious(false)
                     return
                 }
 
-                setReport(loaded)
-            } catch (error) {
-                if (
-                    sequence
-                    === requestSequenceRef.current
-                    && !isRequestAborted(
-                        error,
-                    )
-                ) {
-                    setReport(null)
-                    setLoadError(
-                        getUsageLoadError(
-                            error,
-                            appliedOrganizationId,
-                            tab,
-                        ),
-                    )
+                const data =
+                    effectiveOrganizationId
+                    && isSuperAdmin
+                        ? await getOrganizationUsageDaily(
+                            effectiveOrganizationId,
+                            dateFilter,
+                            {
+                                signal:
+                                    controller.signal,
+                            },
+                        )
+                        : await getUsageDaily(
+                            dateFilter,
+                            {
+                                signal:
+                                    controller.signal,
+                            },
+                        )
+
+                setRows(data)
+                setHasNext(false)
+                setHasPrevious(false)
+            } catch (loadError) {
+                if (isAbortError(loadError)) {
+                    return
                 }
+
+                setRows([])
+                setHasNext(false)
+                setHasPrevious(false)
+                setError(
+                    getApiErrorMessage(
+                        loadError,
+                        'Не удалось загрузить статистику использования.',
+                    ),
+                )
             } finally {
-                if (
-                    sequence
-                    === requestSequenceRef.current
-                ) {
+                if (!controller.signal.aborted) {
                     setLoading(false)
                 }
             }
         }
 
-        void loadReport()
+        void load()
 
         return () => {
             controller.abort()
-            requestSequenceRef.current += 1
         }
     }, [
         tab,
         page,
-        appliedFilter.dateFrom,
-        appliedFilter.dateTo,
-        appliedFilter.model,
-        appliedOrganizationId,
+        appliedDateFrom,
+        appliedDateTo,
+        appliedModel,
+        effectiveOrganizationId,
+        isSuperAdmin,
         reloadToken,
     ])
 
-    useEffect(() => {
-        const query =
-            buildUsageSearch(
-                tab,
-                appliedDraftFilter,
-                page,
-                superAdmin,
-            )
-
-        const nextUrl =
-            `${window.location.pathname}`
-            + query
-            + window.location.hash
-
-        window.history.replaceState(
-            window.history.state,
-            '',
-            nextUrl,
-        )
-    }, [
-        tab,
-        appliedDraftFilter,
-        page,
-        superAdmin,
-    ])
-
     function applyFilters() {
-        setFilterError('')
-
-        try {
-            const normalized =
-                toUsageFilter(
-                    draftFilter,
-                    superAdmin,
-                )
-
-            setLoading(true)
-            setPage(0)
-            setDraftFilter(
-                normalized.draft,
-            )
-            setAppliedDraftFilter(
-                normalized.draft,
-            )
-            setAppliedFilter(
-                normalized.filter,
-            )
-            setAppliedOrganizationId(
-                normalized.organizationId,
-            )
-            setReloadToken(
-                (value) => value + 1,
-            )
-        } catch (error) {
-            setFilterError(
-                error instanceof Error
-                    ? error.message
-                    : (
-                        'Некорректные '
-                        + 'фильтры usage.'
-                    ),
-            )
-        }
-    }
-
-    function resetFilters() {
-        const reset =
-            createDefaultUsageDraftFilter()
-
-        const normalized =
-            toUsageFilter(
-                reset,
-                superAdmin,
-            )
-
-        setLoading(true)
-        setDraftFilter(
-            normalized.draft,
+        const validationError = validateFilters(
+            draftDateFrom,
+            draftDateTo,
+            isSuperAdmin
+                ? draftOrganizationId
+                : '',
         )
-        setAppliedDraftFilter(
-            normalized.draft,
-        )
-        setAppliedFilter(
-            normalized.filter,
-        )
-        setAppliedOrganizationId('')
-        setOrganizationSearch('')
-        setFilterError('')
-        setPage(0)
-        setReloadToken(
-            (value) => value + 1,
-        )
-    }
 
-    function changeTab(
-        nextTab: UsageTab,
-    ) {
-        if (loading || nextTab === tab) {
+        if (validationError) {
+            setFilterError(validationError)
             return
         }
 
-        setLoading(true)
-        setTab(nextTab)
+        setFilterError('')
         setPage(0)
+        setAppliedDateFrom(draftDateFrom)
+        setAppliedDateTo(draftDateTo)
+        setAppliedModel(draftModel.trim())
+        setAppliedOrganizationId(
+            isSuperAdmin
+                ? draftOrganizationId.trim()
+                : '',
+        )
+
+        updateUrl({
+            tab,
+            page: 0,
+            dateFrom: draftDateFrom,
+            dateTo: draftDateTo,
+            model: draftModel.trim(),
+            organizationId:
+                isSuperAdmin
+                    ? draftOrganizationId.trim()
+                    : '',
+        })
     }
 
-    const currentPage =
-        report?.page ?? null
+    function resetFilters() {
+        const range = defaultUtcRange()
 
-    const scopeLabel =
-        getScopeLabel(
-            superAdmin,
-            currentUser?.organizationId
-                ?? null,
-            appliedOrganizationId,
-            selectedOrganization?.name
-                ?? null,
-        )
+        setFilterError('')
+        setDraftDateFrom(range.dateFrom)
+        setDraftDateTo(range.dateTo)
+        setDraftModel('')
+        setDraftOrganizationId('')
+        setAppliedDateFrom(range.dateFrom)
+        setAppliedDateTo(range.dateTo)
+        setAppliedModel('')
+        setAppliedOrganizationId('')
+        setPage(0)
+
+        updateUrl({
+            tab,
+            page: 0,
+            dateFrom: range.dateFrom,
+            dateTo: range.dateTo,
+            model: '',
+            organizationId: '',
+        })
+    }
+
+    function selectTab(nextTab: Tab) {
+        setTab(nextTab)
+        setPage(0)
+
+        updateUrl({
+            tab: nextTab,
+            page: 0,
+            dateFrom: appliedDateFrom,
+            dateTo: appliedDateTo,
+            model: appliedModel,
+            organizationId:
+                isSuperAdmin
+                    ? appliedOrganizationId
+                    : '',
+        })
+    }
+
+    function goToPage(nextPage: number) {
+        const safePage = Math.max(0, nextPage)
+        setPage(safePage)
+
+        updateUrl({
+            tab,
+            page: safePage,
+            dateFrom: appliedDateFrom,
+            dateTo: appliedDateTo,
+            model: appliedModel,
+            organizationId:
+                isSuperAdmin
+                    ? appliedOrganizationId
+                    : '',
+        })
+    }
+
+    function updateUrl(values: {
+        tab: Tab
+        page: number
+        dateFrom: string
+        dateTo: string
+        model: string
+        organizationId: string
+    }) {
+        const next = new URLSearchParams()
+        next.set('report', values.tab)
+        next.set('dateFrom', values.dateFrom)
+        next.set('dateTo', values.dateTo)
+
+        if (values.page > 0) {
+            next.set('page', String(values.page))
+        }
+
+        if (
+            values.tab === 'summary'
+            && values.model
+        ) {
+            next.set('model', values.model)
+        }
+
+        if (values.organizationId) {
+            next.set(
+                'organizationId',
+                values.organizationId,
+            )
+        }
+
+        setSearchParams(next, {
+            replace: true,
+        })
+    }
 
     return (
         <div className="page">
             <h1>Использование AI</h1>
 
-            <div
-                className="card"
-                role="status"
-                aria-live="polite"
-            >
+            <div className="card">
                 <strong>
                     Scope:
                     {' '}
-                    {scopeLabel}
+                    {isSuperAdmin
+                        ? effectiveOrganizationId
+                            ? `ORGANIZATION — ${effectiveOrganizationId}`
+                            : 'GLOBAL'
+                        : `ORGANIZATION — ${effectiveOrganizationId ?? '—'}`}
                 </strong>
-
                 <p className="muted">
-                    Период интерпретируется
-                    как UTC calendar days.
+                    Период интерпретируется как UTC calendar days.
+                    {' '}
                     DateTo является exclusive.
-                    Денежные суммы не
-                    агрегируются в JavaScript.
+                    {' '}
+                    Денежные суммы не агрегируются в JavaScript.
                 </p>
             </div>
 
-            <section
-                className="card form-card"
-                aria-labelledby={
-                    'usage-filters-title'
-                }
-            >
-                <h2 id="usage-filters-title">
-                    Фильтры
-                </h2>
+            <div className="card form-card">
+                <h2>Фильтры</h2>
 
                 <div className="form">
                     <label>
                         Дата с
-
                         <input
                             type="date"
-                            value={
-                                draftFilter.dateFrom
-                            }
-                            max={
-                                draftFilter.dateTo
-                                || undefined
-                            }
-                            required
-                            disabled={loading}
+                            value={draftDateFrom}
                             onChange={(event) =>
-                                setDraftFilter(
-                                    (current) => ({
-                                        ...current,
-                                        dateFrom:
-                                            event.target.value,
-                                    }),
+                                setDraftDateFrom(
+                                    event.target.value,
                                 )
                             }
                         />
                     </label>
 
                     <label>
-                        Дата по
-
+                        Дата по (exclusive)
                         <input
                             type="date"
-                            value={
-                                draftFilter.dateTo
-                            }
-                            min={
-                                draftFilter.dateFrom
-                                || undefined
-                            }
-                            required
-                            disabled={loading}
+                            value={draftDateTo}
                             onChange={(event) =>
-                                setDraftFilter(
-                                    (current) => ({
-                                        ...current,
-                                        dateTo:
-                                            event.target.value,
-                                    }),
+                                setDraftDateTo(
+                                    event.target.value,
                                 )
                             }
                         />
@@ -663,1028 +501,565 @@ function AdminUsagePageContent() {
 
                     <label>
                         Модель
-
                         <input
-                            value={
-                                draftFilter.model
-                            }
-                            maxLength={100}
-                            disabled={
-                                loading
-                                || tab !== 'summary'
-                            }
-                            placeholder="mock-safeai"
+                            value={draftModel}
                             onChange={(event) =>
-                                setDraftFilter(
-                                    (current) => ({
-                                        ...current,
-                                        model:
-                                            event.target.value,
-                                    }),
+                                setDraftModel(
+                                    event.target.value,
                                 )
                             }
+                            maxLength={100}
+                            disabled={tab !== 'summary'}
+                            placeholder="например, mock-safeai"
                         />
                         <small className="muted">
-                            Фильтр модели применяется
-                            только к вкладке «Сводка».
+                            Фильтр модели применяется только к вкладке «Сводка».
                         </small>
                     </label>
 
-                    {superAdmin && (
-                        <>
-                            <label>
-                                Найти организацию
-
-                                <input
-                                    type="search"
-                                    value={
-                                        organizationSearch
-                                    }
-                                    maxLength={255}
-                                    disabled={
-                                        loading
-                                    }
-                                    onChange={(event) =>
-                                        setOrganizationSearch(
-                                            event.target.value,
-                                        )
-                                    }
-                                />
-                            </label>
-
-                            <label>
-                                Scope организации
-
-                                <select
-                                    value={
-                                        draftFilter
-                                            .organizationId
-                                    }
-                                    disabled={
-                                        loading
-                                        || organizationsLoading
-                                    }
-                                    onChange={(event) =>
-                                        setDraftFilter(
-                                            (current) => ({
-                                                ...current,
-                                                organizationId:
-                                                    event.target.value,
-                                            }),
-                                        )
-                                    }
-                                >
-                                    <option value="">
-                                        GLOBAL —
-                                        все организации
-                                    </option>
-
-                                    {includeSelectedOrganization(
-                                        organizations,
-                                        draftFilter
-                                            .organizationId,
-                                    ).map(
-                                        (
-                                            organization,
-                                        ) => (
-                                            <option
-                                                key={
-                                                    organization.id
-                                                }
-                                                value={
-                                                    organization.id
-                                                }
-                                            >
-                                                {
-                                                    organization.name
-                                                }
-                                                {' '}
-                                                (
-                                                {
-                                                    organization.id
-                                                }
-                                                )
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
-                            </label>
-                        </>
-                    )}
-
-                    {filtersDirty && (
-                        <div
-                            className="warning"
-                            role="status"
-                            aria-live="polite"
-                        >
-                            Фильтры изменены.
-                            Отчёт ещё показывает
-                            применённые значения.
-                        </div>
-                    )}
-
-                    {organizationsError && (
-                        <div
-                            className="error"
-                            role="alert"
-                            aria-live="assertive"
-                        >
-                            {organizationsError}
-                        </div>
+                    {isSuperAdmin && (
+                        <label>
+                            Организация UUID
+                            <input
+                                value={draftOrganizationId}
+                                onChange={(event) =>
+                                    setDraftOrganizationId(
+                                        event.target.value,
+                                    )
+                                }
+                                maxLength={36}
+                                placeholder="пусто = все организации"
+                            />
+                        </label>
                     )}
 
                     {filterError && (
                         <div
                             className="error"
                             role="alert"
-                            aria-live="assertive"
                         >
                             {filterError}
                         </div>
                     )}
 
-                    <div className="filter-actions">
+                    <div className="modal-actions">
                         <button
                             type="button"
-                            disabled={
-                                loading
-                                || !filtersDirty
-                            }
-                            onClick={
-                                applyFilters
-                            }
+                            disabled={loading}
+                            onClick={applyFilters}
                         >
                             Применить фильтры
                         </button>
-
                         <button
                             type="button"
-                            className={
-                                'secondary-button'
-                            }
+                            className="secondary-button"
                             disabled={loading}
-                            onClick={
-                                resetFilters
-                            }
+                            onClick={resetFilters}
                         >
                             Сбросить к 30 дням
                         </button>
                     </div>
                 </div>
-            </section>
+            </div>
 
-            <nav
-                className="user-toolbar"
-                aria-label={
-                    'Отчёты использования'
-                }
-            >
-                {USAGE_TABS.map(
-                    ([value, label]) => (
-                        <button
-                            key={value}
-                            type="button"
-                            className={
-                                tab === value
-                                    ? (
-                                        'filter-button '
-                                        + 'active'
-                                    )
-                                    : 'filter-button'
-                            }
-                            aria-pressed={
-                                tab === value
-                            }
-                            disabled={loading}
-                            onClick={() =>
-                                changeTab(value)
-                            }
-                        >
-                            {label}
-                        </button>
-                    ),
-                )}
-            </nav>
-
-            {tab !== 'summary'
-                && appliedFilter.model
-                && (
-                    <div
-                        className="warning"
-                        role="status"
-                        aria-live="polite"
-                    >
-                        Применённый фильтр модели
-                        относится только к вкладке
-                        «Сводка» и не отправляется
-                        в текущий отчёт.
-                    </div>
-                )}
+            <div className="user-toolbar">
+                <TabButton
+                    active={tab === 'summary'}
+                    onClick={() => selectTab('summary')}
+                >
+                    Сводка
+                </TabButton>
+                <TabButton
+                    active={tab === 'users'}
+                    onClick={() => selectTab('users')}
+                >
+                    По пользователям
+                </TabButton>
+                <TabButton
+                    active={tab === 'models'}
+                    onClick={() => selectTab('models')}
+                >
+                    По моделям
+                </TabButton>
+                <TabButton
+                    active={tab === 'daily'}
+                    onClick={() => selectTab('daily')}
+                >
+                    По дням
+                </TabButton>
+            </div>
 
             {loading && (
                 <LoadingState
-                    message={
-                        'Загрузка usage-отчёта...'
+                    message="Загрузка статистики использования..."
+                />
+            )}
+
+            {!loading && error && (
+                <ErrorState
+                    title="Ошибка загрузки"
+                    message={error}
+                    action={
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setReloadToken(
+                                    (value) => value + 1,
+                                )
+                            }
+                        >
+                            Повторить
+                        </button>
                     }
                 />
             )}
 
-            {!loading
-                && loadError
-                && (
-                    <ErrorState
-                        title="Ошибка загрузки"
-                        message={loadError}
-                        action={
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setLoading(true)
-                                    setReloadToken(
-                                        (value) =>
-                                            value + 1,
-                                    )
-                                }}
-                            >
-                                Повторить
-                            </button>
-                        }
+            {!loading && !error && (
+                <div className="card table-card">
+                    <UsageRows
+                        tab={tab}
+                        rows={rows}
                     />
-                )}
 
-            {!loading
-                && !loadError
-                && report
-                && (
-                    <UsageReportTable
-                        report={report}
-                    />
-                )}
-
-            {!loading
-                && !loadError
-                && currentPage
-                && currentPage.totalPages
-                    > 1
-                && (
-                    <UsagePagination
-                        page={
-                            currentPage.page
-                        }
-                        totalPages={
-                            currentPage
-                                .totalPages
-                        }
-                        totalElements={
-                            currentPage
-                                .totalElements
-                        }
-                        onPageChange={
-                            (nextPage) => {
-                                setLoading(true)
-                                setPage(nextPage)
-                            }
-                        }
-                    />
-                )}
+                    {(tab === 'summary'
+                        || tab === 'users')
+                        && (
+                            <div className="pagination">
+                                <button
+                                    type="button"
+                                    className="secondary-button"
+                                    disabled={!hasPrevious}
+                                    onClick={() =>
+                                        goToPage(page - 1)
+                                    }
+                                >
+                                    Назад
+                                </button>
+                                <span>
+                                    Страница {page + 1}
+                                </span>
+                                <button
+                                    type="button"
+                                    className="secondary-button"
+                                    disabled={!hasNext}
+                                    onClick={() =>
+                                        goToPage(page + 1)
+                                    }
+                                >
+                                    Далее
+                                </button>
+                            </div>
+                        )}
+                </div>
+            )}
         </div>
     )
 }
 
-const USAGE_TABS:
-    readonly [
-        UsageTab,
-        string,
-    ][] = [
-    ['summary', 'Сводка'],
-    ['users', 'По пользователям'],
-    ['models', 'По моделям'],
-    ['daily', 'По дням'],
-]
-
-async function loadUsageReport(
-    tab: UsageTab,
-    page: number,
-    filter: UsageFilter,
-    organizationId: string,
-    signal: AbortSignal,
-): Promise<UsageReport> {
-    const dateOnlyFilter = {
-        dateFrom: filter.dateFrom,
-        dateTo: filter.dateTo,
-    }
-
-    if (organizationId) {
-        switch (tab) {
-            case 'summary':
-                return {
-                    tab,
-                    page:
-                        await getUsageByOrganization(
-                            organizationId,
-                            page,
-                            PAGE_SIZE,
-                            filter,
-                            {
-                                signal,
-                            },
-                        ),
-                }
-
-            case 'users':
-                return {
-                    tab,
-                    page:
-                        await getOrganizationUsageUsers(
-                            organizationId,
-                            page,
-                            PAGE_SIZE,
-                            dateOnlyFilter,
-                            {
-                                signal,
-                            },
-                        ),
-                }
-
-            case 'models':
-                return {
-                    tab,
-                    page: pageFromArray(
-                        await getOrganizationUsageModels(
-                            organizationId,
-                            dateOnlyFilter,
-                            {
-                                signal,
-                            },
-                        ),
-                    ),
-                }
-
-            case 'daily':
-                return {
-                    tab,
-                    page: pageFromArray(
-                        await getOrganizationUsageDaily(
-                            organizationId,
-                            dateOnlyFilter,
-                            {
-                                signal,
-                            },
-                        ),
-                    ),
-                }
-        }
-    }
-
-    switch (tab) {
-        case 'summary':
-            return {
-                tab,
-                page:
-                    await getUsageSummary(
-                        page,
-                        PAGE_SIZE,
-                        filter,
-                        {
-                            signal,
-                        },
-                    ),
-            }
-
-        case 'users':
-            return {
-                tab,
-                page:
-                    await getUsageByUsers(
-                        page,
-                        PAGE_SIZE,
-                        dateOnlyFilter,
-                        {
-                            signal,
-                        },
-                    ),
-            }
-
-        case 'models':
-            return {
-                tab,
-                page: pageFromArray(
-                    await getUsageByModels(
-                        dateOnlyFilter,
-                        {
-                            signal,
-                        },
-                    ),
-                ),
-            }
-
-        case 'daily':
-            return {
-                tab,
-                page: pageFromArray(
-                    await getUsageDaily(
-                        dateOnlyFilter,
-                        {
-                            signal,
-                        },
-                    ),
-                ),
-            }
-    }
-}
-
-function UsageReportTable({
-    report,
-}: {
-    report: UsageReport
-}) {
-    switch (report.tab) {
-        case 'summary':
-            return (
-                <UsageTable
-                    rows={
-                        report.page.content
-                    }
-                    columns={
-                        summaryColumns
-                    }
-                    emptyText={
-                        'Сводка использования не найдена.'
-                    }
-                />
-            )
-
-        case 'users':
-            return (
-                <UsageTable
-                    rows={
-                        report.page.content
-                    }
-                    columns={
-                        userColumns
-                    }
-                    emptyText={
-                        'Статистика по пользователям не найдена.'
-                    }
-                />
-            )
-
-        case 'models':
-            return (
-                <UsageTable
-                    rows={
-                        report.page.content
-                    }
-                    columns={
-                        modelColumns
-                    }
-                    emptyText={
-                        'Статистика по моделям не найдена.'
-                    }
-                />
-            )
-
-        case 'daily':
-            return (
-                <UsageTable
-                    rows={
-                        report.page.content
-                    }
-                    columns={
-                        dailyColumns
-                    }
-                    emptyText={
-                        'Дневная статистика не найдена.'
-                    }
-                />
-            )
-    }
-}
-
-type UsageTableColumn<
-    T extends object,
-> = {
-    key: string
-    title: string
-    render: (row: T) => ReactNode
-}
-
-function UsageTable<
-    T extends UsageRow,
->({
+function UsageRows({
+    tab,
     rows,
-    columns,
-    emptyText,
 }: {
-    rows: T[]
-    columns:
-        UsageTableColumn<T>[]
-    emptyText: string
+    tab: Tab
+    rows:
+        PagedRows
+        | UsageModelSummary[]
+        | UsageDailySummary[]
 }) {
     if (rows.length === 0) {
         return (
-            <div className="card table-card">
-                <EmptyState
-                    variant="inline"
-                    message={emptyText}
-                />
-            </div>
+            <EmptyState
+                title="Нет данных"
+                message="За выбранный период данные использования не найдены."
+            />
+        )
+    }
+
+    if (tab === 'summary') {
+        return (
+            <table className="admin-table usage-table">
+                <thead>
+                    <tr>
+                        <th>Пользователь</th>
+                        <th>Модель</th>
+                        <th>Вход</th>
+                        <th>Выход</th>
+                        <th>Всего</th>
+                        <th>Известная стоимость</th>
+                        <th>Качество данных</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {(rows as UsageSummary[]).map(
+                        (row) => (
+                            <UsageSummaryRow
+                                key={`${row.userId}:${row.model}`}
+                                row={row}
+                                showUser
+                                showModel
+                            />
+                        ),
+                    )}
+                </tbody>
+            </table>
+        )
+    }
+
+    if (tab === 'users') {
+        return (
+            <table className="admin-table usage-table">
+                <thead>
+                    <tr>
+                        <th>Пользователь</th>
+                        <th>Вход</th>
+                        <th>Выход</th>
+                        <th>Всего</th>
+                        <th>Известная стоимость</th>
+                        <th>Качество данных</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {(rows as UsageUserSummary[]).map(
+                        (row) => (
+                            <UsageSummaryRow
+                                key={row.userId}
+                                row={row}
+                                showUser
+                            />
+                        ),
+                    )}
+                </tbody>
+            </table>
+        )
+    }
+
+    if (tab === 'models') {
+        return (
+            <table className="admin-table usage-table">
+                <thead>
+                    <tr>
+                        <th>Модель</th>
+                        <th>Вход</th>
+                        <th>Выход</th>
+                        <th>Всего</th>
+                        <th>Известная стоимость</th>
+                        <th>Качество данных</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {(rows as UsageModelSummary[]).map(
+                        (row) => (
+                            <UsageSummaryRow
+                                key={row.model}
+                                row={row}
+                                showModel
+                            />
+                        ),
+                    )}
+                </tbody>
+            </table>
         )
     }
 
     return (
-        <div className="card table-card">
-            <div className="admin-table-wrapper">
-                <table
-                    className={
-                        'admin-table usage-table'
-                    }
-                >
-                    <thead>
-                        <tr>
-                            {columns.map(
-                                (column) => (
-                                    <th
-                                        key={
-                                            column.key
-                                        }
-                                    >
-                                        {
-                                            column.title
-                                        }
-                                    </th>
-                                ),
-                            )}
+        <table className="admin-table usage-table">
+            <thead>
+                <tr>
+                    <th>Дата UTC</th>
+                    <th>Вход</th>
+                    <th>Выход</th>
+                    <th>Всего</th>
+                    <th>Известная стоимость</th>
+                    <th>Качество данных</th>
+                </tr>
+            </thead>
+            <tbody>
+                {(rows as UsageDailySummary[]).map(
+                    (row) => (
+                        <tr key={row.usageDate}>
+                            <td>
+                                {formatIsoDate(row.usageDate)}
+                                {' '}
+                                ({row.aggregationZone})
+                            </td>
+                            <UsageAmountCells row={row} />
                         </tr>
-                    </thead>
+                    ),
+                )}
+            </tbody>
+        </table>
+    )
+}
 
-                    <tbody>
-                        {rows.map(
-                            (row, index) => (
-                                <tr
-                                    key={
-                                        getUsageRowKey(
-                                            row,
-                                            index,
-                                        )
-                                    }
-                                >
-                                    {columns.map(
-                                        (column) => (
-                                            <td
-                                                key={
-                                                    column.key
-                                                }
-                                            >
-                                                {
-                                                    column.render(
-                                                        row,
-                                                    )
-                                                }
-                                            </td>
-                                        ),
-                                    )}
-                                </tr>
-                            ),
-                        )}
-                    </tbody>
-                </table>
-            </div>
+function UsageSummaryRow({
+    row,
+    showUser = false,
+    showModel = false,
+}: {
+    row: UsageAmounts & {
+        userEmail?: string
+        model?: string
+    }
+    showUser?: boolean
+    showModel?: boolean
+}) {
+    return (
+        <tr>
+            {showUser && (
+                <td>{row.userEmail ?? '—'}</td>
+            )}
+            {showModel && (
+                <td>{row.model ?? '—'}</td>
+            )}
+            <UsageAmountCells row={row} />
+        </tr>
+    )
+}
+
+function UsageAmountCells({
+    row,
+}: {
+    row: UsageAmounts
+}) {
+    return (
+        <>
+            <td>{formatCount(row.inputTokens)}</td>
+            <td>{formatCount(row.outputTokens)}</td>
+            <td>
+                {formatCount(row.totalTokens)}
+                {row.partialTotalTokens !== '0' && (
+                    <div className="muted">
+                        + известно из partial:
+                        {' '}
+                        {formatCount(row.partialTotalTokens)}
+                    </div>
+                )}
+            </td>
+            <td>
+                {row.costUsd === null
+                    ? '—'
+                    : `${trimDecimal(row.costUsd)} ${row.currency}`}
+                {row.coverage.pricingComplete === false && (
+                    <div className="muted">
+                        Это только известная часть стоимости.
+                    </div>
+                )}
+            </td>
+            <td>
+                <CoverageView
+                    coverage={row.coverage}
+                />
+            </td>
+        </>
+    )
+}
+
+function CoverageView({
+    coverage,
+}: {
+    coverage: UsageCoverage
+}) {
+    const usageText = coverage.usageComplete === true
+        ? 'usage: полно'
+        : coverage.usageComplete === false
+            ? 'usage: неполно'
+            : 'usage: статус неизвестен'
+
+    const pricingText = coverage.pricingComplete === true
+        ? 'pricing: полно'
+        : coverage.pricingComplete === false
+            ? 'pricing: неполно'
+            : 'pricing: статус неизвестен'
+
+    const details = [
+        countPart(
+            'partial',
+            coverage.partialUsageMessages,
+        ),
+        countPart(
+            'missing',
+            coverage.missingUsageMessages,
+        ),
+        countPart(
+            'unpriced',
+            coverage.unpricedMessages,
+        ),
+        countPart(
+            'pricing errors',
+            coverage.pricingFailedMessages,
+        ),
+    ].filter(Boolean)
+
+    return (
+        <div>
+            <div>{usageText}</div>
+            <div>{pricingText}</div>
+            {details.length > 0 && (
+                <small className="muted">
+                    {details.join(', ')}
+                </small>
+            )}
         </div>
     )
 }
 
-function UsagePagination({
-    page,
-    totalPages,
-    totalElements,
-    onPageChange,
+function TabButton({
+    active,
+    onClick,
+    children,
 }: {
-    page: number
-    totalPages: number
-    totalElements: number
-    onPageChange:
-        (page: number) => void
+    active: boolean
+    onClick: () => void
+    children: string
 }) {
     return (
-        <nav
-            className="pagination"
-            aria-label={
-                'Пагинация usage-отчёта'
+        <button
+            type="button"
+            className={
+                active
+                    ? 'filter-button active'
+                    : 'filter-button'
             }
+            onClick={onClick}
         >
-            <button
-                type="button"
-                className="secondary-button"
-                disabled={page === 0}
-                onClick={() =>
-                    onPageChange(
-                        Math.max(
-                            0,
-                            page - 1,
-                        ),
-                    )
-                }
-            >
-                Назад
-            </button>
-
-            <span>
-                Страница
-                {' '}
-                {page + 1}
-                {' '}
-                из
-                {' '}
-                {totalPages}
-                .
-                {' '}
-                Всего строк:
-                {' '}
-                {totalElements}
-            </span>
-
-            <button
-                type="button"
-                className="secondary-button"
-                disabled={
-                    page + 1
-                        >= totalPages
-                }
-                onClick={() =>
-                    onPageChange(
-                        page + 1,
-                    )
-                }
-            >
-                Вперёд
-            </button>
-        </nav>
+            {children}
+        </button>
     )
 }
 
-const summaryColumns:
-    UsageTableColumn<UsageSummary>[] = [
-    {
-        key: 'userEmail',
-        title: 'Пользователь',
-        render: (row) =>
-            row.userEmail,
-    },
-    {
-        key: 'model',
-        title: 'Модель',
-        render: (row) =>
-            row.model,
-    },
-    ...amountColumns<
-        UsageSummary
-    >(),
-]
-
-const userColumns:
-    UsageTableColumn<UsageUserSummary>[] = [
-    {
-        key: 'userEmail',
-        title: 'Пользователь',
-        render: (row) =>
-            row.userEmail,
-    },
-    ...amountColumns<
-        UsageUserSummary
-    >(),
-]
-
-const modelColumns:
-    UsageTableColumn<UsageModelSummary>[] = [
-    {
-        key: 'model',
-        title: 'Модель',
-        render: (row) =>
-            row.model,
-    },
-    ...amountColumns<
-        UsageModelSummary
-    >(),
-]
-
-const dailyColumns:
-    UsageTableColumn<UsageDailySummary>[] = [
-    {
-        key: 'usageDate',
-        title: 'Дата UTC',
-        render: (row) =>
-            formatDate(
-                row.usageDate,
-            ),
-    },
-    ...amountColumns<
-        UsageDailySummary
-    >(),
-]
-
-function amountColumns<
-    T extends {
-        inputTokens: string
-        outputTokens: string
-        totalTokens: string
-        costUsd: string | null
-        coverage: UsageCoverage
-    },
->(): UsageTableColumn<T>[] {
-    return [
-        {
-            key: 'inputTokens',
-            title: 'Входные токены',
-            render: (row) =>
-                formatIntegerValue(
-                    row.inputTokens,
-                ),
-        },
-        {
-            key: 'outputTokens',
-            title: 'Выходные токены',
-            render: (row) =>
-                formatIntegerValue(
-                    row.outputTokens,
-                ),
-        },
-        {
-            key: 'totalTokens',
-            title: 'Всего токенов',
-            render: (row) =>
-                formatIntegerValue(
-                    row.totalTokens,
-                ),
-        },
-        {
-            key: 'costUsd',
-            title: 'Известная стоимость USD',
-            render: (row) =>
-                formatUsageCost(row),
-        },
-        {
-            key: 'usageCoverage',
-            title: 'Полнота usage',
-            render: (row) =>
-                formatUsageCoverage(
-                    row.coverage,
-                ),
-        },
-        {
-            key: 'pricingCoverage',
-            title: 'Полнота pricing',
-            render: (row) =>
-                formatPricingCoverage(
-                    row.coverage,
-                ),
-        },
-        {
-            key: 'ambiguous',
-            title: 'Неоднозначные операции',
-            render: (row) =>
-                formatIntegerValue(
-                    row.coverage
-                        .ambiguousProviderOperations,
-                ),
-        },
-    ]
-}
-
-function formatUsageCost(
-    row: {
-        costUsd: string | null
-        coverage: UsageCoverage
-    },
-): string {
-    const formatted =
-        formatUsd(row.costUsd)
-
-    if (
-        row.coverage.pricingComplete
-            === true
-    ) {
-        return formatted
+function validateFilters(
+    dateFrom: string,
+    dateTo: string,
+    organizationId: string,
+): string | null {
+    if (!dateFrom || !dateTo) {
+        return 'Обе даты обязательны.'
     }
 
-    if (
-        row.coverage
-            .pricingFailedMessages
-        && row.coverage
-            .pricingFailedMessages
-            !== '0'
-    ) {
-        return (
-            `${formatted} — имеются `
-            + 'ошибки расчёта'
-        )
+    if (dateFrom >= dateTo) {
+        return 'Дата с должна быть раньше даты по.'
     }
 
-    if (
-        row.coverage.pricingComplete
-            === false
-    ) {
-        return (
-            `${formatted} — неполные `
-            + 'pricing-данные'
-        )
-    }
-
-    return (
-        `${formatted} — coverage `
-        + 'неизвестен'
+    const rangeDays = Math.round(
+        (
+            Date.parse(`${dateTo}T00:00:00Z`)
+            - Date.parse(`${dateFrom}T00:00:00Z`)
+        ) / 86_400_000,
     )
+
+    if (rangeDays > 366) {
+        return 'Период не должен превышать 366 дней.'
+    }
+
+    const normalizedOrganizationId =
+        organizationId.trim()
+
+    if (
+        normalizedOrganizationId
+        && !UUID_PATTERN.test(
+            normalizedOrganizationId,
+        )
+    ) {
+        return 'Некорректный UUID организации.'
+    }
+
+    return null
 }
 
-function formatUsageCoverage(
-    coverage: UsageCoverage,
-): string {
-    if (
-        coverage.usageComplete
-            === true
-    ) {
-        return 'Полные'
-    }
+function defaultUtcRange(): {
+    dateFrom: string
+    dateTo: string
+} {
+    const dateTo = new Date()
+    dateTo.setUTCHours(0, 0, 0, 0)
 
-    if (
-        coverage.usageComplete
-            === false
-    ) {
-        return [
-            `missing: ${
-                coverage.missingUsageMessages
-                ?? '—'
-            }`,
-            `partial: ${
-                coverage.partialUsageMessages
-                ?? '—'
-            }`,
-        ].join(', ')
-    }
+    const dateFrom = new Date(dateTo)
+    dateFrom.setUTCDate(
+        dateFrom.getUTCDate() - 30,
+    )
 
-    return 'Coverage неизвестен'
+    return {
+        dateFrom: dateFrom
+            .toISOString()
+            .slice(0, 10),
+        dateTo: dateTo
+            .toISOString()
+            .slice(0, 10),
+    }
 }
 
-function formatPricingCoverage(
-    coverage: UsageCoverage,
-): string {
-    if (
-        coverage.pricingComplete
-            === true
-    ) {
-        return 'Полные'
+function parseTab(value: string | null): Tab {
+    switch (value) {
+        case 'users':
+        case 'models':
+        case 'daily':
+            return value
+        default:
+            return 'summary'
     }
-
-    if (
-        coverage.pricingComplete
-            === false
-    ) {
-        return [
-            `unpriced: ${
-                coverage.unpricedMessages
-                ?? '—'
-            }`,
-            `failed: ${
-                coverage.pricingFailedMessages
-                ?? '—'
-            }`,
-        ].join(', ')
-    }
-
-    return 'Coverage неизвестен'
 }
 
-function getUsageRowKey(
-    row: UsageRow,
-    index: number,
-): string {
-    if ('usageDate' in row) {
-        return row.usageDate
+function parsePage(value: string | null): number {
+    if (!value) {
+        return 0
     }
 
-    if (
-        'userId' in row
-        && 'model' in row
-    ) {
-        return `${row.userId}:${row.model}`
-    }
-
-    if ('userId' in row) {
-        return row.userId
-    }
-
-    if ('model' in row) {
-        return row.model
-    }
-
-    return String(index)
+    const parsed = Number(value)
+    return Number.isSafeInteger(parsed)
+        && parsed >= 0
+        ? parsed
+        : 0
 }
 
-function getScopeLabel(
-    superAdmin: boolean,
-    currentOrganizationId:
-        string | null,
-    selectedOrganizationId: string,
-    selectedOrganizationName:
-        string | null,
+function formatCount(value: string): string {
+    try {
+        return new Intl.NumberFormat(
+            'ru-RU',
+        ).format(BigInt(value))
+    } catch {
+        return value
+    }
+}
+
+function trimDecimal(value: string): string {
+    if (!value.includes('.')) {
+        return value
+    }
+
+    const normalized = value
+        .replace(/0+$/, '')
+        .replace(/\.$/, '')
+
+    return normalized || '0'
+}
+
+function formatIsoDate(value: string): string {
+    const [year, month, day] = value.split('-')
+    return `${day}.${month}.${year}`
+}
+
+function countPart(
+    label: string,
+    value: string | null,
 ): string {
-    if (!superAdmin) {
-        return (
-            'ORGANIZATION — '
-            + (
-                currentOrganizationId
-                ?? 'текущая организация'
+    return value && value !== '0'
+        ? `${label}: ${formatCount(value)}`
+        : ''
+}
+
+function isAbortError(error: unknown): boolean {
+    return error instanceof Error
+        && (
+            error.name === 'AbortError'
+            || (
+                'errorCode' in error
+                && (
+                    error as {
+                        errorCode?: string
+                    }
+                ).errorCode === 'REQUEST_ABORTED'
             )
         )
-    }
-
-    if (!selectedOrganizationId) {
-        return 'GLOBAL — вся платформа'
-    }
-
-    return (
-        'ORGANIZATION — '
-        + (
-            selectedOrganizationName
-            ?? selectedOrganizationId
-        )
-    )
-}
-
-function includeSelectedOrganization(
-    organizations:
-        OrganizationDirectoryItem[],
-    selectedId: string,
-): OrganizationDirectoryItem[] {
-    if (
-        !selectedId
-        || organizations.some(
-            (organization) =>
-                organization.id
-                === selectedId,
-        )
-    ) {
-        return organizations
-    }
-
-    return [
-        {
-            id: selectedId,
-            name:
-                'Выбранная организация',
-            enabled: true,
-            type: 'UNKNOWN',
-            protected: null,
-        },
-        ...organizations,
-    ]
-}
-
-function getUsageLoadError(
-    error: unknown,
-    organizationId: string,
-    tab: UsageTab,
-): string {
-    if (
-        organizationId
-        && tab !== 'summary'
-        && error instanceof ApiError
-        && error.status === 404
-    ) {
-        return (
-            'Backend не реализовал обязательный '
-            + 'organization-scoped aggregate endpoint '
-            + `для отчёта «${tab}». `
-            + 'Global данные намеренно не показаны.'
-        )
-    }
-
-    const base =
-        getApiErrorMessage(
-            error,
-            'Не удалось загрузить статистику использования.',
-        )
-
-    if (
-        error instanceof ApiError
-        && error.retryAfterSeconds
-    ) {
-        return (
-            `${base} Повторите через `
-            + `${error.retryAfterSeconds} сек.`
-        )
-    }
-
-    return base
-}
-
-function isRequestAborted(
-    error: unknown,
-): boolean {
-    return error instanceof ApiError
-        && error.errorCode
-            === 'REQUEST_ABORTED'
 }
 
 export default AdminUsagePage
