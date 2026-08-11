@@ -689,6 +689,51 @@ class AuthControllerSecurityTest {
     }
 
     @Test
+    void meWithNullFullNameReturnsCurrentUserWithoutSerializationFailure()
+            throws Exception {
+        SafeAiUserPrincipal principal =
+                currentPrincipal();
+
+        when(authService.getCurrentUser(principal))
+                .thenReturn(
+                        new CurrentUserResponse(
+                                USER_ID,
+                                ORGANIZATION_ID,
+                                EMAIL,
+                                null,
+                                true,
+                                Set.of("ADMIN")
+                        )
+                );
+
+        mockMvc.perform(
+                        get("/api/auth/me")
+                                .with(authentication(
+                                        authenticationToken(
+                                                principal
+                                        )
+                                ))
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id")
+                        .value(USER_ID.toString()))
+                .andExpect(jsonPath("$.organizationId")
+                        .value(ORGANIZATION_ID.toString()))
+                .andExpect(jsonPath("$.email")
+                        .value(EMAIL))
+                .andExpect(jsonPath("$.enabled")
+                        .value(true))
+                .andExpect(jsonPath("$.roles")
+                        .value(contains("ADMIN")));
+
+        verify(authService).getCurrentUser(
+                principal
+        );
+
+        verifyNoMoreInteractions(authService);
+    }
+
+    @Test
     void meWhenServiceFailsReturnsSafe500()
             throws Exception {
         SafeAiUserPrincipal principal =

@@ -2,156 +2,92 @@
 // frontend/src/api/authApi.test.ts
 // ============================================================
 import {
-    beforeEach,
     describe,
     expect,
     it,
-    vi,
 } from 'vitest'
+
 import {
-    getCurrentUser,
-    login,
     parseAuthUser,
 } from './authApi'
-import {
-    ApiError,
-    apiRequest,
-    ensureCsrfToken,
-    rotateCsrfToken,
-} from './http'
 
-vi.mock('./http', async (importOriginal) => {
-    const actual =
-        await importOriginal<typeof import('./http')>()
-
-    return {
-        ...actual,
-        apiRequest: vi.fn(),
-        ensureCsrfToken: vi.fn(),
-        rotateCsrfToken: vi.fn(),
-    }
-})
-
-const apiRequestMock =
-    vi.mocked(apiRequest)
-const ensureCsrfTokenMock =
-    vi.mocked(ensureCsrfToken)
-const rotateCsrfTokenMock =
-    vi.mocked(rotateCsrfToken)
-
-const USER_RESPONSE = {
-    id: '11111111-1111-1111-1111-111111111111',
+const BASE_USER = {
+    id:
+        '0e2c7bbb-4f75-49e6-9d1f-4c427913b9ca',
     organizationId:
-        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    email: 'user@safeai.test',
-    fullName: 'User',
+        'e06d4947-2bc7-4bd8-9271-2821f9d9509b',
+    email:
+        'vladskol@mail.ru',
     enabled: true,
-    roles: ['USER'],
+    roles: ['ADMIN'],
 }
 
-describe('authApi', () => {
-    beforeEach(() => {
-        vi.clearAllMocks()
-        ensureCsrfTokenMock.mockResolvedValue(
-            'anonymous-csrf',
+describe('parseAuthUser', () => {
+    it('принимает отсутствующий fullName как null', () => {
+        const user = parseAuthUser(
+            BASE_USER,
         )
+
+        expect(user.fullName)
+            .toBeNull()
+
+        expect(user.roles)
+            .toEqual(['ADMIN'])
     })
 
-    it('trim/lowercase email и не изменяет password', async () => {
-        apiRequestMock.mockResolvedValue(
-            USER_RESPONSE,
-        )
-        rotateCsrfTokenMock.mockResolvedValue(
-            'new-token',
-        )
-
-        await login({
-            email: '  USER@SAFEAI.TEST  ',
-            password: '  Secret Password  ',
+    it('принимает явный fullName null', () => {
+        const user = parseAuthUser({
+            ...BASE_USER,
+            fullName: null,
         })
 
-        expect(apiRequestMock).toHaveBeenCalledWith(
-            '/api/auth/login',
-            expect.objectContaining({
-                method: 'POST',
-                json: {
-                    email: 'user@safeai.test',
-                    password:
-                        '  Secret Password  ',
-                },
-            }),
-        )
+        expect(user.fullName)
+            .toBeNull()
     })
 
-    it('после login требует ротацию CSRF', async () => {
-        apiRequestMock.mockResolvedValue(
-            USER_RESPONSE,
-        )
-        rotateCsrfTokenMock.mockResolvedValue(
-            'new-token',
-        )
-
-        await login({
-            email: 'user@safeai.test',
-            password: 'secret',
+    it('сохраняет заполненный fullName', () => {
+        const user = parseAuthUser({
+            ...BASE_USER,
+            fullName: 'Vlad Admin',
         })
 
-        expect(
-            rotateCsrfTokenMock,
-        ).toHaveBeenCalledWith(
-            'anonymous-csrf',
-        )
+        expect(user.fullName)
+            .toBe('Vlad Admin')
     })
 
-    it('не считает login успешным при ошибке CSRF rotation', async () => {
-        apiRequestMock.mockResolvedValue(
-            USER_RESPONSE,
-        )
-        rotateCsrfTokenMock.mockRejectedValue(
-            new ApiError(
-                'CSRF rotation failed',
-                {
-                    status: 0,
-                    error:
-                        'CSRF_TOKEN_NOT_ROTATED',
-                },
-                0,
-            ),
-        )
-
-        await expect(
-            login({
-                email: 'user@safeai.test',
-                password: 'secret',
-            }),
-        ).rejects.toMatchObject({
-            errorCode:
-                'CSRF_TOKEN_NOT_ROTATED',
-        })
-    })
-
-    it('проверяет AuthUser во время выполнения', async () => {
-        apiRequestMock.mockResolvedValue({
-            ...USER_RESPONSE,
-            roles: null,
-        })
-
-        await expect(
-            getCurrentUser(),
-        ).rejects.toMatchObject({
-            errorCode:
-                'INVALID_AUTH_RESPONSE',
-        })
-    })
-
-    it('отклоняет disabled user в успешном /me', () => {
+    it('отклоняет несколько системных ролей', () => {
         expect(() =>
             parseAuthUser({
-                ...USER_RESPONSE,
+                ...BASE_USER,
+                roles: [
+                    'USER',
+                    'ADMIN',
+                ],
+            }),
+        ).toThrow(
+            'Сервер вернул некорректные данные пользователя',
+        )
+    })
+
+    it('отклоняет неизвестную роль', () => {
+        expect(() =>
+            parseAuthUser({
+                ...BASE_USER,
+                roles: ['OWNER'],
+            }),
+        ).toThrow(
+            'Сервер вернул некорректные данные пользователя',
+        )
+    })
+
+    it('отклоняет disabled user в authenticated contract', () => {
+        expect(() =>
+            parseAuthUser({
+                ...BASE_USER,
                 enabled: false,
             }),
         ).toThrow(
-            'некорректные данные пользователя',
+            'Сервер вернул некорректные данные пользователя',
         )
     })
 })

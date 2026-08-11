@@ -18,6 +18,9 @@ const UUID_PATTERN =
 const EMAIL_PATTERN =
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+const MAX_EMAIL_LENGTH = 255
+const MAX_FULL_NAME_LENGTH = 255
+
 const USER_ROLES = new Set<UserRole>([
     'SUPER_ADMIN',
     'ADMIN',
@@ -68,8 +71,12 @@ export async function login(
 
     const user = parseAuthUser(response)
 
-    // Backend должен выдать новый CSRF token для
-    // уже аутентифицированной сессии.
+    /*
+     * Backend удаляет anonymous CSRF token после
+     * успешной аутентификации. После разбора login
+     * response получаем новый token уже для
+     * аутентифицированной сессии.
+     */
     await rotateCsrfToken(
         csrfTokenBeforeLogin,
     )
@@ -116,10 +123,22 @@ export function parseAuthUser(
         id,
         organizationId,
         email,
-        fullName,
         enabled,
         roles,
     } = value
+
+    /*
+     * fullName является nullable бизнес-полем.
+     *
+     * При глобальной Jackson-политике NON_NULL
+     * backend может вообще не сериализовать поле,
+     * когда в БД full_name = NULL. На wire это
+     * эквивалентно fullName: null.
+     */
+    const fullName =
+        value.fullName === undefined
+            ? null
+            : value.fullName
 
     if (
         typeof id !== 'string'
@@ -129,32 +148,31 @@ export function parseAuthUser(
         || typeof email !== 'string'
         || !EMAIL_PATTERN.test(email)
         || email !== email.trim().toLowerCase()
+        || email.length > MAX_EMAIL_LENGTH
         || (
             fullName !== null
-            && typeof fullName !== 'string'
+            && (
+                typeof fullName !== 'string'
+                || fullName.length
+                    > MAX_FULL_NAME_LENGTH
+            )
         )
         || enabled !== true
         || !Array.isArray(roles)
-        || roles.length === 0
+        || roles.length !== 1
     ) {
         throw invalidAuthResponse()
     }
 
-    const normalizedRoles: UserRole[] = []
+    const role = roles[0]
 
-    for (const role of roles) {
-        if (
-            typeof role !== 'string'
-            || !USER_ROLES.has(role as UserRole)
-        ) {
-            throw invalidAuthResponse()
-        }
-
-        const typedRole = role as UserRole
-
-        if (!normalizedRoles.includes(typedRole)) {
-            normalizedRoles.push(typedRole)
-        }
+    if (
+        typeof role !== 'string'
+        || !USER_ROLES.has(
+            role as UserRole,
+        )
+    ) {
+        throw invalidAuthResponse()
     }
 
     return {
@@ -162,9 +180,12 @@ export function parseAuthUser(
         organizationId:
             organizationId.toLowerCase(),
         email,
-        fullName,
+        fullName:
+            fullName as string | null,
         enabled: true,
-        roles: normalizedRoles,
+        roles: [
+            role as UserRole,
+        ],
     }
 }
 
