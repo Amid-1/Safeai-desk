@@ -1018,3 +1018,55 @@ git restore --staged commit-message.txt
 git commit -F commit-message.txt
 git push
 ```
+
+
+# Git: быстрый commit + push
+
+```bash
+# 1. Проверить изменения
+git status
+
+# 2. Добавить всё
+git add -A
+
+# 3. Не добавлять файл с текстом коммита
+git restore --staged commit-message.txt
+
+# 4. Проверить, что попадёт в commit
+git diff --cached --stat
+git status
+
+# При необходимости посмотреть полный diff
+git diff --cached
+
+# 5. Создать commit из commit-message.txt
+git commit -F commit-message.txt
+
+# 6. Проверить последний commit
+git log -1 --stat
+
+# 7. Отправить
+git push
+```
+
+# Если у ветки ещё нет upstream:
+```bash
+git push -u origin "$(git branch --show-current)"
+```
+
+
+# После успешного commit временный файл можно удалить:
+```bash
+rm commit-message.txt
+```
+
+# Коротко одной последовательностью
+```bash
+git status
+git add -A
+git restore --staged commit-message.txt
+git diff --cached --stat
+git commit -F commit-message.txt
+git log -1 --stat
+git push
+```
