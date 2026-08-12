@@ -140,7 +140,8 @@ class UserServiceTest {
                         OTHER_USER_ID,
                         new UpdateUserRequest(
                                 "other@test.com",
-                                "Other User"
+                                "Other User",
+                                0L
                         ),
                         adminPrincipal()
                 ))
@@ -155,7 +156,7 @@ class UserServiceTest {
     void adminCannotPermanentlyDeleteUserFromAnotherOrganization() {
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 OTHER_USER_ID,
-                new PermanentDeleteUserRequest("other@test.com"),
+                new PermanentDeleteUserRequest("other@test.com", 0L),
                 adminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -288,7 +289,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.updateEnabled(
                 USER_ID,
-                new UpdateUserEnabledRequest(false),
+                new UpdateUserEnabledRequest(false, 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -309,7 +310,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.updateRoles(
                 USER_ID,
-                new UpdateUserRolesRequest(Set.of("USER")),
+                new UpdateUserRolesRequest(Set.of("USER"), 0L),
                 adminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -328,7 +329,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.updateRoles(
                 ADMIN_ID,
-                new UpdateUserRolesRequest(Set.of("USER")),
+                new UpdateUserRolesRequest(Set.of("USER"), 0L),
                 adminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -350,7 +351,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.updateEnabled(
                 USER_ID,
-                new UpdateUserEnabledRequest(false),
+                new UpdateUserEnabledRequest(false, 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -372,7 +373,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.updateRoles(
                 USER_ID,
-                new UpdateUserRolesRequest(Set.of("USER")),
+                new UpdateUserRolesRequest(Set.of("USER"), 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -394,7 +395,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 USER_ID,
-                new PermanentDeleteUserRequest(targetAdmin.getEmail()),
+                new PermanentDeleteUserRequest(targetAdmin.getEmail(), 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -418,7 +419,8 @@ class UserServiceTest {
                 USER_ID,
                 new UpdateUserRequest(
                         "new-email@test.com",
-                        target.getFullName()
+                        target.getFullName(),
+                        0L
                 ),
                 adminPrincipal()
         );
@@ -448,7 +450,7 @@ class UserServiceTest {
 
         userService.updateRoles(
                 USER_ID,
-                new UpdateUserRolesRequest(Set.of("ADMIN")),
+                new UpdateUserRolesRequest(Set.of("ADMIN"), 0L),
                 superAdminPrincipal()
         );
 
@@ -474,7 +476,7 @@ class UserServiceTest {
 
         userService.resetPassword(
                 USER_ID,
-                new ResetUserPasswordRequest(VALID_PASSWORD),
+                new ResetUserPasswordRequest(VALID_PASSWORD, 0L),
                 adminPrincipal()
         );
 
@@ -499,7 +501,7 @@ class UserServiceTest {
 
         UserResponse response = userService.updateEnabled(
                 USER_ID,
-                new UpdateUserEnabledRequest(false),
+                new UpdateUserEnabledRequest(false, 0L),
                 adminPrincipal()
         );
 
@@ -525,7 +527,7 @@ class UserServiceTest {
 
         UserResponse response = userService.updateEnabled(
                 USER_ID,
-                new UpdateUserEnabledRequest(true),
+                new UpdateUserEnabledRequest(true, 0L),
                 adminPrincipal()
         );
 
@@ -548,7 +550,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 SUPER_ADMIN_ID,
-                new PermanentDeleteUserRequest(target.getEmail()),
+                new PermanentDeleteUserRequest(target.getEmail(), 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -567,7 +569,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 USER_ID,
-                new PermanentDeleteUserRequest(target.getEmail()),
+                new PermanentDeleteUserRequest(target.getEmail(), 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -586,7 +588,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 USER_ID,
-                new PermanentDeleteUserRequest(target.getEmail()),
+                new PermanentDeleteUserRequest(target.getEmail(), 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -605,7 +607,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 USER_ID,
-                new PermanentDeleteUserRequest("wrong@test.com"),
+                new PermanentDeleteUserRequest("wrong@test.com", 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(BadRequestException.class)
@@ -624,7 +626,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 USER_ID,
-                new PermanentDeleteUserRequest(target.getEmail()),
+                new PermanentDeleteUserRequest(target.getEmail(), 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -657,7 +659,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> retentionService.permanentlyDelete(
                 USER_ID,
-                new PermanentDeleteUserRequest(target.getEmail()),
+                new PermanentDeleteUserRequest(target.getEmail(), 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -680,7 +682,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 USER_ID,
-                new PermanentDeleteUserRequest(target.getEmail()),
+                new PermanentDeleteUserRequest(target.getEmail(), 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ConflictException.class)
@@ -701,7 +703,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 USER_ID,
-                new PermanentDeleteUserRequest(target.getEmail()),
+                new PermanentDeleteUserRequest(target.getEmail(), 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ConflictException.class)
@@ -734,7 +736,8 @@ void permanentDeletionDeletesEmptyDisabledUser() {
     userService.permanentlyDelete(
             USER_ID,
             new PermanentDeleteUserRequest(
-                    target.getEmail()
+                    target.getEmail(),
+                    0L
             ),
             currentUser
     );
@@ -760,35 +763,57 @@ void permanentDeletionDeletesEmptyDisabledUser() {
 }
 
     @Test
-void cannotCreateUserInDisabledOrganization() {
-    OrganizationEntity disabledOrganization = organization(
-            ORGANIZATION_A_ID,
-            false
-    );
+    void cannotCreateUserInDisabledOrganization() {
+        OrganizationEntity disabledOrganization = organization(
+                ORGANIZATION_A_ID,
+                false
+        );
 
-    stubOrganizationLock(disabledOrganization);
+        when(userRepository.existsByEmail(
+                "new-user@test.com"
+        )).thenReturn(false);
 
-    assertThatThrownBy(() -> userService.create(
-            new CreateUserRequest(
-                    ORGANIZATION_A_ID,
-                    "new-user@test.com",
-                    VALID_PASSWORD,
-                    "New User",
-                    Set.of("USER")
-            ),
-            adminPrincipal()
-    ))
-            .isInstanceOf(ForbiddenOperationException.class)
-            .hasMessageContaining("отключенной организации");
+        when(passwordEncoder.encode(
+                VALID_PASSWORD
+        )).thenReturn("encoded-password");
 
-    verify(userRepository, never()).existsByEmail(any());
-    verify(userRepository, never()).saveAndFlush(any());
-    verifyNoInteractions(
-            roleRepository,
-            passwordEncoder,
-            auditEventService
-    );
-}
+        stubOrganizationLock(disabledOrganization);
+
+        assertThatThrownBy(() -> userService.create(
+                new CreateUserRequest(
+                        ORGANIZATION_A_ID,
+                        "new-user@test.com",
+                        VALID_PASSWORD,
+                        "New User",
+                        Set.of("USER")
+                ),
+                adminPrincipal()
+        ))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessageContaining("отключенной организации");
+
+        /*
+         * Предварительный unique-check и BCrypt выполняются до захвата
+         * organization PESSIMISTIC_WRITE. Это намеренно: дорогое хеширование
+         * не должно выполняться под DB lock. После lock enabled проверяется
+         * повторно как security/correctness boundary.
+         */
+        verify(userRepository).existsByEmail(
+                "new-user@test.com"
+        );
+
+        verify(passwordEncoder).encode(
+                VALID_PASSWORD
+        );
+
+        verify(userRepository, never())
+                .saveAndFlush(any());
+
+        verifyNoInteractions(
+                roleRepository,
+                auditEventService
+        );
+    }
 
     private void stubMutationAsAdmin(UserEntity target) {
         when(userRepository.findByIdAndOrganizationId(
@@ -879,6 +904,7 @@ void cannotCreateUserInDisabledOrganization() {
                 ORGANIZATION_A_ID,
                 "admin-a@test.com",
                 0L,
+                0L,
                 Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
     }
@@ -888,6 +914,7 @@ void cannotCreateUserInDisabledOrganization() {
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
                 "super-admin@test.com",
+                0L,
                 0L,
                 Set.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
         );

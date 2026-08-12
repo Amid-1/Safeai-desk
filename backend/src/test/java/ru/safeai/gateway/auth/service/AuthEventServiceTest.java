@@ -17,7 +17,6 @@ import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.RequestIdFilter;
 
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 

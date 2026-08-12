@@ -237,6 +237,7 @@ class ChatConcurrencyIntegrationTest
                 ORGANIZATION_ID,
                 "chat-concurrency@test.com",
                 0L,
+                0L,
                 Set.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_USER"

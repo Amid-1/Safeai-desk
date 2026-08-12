@@ -75,31 +75,42 @@ class AuditEventQueryServiceTest {
 
     private static final Sort DEFAULT_AUDIT_SORT =
             Sort.by(
-                    Sort.Order.desc("createdAt"),
-                    Sort.Order.desc("id")
+                    Sort.Order.desc(
+                            "createdAt"
+                    ),
+                    Sort.Order.desc(
+                            "id"
+                    )
             );
 
     @Mock
-    private AuditEventRepository auditEventRepository;
+    private AuditEventRepository
+            auditEventRepository;
 
     private AuditEventQueryService service;
 
     @BeforeEach
     void setUp() {
-        service = new AuditEventQueryService(
-                auditEventRepository
-        );
+        service =
+                new AuditEventQueryService(
+                        auditEventRepository
+                );
     }
 
     @Test
     void findAll_whenAdmin_shouldUseTenantScopedSpecification() {
-        whenFindAllReturns(auditEventEntity());
+        whenFindAllReturns(
+                auditEventEntity()
+        );
 
         Page<AuditEventResponse> response =
                 service.findAll(
                         adminPrincipal(),
                         emptyFilter(),
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 );
 
         assertAuditEvent(response);
@@ -115,13 +126,18 @@ class AuditEventQueryServiceTest {
 
     @Test
     void findAll_whenSuperAdmin_shouldAllowGlobalQuery() {
-        whenFindAllReturns(auditEventEntity());
+        whenFindAllReturns(
+                auditEventEntity()
+        );
 
         Page<AuditEventResponse> response =
                 service.findAll(
                         superAdminPrincipal(),
                         emptyFilter(),
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 );
 
         assertAuditEvent(response);
@@ -137,25 +153,34 @@ class AuditEventQueryServiceTest {
 
     @Test
     void findAll_whenSuperAdminFiltersOrganization_shouldProceed() {
-        whenFindAllReturns(auditEventEntity());
-
-        AuditEventFilter filter = new AuditEventFilter(
-                null,
-                null,
-                null,
-                null,
-                null,
-                ORGANIZATION_ID
+        whenFindAllReturns(
+                auditEventEntity()
         );
+
+        AuditEventFilter filter =
+                new AuditEventFilter(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        ORGANIZATION_ID
+                );
 
         Page<AuditEventResponse> response =
                 service.findAll(
                         superAdminPrincipal(),
                         filter,
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 );
 
-        assertAuditEvent(response);
+        assertAuditEvent(
+                response
+        );
+
         verifyFindAll(
                 PageRequest.of(
                         0,
@@ -167,25 +192,34 @@ class AuditEventQueryServiceTest {
 
     @Test
     void findAll_whenAdminFiltersOwnOrganization_shouldProceed() {
-        whenFindAllReturns(auditEventEntity());
-
-        AuditEventFilter filter = new AuditEventFilter(
-                null,
-                null,
-                null,
-                null,
-                null,
-                ORGANIZATION_ID
+        whenFindAllReturns(
+                auditEventEntity()
         );
+
+        AuditEventFilter filter =
+                new AuditEventFilter(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        ORGANIZATION_ID
+                );
 
         Page<AuditEventResponse> response =
                 service.findAll(
                         adminPrincipal(),
                         filter,
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 );
 
-        assertAuditEvent(response);
+        assertAuditEvent(
+                response
+        );
+
         verifyFindAll(
                 PageRequest.of(
                         0,
@@ -197,39 +231,49 @@ class AuditEventQueryServiceTest {
 
     @Test
     void findAll_whenAdminFiltersForeignOrganization_shouldRejectBeforeRepository() {
-        AuditEventFilter filter = new AuditEventFilter(
-                null,
-                null,
-                null,
-                null,
-                null,
-                FOREIGN_ORGANIZATION_ID
-        );
+        AuditEventFilter filter =
+                new AuditEventFilter(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        FOREIGN_ORGANIZATION_ID
+                );
 
         assertThatThrownBy(() ->
                 service.findAll(
                         adminPrincipal(),
                         filter,
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 )
         )
                 .isInstanceOf(
                         ForbiddenOperationException.class
                 )
                 .hasMessageContaining(
-                        "Нельзя фильтровать аудит другой организации"
+                        "Нельзя фильтровать аудит "
+                                + "другой организации"
                 );
 
-        verifyNoInteractions(auditEventRepository);
+        verifyNoInteractions(
+                auditEventRepository
+        );
     }
 
     @Test
     void findAll_whenUnsupportedSort_shouldReturnBadRequest() {
-        Pageable pageable = PageRequest.of(
-                0,
-                200,
-                Sort.by("user.passwordHash")
-        );
+        Pageable pageable =
+                PageRequest.of(
+                        0,
+                        200,
+                        Sort.by(
+                                "user.passwordHash"
+                        )
+                );
 
         assertThatThrownBy(() ->
                 service.findAll(
@@ -238,25 +282,35 @@ class AuditEventQueryServiceTest {
                         pageable
                 )
         )
-                .isInstanceOf(BadRequestException.class)
+                .isInstanceOf(
+                        BadRequestException.class
+                )
                 .hasMessageContaining(
-                        "Сортировка по полю не разрешена"
+                        "Сортировка по полю "
+                                + "не разрешена"
                 )
                 .hasMessageContaining(
                         "user.passwordHash"
                 );
 
-        verifyNoInteractions(auditEventRepository);
+        verifyNoInteractions(
+                auditEventRepository
+        );
     }
 
     @Test
     void findAll_whenPageSizeIsTooLarge_shouldCapIt() {
-        whenFindAllReturns(auditEventEntity());
+        whenFindAllReturns(
+                auditEventEntity()
+        );
 
         service.findAll(
                 adminPrincipal(),
                 emptyFilter(),
-                PageRequest.of(0, 200)
+                PageRequest.of(
+                        0,
+                        200
+                )
         );
 
         verifyFindAll(
@@ -270,7 +324,9 @@ class AuditEventQueryServiceTest {
 
     @Test
     void findAll_whenAllowedSortHasNoId_shouldAppendIdTieBreaker() {
-        whenFindAllReturns(auditEventEntity());
+        whenFindAllReturns(
+                auditEventEntity()
+        );
 
         service.findAll(
                 adminPrincipal(),
@@ -290,8 +346,12 @@ class AuditEventQueryServiceTest {
                         0,
                         50,
                         Sort.by(
-                                Sort.Order.asc("eventType"),
-                                Sort.Order.desc("id")
+                                Sort.Order.asc(
+                                        "eventType"
+                                ),
+                                Sort.Order.desc(
+                                        "id"
+                                )
                         )
                 )
         );
@@ -299,12 +359,19 @@ class AuditEventQueryServiceTest {
 
     @Test
     void findAll_whenAllowedSortAlreadyContainsId_shouldNotAppendDuplicate() {
-        whenFindAllReturns(auditEventEntity());
-
-        Sort requestedSort = Sort.by(
-                Sort.Order.asc("createdAt"),
-                Sort.Order.asc("id")
+        whenFindAllReturns(
+                auditEventEntity()
         );
+
+        Sort requestedSort =
+                Sort.by(
+                        Sort.Order.asc(
+                                "createdAt"
+                        ),
+                        Sort.Order.asc(
+                                "id"
+                        )
+                );
 
         service.findAll(
                 adminPrincipal(),
@@ -328,45 +395,61 @@ class AuditEventQueryServiceTest {
     @Test
     void findAll_whenDateRangeIsInvalid_shouldReject() {
         assertThatThrownBy(() -> {
-            AuditEventFilter filter = new AuditEventFilter(
-                    null,
-                    null,
-                    null,
-                    Instant.parse(
-                            "2026-07-12T12:00:00Z"
-                    ),
-                    Instant.parse(
-                            "2026-07-12T12:00:00Z"
-                    ),
-                    null
-            );
+            AuditEventFilter filter =
+                    new AuditEventFilter(
+                            null,
+                            null,
+                            null,
+                            Instant.parse(
+                                    "2026-07-12T12:00:00Z"
+                            ),
+                            Instant.parse(
+                                    "2026-07-12T12:00:00Z"
+                            ),
+                            null
+                    );
 
             service.findAll(
                     adminPrincipal(),
                     filter,
-                    PageRequest.of(0, 50)
+                    PageRequest.of(
+                            0,
+                            50
+                    )
             );
         })
-                .isInstanceOf(BadRequestException.class)
+                .isInstanceOf(
+                        BadRequestException.class
+                )
                 .hasMessageContaining(
-                        "dateFrom должен быть раньше dateTo"
+                        "dateFrom должен быть "
+                                + "раньше dateTo"
                 );
 
-        verifyNoInteractions(auditEventRepository);
+        verifyNoInteractions(
+                auditEventRepository
+        );
     }
 
     @Test
     void findByUserId_whenAdmin_shouldDelegateThroughTenantScopedFindAll() {
-        whenFindAllReturns(auditEventEntity());
+        whenFindAllReturns(
+                auditEventEntity()
+        );
 
         Page<AuditEventResponse> response =
                 service.findByUserId(
                         USER_ID,
                         adminPrincipal(),
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 );
 
-        assertAuditEvent(response);
+        assertAuditEvent(
+                response
+        );
 
         verifyFindAll(
                 PageRequest.of(
@@ -383,7 +466,10 @@ class AuditEventQueryServiceTest {
                 service.findByUserId(
                         null,
                         adminPrincipal(),
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 )
         )
                 .isInstanceOf(
@@ -393,45 +479,87 @@ class AuditEventQueryServiceTest {
                         "userId не должен быть null"
                 );
 
-        verifyNoInteractions(auditEventRepository);
+        verifyNoInteractions(
+                auditEventRepository
+        );
     }
 
     @Test
     void findAll_shouldMapSystemEventWithoutActor() {
-        AuditEventEntity event = auditEventEntity();
-        event.setActorUserId(null);
-        event.setActorOrganizationId(null);
-        event.setActorEmail(null);
-        event.setActorDisplayName("SYSTEM");
+        AuditEventEntity event =
+                auditEventEntity();
 
-        whenFindAllReturns(event);
+        event.setActorUserId(
+                null
+        );
+
+        event.setActorOrganizationId(
+                null
+        );
+
+        event.setActorEmail(
+                null
+        );
+
+        event.setActorDisplayName(
+                "SYSTEM"
+        );
+
+        whenFindAllReturns(
+                event
+        );
 
         Page<AuditEventResponse> response =
                 service.findAll(
                         adminPrincipal(),
                         emptyFilter(),
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 );
 
         AuditEventResponse item =
-                response.getContent().getFirst();
+                response.getContent()
+                        .getFirst();
 
-        assertThat(item.userId()).isNull();
-        assertThat(item.actorOrganizationId()).isNull();
-        assertThat(item.userEmail()).isNull();
-        assertThat(item.userDisplayName())
-                .isEqualTo("SYSTEM");
+        assertThat(
+                item.userId()
+        ).isNull();
+
+        assertThat(
+                item.actorOrganizationId()
+        ).isNull();
+
+        assertThat(
+                item.userEmail()
+        ).isNull();
+
+        assertThat(
+                item.userDisplayName()
+        ).isEqualTo(
+                "SYSTEM"
+        );
     }
 
     @SuppressWarnings("unchecked")
     private void whenFindAllReturns(
             AuditEventEntity event
     ) {
-        when(auditEventRepository.findAll(
-                any(Specification.class),
-                any(Pageable.class)
-        )).thenReturn(
-                new PageImpl<>(List.of(event))
+        when(
+                auditEventRepository
+                        .findAll(
+                                any(
+                                        Specification.class
+                                ),
+                                any(
+                                        Pageable.class
+                                )
+                        )
+        ).thenReturn(
+                new PageImpl<>(
+                        List.of(event)
+                )
         );
     }
 
@@ -439,9 +567,15 @@ class AuditEventQueryServiceTest {
     private void verifyFindAll(
             Pageable expectedPageable
     ) {
-        verify(auditEventRepository).findAll(
-                any(Specification.class),
-                eq(expectedPageable)
+        verify(
+                auditEventRepository
+        ).findAll(
+                any(
+                        Specification.class
+                ),
+                eq(
+                        expectedPageable
+                )
         );
 
         verifyNoMoreInteractions(
@@ -452,40 +586,72 @@ class AuditEventQueryServiceTest {
     private void assertAuditEvent(
             Page<AuditEventResponse> response
     ) {
-        assertThat(response.getContent()).hasSize(1);
+        assertThat(
+                response.getContent()
+        ).hasSize(1);
 
         AuditEventResponse item =
-                response.getContent().getFirst();
+                response.getContent()
+                        .getFirst();
 
-        assertThat(item.id())
-                .isEqualTo(AUDIT_EVENT_ID);
-        assertThat(item.userId())
-                .isEqualTo(USER_ID);
-        assertThat(item.actorOrganizationId())
-                .isEqualTo(ORGANIZATION_ID);
-        assertThat(item.organizationId())
-                .isEqualTo(ORGANIZATION_ID);
-        assertThat(item.userEmail())
-                .isEqualTo("admin@test.com");
-        assertThat(item.userDisplayName())
-                .isEqualTo("Admin");
-        assertThat(item.eventType())
-                .isEqualTo(
-                        AuditEventType
-                                .USER_LOGIN_SUCCESS
-                                .name()
-                );
-        assertThat(item.details())
-                .containsEntry(
-                        "email",
-                        "admin@test.com"
-                );
-        assertThat(item.createdAt())
-                .isEqualTo(
-                        Instant.parse(
-                                "2026-06-12T12:00:00Z"
-                        )
-                );
+        assertThat(
+                item.id()
+        ).isEqualTo(
+                AUDIT_EVENT_ID
+        );
+
+        assertThat(
+                item.userId()
+        ).isEqualTo(
+                USER_ID
+        );
+
+        assertThat(
+                item.actorOrganizationId()
+        ).isEqualTo(
+                ORGANIZATION_ID
+        );
+
+        assertThat(
+                item.organizationId()
+        ).isEqualTo(
+                ORGANIZATION_ID
+        );
+
+        assertThat(
+                item.userEmail()
+        ).isEqualTo(
+                "admin@test.com"
+        );
+
+        assertThat(
+                item.userDisplayName()
+        ).isEqualTo(
+                "Admin"
+        );
+
+        assertThat(
+                item.eventType()
+        ).isEqualTo(
+                AuditEventType
+                        .USER_LOGIN_SUCCESS
+                        .name()
+        );
+
+        assertThat(
+                item.details()
+        ).containsEntry(
+                "email",
+                "admin@test.com"
+        );
+
+        assertThat(
+                item.createdAt()
+        ).isEqualTo(
+                Instant.parse(
+                        "2026-06-12T12:00:00Z"
+                )
+        );
     }
 
     private AuditEventFilter emptyFilter() {
@@ -503,25 +669,43 @@ class AuditEventQueryServiceTest {
         AuditEventEntity event =
                 new AuditEventEntity();
 
-        event.setId(AUDIT_EVENT_ID);
-        event.setActorUserId(USER_ID);
+        event.setId(
+                AUDIT_EVENT_ID
+        );
+
+        event.setActorUserId(
+                USER_ID
+        );
+
         event.setActorOrganizationId(
                 ORGANIZATION_ID
         );
-        event.setActorEmail("admin@test.com");
-        event.setActorDisplayName("Admin");
-        event.setOrganizationId(ORGANIZATION_ID);
+
+        event.setActorEmail(
+                "admin@test.com"
+        );
+
+        event.setActorDisplayName(
+                "Admin"
+        );
+
+        event.setOrganizationId(
+                ORGANIZATION_ID
+        );
+
         event.setEventType(
                 AuditEventType
                         .USER_LOGIN_SUCCESS
                         .name()
         );
+
         event.setDetails(
                 Map.of(
                         "email",
                         "admin@test.com"
                 )
         );
+
         event.setCreatedAt(
                 Instant.parse(
                         "2026-06-12T12:00:00Z"
@@ -538,6 +722,7 @@ class AuditEventQueryServiceTest {
                         ORGANIZATION_ID,
                         "admin@test.com",
                         0L,
+                        0L,
                         List.of(
                                 new SimpleGrantedAuthority(
                                         "ROLE_ADMIN"
@@ -552,6 +737,7 @@ class AuditEventQueryServiceTest {
                         SUPER_ADMIN_ID,
                         PLATFORM_ORGANIZATION_ID,
                         "superadmin@test.com",
+                        0L,
                         0L,
                         List.of(
                                 new SimpleGrantedAuthority(

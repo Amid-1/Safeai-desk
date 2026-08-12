@@ -92,7 +92,8 @@ class UserManagementPostgresIntegrationTest
                 targetUserId,
                 new UpdateUserRequest(
                         "changed-b@test.com",
-                        "Changed User B"
+                        "Changed User B",
+                        0L
                 ),
                 adminPrincipal()
         )).isInstanceOf(ResourceNotFoundException.class);
@@ -174,7 +175,8 @@ class UserManagementPostgresIntegrationTest
                 created.id(),
                 new UpdateUserRequest(
                         created.email(),
-                        "After"
+                        "After",
+                        created.version()
                 ),
                 adminPrincipal()
         );
@@ -238,7 +240,7 @@ class UserManagementPostgresIntegrationTest
 
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 adminId,
-                new PermanentDeleteUserRequest("last-admin@test.com"),
+                new PermanentDeleteUserRequest("last-admin@test.com", 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ForbiddenOperationException.class)
@@ -383,7 +385,7 @@ class UserManagementPostgresIntegrationTest
 
         userService.permanentlyDelete(
                 fixture.userId(),
-                new PermanentDeleteUserRequest(fixture.email()),
+                new PermanentDeleteUserRequest(fixture.email(), 0L),
                 superAdminPrincipal()
         );
 
@@ -440,7 +442,7 @@ class UserManagementPostgresIntegrationTest
         try {
             userService.updateEnabled(
                     userId,
-                    new UpdateUserEnabledRequest(false),
+                    new UpdateUserEnabledRequest(false, 0L),
                     superAdminPrincipal()
             );
             return "SUCCESS";
@@ -453,7 +455,7 @@ class UserManagementPostgresIntegrationTest
         try {
             userService.updateRoles(
                     userId,
-                    new UpdateUserRolesRequest(Set.of("USER")),
+                    new UpdateUserRolesRequest(Set.of("USER"), 0L),
                     superAdminPrincipal()
             );
             return "SUCCESS";
@@ -466,7 +468,7 @@ class UserManagementPostgresIntegrationTest
         try {
             userService.permanentlyDelete(
                     fixture.userId(),
-                    new PermanentDeleteUserRequest(fixture.email()),
+                    new PermanentDeleteUserRequest(fixture.email(), 0L),
                     superAdminPrincipal()
             );
             return "DELETE_SUCCESS";
@@ -632,7 +634,7 @@ class UserManagementPostgresIntegrationTest
     ) {
         assertThatThrownBy(() -> userService.permanentlyDelete(
                 fixture.userId(),
-                new PermanentDeleteUserRequest(fixture.email()),
+                new PermanentDeleteUserRequest(fixture.email(), 0L),
                 superAdminPrincipal()
         ))
                 .isInstanceOf(ConflictException.class)
@@ -647,6 +649,7 @@ class UserManagementPostgresIntegrationTest
                 ORGANIZATION_A_ID,
                 "admin-a@test.com",
                 0L,
+                0L,
                 Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
         );
     }
@@ -656,6 +659,7 @@ class UserManagementPostgresIntegrationTest
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
                 "super-admin@test.com",
+                0L,
                 0L,
                 Set.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))
         );

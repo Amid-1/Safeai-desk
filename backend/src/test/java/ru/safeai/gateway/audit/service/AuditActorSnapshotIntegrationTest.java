@@ -36,36 +36,48 @@ class AuditActorSnapshotIntegrationTest
 
     @Test
     void adminOfOwnOrganizationGetsEmailAndNameSnapshot() {
-        UUID organizationId = UUID.randomUUID();
-        UUID adminId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
+
+        UUID adminId =
+                UUID.randomUUID();
 
         insertOrganization(
                 organizationId,
-                "Admin Snapshot " + organizationId,
+                "Admin Snapshot "
+                        + organizationId,
                 true
         );
 
         insertTestUser(
                 adminId,
                 organizationId,
-                "admin-" + adminId + "@test.com",
+                "admin-"
+                        + adminId
+                        + "@test.com",
                 "Own Organization Admin",
                 "ADMIN"
         );
 
-        SafeAiUserPrincipal principal = principal(
-                adminId,
-                organizationId,
-                "admin-" + adminId + "@test.com",
-                "ROLE_ADMIN"
-        );
+        SafeAiUserPrincipal principal =
+                principal(
+                        adminId,
+                        organizationId,
+                        "admin-"
+                                + adminId
+                                + "@test.com",
+                        "ROLE_ADMIN"
+                );
 
         auditEventService.record(
                 principal,
                 "Own Organization Admin",
                 organizationId,
                 AuditEventType.USER_UPDATED,
-                Map.of("targetUserId", UUID.randomUUID())
+                Map.of(
+                        "targetUserId",
+                        UUID.randomUUID()
+                )
         );
 
         assertThat(
@@ -86,58 +98,85 @@ class AuditActorSnapshotIntegrationTest
                         """
                 );
 
-        assertThat(row.get("actor_user_id"))
-                .isEqualTo(adminId);
-        assertThat(row.get("actor_organization_id"))
-                .isEqualTo(organizationId);
-        assertThat(row.get("actor_email"))
-                .isEqualTo(
-                        "admin-"
-                                + adminId
-                                + "@test.com"
-                );
-        assertThat(row.get("actor_display_name"))
-                .isEqualTo(
-                        "Own Organization Admin"
-                );
-        assertThat(row.get("organization_id"))
-                .isEqualTo(organizationId);
+        assertThat(
+                row.get("actor_user_id")
+        ).isEqualTo(adminId);
+
+        assertThat(
+                row.get(
+                        "actor_organization_id"
+                )
+        ).isEqualTo(
+                organizationId
+        );
+
+        assertThat(
+                row.get("actor_email")
+        ).isEqualTo(
+                "admin-"
+                        + adminId
+                        + "@test.com"
+        );
+
+        assertThat(
+                row.get(
+                        "actor_display_name"
+                )
+        ).isEqualTo(
+                "Own Organization Admin"
+        );
+
+        assertThat(
+                row.get("organization_id")
+        ).isEqualTo(
+                organizationId
+        );
     }
 
     @Test
     void superAdminManagingForeignOrganizationKeepsOwnActorOrganization() {
         UUID platformOrganizationId =
                 UUID.randomUUID();
+
         UUID targetOrganizationId =
                 UUID.randomUUID();
-        UUID superAdminId = UUID.randomUUID();
+
+        UUID superAdminId =
+                UUID.randomUUID();
 
         insertOrganization(
                 platformOrganizationId,
-                "Platform " + platformOrganizationId,
+                "Platform "
+                        + platformOrganizationId,
                 true
         );
 
         insertOrganization(
                 targetOrganizationId,
-                "Foreign Target " + targetOrganizationId,
+                "Foreign Target "
+                        + targetOrganizationId,
                 true
         );
 
         insertTestUser(
                 superAdminId,
                 platformOrganizationId,
-                "super-" + superAdminId + "@test.com",
+                "super-"
+                        + superAdminId
+                        + "@test.com",
                 "Platform Super Admin",
                 "SUPER_ADMIN"
         );
 
-        SafeAiUserPrincipal principal = principal(
-                superAdminId,
-                platformOrganizationId,
-                "super-" + superAdminId + "@test.com",
-                "ROLE_SUPER_ADMIN"
-        );
+        SafeAiUserPrincipal principal =
+                principal(
+                        superAdminId,
+                        platformOrganizationId,
+                        "super-"
+                                + superAdminId
+                                + "@test.com",
+                        "ROLE_SUPER_ADMIN"
+                );
 
         auditEventService.record(
                 principal,
@@ -145,10 +184,14 @@ class AuditActorSnapshotIntegrationTest
                 targetOrganizationId,
                 AuditEventType
                         .ORGANIZATION_ENABLED_CHANGED,
-                Map.of("enabled", false)
+                Map.of(
+                        "enabled",
+                        false
+                )
         );
 
-        auditOutboxProcessor.processBatch();
+        auditOutboxProcessor
+                .processBatch();
 
         Map<String, Object> row =
                 jdbcTemplate.queryForMap(
@@ -162,38 +205,67 @@ class AuditActorSnapshotIntegrationTest
                         """
                 );
 
-        assertThat(row.get("actor_user_id"))
-                .isEqualTo(superAdminId);
-        assertThat(row.get("actor_organization_id"))
-                .isEqualTo(platformOrganizationId);
-        assertThat(row.get("organization_id"))
-                .isEqualTo(targetOrganizationId);
-        assertThat(row.get("actor_email"))
-                .isEqualTo(
-                        "super-"
-                                + superAdminId
-                                + "@test.com"
-                );
-        assertThat(row.get("actor_display_name"))
-                .isEqualTo("Platform Super Admin");
+        assertThat(
+                row.get("actor_user_id")
+        ).isEqualTo(
+                superAdminId
+        );
+
+        assertThat(
+                row.get(
+                        "actor_organization_id"
+                )
+        ).isEqualTo(
+                platformOrganizationId
+        );
+
+        assertThat(
+                row.get("organization_id")
+        ).isEqualTo(
+                targetOrganizationId
+        );
+
+        assertThat(
+                row.get("actor_email")
+        ).isEqualTo(
+                "super-"
+                        + superAdminId
+                        + "@test.com"
+        );
+
+        assertThat(
+                row.get(
+                        "actor_display_name"
+                )
+        ).isEqualTo(
+                "Platform Super Admin"
+        );
     }
 
     @Test
     void changingCurrentUserEmailDoesNotRewriteOldAuditSnapshot() {
-        UUID organizationId = UUID.randomUUID();
-        UUID adminId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
+
+        UUID adminId =
+                UUID.randomUUID();
 
         insertOrganization(
                 organizationId,
-                "Email Snapshot " + organizationId,
+                "Email Snapshot "
+                        + organizationId,
                 true
         );
 
         String oldEmail =
-                "old-" + adminId + "@test.com";
+                "old-"
+                        + adminId
+                        + "@test.com";
 
         String newEmail =
-                "new-" + adminId + "@test.com";
+                "new-"
+                        + adminId
+                        + "@test.com";
 
         insertTestUser(
                 adminId,
@@ -213,7 +285,10 @@ class AuditActorSnapshotIntegrationTest
                 "Email Admin",
                 organizationId,
                 AuditEventType.USER_UPDATED,
-                Map.of("change", "before-email-change")
+                Map.of(
+                        "change",
+                        "before-email-change"
+                )
         );
 
         jdbcTemplate.update(
@@ -226,7 +301,8 @@ class AuditActorSnapshotIntegrationTest
                 adminId
         );
 
-        auditOutboxProcessor.processBatch();
+        auditOutboxProcessor
+                .processBatch();
 
         assertThat(
                 queryString(
@@ -235,7 +311,9 @@ class AuditActorSnapshotIntegrationTest
                         from public.audit_events
                         """
                 )
-        ).isEqualTo(oldEmail);
+        ).isEqualTo(
+                oldEmail
+        );
 
         assertThat(
                 queryString(
@@ -246,22 +324,30 @@ class AuditActorSnapshotIntegrationTest
                         """,
                         adminId
                 )
-        ).isEqualTo(newEmail);
+        ).isEqualTo(
+                newEmail
+        );
     }
 
     @Test
     void deletingUserNullsCurrentLinkButPreservesAllActorSnapshots() {
-        UUID organizationId = UUID.randomUUID();
-        UUID adminId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
+
+        UUID adminId =
+                UUID.randomUUID();
 
         insertOrganization(
                 organizationId,
-                "Delete Snapshot " + organizationId,
+                "Delete Snapshot "
+                        + organizationId,
                 true
         );
 
         String email =
-                "delete-" + adminId + "@test.com";
+                "delete-"
+                        + adminId
+                        + "@test.com";
 
         insertTestUser(
                 adminId,
@@ -280,11 +366,16 @@ class AuditActorSnapshotIntegrationTest
                 ),
                 "Deleted Admin",
                 organizationId,
-                AuditEventType.USER_PERMANENTLY_DELETED,
-                Map.of("targetUserId", UUID.randomUUID())
+                AuditEventType
+                        .USER_PERMANENTLY_DELETED,
+                Map.of(
+                        "targetUserId",
+                        UUID.randomUUID()
+                )
         );
 
-        auditOutboxProcessor.processBatch();
+        auditOutboxProcessor
+                .processBatch();
 
         UUID linkedBeforeDelete =
                 jdbcTemplate.queryForObject(
@@ -295,10 +386,15 @@ class AuditActorSnapshotIntegrationTest
                         UUID.class
                 );
 
-        assertThat(linkedBeforeDelete)
-                .isEqualTo(adminId);
+        assertThat(
+                linkedBeforeDelete
+        ).isEqualTo(
+                adminId
+        );
 
-        deleteTestUser(adminId);
+        deleteTestUser(
+                adminId
+        );
 
         Map<String, Object> row =
                 jdbcTemplate.queryForMap(
@@ -312,31 +408,58 @@ class AuditActorSnapshotIntegrationTest
                         """
                 );
 
-        assertThat(row.get("user_id")).isNull();
-        assertThat(row.get("actor_user_id"))
-                .isEqualTo(adminId);
-        assertThat(row.get("actor_organization_id"))
-                .isEqualTo(organizationId);
-        assertThat(row.get("actor_email"))
-                .isEqualTo(email);
-        assertThat(row.get("actor_display_name"))
-                .isEqualTo("Deleted Admin");
-    }
+        assertThat(
+                row.get("user_id")
+        ).isNull();
 
+        assertThat(
+                row.get("actor_user_id")
+        ).isEqualTo(
+                adminId
+        );
+
+        assertThat(
+                row.get(
+                        "actor_organization_id"
+                )
+        ).isEqualTo(
+                organizationId
+        );
+
+        assertThat(
+                row.get("actor_email")
+        ).isEqualTo(
+                email
+        );
+
+        assertThat(
+                row.get(
+                        "actor_display_name"
+                )
+        ).isEqualTo(
+                "Deleted Admin"
+        );
+    }
 
     @Test
     void deletingActorBeforeWorkerRunStillPreservesOutboxSnapshot() {
-        UUID organizationId = UUID.randomUUID();
-        UUID adminId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
+
+        UUID adminId =
+                UUID.randomUUID();
 
         insertOrganization(
                 organizationId,
-                "Delete Before Worker " + organizationId,
+                "Delete Before Worker "
+                        + organizationId,
                 true
         );
 
         String email =
-                "before-worker-" + adminId + "@test.com";
+                "before-worker-"
+                        + adminId
+                        + "@test.com";
 
         insertTestUser(
                 adminId,
@@ -356,14 +479,22 @@ class AuditActorSnapshotIntegrationTest
                 "Deleted Before Worker",
                 organizationId,
                 AuditEventType.USER_UPDATED,
-                Map.of("test", true)
+                Map.of(
+                        "test",
+                        true
+                )
         );
 
-        assertThat(countAuditOutbox()).isEqualTo(1);
+        assertThat(
+                countAuditOutbox()
+        ).isEqualTo(1);
 
-        deleteTestUser(adminId);
+        deleteTestUser(
+                adminId
+        );
 
-        auditOutboxProcessor.processBatch();
+        auditOutboxProcessor
+                .processBatch();
 
         Map<String, Object> row =
                 jdbcTemplate.queryForMap(
@@ -377,15 +508,37 @@ class AuditActorSnapshotIntegrationTest
                         """
                 );
 
-        assertThat(row.get("user_id")).isNull();
-        assertThat(row.get("actor_user_id"))
-                .isEqualTo(adminId);
-        assertThat(row.get("actor_organization_id"))
-                .isEqualTo(organizationId);
-        assertThat(row.get("actor_email"))
-                .isEqualTo(email);
-        assertThat(row.get("actor_display_name"))
-                .isEqualTo("Deleted Before Worker");
+        assertThat(
+                row.get("user_id")
+        ).isNull();
+
+        assertThat(
+                row.get("actor_user_id")
+        ).isEqualTo(
+                adminId
+        );
+
+        assertThat(
+                row.get(
+                        "actor_organization_id"
+                )
+        ).isEqualTo(
+                organizationId
+        );
+
+        assertThat(
+                row.get("actor_email")
+        ).isEqualTo(
+                email
+        );
+
+        assertThat(
+                row.get(
+                        "actor_display_name"
+                )
+        ).isEqualTo(
+                "Deleted Before Worker"
+        );
     }
 
     private SafeAiUserPrincipal principal(
@@ -399,6 +552,7 @@ class AuditActorSnapshotIntegrationTest
                         userId,
                         organizationId,
                         email,
+                        0L,
                         0L,
                         List.of(
                                 new SimpleGrantedAuthority(

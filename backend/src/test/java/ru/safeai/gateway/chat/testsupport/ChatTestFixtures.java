@@ -164,6 +164,7 @@ public final class ChatTestFixtures {
                 ORGANIZATION_ID,
                 "chat-user@test.com",
                 0L,
+                0L,
                 List.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_USER"

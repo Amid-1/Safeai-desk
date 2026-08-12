@@ -34,13 +34,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(
-        controllers =
-        GlobalExceptionHandlerIntegrationTest
-                .ErrorProbeController.class
-)
+@WebMvcTest(useDefaultFilters = false)
 @AutoConfigureMockMvc(addFilters = false)
 @Import({
+        GlobalExceptionHandlerIntegrationTest
+                .ErrorProbeController.class,
         GlobalExceptionHandler.class,
         ApiErrorResponseFactory.class,
         GlobalExceptionHandlerIntegrationTest

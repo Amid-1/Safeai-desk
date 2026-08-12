@@ -475,6 +475,7 @@ class ChatControllerSecurityTest {
                 ORGANIZATION_ID,
                 "admin@test.com",
                 0L,
+                0L,
                 List.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_ADMIN"

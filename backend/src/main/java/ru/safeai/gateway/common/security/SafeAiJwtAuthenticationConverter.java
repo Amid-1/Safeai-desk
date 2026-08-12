@@ -6,6 +6,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -145,6 +146,29 @@ public class SafeAiJwtAuthenticationConverter
                         null,
                         authorities
                 );
+    }
+
+    /**
+     * Адаптер для Spring Security OAuth2 Resource Server.
+     *
+     * <p>Доменный strict-converter намеренно бросает {@link BadJwtException},
+     * чтобы unit-тесты и прямые вызовы различали причину отклонения JWT.
+     * BearerTokenAuthenticationFilter, однако, должен получить
+     * {@link org.springframework.security.core.AuthenticationException}.
+     * Поэтому на границе resource-server переводим ожидаемую ошибку
+     * в {@link InvalidBearerTokenException}; детали токена наружу не утекают.</p>
+     */
+    public AbstractAuthenticationToken convertForResourceServer(
+            Jwt jwt
+    ) {
+        try {
+            return convert(jwt);
+        } catch (BadJwtException exception) {
+            throw new InvalidBearerTokenException(
+                    "Invalid access token",
+                    exception
+            );
+        }
     }
 
     private String requiredStringClaim(

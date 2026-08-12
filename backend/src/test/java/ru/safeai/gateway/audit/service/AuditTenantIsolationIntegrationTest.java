@@ -44,25 +44,37 @@ class AuditTenantIsolationIntegrationTest
 
     @Test
     void adminReadsOnlyEventsOfOwnOrganization() {
-        Fixture fixture = fixture();
+        Fixture fixture =
+                fixture();
 
         Page<AuditEventResponse> page =
                 queryService.findAll(
                         fixture.adminPrincipal(),
                         emptyFilter(),
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 );
 
-        assertThat(page.getContent())
+        assertThat(
+                page.getContent()
+        )
                 .extracting(
-                        AuditEventResponse::organizationId
+                        AuditEventResponse
+                                ::organizationId
                 )
                 .containsOnly(
-                        fixture.adminOrganizationId()
+                        fixture
+                                .adminOrganizationId()
                 );
 
-        assertThat(page.getContent())
-                .extracting(AuditEventResponse::id)
+        assertThat(
+                page.getContent()
+        )
+                .extracting(
+                        AuditEventResponse::id
+                )
                 .containsExactly(
                         fixture.adminEventId()
                 );
@@ -70,103 +82,140 @@ class AuditTenantIsolationIntegrationTest
 
     @Test
     void adminCannotBypassTenantIsolationThroughForeignUserId() {
-        Fixture fixture = fixture();
+        Fixture fixture =
+                fixture();
 
         Page<AuditEventResponse> page =
                 queryService.findByUserId(
                         fixture.foreignActorId(),
                         fixture.adminPrincipal(),
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 );
 
-        assertThat(page.getContent()).isEmpty();
+        assertThat(
+                page.getContent()
+        ).isEmpty();
     }
 
     @Test
     void adminCannotBypassTenantIsolationThroughOrganizationFilter() {
-        Fixture fixture = fixture();
+        Fixture fixture =
+                fixture();
 
-        AuditEventFilter filter = new AuditEventFilter(
-                null,
-                null,
-                null,
-                null,
-                null,
-                fixture.foreignOrganizationId()
-        );
+        AuditEventFilter filter =
+                new AuditEventFilter(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        fixture
+                                .foreignOrganizationId()
+                );
 
         assertThatThrownBy(() ->
                 queryService.findAll(
                         fixture.adminPrincipal(),
                         filter,
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 )
         )
                 .isInstanceOf(
                         ForbiddenOperationException.class
                 )
                 .hasMessageContaining(
-                        "Нельзя фильтровать аудит другой организации"
+                        "Нельзя фильтровать аудит "
+                                + "другой организации"
                 );
     }
 
     @Test
     void superAdminCanFilterAnyTargetOrganization() {
-        Fixture fixture = fixture();
+        Fixture fixture =
+                fixture();
 
-        AuditEventFilter filter = new AuditEventFilter(
-                null,
-                null,
-                null,
-                null,
-                null,
-                fixture.foreignOrganizationId()
-        );
+        AuditEventFilter filter =
+                new AuditEventFilter(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        fixture
+                                .foreignOrganizationId()
+                );
 
         Page<AuditEventResponse> page =
                 queryService.findAll(
-                        fixture.superAdminPrincipal(),
+                        fixture
+                                .superAdminPrincipal(),
                         filter,
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 );
 
-        assertThat(page.getContent())
-                .extracting(AuditEventResponse::id)
+        assertThat(
+                page.getContent()
+        )
+                .extracting(
+                        AuditEventResponse::id
+                )
                 .containsExactly(
                         fixture.foreignEventId()
                 );
 
-        assertThat(page.getContent())
+        assertThat(
+                page.getContent()
+        )
                 .extracting(
-                        AuditEventResponse::organizationId
+                        AuditEventResponse
+                                ::organizationId
                 )
                 .containsOnly(
-                        fixture.foreignOrganizationId()
+                        fixture
+                                .foreignOrganizationId()
                 );
     }
 
     @Test
     void adminEmailPrefixFilterCannotExposeForeignTenant() {
-        Fixture fixture = fixture();
+        Fixture fixture =
+                fixture();
 
-        AuditEventFilter filter = new AuditEventFilter(
-                null,
-                "shared-prefix",
-                null,
-                null,
-                null,
-                null
-        );
+        AuditEventFilter filter =
+                new AuditEventFilter(
+                        null,
+                        "shared-prefix",
+                        null,
+                        null,
+                        null,
+                        null
+                );
 
         Page<AuditEventResponse> page =
                 queryService.findAll(
                         fixture.adminPrincipal(),
                         filter,
-                        PageRequest.of(0, 50)
+                        PageRequest.of(
+                                0,
+                                50
+                        )
                 );
 
-        assertThat(page.getContent())
-                .extracting(AuditEventResponse::id)
+        assertThat(
+                page.getContent()
+        )
+                .extracting(
+                        AuditEventResponse::id
+                )
                 .containsExactly(
                         fixture.adminEventId()
                 );
@@ -182,12 +231,20 @@ class AuditTenantIsolationIntegrationTest
         UUID platformOrganizationId =
                 UUID.randomUUID();
 
-        UUID adminActorId = UUID.randomUUID();
-        UUID foreignActorId = UUID.randomUUID();
-        UUID superAdminId = UUID.randomUUID();
+        UUID adminActorId =
+                UUID.randomUUID();
 
-        UUID adminEventId = UUID.randomUUID();
-        UUID foreignEventId = UUID.randomUUID();
+        UUID foreignActorId =
+                UUID.randomUUID();
+
+        UUID superAdminId =
+                UUID.randomUUID();
+
+        UUID adminEventId =
+                UUID.randomUUID();
+
+        UUID foreignEventId =
+                UUID.randomUUID();
 
         Instant createdAt =
                 Instant.parse(
@@ -201,7 +258,10 @@ class AuditTenantIsolationIntegrationTest
                 "shared-prefix-admin@test.com",
                 "Admin",
                 adminOrganizationId,
-                Map.of("tenant", "admin"),
+                Map.of(
+                        "tenant",
+                        "admin"
+                ),
                 createdAt
         );
 
@@ -212,7 +272,10 @@ class AuditTenantIsolationIntegrationTest
                 "shared-prefix-foreign@test.com",
                 "Foreign Admin",
                 foreignOrganizationId,
-                Map.of("tenant", "foreign"),
+                Map.of(
+                        "tenant",
+                        "foreign"
+                ),
                 createdAt.plusSeconds(1)
         );
 
@@ -282,7 +345,8 @@ class AuditTenantIsolationIntegrationTest
                 "createdAt не должен быть null"
         );
 
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 insert into public.audit_events (
                     id,
                     user_id,
@@ -314,7 +378,9 @@ class AuditTenantIsolationIntegrationTest
                 actorEmail,
                 actorDisplayName,
                 targetOrganizationId,
-                AuditEventType.USER_UPDATED.name(),
+                AuditEventType
+                        .USER_UPDATED
+                        .name(),
                 toJson(details),
                 new SqlParameterValue(
                         Types.TIMESTAMP_WITH_TIMEZONE,
@@ -346,12 +412,14 @@ class AuditTenantIsolationIntegrationTest
             UUID adminEventId,
             UUID foreignEventId
     ) {
+
         SafeAiUserPrincipal adminPrincipal() {
             return SafeAiUserPrincipal
                     .accessTokenPrincipal(
                             adminActorId,
                             adminOrganizationId,
                             "admin@test.com",
+                            0L,
                             0L,
                             List.of(
                                     new SimpleGrantedAuthority(
@@ -367,6 +435,7 @@ class AuditTenantIsolationIntegrationTest
                             superAdminId,
                             platformOrganizationId,
                             "superadmin@test.com",
+                            0L,
                             0L,
                             List.of(
                                     new SimpleGrantedAuthority(

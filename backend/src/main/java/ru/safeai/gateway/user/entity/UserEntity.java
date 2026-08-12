@@ -14,6 +14,8 @@ import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.DynamicUpdate;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 
 import java.time.Instant;
@@ -32,20 +34,40 @@ public class UserEntity {
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "organization_id", nullable = false)
+    @ManyToOne(
+            fetch = FetchType.LAZY,
+            optional = false
+    )
+    @JoinColumn(
+            name = "organization_id",
+            nullable = false
+    )
     private OrganizationEntity organization;
 
-    @Column(name = "email", nullable = false, length = 255)
+    @Column(
+            name = "email",
+            nullable = false,
+            length = 255
+    )
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 255)
+    @Column(
+            name = "password_hash",
+            nullable = false,
+            length = 255
+    )
     private String passwordHash;
 
-    @Column(name = "full_name", length = 255)
+    @Column(
+            name = "full_name",
+            length = 255
+    )
     private String fullName;
 
-    @Column(name = "enabled", nullable = false)
+    @Column(
+            name = "enabled",
+            nullable = false
+    )
     private boolean enabled;
 
     @Column(name = "disabled_at")
@@ -54,11 +76,21 @@ public class UserEntity {
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "user_roles",
-            joinColumns = @JoinColumn(name = "user_id"),
-            inverseJoinColumns = @JoinColumn(name = "role_id")
+            joinColumns =
+                    @JoinColumn(
+                            name = "user_id"
+                    ),
+            inverseJoinColumns =
+                    @JoinColumn(
+                            name = "role_id"
+                    )
     )
-    private Set<RoleEntity> roles = new HashSet<>();
+    private Set<RoleEntity> roles =
+            new HashSet<>();
 
+    @Generated(
+            event = EventType.INSERT
+    )
     @Column(
             name = "created_at",
             nullable = false,
@@ -67,6 +99,12 @@ public class UserEntity {
     )
     private Instant createdAt;
 
+    @Generated(
+            event = {
+                    EventType.INSERT,
+                    EventType.UPDATE
+            }
+    )
     @Column(
             name = "updated_at",
             nullable = false,
@@ -78,11 +116,17 @@ public class UserEntity {
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
-    @Column(name = "token_version", nullable = false)
+    @Column(
+            name = "token_version",
+            nullable = false
+    )
     private long tokenVersion;
 
     @Version
-    @Column(name = "version", nullable = false)
+    @Column(
+            name = "version",
+            nullable = false
+    )
     private long version;
 
     @PrePersist

@@ -554,6 +554,7 @@ class ChatTurnStateMachineIntegrationTest
                 ORGANIZATION_ID,
                 "chat-state-machine@test.com",
                 0L,
+                0L,
                 Set.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_USER"

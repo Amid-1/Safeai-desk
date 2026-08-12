@@ -45,19 +45,28 @@ class AuditEventServiceTest {
 
     @Test
     void recordFromPrincipalBuildsImmutableActorSnapshot() {
-        AuditEventService service = service();
+        AuditEventService service =
+                service();
 
         SafeAiUserPrincipal principal =
                 principal();
 
-        AuditCommand command = command();
+        AuditCommand command =
+                command();
 
-        when(commandFactory.create(
-                any(AuditActor.class),
-                eq(TARGET_ORGANIZATION_ID),
-                eq(AuditEventType.USER_UPDATED),
-                anyMap()
-        )).thenReturn(command);
+        when(
+                commandFactory.create(
+                        any(AuditActor.class),
+                        eq(TARGET_ORGANIZATION_ID),
+                        eq(
+                                AuditEventType
+                                        .USER_UPDATED
+                        ),
+                        anyMap()
+                )
+        ).thenReturn(
+                command
+        );
 
         service.record(
                 principal,
@@ -75,47 +84,71 @@ class AuditEventServiceTest {
                         AuditActor.class
                 );
 
-        verify(commandFactory).create(
+        verify(
+                commandFactory
+        ).create(
                 actorCaptor.capture(),
                 eq(TARGET_ORGANIZATION_ID),
-                eq(AuditEventType.USER_UPDATED),
+                eq(
+                        AuditEventType
+                                .USER_UPDATED
+                ),
                 anyMap()
         );
 
         AuditActor actor =
                 actorCaptor.getValue();
 
-        assertThat(actor.userId())
-                .isEqualTo(USER_ID);
+        assertThat(
+                actor.userId()
+        ).isEqualTo(
+                USER_ID
+        );
 
-        assertThat(actor.organizationId())
-                .isEqualTo(
-                        ACTOR_ORGANIZATION_ID
-                );
+        assertThat(
+                actor.organizationId()
+        ).isEqualTo(
+                ACTOR_ORGANIZATION_ID
+        );
 
-        assertThat(actor.email())
-                .isEqualTo("admin@test.com");
+        assertThat(
+                actor.email()
+        ).isEqualTo(
+                "admin@test.com"
+        );
 
-        assertThat(actor.displayName())
-                .isEqualTo("Admin Name");
+        assertThat(
+                actor.displayName()
+        ).isEqualTo(
+                "Admin Name"
+        );
 
-        verify(outboxWriter)
-                .writeRequired(command);
+        verify(
+                outboxWriter
+        ).writeRequired(
+                command
+        );
     }
 
     @Test
     void serializationFailureDoesNotCreatePartialOutboxIntent() {
-        AuditEventService service = service();
+        AuditEventService service =
+                service();
 
         doThrow(
                 new IllegalArgumentException(
                         "Sanitized audit details "
                                 + "не сериализуется в JSON"
                 )
-        ).when(commandFactory).create(
+        ).when(
+                commandFactory
+        ).create(
                 any(AuditActor.class),
                 eq(TARGET_ORGANIZATION_ID),
-                eq(AuditEventType.USER_UPDATED),
+                eq(
+                        AuditEventType
+                                .USER_UPDATED
+                ),
                 anyMap()
         );
 
@@ -124,7 +157,10 @@ class AuditEventServiceTest {
                         principal(),
                         TARGET_ORGANIZATION_ID,
                         AuditEventType.USER_UPDATED,
-                        Map.of("safe", "value")
+                        Map.of(
+                                "safe",
+                                "value"
+                        )
                 )
         )
                 .isInstanceOf(
@@ -134,28 +170,42 @@ class AuditEventServiceTest {
                         "не сериализуется в JSON"
                 );
 
-        verifyNoInteractions(outboxWriter);
+        verifyNoInteractions(
+                outboxWriter
+        );
     }
 
     @Test
     void requiredWriterFailureIsNotSwallowed() {
-        AuditEventService service = service();
+        AuditEventService service =
+                service();
 
-        AuditCommand command = command();
+        AuditCommand command =
+                command();
 
-        when(commandFactory.create(
-                any(AuditActor.class),
-                eq(TARGET_ORGANIZATION_ID),
-                eq(AuditEventType.USER_UPDATED),
-                anyMap()
-        )).thenReturn(command);
+        when(
+                commandFactory.create(
+                        any(AuditActor.class),
+                        eq(TARGET_ORGANIZATION_ID),
+                        eq(
+                                AuditEventType
+                                        .USER_UPDATED
+                        ),
+                        anyMap()
+                )
+        ).thenReturn(
+                command
+        );
 
         doThrow(
                 new IllegalStateException(
                         "audit database unavailable"
                 )
-        ).when(outboxWriter)
-                .writeRequired(command);
+        ).when(
+                outboxWriter
+        ).writeRequired(
+                command
+        );
 
         assertThatThrownBy(() ->
                 service.record(
@@ -172,8 +222,11 @@ class AuditEventServiceTest {
                         "audit database unavailable"
                 );
 
-        verify(outboxWriter)
-                .writeRequired(command);
+        verify(
+                outboxWriter
+        ).writeRequired(
+                command
+        );
     }
 
     private AuditEventService service() {
@@ -202,17 +255,18 @@ class AuditEventServiceTest {
     }
 
     private SafeAiUserPrincipal principal() {
-    return SafeAiUserPrincipal
-            .accessTokenPrincipal(
-                    USER_ID,
-                    ACTOR_ORGANIZATION_ID,
-                    "admin@test.com",
-                    0L,
-                    List.of(
-                            new SimpleGrantedAuthority(
-                                    "ROLE_ADMIN"
-                            )
-                    )
-            );
-}
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        USER_ID,
+                        ACTOR_ORGANIZATION_ID,
+                        "admin@test.com",
+                        0L,
+                        0L,
+                        List.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_ADMIN"
+                                )
+                        )
+                );
+    }
 }

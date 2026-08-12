@@ -26,18 +26,58 @@ class PasswordValidatorTest {
     }
 
     @Test
-    void rejectsNullBlankAndShortPasswords() {
-        assertThat(validator.isValid(null, null)).isFalse();
-        assertThat(validator.isValid("   ", null)).isFalse();
-        assertThat(validator.isValid("Aa1!", null)).isFalse();
+    void delegatesNullAndBlankToNotBlankAndRejectsShortPassword() {
+        assertThat(
+                validator.isValid(
+                        null,
+                        null
+                )
+        ).isTrue();
+
+        assertThat(
+                validator.isValid(
+                        "   ",
+                        null
+                )
+        ).isTrue();
+
+        assertThat(
+                validator.isValid(
+                        "Aa1!",
+                        null
+                )
+        ).isFalse();
     }
 
     @Test
     void rejectsPasswordWithoutRequiredCharacterGroups() {
-        assertThat(validator.isValid("lowercase_123!", null)).isFalse();
-        assertThat(validator.isValid("UPPERCASE_123!", null)).isFalse();
-        assertThat(validator.isValid("NoDigitsHere!", null)).isFalse();
-        assertThat(validator.isValid("NoSpecial1234", null)).isFalse();
+        assertThat(
+                validator.isValid(
+                        "lowercase_123!",
+                        null
+                )
+        ).isFalse();
+
+        assertThat(
+                validator.isValid(
+                        "UPPERCASE_123!",
+                        null
+                )
+        ).isFalse();
+
+        assertThat(
+                validator.isValid(
+                        "NoDigitsHere!",
+                        null
+                )
+        ).isFalse();
+
+        assertThat(
+                validator.isValid(
+                        "NoSpecial1234",
+                        null
+                )
+        ).isFalse();
     }
 
     @Test
@@ -50,16 +90,31 @@ class PasswordValidatorTest {
 
     @Test
     void rejectsMoreThan72Utf8Bytes() {
-        String password = "Aa1!" + "я".repeat(35);
+        String password =
+                "Aa1!" + "я".repeat(35);
 
-        assertThat(password.length()).isLessThanOrEqualTo(72);
-        assertThat(validator.isValid(password, null)).isFalse();
+        assertThat(
+                password.length()
+        ).isLessThanOrEqualTo(72);
+
+        assertThat(
+                validator.isValid(
+                        password,
+                        null
+                )
+        ).isFalse();
     }
 
     @Test
     void countsUnicodeCodePointsForMinimumLength() {
-        String password = "Aa1!" + "🙂".repeat(8);
+        String password =
+                "Aa1!" + "🙂".repeat(8);
 
-        assertThat(validator.isValid(password, null)).isTrue();
+        assertThat(
+                validator.isValid(
+                        password,
+                        null
+                )
+        ).isTrue();
     }
 }

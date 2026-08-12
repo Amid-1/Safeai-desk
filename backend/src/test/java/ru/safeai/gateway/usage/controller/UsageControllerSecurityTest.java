@@ -746,6 +746,7 @@ class UsageControllerSecurityTest {
                 ORGANIZATION_ID,
                 "admin@test.com",
                 0L,
+                0L,
                 Set.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_ADMIN"
@@ -759,6 +760,7 @@ class UsageControllerSecurityTest {
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
                 "superadmin@test.com",
+                0L,
                 0L,
                 Set.of(
                         new SimpleGrantedAuthority(

@@ -719,6 +719,7 @@ class UsageQueryServiceTest {
                 ORGANIZATION_ID,
                 "admin@test.com",
                 0L,
+                0L,
                 List.of(
                         new SimpleGrantedAuthority(
                                 "ROLE_ADMIN"
@@ -732,6 +733,7 @@ class UsageQueryServiceTest {
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
                 "superadmin@test.com",
+                0L,
                 0L,
                 List.of(
                         new SimpleGrantedAuthority(

@@ -7,7 +7,6 @@ import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.safeai.gateway.user.entity.UserEntity;
@@ -16,23 +15,30 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface UserRepository extends JpaRepository<UserEntity, UUID> {
+public interface UserRepository
+        extends JpaRepository<UserEntity, UUID> {
 
     /**
-     * Параметр email должен быть каноническим: trim + lowercase.
-     * V24 гарантирует такой же invariant и обычный unique(email) в PostgreSQL.
+     * Параметр email должен быть каноническим:
+     * trim + lowercase.
+     *
+     * <p>V24 гарантирует такой же invariant
+     * и обычный unique(email) в PostgreSQL.</p>
      */
-    @EntityGraph(attributePaths = {
-            "roles",
-            "organization"
-    })
+    @EntityGraph(
+            attributePaths = {
+                    "roles",
+                    "organization"
+            }
+    )
     @Query("""
             select distinct user
             from UserEntity user
             where user.email = :email
             """)
     Optional<UserEntity> findByEmail(
-            @Param("email") String email
+            @Param("email")
+            String email
     );
 
     @Query("""
@@ -41,30 +47,39 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             where user.email = :email
             """)
     boolean existsByEmail(
-            @Param("email") String email
+            @Param("email")
+            String email
     );
 
-    @EntityGraph(attributePaths = {
-            "roles",
-            "organization"
-    })
+    @EntityGraph(
+            attributePaths = {
+                    "roles",
+                    "organization"
+            }
+    )
     @Query("""
             select distinct user
             from UserEntity user
             where user.id = :id
             """)
-    Optional<UserEntity> findByIdWithRolesAndOrganization(
-            @Param("id") UUID id
+    Optional<UserEntity>
+    findByIdWithRolesAndOrganization(
+            @Param("id")
+            UUID id
     );
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Lock(
+            LockModeType.PESSIMISTIC_WRITE
+    )
     @Query("""
             select user
             from UserEntity user
             where user.id = :id
             """)
-    Optional<UserEntity> findByIdForSecurityUpdate(
-            @Param("id") UUID id
+    Optional<UserEntity>
+    findByIdForSecurityUpdate(
+            @Param("id")
+            UUID id
     );
 
     @Query(
@@ -77,7 +92,9 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
                     from UserEntity user
                     """
     )
-    Page<UUID> findAllIds(Pageable pageable);
+    Page<UUID> findAllIds(
+            Pageable pageable
+    );
 
     @Query(
             value = """
@@ -104,7 +121,8 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
                     """
     )
     Page<UUID> findAllIdsByRole(
-            @Param("role") String role,
+            @Param("role")
+            String role,
             Pageable pageable
     );
 
@@ -121,7 +139,8 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
                     """
     )
     Page<UUID> findAllIdsByOrganizationId(
-            @Param("organizationId") UUID organizationId,
+            @Param("organizationId")
+            UUID organizationId,
             Pageable pageable
     );
 
@@ -151,26 +170,43 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
                       )
                     """
     )
-    Page<UUID> findAllIdsByOrganizationIdAndRole(
-            @Param("organizationId") UUID organizationId,
-            @Param("role") String role,
+    Page<UUID>
+    findAllIdsByOrganizationIdAndRole(
+            @Param("organizationId")
+            UUID organizationId,
+            @Param("role")
+            String role,
             Pageable pageable
     );
 
-    @EntityGraph(attributePaths = {
-            "roles",
-            "organization"
-    })
+    @EntityGraph(
+            attributePaths = {
+                    "roles",
+                    "organization"
+            }
+    )
     @Query("""
             select distinct user
             from UserEntity user
             where user.id in :ids
             """)
-    List<UserEntity> findAllByIdsWithRolesAndOrganization(
-            @Param("ids") List<UUID> ids
+    List<UserEntity>
+    findAllByIdsWithRolesAndOrganization(
+            @Param("ids")
+            List<UUID> ids
     );
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    /**
+     * Блокирует всех активных ADMIN организации
+     * в стабильном порядке по id.
+     *
+     * <p>Используется для защиты invariant:
+     * в организации должен оставаться хотя бы
+     * один активный ADMIN.</p>
+     */
+    @Lock(
+            LockModeType.PESSIMISTIC_WRITE
+    )
     @Query("""
             select user
             from UserEntity user
@@ -185,33 +221,46 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
               )
             order by user.id
             """)
-    List<UserEntity> findEnabledAdminsForUpdate(
-            @Param("organizationId") UUID organizationId
+    List<UserEntity>
+    findEnabledAdminsForUpdate(
+            @Param("organizationId")
+            UUID organizationId
     );
 
-    @EntityGraph(attributePaths = {
-            "roles",
-            "organization"
-    })
+    @EntityGraph(
+            attributePaths = {
+                    "roles",
+                    "organization"
+            }
+    )
     @Query("""
             select distinct user
             from UserEntity user
             where user.id = :id
               and user.organization.id = :organizationId
             """)
-    Optional<UserEntity> findByIdAndOrganizationId(
-            @Param("id") UUID id,
-            @Param("organizationId") UUID organizationId
+    Optional<UserEntity>
+    findByIdAndOrganizationId(
+            @Param("id")
+            UUID id,
+            @Param("organizationId")
+            UUID organizationId
     );
 
-    @EntityGraph(attributePaths = "organization")
+    @EntityGraph(
+            attributePaths = {
+                    "organization"
+            }
+    )
     @Query("""
             select user
             from UserEntity user
             where user.id = :id
             """)
-    Optional<UserEntity> findByIdWithOrganization(
-            @Param("id") UUID id
+    Optional<UserEntity>
+    findByIdWithOrganization(
+            @Param("id")
+            UUID id
     );
 
     @Query("""
@@ -220,23 +269,11 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             where appUser.organization.id = :organizationId
             order by appUser.id
             """)
-    Slice<UUID> findIdsByOrganizationId(
-            @Param("organizationId") UUID organizationId,
+    Slice<UUID>
+    findIdsByOrganizationId(
+            @Param("organizationId")
+            UUID organizationId,
             Pageable pageable
-    );
-
-    @Modifying(
-            flushAutomatically = true,
-            clearAutomatically = true
-    )
-    @Query("""
-            
-                update UserEntity user
-            set user.tokenVersion = user.tokenVersion + 1
-            where user.organization.id = :organizationId
-            """)
-    int incrementTokenVersionByOrganizationId(
-            @Param("organizationId") UUID organizationId
     );
 
     @SuppressWarnings({
@@ -247,16 +284,19 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             value = """
                     select exists (
                         select 1
-                        from public.refresh_tokens as refresh_token
+                        from public.refresh_tokens
+                                as refresh_token
                         where refresh_token.user_id = :userId
                           and refresh_token.revoked_at is null
-                          and refresh_token.expires_at > current_timestamp
+                          and refresh_token.expires_at
+                              > current_timestamp
                     )
                     """,
             nativeQuery = true
     )
     boolean hasActiveRefreshTokens(
-            @Param("userId") UUID userId
+            @Param("userId")
+            UUID userId
     );
 
     @SuppressWarnings({
@@ -267,50 +307,59 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             value = """
                     select exists (
                         select 1
-                        from public.chat_sessions as chat_session
+                        from public.chat_sessions
+                                as chat_session
                         where chat_session.user_id = :userId
-                    
+
                         union all
-                    
+
                         select 1
                         from public.usage_daily_user_model_rollups
                                 as usage_rollup
                         where usage_rollup.user_id = :userId
-                    
+
                         union all
-                    
+
                         select 1
-                        from public.user_ai_quotas as user_quota
+                        from public.user_ai_quotas
+                                as user_quota
                         where user_quota.user_id = :userId
-                    
+
                         union all
-                    
+
                         select 1
-                        from public.audit_events as audit_event
+                        from public.audit_events
+                                as audit_event
                         where audit_event.user_id = :userId
                            or audit_event.actor_user_id = :userId
-                    
+
                         union all
-                    
+
                         select 1
-                        from public.audit_outbox as audit_outbox_event
+                        from public.audit_outbox
+                                as audit_outbox_event
                         where audit_outbox_event.actor_user_id = :userId
                     )
                     """,
             nativeQuery = true
     )
     boolean hasPermanentDeletionDependencies(
-            @Param("userId") UUID userId
+            @Param("userId")
+            UUID userId
     );
 
-    long countByOrganization_Id(UUID organizationId);
+    long countByOrganization_Id(
+            UUID organizationId
+    );
 
     long countByOrganization_IdAndEnabled(
             UUID organizationId,
             boolean enabled
     );
 
-    long countByEnabled(boolean enabled);
+    long countByEnabled(
+            boolean enabled
+    );
 
     @Query("""
             select count(distinct user.id)
@@ -319,7 +368,8 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
             where role.name = :role
             """)
     long countByRole(
-            @Param("role") String role
+            @Param("role")
+            String role
     );
 
     @Query("""
@@ -330,7 +380,9 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
               and role.name = :role
             """)
     long countByOrganizationIdAndRole(
-            @Param("organizationId") UUID organizationId,
-            @Param("role") String role
+            @Param("organizationId")
+            UUID organizationId,
+            @Param("role")
+            String role
     );
 }

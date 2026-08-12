@@ -114,6 +114,7 @@ class ChatTenantIsolationIntegrationTest
                 organizationId,
                 "principal@test.example",
                 0L,
+                0L,
                 List.of(
                         new SimpleGrantedAuthority(role)
                 )

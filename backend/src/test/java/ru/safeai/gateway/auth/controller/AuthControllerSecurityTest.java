@@ -904,6 +904,7 @@ class AuthControllerSecurityTest {
                         ORGANIZATION_ID,
                         EMAIL,
                         0L,
+                        0L,
                         Set.of(
                                 new SimpleGrantedAuthority(
                                         "ROLE_ADMIN"

@@ -14,17 +14,16 @@ import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
-public final class RestAuthenticationEntryPoint
+public class RestAuthenticationEntryPoint
         implements AuthenticationEntryPoint {
 
-    private final ApiErrorResponseWriter
-            errorResponseWriter;
+    private final ApiErrorResponseWriter errorResponseWriter;
 
     @Override
     public void commence(
             HttpServletRequest request,
             HttpServletResponse response,
-            AuthenticationException authException
+            AuthenticationException authenticationException
     ) throws IOException {
         errorResponseWriter.write(
                 request,

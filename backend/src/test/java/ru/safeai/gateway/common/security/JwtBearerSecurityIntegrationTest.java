@@ -185,6 +185,7 @@ class JwtBearerSecurityIntegrationTest {
                                                     )
                                                     .jwtAuthenticationConverter(
                                                             converter
+                                                                    ::convertForResourceServer
                                                     )
                                     )
                     )

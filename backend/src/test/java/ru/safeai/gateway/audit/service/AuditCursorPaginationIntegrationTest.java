@@ -39,22 +39,29 @@ class AuditCursorPaginationIntegrationTest
 
     @Test
     void cursorPaginationHasNoDuplicatesAndPreservesTenantIsolation() {
-        UUID organizationId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
 
         UUID foreignOrganizationId =
                 UUID.randomUUID();
 
-        UUID adminId = UUID.randomUUID();
+        UUID adminId =
+                UUID.randomUUID();
 
         Instant sameCreatedAt =
                 Instant.parse(
                         "2026-07-30T08:00:00Z"
                 );
 
-        Set<UUID> expected = new HashSet<>();
+        Set<UUID> expected =
+                new HashSet<>();
 
-        for (int index = 0; index < 3; index++) {
-            UUID id = UUID.randomUUID();
+        for (int index = 0;
+             index < 3;
+             index++) {
+
+            UUID id =
+                    UUID.randomUUID();
 
             expected.add(id);
 
@@ -65,7 +72,10 @@ class AuditCursorPaginationIntegrationTest
                     "admin@test.com",
                     "Admin",
                     organizationId,
-                    Map.of("index", index),
+                    Map.of(
+                            "index",
+                            index
+                    ),
                     sameCreatedAt
             );
         }
@@ -77,8 +87,12 @@ class AuditCursorPaginationIntegrationTest
                 "foreign@test.com",
                 "Foreign",
                 foreignOrganizationId,
-                Map.of("foreign", true),
-                sameCreatedAt.plusSeconds(1)
+                Map.of(
+                        "foreign",
+                        true
+                ),
+                sameCreatedAt
+                        .plusSeconds(1)
         );
 
         SafeAiUserPrincipal admin =
@@ -87,6 +101,7 @@ class AuditCursorPaginationIntegrationTest
                                 adminId,
                                 organizationId,
                                 "admin@test.com",
+                                0L,
                                 0L,
                                 List.of(
                                         new SimpleGrantedAuthority(
@@ -103,9 +118,17 @@ class AuditCursorPaginationIntegrationTest
                         2
                 );
 
-        assertThat(first.items()).hasSize(2);
-        assertThat(first.hasNext()).isTrue();
-        assertThat(first.nextCursor()).isNotBlank();
+        assertThat(
+                first.items()
+        ).hasSize(2);
+
+        assertThat(
+                first.hasNext()
+        ).isTrue();
+
+        assertThat(
+                first.nextCursor()
+        ).isNotBlank();
 
         AuditEventCursorResponse second =
                 cursorService.findAll(
@@ -115,17 +138,29 @@ class AuditCursorPaginationIntegrationTest
                         2
                 );
 
-        assertThat(second.items()).hasSize(1);
-        assertThat(second.hasNext()).isFalse();
-        assertThat(second.nextCursor()).isNull();
+        assertThat(
+                second.items()
+        ).hasSize(1);
+
+        assertThat(
+                second.hasNext()
+        ).isFalse();
+
+        assertThat(
+                second.nextCursor()
+        ).isNull();
 
         List<UUID> allIds =
                 java.util.stream.Stream
                         .concat(
-                                first.items().stream(),
-                                second.items().stream()
+                                first.items()
+                                        .stream(),
+                                second.items()
+                                        .stream()
                         )
-                        .map(AuditEventResponse::id)
+                        .map(
+                                AuditEventResponse::id
+                        )
                         .toList();
 
         assertThat(allIds)
@@ -137,15 +172,19 @@ class AuditCursorPaginationIntegrationTest
         assertThat(
                 java.util.stream.Stream
                         .concat(
-                                first.items().stream(),
-                                second.items().stream()
+                                first.items()
+                                        .stream(),
+                                second.items()
+                                        .stream()
                         )
                         .map(
                                 AuditEventResponse
                                         ::organizationId
                         )
                         .toList()
-        ).containsOnly(organizationId);
+        ).containsOnly(
+                organizationId
+        );
     }
 
     @SuppressWarnings({
@@ -202,7 +241,8 @@ class AuditCursorPaginationIntegrationTest
                 "createdAt не должен быть null"
         );
 
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 insert into public.audit_events (
                     id,
                     user_id,
@@ -234,7 +274,9 @@ class AuditCursorPaginationIntegrationTest
                 actorEmail,
                 actorDisplayName,
                 targetOrganizationId,
-                AuditEventType.USER_UPDATED.name(),
+                AuditEventType
+                        .USER_UPDATED
+                        .name(),
                 toJson(details),
                 new SqlParameterValue(
                         Types.TIMESTAMP_WITH_TIMEZONE,

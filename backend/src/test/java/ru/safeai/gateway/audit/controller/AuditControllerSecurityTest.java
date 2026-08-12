@@ -654,6 +654,7 @@ class AuditControllerSecurityTest {
                         ORGANIZATION_ID,
                         "user@test.com",
                         0L,
+                        0L,
                         List.of(
                                 new SimpleGrantedAuthority(
                                         "ROLE_USER"
@@ -669,6 +670,7 @@ class AuditControllerSecurityTest {
                         ORGANIZATION_ID,
                         "admin@test.com",
                         0L,
+                        0L,
                         List.of(
                                 new SimpleGrantedAuthority(
                                         "ROLE_ADMIN"
@@ -683,6 +685,7 @@ class AuditControllerSecurityTest {
                         SUPER_ADMIN_ID,
                         PLATFORM_ORGANIZATION_ID,
                         "superadmin@test.com",
+                        0L,
                         0L,
                         List.of(
                                 new SimpleGrantedAuthority(

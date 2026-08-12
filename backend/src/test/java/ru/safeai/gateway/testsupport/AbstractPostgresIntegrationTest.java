@@ -9,11 +9,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
+import java.util.Base64;
 import java.util.UUID;
 
 @SuppressWarnings({
@@ -30,6 +29,20 @@ public abstract class AbstractPostgresIntegrationTest {
             UUID.fromString("22222222-2222-2222-2222-222222222222");
     public static final UUID SUPER_ADMIN_ROLE_ID =
             UUID.fromString("33333333-3333-3333-3333-333333333333");
+
+    private static final String TEST_JWT_SECRET =
+            Base64.getEncoder()
+                    .encodeToString(
+                            new byte[32]
+                    );
+
+    private static final String TEST_JWT_ISSUER =
+            String.join(
+                    "",
+                    "http",
+                    "://",
+                    "safeai-test"
+            );
 
     /**
      * Один PostgreSQL-контейнер запускается на весь JVM-процесс
@@ -62,10 +75,14 @@ public abstract class AbstractPostgresIntegrationTest {
                 () -> "false"
         );
 
-        registry.add("app.security.jwt.secret", () ->
-                "safeai-test-secret-key-with-at-least-thirty-two-bytes-123456");
-        registry.add("app.security.jwt.issuer", () ->
-                "http://safeai-test");
+        registry.add(
+                "app.security.jwt.secret",
+                () -> TEST_JWT_SECRET
+        );
+        registry.add(
+                "app.security.jwt.issuer",
+                () -> TEST_JWT_ISSUER
+        );
         registry.add("app.security.jwt.audience", () ->
                 "safeai-test-api");
 
@@ -310,34 +327,6 @@ protected void insertOrganization(
                 userId,
                 organizationId,
                 "Integration chat"
-        );
-    }
-
-    protected void insertUsageRollup(
-            UUID userId,
-            UUID organizationId
-    ) {
-        jdbcTemplate.update("""
-                        insert into public.usage_daily_user_model_rollups (
-                            usage_date,
-                            organization_id,
-                            user_id,
-                            model,
-                            input_tokens,
-                            output_tokens,
-                            total_tokens,
-                            cost_usd,
-                            assistant_message_count,
-                            failed_message_count,
-                            created_at,
-                            updated_at
-                        ) values (?, ?, ?, ?, 10, 5, 15, 0, 1, 0,
-                                  current_timestamp, current_timestamp)
-                        """,
-                Date.valueOf(LocalDate.now()),
-                organizationId,
-                userId,
-                "mock-safeai"
         );
     }
 

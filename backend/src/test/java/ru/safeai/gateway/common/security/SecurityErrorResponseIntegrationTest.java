@@ -7,40 +7,46 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
-import org.springframework.security.config.Customizer;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.UUID;
 
-import static org.hamcrest.Matchers.not;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(
-        controllers =
-        SecurityErrorResponseIntegrationTest
-                .SecurityProbeController.class
-)
+@WebMvcTest(useDefaultFilters = false)
 @Import({
+        SecurityErrorResponseIntegrationTest
+                .SecurityProbeController.class,
+
         RequestIdFilter.class,
+
         ApiErrorResponseFactory.class,
         ApiErrorResponseWriter.class,
+
         RestAuthenticationEntryPoint.class,
         RestAccessDeniedHandler.class,
+
         SecurityErrorResponseIntegrationTest
                 .SecurityTestConfiguration.class
 })
@@ -51,128 +57,262 @@ class SecurityErrorResponseIntegrationTest {
                     "2026-08-12T12:00:00Z"
             );
 
+    private static final String AUTHENTICATED_ENDPOINT =
+            "/test/security/authenticated";
+
+    private static final String ADMIN_ENDPOINT =
+            "/test/security/admin";
+
+    private static final String CLIENT_REQUEST_ID_401 =
+            "client-correlation-1";
+
+    private static final String CLIENT_REQUEST_ID_403 =
+            "client-correlation-2";
+
     @Autowired
     private MockMvc mockMvc;
 
     @Test
     void unauthenticatedRequestReturnsSafeJson401NoStore()
             throws Exception {
-        mockMvc.perform(
-                        get(
-                                "/test/security/authenticated"
+
+        MvcResult result =
+                mockMvc.perform(
+                                get(
+                                        AUTHENTICATED_ENDPOINT
+                                )
+                                        .header(
+                                                RequestIdFilter
+                                                        .REQUEST_ID_HEADER,
+                                                CLIENT_REQUEST_ID_401
+                                        )
                         )
-                                .header(
+                        .andExpect(
+                                status().isUnauthorized()
+                        )
+                        .andExpect(
+                                content()
+                                        .contentTypeCompatibleWith(
+                                                MediaType.APPLICATION_JSON
+                                        )
+                        )
+                        .andExpect(
+                                header().string(
+                                        HttpHeaders.CACHE_CONTROL,
+                                        "no-store"
+                                )
+                        )
+                        .andExpect(
+                                header().string(
+                                        HttpHeaders.WWW_AUTHENTICATE,
+                                        "Bearer"
+                                )
+                        )
+                        .andExpect(
+                                header().exists(
                                         RequestIdFilter
-                                                .REQUEST_ID_HEADER,
-                                        "client-correlation-1"
-                                )
-                )
-                .andExpect(
-                        status().isUnauthorized()
-                )
-                .andExpect(
-                        header().string(
-                                HttpHeaders.CACHE_CONTROL,
-                                "no-store"
-                        )
-                )
-                .andExpect(
-                        header().exists(
-                                RequestIdFilter
-                                        .REQUEST_ID_HEADER
-                        )
-                )
-                .andExpect(
-                        header().string(
-                                RequestIdFilter
-                                        .REQUEST_ID_HEADER,
-                                not(
-                                        "client-correlation-1"
+                                                .REQUEST_ID_HEADER
                                 )
                         )
-                )
-                .andExpect(
-                        jsonPath("$.status")
-                                .value(401)
-                )
-                .andExpect(
-                        jsonPath("$.error")
-                                .value(
-                                        "UNAUTHORIZED"
-                                )
-                )
-                .andExpect(
-                        jsonPath("$.message")
-                                .value(
-                                        "Требуется авторизация"
-                                )
-                )
-                .andExpect(
-                        jsonPath("$.path")
-                                .value(
-                                        "/test/security/authenticated"
-                                )
-                )
-                .andExpect(
-                        jsonPath("$.requestId")
-                                .isString()
-                )
-                .andExpect(
-                        jsonPath("$.fieldErrors")
-                                .isMap()
-                );
+                        .andExpect(
+                                jsonPath("$.timestamp")
+                                        .value(
+                                                NOW.toString()
+                                        )
+                        )
+                        .andExpect(
+                                jsonPath("$.status")
+                                        .value(401)
+                        )
+                        .andExpect(
+                                jsonPath("$.error")
+                                        .value(
+                                                "UNAUTHORIZED"
+                                        )
+                        )
+                        .andExpect(
+                                jsonPath("$.message")
+                                        .value(
+                                                "Требуется авторизация"
+                                        )
+                        )
+                        .andExpect(
+                                jsonPath("$.path")
+                                        .value(
+                                                AUTHENTICATED_ENDPOINT
+                                        )
+                        )
+                        .andExpect(
+                                jsonPath("$.requestId")
+                                        .isString()
+                        )
+                        .andExpect(
+                                jsonPath("$.fieldErrors")
+                                        .isMap()
+                        )
+                        .andReturn();
+
+        assertRequestIdContract(
+                result,
+                CLIENT_REQUEST_ID_401
+        );
     }
 
     @Test
     void authenticatedButUnauthorizedRequestReturnsSafeJson403NoStore()
             throws Exception {
-        mockMvc.perform(
-                        get(
-                                "/test/security/admin"
+
+        MvcResult result =
+                mockMvc.perform(
+                                get(
+                                        ADMIN_ENDPOINT
+                                )
+                                        .header(
+                                                RequestIdFilter
+                                                        .REQUEST_ID_HEADER,
+                                                CLIENT_REQUEST_ID_403
+                                        )
+                                        .with(
+                                                user("user")
+                                                        .roles(
+                                                                "USER"
+                                                        )
+                                        )
                         )
-                                .with(
-                                        user("user")
-                                                .roles(
-                                                        "USER"
-                                                )
-                                )
-                )
-                .andExpect(
-                        status().isForbidden()
-                )
-                .andExpect(
-                        header().string(
-                                HttpHeaders.CACHE_CONTROL,
-                                "no-store"
+                        .andExpect(
+                                status().isForbidden()
                         )
-                )
-                .andExpect(
-                        jsonPath("$.status")
-                                .value(403)
-                )
-                .andExpect(
-                        jsonPath("$.error")
-                                .value(
-                                        "FORBIDDEN"
+                        .andExpect(
+                                content()
+                                        .contentTypeCompatibleWith(
+                                                MediaType.APPLICATION_JSON
+                                        )
+                        )
+                        .andExpect(
+                                header().string(
+                                        HttpHeaders.CACHE_CONTROL,
+                                        "no-store"
                                 )
-                )
-                .andExpect(
-                        jsonPath("$.message")
-                                .value(
-                                        "Доступ запрещён"
+                        )
+                        .andExpect(
+                                header().doesNotExist(
+                                        HttpHeaders.WWW_AUTHENTICATE
                                 )
-                )
-                .andExpect(
-                        jsonPath("$.fieldErrors")
-                                .isMap()
+                        )
+                        .andExpect(
+                                header().exists(
+                                        RequestIdFilter
+                                                .REQUEST_ID_HEADER
+                                )
+                        )
+                        .andExpect(
+                                jsonPath("$.timestamp")
+                                        .value(
+                                                NOW.toString()
+                                        )
+                        )
+                        .andExpect(
+                                jsonPath("$.status")
+                                        .value(403)
+                        )
+                        .andExpect(
+                                jsonPath("$.error")
+                                        .value(
+                                                "FORBIDDEN"
+                                        )
+                        )
+                        .andExpect(
+                                jsonPath("$.message")
+                                        .value(
+                                                "Доступ запрещён"
+                                        )
+                        )
+                        .andExpect(
+                                jsonPath("$.path")
+                                        .value(
+                                                ADMIN_ENDPOINT
+                                        )
+                        )
+                        .andExpect(
+                                jsonPath("$.requestId")
+                                        .isString()
+                        )
+                        .andExpect(
+                                jsonPath("$.fieldErrors")
+                                        .isMap()
+                        )
+                        .andReturn();
+
+        assertRequestIdContract(
+                result,
+                CLIENT_REQUEST_ID_403
+        );
+    }
+
+    private static void assertRequestIdContract(
+            MvcResult result,
+            String clientRequestId
+    ) {
+        String serverRequestId =
+                result.getResponse()
+                        .getHeader(
+                                RequestIdFilter
+                                        .REQUEST_ID_HEADER
+                        );
+
+        assertThat(serverRequestId)
+                .isNotBlank()
+                .isNotEqualTo(
+                        clientRequestId
                 );
+
+        assertThat(
+                UUID.fromString(
+                        serverRequestId
+                )
+        ).isNotNull();
+
+        assertThat(
+                result.getRequest()
+                        .getAttribute(
+                                RequestIdFilter
+                                        .REQUEST_ID_ATTRIBUTE
+                        )
+        ).isEqualTo(
+                serverRequestId
+        );
+
+        assertThat(
+                result.getRequest()
+                        .getAttribute(
+                                RequestIdFilter
+                                        .CLIENT_REQUEST_ID_ATTRIBUTE
+                        )
+        ).isEqualTo(
+                clientRequestId
+        );
+
+        String responseBody =
+                new String(
+                        result.getResponse()
+                                .getContentAsByteArray(),
+                        StandardCharsets.UTF_8
+                );
+
+        assertThat(
+                responseBody
+        ).contains(
+                "\"requestId\":\""
+                        + serverRequestId
+                        + "\""
+        );
     }
 
     @RestController
     static class SecurityProbeController {
 
         @GetMapping(
-                "/test/security/authenticated"
+                AUTHENTICATED_ENDPOINT
         )
         Map<String, Boolean> authenticated() {
             return Map.of(
@@ -182,7 +322,7 @@ class SecurityErrorResponseIntegrationTest {
         }
 
         @GetMapping(
-                "/test/security/admin"
+                ADMIN_ENDPOINT
         )
         Map<String, Boolean> admin() {
             return Map.of(
@@ -213,22 +353,18 @@ class SecurityErrorResponseIntegrationTest {
         ) {
             return http
                     .csrf(
-                            AbstractHttpConfigurer
-                                    ::disable
+                            AbstractHttpConfigurer::disable
                     )
                     .requestCache(
-                            AbstractHttpConfigurer
-                                    ::disable
+                            AbstractHttpConfigurer::disable
                     )
                     .sessionManagement(
                             session ->
                                     session
                                             .sessionCreationPolicy(
-                                                    SessionCreationPolicy.STATELESS
+                                                    SessionCreationPolicy
+                                                            .STATELESS
                                             )
-                    )
-                    .httpBasic(
-                            Customizer.withDefaults()
                     )
                     .exceptionHandling(
                             exceptions ->
@@ -241,14 +377,20 @@ class SecurityErrorResponseIntegrationTest {
                                             )
                     )
                     .authorizeHttpRequests(
-                            auth ->
-                                    auth
+                            authorization ->
+                                    authorization
                                             .requestMatchers(
-                                                    "/test/security/admin"
+                                                    ADMIN_ENDPOINT
                                             )
-                                            .hasRole("ADMIN")
-                                            .anyRequest()
+                                            .hasRole(
+                                                    "ADMIN"
+                                            )
+                                            .requestMatchers(
+                                                    AUTHENTICATED_ENDPOINT
+                                            )
                                             .authenticated()
+                                            .anyRequest()
+                                            .denyAll()
                     )
                     .build();
         }

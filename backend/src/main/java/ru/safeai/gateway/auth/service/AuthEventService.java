@@ -2,13 +2,13 @@ package ru.safeai.gateway.auth.service;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.details.SecurityRefreshReuseAuditDetails;
 import ru.safeai.gateway.audit.model.AuditActor;
 import ru.safeai.gateway.audit.service.BestEffortStandaloneAuditService;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
-import ru.safeai.gateway.common.exception.RateLimitExceededException;
 import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.ClientIpResolver;
@@ -26,19 +26,30 @@ public class AuthEventService {
      * Must match the actor_email / actor_display_name snapshot limits.
      */
     private static final int MAX_IDENTITY_LENGTH = 255;
+
     private static final int MAX_IP_LENGTH = 128;
+
     private static final int MAX_USER_AGENT_LENGTH = 512;
+
     private static final int MAX_REQUEST_ID_LENGTH = 128;
+
+    private static final String UNKNOWN_VALUE =
+            "unknown";
 
     /*
      * AuthService invokes these methods after the login/refresh/logout
-     * transaction has already completed. Therefore audit persistence is a
+     * transaction has already completed. Therefore, audit persistence is a
      * standalone best-effort operation and must not turn a committed auth
      * operation into an HTTP failure.
      */
-    private final BestEffortStandaloneAuditService auditService;
-    private final PlatformProperties platformProperties;
-    private final ClientIpResolver clientIpResolver;
+    private final BestEffortStandaloneAuditService
+            auditService;
+
+    private final PlatformProperties
+            platformProperties;
+
+    private final ClientIpResolver
+            clientIpResolver;
 
     public void loginSuccess(
             CurrentUserResponse user,
@@ -48,31 +59,35 @@ public class AuthEventService {
                 user,
                 "user не должен быть null"
         );
+
         Objects.requireNonNull(
                 request,
                 "request не должен быть null"
         );
+
         Objects.requireNonNull(
                 user.id(),
                 "user.id не должен быть null"
         );
+
         Objects.requireNonNull(
                 user.organizationId(),
                 "user.organizationId не должен быть null"
         );
 
-        AuditActor actor = new AuditActor(
-                user.id(),
-                user.organizationId(),
-                truncateNullable(
-                        user.email(),
-                        MAX_IDENTITY_LENGTH
-                ),
-                truncateNullable(
-                        user.fullName(),
-                        MAX_IDENTITY_LENGTH
-                )
-        );
+        AuditActor actor =
+                new AuditActor(
+                        user.id(),
+                        user.organizationId(),
+                        truncateNullable(
+                                user.email(),
+                                MAX_IDENTITY_LENGTH
+                        ),
+                        truncateNullable(
+                                user.fullName(),
+                                MAX_IDENTITY_LENGTH
+                        )
+                );
 
         auditService.tryRecord(
                 actor,
@@ -120,40 +135,6 @@ public class AuthEventService {
         );
     }
 
-    public void loginRateLimitExceeded(
-            String email,
-            HttpServletRequest request,
-            RateLimitExceededException exception
-    ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
-        Objects.requireNonNull(
-                exception,
-                "exception не должен быть null"
-        );
-
-        auditService.tryRecordSystem(
-                platformProperties.organizationId(),
-                AuditEventType.RATE_LIMIT_EXCEEDED,
-                requestDetails(
-                        request,
-                        Map.of(
-                                "type",
-                                "LOGIN",
-                                "email",
-                                truncateOrUnknown(
-                                        email,
-                                        MAX_IDENTITY_LENGTH
-                                ),
-                                "retryAfterSeconds",
-                                exception.getRetryAfterSeconds()
-                        )
-                )
-        );
-    }
-
     public void refreshReuseDetected(
             RefreshTokenReuseDetectedException exception,
             HttpServletRequest request
@@ -162,43 +143,50 @@ public class AuthEventService {
                 exception,
                 "exception не должен быть null"
         );
+
         Objects.requireNonNull(
                 request,
                 "request не должен быть null"
         );
+
         Objects.requireNonNull(
                 exception.getUserId(),
                 "exception.userId не должен быть null"
         );
+
         Objects.requireNonNull(
                 exception.getOrganizationId(),
                 "exception.organizationId не должен быть null"
         );
+
         Objects.requireNonNull(
                 exception.getTokenFamilyId(),
                 "exception.tokenFamilyId не должен быть null"
         );
 
-        AuditActor actor = new AuditActor(
-                exception.getUserId(),
-                exception.getOrganizationId(),
-                null,
-                null
-        );
+        AuditActor actor =
+                new AuditActor(
+                        exception.getUserId(),
+                        exception.getOrganizationId(),
+                        null,
+                        null
+                );
 
         SecurityRefreshReuseAuditDetails details =
                 new SecurityRefreshReuseAuditDetails(
                         exception.getTokenFamilyId(),
                         truncateOrUnknown(
-                                clientIpResolver.resolve(request),
+                                clientIpResolver.resolve(
+                                        request
+                                ),
                                 MAX_IP_LENGTH
                         ),
-                        headerOrUnknown(
-                                request,
-                                "User-Agent",
-                                MAX_USER_AGENT_LENGTH
+                        userAgentOrUnknown(
+                                request
                         ),
-                        requestId(request)
+                        requestId(
+                                request
+                        )
                 );
 
         auditService.tryRecord(
@@ -218,28 +206,32 @@ public class AuthEventService {
                 subject,
                 "subject не должен быть null"
         );
+
         Objects.requireNonNull(
                 request,
                 "request не должен быть null"
         );
+
         Objects.requireNonNull(
                 subject.userId(),
                 "subject.userId не должен быть null"
         );
+
         Objects.requireNonNull(
                 subject.organizationId(),
                 "subject.organizationId не должен быть null"
         );
 
-        AuditActor actor = new AuditActor(
-                subject.userId(),
-                subject.organizationId(),
-                truncateNullable(
-                        subject.email(),
-                        MAX_IDENTITY_LENGTH
-                ),
-                null
-        );
+        AuditActor actor =
+                new AuditActor(
+                        subject.userId(),
+                        subject.organizationId(),
+                        truncateNullable(
+                                subject.email(),
+                                MAX_IDENTITY_LENGTH
+                        ),
+                        null
+                );
 
         auditService.tryRecord(
                 actor,
@@ -264,84 +256,147 @@ public class AuthEventService {
             HttpServletRequest request,
             Map<String, Object> eventDetails
     ) {
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                eventDetails,
+                "eventDetails не должен быть null"
+        );
+
         Map<String, Object> result =
-                new LinkedHashMap<>(eventDetails);
+                new LinkedHashMap<>(
+                        eventDetails
+                );
 
         result.put(
                 "ip",
                 truncateOrUnknown(
-                        clientIpResolver.resolve(request),
+                        clientIpResolver.resolve(
+                                request
+                        ),
                         MAX_IP_LENGTH
                 )
         );
 
         result.put(
                 "userAgent",
-                headerOrUnknown(
-                        request,
-                        "User-Agent",
-                        MAX_USER_AGENT_LENGTH
+                userAgentOrUnknown(
+                        request
                 )
         );
 
+        /*
+         * requestId всегда является server-generated correlation id.
+         *
+         * Входящий X-Request-Id является только client metadata
+         * и никогда не используется вместо server requestId.
+         */
         result.put(
                 "requestId",
-                requestId(request)
+                requestId(
+                        request
+                )
         );
 
-        return Map.copyOf(result);
+        String clientRequestId =
+                clientRequestId(
+                        request
+                );
+
+        if (clientRequestId != null) {
+            result.put(
+                    "clientRequestId",
+                    clientRequestId
+            );
+        }
+
+        return Map.copyOf(
+                result
+        );
     }
 
     private String requestId(
             HttpServletRequest request
     ) {
-        Object attribute = request.getAttribute(
-                RequestIdFilter.REQUEST_ID_ATTRIBUTE
-        );
+        Object attribute =
+                request.getAttribute(
+                        RequestIdFilter
+                                .REQUEST_ID_ATTRIBUTE
+                );
 
         if (attribute instanceof String value
                 && !value.isBlank()) {
+
             return truncateOrUnknown(
                     value,
                     MAX_REQUEST_ID_LENGTH
             );
         }
 
-        return headerOrUnknown(
-                request,
-                RequestIdFilter.REQUEST_ID_HEADER,
+        /*
+         * Не используем client-controlled X-Request-Id
+         * в качестве server correlation id.
+         */
+        return UNKNOWN_VALUE;
+    }
+
+    private @Nullable String clientRequestId(
+            HttpServletRequest request
+    ) {
+        Object attribute =
+                request.getAttribute(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_ATTRIBUTE
+                );
+
+        if (!(attribute instanceof String value)
+                || value.isBlank()) {
+
+            return null;
+        }
+
+        return truncateNullable(
+                value,
                 MAX_REQUEST_ID_LENGTH
         );
     }
 
-    private String headerOrUnknown(
-            HttpServletRequest request,
-            String name,
-            int maxLength
+    private String userAgentOrUnknown(
+            HttpServletRequest request
     ) {
         return truncateOrUnknown(
-                request.getHeader(name),
-                maxLength
+                request.getHeader(
+                        "User-Agent"
+                ),
+                MAX_USER_AGENT_LENGTH
         );
     }
 
     private String truncateOrUnknown(
-            String value,
+            @Nullable String value,
             int maxLength
     ) {
         String normalized =
-                truncateNullable(value, maxLength);
+                truncateNullable(
+                        value,
+                        maxLength
+                );
 
         return normalized == null
-                ? "unknown"
+                ? UNKNOWN_VALUE
                 : normalized;
     }
 
-    private String truncateNullable(
-            String value,
+    private @Nullable String truncateNullable(
+            @Nullable String value,
             int maxLength
     ) {
-        if (value == null || value.isBlank()) {
+        if (value == null
+                || value.isBlank()) {
+
             return null;
         }
 
@@ -351,20 +406,32 @@ public class AuthEventService {
             );
         }
 
-        String trimmed = value.trim();
+        String trimmed =
+                value.trim();
 
-        if (trimmed.length() <= maxLength) {
+        if (trimmed.length()
+                <= maxLength) {
+
             return trimmed;
         }
 
-        int end = maxLength;
+        int end =
+                maxLength;
 
+        /*
+         * Не обрываем UTF-16 surrogate pair.
+         */
         if (Character.isHighSurrogate(
-                trimmed.charAt(end - 1)
+                trimmed.charAt(
+                        end - 1
+                )
         )) {
             end--;
         }
 
-        return trimmed.substring(0, end);
+        return trimmed.substring(
+                0,
+                end
+        );
     }
 }

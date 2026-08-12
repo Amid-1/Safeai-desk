@@ -19,7 +19,4 @@ public record UpdateUserRequest(
         @PositiveOrZero
         Long expectedVersion
 ) {
-    public UpdateUserRequest(String email, String fullName) {
-        this(email, fullName, 0L);
-    }
 }

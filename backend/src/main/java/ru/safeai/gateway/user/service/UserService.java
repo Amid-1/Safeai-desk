@@ -235,10 +235,9 @@ public class UserService {
              * при commit transaction.
              */
             saved =
-                    userRepository
-                            .saveAndFlush(
-                                    entity
-                            );
+                    saveAndRefresh(
+                            entity
+                    );
         } catch (
                 DataIntegrityViolationException exception
         ) {

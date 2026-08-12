@@ -11,7 +11,4 @@ public record UpdateUserEnabledRequest(
         @PositiveOrZero
         Long expectedVersion
 ) {
-    public UpdateUserEnabledRequest(Boolean enabled) {
-        this(enabled, 0L);
-    }
 }

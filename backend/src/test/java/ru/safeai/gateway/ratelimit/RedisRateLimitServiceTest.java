@@ -516,6 +516,7 @@ void setUp() {
                         ORGANIZATION_ID,
                         "user@test.com",
                         0L,
+                        0L,
                         List.of(
                                 new SimpleGrantedAuthority(
                                         role

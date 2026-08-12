@@ -3,6 +3,7 @@ package ru.safeai.gateway.common.exception;
 import jakarta.persistence.OptimisticLockException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ElementKind;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Path;
 import org.junit.jupiter.api.BeforeEach;
@@ -164,7 +165,12 @@ class GlobalExceptionHandlerTest {
     @Test
     void handleAuthServiceUnavailableReturnsSafe503() {
         AuthServiceUnavailableException exception =
-                mock(AuthServiceUnavailableException.class);
+                new AuthServiceUnavailableException(
+                        "Authentication status lookup failed",
+                        new RuntimeException(
+                                "redis.internal:6379"
+                        )
+                );
 
         ResponseEntity<ApiErrorResponse> response =
                 handler.handleAuthServiceUnavailable(
@@ -172,13 +178,19 @@ class GlobalExceptionHandlerTest {
                         request("/api/auth/login")
                 );
 
-        assertError(
+        ApiErrorResponse body = assertError(
                 response,
                 HttpStatus.SERVICE_UNAVAILABLE,
                 ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
                 "Сервис авторизации временно недоступен",
                 "/api/auth/login"
         );
+
+        assertThat(body.message())
+                .doesNotContain(
+                        "Authentication status lookup failed",
+                        "redis.internal"
+                );
     }
 
     @Test
@@ -623,8 +635,38 @@ class GlobalExceptionHandlerTest {
 
         Path path = mock(Path.class);
 
-        when(path.toString())
-                .thenReturn("list.page");
+        Path.Node methodNode =
+                mock(Path.Node.class);
+
+        Path.Node parameterNode =
+                mock(Path.Node.class);
+
+        Path.Node propertyNode =
+                mock(Path.Node.class);
+
+        when(methodNode.getKind())
+                .thenReturn(ElementKind.METHOD);
+
+        when(parameterNode.getKind())
+                .thenReturn(ElementKind.PARAMETER);
+
+        when(parameterNode.getName())
+                .thenReturn("request");
+
+        when(propertyNode.getKind())
+                .thenReturn(ElementKind.PROPERTY);
+
+        when(propertyNode.getName())
+                .thenReturn("page");
+
+        when(path.iterator())
+                .thenReturn(
+                        List.of(
+                                methodNode,
+                                parameterNode,
+                                propertyNode
+                        ).iterator()
+                );
 
         when(violation.getPropertyPath())
                 .thenReturn(path);

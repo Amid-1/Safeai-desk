@@ -16,7 +16,4 @@ public record PermanentDeleteUserRequest(
         @PositiveOrZero
         Long expectedVersion
 ) {
-    public PermanentDeleteUserRequest(String confirmationEmail) {
-        this(confirmationEmail, 0L);
-    }
 }
