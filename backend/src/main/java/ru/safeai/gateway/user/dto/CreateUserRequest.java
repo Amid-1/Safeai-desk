@@ -18,6 +18,7 @@ public record CreateUserRequest(
         @Size(max = 255)
         String email,
 
+        @NotBlank
         @ValidPassword
         String password,
 
@@ -26,6 +27,10 @@ public record CreateUserRequest(
 
         @NotNull
         @Size(min = 1, max = 1)
-        Set<@NotBlank @Size(max = 100) String> roles
+        Set<
+                @NotBlank
+                @Size(max = 100)
+                String
+                > roles
 ) {
 }

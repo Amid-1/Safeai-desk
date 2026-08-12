@@ -13,14 +13,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Записывает единый JSON-контракт ошибки из Spring Security filter chain.
+ * Единый JSON writer для Spring Security filter chain.
  */
 @Component
 @RequiredArgsConstructor
-public class ApiErrorResponseWriter {
+public final class ApiErrorResponseWriter {
 
     private final JsonMapper jsonMapper;
-    private final ApiErrorResponseFactory errorResponseFactory;
+    private final ApiErrorResponseFactory
+            errorResponseFactory;
 
     public void write(
             HttpServletRequest request,
@@ -34,10 +35,19 @@ public class ApiErrorResponseWriter {
         }
 
         response.resetBuffer();
-        response.setStatus(status.value());
-        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
-        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setStatus(
+                status.value()
+        );
+        response.setHeader(
+                HttpHeaders.CACHE_CONTROL,
+                "no-store"
+        );
+        response.setCharacterEncoding(
+                StandardCharsets.UTF_8.name()
+        );
+        response.setContentType(
+                MediaType.APPLICATION_JSON_VALUE
+        );
 
         jsonMapper.writeValue(
                 response.getOutputStream(),

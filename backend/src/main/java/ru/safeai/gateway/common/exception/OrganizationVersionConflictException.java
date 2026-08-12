@@ -45,7 +45,10 @@ public final class OrganizationVersionConflictException
             );
         }
 
-        this.expectedVersion = expectedVersion;
-        this.actualVersion = actualVersion;
+        this.expectedVersion =
+                expectedVersion;
+
+        this.actualVersion =
+                actualVersion;
     }
 }

@@ -37,15 +37,11 @@ public class JwtService {
 
         Instant expiresAt = issuedAt.plus(
                 Duration.ofMinutes(
-                        jwtProperties.expirationMinutes()
+                        jwtProperties
+                                .expirationMinutes()
                 )
         );
 
-        /*
-         * AccessTokenSubject уже проверяет и нормализует роли.
-         * Дополнительная сортировка обеспечивает стабильный
-         * порядок элементов в JWT payload.
-         */
         List<String> roles = subject.roles()
                 .stream()
                 .sorted()
@@ -56,40 +52,54 @@ public class JwtService {
                 .type(TOKEN_TYPE)
                 .build();
 
-        JwtClaimsSet claims = JwtClaimsSet.builder()
-                .issuer(jwtProperties.issuer())
-                .audience(List.of(
-                        jwtProperties.audience()
-                ))
-                .issuedAt(issuedAt)
-                .expiresAt(expiresAt)
-                .subject(subject.userId().toString())
-                .id(UUID.randomUUID().toString())
-                .claim(
-                        "userId",
-                        subject.userId().toString()
-                )
-                .claim(
-                        "organizationId",
-                        subject.organizationId().toString()
-                )
-                .claim(
-                        "email",
-                        subject.email()
-                )
-                .claim(
-                        "tokenVersion",
-                        subject.tokenVersion()
-                )
-                .claim(
-                        "organizationAuthVersion",
-                        subject.organizationAuthVersion()
-                )
-                .claim(
-                        "roles",
-                        roles
-                )
-                .build();
+        JwtClaimsSet claims =
+                JwtClaimsSet.builder()
+                        .issuer(
+                                jwtProperties.issuer()
+                        )
+                        .audience(
+                                List.of(
+                                        jwtProperties
+                                                .audience()
+                                )
+                        )
+                        .issuedAt(issuedAt)
+                        .expiresAt(expiresAt)
+                        .subject(
+                                subject.userId()
+                                        .toString()
+                        )
+                        .id(
+                                UUID.randomUUID()
+                                        .toString()
+                        )
+                        .claim(
+                                "userId",
+                                subject.userId()
+                                        .toString()
+                        )
+                        .claim(
+                                "organizationId",
+                                subject.organizationId()
+                                        .toString()
+                        )
+                        .claim(
+                                "email",
+                                subject.email()
+                        )
+                        .claim(
+                                "tokenVersion",
+                                subject.tokenVersion()
+                        )
+                        .claim(
+                                "organizationAuthVersion",
+                                subject.organizationAuthVersion()
+                        )
+                        .claim(
+                                "roles",
+                                roles
+                        )
+                        .build();
 
         return jwtEncoder.encode(
                 JwtEncoderParameters.from(

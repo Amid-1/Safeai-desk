@@ -4,6 +4,8 @@ import jakarta.persistence.OptimisticLockException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.ElementKind;
+import jakarta.validation.Path;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSourceResolvable;
@@ -14,7 +16,6 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AccountExpiredException;
@@ -33,9 +34,9 @@ import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
@@ -44,6 +45,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import ru.safeai.gateway.common.security.RequestIdFilter;
 
+import java.util.Objects;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -54,15 +56,12 @@ import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Единственный common-level MVC exception advice.
- *
- * <p>Специализированные advice функциональных модулей должны иметь явно
- * более высокий приоритет. Отдельные common advice для chat availability
- * и optimistic locking использовать не нужно.</p>
  */
 @Slf4j
 @RestControllerAdvice
 @RequiredArgsConstructor
-public class GlobalExceptionHandler implements Ordered {
+public class GlobalExceptionHandler
+        implements Ordered {
 
     private static final String VALIDATION_MESSAGE =
             "Ошибка валидации запроса";
@@ -83,11 +82,6 @@ public class GlobalExceptionHandler implements Ordered {
     private static final String INVALID_REFRESH_TOKEN_MESSAGE =
             "Недействительный refresh token";
 
-    /*
-     * Во время Redis outage один request не должен создавать один полный
-     * ERROR stack trace. Один экземпляр приложения пишет первый stack trace,
-     * затем не чаще одного раза в минуту сообщает число подавленных записей.
-     */
     private static final long RATE_LIMIT_LOG_INTERVAL_NANOS =
             TimeUnit.MINUTES.toNanos(1);
 
@@ -106,7 +100,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(ChatBusyException.class)
-    public ResponseEntity<ApiErrorResponse> handleChatBusy(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleChatBusy(
             ChatBusyException exception,
             HttpServletRequest request
     ) {
@@ -124,7 +119,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(ChatLockUnavailableException.class)
-    public ResponseEntity<ApiErrorResponse> handleChatLockUnavailable(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleChatLockUnavailable(
             ChatLockUnavailableException exception,
             HttpServletRequest request
     ) {
@@ -146,7 +142,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(RateLimitUnavailableException.class)
-    public ResponseEntity<ApiErrorResponse> handleRateLimitUnavailable(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleRateLimitUnavailable(
             RateLimitUnavailableException exception,
             HttpServletRequest request
     ) {
@@ -166,13 +163,13 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(AuthServiceUnavailableException.class)
-    public ResponseEntity<ApiErrorResponse> handleAuthServiceUnavailable(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleAuthServiceUnavailable(
             AuthServiceUnavailableException exception,
             HttpServletRequest request
     ) {
         log.error(
-                "Authentication service unavailable: "
-                        + "requestId={}, path={}",
+                "Authentication service unavailable: requestId={}, path={}",
                 requestId(request),
                 request.getRequestURI(),
                 exception
@@ -181,7 +178,7 @@ public class GlobalExceptionHandler implements Ordered {
         return build(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
-                "Сервис авторизации временно недоступен",
+                exception.getPublicMessage(),
                 request,
                 null,
                 null
@@ -189,7 +186,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(BadRequestException.class)
-    public ResponseEntity<ApiErrorResponse> handleBadRequest(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleBadRequest(
             BadRequestException exception,
             HttpServletRequest request
     ) {
@@ -207,7 +205,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ApiErrorResponse> handleResourceNotFound(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleResourceNotFound(
             ResourceNotFoundException exception,
             HttpServletRequest request
     ) {
@@ -224,8 +223,61 @@ public class GlobalExceptionHandler implements Ordered {
         );
     }
 
+    @ExceptionHandler(UserVersionConflictException.class)
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleUserVersionConflict(
+            UserVersionConflictException exception,
+            HttpServletRequest request
+    ) {
+        log.info(
+                "User optimistic version conflict: requestId={}, "
+                        + "userId={}, expectedVersion={}, actualVersion={}, path={}",
+                requestId(request),
+                exception.getUserId(),
+                exception.getExpectedVersion(),
+                exception.getActualVersion(),
+                request.getRequestURI()
+        );
+
+        return build(
+                exception.getStatus(),
+                exception.getErrorCode(),
+                exception.getPublicMessage(),
+                request,
+                null,
+                null
+        );
+    }
+
+    @ExceptionHandler(OrganizationVersionConflictException.class)
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleOrganizationVersionConflict(
+            OrganizationVersionConflictException exception,
+            HttpServletRequest request
+    ) {
+        log.info(
+                "Organization optimistic version conflict: requestId={}, "
+                        + "organizationId={}, expectedVersion={}, actualVersion={}, path={}",
+                requestId(request),
+                exception.getOrganizationId(),
+                exception.getExpectedVersion(),
+                exception.getActualVersion(),
+                request.getRequestURI()
+        );
+
+        return build(
+                exception.getStatus(),
+                exception.getErrorCode(),
+                exception.getPublicMessage(),
+                request,
+                null,
+                null
+        );
+    }
+
     @ExceptionHandler(ConflictException.class)
-    public ResponseEntity<ApiErrorResponse> handleConflict(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleConflict(
             ConflictException exception,
             HttpServletRequest request
     ) {
@@ -243,15 +295,16 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(ForbiddenOperationException.class)
-    public ResponseEntity<ApiErrorResponse> handleForbiddenOperation(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleForbiddenOperation(
             ForbiddenOperationException exception,
             HttpServletRequest request
     ) {
         return build(
-                HttpStatus.FORBIDDEN,
-                ApiErrorCode.FORBIDDEN,
+                exception.getStatus(),
+                exception.getErrorCode(),
                 safeMessage(
-                        exception.getMessage(),
+                        exception.getPublicMessage(),
                         "Операция запрещена"
                 ),
                 request,
@@ -261,7 +314,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ApiErrorResponse> handleAccessDenied(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleAccessDenied(
             AccessDeniedException exception,
             HttpServletRequest request
     ) {
@@ -283,7 +337,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(ExpiredRefreshTokenException.class)
-    public ResponseEntity<ApiErrorResponse> handleExpiredRefreshToken(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleExpiredRefreshToken(
             ExpiredRefreshTokenException exception,
             HttpServletRequest request
     ) {
@@ -305,15 +360,14 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(RefreshTokenReuseDetectedException.class)
-    public ResponseEntity<ApiErrorResponse>
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
     handleRefreshTokenReuseDetected(
             RefreshTokenReuseDetectedException exception,
             HttpServletRequest request
     ) {
         log.warn(
                 "Refresh token reuse detected: requestId={}, "
-                        + "userId={}, organizationId={}, "
-                        + "tokenFamilyId={}, path={}",
+                        + "userId={}, organizationId={}, tokenFamilyId={}, path={}",
                 requestId(request),
                 exception.getUserId(),
                 exception.getOrganizationId(),
@@ -332,7 +386,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(InvalidRefreshTokenException.class)
-    public ResponseEntity<ApiErrorResponse> handleInvalidRefreshToken(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleInvalidRefreshToken(
             InvalidRefreshTokenException exception,
             HttpServletRequest request
     ) {
@@ -354,11 +409,13 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(RateLimitExceededException.class)
-    public ResponseEntity<ApiErrorResponse> handleRateLimitExceeded(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleRateLimitExceeded(
             RateLimitExceededException exception,
             HttpServletRequest request
     ) {
-        HttpHeaders headers = new HttpHeaders();
+        HttpHeaders headers =
+                new HttpHeaders();
 
         if (exception.getRetryAfterSeconds() > 0L) {
             headers.set(
@@ -382,12 +439,9 @@ public class GlobalExceptionHandler implements Ordered {
         );
     }
 
-    /**
-     * Общий fallback только для прочих ApiException-наследников.
-     * Специальные исключения выше имеют более конкретные mappings.
-     */
     @ExceptionHandler(ApiException.class)
-    public ResponseEntity<ApiErrorResponse> handleApiException(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleApiException(
             ApiException exception,
             HttpServletRequest request
     ) {
@@ -405,7 +459,8 @@ public class GlobalExceptionHandler implements Ordered {
             OptimisticLockException.class,
             OptimisticLockingFailureException.class
     })
-    public ResponseEntity<ApiErrorResponse> handleOptimisticLock(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleOptimisticLock(
             Exception exception,
             HttpServletRequest request
     ) {
@@ -427,7 +482,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiErrorResponse> handleValidation(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleValidation(
             MethodArgumentNotValidException exception,
             HttpServletRequest request
     ) {
@@ -440,7 +496,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(BindException.class)
-    public ResponseEntity<ApiErrorResponse> handleBindException(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleBindException(
             BindException exception,
             HttpServletRequest request
     ) {
@@ -453,7 +510,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(HandlerMethodValidationException.class)
-    public ResponseEntity<ApiErrorResponse> handleMethodValidation(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleMethodValidation(
             HandlerMethodValidationException exception,
             HttpServletRequest request
     ) {
@@ -466,7 +524,9 @@ public class GlobalExceptionHandler implements Ordered {
                     exception
             );
 
-            return internalServerError(request);
+            return internalServerError(
+                    request
+            );
         }
 
         Map<String, List<String>> fieldErrors =
@@ -496,7 +556,8 @@ public class GlobalExceptionHandler implements Ordered {
                 continue;
             }
 
-            String field = parameterName(result);
+            String field =
+                    parameterName(result);
 
             for (MessageSourceResolvable error
                     : result.getResolvableErrors()) {
@@ -524,7 +585,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ApiErrorResponse> handleConstraintViolation(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleConstraintViolation(
             ConstraintViolationException exception,
             HttpServletRequest request
     ) {
@@ -537,7 +599,6 @@ public class GlobalExceptionHandler implements Ordered {
                     fieldErrors,
                     normalizeConstraintPath(
                             violation.getPropertyPath()
-                                    .toString()
                     ),
                     violation.getMessage()
             );
@@ -550,7 +611,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ApiErrorResponse> handleUnreadableBody(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleUnreadableBody(
             HttpServletRequest request
     ) {
         return build(
@@ -565,7 +627,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)
-    public ResponseEntity<ApiErrorResponse> handleMissingParameter(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleMissingParameter(
             MissingServletRequestParameterException exception,
             HttpServletRequest request
     ) {
@@ -581,7 +644,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(MissingRequestHeaderException.class)
-    public ResponseEntity<ApiErrorResponse> handleMissingHeader(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleMissingHeader(
             MissingRequestHeaderException exception,
             HttpServletRequest request
     ) {
@@ -597,7 +661,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleTypeMismatch(
             MethodArgumentTypeMismatchException exception,
             HttpServletRequest request
     ) {
@@ -613,7 +678,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<ApiErrorResponse> handleMethodNotAllowed(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleMethodNotAllowed(
             HttpRequestMethodNotSupportedException exception,
             HttpServletRequest request
     ) {
@@ -628,7 +694,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
-    public ResponseEntity<ApiErrorResponse> handleUnsupportedMediaType(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleUnsupportedMediaType(
             HttpMediaTypeNotSupportedException exception,
             HttpServletRequest request
     ) {
@@ -643,7 +710,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
-    public ResponseEntity<ApiErrorResponse> handleNotAcceptable(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleNotAcceptable(
             HttpMediaTypeNotAcceptableException exception,
             HttpServletRequest request
     ) {
@@ -658,7 +726,8 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<ApiErrorResponse> handleNoResource(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleNoResource(
             NoResourceFoundException exception,
             HttpServletRequest request
     ) {
@@ -673,7 +742,7 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<ApiErrorResponse>
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
     handleResponseStatusException(
             ResponseStatusException exception,
             HttpServletRequest request
@@ -692,12 +761,13 @@ public class GlobalExceptionHandler implements Ordered {
             );
         }
 
-        String message = status.is5xxServerError()
-                ? INTERNAL_ERROR_MESSAGE
-                : safeMessage(
-                exception.getReason(),
-                messageForStatus(status)
-        );
+        String message =
+                status.is5xxServerError()
+                        ? INTERNAL_ERROR_MESSAGE
+                        : safeMessage(
+                        exception.getReason(),
+                        messageForStatus(status)
+                );
 
         return build(
                 status,
@@ -716,7 +786,7 @@ public class GlobalExceptionHandler implements Ordered {
             AccountExpiredException.class,
             CredentialsExpiredException.class
     })
-    public ResponseEntity<ApiErrorResponse>
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
     handleExpectedAuthenticationFailure(
             HttpServletRequest request
     ) {
@@ -731,7 +801,7 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(AuthenticationServiceException.class)
-    public ResponseEntity<ApiErrorResponse>
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
     handleAuthenticationInfrastructure(
             AuthenticationServiceException exception,
             HttpServletRequest request
@@ -755,41 +825,44 @@ public class GlobalExceptionHandler implements Ordered {
     }
 
     @ExceptionHandler(AuthenticationException.class)
-    public ResponseEntity<ApiErrorResponse>
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
     handleUnexpectedAuthenticationFailure(
             AuthenticationException exception,
             HttpServletRequest request
     ) {
         log.error(
-                "Unexpected authentication failure: "
-                        + "requestId={}, path={}",
+                "Unexpected authentication failure: requestId={}, path={}",
                 requestId(request),
                 request.getRequestURI(),
                 exception
         );
 
-        return internalServerError(request);
+        return internalServerError(
+                request
+        );
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<ApiErrorResponse>
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
     handleDataIntegrityViolation(
             DataIntegrityViolationException exception,
             HttpServletRequest request
     ) {
         log.error(
-                "Unexpected data integrity violation: "
-                        + "requestId={}, path={}",
+                "Unexpected data integrity violation: requestId={}, path={}",
                 requestId(request),
                 request.getRequestURI(),
                 exception
         );
 
-        return internalServerError(request);
+        return internalServerError(
+                request
+        );
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiErrorResponse> handleUnexpected(
+    public org.springframework.http.ResponseEntity<ApiErrorResponse>
+    handleUnexpected(
             Exception exception,
             HttpServletRequest request
     ) {
@@ -800,50 +873,47 @@ public class GlobalExceptionHandler implements Ordered {
                 exception
         );
 
-        return internalServerError(request);
+        return internalServerError(
+                request
+        );
     }
 
     private void logRateLimitUnavailable(
             RateLimitUnavailableException exception,
             HttpServletRequest request
     ) {
-        long now = System.nanoTime();
+        long now =
+                System.nanoTime();
 
         while (true) {
             long next =
                     nextRateLimitLogNanos.get();
 
-            /*
-             * Сравнение через разность корректно переживает переполнение
-             * монотонного счётчика System.nanoTime().
-             */
             if (now - next < 0L) {
                 suppressedRateLimitLogs.increment();
                 return;
             }
 
             long candidate =
-                    now + RATE_LIMIT_LOG_INTERVAL_NANOS;
+                    now
+                            + RATE_LIMIT_LOG_INTERVAL_NANOS;
 
-            if (!nextRateLimitLogNanos.compareAndSet(
-                    next,
-                    candidate
-            )) {
-                /*
-                 * Другой поток мог обновить deadline.
-                 * Обновляем now перед повторной проверкой.
-                 */
+            if (!nextRateLimitLogNanos
+                    .compareAndSet(
+                            next,
+                            candidate
+                    )) {
                 now = System.nanoTime();
                 continue;
             }
 
             long suppressed =
-                    suppressedRateLimitLogs.sumThenReset();
+                    suppressedRateLimitLogs
+                            .sumThenReset();
 
             log.error(
-                    "Rate limit service unavailable: "
-                            + "requestId={}, path={}, "
-                            + "suppressedSinceLastLog={}",
+                    "Rate limit service unavailable: requestId={}, "
+                            + "path={}, suppressedSinceLastLog={}",
                     requestId(request),
                     request.getRequestURI(),
                     suppressed,
@@ -854,8 +924,8 @@ public class GlobalExceptionHandler implements Ordered {
         }
     }
 
-
-    private ResponseEntity<ApiErrorResponse> validationResponse(
+    private org.springframework.http.ResponseEntity<ApiErrorResponse>
+    validationResponse(
             HttpServletRequest request,
             Map<String, List<String>> fieldErrors
     ) {
@@ -880,7 +950,8 @@ public class GlobalExceptionHandler implements Ordered {
         );
     }
 
-    private ResponseEntity<ApiErrorResponse> internalServerError(
+    private org.springframework.http.ResponseEntity<ApiErrorResponse>
+    internalServerError(
             HttpServletRequest request
     ) {
         return build(
@@ -893,7 +964,8 @@ public class GlobalExceptionHandler implements Ordered {
         );
     }
 
-    private ResponseEntity<ApiErrorResponse> build(
+    private org.springframework.http.ResponseEntity<ApiErrorResponse>
+    build(
             HttpStatusCode status,
             ApiErrorCode error,
             String message,
@@ -901,10 +973,12 @@ public class GlobalExceptionHandler implements Ordered {
             Map<String, List<String>> fieldErrors,
             HttpHeaders headers
     ) {
-        ResponseEntity.BodyBuilder builder =
-                ResponseEntity.status(status);
+        org.springframework.http.ResponseEntity.BodyBuilder builder =
+                org.springframework.http.ResponseEntity
+                        .status(status);
 
-        if (headers != null && !headers.isEmpty()) {
+        if (headers != null
+                && !headers.isEmpty()) {
             builder.headers(headers);
         }
 
@@ -923,7 +997,8 @@ public class GlobalExceptionHandler implements Ordered {
         );
     }
 
-    private Map<String, List<String>> bindingErrors(
+    private Map<String, List<String>>
+    bindingErrors(
             BindingResult bindingResult
     ) {
         Map<String, List<String>> errors =
@@ -956,23 +1031,30 @@ public class GlobalExceptionHandler implements Ordered {
             String message
     ) {
         String normalizedField =
-                field == null || field.isBlank()
+                field == null
+                        || field.isBlank()
                         ? "_global"
                         : field.trim();
 
         String normalizedMessage =
-                message == null || message.isBlank()
+                message == null
+                        || message.isBlank()
                         ? "Некорректное значение"
                         : message.trim();
 
         List<String> messages =
                 errors.computeIfAbsent(
                         normalizedField,
-                        ignored -> new ArrayList<>()
+                        ignored ->
+                                new ArrayList<>()
                 );
 
-        if (!messages.contains(normalizedMessage)) {
-            messages.add(normalizedMessage);
+        if (!messages.contains(
+                normalizedMessage
+        )) {
+            messages.add(
+                    normalizedMessage
+            );
         }
     }
 
@@ -1006,29 +1088,72 @@ public class GlobalExceptionHandler implements Ordered {
         return base;
     }
 
+    /**
+     * Не полагается на Path#toString() и поэтому устойчив к изменению
+     * textual representation Bean Validation implementation.
+     */
     private String normalizeConstraintPath(
-            String rawPath
-    ) {
-        if (rawPath == null || rawPath.isBlank()) {
-            return "_global";
+        Path path
+) {
+    if (path == null) {
+        return "_global";
+    }
+
+    List<String> properties =
+            new ArrayList<>();
+
+    String parameterFallback = null;
+
+    for (Path.Node node : path) {
+        ElementKind kind =
+                node.getKind();
+
+        String name =
+                node.getName();
+
+        if (kind == ElementKind.PARAMETER
+                && name != null
+                && !name.isBlank()) {
+
+            parameterFallback =
+                    name.trim();
+
+            continue;
         }
 
-        String normalized = rawPath.trim();
-        int firstDot = normalized.indexOf('.');
+        if ((kind == ElementKind.PROPERTY
+                || kind == ElementKind.CONTAINER_ELEMENT)
+                && name != null
+                && !name.isBlank()
+                && !name.startsWith("<")) {
 
-        return firstDot < 0
-                ? normalized
-                : normalized.substring(
-                firstDot + 1
+            properties.add(
+                    name.trim()
+            );
+        }
+    }
+
+    if (!properties.isEmpty()) {
+        return String.join(
+                ".",
+                properties
         );
     }
+
+    return Objects.requireNonNullElse(
+            parameterFallback,
+            "_global"
+    );
+}
 
     private String defaultMessage(
             MessageSourceResolvable error
     ) {
-        String message = error.getDefaultMessage();
+        String message =
+                error.getDefaultMessage();
 
-        return message == null || message.isBlank()
+        return message == null
+                || message.isBlank()
                 ? "Некорректное значение"
                 : message;
     }
@@ -1037,18 +1162,28 @@ public class GlobalExceptionHandler implements Ordered {
             HttpStatusCode status
     ) {
         return switch (status.value()) {
-            case 400 -> ApiErrorCode.BAD_REQUEST;
-            case 401 -> ApiErrorCode.UNAUTHORIZED;
-            case 403 -> ApiErrorCode.FORBIDDEN;
-            case 404 -> ApiErrorCode.NOT_FOUND;
-            case 405 -> ApiErrorCode.METHOD_NOT_ALLOWED;
-            case 406 -> ApiErrorCode.NOT_ACCEPTABLE;
-            case 409 -> ApiErrorCode.CONFLICT;
-            case 415 -> ApiErrorCode.UNSUPPORTED_MEDIA_TYPE;
-            case 429 -> ApiErrorCode.RATE_LIMIT_EXCEEDED;
-            default -> status.is5xxServerError()
-                    ? ApiErrorCode.INTERNAL_SERVER_ERROR
-                    : ApiErrorCode.BAD_REQUEST;
+            case 400 ->
+                    ApiErrorCode.BAD_REQUEST;
+            case 401 ->
+                    ApiErrorCode.UNAUTHORIZED;
+            case 403 ->
+                    ApiErrorCode.FORBIDDEN;
+            case 404 ->
+                    ApiErrorCode.NOT_FOUND;
+            case 405 ->
+                    ApiErrorCode.METHOD_NOT_ALLOWED;
+            case 406 ->
+                    ApiErrorCode.NOT_ACCEPTABLE;
+            case 409 ->
+                    ApiErrorCode.CONFLICT;
+            case 415 ->
+                    ApiErrorCode.UNSUPPORTED_MEDIA_TYPE;
+            case 429 ->
+                    ApiErrorCode.RATE_LIMIT_EXCEEDED;
+            default ->
+                    status.is5xxServerError()
+                            ? ApiErrorCode.INTERNAL_SERVER_ERROR
+                            : ApiErrorCode.BAD_REQUEST;
         };
     }
 
@@ -1056,18 +1191,28 @@ public class GlobalExceptionHandler implements Ordered {
             HttpStatusCode status
     ) {
         return switch (status.value()) {
-            case 400 -> "Некорректный запрос";
-            case 401 -> "Требуется авторизация";
-            case 403 -> "Доступ запрещён";
-            case 404 -> "Ресурс не найден";
-            case 405 -> "HTTP-метод не поддерживается для этого ресурса";
-            case 406 -> "Запрошенный формат ответа не поддерживается";
-            case 409 -> "Конфликт данных";
-            case 415 -> "Тип содержимого запроса не поддерживается";
-            case 429 -> "Превышен лимит запросов";
-            default -> status.is5xxServerError()
-                    ? INTERNAL_ERROR_MESSAGE
-                    : "Ошибка запроса";
+            case 400 ->
+                    "Некорректный запрос";
+            case 401 ->
+                    "Требуется авторизация";
+            case 403 ->
+                    "Доступ запрещён";
+            case 404 ->
+                    "Ресурс не найден";
+            case 405 ->
+                    "HTTP-метод не поддерживается для этого ресурса";
+            case 406 ->
+                    "Запрошенный формат ответа не поддерживается";
+            case 409 ->
+                    "Конфликт данных";
+            case 415 ->
+                    "Тип содержимого запроса не поддерживается";
+            case 429 ->
+                    "Превышен лимит запросов";
+            default ->
+                    status.is5xxServerError()
+                            ? INTERNAL_ERROR_MESSAGE
+                            : "Ошибка запроса";
         };
     }
 
@@ -1075,7 +1220,8 @@ public class GlobalExceptionHandler implements Ordered {
             String message,
             String fallback
     ) {
-        return message == null || message.isBlank()
+        return message == null
+                || message.isBlank()
                 ? fallback
                 : message.trim();
     }
@@ -1083,11 +1229,14 @@ public class GlobalExceptionHandler implements Ordered {
     private String requestId(
             HttpServletRequest request
     ) {
-        Object value = request.getAttribute(
-                RequestIdFilter.REQUEST_ID_ATTRIBUTE
-        );
+        Object value =
+                request.getAttribute(
+                        RequestIdFilter
+                                .REQUEST_ID_ATTRIBUTE
+                );
 
-        return value instanceof String requestId
+        return value
+                instanceof String requestId
                 && !requestId.isBlank()
                 ? requestId
                 : "missing";

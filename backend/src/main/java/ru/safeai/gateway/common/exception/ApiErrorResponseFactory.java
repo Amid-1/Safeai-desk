@@ -11,12 +11,17 @@ import java.util.Map;
 import java.util.Objects;
 
 @Component
-public class ApiErrorResponseFactory {
+public final class ApiErrorResponseFactory {
 
     private final Clock clock;
 
-    public ApiErrorResponseFactory(Clock clock) {
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+    public ApiErrorResponseFactory(
+            Clock clock
+    ) {
+        this.clock = Objects.requireNonNull(
+                clock,
+                "clock must not be null"
+        );
     }
 
     public ApiErrorResponse create(
@@ -26,23 +31,47 @@ public class ApiErrorResponseFactory {
             HttpServletRequest request,
             Map<String, List<String>> fieldErrors
     ) {
-        Objects.requireNonNull(status, "status must not be null");
-        Objects.requireNonNull(error, "error must not be null");
-        Objects.requireNonNull(request, "request must not be null");
+        Objects.requireNonNull(
+                status,
+                "status must not be null"
+        );
 
-        String path = request.getRequestURI();
+        Objects.requireNonNull(
+                error,
+                "error must not be null"
+        );
+
+        Objects.requireNonNull(
+                request,
+                "request must not be null"
+        );
+
+        if (message == null
+                || message.isBlank()) {
+            throw new IllegalArgumentException(
+                    "message must not be blank"
+            );
+        }
+
+        String path =
+                request.getRequestURI();
+
         if (path == null || path.isBlank()) {
             path = "/";
         }
 
-        Object requestIdAttribute = request.getAttribute(
-                RequestIdFilter.REQUEST_ID_ATTRIBUTE
-        );
+        Object requestIdAttribute =
+                request.getAttribute(
+                        RequestIdFilter
+                                .REQUEST_ID_ATTRIBUTE
+                );
 
-        String requestId = requestIdAttribute instanceof String value
-                && !value.isBlank()
-                ? value
-                : null;
+        String requestId =
+                requestIdAttribute
+                        instanceof String value
+                        && !value.isBlank()
+                        ? value
+                        : null;
 
         return new ApiErrorResponse(
                 clock.instant(),

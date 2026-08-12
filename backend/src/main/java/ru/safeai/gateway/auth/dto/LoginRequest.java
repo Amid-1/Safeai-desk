@@ -3,7 +3,7 @@ package ru.safeai.gateway.auth.dto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import ru.safeai.gateway.auth.validation.Utf8ByteLength;
+import ru.safeai.gateway.user.validation.BcryptUtf8Length;
 
 public record LoginRequest(
         @Email
@@ -11,12 +11,18 @@ public record LoginRequest(
         @Size(max = 255)
         String email,
 
+        /*
+         * ВАЖНО:
+         * login не применяет текущую complexity policy.
+         *
+         * Старый ранее допустимый пароль должен продолжать
+         * использоваться для аутентификации.
+         *
+         * Здесь проверяется только технический предел BCrypt.
+         */
         @NotBlank
         @Size(max = 72)
-        @Utf8ByteLength(
-                max = 72,
-                message = "Пароль не должен превышать 72 байта в UTF-8"
-        )
+        @BcryptUtf8Length
         String password
 ) {
 }

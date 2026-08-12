@@ -11,42 +11,44 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * Преобразование системных ролей SafeAI в Spring Security authorities
+ * и обратно.
+ *
+ * <p>Единственным source of truth для допустимых ролей является
+ * {@link SystemRole}.</p>
+ */
 public final class RoleAuthorityMapper {
 
     private RoleAuthorityMapper() {
     }
 
     /**
-     * Преобразует имена ролей к каноническому формату:
-
-     * USER      -> USER
-     * ROLE_USER -> USER
-     * user      -> USER
-
-     * Неизвестная, пустая или некорректная роль приводит
-     * к исключению в SystemRole.parse().
-     */
-    public static List<String> normalizeRoleNames(
-            Collection<String> roles
-    ) {
-        if (roles.isEmpty()) {
-            return List.of();
-        }
-
-        return roles.stream()
-                .map(SystemRole::parse)
-                .map(SystemRole::roleName)
-                .distinct()
-                .sorted()
-                .toList();
-    }
-
-    /**
-     * Преобразует бизнес-роли в Spring Security authorities.
+     * Преобразует имена ролей:
+     *
+     * <pre>
+     * USER
+     * role_user
+     * ROLE_USER
+     * </pre>
+     *
+     * в canonical Spring authorities:
+     *
+     * <pre>
+     * ROLE_USER
+     * </pre>
+     *
+     * <p>Результат дедуплицирован, отсортирован
+     * и immutable.</p>
      */
     public static Set<SimpleGrantedAuthority> toAuthorities(
             Collection<String> roles
     ) {
+        Objects.requireNonNull(
+                roles,
+                "roles не должен быть null"
+        );
+
         if (roles.isEmpty()) {
             return Set.of();
         }
@@ -58,26 +60,46 @@ public final class RoleAuthorityMapper {
                         .distinct()
                         .sorted()
                         .map(SimpleGrantedAuthority::new)
-                        .collect(Collectors.toCollection(
-                                LinkedHashSet::new
-                        ));
+                        .collect(
+                                Collectors.toCollection(
+                                        LinkedHashSet::new
+                                )
+                        );
 
-        return Collections.unmodifiableSet(authorities);
+        return Collections.unmodifiableSet(
+                authorities
+        );
     }
 
     /**
-     * Преобразует Spring Security authorities обратно
-     * в канонические имена бизнес-ролей.
+     * Преобразует Spring Security authorities в canonical
+     * имена системных ролей:
+     *
+     * <pre>
+     * ROLE_ADMIN -> ADMIN
+     * ROLE_USER  -> USER
+     * </pre>
+     *
+     * <p>Результат дедуплицирован, отсортирован
+     * и immutable.</p>
      */
     public static List<String> toRoleNames(
             Collection<? extends GrantedAuthority> authorities
     ) {
+        Objects.requireNonNull(
+                authorities,
+                "authorities не должен быть null"
+        );
+
         if (authorities.isEmpty()) {
             return List.of();
         }
 
         return authorities.stream()
-                .map(RoleAuthorityMapper::requireAuthorityName)
+                .map(
+                        RoleAuthorityMapper
+                                ::requireAuthorityName
+                )
                 .map(SystemRole::parse)
                 .map(SystemRole::roleName)
                 .distinct()
@@ -88,9 +110,16 @@ public final class RoleAuthorityMapper {
     private static String requireAuthorityName(
             GrantedAuthority authority
     ) {
+        GrantedAuthority value =
+                Objects.requireNonNull(
+                        authority,
+                        "authority не должен быть null"
+                );
+
         return Objects.requireNonNull(
-                authority.getAuthority(),
-                "GrantedAuthority#getAuthority() не должен возвращать null"
+                value.getAuthority(),
+                "GrantedAuthority#getAuthority() "
+                        + "не должен возвращать null"
         );
     }
 }

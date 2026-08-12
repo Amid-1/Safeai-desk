@@ -1,6 +1,9 @@
 package ru.safeai.gateway.common.exception;
 
+import org.jspecify.annotations.Nullable;
+
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -8,7 +11,9 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Единый JSON-контракт ошибки API.
+ * Stable public API error contract.
+ *
+ * <p>fieldErrors никогда не равен null и всегда immutable.</p>
  */
 public record ApiErrorResponse(
         Instant timestamp,
@@ -16,72 +21,178 @@ public record ApiErrorResponse(
         String error,
         String message,
         String path,
-        String requestId,
+        @Nullable String requestId,
         Map<String, List<String>> fieldErrors
 ) {
-    public ApiErrorResponse {
-        Objects.requireNonNull(timestamp, "timestamp must not be null");
-        error = requireText(error, "error");
-        message = requireText(message, "message");
-        path = requireText(path, "path");
+
+    public ApiErrorResponse(
+            Instant timestamp,
+            int status,
+            String error,
+            String message,
+            String path,
+            @Nullable String requestId,
+            Map<String, List<String>> fieldErrors
+    ) {
+        this.timestamp =
+                Objects.requireNonNull(
+                        timestamp,
+                        "timestamp must not be null"
+                );
 
         if (status < 100 || status > 599) {
-            throw new IllegalArgumentException("status must be a valid HTTP status code");
+            throw new IllegalArgumentException(
+                    "status must be a valid HTTP status"
+            );
         }
 
-        requestId = normalizeNullableText(requestId);
-        fieldErrors = immutableFieldErrors(fieldErrors);
+        this.status = status;
+
+        this.error =
+                requireText(
+                        error,
+                        "error"
+                );
+
+        this.message =
+                requireText(
+                        message,
+                        "message"
+                );
+
+        this.path =
+                path == null || path.isBlank()
+                        ? "/"
+                        : path.trim();
+
+        this.requestId =
+                requestId == null || requestId.isBlank()
+                        ? null
+                        : requestId.trim();
+
+        this.fieldErrors =
+                normalizeFieldErrors(
+                        fieldErrors
+                );
     }
 
-    private static Map<String, List<String>> immutableFieldErrors(
+    private static String requireText(
+            String value,
+            String fieldName
+    ) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    fieldName
+                            + " must not be blank"
+            );
+        }
+
+        return value.trim();
+    }
+
+    private static Map<String, List<String>>
+    normalizeFieldErrors(
             Map<String, List<String>> source
     ) {
         if (source == null || source.isEmpty()) {
             return Map.of();
         }
 
-        Map<String, List<String>> copy = new LinkedHashMap<>();
+        LinkedHashMap<String, List<String>> normalized =
+                new LinkedHashMap<>();
 
-        source.forEach((rawField, rawMessages) -> {
-            String field = normalizeNullableText(rawField);
+        for (Map.Entry<String, List<String>> entry
+                : source.entrySet()) {
 
-            if (field == null || rawMessages == null || rawMessages.isEmpty()) {
-                return;
+            String field =
+                    entry.getKey();
+
+            if (field == null || field.isBlank()) {
+                field = "_global";
+            } else {
+                field = field.trim();
             }
 
-            List<String> messages = rawMessages.stream()
-                    .filter(Objects::nonNull)
-                    .map(String::trim)
-                    .filter(message -> !message.isEmpty())
-                    .distinct()
-                    .toList();
+            List<String> messages =
+                    normalizeMessages(
+                            entry.getValue()
+                    );
 
             if (!messages.isEmpty()) {
-                copy.put(field, List.copyOf(messages));
+                /*
+                 * Если несколько исходных ключей после trim/
+                 * normalization превращаются в одно поле,
+                 * сообщения объединяем, а не затираем.
+                 */
+                normalized.merge(
+                        field,
+                        messages,
+                        ApiErrorResponse::mergeMessages
+                );
             }
-        });
-
-        return copy.isEmpty()
-                ? Map.of()
-                : Collections.unmodifiableMap(copy);
-    }
-
-    private static String requireText(String value, String fieldName) {
-        String normalized = normalizeNullableText(value);
-
-        if (normalized == null) {
-            throw new IllegalArgumentException(fieldName + " must not be blank");
         }
 
-        return normalized;
-    }
-
-    private static String normalizeNullableText(String value) {
-        if (value == null) {
-            return null;
+        if (normalized.isEmpty()) {
+            return Map.of();
         }
 
-        String normalized = value.trim();
-        return normalized.isEmpty() ? null : normalized;
+        return Collections.unmodifiableMap(
+                normalized
+        );
+    }
+
+    private static List<String> normalizeMessages(
+            List<String> source
+    ) {
+        if (source == null || source.isEmpty()) {
+            return List.of();
+        }
+
+        ArrayList<String> result =
+                new ArrayList<>();
+
+        for (String message : source) {
+            if (message == null || message.isBlank()) {
+                continue;
+            }
+
+            String normalized =
+                    message.trim();
+
+            if (!result.contains(normalized)) {
+                result.add(normalized);
+            }
+        }
+
+        return List.copyOf(result);
+    }
+
+    private static List<String> mergeMessages(
+            List<String> first,
+            List<String> second
+    ) {
+        if (first.isEmpty()) {
+            return second;
+        }
+
+        if (second.isEmpty()) {
+            return first;
+        }
+
+        ArrayList<String> merged =
+                new ArrayList<>(
+                        first.size()
+                                + second.size()
+                );
+
+        merged.addAll(first);
+
+        for (String message : second) {
+            if (!merged.contains(message)) {
+                merged.add(message);
+            }
+        }
+
+        return List.copyOf(merged);
     }
 }

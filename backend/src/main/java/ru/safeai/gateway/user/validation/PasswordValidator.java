@@ -11,47 +11,17 @@ public final class PasswordValidator
             String password,
             ConstraintValidatorContext context
     ) {
+        /*
+         * Null/blank проверяет @NotBlank.
+         *
+         * Такой подход предотвращает два validation message
+         * на одно отсутствующее поле.
+         */
         if (password == null || password.isBlank()) {
-            return false;
+            return true;
         }
 
-        if (password.codePointCount(0, password.length())
-                < PasswordPolicy.MIN_LENGTH) {
-            return false;
-        }
-
-        if (!PasswordPolicy.hasValidUtf8Length(password)) {
-            return false;
-        }
-
-        boolean hasLowercase = false;
-        boolean hasUppercase = false;
-        boolean hasDigit = false;
-        boolean hasSpecial = false;
-
-        for (int offset = 0; offset < password.length();) {
-            int codePoint = password.codePointAt(offset);
-
-            if (Character.isISOControl(codePoint)) {
-                return false;
-            }
-
-            if (Character.isLowerCase(codePoint)) {
-                hasLowercase = true;
-            } else if (Character.isUpperCase(codePoint)) {
-                hasUppercase = true;
-            } else if (Character.isDigit(codePoint)) {
-                hasDigit = true;
-            } else {
-                hasSpecial = true;
-            }
-
-            offset += Character.charCount(codePoint);
-        }
-
-        return hasLowercase
-                && hasUppercase
-                && hasDigit
-                && hasSpecial;
+        return PasswordPolicy
+                .isValidNewPassword(password);
     }
 }

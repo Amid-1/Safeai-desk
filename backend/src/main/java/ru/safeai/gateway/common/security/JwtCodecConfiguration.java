@@ -25,15 +25,20 @@ public class JwtCodecConfiguration {
     private static final Duration CLOCK_SKEW =
             Duration.ofSeconds(30);
 
-    private static final String REQUIRED_TOKEN_TYPE = "JWT";
+    private static final String REQUIRED_TOKEN_TYPE =
+            "JWT";
 
     @Bean
-    SecretKey jwtSecretKey(JwtProperties properties) {
+    SecretKey jwtSecretKey(
+            JwtProperties properties
+    ) {
         return properties.secretKey();
     }
 
     @Bean
-    JwtEncoder jwtEncoder(SecretKey jwtSecretKey) {
+    JwtEncoder jwtEncoder(
+            SecretKey jwtSecretKey
+    ) {
         return NimbusJwtEncoder
                 .withSecretKey(jwtSecretKey)
                 .algorithm(MacAlgorithm.HS256)
@@ -46,52 +51,80 @@ public class JwtCodecConfiguration {
             JwtProperties properties,
             Clock clock
     ) {
-        NimbusJwtDecoder decoder = NimbusJwtDecoder
-                .withSecretKey(jwtSecretKey)
-                .macAlgorithm(MacAlgorithm.HS256)
-                /*
-                 * Встроенная typ-проверка отключена, потому что ниже
-                 * используется явно настроенный JwtTypeValidator.
-                 */
-                .validateType(false)
-                .build();
+        NimbusJwtDecoder decoder =
+                NimbusJwtDecoder
+                        .withSecretKey(
+                                jwtSecretKey
+                        )
+                        .macAlgorithm(
+                                MacAlgorithm.HS256
+                        )
+                        /*
+                         * typ проверяется явно ниже.
+                         * Это не позволяет silently принять
+                         * token без typ.
+                         */
+                        .validateType(false)
+                        .build();
 
         decoder.setJwtValidator(
-                createJwtValidator(properties, clock)
+                createJwtValidator(
+                        properties,
+                        clock
+                )
         );
 
         return decoder;
     }
 
-    private OAuth2TokenValidator<Jwt> createJwtValidator(
+    private OAuth2TokenValidator<Jwt>
+    createJwtValidator(
             JwtProperties properties,
             Clock clock
     ) {
         return new DelegatingOAuth2TokenValidator<>(
                 createTimestampValidator(clock),
-                new JwtIssuerValidator(properties.issuer()),
-                new JwtAudienceValidator(properties.audience()),
+                new JwtIssuerValidator(
+                        properties.issuer()
+                ),
+                new JwtAudienceValidator(
+                        properties.audience()
+                ),
                 createTypeValidator()
         );
     }
 
-    private JwtTimestampValidator createTimestampValidator(
+    private JwtTimestampValidator
+    createTimestampValidator(
             Clock clock
     ) {
         JwtTimestampValidator validator =
-                new JwtTimestampValidator(CLOCK_SKEW);
+                new JwtTimestampValidator(
+                        CLOCK_SKEW
+                );
 
         validator.setClock(clock);
-        validator.setAllowEmptyExpiryClaim(false);
-        validator.setAllowEmptyNotBeforeClaim(true);
+        validator.setAllowEmptyExpiryClaim(
+                false
+        );
+        validator.setAllowEmptyNotBeforeClaim(
+                true
+        );
 
         return validator;
     }
 
-    private JwtTypeValidator createTypeValidator() {
+    private JwtTypeValidator
+    createTypeValidator() {
         JwtTypeValidator validator =
-                new JwtTypeValidator(REQUIRED_TOKEN_TYPE);
+                new JwtTypeValidator(
+                        REQUIRED_TOKEN_TYPE
+                );
 
+        /*
+         * JwtTypeValidator.jwt() здесь не используем:
+         * в нашем контракте typ обязателен.
+         */
         validator.setAllowEmpty(false);
 
         return validator;

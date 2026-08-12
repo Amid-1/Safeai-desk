@@ -12,15 +12,18 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.io.IOException;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RequestIdFilterTest {
-
-    private static final String PREVIOUS_MDC_VALUE =
-            "previous-request-id";
 
     private final RequestIdFilter filter =
             new RequestIdFilter();
@@ -31,37 +34,76 @@ class RequestIdFilterTest {
     }
 
     @Test
-    void validClientRequestIdIsPreserved() throws Exception {
-        MockHttpServletRequest request = requestWithId(
-                "client-123"
-        );
+    void serverAlwaysGeneratesOwnRequestId() throws Exception {
+        MockHttpServletRequest request =
+                requestWithId(
+                        "client-123"
+                );
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        execute(request, response);
-
-        assertRequestId(
+        execute(
                 request,
-                response,
+                response
+        );
+
+        String serverRequestId =
+                requireServerRequestId(
+                        request,
+                        response
+                );
+
+        assertThat(serverRequestId)
+                .isNotEqualTo(
+                        "client-123"
+                );
+
+        assertThat(
+                request.getAttribute(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_ATTRIBUTE
+                )
+        ).isEqualTo(
                 "client-123"
         );
     }
 
     @Test
-    void validRequestIdIsTrimmed() throws Exception {
-        MockHttpServletRequest request = requestWithId(
-                "  client-123  "
-        );
+    void validClientRequestIdIsTrimmedAndPreservedOnlyAsMetadata()
+            throws Exception {
+        MockHttpServletRequest request =
+                requestWithId(
+                        "  client-123  "
+                );
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        execute(request, response);
-
-        assertRequestId(
+        execute(
                 request,
-                response,
+                response
+        );
+
+        String serverRequestId =
+                requireServerRequestId(
+                        request,
+                        response
+                );
+
+        assertThat(
+                request.getAttribute(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_ATTRIBUTE
+                )
+        ).isEqualTo(
                 "client-123"
         );
+
+        assertThat(serverRequestId)
+                .isNotEqualTo(
+                        "client-123"
+                );
     }
 
     @ParameterizedTest
@@ -72,53 +114,100 @@ class RequestIdFilterTest {
             "CLIENT123",
             "1234567890"
     })
-    void allowedRequestIdCharactersAreAccepted(
-            String requestId
+    void allowedClientRequestIdCharactersAreAccepted(
+            String clientRequestId
     ) throws Exception {
         MockHttpServletRequest request =
-                requestWithId(requestId);
+                requestWithId(
+                        clientRequestId
+                );
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        execute(request, response);
-
-        assertRequestId(
+        execute(
                 request,
-                response,
-                requestId
+                response
+        );
+
+        assertThat(
+                request.getAttribute(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_ATTRIBUTE
+                )
+        ).isEqualTo(
+                clientRequestId
+        );
+
+        assertThat(
+                response.getHeader(
+                        RequestIdFilter
+                                .REQUEST_ID_HEADER
+                )
+        ).isNotEqualTo(
+                clientRequestId
         );
     }
 
     @Test
-    void requestIdWithExactly128CharactersIsAccepted()
+    void clientRequestIdWithExactly128CharactersIsAccepted()
             throws Exception {
-        String requestId = "a".repeat(128);
+        String clientRequestId =
+                "a".repeat(128);
 
         MockHttpServletRequest request =
-                requestWithId(requestId);
+                requestWithId(
+                        clientRequestId
+                );
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        execute(request, response);
-
-        assertRequestId(
+        execute(
                 request,
-                response,
-                requestId
+                response
+        );
+
+        assertThat(
+                request.getAttribute(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_ATTRIBUTE
+                )
+        ).isEqualTo(
+                clientRequestId
+        );
+
+        requireServerRequestId(
+                request,
+                response
         );
     }
 
     @Test
-    void missingRequestIdIsReplacedWithUuid()
+    void missingClientRequestIdStillGetsServerUuid()
             throws Exception {
         MockHttpServletRequest request =
                 new MockHttpServletRequest();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        execute(request, response);
+        execute(
+                request,
+                response
+        );
 
-        assertGeneratedRequestId(request, response);
+        requireServerRequestId(
+                request,
+                response
+        );
+
+        assertThat(
+                request.getAttribute(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_ATTRIBUTE
+                )
+        ).isNull();
     }
 
     @ParameterizedTest
@@ -132,124 +221,240 @@ class RequestIdFilterTest {
             "client:123",
             "client@123"
     })
-    void invalidRequestIdIsReplacedWithUuid(
-            String requestId
+    void invalidIncomingRequestIdIsRejectedAsClientMetadata(
+            String incomingId
     ) throws Exception {
         MockHttpServletRequest request =
-                requestWithId(requestId);
+                requestWithId(
+                        incomingId
+                );
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        execute(request, response);
+        execute(
+                request,
+                response
+        );
 
-        assertGeneratedRequestId(request, response);
+        assertThat(
+                request.getAttribute(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_ATTRIBUTE
+                )
+        ).isNull();
+
+        String serverId =
+                requireServerRequestId(
+                        request,
+                        response
+                );
+
+        assertThat(serverId)
+                .isNotEqualTo(
+                        incomingId.trim()
+                );
     }
 
     @Test
-    void requestIdLongerThan128CharactersIsReplacedWithUuid()
+    void clientRequestIdLongerThan128CharactersIsRejected()
             throws Exception {
-        MockHttpServletRequest request = requestWithId(
-                "a".repeat(129)
-        );
+        MockHttpServletRequest request =
+                requestWithId(
+                        "a".repeat(129)
+                );
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        execute(request, response);
+        execute(
+                request,
+                response
+        );
 
-        assertGeneratedRequestId(request, response);
+        assertThat(
+                request.getAttribute(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_ATTRIBUTE
+                )
+        ).isNull();
+
+        requireServerRequestId(
+                request,
+                response
+        );
     }
 
     @Test
-    void requestIdIsAvailableInMdcDuringFilterChain()
+    void requestAndClientIdsAreAvailableInMdcDuringFilterChain()
             throws Exception {
-        MockHttpServletRequest request = requestWithId(
-                "client-123"
-        );
+        MockHttpServletRequest request =
+                requestWithId(
+                        "client-123"
+                );
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
         AtomicBoolean chainInvoked =
                 new AtomicBoolean(false);
 
-        FilterChain chain = (servletRequest, servletResponse) -> {
-            chainInvoked.set(true);
+        FilterChain chain =
+                (servletRequest, servletResponse) -> {
+                    chainInvoked.set(true);
 
-            assertThat(MDC.get(
-                    RequestIdFilter.REQUEST_ID_ATTRIBUTE
-            )).isEqualTo("client-123");
+                    String serverRequestId =
+                            (String)
+                                    servletRequest
+                                            .getAttribute(
+                                                    RequestIdFilter
+                                                            .REQUEST_ID_ATTRIBUTE
+                                            );
 
-            assertThat(servletRequest.getAttribute(
-                    RequestIdFilter.REQUEST_ID_ATTRIBUTE
-            )).isEqualTo("client-123");
-        };
+                    assertThat(
+                            MDC.get(
+                                    RequestIdFilter
+                                            .REQUEST_ID_MDC_KEY
+                            )
+                    ).isEqualTo(
+                            serverRequestId
+                    );
 
-        filter.doFilter(request, response, chain);
+                    assertThat(
+                            MDC.get(
+                                    RequestIdFilter
+                                            .CLIENT_REQUEST_ID_MDC_KEY
+                            )
+                    ).isEqualTo(
+                            "client-123"
+                    );
+                };
 
-        assertThat(chainInvoked).isTrue();
+        filter.doFilter(
+                request,
+                response,
+                chain
+        );
+
+        assertThat(
+                chainInvoked
+        ).isTrue();
     }
 
     @Test
-    void mdcValueIsRemovedAfterRequestWhenNoPreviousValueExists()
+    void mdcIsCleanedAfterRequest()
             throws Exception {
-        MockHttpServletRequest request = requestWithId(
-                "client-123"
-        );
+        MockHttpServletRequest request =
+                requestWithId(
+                        "client-123"
+                );
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        execute(request, response);
+        execute(
+                request,
+                response
+        );
 
-        assertThat(MDC.get(
-                RequestIdFilter.REQUEST_ID_ATTRIBUTE
-        )).isNull();
+        assertThat(
+                MDC.get(
+                        RequestIdFilter
+                                .REQUEST_ID_MDC_KEY
+                )
+        ).isNull();
+
+        assertThat(
+                MDC.get(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_MDC_KEY
+                )
+        ).isNull();
     }
 
     @Test
-    void previousMdcValueIsRestoredAfterRequest()
+    void previousMdcValuesAreRestoredAfterRequest()
             throws Exception {
         MDC.put(
-                RequestIdFilter.REQUEST_ID_ATTRIBUTE,
-                PREVIOUS_MDC_VALUE
+                RequestIdFilter
+                        .REQUEST_ID_MDC_KEY,
+                "outer-server-id"
         );
 
-        MockHttpServletRequest request = requestWithId(
-                "client-123"
+        MDC.put(
+                RequestIdFilter
+                        .CLIENT_REQUEST_ID_MDC_KEY,
+                "outer-client-id"
         );
+
+        MockHttpServletRequest request =
+                requestWithId(
+                        "new-client-id"
+                );
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        FilterChain chain = (servletRequest, servletResponse) ->
-                assertThat(MDC.get(
-                        RequestIdFilter.REQUEST_ID_ATTRIBUTE
-                )).isEqualTo("client-123");
+        execute(
+                request,
+                response
+        );
 
-        filter.doFilter(request, response, chain);
+        assertThat(
+                MDC.get(
+                        RequestIdFilter
+                                .REQUEST_ID_MDC_KEY
+                )
+        ).isEqualTo(
+                "outer-server-id"
+        );
 
-        assertThat(MDC.get(
-                RequestIdFilter.REQUEST_ID_ATTRIBUTE
-        )).isEqualTo(PREVIOUS_MDC_VALUE);
+        assertThat(
+                MDC.get(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_MDC_KEY
+                )
+        ).isEqualTo(
+                "outer-client-id"
+        );
     }
 
     @Test
-    void previousMdcValueIsRestoredWhenFilterChainThrows() {
+    void previousMdcValuesAreRestoredWhenFilterChainThrows() {
         MDC.put(
-                RequestIdFilter.REQUEST_ID_ATTRIBUTE,
-                PREVIOUS_MDC_VALUE
+                RequestIdFilter
+                        .REQUEST_ID_MDC_KEY,
+                "outer-server-id"
         );
 
-        MockHttpServletRequest request = requestWithId(
-                "client-123"
+        MDC.put(
+                RequestIdFilter
+                        .CLIENT_REQUEST_ID_MDC_KEY,
+                "outer-client-id"
         );
+
+        MockHttpServletRequest request =
+                requestWithId(
+                        "client-123"
+                );
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
         FilterChain failingChain =
                 (servletRequest, servletResponse) -> {
-                    assertThat(MDC.get(
-                            RequestIdFilter.REQUEST_ID_ATTRIBUTE
-                    )).isEqualTo("client-123");
+                    assertThat(
+                            MDC.get(
+                                    RequestIdFilter
+                                            .CLIENT_REQUEST_ID_MDC_KEY
+                            )
+                    ).isEqualTo(
+                            "client-123"
+                    );
 
-                    throw new ServletException("chain failure");
+                    throw new ServletException(
+                            "chain failure"
+                    );
                 };
 
         assertThatThrownBy(() ->
@@ -259,12 +464,255 @@ class RequestIdFilterTest {
                         failingChain
                 )
         )
-                .isInstanceOf(ServletException.class)
-                .hasMessage("chain failure");
+                .isInstanceOf(
+                        ServletException.class
+                )
+                .hasMessage(
+                        "chain failure"
+                );
 
-        assertThat(MDC.get(
-                RequestIdFilter.REQUEST_ID_ATTRIBUTE
-        )).isEqualTo(PREVIOUS_MDC_VALUE);
+        assertThat(
+                MDC.get(
+                        RequestIdFilter
+                                .REQUEST_ID_MDC_KEY
+                )
+        ).isEqualTo(
+                "outer-server-id"
+        );
+
+        assertThat(
+                MDC.get(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_MDC_KEY
+                )
+        ).isEqualTo(
+                "outer-client-id"
+        );
+    }
+
+    @Test
+    void sequentialRequestsAlwaysReceiveDifferentServerIds()
+            throws Exception {
+        MockHttpServletRequest firstRequest =
+                requestWithId(
+                        "same-client-id"
+                );
+
+        MockHttpServletResponse firstResponse =
+                new MockHttpServletResponse();
+
+        execute(
+                firstRequest,
+                firstResponse
+        );
+
+        MockHttpServletRequest secondRequest =
+                requestWithId(
+                        "same-client-id"
+                );
+
+        MockHttpServletResponse secondResponse =
+                new MockHttpServletResponse();
+
+        execute(
+                secondRequest,
+                secondResponse
+        );
+
+        assertThat(
+                firstResponse.getHeader(
+                        RequestIdFilter
+                                .REQUEST_ID_HEADER
+                )
+        ).isNotEqualTo(
+                secondResponse.getHeader(
+                        RequestIdFilter
+                                .REQUEST_ID_HEADER
+                )
+        );
+    }
+
+    @Test
+    void concurrentRequestsDoNotMixMdc()
+            throws Exception {
+        CountDownLatch bothInsideChain =
+                new CountDownLatch(2);
+
+        CountDownLatch release =
+                new CountDownLatch(1);
+
+        try (ExecutorService executor =
+                     Executors.newFixedThreadPool(2)) {
+
+            Future<RequestContextSnapshot> first =
+                    executor.submit(() ->
+                            executeConcurrentRequest(
+                                    "client-one",
+                                    bothInsideChain,
+                                    release
+                            )
+                    );
+
+            Future<RequestContextSnapshot> second =
+                    executor.submit(() ->
+                            executeConcurrentRequest(
+                                    "client-two",
+                                    bothInsideChain,
+                                    release
+                            )
+                    );
+
+            try {
+                assertThat(
+                        bothInsideChain.await(
+                                5L,
+                                TimeUnit.SECONDS
+                        )
+                ).isTrue();
+            } finally {
+                release.countDown();
+            }
+
+            RequestContextSnapshot firstResult =
+                    first.get(
+                            5L,
+                            TimeUnit.SECONDS
+                    );
+
+            RequestContextSnapshot secondResult =
+                    second.get(
+                            5L,
+                            TimeUnit.SECONDS
+                    );
+
+            assertThat(
+                    firstResult.clientRequestId()
+            ).isEqualTo(
+                    "client-one"
+            );
+
+            assertThat(
+                    secondResult.clientRequestId()
+            ).isEqualTo(
+                    "client-two"
+            );
+
+            assertThat(
+                    firstResult.serverRequestId()
+            ).isNotEqualTo(
+                    secondResult.serverRequestId()
+            );
+
+            assertThat(
+                    UUID.fromString(
+                            firstResult
+                                    .serverRequestId()
+                    )
+            ).isNotNull();
+
+            assertThat(
+                    UUID.fromString(
+                            secondResult
+                                    .serverRequestId()
+                    )
+            ).isNotNull();
+        }
+    }
+
+    private RequestContextSnapshot
+    executeConcurrentRequest(
+            String clientId,
+            CountDownLatch bothInsideChain,
+            CountDownLatch release
+    ) throws Exception {
+        MockHttpServletRequest request =
+                requestWithId(clientId);
+
+        MockHttpServletResponse response =
+                new MockHttpServletResponse();
+
+        AtomicReference<RequestContextSnapshot>
+                snapshot =
+                new AtomicReference<>();
+
+        filter.doFilter(
+                request,
+                response,
+                (servletRequest, servletResponse) -> {
+                    String requestId =
+                            MDC.get(
+                                    RequestIdFilter
+                                            .REQUEST_ID_MDC_KEY
+                            );
+
+                    String clientRequestId =
+                            MDC.get(
+                                    RequestIdFilter
+                                            .CLIENT_REQUEST_ID_MDC_KEY
+                            );
+
+                    snapshot.set(
+                            new RequestContextSnapshot(
+                                    requestId,
+                                    clientRequestId
+                            )
+                    );
+
+                    bothInsideChain.countDown();
+
+                    try {
+                        if (!release.await(
+                                5L,
+                                TimeUnit.SECONDS
+                        )) {
+                            throw new ServletException(
+                                    "Concurrent test timeout"
+                            );
+                        }
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread()
+                                .interrupt();
+
+                        throw new ServletException(
+                                exception
+                        );
+                    }
+
+                    assertThat(
+                            MDC.get(
+                                    RequestIdFilter
+                                            .REQUEST_ID_MDC_KEY
+                            )
+                    ).isEqualTo(
+                            requestId
+                    );
+
+                    assertThat(
+                            MDC.get(
+                                    RequestIdFilter
+                                            .CLIENT_REQUEST_ID_MDC_KEY
+                            )
+                    ).isEqualTo(
+                            clientRequestId
+                    );
+                }
+        );
+
+        assertThat(
+                MDC.get(
+                        RequestIdFilter
+                                .REQUEST_ID_MDC_KEY
+                )
+        ).isNull();
+
+        assertThat(
+                MDC.get(
+                        RequestIdFilter
+                                .CLIENT_REQUEST_ID_MDC_KEY
+                )
+        ).isNull();
+
+        return snapshot.get();
     }
 
     private void execute(
@@ -275,7 +723,7 @@ class RequestIdFilterTest {
                 request,
                 response,
                 (servletRequest, servletResponse) -> {
-                    // Цепочка успешно продолжена.
+                    // success
                 }
         );
     }
@@ -287,47 +735,56 @@ class RequestIdFilterTest {
                 new MockHttpServletRequest();
 
         request.addHeader(
-                RequestIdFilter.REQUEST_ID_HEADER,
+                RequestIdFilter
+                        .REQUEST_ID_HEADER,
                 requestId
         );
 
         return request;
     }
 
-    private void assertRequestId(
-            MockHttpServletRequest request,
-            MockHttpServletResponse response,
-            String expectedRequestId
-    ) {
-        assertThat(request.getAttribute(
-                RequestIdFilter.REQUEST_ID_ATTRIBUTE
-        )).isEqualTo(expectedRequestId);
-
-        assertThat(response.getHeader(
-                RequestIdFilter.REQUEST_ID_HEADER
-        )).isEqualTo(expectedRequestId);
-    }
-
-    private void assertGeneratedRequestId(
+    private String requireServerRequestId(
             MockHttpServletRequest request,
             MockHttpServletResponse response
     ) {
-        Object requestAttribute = request.getAttribute(
-                RequestIdFilter.REQUEST_ID_ATTRIBUTE
+        Object attribute =
+                request.getAttribute(
+                        RequestIdFilter
+                                .REQUEST_ID_ATTRIBUTE
+                );
+
+        assertThat(attribute)
+                .isInstanceOf(
+                        String.class
+                );
+
+        String requestId =
+                (String) attribute;
+
+        assertThat(requestId)
+                .isNotBlank();
+
+        assertThat(
+                response.getHeader(
+                        RequestIdFilter
+                                .REQUEST_ID_HEADER
+                )
+        ).isEqualTo(
+                requestId
         );
 
-        assertThat(requestAttribute)
-                .isInstanceOf(String.class);
+        assertThat(
+                UUID.fromString(
+                        requestId
+                )
+        ).isNotNull();
 
-        String requestId = (String) requestAttribute;
+        return requestId;
+    }
 
-        assertThat(requestId).isNotBlank();
-
-        assertThat(response.getHeader(
-                RequestIdFilter.REQUEST_ID_HEADER
-        )).isEqualTo(requestId);
-
-        assertThat(UUID.fromString(requestId))
-                .isNotNull();
+    private record RequestContextSnapshot(
+            String serverRequestId,
+            String clientRequestId
+    ) {
     }
 }

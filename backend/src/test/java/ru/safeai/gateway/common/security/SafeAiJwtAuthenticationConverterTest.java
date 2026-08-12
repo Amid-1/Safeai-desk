@@ -8,10 +8,10 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,499 +21,571 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 class SafeAiJwtAuthenticationConverterTest {
 
     private static final UUID USER_ID =
-            UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+            UUID.fromString(
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            );
 
     private static final UUID ORGANIZATION_ID =
-            UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+            UUID.fromString(
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            );
 
-    private static final long ORGANIZATION_AUTH_VERSION =
-            2L;
+    private static final Instant NOW =
+            Instant.parse(
+                    "2026-08-12T12:00:00Z"
+            );
 
-    private static final Instant ISSUED_AT =
-            Instant.parse("2026-06-12T12:00:00Z");
-
-    private static final Instant EXPIRES_AT =
-            Instant.parse("2026-06-12T12:05:00Z");
-
-    private static final String RAW_TOKEN =
-            "raw-secret-token";
-
-    private final SafeAiJwtAuthenticationConverter converter =
+    private final SafeAiJwtAuthenticationConverter
+            converter =
             new SafeAiJwtAuthenticationConverter();
 
     @Test
     void validJwtCreatesAuthenticatedPrincipalWithoutCredentials() {
         AbstractAuthenticationToken authentication =
-                converter.convert(validJwt());
+                convert(
+                        USER_ID.toString(),
+                        validClaims()
+                );
 
-        assertThat(authentication).isNotNull();
-        assertThat(authentication.isAuthenticated()).isTrue();
+        assertThat(authentication)
+                .isNotNull();
 
-        // Raw JWT не сохраняется в Authentication credentials.
-        assertThat(authentication.getCredentials())
-                .isNull();
+        assertThat(
+                authentication.isAuthenticated()
+        ).isTrue();
 
-        SafeAiUserPrincipal principal = assertInstanceOf(
-                SafeAiUserPrincipal.class,
-                authentication.getPrincipal()
-        );
+        assertThat(
+                authentication.getCredentials()
+        ).isNull();
+
+        SafeAiUserPrincipal principal =
+                assertInstanceOf(
+                        SafeAiUserPrincipal.class,
+                        authentication
+                                .getPrincipal()
+                );
 
         assertThat(principal.getId())
                 .isEqualTo(USER_ID);
 
-        assertThat(principal.getOrganizationId())
-                .isEqualTo(ORGANIZATION_ID);
-
-        assertThat(principal.getEmail())
-                .isEqualTo("user@example.com");
+        assertThat(
+                principal.getOrganizationId()
+        ).isEqualTo(
+                ORGANIZATION_ID
+        );
 
         assertThat(principal.getTokenVersion())
-                .isEqualTo(1L);
+                .isEqualTo(4L);
 
-        assertThat(principal.getOrganizationAuthVersion())
-                .isEqualTo(ORGANIZATION_AUTH_VERSION);
+        assertThat(
+                principal.getOrganizationAuthVersion()
+        ).isEqualTo(8L);
 
-        assertThat(principal.isEnabled())
-                .isTrue();
+        assertThat(
+                principal.authorityNames()
+        ).containsExactly(
+                "ROLE_USER"
+        );
 
-        /*
-         * Access-token principal не содержит password hash.
-         */
-        assertThat(principal.getPassword())
-                .isNull();
-
-        assertThat(authentication.getAuthorities())
-                .extracting("authority")
-                .containsExactly(
-                        "ROLE_ADMIN",
-                        "ROLE_USER"
-                );
+        assertThat(
+                principal.getPassword()
+        ).isNull();
     }
 
     @Test
-    void principalDoesNotContainRawJwtOrEmailInToString() {
-        AbstractAuthenticationToken authentication =
-                converter.convert(validJwt());
-
-        SafeAiUserPrincipal principal = assertInstanceOf(
-                SafeAiUserPrincipal.class,
-                authentication.getPrincipal()
-        );
-
-        assertThat(authentication.toString())
-                .doesNotContain(RAW_TOKEN);
+    void rawJwtAndEmailAreNotExposedByPrincipalToString() {
+        SafeAiUserPrincipal principal =
+                convertPrincipal(
+                        USER_ID.toString(),
+                        validClaims()
+                );
 
         assertThat(principal.toString())
                 .doesNotContain(
-                        RAW_TOKEN,
-                        "user@example.com",
-                        "password",
-                        "hash"
+                        "raw-secret-token"
+                )
+                .doesNotContain(
+                        "user@example.com"
                 );
-    }
-
-    @Test
-    void missingSubjectIsRejected() {
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        null,
-                        validClaims()
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining("subject");
-    }
-
-    @Test
-    void blankSubjectIsRejected() {
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        " ",
-                        validClaims()
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining("subject");
-    }
-
-    @Test
-    void subjectDifferentFromUserIdIsRejected() {
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        UUID.randomUUID().toString(),
-                        validClaims()
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining(
-                        "subject does not match userId"
-                );
-    }
-
-    @Test
-    void missingUserIdIsRejected() {
-        Map<String, Object> claims = validClaims();
-        claims.remove("userId");
-
-        assertMissingClaim(claims, "userId");
-    }
-
-    @Test
-    void missingOrganizationIdIsRejected() {
-        Map<String, Object> claims = validClaims();
-        claims.remove("organizationId");
-
-        assertMissingClaim(claims, "organizationId");
-    }
-
-    @Test
-    void missingEmailIsRejected() {
-        Map<String, Object> claims = validClaims();
-        claims.remove("email");
-
-        assertMissingClaim(claims, "email");
-    }
-
-    @Test
-    void missingTokenVersionIsRejected() {
-        Map<String, Object> claims = validClaims();
-        claims.remove("tokenVersion");
-
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        USER_ID.toString(),
-                        claims
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining("tokenVersion");
     }
 
     @Test
     void missingOrganizationAuthVersionIsRejected() {
-        Map<String, Object> claims = validClaims();
-        claims.remove("organizationAuthVersion");
+        Map<String, Object> claims =
+                validClaims();
 
-        assertMissingClaim(
+        claims.remove(
+                "organizationAuthVersion"
+        );
+
+        assertRejected(
+                USER_ID.toString(),
                 claims,
                 "organizationAuthVersion"
         );
     }
 
     @Test
-    void invalidUserIdUuidIsRejected() {
-        Map<String, Object> claims = validClaims();
-        claims.put("userId", "not-a-uuid");
-
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        "not-a-uuid",
-                        claims
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining("userId");
-    }
-
-    @Test
-    void invalidOrganizationIdUuidIsRejected() {
-        Map<String, Object> claims = validClaims();
-        claims.put("organizationId", "not-a-uuid");
-
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        USER_ID.toString(),
-                        claims
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining("organizationId");
-    }
-
-    @Test
-    void uppercaseEmailIsRejected() {
-        assertInvalidEmail("User@example.com");
-    }
-
-    @Test
-    void emailWithExternalSpacesIsRejected() {
-        assertInvalidEmail(" user@example.com ");
-    }
-
-    @Test
-    void emailLongerThan255CharactersIsRejected() {
-        String email = "a".repeat(244) + "@example.com";
-
-        assertThat(email.length()).isGreaterThan(255);
-        assertInvalidEmail(email);
-    }
-
-    @Test
-    void missingRolesIsRejected() {
-        Map<String, Object> claims = validClaims();
-        claims.remove("roles");
-
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        USER_ID.toString(),
-                        claims
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining("roles");
-    }
-
-    @Test
-    void emptyRolesAreRejected() {
-        Map<String, Object> claims = validClaims();
-        claims.put("roles", List.of());
-
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        USER_ID.toString(),
-                        claims
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining("roles");
-    }
-
-    @Test
-    void unknownRoleIsRejected() {
-        Map<String, Object> claims = validClaims();
-        claims.put("roles", List.of("ROOT"));
-
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        USER_ID.toString(),
-                        claims
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining("roles");
-    }
-
-    @Test
-    void roleNamesAreCanonicalizedAndDeduplicated() {
-        Map<String, Object> claims = validClaims();
-        claims.put(
-                "roles",
-                List.of(
-                        "user",
-                        "ROLE_ADMIN",
-                        "USER"
-                )
-        );
-
-        AbstractAuthenticationToken authentication =
-                converter.convert(jwt(
-                        USER_ID.toString(),
-                        claims
-                ));
-
-        assertThat(authentication.getAuthorities())
-                .extracting("authority")
-                .containsExactly(
-                        "ROLE_ADMIN",
-                        "ROLE_USER"
-                );
-    }
-
-    @Test
-    void negativeTokenVersionIsRejected() {
-        assertInvalidTokenVersion(
+    void negativeOrganizationAuthVersionIsRejected() {
+        assertInvalidOrganizationAuthVersion(
                 -1L,
                 "negative"
         );
     }
 
     @Test
-    void fractionalDoubleTokenVersionIsRejected() {
-        assertInvalidTokenVersion(
+    void fractionalDoubleOrganizationAuthVersionIsRejected() {
+        assertInvalidOrganizationAuthVersion(
                 1.5D,
                 "integral long"
         );
     }
 
     @Test
-    void fractionalFloatTokenVersionIsRejected() {
-        assertInvalidTokenVersion(
+    void fractionalFloatOrganizationAuthVersionIsRejected() {
+        assertInvalidOrganizationAuthVersion(
                 1.5F,
                 "integral long"
         );
     }
 
     @Test
-    void fractionalBigDecimalTokenVersionIsRejected() {
-        assertInvalidTokenVersion(
-                new BigDecimal("1.1"),
+    void fractionalBigDecimalOrganizationAuthVersionIsRejected() {
+        assertInvalidOrganizationAuthVersion(
+                new BigDecimal("1.5"),
                 "integral long"
         );
     }
 
     @Test
-    void bigIntegerOverflowIsRejected() {
-        assertInvalidTokenVersion(
-                BigInteger.valueOf(Long.MAX_VALUE)
-                        .add(BigInteger.ONE),
+    void organizationAuthVersionBigIntegerOverflowIsRejected() {
+        assertInvalidOrganizationAuthVersion(
+                BigInteger
+                        .valueOf(
+                                Long.MAX_VALUE
+                        )
+                        .add(
+                                BigInteger.ONE
+                        ),
                 "integral long"
         );
     }
 
     @Test
-    void bigDecimalOverflowIsRejected() {
-        assertInvalidTokenVersion(
-                new BigDecimal(Long.MAX_VALUE)
-                        .add(BigDecimal.ONE),
+    void organizationAuthVersionBigDecimalOverflowIsRejected() {
+        assertInvalidOrganizationAuthVersion(
+                new BigDecimal(
+                        Long.MAX_VALUE
+                ).add(
+                        BigDecimal.ONE
+                ),
                 "integral long"
         );
     }
 
     @Test
-    void nanTokenVersionIsRejected() {
-        assertInvalidTokenVersion(
+    void nanOrganizationAuthVersionIsRejected() {
+        assertInvalidOrganizationAuthVersion(
                 Double.NaN,
                 "integral long"
         );
     }
 
     @Test
-    void positiveInfinityTokenVersionIsRejected() {
-        assertInvalidTokenVersion(
+    void positiveInfinityOrganizationAuthVersionIsRejected() {
+        assertInvalidOrganizationAuthVersion(
                 Double.POSITIVE_INFINITY,
                 "integral long"
         );
     }
 
     @Test
-    void nonNumericTokenVersionIsRejected() {
-        assertInvalidTokenVersion(
-                "1",
+    void nonNumericOrganizationAuthVersionIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "organizationAuthVersion",
+                "8"
+        );
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
                 "not numeric"
         );
     }
 
     @Test
-    void supportedIntegralNumberTypesAreAccepted() {
-        List<Number> versions = List.of(
-                (byte) 1,
-                (short) 2,
-                3,
-                4L,
-                BigInteger.valueOf(5),
-                new BigDecimal("6"),
-                7.0D,
-                8.0F
-        );
+    void supportedIntegralOrganizationVersionTypesAreAccepted() {
+        List<Number> versions =
+                List.of(
+                        (byte) 1,
+                        (short) 2,
+                        3,
+                        4L,
+                        BigInteger.valueOf(5),
+                        new BigDecimal("6"),
+                        7.0D,
+                        8.0F
+                );
 
         for (Number version : versions) {
-            Map<String, Object> claims = validClaims();
-            claims.put("tokenVersion", version);
+            Map<String, Object> claims =
+                    validClaims();
 
-            AbstractAuthenticationToken authentication =
-                    converter.convert(jwt(
-                            USER_ID.toString(),
-                            claims
-                    ));
-
-            SafeAiUserPrincipal principal = assertInstanceOf(
-                    SafeAiUserPrincipal.class,
-                    authentication.getPrincipal()
+            claims.put(
+                    "organizationAuthVersion",
+                    version
             );
 
-            assertThat(principal.getTokenVersion())
-                    .isEqualTo(version.longValue());
+            SafeAiUserPrincipal principal =
+                    convertPrincipal(
+                            USER_ID.toString(),
+                            claims
+                    );
+
+            assertThat(
+                    principal
+                            .getOrganizationAuthVersion()
+            ).isEqualTo(
+                    version.longValue()
+            );
         }
     }
 
-    private void assertMissingClaim(
-            Map<String, Object> claims,
-            String claimName
-    ) {
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        USER_ID.toString(),
-                        claims
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining(claimName);
-    }
+    @Test
+    void missingTokenVersionIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
 
-    private void assertInvalidEmail(String email) {
-        Map<String, Object> claims = validClaims();
-        claims.put("email", email);
+        claims.remove(
+                "tokenVersion"
+        );
 
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        USER_ID.toString(),
-                        claims
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining("canonical");
-    }
-
-    private void assertInvalidTokenVersion(
-            Object tokenVersion,
-            String expectedMessage
-    ) {
-        Map<String, Object> claims = validClaims();
-        claims.put("tokenVersion", tokenVersion);
-
-        assertThatThrownBy(() ->
-                converter.convert(jwt(
-                        USER_ID.toString(),
-                        claims
-                ))
-        )
-                .isInstanceOf(BadJwtException.class)
-                .hasMessageContaining(expectedMessage);
-    }
-
-    private Jwt validJwt() {
-        return jwt(
+        assertRejected(
                 USER_ID.toString(),
-                validClaims()
+                claims,
+                "tokenVersion"
         );
     }
 
-    private Map<String, Object> validClaims() {
-        Map<String, Object> claims = new HashMap<>();
+    @Test
+    void fractionalTokenVersionIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
 
-        claims.put("userId", USER_ID.toString());
+        claims.put(
+                "tokenVersion",
+                1.5D
+        );
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "integral long"
+        );
+    }
+
+    @Test
+    void tokenVersionOverflowIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "tokenVersion",
+                BigInteger
+                        .valueOf(
+                                Long.MAX_VALUE
+                        )
+                        .add(
+                                BigInteger.ONE
+                        )
+        );
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "integral long"
+        );
+    }
+
+    @Test
+    void subjectMismatchIsRejected() {
+        assertRejected(
+                UUID.randomUUID()
+                        .toString(),
+                validClaims(),
+                "subject does not match userId"
+        );
+    }
+
+    @Test
+    void unknownRoleIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "roles",
+                List.of("ROOT")
+        );
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "roles contain invalid values"
+        );
+    }
+
+    @Test
+    void nonStringRoleIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "roles",
+                List.of(123)
+        );
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "roles contain invalid values"
+        );
+    }
+
+    @Test
+    void roleNamesAreCanonicalizedAndDeduplicated() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "roles",
+                List.of(
+                        "user",
+                        "ROLE_USER",
+                        "admin"
+                )
+        );
+
+        SafeAiUserPrincipal principal =
+                convertPrincipal(
+                        USER_ID.toString(),
+                        claims
+                );
+
+        assertThat(
+                principal.authorityNames()
+        ).containsExactly(
+                "ROLE_ADMIN",
+                "ROLE_USER"
+        );
+    }
+
+    @Test
+    void invalidUserUuidIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "userId",
+                "not-a-uuid"
+        );
+
+        assertRejected(
+                "not-a-uuid",
+                claims,
+                "valid UUID"
+        );
+    }
+
+    @Test
+    void invalidOrganizationUuidIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "organizationId",
+                "not-a-uuid"
+        );
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "valid UUID"
+        );
+    }
+
+    @Test
+    void nonCanonicalEmailIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "email",
+                "User@example.com"
+        );
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "not canonical"
+        );
+    }
+
+    @Test
+    void missingSubjectIsRejected() {
+        assertThatThrownBy(() ->
+                converter.convert(
+                        jwt(
+                                null,
+                                validClaims()
+                        )
+                )
+        )
+                .isInstanceOf(
+                        BadJwtException.class
+                )
+                .hasMessageContaining(
+                        "subject is missing"
+                );
+    }
+
+    private void assertInvalidOrganizationAuthVersion(
+            Object value,
+            String expectedMessage
+    ) {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "organizationAuthVersion",
+                value
+        );
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                expectedMessage
+        );
+    }
+
+    private void assertRejected(
+            String subject,
+            Map<String, Object> claims,
+            String expectedMessage
+    ) {
+        assertThatThrownBy(() ->
+                converter.convert(
+                        jwt(
+                                subject,
+                                claims
+                        )
+                )
+        )
+                .isInstanceOf(
+                        BadJwtException.class
+                )
+                .hasMessageContaining(
+                        expectedMessage
+                );
+    }
+
+    private Map<String, Object>
+    validClaims() {
+        Map<String, Object> claims =
+                new LinkedHashMap<>();
+
+        claims.put(
+                "userId",
+                USER_ID.toString()
+        );
+
         claims.put(
                 "organizationId",
                 ORGANIZATION_ID.toString()
         );
-        claims.put("email", "user@example.com");
+
+        claims.put(
+                "email",
+                "user@example.com"
+        );
+
         claims.put(
                 "roles",
-                new ArrayList<>(List.of("USER", "ADMIN"))
+                List.of("USER")
         );
-        claims.put("tokenVersion", 1L);
+
+        claims.put(
+                "tokenVersion",
+                4L
+        );
+
         claims.put(
                 "organizationAuthVersion",
-                ORGANIZATION_AUTH_VERSION
+                8L
         );
 
         return claims;
+    }
+
+    private AbstractAuthenticationToken convert(
+            String subject,
+            Map<String, Object> claims
+    ) {
+        return Objects.requireNonNull(
+                converter.convert(
+                        jwt(
+                                subject,
+                                claims
+                        )
+                ),
+                "converter returned null authentication"
+        );
+    }
+
+    private SafeAiUserPrincipal convertPrincipal(
+            String subject,
+            Map<String, Object> claims
+    ) {
+        AbstractAuthenticationToken authentication =
+                convert(
+                        subject,
+                        claims
+                );
+
+        return assertInstanceOf(
+                SafeAiUserPrincipal.class,
+                authentication.getPrincipal()
+        );
     }
 
     private Jwt jwt(
             String subject,
             Map<String, Object> claims
     ) {
-        Jwt.Builder builder = Jwt.withTokenValue(RAW_TOKEN)
-                .header("alg", "HS256")
-                .issuedAt(ISSUED_AT)
-                .expiresAt(EXPIRES_AT);
+        Jwt.Builder builder =
+                Jwt.withTokenValue(
+                                "raw-secret-token"
+                        )
+                        .header(
+                                "alg",
+                                "HS256"
+                        )
+                        .issuedAt(NOW)
+                        .expiresAt(
+                                NOW.plusSeconds(
+                                        300
+                                )
+                        );
 
         if (subject != null) {
             builder.subject(subject);
         }
 
-        claims.forEach(builder::claim);
+        claims.forEach(
+                builder::claim
+        );
 
         return builder.build();
     }

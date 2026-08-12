@@ -11,7 +11,8 @@ import java.lang.annotation.Target;
 
 @Documented
 @Constraint(
-        validatedBy = PasswordValidator.class
+        validatedBy =
+                BcryptUtf8LengthValidator.class
 )
 @Target({
         ElementType.FIELD,
@@ -20,10 +21,13 @@ import java.lang.annotation.Target;
         ElementType.ANNOTATION_TYPE
 })
 @Retention(RetentionPolicy.RUNTIME)
-public @interface ValidPassword {
+public @interface BcryptUtf8Length {
+
+    int max()
+            default PasswordPolicy.MAX_BCRYPT_BYTES;
 
     String message()
-            default PasswordPolicy.MESSAGE;
+            default PasswordPolicy.BCRYPT_LENGTH_MESSAGE;
 
     Class<?>[] groups()
             default {};

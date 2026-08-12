@@ -1,13 +1,14 @@
-# "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local-nginx.yml"
-# "D:\Java projects\Safeai-desk\backend\src\main\resources\application-local-nginx.yml"
-
-# Профиль local-nginx автоматически включает профиль local
-# через spring.profiles.group.local-nginx в application.yml.
+# D:\Java projects\Safeai-desk\backend\src\main\resources\application-local-nginx.yml
 #
-# В этом файле находятся только отличия запуска через локальный Nginx.
+# Профиль local-nginx автоматически включает local
+# через spring.profiles.group.local-nginx.
+#
+# Forwarded headers намеренно НЕ обрабатываются Spring.
+# ClientIpResolver самостоятельно доверяет им только
+# при соединении от trusted proxy.
 
 server:
-  forward-headers-strategy: framework
+  forward-headers-strategy: none
 
 safeai:
   security:

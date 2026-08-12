@@ -1,19 +1,20 @@
 package ru.safeai.gateway.common.security;
 
 import org.springframework.beans.factory.SmartInitializingSingleton;
-import org.springframework.core.env.Environment;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
+import java.net.URI;
 import java.util.Locale;
+import java.util.Objects;
 
 /**
- * Fail-fast проверки, относящиеся именно к выбранной production-модели:
- * TLS завершается на Nginx, forwarded headers обрабатывает ClientIpResolver.
+ * Fail-fast проверки production security model.
  */
 @Component
 @Profile({"prod", "production"})
-public class ProductionSecurityInvariantValidator
+public final class ProductionSecurityInvariantValidator
         implements SmartInitializingSingleton {
 
     private final CorsProperties corsProperties;
@@ -27,50 +28,117 @@ public class ProductionSecurityInvariantValidator
             JwtProperties jwtProperties,
             Environment environment
     ) {
-        this.corsProperties = corsProperties;
-        this.clientIpProperties = clientIpProperties;
-        this.jwtProperties = jwtProperties;
-        this.environment = environment;
+        this.corsProperties =
+                Objects.requireNonNull(
+                        corsProperties,
+                        "corsProperties не должен быть null"
+                );
+
+        this.clientIpProperties =
+                Objects.requireNonNull(
+                        clientIpProperties,
+                        "clientIpProperties не должен быть null"
+                );
+
+        this.jwtProperties =
+                Objects.requireNonNull(
+                        jwtProperties,
+                        "jwtProperties не должен быть null"
+                );
+
+        this.environment =
+                Objects.requireNonNull(
+                        environment,
+                        "environment не должен быть null"
+                );
     }
 
     @Override
     public void afterSingletonsInstantiated() {
-        if (corsProperties.allowedOrigins().isEmpty()) {
+        validateCors();
+        validateTrustedProxies();
+        validateIssuer();
+        validateForwardedHeadersStrategy();
+    }
+
+    private void validateCors() {
+        if (corsProperties
+                .allowedOrigins()
+                .isEmpty()) {
             throw new IllegalStateException(
                     "В production должен быть задан хотя бы один CORS origin"
             );
         }
 
-        if (corsProperties.allowedOrigins().stream()
-                .anyMatch(origin -> !origin.startsWith("https://"))) {
+        if (corsProperties
+                .allowedOrigins()
+                .stream()
+                .anyMatch(origin ->
+                        !origin.startsWith(
+                                "https://"
+                        )
+                )) {
             throw new IllegalStateException(
-                    "В prod все safeai.cors.allowed-origins должны использовать HTTPS"
+                    "В prod все safeai.cors.allowed-origins "
+                            + "должны использовать HTTPS"
+            );
+        }
+    }
+
+    private void validateTrustedProxies() {
+        if (clientIpProperties
+                .trustedProxyCidrs()
+                .isEmpty()) {
+            throw new IllegalStateException(
+                    "В production должен быть задан trusted CIDR "
+                            + "для edge proxy"
             );
         }
 
-        if (clientIpProperties.trustedProxyCidrs().isEmpty()) {
-            throw new IllegalStateException(
-                    "В production должен быть задан trusted CIDR для edge proxy"
-            );
-        }
-        if (clientIpProperties.trustedProxyCidrs().stream().anyMatch(cidr ->
-                "0.0.0.0/0".equals(cidr) || "::/0".equals(cidr))) {
+        boolean trustAll =
+                clientIpProperties
+                        .trustedProxyCidrs()
+                        .stream()
+                        .anyMatch(cidr ->
+                                "0.0.0.0/0".equals(cidr)
+                                        || "::/0".equals(cidr)
+                        );
+
+        if (trustAll) {
             throw new IllegalStateException(
                     "Нельзя доверять всем IP-адресам как reverse proxy"
             );
         }
+    }
 
-        if (!jwtProperties.issuer().startsWith("https://")) {
+    private void validateIssuer() {
+        URI issuer =
+                URI.create(
+                        jwtProperties.issuer()
+                );
+
+        if (!"https".equalsIgnoreCase(
+                issuer.getScheme()
+        )) {
             throw new IllegalStateException(
-                    "В prod app.security.jwt.issuer должен использовать HTTPS"
+                    "В prod app.security.jwt.issuer "
+                            + "должен использовать HTTPS"
             );
         }
+    }
 
-        String strategy = environment.getProperty(
-                "server.forward-headers-strategy",
-                "none"
-        );
-        if (!"none".equals(strategy.toLowerCase(Locale.ROOT))) {
+    private void validateForwardedHeadersStrategy() {
+        String strategy =
+                environment.getProperty(
+                        "server.forward-headers-strategy",
+                        "none"
+                );
+
+        if (!"none".equals(
+                strategy.toLowerCase(
+                        Locale.ROOT
+                )
+        )) {
             throw new IllegalStateException(
                     "При использовании ClientIpResolver установите "
                             + "server.forward-headers-strategy=none"

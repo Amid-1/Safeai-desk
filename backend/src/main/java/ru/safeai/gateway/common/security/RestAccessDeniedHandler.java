@@ -14,9 +14,11 @@ import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
-public class RestAccessDeniedHandler implements AccessDeniedHandler {
+public final class RestAccessDeniedHandler
+        implements AccessDeniedHandler {
 
-    private final ApiErrorResponseWriter errorResponseWriter;
+    private final ApiErrorResponseWriter
+            errorResponseWriter;
 
     @Override
     public void handle(

@@ -14,34 +14,34 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * Resolves the direct client IP without trusting spoofable forwarded headers.
+ *
+ * <p>Forwarded headers are read only when the socket peer is explicitly
+ * configured as a trusted reverse proxy.</p>
+ *
+ * <p>Untrusted hostnames are never sent to DNS resolution. IPv4 is parsed
+ * manually; InetAddress is used only for strings that are already recognized
+ * as IPv6 literals by the presence of ':'.</p>
+ */
 @Component
-public class ClientIpResolver {
+public final class ClientIpResolver {
 
-    private static final String UNKNOWN = "unknown";
+    private static final String UNKNOWN =
+            "unknown";
 
-    private static final String X_FORWARDED_FOR =
-            "X-Forwarded-For";
+    private static final int MAX_FORWARDED_HOPS =
+            32;
 
-    private static final String X_REAL_IP =
-            "X-Real-IP";
-
-    private static final int MAX_FORWARDED_HOPS = 32;
-
-    private static final Pattern IPV4_WITH_OPTIONAL_PORT =
+    private static final Pattern IPV4_WITH_PORT =
             Pattern.compile(
-                    "^(\\d{1,3}(?:\\.\\d{1,3}){3})"
-                            + "(?::\\d{1,5})?$"
+                    "^([0-9]{1,3}(?:\\.[0-9]{1,3}){3}):([0-9]{1,5})$"
             );
 
-    private static final Pattern
-            BRACKETED_IPV6_WITH_OPTIONAL_PORT =
+    private static final Pattern IPV6_LITERAL_CHARS =
             Pattern.compile(
-                    "^\\[([0-9a-fA-F:.]+)]"
-                            + "(?::\\d{1,5})?$"
+                    "^[0-9A-Fa-f:.]+$"
             );
-
-    private static final Pattern IPV6_LITERAL =
-            Pattern.compile("^[0-9a-fA-F:.]+$");
 
     private final List<IpAddressMatcher>
             trustedProxyMatchers;
@@ -55,7 +55,8 @@ public class ClientIpResolver {
         );
 
         this.trustedProxyMatchers =
-                properties.trustedProxyCidrs()
+                properties
+                        .trustedProxyCidrs()
                         .stream()
                         .map(IpAddressMatcher::new)
                         .toList();
@@ -69,112 +70,183 @@ public class ClientIpResolver {
                 "request не должен быть null"
         );
 
-        String remoteAddr = normalizeIp(
-                request.getRemoteAddr()
-        ).orElse(UNKNOWN);
+        Optional<String> normalizedRemote =
+                normalizeIp(
+                        request.getRemoteAddr()
+                );
 
-        /*
-         * Forwarded-заголовкам доверяем только тогда,
-         * когда непосредственное соединение пришло
-         * от настроенного trusted proxy.
-         */
-        if (UNKNOWN.equals(remoteAddr)
-                || isDirectClient(remoteAddr)) {
-            return remoteAddr;
+        if (normalizedRemote.isEmpty()) {
+            return UNKNOWN;
         }
 
-        return resolveFromForwardedHeaders(request)
-                .orElse(remoteAddr);
-    }
+        String remoteAddress =
+                normalizedRemote.get();
 
-    private Optional<String> resolveFromForwardedHeaders(
-            HttpServletRequest request
-    ) {
-        Optional<String> fromXForwardedFor =
-                resolveFromXForwardedFor(
+        /*
+         * Forwarded headers имеют значение только если
+         * непосредственный socket peer является доверенным proxy.
+         */
+        if (isUntrustedAddress(remoteAddress)) {
+            return remoteAddress;
+        }
+
+        ForwardedChainResult xff =
+                parseForwardedFor(
                         request.getHeader(
-                                X_FORWARDED_FOR
+                                "X-Forwarded-For"
                         )
                 );
 
-        if (fromXForwardedFor.isPresent()) {
-            return fromXForwardedFor;
+        if (xff.present()) {
+            /*
+             * Если X-Forwarded-For присутствует, но malformed,
+             * не пытаемся частично доверять цепочке и не переключаемся
+             * на X-Real-IP. Возвращаем непосредственный trusted peer.
+             */
+            if (!xff.valid()) {
+                return remoteAddress;
+            }
+
+            Optional<String> directClient =
+                    nearestUntrustedFromRight(
+                            xff.addresses()
+                    );
+
+            return directClient.orElse(
+                    remoteAddress
+            );
         }
 
-        return normalizeIp(
-                request.getHeader(X_REAL_IP)
-        ).filter(this::isDirectClient);
+        /*
+         * X-Real-IP — только fallback при полном отсутствии
+         * валидной/невалидной X-Forwarded-For цепочки.
+         */
+        Optional<String> realIp =
+                normalizeIp(
+                        request.getHeader(
+                                "X-Real-IP"
+                        )
+                );
+
+        return realIp.orElse(
+                remoteAddress
+        );
     }
 
-    private Optional<String> resolveFromXForwardedFor(
-            @Nullable String headerValue
+    private ForwardedChainResult parseForwardedFor(
+            @Nullable String rawHeader
     ) {
-        if (headerValue == null
-                || headerValue.isBlank()) {
-            return Optional.empty();
+        if (rawHeader == null
+                || rawHeader.isBlank()) {
+
+            return ForwardedChainResult
+                    .absent();
         }
 
         String[] rawHops =
-                headerValue.split(",", -1);
+                rawHeader.split(
+                        ",",
+                        -1
+                );
 
         /*
-         * Чрезмерно длинной цепочке не доверяем
-         * даже частично.
+         * String#split для непустой строки всегда возвращает
+         * минимум один элемент, поэтому rawHops.length == 0
+         * здесь проверять не нужно.
          */
-        if (rawHops.length > MAX_FORWARDED_HOPS) {
-            return Optional.empty();
+        if (rawHops.length
+                > MAX_FORWARDED_HOPS) {
+
+            return ForwardedChainResult
+                    .invalid();
         }
 
-        List<String> chain =
-                new ArrayList<>(rawHops.length);
+        ArrayList<String> addresses =
+                new ArrayList<>(
+                        rawHops.length
+                );
 
         for (String rawHop : rawHops) {
-            Optional<String> normalized =
+            Optional<String> address =
                     normalizeIp(rawHop);
 
             /*
-             * Один невалидный hop делает
-             * недоверенной всю цепочку.
+             * Одна malformed запись инвалидирует всю цепочку.
+             * Это fail-closed поведение.
              */
-            if (normalized.isEmpty()) {
-                return Optional.empty();
+            if (address.isEmpty()) {
+                return ForwardedChainResult
+                        .invalid();
             }
 
-            chain.add(normalized.get());
+            addresses.add(
+                    address.get()
+            );
         }
+
+        return ForwardedChainResult.valid(
+                List.copyOf(addresses)
+        );
+    }
+
+    private Optional<String>
+    nearestUntrustedFromRight(
+            List<String> chain
+    ) {
+        Objects.requireNonNull(
+                chain,
+                "chain не должен быть null"
+        );
 
         /*
          * Идём справа налево:
-         * пропускаем доверенные proxy и возвращаем
-         * первый недоверенный адрес клиента.
+         *
+         * client, proxyA, proxyB
+         *
+         * proxyB расположен ближе всего к нашему backend.
+         *
+         * Все известные trusted proxy пропускаем.
+         * Первый неизвестный адрес считается границей доверия
+         * и является resolved client IP.
          */
-        for (int index = chain.size() - 1;
+        for (int index =
+                chain.size() - 1;
              index >= 0;
              index--) {
 
-            String candidate = chain.get(index);
+            String candidate =
+                    chain.get(index);
 
-            if (isDirectClient(candidate)) {
-                return Optional.of(candidate);
+            if (isUntrustedAddress(candidate)) {
+                return Optional.of(
+                        candidate
+                );
             }
         }
 
         return Optional.empty();
     }
 
-    private boolean isDirectClient(String ip) {
-        return !matchesTrustedProxy(ip);
-    }
+    /**
+     * Возвращает true, если адрес НЕ входит ни в один
+     * явно настроенный trusted proxy CIDR.
+     *
+     * <p>Пустой allowlist означает, что ни одному адресу
+     * не доверяем.</p>
+     */
+    private boolean isUntrustedAddress(
+            String ip
+    ) {
+        Objects.requireNonNull(
+                ip,
+                "ip не должен быть null"
+        );
 
-    private boolean matchesTrustedProxy(String ip) {
-        if (ip.isBlank()
-                || trustedProxyMatchers.isEmpty()) {
-            return false;
-        }
-
-        return trustedProxyMatchers.stream()
-                .anyMatch(
-                        matcher -> matcher.matches(ip)
+        return trustedProxyMatchers
+                .stream()
+                .noneMatch(
+                        matcher ->
+                                matcher.matches(ip)
                 );
     }
 
@@ -185,88 +257,72 @@ public class ClientIpResolver {
             return Optional.empty();
         }
 
-        String value = rawValue.trim();
+        String value =
+                rawValue.trim();
 
         if (value.isBlank()
-                || UNKNOWN.equalsIgnoreCase(value)) {
+                || UNKNOWN.equalsIgnoreCase(
+                value
+        )) {
             return Optional.empty();
         }
 
-        Matcher bracketedIpv6 =
-                BRACKETED_IPV6_WITH_OPTIONAL_PORT
-                        .matcher(value);
+        value =
+                stripBracketedIpv6Port(
+                        value
+                );
 
-        if (bracketedIpv6.matches()) {
-            return normalizeIpv6(
-                    bracketedIpv6.group(1)
-            );
-        }
+        value =
+                stripIpv4Port(
+                        value
+                );
 
-        Matcher ipv4 =
-                IPV4_WITH_OPTIONAL_PORT.matcher(value);
+        Optional<String> ipv4 =
+                normalizeIpv4(value);
 
-        if (ipv4.matches()) {
-            return normalizeIpv4(
-                    ipv4.group(1)
-            );
-        }
-
-        if (value.indexOf(':') >= 0
-                && IPV6_LITERAL.matcher(value)
-                .matches()) {
-            return normalizeIpv6(value);
+        if (ipv4.isPresent()) {
+            return ipv4;
         }
 
         /*
-         * Hostname отклоняется до вызова InetAddress,
-         * чтобы не запускать DNS lookup.
+         * Если ':' отсутствует, после неудачного IPv4 parse
+         * значение не может быть принимаемым нами IP literal.
+         *
+         * Поэтому hostname вроде:
+         *
+         * attacker.example.com
+         * dead.beef
+         *
+         * отвергается ДО InetAddress и не вызывает DNS lookup.
          */
-        return Optional.empty();
-    }
-
-    private Optional<String> normalizeIpv4(
-            String value
-    ) {
-        String[] octets =
-                value.split("\\.", -1);
-
-        if (octets.length != 4) {
+        if (!value.contains(":")) {
             return Optional.empty();
         }
 
-        for (String octet : octets) {
-            try {
-                if (octet.isEmpty()
-                        || Integer.parseInt(octet) > 255) {
-                    return Optional.empty();
-                }
-            } catch (NumberFormatException exception) {
-                return Optional.empty();
-            }
-        }
+        /*
+         * Перед InetAddress разрешаем только символы,
+         * допустимые в нашем IPv6 literal representation.
+         */
+        if (!IPV6_LITERAL_CHARS
+                .matcher(value)
+                .matches()) {
 
-        try {
-            return Optional.of(
-                    InetAddress
-                            .getByName(value)
-                            .getHostAddress()
-            );
-        } catch (
-                UnknownHostException
-                | IllegalArgumentException exception
-        ) {
             return Optional.empty();
         }
-    }
 
-    private Optional<String> normalizeIpv6(
-            String value
-    ) {
         try {
             InetAddress address =
-                    InetAddress.getByName(value);
+                    InetAddress.getByName(
+                            value
+                    );
 
-            if (address.getAddress().length != 16) {
+            byte[] bytes =
+                    address.getAddress();
+
+            /*
+             * IPv6 должен занимать ровно 16 байт.
+             */
+            if (bytes.length != 16) {
                 return Optional.empty();
             }
 
@@ -274,10 +330,264 @@ public class ClientIpResolver {
                     address.getHostAddress()
             );
         } catch (
-                UnknownHostException
-                | IllegalArgumentException exception
+                UnknownHostException exception
         ) {
             return Optional.empty();
+        }
+    }
+
+    private Optional<String> normalizeIpv4(
+            String value
+    ) {
+        Objects.requireNonNull(
+                value,
+                "value не должен быть null"
+        );
+
+        String[] parts =
+                value.split(
+                        "\\.",
+                        -1
+                );
+
+        if (parts.length != 4) {
+            return Optional.empty();
+        }
+
+        int[] octets =
+                new int[4];
+
+        for (int index = 0;
+             index < 4;
+             index++) {
+
+            String part =
+                    parts[index];
+
+            if (part.isEmpty()
+                    || part.length() > 3) {
+
+                return Optional.empty();
+            }
+
+            for (int charIndex = 0;
+                 charIndex < part.length();
+                 charIndex++) {
+
+                if (!Character.isDigit(
+                        part.charAt(
+                                charIndex
+                        )
+                )) {
+                    return Optional.empty();
+                }
+            }
+
+            int octet;
+
+            try {
+                octet =
+                        Integer.parseInt(
+                                part
+                        );
+            } catch (
+                    NumberFormatException exception
+            ) {
+                return Optional.empty();
+            }
+
+            /*
+             * Строка состоит только из decimal digits,
+             * поэтому отрицательное значение здесь невозможно.
+             */
+            if (octet > 255) {
+                return Optional.empty();
+            }
+
+            octets[index] =
+                    octet;
+        }
+
+        return Optional.of(
+                octets[0]
+                        + "."
+                        + octets[1]
+                        + "."
+                        + octets[2]
+                        + "."
+                        + octets[3]
+        );
+    }
+
+    private String stripIpv4Port(
+            String value
+    ) {
+        Objects.requireNonNull(
+                value,
+                "value не должен быть null"
+        );
+
+        Matcher matcher =
+                IPV4_WITH_PORT
+                        .matcher(value);
+
+        if (!matcher.matches()) {
+            return value;
+        }
+
+        int port;
+
+        try {
+            port =
+                    Integer.parseInt(
+                            matcher.group(2)
+                    );
+        } catch (
+                NumberFormatException exception
+        ) {
+            return value;
+        }
+
+        if (port < 1
+                || port > 65535) {
+
+            return value;
+        }
+
+        return matcher.group(1);
+    }
+
+    private String stripBracketedIpv6Port(
+            String value
+    ) {
+        Objects.requireNonNull(
+                value,
+                "value не должен быть null"
+        );
+
+        if (!value.startsWith("[")) {
+            return value;
+        }
+
+        int closingBracket =
+                value.indexOf(']');
+
+        if (closingBracket <= 1) {
+            return value;
+        }
+
+        String literal =
+                value.substring(
+                        1,
+                        closingBracket
+                );
+
+        /*
+         * [2001:db8::1]
+         */
+        if (closingBracket
+                == value.length() - 1) {
+
+            return literal;
+        }
+
+        /*
+         * После ] разрешён только :port.
+         */
+        if (value.charAt(
+                closingBracket + 1
+        ) != ':') {
+
+            return value;
+        }
+
+        String rawPort =
+                value.substring(
+                        closingBracket + 2
+                );
+
+        if (rawPort.isEmpty()) {
+            return value;
+        }
+
+        try {
+            int port =
+                    Integer.parseInt(
+                            rawPort
+                    );
+
+            if (port < 1
+                    || port > 65535) {
+
+                return value;
+            }
+
+            return literal;
+        } catch (
+                NumberFormatException exception
+        ) {
+            return value;
+        }
+    }
+
+    private record ForwardedChainResult(
+            boolean present,
+            boolean valid,
+            List<String> addresses
+    ) {
+
+        private ForwardedChainResult {
+            addresses =
+                    List.copyOf(
+                            Objects.requireNonNull(
+                                    addresses,
+                                    "addresses не должен быть null"
+                            )
+                    );
+
+            if (!present
+                    && !addresses.isEmpty()) {
+
+                throw new IllegalArgumentException(
+                        "Absent forwarded chain "
+                                + "не может содержать addresses"
+                );
+            }
+
+            if (!valid
+                    && !addresses.isEmpty()) {
+
+                throw new IllegalArgumentException(
+                        "Invalid forwarded chain "
+                                + "не должна содержать addresses"
+                );
+            }
+        }
+
+        private static ForwardedChainResult absent() {
+            return new ForwardedChainResult(
+                    false,
+                    true,
+                    List.of()
+            );
+        }
+
+        private static ForwardedChainResult invalid() {
+            return new ForwardedChainResult(
+                    true,
+                    false,
+                    List.of()
+            );
+        }
+
+        private static ForwardedChainResult valid(
+                List<String> addresses
+        ) {
+            return new ForwardedChainResult(
+                    true,
+                    true,
+                    addresses
+            );
         }
     }
 }

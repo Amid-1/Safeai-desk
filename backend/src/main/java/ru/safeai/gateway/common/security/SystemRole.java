@@ -1,6 +1,7 @@
 package ru.safeai.gateway.common.security;
 
 import java.util.Locale;
+import java.util.Objects;
 
 public enum SystemRole {
     SUPER_ADMIN,
@@ -18,14 +19,19 @@ public enum SystemRole {
     }
 
     public static SystemRole parse(String value) {
-        if (value.isBlank()) {
+        String source = Objects.requireNonNull(
+                value,
+                "role не должен быть null"
+        );
+
+        if (source.isBlank()) {
             throw new IllegalArgumentException(
                     "Role must not be blank"
             );
         }
 
-        String normalized = value
-                .trim()
+        String normalized = source
+                .strip()
                 .toUpperCase(Locale.ROOT);
 
         if (normalized.startsWith(ROLE_PREFIX)) {

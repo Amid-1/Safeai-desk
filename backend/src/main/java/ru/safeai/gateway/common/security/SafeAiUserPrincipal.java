@@ -15,6 +15,12 @@ import java.util.UUID;
 
 /**
  * Безопасное представление authenticated user.
+ *
+ * <p>organizationAuthVersion обязательна как для password
+ * authentication, так и для principal, восстановленного из JWT.</p>
+ *
+ * <p>Password hash намеренно не имеет отдельного getter и
+ * не попадает в toString().</p>
  */
 public final class SafeAiUserPrincipal
         implements UserDetails, CredentialsContainer {
@@ -56,10 +62,11 @@ public final class SafeAiUserPrincipal
                 "id не должен быть null"
         );
 
-        this.organizationId = Objects.requireNonNull(
-                organizationId,
-                "organizationId не должен быть null"
-        );
+        this.organizationId =
+                Objects.requireNonNull(
+                        organizationId,
+                        "organizationId не должен быть null"
+                );
 
         this.email =
                 SecurityIdentityValidator
@@ -104,10 +111,17 @@ public final class SafeAiUserPrincipal
             long organizationAuthVersion,
             Collection<? extends GrantedAuthority> authorities
     ) {
-        String credentials = Objects.requireNonNull(
-                passwordHash,
-                "passwordHash не должен быть null"
-        );
+        String credentials =
+                Objects.requireNonNull(
+                        passwordHash,
+                        "passwordHash не должен быть null"
+                );
+
+        if (credentials.isBlank()) {
+            throw new IllegalArgumentException(
+                    "passwordHash не должен быть пустым"
+            );
+        }
 
         return new SafeAiUserPrincipal(
                 id,
@@ -117,27 +131,6 @@ public final class SafeAiUserPrincipal
                 enabled,
                 tokenVersion,
                 organizationAuthVersion,
-                authorities
-        );
-    }
-
-    public static SafeAiUserPrincipal passwordPrincipal(
-            UUID id,
-            UUID organizationId,
-            String email,
-            String passwordHash,
-            boolean enabled,
-            long tokenVersion,
-            Collection<? extends GrantedAuthority> authorities
-    ) {
-        return passwordPrincipal(
-                id,
-                organizationId,
-                email,
-                passwordHash,
-                enabled,
-                tokenVersion,
-                0L,
                 authorities
         );
     }
@@ -162,23 +155,6 @@ public final class SafeAiUserPrincipal
         );
     }
 
-    public static SafeAiUserPrincipal accessTokenPrincipal(
-            UUID id,
-            UUID organizationId,
-            String email,
-            long tokenVersion,
-            Collection<? extends GrantedAuthority> authorities
-    ) {
-        return accessTokenPrincipal(
-                id,
-                organizationId,
-                email,
-                tokenVersion,
-                0L,
-                authorities
-        );
-    }
-
     public List<String> authorityNames() {
         return authorityNames;
     }
@@ -188,6 +164,12 @@ public final class SafeAiUserPrincipal
         return authorities;
     }
 
+    /**
+     * Реализация UserDetails.
+     *
+     * <p>Это единственный password getter.
+     * Отдельный getPasswordHash() намеренно отсутствует.</p>
+     */
     @Override
     public @Nullable String getPassword() {
         return passwordHash;
@@ -196,6 +178,21 @@ public final class SafeAiUserPrincipal
     @Override
     public String getUsername() {
         return email;
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
     }
 
     @Override

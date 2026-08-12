@@ -15,7 +15,8 @@ import org.springframework.security.core.authority
         .SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
-import ru.safeai.gateway.common.security.JsonSecurityErrorWriter;
+import ru.safeai.gateway.common.exception.ApiErrorCode;
+import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.service.UserSecurityStatus;
 import ru.safeai.gateway.user.service.UserStatusCacheService;
@@ -34,34 +35,48 @@ import static org.mockito.Mockito.when;
 class UserStatusFilterTest {
 
     private static final UUID USER_ID =
-            UUID.randomUUID();
+            UUID.fromString(
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            );
 
     private static final UUID ORGANIZATION_ID =
-            UUID.randomUUID();
+            UUID.fromString(
+                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            );
 
-    private static final long TOKEN_VERSION = 5L;
+    private static final long TOKEN_VERSION =
+            5L;
 
-    private static final long ORGANIZATION_AUTH_VERSION = 3L;
+    private static final long ORGANIZATION_AUTH_VERSION =
+            3L;
 
     @Mock
-    private UserStatusCacheService userStatusCacheService;
+    private UserStatusCacheService
+            userStatusCacheService;
 
     @Mock
-    private JsonSecurityErrorWriter errorWriter;
+    private ApiErrorResponseWriter
+            errorWriter;
 
     @Mock
     private FilterChain filterChain;
 
     @AfterEach
     void clearSecurityContext() {
-        SecurityContextHolder.clearContext();
+        SecurityContextHolder
+                .clearContext();
     }
 
     @Test
     void requestWithoutSafeAiPrincipalPassesThrough()
             throws Exception {
-        UserStatusFilter filter = filter();
-        MockHttpServletRequest request = request();
+
+        UserStatusFilter filter =
+                filter();
+
+        MockHttpServletRequest request =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
@@ -71,10 +86,11 @@ class UserStatusFilterTest {
                 filterChain
         );
 
-        verify(filterChain).doFilter(
-                request,
-                response
-        );
+        verify(filterChain)
+                .doFilter(
+                        request,
+                        response
+                );
 
         verifyNoInteractions(
                 userStatusCacheService,
@@ -85,20 +101,33 @@ class UserStatusFilterTest {
     @Test
     void validSecurityStatePassesThrough()
             throws Exception {
-        authenticate(principal());
 
-        when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(
+        authenticate(
+                principal()
+        );
+
+        when(
+                userStatusCacheService
+                        .getStatus(
+                                USER_ID
+                        )
+        ).thenReturn(
+                Optional.of(
                         status(
                                 true,
                                 true,
                                 TOKEN_VERSION,
                                 ORGANIZATION_AUTH_VERSION
                         )
-                ));
+                )
+        );
 
-        UserStatusFilter filter = filter();
-        MockHttpServletRequest request = request();
+        UserStatusFilter filter =
+                filter();
+
+        MockHttpServletRequest request =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
@@ -108,28 +137,40 @@ class UserStatusFilterTest {
                 filterChain
         );
 
-        verify(filterChain).doFilter(
-                request,
-                response
-        );
+        verify(filterChain)
+                .doFilter(
+                        request,
+                        response
+                );
 
-        verifyNoInteractions(errorWriter);
+        verifyNoInteractions(
+                errorWriter
+        );
     }
 
     @Test
     void disabledUserReturnsControlled401AndStopsChain()
             throws Exception {
-        authenticate(principal());
 
-        when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(
+        authenticate(
+                principal()
+        );
+
+        when(
+                userStatusCacheService
+                        .getStatus(
+                                USER_ID
+                        )
+        ).thenReturn(
+                Optional.of(
                         status(
                                 false,
                                 true,
                                 TOKEN_VERSION,
                                 ORGANIZATION_AUTH_VERSION
                         )
-                ));
+                )
+        );
 
         assertRejectedByFilter();
     }
@@ -137,17 +178,26 @@ class UserStatusFilterTest {
     @Test
     void disabledOrganizationReturnsControlled401AndStopsChain()
             throws Exception {
-        authenticate(principal());
 
-        when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(
+        authenticate(
+                principal()
+        );
+
+        when(
+                userStatusCacheService
+                        .getStatus(
+                                USER_ID
+                        )
+        ).thenReturn(
+                Optional.of(
                         status(
                                 true,
                                 false,
                                 TOKEN_VERSION,
                                 ORGANIZATION_AUTH_VERSION
                         )
-                ));
+                )
+        );
 
         assertRejectedByFilter();
     }
@@ -155,17 +205,26 @@ class UserStatusFilterTest {
     @Test
     void staleUserTokenVersionReturnsControlled401AndStopsChain()
             throws Exception {
-        authenticate(principal());
 
-        when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(
+        authenticate(
+                principal()
+        );
+
+        when(
+                userStatusCacheService
+                        .getStatus(
+                                USER_ID
+                        )
+        ).thenReturn(
+                Optional.of(
                         status(
                                 true,
                                 true,
-                                TOKEN_VERSION + 1,
+                                TOKEN_VERSION + 1L,
                                 ORGANIZATION_AUTH_VERSION
                         )
-                ));
+                )
+        );
 
         assertRejectedByFilter();
     }
@@ -173,17 +232,55 @@ class UserStatusFilterTest {
     @Test
     void staleOrganizationAuthVersionReturnsControlled401AndStopsChain()
             throws Exception {
-        authenticate(principal());
 
-        when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.of(
+        authenticate(
+                principal()
+        );
+
+        when(
+                userStatusCacheService
+                        .getStatus(
+                                USER_ID
+                        )
+        ).thenReturn(
+                Optional.of(
                         status(
                                 true,
                                 true,
                                 TOKEN_VERSION,
-                                ORGANIZATION_AUTH_VERSION + 1
+                                ORGANIZATION_AUTH_VERSION + 1L
                         )
-                ));
+                )
+        );
+
+        assertRejectedByFilter();
+    }
+
+    @Test
+    void differentOrganizationReturnsControlled401AndStopsChain()
+            throws Exception {
+
+        authenticate(
+                principal()
+        );
+
+        UserSecurityStatus status =
+                new UserSecurityStatus(
+                        UUID.randomUUID(),
+                        true,
+                        true,
+                        TOKEN_VERSION,
+                        ORGANIZATION_AUTH_VERSION
+                );
+
+        when(
+                userStatusCacheService
+                        .getStatus(
+                                USER_ID
+                        )
+        ).thenReturn(
+                Optional.of(status)
+        );
 
         assertRejectedByFilter();
     }
@@ -191,10 +288,19 @@ class UserStatusFilterTest {
     @Test
     void missingUserReturnsControlled401AndStopsChain()
             throws Exception {
-        authenticate(principal());
 
-        when(userStatusCacheService.getStatus(USER_ID))
-                .thenReturn(Optional.empty());
+        authenticate(
+                principal()
+        );
+
+        when(
+                userStatusCacheService
+                        .getStatus(
+                                USER_ID
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertRejectedByFilter();
     }
@@ -202,15 +308,28 @@ class UserStatusFilterTest {
     @Test
     void securityStateStorageFailureReturnsControlled503()
             throws Exception {
-        authenticate(principal());
 
-        when(userStatusCacheService.getStatus(USER_ID))
-                .thenThrow(new IllegalStateException(
+        authenticate(
+                principal()
+        );
+
+        when(
+                userStatusCacheService
+                        .getStatus(
+                                USER_ID
+                        )
+        ).thenThrow(
+                new IllegalStateException(
                         "PostgreSQL unavailable"
-                ));
+                )
+        );
 
-        UserStatusFilter filter = filter();
-        MockHttpServletRequest request = request();
+        UserStatusFilter filter =
+                filter();
+
+        MockHttpServletRequest request =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
@@ -220,26 +339,34 @@ class UserStatusFilterTest {
                 filterChain
         );
 
-        verify(errorWriter).write(
-                request,
-                response,
-                HttpStatus.SERVICE_UNAVAILABLE,
-                "AUTH_STATUS_UNAVAILABLE",
-                "Сервис проверки авторизации временно недоступен"
-        );
+        verify(errorWriter)
+                .write(
+                        request,
+                        response,
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
+                        "Сервис проверки авторизации "
+                                + "временно недоступен"
+                );
 
-        verify(filterChain, never()).doFilter(
-                request,
-                response
-        );
+        verify(filterChain, never())
+                .doFilter(
+                        request,
+                        response
+                );
 
         assertSecurityContextCleared();
     }
 
     private void assertRejectedByFilter()
             throws Exception {
-        UserStatusFilter filter = filter();
-        MockHttpServletRequest request = request();
+
+        UserStatusFilter filter =
+                filter();
+
+        MockHttpServletRequest request =
+                request();
+
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
@@ -249,18 +376,20 @@ class UserStatusFilterTest {
                 filterChain
         );
 
-        verify(errorWriter).write(
-                request,
-                response,
-                HttpStatus.UNAUTHORIZED,
-                "TOKEN_REVOKED",
-                "Токен больше не действителен"
-        );
+        verify(errorWriter)
+                .write(
+                        request,
+                        response,
+                        HttpStatus.UNAUTHORIZED,
+                        ApiErrorCode.TOKEN_REVOKED,
+                        "Токен больше не действителен"
+                );
 
-        verify(filterChain, never()).doFilter(
-                request,
-                response
-        );
+        verify(filterChain, never())
+                .doFilter(
+                        request,
+                        response
+                );
 
         assertSecurityContextCleared();
     }
@@ -303,25 +432,27 @@ class UserStatusFilterTest {
     }
 
     private SafeAiUserPrincipal principal() {
-        return SafeAiUserPrincipal.accessTokenPrincipal(
-                USER_ID,
-                ORGANIZATION_ID,
-                "user@test.com",
-                TOKEN_VERSION,
-                ORGANIZATION_AUTH_VERSION,
-                Set.of(
-                        new SimpleGrantedAuthority(
-                                "ROLE_USER"
+        return SafeAiUserPrincipal
+                .accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        "user@test.com",
+                        TOKEN_VERSION,
+                        ORGANIZATION_AUTH_VERSION,
+                        Set.of(
+                                new SimpleGrantedAuthority(
+                                        "ROLE_USER"
+                                )
                         )
-                )
-        );
+                );
     }
 
     private void authenticate(
             SafeAiUserPrincipal principal
     ) {
         SecurityContext context =
-                SecurityContextHolder.createEmptyContext();
+                SecurityContextHolder
+                        .createEmptyContext();
 
         context.setAuthentication(
                 new UsernamePasswordAuthenticationToken(
@@ -331,6 +462,9 @@ class UserStatusFilterTest {
                 )
         );
 
-        SecurityContextHolder.setContext(context);
+        SecurityContextHolder
+                .setContext(
+                        context
+                );
     }
 }

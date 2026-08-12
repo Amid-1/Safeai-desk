@@ -45,7 +45,9 @@ class JwtServiceTest {
             );
 
     private static final Instant NOW =
-            Instant.parse("2026-06-12T12:00:00Z");
+            Instant.parse(
+                    "2026-08-12T12:00:00Z"
+            );
 
     private static final Duration TOKEN_LIFETIME =
             Duration.ofMinutes(60);
@@ -57,10 +59,13 @@ class JwtServiceTest {
             "safeai-desk-api";
 
     private static final String VALID_BASE64_SECRET =
-            Base64.getEncoder().encodeToString(
-                    "0123456789abcdef0123456789abcdef"
-                            .getBytes(StandardCharsets.UTF_8)
-            );
+            Base64.getEncoder()
+                    .encodeToString(
+                            "0123456789abcdef0123456789abcdef"
+                                    .getBytes(
+                                            StandardCharsets.UTF_8
+                                    )
+                    );
 
     @Mock
     private JwtEncoder jwtEncoder;
@@ -69,38 +74,62 @@ class JwtServiceTest {
 
     @BeforeEach
     void setUp() {
-        JwtProperties jwtProperties = new JwtProperties(
-                VALID_BASE64_SECRET,
-                TOKEN_LIFETIME.toMinutes(),
-                ISSUER,
-                AUDIENCE
-        );
+        JwtProperties jwtProperties =
+                new JwtProperties(
+                        VALID_BASE64_SECRET,
+                        TOKEN_LIFETIME
+                                .toMinutes(),
+                        ISSUER,
+                        AUDIENCE
+                );
 
-        Clock clock = Clock.fixed(
-                NOW,
-                ZoneOffset.UTC
-        );
+        Clock clock =
+                Clock.fixed(
+                        NOW,
+                        ZoneOffset.UTC
+                );
 
-        jwtService = new JwtService(
-                jwtEncoder,
-                jwtProperties,
-                clock
-        );
+        jwtService =
+                new JwtService(
+                        jwtEncoder,
+                        jwtProperties,
+                        clock
+                );
     }
 
     @Test
     void generateTokenCreatesExpectedHeaderClaimsAndLifetime() {
-        Jwt encodedJwt = Jwt.withTokenValue("encoded-token")
-                .header("alg", "HS256")
-                .header("typ", "JWT")
-                .issuedAt(NOW)
-                .expiresAt(NOW.plus(TOKEN_LIFETIME))
-                .claim("test", "value")
-                .build();
+        Jwt encodedJwt =
+                Jwt.withTokenValue(
+                                "encoded-token"
+                        )
+                        .header(
+                                "alg",
+                                "HS256"
+                        )
+                        .header(
+                                "typ",
+                                "JWT"
+                        )
+                        .issuedAt(NOW)
+                        .expiresAt(
+                                NOW.plus(
+                                        TOKEN_LIFETIME
+                                )
+                        )
+                        .claim(
+                                "test",
+                                "value"
+                        )
+                        .build();
 
-        when(jwtEncoder.encode(
-                any(JwtEncoderParameters.class)
-        )).thenReturn(encodedJwt);
+        when(
+                jwtEncoder.encode(
+                        any(
+                                JwtEncoderParameters.class
+                        )
+                )
+        ).thenReturn(encodedJwt);
 
         AccessTokenSubject subject =
                 new AccessTokenSubject(
@@ -108,105 +137,187 @@ class JwtServiceTest {
                         ORGANIZATION_ID,
                         "admin@test.com",
                         7L,
+                        12L,
                         Set.of(
                                 "ROLE_USER",
                                 "admin"
                         )
                 );
 
-        String token = jwtService.generateToken(subject);
+        String token =
+                jwtService.generateToken(
+                        subject
+                );
 
-        assertThat(token).isEqualTo("encoded-token");
+        assertThat(token)
+                .isEqualTo(
+                        "encoded-token"
+                );
 
-        ArgumentCaptor<JwtEncoderParameters> captor =
+        ArgumentCaptor<JwtEncoderParameters>
+                captor =
                 ArgumentCaptor.forClass(
                         JwtEncoderParameters.class
                 );
 
-        verify(jwtEncoder).encode(captor.capture());
-        verifyNoMoreInteractions(jwtEncoder);
+        verify(jwtEncoder)
+                .encode(
+                        captor.capture()
+                );
+
+        verifyNoMoreInteractions(
+                jwtEncoder
+        );
 
         JwtEncoderParameters parameters =
                 captor.getValue();
 
-        JwsHeader headers = Objects.requireNonNull(
-                parameters.getJwsHeader(),
-                "JWS header не должен быть null"
-        );
-
-        assertThat(headers.getAlgorithm())
-                .isEqualTo(MacAlgorithm.HS256);
-
-        assertThat(headers.getType())
-                .isEqualTo("JWT");
-
-        JwtClaimsSet claims = parameters.getClaims();
-
-        assertThat(claims.getIssuer())
-                .hasToString(ISSUER);
-
-        assertThat(claims.getAudience())
-                .containsExactly(AUDIENCE);
-
-        assertThat(claims.getSubject())
-                .isEqualTo(USER_ID.toString());
-
-        assertThat(claims.getIssuedAt())
-                .isEqualTo(NOW);
-
-        assertThat(claims.getExpiresAt())
-                .isEqualTo(
-                        NOW.plus(TOKEN_LIFETIME)
+        JwsHeader headers =
+                Objects.requireNonNull(
+                        parameters
+                                .getJwsHeader(),
+                        "JWS header не должен быть null"
                 );
 
-        assertThat(Duration.between(
-                claims.getIssuedAt(),
+        assertThat(
+                headers.getAlgorithm()
+        ).isEqualTo(
+                MacAlgorithm.HS256
+        );
+
+        assertThat(
+                headers.getType()
+        ).isEqualTo("JWT");
+
+        JwtClaimsSet claims =
+                parameters.getClaims();
+
+        assertThat(
+                claims.getIssuer()
+        ).hasToString(ISSUER);
+
+        assertThat(
+                claims.getAudience()
+        ).containsExactly(
+                AUDIENCE
+        );
+
+        assertThat(
+                claims.getSubject()
+        ).isEqualTo(
+                USER_ID.toString()
+        );
+
+        assertThat(
+                claims.getIssuedAt()
+        ).isEqualTo(NOW);
+
+        assertThat(
                 claims.getExpiresAt()
-        )).isEqualTo(TOKEN_LIFETIME);
+        ).isEqualTo(
+                NOW.plus(
+                        TOKEN_LIFETIME
+                )
+        );
 
-        assertThat(claims.getClaimAsString("email"))
-                .isEqualTo("admin@test.com");
+        assertThat(
+                Duration.between(
+                        claims.getIssuedAt(),
+                        claims.getExpiresAt()
+                )
+        ).isEqualTo(
+                TOKEN_LIFETIME
+        );
 
-        assertThat(claims.getClaimAsString("userId"))
-                .isEqualTo(USER_ID.toString());
+        assertThat(
+                claims.getClaimAsString(
+                        "email"
+                )
+        ).isEqualTo(
+                "admin@test.com"
+        );
+
+        assertThat(
+                claims.getClaimAsString(
+                        "userId"
+                )
+        ).isEqualTo(
+                USER_ID.toString()
+        );
 
         assertThat(
                 claims.getClaimAsString(
                         "organizationId"
                 )
-        ).isEqualTo(ORGANIZATION_ID.toString());
+        ).isEqualTo(
+                ORGANIZATION_ID.toString()
+        );
 
         assertThat(
-                claims.getClaimAsStringList("roles")
+                claims.getClaimAsStringList(
+                        "roles"
+                )
         ).containsExactly(
                 "ADMIN",
                 "USER"
         );
 
         Number tokenVersion =
-                claims.getClaim("tokenVersion");
+                claims.getClaim(
+                        "tokenVersion"
+                );
 
-        assertThat(tokenVersion).isNotNull();
-        assertThat(tokenVersion.longValue())
-                .isEqualTo(7L);
+        assertThat(tokenVersion)
+                .isNotNull();
+
+        assertThat(
+                tokenVersion.longValue()
+        ).isEqualTo(7L);
+
+        Number organizationAuthVersion =
+                claims.getClaim(
+                        "organizationAuthVersion"
+                );
+
+        assertThat(
+                organizationAuthVersion
+        ).isNotNull();
+
+        assertThat(
+                organizationAuthVersion
+                        .longValue()
+        ).isEqualTo(12L);
 
         String tokenId =
-                claims.getClaimAsString("jti");
+                claims.getClaimAsString(
+                        "jti"
+                );
 
-        assertThat(tokenId).isNotBlank();
-        assertThat(UUID.fromString(tokenId))
-                .isNotNull();
+        assertThat(tokenId)
+                .isNotBlank();
+
+        assertThat(
+                UUID.fromString(tokenId)
+        ).isNotNull();
     }
 
     @Test
     @SuppressWarnings("DataFlowIssue")
     void nullSubjectIsRejectedBeforeEncoding() {
         assertThatThrownBy(() ->
-                jwtService.generateToken(null)
+                jwtService.generateToken(
+                        null
+                )
         )
-                .isInstanceOf(NullPointerException.class)
-                .hasMessage("subject не должен быть null");
+                .isInstanceOf(
+                        NullPointerException.class
+                )
+                .hasMessage(
+                        "subject не должен быть null"
+                );
 
-        verifyNoInteractions(jwtEncoder);
+        verifyNoInteractions(
+                jwtEncoder
+        );
     }
 }

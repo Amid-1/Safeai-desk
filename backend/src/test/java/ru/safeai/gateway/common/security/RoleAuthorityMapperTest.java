@@ -14,10 +14,20 @@ class RoleAuthorityMapperTest {
 
     @Test
     void mapsRoleNamesToDeterministicAuthorities() {
-        assertThat(RoleAuthorityMapper.toAuthorities(
-                List.of("user", "ADMIN", "ROLE_USER")
-        ))
-                .extracting(GrantedAuthority::getAuthority)
+        assertThat(
+                RoleAuthorityMapper
+                        .toAuthorities(
+                                List.of(
+                                        "user",
+                                        "ADMIN",
+                                        "ROLE_USER"
+                                )
+                        )
+        )
+                .extracting(
+                        GrantedAuthority
+                                ::getAuthority
+                )
                 .containsExactly(
                         "ROLE_ADMIN",
                         "ROLE_USER"
@@ -26,32 +36,56 @@ class RoleAuthorityMapperTest {
 
     @Test
     void mapsAuthoritiesToDeterministicRoleNames() {
-        assertThat(RoleAuthorityMapper.toRoleNames(
-                Set.of(
-                        new SimpleGrantedAuthority("ROLE_USER"),
-                        new SimpleGrantedAuthority("ROLE_ADMIN")
-                )
-        )).containsExactly("ADMIN", "USER");
+        assertThat(
+                RoleAuthorityMapper
+                        .toRoleNames(
+                                Set.of(
+                                        new SimpleGrantedAuthority(
+                                                "ROLE_USER"
+                                        ),
+                                        new SimpleGrantedAuthority(
+                                                "ROLE_ADMIN"
+                                        )
+                                )
+                        )
+        ).containsExactly(
+                "ADMIN",
+                "USER"
+        );
     }
 
     @Test
     void rejectsUnknownRole() {
         assertThatThrownBy(() ->
-                RoleAuthorityMapper.toAuthorities(
-                        List.of("UNKNOWN")
-                ))
-                .isInstanceOf(IllegalArgumentException.class);
+                RoleAuthorityMapper
+                        .toAuthorities(
+                                List.of(
+                                        "UNKNOWN"
+                                )
+                        )
+        ).isInstanceOf(
+                IllegalArgumentException.class
+        );
     }
 
     @Test
     void rejectsAuthorityWithNullName() {
-        GrantedAuthority invalidAuthority = () -> null;
+        GrantedAuthority invalidAuthority =
+                () -> null;
 
         assertThatThrownBy(() ->
-                RoleAuthorityMapper.toRoleNames(
-                        List.of(invalidAuthority)
-                ))
-                .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("getAuthority");
+                RoleAuthorityMapper
+                        .toRoleNames(
+                                List.of(
+                                        invalidAuthority
+                                )
+                        )
+        )
+                .isInstanceOf(
+                        NullPointerException.class
+                )
+                .hasMessageContaining(
+                        "getAuthority"
+                );
     }
 }

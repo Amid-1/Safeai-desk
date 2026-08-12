@@ -63,7 +63,7 @@ spring:
 
 logging:
   pattern:
-    level: "%5p [${spring.application.name:},%X{requestId}]"
+    level: "%5p [${spring.application.name:},requestId=%X{requestId},clientRequestId=%X{clientRequestId}]"
 
 server:
   port: 8080

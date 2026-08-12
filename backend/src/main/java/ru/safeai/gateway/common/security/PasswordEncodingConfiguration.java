@@ -9,19 +9,19 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import java.util.Map;
 
 /**
- * Production-конфигурация кодирования паролей.
+ * Production password encoder.
  *
- * <p>Новые пароли получают префикс {@code {bcrypt}}
- * и кодируются BCrypt с cost factor 12.</p>
- *
- * <p>Старые BCrypt-хеши без префикса продолжают
- * проверяться через fallback encoder.</p>
+ * <p>New hashes use `{bcrypt}` and BCrypt cost 12.
+ * Legacy unprefixed BCrypt hashes remain readable during migration.</p>
  */
 @Configuration(proxyBeanMethods = false)
 public class PasswordEncodingConfiguration {
 
-    private static final String BCRYPT_ID = "bcrypt";
-    private static final int BCRYPT_STRENGTH = 12;
+    private static final String BCRYPT_ID =
+            "bcrypt";
+
+    private static final int BCRYPT_STRENGTH =
+            12;
 
     @Bean
     PasswordEncoder passwordEncoder() {
@@ -39,9 +39,10 @@ public class PasswordEncodingConfiguration {
                         )
                 );
 
-        delegating.setDefaultPasswordEncoderForMatches(
-                bcrypt
-        );
+        delegating
+                .setDefaultPasswordEncoderForMatches(
+                        bcrypt
+                );
 
         return delegating;
     }

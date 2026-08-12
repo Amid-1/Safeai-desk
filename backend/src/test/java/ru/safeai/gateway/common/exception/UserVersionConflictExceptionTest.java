@@ -8,20 +8,20 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class OrganizationVersionConflictExceptionTest {
+class UserVersionConflictExceptionTest {
 
-    private static final UUID ORGANIZATION_ID =
+    private static final UUID USER_ID =
             UUID.fromString(
-                    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+                    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
             );
 
     @Test
     void exposesStableConflictContractAndLogMetadata() {
-        OrganizationVersionConflictException exception =
-                new OrganizationVersionConflictException(
-                        ORGANIZATION_ID,
-                        3L,
-                        4L
+        UserVersionConflictException exception =
+                new UserVersionConflictException(
+                        USER_ID,
+                        5L,
+                        6L
                 );
 
         assertThat(
@@ -34,35 +34,33 @@ class OrganizationVersionConflictExceptionTest {
                 exception.getErrorCode()
         ).isEqualTo(
                 ApiErrorCode
-                        .ORGANIZATION_VERSION_CONFLICT
+                        .USER_VERSION_CONFLICT
         );
 
         assertThat(
-                exception.getOrganizationId()
-        ).isEqualTo(
-                ORGANIZATION_ID
-        );
+                exception.getUserId()
+        ).isEqualTo(USER_ID);
 
         assertThat(
                 exception.getExpectedVersion()
-        ).isEqualTo(3L);
+        ).isEqualTo(5L);
 
         assertThat(
                 exception.getActualVersion()
-        ).isEqualTo(4L);
+        ).isEqualTo(6L);
 
         assertThat(
                 exception.getPublicMessage()
         ).doesNotContain(
-                "3",
-                "4"
+                "5",
+                "6"
         );
     }
 
     @Test
     void negativeVersionsAreRejected() {
         assertThatThrownBy(() ->
-                throwOrganizationVersionConflict(
+                throwUserVersionConflict(
                         -1L,
                         0L
                 )
@@ -71,7 +69,7 @@ class OrganizationVersionConflictExceptionTest {
         );
 
         assertThatThrownBy(() ->
-                throwOrganizationVersionConflict(
+                throwUserVersionConflict(
                         0L,
                         -1L
                 )
@@ -80,12 +78,12 @@ class OrganizationVersionConflictExceptionTest {
         );
     }
 
-    private static void throwOrganizationVersionConflict(
+    private static void throwUserVersionConflict(
             long expectedVersion,
             long actualVersion
     ) {
-        throw new OrganizationVersionConflictException(
-                ORGANIZATION_ID,
+        throw new UserVersionConflictException(
+                USER_ID,
                 expectedVersion,
                 actualVersion
         );

@@ -11,7 +11,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import ru.safeai.gateway.common.security.JsonSecurityErrorWriter;
+import ru.safeai.gateway.common.exception.ApiErrorCode;
+import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.service.UserSecurityStatus;
 import ru.safeai.gateway.user.service.UserStatusCacheService;
@@ -22,10 +23,14 @@ import java.util.Optional;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class UserStatusFilter extends OncePerRequestFilter {
+public final class UserStatusFilter
+        extends OncePerRequestFilter {
 
-    private final UserStatusCacheService userStatusCacheService;
-    private final JsonSecurityErrorWriter errorWriter;
+    private final UserStatusCacheService
+            userStatusCacheService;
+
+    private final ApiErrorResponseWriter
+            errorWriter;
 
     @Override
     protected void doFilterInternal(
@@ -33,37 +38,58 @@ public class UserStatusFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        Authentication authentication = SecurityContextHolder
-                .getContext()
-                .getAuthentication();
+
+        Authentication authentication =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
 
         if (authentication == null
                 || !(authentication.getPrincipal()
                 instanceof SafeAiUserPrincipal principal)) {
-            filterChain.doFilter(request, response);
+
+            filterChain.doFilter(
+                    request,
+                    response
+            );
+
             return;
         }
 
         try {
             Optional<UserSecurityStatus> optionalStatus =
-                    userStatusCacheService.getStatus(
-                            principal.getId()
-                    );
+                    userStatusCacheService
+                            .getStatus(
+                                    principal.getId()
+                            );
 
-            boolean valid = optionalStatus
-                    .map(status -> isValid(status, principal))
-                    .orElse(false);
+            boolean valid =
+                    optionalStatus
+                            .map(status ->
+                                    isValid(
+                                            status,
+                                            principal
+                                    )
+                            )
+                            .orElse(false);
 
             if (!valid) {
-                rejectToken(request, response);
+                rejectToken(
+                        request,
+                        response
+                );
+
                 return;
             }
         } catch (RuntimeException exception) {
-            SecurityContextHolder.clearContext();
+            SecurityContextHolder
+                    .clearContext();
 
             log.error(
-                    "Unable to validate user security state: userId={}",
+                    "Unable to validate user security state: "
+                            + "userId={}, organizationId={}",
                     principal.getId(),
+                    principal.getOrganizationId(),
                     exception
             );
 
@@ -71,14 +97,18 @@ public class UserStatusFilter extends OncePerRequestFilter {
                     request,
                     response,
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    "AUTH_STATUS_UNAVAILABLE",
-                    "Сервис проверки авторизации временно недоступен"
+                    ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
+                    "Сервис проверки авторизации "
+                            + "временно недоступен"
             );
 
             return;
         }
 
-        filterChain.doFilter(request, response);
+        filterChain.doFilter(
+                request,
+                response
+        );
     }
 
     private boolean isValid(
@@ -87,7 +117,8 @@ public class UserStatusFilter extends OncePerRequestFilter {
     ) {
         return status.userEnabled()
                 && status.organizationEnabled()
-                && status.organizationId().equals(
+                && status.organizationId()
+                .equals(
                         principal.getOrganizationId()
                 )
                 && status.tokenVersion()
@@ -100,13 +131,15 @@ public class UserStatusFilter extends OncePerRequestFilter {
             HttpServletRequest request,
             HttpServletResponse response
     ) throws IOException {
-        SecurityContextHolder.clearContext();
+
+        SecurityContextHolder
+                .clearContext();
 
         errorWriter.write(
                 request,
                 response,
                 HttpStatus.UNAUTHORIZED,
-                "TOKEN_REVOKED",
+                ApiErrorCode.TOKEN_REVOKED,
                 "Токен больше не действителен"
         );
     }

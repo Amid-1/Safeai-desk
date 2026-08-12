@@ -1,4 +1,5 @@
-# "D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod.yml"
+# application-prod.yml
+
 spring:
   datasource:
     username: ${SAFEAI_DB_APP_USER}
@@ -20,7 +21,10 @@ spring:
 
 server:
   shutdown: graceful
-  forward-headers-strategy: framework
+
+  # Forwarded headers намеренно не применяются Spring.
+  # ClientIpResolver валидирует X-Forwarded-For самостоятельно.
+  forward-headers-strategy: none
 
 management:
   endpoints:
@@ -30,15 +34,18 @@ management:
           - health
           - info
           - prometheus
+
   endpoint:
     health:
       probes:
         enabled: true
       show-details: never
+
       group:
         liveness:
           include:
             - livenessState
+
         readiness:
           include:
             - readinessState
@@ -97,9 +104,6 @@ safeai:
       connect-timeout: ${ANTHROPIC_CONNECT_TIMEOUT:5s}
       read-timeout: ${ANTHROPIC_READ_TIMEOUT:60s}
 
-    pricing:
-      models: []
-
   auth:
     cookies:
       secure: ${SAFEAI_AUTH_COOKIES_SECURE:true}
@@ -122,12 +126,14 @@ safeai:
       key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX}
       hmac-secret: ${SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET}
       key-version: ${SAFEAI_RATE_LIMIT_REDIS_KEY_VERSION:v1}
+
     login:
       enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}
       email-limit: ${SAFEAI_RATE_LIMIT_LOGIN_EMAIL_LIMIT:10}
       ip-limit: ${SAFEAI_RATE_LIMIT_LOGIN_IP_LIMIT:100}
       window: ${SAFEAI_RATE_LIMIT_LOGIN_WINDOW:10m}
       audit-organization-id: ${SAFEAI_RATE_LIMIT_LOGIN_AUDIT_ORGANIZATION_ID:${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}}
+
     ai-messages:
       enabled: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ENABLED:true}
       user-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_USER_LIMIT_PER_HOUR:20}
@@ -137,14 +143,15 @@ safeai:
   security:
     client-ip:
       trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:172.28.0.10/32}
+
     user-status-cache:
       enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:false}
       ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:15s}
       key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status}
-    # Backend добавляет HSTS к HTTPS API-ответам. Это не заменяет
-    # domain-wide HSTS на внешнем TLS terminator, который отдаёт frontend.
+
+    # HSTS должен устанавливаться TLS terminator / Nginx.
     hsts:
-      enabled: ${SAFEAI_HSTS_ENABLED:true}
+      enabled: ${SAFEAI_HSTS_ENABLED:false}
 
   platform:
     organization-id: ${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}
@@ -159,6 +166,7 @@ safeai:
     outbox:
       batch-size: ${SAFEAI_AUDIT_OUTBOX_BATCH_SIZE:100}
       poll-delay-ms: ${SAFEAI_AUDIT_OUTBOX_POLL_DELAY_MS:1000}
+
     retention:
       enabled: ${SAFEAI_AUDIT_RETENTION_ENABLED:true}
       period: ${SAFEAI_AUDIT_RETENTION_PERIOD:1095d}
@@ -176,6 +184,7 @@ safeai:
     slow-query-threshold: ${SAFEAI_USAGE_SLOW_QUERY_THRESHOLD:2s}
     fetch-size: ${SAFEAI_USAGE_FETCH_SIZE:200}
     max-concurrent-reports: ${SAFEAI_USAGE_MAX_CONCURRENT_REPORTS:4}
+
     rollup:
       enabled: ${SAFEAI_USAGE_ROLLUP_ENABLED:true}
       cron: "${SAFEAI_USAGE_ROLLUP_CRON:0 */10 * * * *}"
@@ -190,21 +199,25 @@ safeai:
     max-chat-page-size: ${SAFEAI_CHAT_MAX_CHAT_PAGE_SIZE:100}
     max-message-page-size: ${SAFEAI_CHAT_MAX_MESSAGE_PAGE_SIZE:100}
     max-message-chars: ${SAFEAI_CHAT_MAX_MESSAGE_CHARS:16000}
+
     processing-lease: ${SAFEAI_CHAT_PROCESSING_LEASE:3m}
     lease-renewal-threads: ${SAFEAI_CHAT_LEASE_RENEWAL_THREADS:4}
     max-active-lease-watchdogs: ${SAFEAI_CHAT_MAX_ACTIVE_LEASE_WATCHDOGS:1000}
+
     lock:
       key-prefix: ${SAFEAI_CHAT_LOCK_KEY_PREFIX:safeai:prod:chat-lock}
       ttl: ${SAFEAI_CHAT_LOCK_TTL:2m}
       renewal-threads: ${SAFEAI_CHAT_LOCK_RENEWAL_THREADS:4}
       max-active-locks: ${SAFEAI_CHAT_LOCK_MAX_ACTIVE_LOCKS:1000}
       shutdown-timeout: ${SAFEAI_CHAT_LOCK_SHUTDOWN_TIMEOUT:5s}
+
     quota:
       enabled: ${SAFEAI_CHAT_QUOTA_ENABLED:true}
       reservation-input-tokens: ${SAFEAI_CHAT_QUOTA_RESERVATION_INPUT_TOKENS:16000}
       reservation-output-tokens: ${SAFEAI_CHAT_QUOTA_RESERVATION_OUTPUT_TOKENS:2048}
       reservation-cost-usd: ${SAFEAI_CHAT_QUOTA_RESERVATION_COST_USD:1.000000000000}
       period-zone: ${SAFEAI_CHAT_QUOTA_PERIOD_ZONE:UTC}
+
     recovery:
       enabled: ${SAFEAI_CHAT_RECOVERY_ENABLED:true}
       batch-size: ${SAFEAI_CHAT_RECOVERY_BATCH_SIZE:100}

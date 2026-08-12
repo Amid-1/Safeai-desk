@@ -17,10 +17,13 @@ class PasswordEncodingConfigurationTest {
 
     @Test
     void newHashesUseBcryptPrefixAndStrengthTwelve() {
-        String hash = encoder.encode(PASSWORD);
+        String hash =
+                encoder.encode(PASSWORD);
 
         assertThat(hash)
-                .startsWith("{bcrypt}$2")
+                .startsWith(
+                        "{bcrypt}$2"
+                )
                 .matches(
                         "\\{bcrypt}\\$2[aby]\\$12\\$.*"
                 );
@@ -35,16 +38,16 @@ class PasswordEncodingConfigurationTest {
 
     @Test
     void legacyUnprefixedBcryptHashStillMatchesDuringMigration() {
-        /*
-         * Старый хеш создаётся с default strength=10
-         * и без {bcrypt}-префикса.
-         */
         String legacyHash =
                 new BCryptPasswordEncoder()
-                        .encode("password");
+                        .encode(
+                                "password"
+                        );
 
         assertThat(legacyHash)
-                .doesNotStartWith("{bcrypt}");
+                .doesNotStartWith(
+                        "{bcrypt}"
+                );
 
         assertThat(
                 encoder.matches(
@@ -56,7 +59,8 @@ class PasswordEncodingConfigurationTest {
 
     @Test
     void incorrectPasswordDoesNotMatch() {
-        String hash = encoder.encode(PASSWORD);
+        String hash =
+                encoder.encode(PASSWORD);
 
         assertThat(
                 encoder.matches(

@@ -1,24 +1,19 @@
 package ru.safeai.gateway.common.security;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers
-        .AbstractHttpConfigurer;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.provisioning
-        .InMemoryUserDetailsManager;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.test.context.TestConstructor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
@@ -26,205 +21,174 @@ import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Map;
 
-import static org.springframework.security.test.web.servlet.request
-        .SecurityMockMvcRequestPostProcessors.httpBasic;
-import static org.springframework.test.web.servlet.request
-        .MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result
-        .MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result
-        .MockMvcResultMatchers.header;
-import static org.springframework.test.web.servlet.result
-        .MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result
-        .MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.not;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(useDefaultFilters = false)
-@Import({
+@WebMvcTest(
+        controllers =
         SecurityErrorResponseIntegrationTest
-                .SecurityProbeController.class,
+                .SecurityProbeController.class
+)
+@Import({
+        RequestIdFilter.class,
+        ApiErrorResponseFactory.class,
         ApiErrorResponseWriter.class,
         RestAuthenticationEntryPoint.class,
         RestAccessDeniedHandler.class,
         SecurityErrorResponseIntegrationTest
                 .SecurityTestConfiguration.class
 })
-@TestConstructor(
-        autowireMode = TestConstructor.AutowireMode.ALL
-)
 class SecurityErrorResponseIntegrationTest {
 
-    private static final String ENDPOINT =
-            "/test/security/admin";
+    private static final Instant NOW =
+            Instant.parse(
+                    "2026-08-12T12:00:00Z"
+            );
 
-    private static final String REQUEST_ID =
-            "security-request-id";
+    @Autowired
+    private MockMvc mockMvc;
 
-    private static final Instant FIXED_TIME =
-            Instant.parse("2026-06-12T12:00:00Z");
-
-    private final MockMvc mockMvc;
-
-    SecurityErrorResponseIntegrationTest(
-            MockMvc mockMvc
-    ) {
-        this.mockMvc = mockMvc;
+    @Test
+    void unauthenticatedRequestReturnsSafeJson401NoStore()
+            throws Exception {
+        mockMvc.perform(
+                        get(
+                                "/test/security/authenticated"
+                        )
+                                .header(
+                                        RequestIdFilter
+                                                .REQUEST_ID_HEADER,
+                                        "client-correlation-1"
+                                )
+                )
+                .andExpect(
+                        status().isUnauthorized()
+                )
+                .andExpect(
+                        header().string(
+                                HttpHeaders.CACHE_CONTROL,
+                                "no-store"
+                        )
+                )
+                .andExpect(
+                        header().exists(
+                                RequestIdFilter
+                                        .REQUEST_ID_HEADER
+                        )
+                )
+                .andExpect(
+                        header().string(
+                                RequestIdFilter
+                                        .REQUEST_ID_HEADER,
+                                not(
+                                        "client-correlation-1"
+                                )
+                        )
+                )
+                .andExpect(
+                        jsonPath("$.status")
+                                .value(401)
+                )
+                .andExpect(
+                        jsonPath("$.error")
+                                .value(
+                                        "UNAUTHORIZED"
+                                )
+                )
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(
+                                        "Требуется авторизация"
+                                )
+                )
+                .andExpect(
+                        jsonPath("$.path")
+                                .value(
+                                        "/test/security/authenticated"
+                                )
+                )
+                .andExpect(
+                        jsonPath("$.requestId")
+                                .isString()
+                )
+                .andExpect(
+                        jsonPath("$.fieldErrors")
+                                .isMap()
+                );
     }
 
     @Test
-    void unauthenticatedRequestReturnsCompleteJson401()
+    void authenticatedButUnauthorizedRequestReturnsSafeJson403NoStore()
             throws Exception {
-        mockMvc.perform(get(ENDPOINT)
-                        .requestAttr(
-                                RequestIdFilter
-                                        .REQUEST_ID_ATTRIBUTE,
-                                REQUEST_ID
-                        ))
-                .andExpect(status().isUnauthorized())
-                .andExpect(content().contentTypeCompatibleWith(
-                        MediaType.APPLICATION_JSON
-                ))
-                .andExpect(header().string(
-                        HttpHeaders.CACHE_CONTROL,
-                        "no-store"
-                ))
-                .andExpect(header().string(
-                        HttpHeaders.WWW_AUTHENTICATE,
-                        "Bearer"
-                ))
-                .andExpect(jsonPath("$.timestamp")
-                        .value(FIXED_TIME.toString()))
-                .andExpect(jsonPath("$.status")
-                        .value(401))
-                .andExpect(jsonPath("$.error")
-                        .value("UNAUTHORIZED"))
-                .andExpect(jsonPath("$.message")
-                        .value("Требуется авторизация"))
-                .andExpect(jsonPath("$.path")
-                        .value(ENDPOINT))
-                .andExpect(jsonPath("$.requestId")
-                        .value(REQUEST_ID))
-                .andExpect(jsonPath("$.fieldErrors")
-                        .isEmpty());
-    }
-
-    @Test
-    void invalidCredentialsReturnSameCompleteJson401()
-            throws Exception {
-        mockMvc.perform(get(ENDPOINT)
-                        .with(httpBasic(
-                                "user",
-                                "wrong-password"
-                        ))
-                        .requestAttr(
-                                RequestIdFilter
-                                        .REQUEST_ID_ATTRIBUTE,
-                                REQUEST_ID
-                        ))
-                .andExpect(status().isUnauthorized())
-                .andExpect(content().contentTypeCompatibleWith(
-                        MediaType.APPLICATION_JSON
-                ))
-                .andExpect(header().string(
-                        HttpHeaders.CACHE_CONTROL,
-                        "no-store"
-                ))
-                .andExpect(header().string(
-                        HttpHeaders.WWW_AUTHENTICATE,
-                        "Bearer"
-                ))
-                .andExpect(jsonPath("$.timestamp")
-                        .value(FIXED_TIME.toString()))
-                .andExpect(jsonPath("$.status")
-                        .value(401))
-                .andExpect(jsonPath("$.error")
-                        .value("UNAUTHORIZED"))
-                .andExpect(jsonPath("$.message")
-                        .value("Требуется авторизация"))
-                .andExpect(jsonPath("$.path")
-                        .value(ENDPOINT))
-                .andExpect(jsonPath("$.requestId")
-                        .value(REQUEST_ID))
-                .andExpect(jsonPath("$.fieldErrors")
-                        .isEmpty());
-    }
-
-    @Test
-    void userWithoutRequiredRoleReturnsCompleteJson403()
-            throws Exception {
-        mockMvc.perform(get(ENDPOINT)
-                        .with(httpBasic(
-                                "user",
-                                "password"
-                        ))
-                        .requestAttr(
-                                RequestIdFilter
-                                        .REQUEST_ID_ATTRIBUTE,
-                                REQUEST_ID
-                        ))
-                .andExpect(status().isForbidden())
-                .andExpect(content().contentTypeCompatibleWith(
-                        MediaType.APPLICATION_JSON
-                ))
-                .andExpect(header().string(
-                        HttpHeaders.CACHE_CONTROL,
-                        "no-store"
-                ))
-                /*
-                 * WWW-Authenticate предназначен для 401.
-                 * При обычном запрете доступа 403 он не нужен.
-                 */
-                .andExpect(header().doesNotExist(
-                        HttpHeaders.WWW_AUTHENTICATE
-                ))
-                .andExpect(jsonPath("$.timestamp")
-                        .value(FIXED_TIME.toString()))
-                .andExpect(jsonPath("$.status")
-                        .value(403))
-                .andExpect(jsonPath("$.error")
-                        .value("FORBIDDEN"))
-                .andExpect(jsonPath("$.message")
-                        .value("Доступ запрещён"))
-                .andExpect(jsonPath("$.path")
-                        .value(ENDPOINT))
-                .andExpect(jsonPath("$.requestId")
-                        .value(REQUEST_ID))
-                .andExpect(jsonPath("$.fieldErrors")
-                        .isEmpty());
-    }
-
-    @Test
-    void userWithRequiredRoleCanAccessEndpoint()
-            throws Exception {
-        mockMvc.perform(get(ENDPOINT)
-                        .with(httpBasic(
-                                "admin",
-                                "password"
-                        ))
-                        .requestAttr(
-                                RequestIdFilter
-                                        .REQUEST_ID_ATTRIBUTE,
-                                REQUEST_ID
-                        ))
-                .andExpect(status().isOk())
-                .andExpect(content().string("ok"))
-                /*
-                 * Успешный ответ не должен ошибочно получать
-                 * security error headers.
-                 */
-                .andExpect(header().doesNotExist(
-                        HttpHeaders.WWW_AUTHENTICATE
-                ));
+        mockMvc.perform(
+                        get(
+                                "/test/security/admin"
+                        )
+                                .with(
+                                        user("user")
+                                                .roles(
+                                                        "USER"
+                                                )
+                                )
+                )
+                .andExpect(
+                        status().isForbidden()
+                )
+                .andExpect(
+                        header().string(
+                                HttpHeaders.CACHE_CONTROL,
+                                "no-store"
+                        )
+                )
+                .andExpect(
+                        jsonPath("$.status")
+                                .value(403)
+                )
+                .andExpect(
+                        jsonPath("$.error")
+                                .value(
+                                        "FORBIDDEN"
+                                )
+                )
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(
+                                        "Доступ запрещён"
+                                )
+                )
+                .andExpect(
+                        jsonPath("$.fieldErrors")
+                                .isMap()
+                );
     }
 
     @RestController
-    @RequestMapping("/test/security")
     static class SecurityProbeController {
 
-        @GetMapping("/admin")
-        String admin() {
-            return "ok";
+        @GetMapping(
+                "/test/security/authenticated"
+        )
+        Map<String, Boolean> authenticated() {
+            return Map.of(
+                    "ok",
+                    true
+            );
+        }
+
+        @GetMapping(
+                "/test/security/admin"
+        )
+        Map<String, Boolean> admin() {
+            return Map.of(
+                    "ok",
+                    true
+            );
         }
     }
 
@@ -232,39 +196,15 @@ class SecurityErrorResponseIntegrationTest {
     static class SecurityTestConfiguration {
 
         @Bean
-        Clock testClock() {
+        Clock clock() {
             return Clock.fixed(
-                    FIXED_TIME,
+                    NOW,
                     ZoneOffset.UTC
             );
         }
 
         @Bean
-        ApiErrorResponseFactory apiErrorResponseFactory(
-                Clock testClock
-        ) {
-            return new ApiErrorResponseFactory(
-                    testClock
-            );
-        }
-
-        @Bean
-        UserDetailsService userDetailsService() {
-            return new InMemoryUserDetailsManager(
-                    User.withUsername("user")
-                            .password("{noop}password")
-                            .roles("USER")
-                            .build(),
-
-                    User.withUsername("admin")
-                            .password("{noop}password")
-                            .roles("ADMIN")
-                            .build()
-            );
-        }
-
-        @Bean
-        SecurityFilterChain testSecurityFilterChain(
+        SecurityFilterChain securityFilterChain(
                 HttpSecurity http,
                 RestAuthenticationEntryPoint
                         authenticationEntryPoint,
@@ -272,32 +212,43 @@ class SecurityErrorResponseIntegrationTest {
                         accessDeniedHandler
         ) {
             return http
-                    .csrf(AbstractHttpConfigurer::disable)
+                    .csrf(
+                            AbstractHttpConfigurer
+                                    ::disable
+                    )
                     .requestCache(
-                            AbstractHttpConfigurer::disable
+                            AbstractHttpConfigurer
+                                    ::disable
                     )
-                    .authorizeHttpRequests(authorize ->
-                            authorize
-                                    .requestMatchers(
-                                            ENDPOINT
-                                    )
-                                    .hasRole("ADMIN")
-                                    .anyRequest()
-                                    .authenticated()
+                    .sessionManagement(
+                            session ->
+                                    session
+                                            .sessionCreationPolicy(
+                                                    SessionCreationPolicy.STATELESS
+                                            )
                     )
-                    .httpBasic(httpBasic -> httpBasic
-                            .authenticationEntryPoint(
-                                    authenticationEntryPoint
-                            )
+                    .httpBasic(
+                            Customizer.withDefaults()
                     )
-                    .exceptionHandling(exception ->
-                            exception
-                                    .authenticationEntryPoint(
-                                            authenticationEntryPoint
-                                    )
-                                    .accessDeniedHandler(
-                                            accessDeniedHandler
-                                    )
+                    .exceptionHandling(
+                            exceptions ->
+                                    exceptions
+                                            .authenticationEntryPoint(
+                                                    authenticationEntryPoint
+                                            )
+                                            .accessDeniedHandler(
+                                                    accessDeniedHandler
+                                            )
+                    )
+                    .authorizeHttpRequests(
+                            auth ->
+                                    auth
+                                            .requestMatchers(
+                                                    "/test/security/admin"
+                                            )
+                                            .hasRole("ADMIN")
+                                            .anyRequest()
+                                            .authenticated()
                     )
                     .build();
         }

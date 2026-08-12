@@ -12,18 +12,15 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * Общая валидация и нормализация значений security-модели.
+ * Общие security invariants для principal и JWT subject.
+ *
+ * <p>Класс намеренно package-private: это внутренняя
+ * security validation API общего security package.</p>
  */
 final class SecurityIdentityValidator {
 
-    private static final int MAX_EMAIL_LENGTH = 255;
-    private static final String ROLE_PREFIX = "ROLE_";
-
-    private static final Set<String> ALLOWED_ROLES = Set.of(
-            "SUPER_ADMIN",
-            "ADMIN",
-            "USER"
-    );
+    private static final int MAX_EMAIL_LENGTH =
+            255;
 
     private SecurityIdentityValidator() {
     }
@@ -31,24 +28,34 @@ final class SecurityIdentityValidator {
     static String requireCanonicalEmail(
             String email
     ) {
-        String value = Objects.requireNonNull(
-                email,
-                "email не должен быть null"
-        );
-
-        boolean canonical =
-                !value.isBlank()
-                        && value.length() <= MAX_EMAIL_LENGTH
-                        && value.equals(value.strip())
-                        && value.equals(
-                        value.toLowerCase(Locale.ROOT)
+        String value =
+                Objects.requireNonNull(
+                        email,
+                        "email не должен быть null"
                 );
 
-        if (!canonical) {
-            throw new IllegalArgumentException(
-                    "email должен быть canonical lowercase email; "
-                            + "email должен быть каноническим lowercase email"
-            );
+        if (value.isBlank()) {
+            throw invalidEmail();
+        }
+
+        if (value.length()
+                > MAX_EMAIL_LENGTH) {
+
+            throw invalidEmail();
+        }
+
+        if (!value.equals(
+                value.strip()
+        )) {
+            throw invalidEmail();
+        }
+
+        if (!value.equals(
+                value.toLowerCase(
+                        Locale.ROOT
+                )
+        )) {
+            throw invalidEmail();
         }
 
         return value;
@@ -58,39 +65,42 @@ final class SecurityIdentityValidator {
             long value,
             String fieldName
     ) {
-        if (value >= 0) {
-            return value;
+        String name =
+                Objects.requireNonNull(
+                        fieldName,
+                        "fieldName не должен быть null"
+                );
+
+        if (value < 0L) {
+            throw new IllegalArgumentException(
+                    name
+                            + " не может быть отрицательным"
+            );
         }
 
-        String name = Objects.requireNonNull(
-                fieldName,
-                "fieldName не должен быть null"
-        );
-
-        throw new IllegalArgumentException(
-                name + " не может быть отрицательным"
-        );
+        return value;
     }
 
     static List<String> normalizeAuthorityNames(
             Collection<? extends GrantedAuthority> authorities
     ) {
-        Collection<? extends GrantedAuthority> source =
-                Objects.requireNonNull(
-                        authorities,
-                        "authorities не должны быть null"
-                );
+        Objects.requireNonNull(
+                authorities,
+                "authorities не должен быть null"
+        );
 
-        if (source.isEmpty()) {
+        if (authorities.isEmpty()) {
             throw new IllegalArgumentException(
-                    "authorities не должны быть пустыми"
+                    "authorities не должен быть пустым"
             );
         }
 
         TreeSet<String> normalizedNames =
                 new TreeSet<>();
 
-        for (GrantedAuthority authority : source) {
+        for (GrantedAuthority authority
+                : authorities) {
+
             GrantedAuthority value =
                     Objects.requireNonNull(
                             authority,
@@ -104,25 +114,36 @@ final class SecurityIdentityValidator {
                     );
 
             normalizedNames.add(
-                    ROLE_PREFIX
-                            + normalizeRoleName(
-                            authorityName
-                    )
+                    SystemRole
+                            .parse(
+                                    authorityName
+                            )
+                            .authority()
             );
         }
 
-        return List.copyOf(normalizedNames);
+        /*
+         * Дополнительная normalizedNames.isEmpty()
+         * здесь не требуется:
+         *
+         * authorities уже гарантированно non-empty;
+         * каждый элемент либо добавляет canonical role,
+         * либо validation выбрасывает exception.
+         */
+        return List.copyOf(
+                normalizedNames
+        );
     }
 
     static Set<String> normalizeRoleNames(
             Set<String> roles
     ) {
-        Set<String> source = Objects.requireNonNull(
+        Objects.requireNonNull(
                 roles,
                 "roles не должен быть null"
         );
 
-        if (source.isEmpty()) {
+        if (roles.isEmpty()) {
             throw new IllegalArgumentException(
                     "roles не должен быть пустым"
             );
@@ -131,42 +152,24 @@ final class SecurityIdentityValidator {
         TreeSet<String> normalizedNames =
                 new TreeSet<>();
 
-        for (String role : source) {
+        for (String role : roles) {
             normalizedNames.add(
-                    normalizeRoleName(role)
+                    SystemRole
+                            .parse(role)
+                            .roleName()
             );
         }
 
         return Collections.unmodifiableSet(
-                new LinkedHashSet<>(normalizedNames)
+                new LinkedHashSet<>(
+                        normalizedNames
+                )
         );
     }
 
-    private static String normalizeRoleName(
-            String role
-    ) {
-        String value = Objects.requireNonNull(
-                role,
-                "role не должен быть null"
+    private static IllegalArgumentException invalidEmail() {
+        return new IllegalArgumentException(
+                "email должен быть каноническим lowercase email"
         );
-
-        String normalized = value
-                .strip()
-                .toUpperCase(Locale.ROOT);
-
-        String roleName =
-                normalized.startsWith(ROLE_PREFIX)
-                        ? normalized.substring(
-                        ROLE_PREFIX.length()
-                )
-                        : normalized;
-
-        if (!ALLOWED_ROLES.contains(roleName)) {
-            throw new IllegalArgumentException(
-                    "Unknown role: " + value
-            );
-        }
-
-        return roleName;
     }
 }
