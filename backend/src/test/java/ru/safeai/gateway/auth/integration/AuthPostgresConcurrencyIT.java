@@ -44,7 +44,7 @@ import ru.safeai.gateway.auth.service.RefreshTokenCleanupBatchService;
 import ru.safeai.gateway.auth.service.RefreshTokenCleanupJob;
 import ru.safeai.gateway.auth.service.RefreshTokenCleanupProperties;
 import ru.safeai.gateway.auth.service.RefreshTokenService;
-import ru.safeai.gateway.auth.service.UserSecurityMutationTransactionService;
+import ru.safeai.gateway.auth.service.UserSessionRevocationService;
 import ru.safeai.gateway.common.exception.AuthServiceUnavailableException;
 import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
@@ -108,7 +108,8 @@ import static org.mockito.Mockito.when;
 @Import({
         RefreshTokenService.class,
         LoginSessionTransactionService.class,
-        UserSecurityMutationTransactionService.class,
+        UserSecurityMutationTestService.class,
+        UserSessionRevocationService.class,
         RefreshTokenCleanupBatchService.class,
         RefreshTokenCleanupJob.class,
         AuthCookieService.class,
@@ -144,7 +145,7 @@ class AuthPostgresConcurrencyIT {
             loginSessionTransactionService;
 
     @Autowired
-    private UserSecurityMutationTransactionService
+    private UserSecurityMutationTestService
             securityMutationService;
 
     @Autowired
@@ -658,9 +659,9 @@ class AuthPostgresConcurrencyIT {
                             "new-encoded-password"
                     );
             case ROLE_CHANGE ->
-                    securityMutationService.replaceRoles(
+                    securityMutationService.replaceRole(
                             userId,
-                            Set.of(USER_ROLE)
+                            USER_ROLE
                     );
             case DISABLE ->
                     securityMutationService.disableUser(userId);
