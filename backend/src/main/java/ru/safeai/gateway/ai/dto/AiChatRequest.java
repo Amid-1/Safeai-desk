@@ -1,10 +1,8 @@
 package ru.safeai.gateway.ai.dto;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 public record AiChatRequest(
         UUID userId,
@@ -119,68 +117,6 @@ public record AiChatRequest(
         }
     }
 
-    /**
-     * Совместимость с прежним контрактом: SYSTEM и DEVELOPER извлекаются
-     * из legacy history и больше не теряются в Anthropic.
-     */
-    public AiChatRequest(
-            UUID userId,
-            UUID organizationId,
-            UUID chatId,
-            UUID providerOperationId,
-            String userMessage,
-            List<AiMessage> legacyHistory
-    ) {
-        this(
-                userId,
-                organizationId,
-                chatId,
-                providerOperationId,
-                joinInstructions(legacyHistory, AiMessageRole.SYSTEM),
-                joinInstructions(legacyHistory, AiMessageRole.DEVELOPER),
-                userMessage,
-                conversationHistory(legacyHistory)
-        );
-    }
-
-    public AiChatRequest(
-            UUID userId,
-            UUID organizationId,
-            UUID chatId,
-            String userMessage,
-            List<AiMessage> legacyHistory
-    ) {
-        this(
-                userId,
-                organizationId,
-                chatId,
-                UUID.randomUUID(),
-                userMessage,
-                legacyHistory
-        );
-    }
-
-    public AiChatRequest(
-            UUID userId,
-            UUID organizationId,
-            UUID chatId,
-            String systemInstructions,
-            String developerInstructions,
-            String userMessage,
-            List<AiMessage> history
-    ) {
-        this(
-                userId,
-                organizationId,
-                chatId,
-                UUID.randomUUID(),
-                systemInstructions,
-                developerInstructions,
-                userMessage,
-                history
-        );
-    }
-
     private static String normalizeInstructions(
             String value,
             String fieldName
@@ -203,47 +139,5 @@ public record AiChatRequest(
 
     private static int length(String value) {
         return value == null ? 0 : value.length();
-    }
-
-    private static String joinInstructions(
-            List<AiMessage> history,
-            AiMessageRole role
-    ) {
-        if (history == null || history.isEmpty()) {
-            return null;
-        }
-
-        String joined = history.stream()
-                .filter(Objects::nonNull)
-                .filter(message -> message.role() == role)
-                .map(AiMessage::content)
-                .collect(Collectors.joining("\n\n"));
-
-        return joined.isBlank() ? null : joined;
-    }
-
-    private static List<AiMessage> conversationHistory(
-            List<AiMessage> history
-    ) {
-        if (history == null || history.isEmpty()) {
-            return List.of();
-        }
-
-        List<AiMessage> result = new ArrayList<>();
-
-        for (AiMessage message : history) {
-            if (message == null) {
-                throw new IllegalArgumentException(
-                        "history не должен содержать null"
-                );
-            }
-
-            if (message.role() == AiMessageRole.USER
-                    || message.role() == AiMessageRole.ASSISTANT) {
-                result.add(message);
-            }
-        }
-
-        return List.copyOf(result);
     }
 }

@@ -231,7 +231,7 @@ npm run dev
 Vite покажет адрес, обычно:
 
 ```text
-http://localhost:5173
+4
 ```
 
 Остановка frontend:

@@ -118,45 +118,6 @@ public record AiChatResponse(
     }
 
     /**
-     * Конструктор совместимости со старым DTO.
-     * Использовать только для данных, в которых requested и resolved model
-     * исторически не разделялись.
-     */
-    public AiChatResponse(
-            String content,
-            String model,
-            String providerMessageId,
-            AiResponseStatus responseStatus,
-            String finishReason,
-            Integer inputTokens,
-            Integer outputTokens,
-            UsageStatus usageStatus,
-            BigDecimal costUsd,
-            PricingStatus pricingStatus,
-            String currency,
-            String priceVersion,
-            Instant pricingCalculatedAt
-    ) {
-        this(
-                content,
-                model,
-                model,
-                providerMessageId,
-                null,
-                responseStatus,
-                finishReason,
-                inputTokens,
-                outputTokens,
-                usageStatus,
-                costUsd,
-                pricingStatus,
-                currency,
-                priceVersion,
-                pricingCalculatedAt
-        );
-    }
-
-    /**
      * Каноническая фабрика для успешного ответа AI-провайдера.
      *
      * @param requestedModel    модель, которую запросило приложение

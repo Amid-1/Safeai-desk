@@ -16,28 +16,4 @@ public record UserResponse(
         Instant updatedAt,
         Instant lastLoginAt
 ) {
-    public UserResponse(
-            UUID id,
-            UUID organizationId,
-            String email,
-            String fullName,
-            boolean enabled,
-            Set<String> roles,
-            Instant createdAt,
-            Instant updatedAt,
-            Instant lastLoginAt
-    ) {
-        this(
-                id,
-                organizationId,
-                email,
-                fullName,
-                enabled,
-                roles,
-                0L,
-                createdAt,
-                updatedAt,
-                lastLoginAt
-        );
-    }
 }

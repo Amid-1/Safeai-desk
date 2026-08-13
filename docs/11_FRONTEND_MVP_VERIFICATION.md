@@ -27,50 +27,159 @@
 
 ---
 
-## 2. Структура frontend
-
-Ожидаемая структура frontend:
-
 ```text
-frontend
-├── src
-│   ├── api
-│   │   ├── adminApi.ts
-│   │   ├── authApi.ts
-│   │   ├── chatApi.ts
-│   │   ├── http.ts
-│   │   └── userApi.ts
+├── frontend/
+│   ├── node_modules/
 │   │
-│   ├── auth
-│   │   └── AuthContext.tsx
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── __tests__/
+│   │   │   ├── adminApi.test.ts
+│   │   │   ├── adminApi.ts
+│   │   │   ├── authApi.test.ts
+│   │   │   ├── authApi.ts
+│   │   │   ├── authCoordinator.ts
+│   │   │   ├── chatApi.test.ts
+│   │   │   ├── chatApi.ts
+│   │   │   ├── http.chat-errors.test.ts
+│   │   │   ├── http.test.ts
+│   │   │   ├── http.ts
+│   │   │   ├── organizationApi.test.ts
+│   │   │   ├── organizationApi.ts
+│   │   │   ├── query.test.ts
+│   │   │   ├── query.ts
+│   │   │   ├── runtime.ts
+│   │   │   ├── types.ts
+│   │   │   ├── usageApi.test.ts
+│   │   │   ├── usageApi.ts
+│   │   │   ├── userApi.test.ts
+│   │   │   └── userApi.ts
+│   │   │
+│   │   ├── auth/
+│   │   │   ├── AuthContext.test.tsx
+│   │   │   └── AuthContext.tsx
+│   │   │
+│   │   ├── components/
+│   │   │   ├── admin/
+│   │   │   │   ├── __tests__/
+│   │   │   │   │   └── UserRoleSelector.test.tsx
+│   │   │   │   │
+│   │   │   │   ├── audit/
+│   │   │   │   │   ├── AuditActor.test.tsx
+│   │   │   │   │   ├── AuditActor.tsx
+│   │   │   │   │   ├── AuditDetailsModal.tsx
+│   │   │   │   │   ├── AuditFilters.tsx
+│   │   │   │   │   ├── AuditPagination.tsx
+│   │   │   │   │   ├── AuditTable.tsx
+│   │   │   │   │   └── types.ts
+│   │   │   │   │
+│   │   │   │   ├── UserActionsMenu.test.tsx
+│   │   │   │   ├── UserActionsMenu.tsx
+│   │   │   │   ├── UserIdentityCell.tsx
+│   │   │   │   ├── UserRoleBadge.tsx
+│   │   │   │   └── UserRoleSelector.tsx
+│   │   │   │
+│   │   │   ├── ConfirmDialog.tsx
+│   │   │   ├── ErrorBoundary.tsx
+│   │   │   ├── Modal.tsx
+│   │   │   ├── PageErrorBoundary.tsx
+│   │   │   └── StateBlock.tsx
+│   │   │
+│   │   ├── constants/
+│   │   │   └── auditEvents.ts
+│   │   │
+│   │   ├── domain/
+│   │   │   ├── __tests__/
+│   │   │   │   └── userManagementRolePolicy.test.ts
+│   │   │   └── userManagementRolePolicy.ts
+│   │   │
+│   │   ├── hooks/
+│   │   │   ├── admin/
+│   │   │   │   ├── useAuditDirectories.ts
+│   │   │   │   └── useAuditEvents.ts
+│   │   │   └── useAutoClearMessage.ts
+│   │   │
+│   │   ├── pages/
+│   │   │   ├── adminAudit.helpers.test.ts
+│   │   │   ├── adminAudit.helpers.ts
+│   │   │   ├── AdminAuditPage.css
+│   │   │   ├── AdminAuditPage.tsx
+│   │   │   ├── AdminOrganizationsPage.css
+│   │   │   ├── AdminOrganizationsPage.tsx
+│   │   │   ├── adminUsage.helpers.test.ts
+│   │   │   ├── adminUsage.helpers.ts
+│   │   │   ├── AdminUsagePage.tsx
+│   │   │   ├── AdminUsersPage.css
+│   │   │   ├── AdminUsersPage.tsx
+│   │   │   ├── chatPage.helpers.test.ts
+│   │   │   ├── chatPage.helpers.ts
+│   │   │   ├── ChatPage.tsx
+│   │   │   ├── LoginPage.test.tsx
+│   │   │   └── LoginPage.tsx
+│   │   │
+│   │   ├── styles/
+│   │   │   ├── production-hardening.css
+│   │   │   └── user-management-additions.css
+│   │   │
+│   │   ├── test/
+│   │   │   └── setup.ts
+│   │   │
+│   │   ├── utils/
+│   │   │   ├── date.test.ts
+│   │   │   ├── date.ts
+│   │   │   ├── format.test.ts
+│   │   │   ├── format.ts
+│   │   │   ├── frontendErrorReporting.ts
+│   │   │   ├── organizations.test.ts
+│   │   │   ├── organizations.ts
+│   │   │   ├── page.test.ts
+│   │   │   ├── page.ts
+│   │   │   ├── password.test.ts
+│   │   │   ├── password.ts
+│   │   │   └── secureUuid.ts
+│   │   │
+│   │   ├── App.test.tsx
+│   │   ├── App.tsx
+│   │   ├── index.css
+│   │   ├── main.tsx
+│   │   └── vite-env.d.ts
 │   │
-│   ├── components
-│   │   └── ErrorBoundary.tsx
-│   │
-│   ├── pages
-│   │   ├── AdminAuditPage.tsx
-│   │   ├── AdminUsagePage.tsx
-│   │   ├── AdminUsersPage.tsx
-│   │   ├── ChatPage.tsx
-│   │   └── LoginPage.tsx
-│   │
-│   ├── utils
-│   │   ├── format.ts
-│   │   └── page.ts
-│   │
-│   ├── App.tsx
-│   ├── global.d.ts
-│   ├── index.css
-│   ├── main.tsx
-│   └── vite-env.d.ts
-│
-├── index.html
-├── package.json
-├── package-lock.json
-├── tsconfig.app.json
-├── tsconfig.json
-├── tsconfig.node.json
-└── vite.config.ts
+│   ├── eslint.config.mjs
+│   ├── index.html
+│   ├── install-and-check.cmd
+│   ├── install-and-check.sh
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.app.json
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
+│   ├── tsconfig.test.json
+│   └── vite.config.ts
+```
+
+| Файл | Назначение |
+|---|---|
+| `api/http.ts` | общий `apiRequest`, cookies, CSRF, refresh retry, `ApiError`, `X-Request-Id` |
+| `api/authApi.ts` | login/logout/me |
+| `api/chatApi.ts` | chats API |
+| `api/userApi.ts` | user-management API |
+| `api/organizationApi.ts` | organization-management API |
+| `api/adminApi.ts` | audit и usage API |
+| `auth/AuthContext.tsx` | состояние текущего пользователя, login/logout, unauthorized events |
+| `App.tsx` | routes, protected routes, topbar |
+| `LoginPage.tsx` | форма входа |
+| `ChatPage.tsx` | чат, сообщения, pending/failed состояния |
+| `AdminUsersPage.tsx` | управление пользователями |
+| `AdminOrganizationsPage.tsx` | управление организациями |
+| `AdminAuditPage.tsx` | audit events |
+| `AdminUsagePage.tsx` | usage analytics |
+| `Modal.tsx` | общий modal с Escape/backdrop/focus handling |
+| `ConfirmDialog.tsx` | confirmation dialog |
+| `ErrorBoundary.tsx` | fallback для frontend runtime errors |
+| `StateBlock.tsx` | loading/error/empty states |
+
+---
+
 ```
 
 ---

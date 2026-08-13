@@ -24,6 +24,9 @@ const AdminUsersPage = lazy(
 const AdminOrganizationsPage = lazy(
     () => import('./pages/AdminOrganizationsPage'),
 )
+const KnowledgePage = lazy(
+    () => import('./pages/KnowledgePage'),
+)
 const AdminAuditPage = lazy(
     () => import('./pages/AdminAuditPage'),
 )
@@ -254,6 +257,7 @@ function AppLayout() {
         currentUser,
         ['ADMIN', 'USER'],
     )
+    const canAccessKnowledge = canAccessChat
     const canAccessAdmin = hasAnyRole(
         currentUser,
         [
@@ -294,6 +298,15 @@ function AppLayout() {
                                 className={getNavLinkClass}
                             >
                                 Чат
+                            </NavLink>
+                        )}
+
+                        {canAccessKnowledge && (
+                            <NavLink
+                                to="/knowledge"
+                                className={getNavLinkClass}
+                            >
+                                Базы знаний
                             </NavLink>
                         )}
 
@@ -384,6 +397,17 @@ function AppLayout() {
                                     roles={['ADMIN', 'USER']}
                                 >
                                     <ChatPage />
+                                </ProtectedRoute>
+                            }
+                        />
+
+                        <Route
+                            path="/knowledge"
+                            element={
+                                <ProtectedRoute
+                                    roles={['ADMIN', 'USER']}
+                                >
+                                    <KnowledgePage />
                                 </ProtectedRoute>
                             }
                         />

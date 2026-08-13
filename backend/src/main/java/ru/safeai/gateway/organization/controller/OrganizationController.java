@@ -29,7 +29,6 @@ import ru.safeai.gateway.organization.dto.OrganizationDirectoryResponse;
 import ru.safeai.gateway.organization.dto.OrganizationDisableImpactResponse;
 import ru.safeai.gateway.organization.dto.OrganizationPageResponse;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
-import ru.safeai.gateway.organization.dto.UpdateOrganizationEnabledRequest;
 import ru.safeai.gateway.organization.dto.UpdateOrganizationRequest;
 import ru.safeai.gateway.organization.service.OrganizationService;
 
@@ -149,30 +148,6 @@ public class OrganizationController {
                 currentUser
         );
     }
-
-    /**
- * Совместимость со старым клиентом.
- *
- * <p>Новые клиенты должны использовать отдельные endpoints
- * {@code /disable} и {@code /enable}. expectedVersion обязателен
- * и для compatibility endpoint.</p>
- */
-@Deprecated
-@PreAuthorize("hasRole('SUPER_ADMIN')")
-@PatchMapping("/{id}/enabled")
-public OrganizationResponse updateEnabled(
-        @PathVariable UUID id,
-        @Valid @RequestBody
-        UpdateOrganizationEnabledRequest request,
-        @AuthenticationPrincipal(errorOnInvalidType = true)
-        SafeAiUserPrincipal currentUser
-) {
-    return organizationService.updateEnabled(
-            id,
-            request,
-            currentUser
-    );
-}
 
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping("/{id}/disable")

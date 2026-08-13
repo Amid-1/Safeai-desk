@@ -20,6 +20,11 @@ import static ru.safeai.gateway.ai.testsupport.AiTestFixtures.USER_ID;
 @Tag("unit")
 class AiMessageAndRequestTest {
 
+    private static final UUID PROVIDER_OPERATION_ID =
+            UUID.fromString(
+                    "dddddddd-dddd-dddd-dddd-dddddddddddd"
+            );
+
     @Test
     void stringRoleConstructorParsesKnownRole() {
         AiMessage message =
@@ -67,26 +72,17 @@ class AiMessageAndRequestTest {
     }
 
     @Test
-    void legacyConstructorExtractsSystemAndDeveloperInstructions() {
+    void canonicalConstructorKeepsInstructionsSeparateFromHistory() {
         AiChatRequest request =
                 new AiChatRequest(
                         USER_ID,
                         ORGANIZATION_ID,
                         CHAT_ID,
+                        PROVIDER_OPERATION_ID,
+                        "system-1\n\nsystem-2",
+                        "developer",
                         "Привет",
                         List.of(
-                                new AiMessage(
-                                        AiMessageRole.SYSTEM,
-                                        "system-1"
-                                ),
-                                new AiMessage(
-                                        AiMessageRole.SYSTEM,
-                                        "system-2"
-                                ),
-                                new AiMessage(
-                                        AiMessageRole.DEVELOPER,
-                                        "developer"
-                                ),
                                 new AiMessage(
                                         AiMessageRole.USER,
                                         "old-user"
@@ -99,7 +95,7 @@ class AiMessageAndRequestTest {
                 );
 
         assertThat(request.providerOperationId())
-                .isNotNull();
+                .isEqualTo(PROVIDER_OPERATION_ID);
 
         assertThat(request.systemInstructions())
                 .isEqualTo("system-1\n\nsystem-2");
@@ -118,7 +114,9 @@ class AiMessageAndRequestTest {
     @Test
     void requestCopiesHistoryAndPreservesExplicitOperationId() {
         UUID operationId =
-                UUID.randomUUID();
+                UUID.fromString(
+                        "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+                );
 
         List<AiMessage> source =
                 new ArrayList<>();
@@ -240,6 +238,9 @@ class AiMessageAndRequestTest {
                         USER_ID,
                         ORGANIZATION_ID,
                         CHAT_ID,
+                        PROVIDER_OPERATION_ID,
+                        null,
+                        null,
                         " ",
                         List.of()
                 )
@@ -264,13 +265,14 @@ class AiMessageAndRequestTest {
                         USER_ID,
                         ORGANIZATION_ID,
                         CHAT_ID,
-                        UUID.randomUUID(),
+                        PROVIDER_OPERATION_ID,
+                        null,
+                        null,
                         "Привет",
                         historyWithNull
                 )
         )
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("null");
+                .isInstanceOf(NullPointerException.class);
     }
 
     private static void createCanonicalRequest(
@@ -280,7 +282,7 @@ class AiMessageAndRequestTest {
                 USER_ID,
                 ORGANIZATION_ID,
                 CHAT_ID,
-                UUID.randomUUID(),
+                PROVIDER_OPERATION_ID,
                 "system",
                 "developer",
                 "current",

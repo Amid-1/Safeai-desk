@@ -106,9 +106,6 @@ export function toLocalExclusiveEndOfDayIso(
         day,
     } = parseDateValue(dateValue)
 
-    // Конструктор локальной даты корректно учитывает DST:
-    // exclusive end — следующая локальная полночь,
-    // а не start + 24 часа.
     return new Date(
         year,
         month - 1,
@@ -205,12 +202,11 @@ export function getInclusiveDayCount(
     dateFrom: string,
     dateTo: string,
 ): number {
-    const from = parseDateValue(
-        dateFrom,
-    )
-    const to = parseDateValue(
-        dateTo,
-    )
+    const from =
+        parseDateValue(dateFrom)
+
+    const to =
+        parseDateValue(dateTo)
 
     const fromEpoch = Date.UTC(
         from.year,
@@ -250,10 +246,11 @@ export function assertDateRange(
         )
     }
 
-    const days = getInclusiveDayCount(
-        dateFrom,
-        dateTo,
-    )
+    const days =
+        getInclusiveDayCount(
+            dateFrom,
+            dateTo,
+        )
 
     if (days < 1) {
         throw new Error(

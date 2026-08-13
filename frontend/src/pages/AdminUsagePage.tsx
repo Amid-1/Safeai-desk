@@ -1,4 +1,3 @@
-/* frontend/src/pages/AdminUsagePage.tsx */
 import {
     useEffect,
     useMemo,
@@ -31,6 +30,9 @@ import {
 import {
     normalizePageResponse,
 } from '../utils/page'
+import {
+    toUtcStartOfDayIso,
+} from '../utils/date'
 import {
     EmptyState,
     ErrorState,
@@ -148,9 +150,15 @@ function AdminUsagePageContent() {
             setError('')
 
             try {
+                /*
+                 * В URL страницы сохраняются удобные date-only значения
+                 * YYYY-MM-DD, но backend-контракт usage принимает Instant.
+                 * DateTo уже является EXCLUSIVE границей, поэтому обе даты
+                 * преобразуются в начало соответствующего UTC-дня без +1 дня.
+                 */
                 const dateFilter = {
-                    dateFrom: appliedDateFrom,
-                    dateTo: appliedDateTo,
+                    dateFrom: toUtcStartOfDayIso(appliedDateFrom),
+                    dateTo: toUtcStartOfDayIso(appliedDateTo),
                 }
 
                 if (tab === 'summary') {
@@ -934,6 +942,13 @@ function validateFilters(
 ): string | null {
     if (!dateFrom || !dateTo) {
         return 'Обе даты обязательны.'
+    }
+
+    try {
+        toUtcStartOfDayIso(dateFrom)
+        toUtcStartOfDayIso(dateTo)
+    } catch {
+        return 'Некорректная календарная дата.'
     }
 
     if (dateFrom >= dateTo) {

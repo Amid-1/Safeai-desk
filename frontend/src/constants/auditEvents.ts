@@ -1,6 +1,3 @@
-// ============================================================
-// frontend/src/constants/auditEvents.ts
-// ============================================================
 export const AUDIT_EVENT_TYPES = [
     'USER_LOGIN_SUCCESS',
     'USER_LOGIN_FAILED',
@@ -20,6 +17,11 @@ export const AUDIT_EVENT_TYPES = [
     'ORGANIZATION_NAME_CHANGED',
     'ORGANIZATION_ENABLED_CHANGED',
     'USER_UPDATED',
+    'KNOWLEDGE_BASE_CREATED',
+    'KNOWLEDGE_BASE_UPDATED',
+    'KNOWLEDGE_BASE_MEMBER_ADDED',
+    'KNOWLEDGE_BASE_MEMBER_UPDATED',
+    'KNOWLEDGE_BASE_MEMBER_REMOVED',
 ] as const
 
 export type AuditEventType =
@@ -80,6 +82,21 @@ const AUDIT_EVENT_TYPE_LABELS:
 
     USER_UPDATED:
         'Изменён профиль пользователя',
+
+    KNOWLEDGE_BASE_CREATED:
+        'Создана база знаний',
+
+    KNOWLEDGE_BASE_UPDATED:
+        'Изменена база знаний',
+
+    KNOWLEDGE_BASE_MEMBER_ADDED:
+        'Добавлен участник базы знаний',
+
+    KNOWLEDGE_BASE_MEMBER_UPDATED:
+        'Изменён доступ участника базы знаний',
+
+    KNOWLEDGE_BASE_MEMBER_REMOVED:
+        'Удалён участник базы знаний',
 }
 
 export function getAuditEventTypeLabel(

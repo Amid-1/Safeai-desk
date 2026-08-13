@@ -45,8 +45,8 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -547,9 +547,15 @@ class OrganizationControllerSecurityTest {
         );
     }
 
+    /**
+     * Regression guard: legacy compatibility endpoint был удалён.
+     *
+     * <p>Новые клиенты должны использовать исключительно
+     * {@code POST /api/organizations/{id}/disable} и
+     * {@code POST /api/organizations/{id}/enable}.</p>
+     */
     @Test
-    @SuppressWarnings("deprecation")
-    void compatibilityEnabledEndpointRequiresExpectedVersion()
+    void legacyEnabledEndpointIsNotExposed()
             throws Exception {
         mockMvc.perform(
                 patch(
@@ -566,21 +572,16 @@ class OrganizationControllerSecurityTest {
                         )
                         .content("""
                                 {
-                                  "enabled": false
+                                  "enabled": false,
+                                  "expectedVersion": 7
                                 }
                                 """)
-        ).andExpect(
-                status().isBadRequest()
-        );
-
-        verify(
-                organizationService,
-                never()
-        ).updateEnabled(
-                any(),
-                any(),
-                any()
-        );
+        )
+                .andExpect(status().isNotFound())
+                .andExpect(
+                        jsonPath("$.error")
+                                .value("NOT_FOUND")
+                );
     }
 
     @Test
@@ -698,7 +699,9 @@ class OrganizationControllerSecurityTest {
                 eq(ORGANIZATION_ID),
                 any(DisableOrganizationRequest.class),
                 any(SafeAiUserPrincipal.class)
-        )).thenReturn(disabled);
+        )).thenReturn(
+                disabled
+        );
 
         mockMvc.perform(
                 post(
@@ -750,7 +753,9 @@ class OrganizationControllerSecurityTest {
                 eq(ORGANIZATION_ID),
                 any(EnableOrganizationRequest.class),
                 any(SafeAiUserPrincipal.class)
-        )).thenReturn(enabled);
+        )).thenReturn(
+                enabled
+        );
 
         mockMvc.perform(
                 post(

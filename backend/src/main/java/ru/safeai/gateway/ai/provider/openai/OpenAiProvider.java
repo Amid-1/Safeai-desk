@@ -91,24 +91,6 @@ public class OpenAiProvider implements AiProvider {
         );
     }
 
-    /**
-     * Совместимость с прежними unit-тестами.
-     */
-    public OpenAiProvider(
-            OpenAiProperties properties,
-            AiResponseMetadataService responseMetadataService,
-            AiProviderRetryExecutor retryExecutor,
-            Clock clock
-    ) {
-        this(
-                properties,
-                responseMetadataService,
-                retryExecutor,
-                AiContextWindowService.defaults(),
-                clock
-        );
-    }
-
     OpenAiProvider(
             OpenAiProperties properties,
             AiResponseMetadataService responseMetadataService,
