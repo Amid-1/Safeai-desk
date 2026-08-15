@@ -1,0 +1,153 @@
+.usage-page {
+    display: grid;
+    gap: 24px;
+}
+
+.usage-page__header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.usage-page__header h1,
+.usage-page__header p,
+.usage-section-heading h2,
+.usage-section-heading p,
+.usage-report-heading h2,
+.usage-report-heading p {
+    margin: 0;
+}
+
+.usage-page__header p,
+.usage-section-heading p,
+.usage-report-heading p {
+    margin-top: 8px;
+}
+
+.usage-scope {
+    display: grid;
+    gap: 3px;
+    min-width: 210px;
+    padding: 14px 18px;
+    border: 1px solid #dbe3ef;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.usage-scope__label {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.usage-filters {
+    padding: 24px;
+}
+
+.usage-section-heading {
+    margin-bottom: 18px;
+}
+
+.usage-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(180px, 1fr)) minmax(240px, 1.4fr);
+    gap: 16px;
+    align-items: start;
+}
+
+.usage-filter-grid label {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+    font-weight: 700;
+}
+
+.usage-filter-grid input {
+    width: 100%;
+}
+
+.usage-filter-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.usage-report {
+    display: grid;
+    gap: 16px;
+}
+
+.usage-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.usage-tabs .filter-button {
+    border-radius: 10px;
+}
+
+.usage-report-heading {
+    display: grid;
+    gap: 2px;
+}
+
+.usage-report .table-card {
+    margin: 0;
+}
+
+.usage-report .state-block--empty {
+    min-height: 190px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+@media (max-width: 900px) {
+    .usage-filter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .usage-filter-grid label:last-child {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 640px) {
+    .usage-page__header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .usage-scope {
+        min-width: 0;
+    }
+
+    .usage-filter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .usage-filter-grid label:last-child {
+        grid-column: auto;
+    }
+
+    .usage-filter-actions,
+    .usage-filter-actions button {
+        width: 100%;
+    }
+
+    .usage-tabs {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .usage-tabs button {
+        width: 100%;
+    }
+}

@@ -126,30 +126,6 @@ public record UsageDataQualityResponse(
         );
     }
 
-    /**
-     * Конструктор совместимости для кода, созданного до появления chat_turns.
-     */
-    public UsageDataQualityResponse(
-            long assistantMessages,
-            long storedCompletedMessages,
-            long storedFailedMessages,
-            long missingResolvedModelMessages,
-            UsageTokenSummary usage,
-            UsageCostSummary cost,
-            List<UsageProblemModelResponse> problemModels
-    ) {
-        this(
-                assistantMessages,
-                storedCompletedMessages,
-                storedFailedMessages,
-                missingResolvedModelMessages,
-                0L,
-                usage,
-                cost,
-                problemModels
-        );
-    }
-
     private static BigDecimal coveragePercent(
             long covered,
             long applicable

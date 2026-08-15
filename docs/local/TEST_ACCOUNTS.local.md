@@ -98,27 +98,35 @@ Demo Company — тестовая customer organization для локально�
 > Если для аккаунта выполнялся **Reset password** через UI, актуальным является последний заданный пароль.  
 > Старый пароль из этой таблицы после reset password больше не подойдет.
 
-| № | Email                   | Password             | Role | Организация     | Полное имя / комментарий                                               |
-|---:|-------------------------|----------------------|---|-----------------|------------------------------------------------------------------------|
-| 1 | `admin@test.com`        | `bvhgSI*7&@)++!@$HJ` | `ADMIN` | `Demo Company`  | AdminTest AdminTestov. Seed/local admin.                               |
-| 2 | `admin@klever.ru`       | `bvhgSI*7&@)++!@$`   | `ADMIN` | `ООО "Клевер"`  | AdminKlever AdminKleverov. Создан вручную через frontend/admin users.  |
+| № | Email         | Password             | Role | Организация    | Полное имя / комментарий                                               |
+|---:|---------------|----------------------|---|----------------|------------------------------------------------------------------------|
+| 1 | `admin@test.com` | `bvhgSI*7&@)++!@$HJ` | `ADMIN` | `Demo Company` | AdminTest AdminTestov. Seed/local admin.                               |
+| 2 | `admin@klever.ru` | `bvhgSI*7&@)++!@$`   | `ADMIN` | `ООО "Клевер"` | AdminKlever AdminKleverov. Создан вручную через frontend/admin users.  |
 | 3 | `ivanRomashka@mail.com` | `v2F4r1C4@$aD`       | `ADMIN` | `ООО "Ромашка"` | InanRomashka IvanRomashkov. Создан вручную через frontend/admin users. |
-| 4 | `vladSokol@mail.ru`     | `fhgkJFG@3%^&%`      | `ADMIN` | `ООО "Сокол"`   | VladSokol VladSokolov. В БД email нормализуется к lower-case.          |
-| 5 | `mishaZil@proton.net`   | `bvhgSI*7&@)++`      | `ADMIN` | `ООО "Зил"`     | MishaZil MichaZilov. В БД email нормализуется к lower-case.            |
-| 5 | `nikitaZil@proton.net`  | `bvhgSI*7&@)=_`      | `ADMIN` | `ООО "Космос"`  | NikitaKosmos NikitaKosmosov. В БД email нормализуется к lower-case.    |
+| 4 | `vladSokol@mail.ru` | `fhgkJFG@3%^&%`      | `ADMIN` | `ООО "Сокол"`  | VladSokol VladSokolov. В БД email нормализуется к lower-case.          |
+| 5 | `mishaZil@proton.net` | `bvhgSI*7&@)++`      | `ADMIN` | `ООО "Зил"`    | MishaZil MichaZilov. В БД email нормализуется к lower-case.            |
+| 5 | `nikitaZil@proton.net` | `bvhgSI*7&@)=_`      | `ADMIN` | `ООО "Космос"` | NikitaKosmos NikitaKosmosov. В БД email нормализуется к lower-case.    |
+| 5 | `ADMIN-A@proton.net` | `bvhgSI*7&@)=_@#`    | `ADMIN` | `Organization A`  | ADMIN-A  |
+| 5 | `ADMIN-B@proton.net` | `bvhgSI*7&@)=_*)`    | `ADMIN` | `Organization B`  |  ADMIN-B  |
+| 5 | `@proton.net` | `bvhgSI*7&@)=_((`    | `ADMIN` | `` |    |
+| 5 | `@proton.net` | `bvhgSI*7&@)=_*^`    | `ADMIN` | `` |    |
 
 ### 4.3 USER
 
-| № | Email                 | Password              | Role | Организация     | Полное имя / комментарий                                                                  |
-|--:|-----------------------|-----------------------|---|-----------------|-------------------------------------------------------------------------------------------|
-| 1 | `dimac@mail.com`      | `v2F4r1C4!#SD`        | `USER` | `Demo Company`  | Dima Dmitriev. Создан вручную через frontend/admin users.                                 |
-| 2 | `user@test.com`       | `useR12345678%^A`     | `USER` | `Demo Company`  | UserTest UserTestov. Если пароль менялся через reset password, использовать новый пароль. |
-| 3 | `vasiya@gmail.com`    | `dfghjGH75!+Sdd`      | `USER` | `ООО "Сокол"`   | VasiyaSokol VasiyaSokolov. В БД email нормализуется к lower-case.                         |
-| 4 | `petiyadf@yandex.com` | `DGFGFNjghj&*46`      | `USER` | `ООО "Ромашка"` | PetiyaRomashka PetiyaRomashkov. В БД email нормализуется к lower-case.                    |
-| 5 | `user1@klever.ru`     | `DGFGFNjghj&*46Dfg`   | `USER` | `ООО "Клевер"`  | User1Klever User1Kleverov. В БД email нормализуется к lower-case.                         |
-| 6 | `user2@klever.ru`     | `DGFGFNjghj&*46Dfg!@` | `USER` | `ООО "Клевер"`  | User2Klever User2Kleverov. В БД email нормализуется к lower-case.                         |
-| 6 | `use12@zil.ru`        | `DGFGFNjghj&*46Dfg**` | `USER` | `ООО "Зил"`     | User1Zil User1Zilov. В БД email нормализуется к lower-case.                               |
-| 6 | `user2@zil.ru`        | `DGFGFNjghj&*46Df*&(` | `USER` | `ООО "Зил"`     | User2Zil User2Zilov. В БД email нормализуется к lower-case.                               |
+| № | Email            | Password               | Role | Организация     | Полное имя / комментарий                                                                  |
+|--:|------------------|------------------------|---|-----------------|-------------------------------------------------------------------------------------------|
+| 1 | `dimac@mail.com` | `v2F4r1C4!#SD`         | `USER` | `Demo Company`  | Dima Dmitriev. Создан вручную через frontend/admin users.                                 |
+| 2 | `user@test.com`  | `useR12345678%^A`      | `USER` | `Demo Company`  | UserTest UserTestov. Если пароль менялся через reset password, использовать новый пароль. |
+| 3 | `vasiya@gmail.com` | `dfghjGH75!+Sdd`       | `USER` | `ООО "Сокол"`   | VasiyaSokol VasiyaSokolov. В БД email нормализуется к lower-case.                         |
+| 4 | `petiyadf@yandex.com` | `DGFGFNjghj&*46`       | `USER` | `ООО "Ромашка"` | PetiyaRomashka PetiyaRomashkov. В БД email нормализуется к lower-case.                    |
+| 5 | `user1@klever.ru` | `DGFGFNjghj&*46Dfg`    | `USER` | `ООО "Клевер"`  | User1Klever User1Kleverov. В БД email нормализуется к lower-case.                         |
+| 6 | `user2@klever.ru` | `DGFGFNjghj&*46Dfg!@`  | `USER` | `ООО "Клевер"`  | User2Klever User2Kleverov. В БД email нормализуется к lower-case.                         |
+| 6 | `use12@zil.ru`   | `DGFGFNjghj&*46Dfg**`  | `USER` | `ООО "Зил"`     | User1Zil User1Zilov. В БД email нормализуется к lower-case.                               |
+| 6 | `user2@zil.ru`   | `DGFGFNjghj&*46Df*&(`  | `USER` | `ООО "Зил"`     | User2Zil User2Zilov. В БД email нормализуется к lower-case.                               |
+| 6 | `USER-A1@proton.ru` | `DGFGFNjghj&*46Df&&&`  | `USER` | ``     |   USER-A1                          |
+| 6 | `USER-A2@proton.ru` | `DGFGFNjghj&*46Df***`  | `USER` | ``     |   USER-A2                            |
+| 6 | `USER-B1@mail.ru`  | `DGFGFNjghj&*46D))*`   | `USER` | ``     |     USER-B1                         |
+| 6 | `@mail.ru`       | `DGFGFNjghj&*46Df*&(^` | `USER` | ``     |                              |
 
 ---
 

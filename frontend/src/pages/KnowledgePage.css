@@ -120,13 +120,43 @@
     font-weight: 650;
 }
 
-.knowledge-card__future {
-    padding: 10px 12px;
+.knowledge-card__document-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0;
+    padding: 12px;
+    gap: 10px;
     border-radius: 9px;
     background: #f8fafc;
+}
+
+.knowledge-card__document-stats div {
+    min-width: 0;
+}
+
+.knowledge-card__document-stats dt {
     color: #64748b;
-    font-size: 12px;
-    line-height: 1.45;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.knowledge-card__document-stats dd {
+    margin: 4px 0 0;
+    font-size: 18px;
+    font-weight: 750;
+}
+
+.knowledge-card__open {
+    display: inline-flex;
+    width: max-content;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    border-radius: 8px;
+    background: #111827;
+    color: #fff;
+    font-weight: 700;
+    text-decoration: none;
 }
 
 .knowledge-card__actions {
@@ -196,7 +226,28 @@
 }
 
 .knowledge-members-table {
-    min-width: 760px;
+    width: 100%;
+    table-layout: fixed;
+}
+
+.knowledge-members-table th:nth-child(1) {
+    width: 36%;
+}
+
+.knowledge-members-table th:nth-child(2) {
+    width: 32%;
+}
+
+.knowledge-members-table th:nth-child(3) {
+    width: 32%;
+}
+
+.knowledge-members-table td {
+    overflow-wrap: anywhere;
+}
+
+.knowledge-members-table .danger-button {
+    white-space: normal;
 }
 
 .knowledge-members-table select {
@@ -234,5 +285,37 @@
     .knowledge-candidate {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .knowledge-card__document-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .knowledge-members-table,
+    .knowledge-members-table thead,
+    .knowledge-members-table tbody,
+    .knowledge-members-table tr,
+    .knowledge-members-table th,
+    .knowledge-members-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .knowledge-members-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+    }
+
+    .knowledge-members-table tr {
+        padding: 12px 0;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .knowledge-members-table td {
+        padding: 5px 0;
+        border: 0;
     }
 }

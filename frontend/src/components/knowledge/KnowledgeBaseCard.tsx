@@ -4,6 +4,9 @@ import type {
 import {
     formatDateTime,
 } from '../../utils/format'
+import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { getKnowledgeDocuments } from '../../api/knowledgeDocumentApi'
 
 type KnowledgeBaseCardProps = {
     knowledgeBase: KnowledgeBase
@@ -20,6 +23,37 @@ function KnowledgeBaseCard({
     onEdit,
     onMembers,
 }: KnowledgeBaseCardProps) {
+    const [stats, setStats] = useState<{
+        total: number
+        ready: number
+        processing: number
+    } | null>(null)
+
+    useEffect(() => {
+        const controller = new AbortController()
+
+        getKnowledgeDocuments(
+            knowledgeBase.id,
+            0,
+            100,
+            controller.signal,
+        ).then((page) => {
+            setStats({
+                total: page.totalElements,
+                ready: page.content.filter(
+                    (document) => document.status === 'READY',
+                ).length,
+                processing: page.content.filter(
+                    (document) => document.status !== 'READY'
+                        && document.status !== 'FAILED',
+                ).length,
+            })
+        }).catch(() => {
+            if (!controller.signal.aborted) setStats(null)
+        })
+
+        return () => controller.abort()
+    }, [knowledgeBase.id])
     return (
         <article
             className={
@@ -33,9 +67,7 @@ function KnowledgeBaseCard({
         >
             <div className="knowledge-card__top">
                 <div>
-                    <h2>
-                        {knowledgeBase.name}
-                    </h2>
+                    <h2><Link to={`/knowledge/${knowledgeBase.id}`}>{knowledgeBase.name}</Link></h2>
 
                     <span
                         className={
@@ -95,10 +127,11 @@ function KnowledgeBaseCard({
                 </div>
             </dl>
 
-            <div className="knowledge-card__future">
-                Документы и версии:
-                следующий этап V39.
-            </div>
+            <dl className="knowledge-card__document-stats">
+                <div><dt>Документы</dt><dd>{stats?.total ?? '—'}</dd></div>
+                <div><dt>Готово</dt><dd>{stats?.ready ?? '—'}</dd></div>
+                <div><dt>Обрабатывается</dt><dd>{stats?.processing ?? '—'}</dd></div>
+            </dl>
 
             {canManage && (
                 <div className="knowledge-card__actions">
@@ -127,6 +160,7 @@ function KnowledgeBaseCard({
                     </button>
                 </div>
             )}
+            <Link className="knowledge-card__open" to={`/knowledge/${knowledgeBase.id}`}>Открыть базу</Link>
         </article>
     )
 }

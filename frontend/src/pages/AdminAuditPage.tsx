@@ -345,13 +345,22 @@ function AdminAuditPageContent() {
 
     return (
         <div className="page audit-page">
-            <h1>Аудит событий</h1>
-
-            <p className="muted audit-page__intro">
-                Время отображается в часовом поясе браузера.
-                Инициатор события и целевая организация являются
-                независимыми измерениями аудита.
-            </p>
+            <header className="audit-page__header">
+                <div className="audit-page__heading">
+                    <span className="audit-page__eyebrow">
+                        Безопасность и контроль
+                    </span>
+                    <h1>Аудит событий</h1>
+                    <p className="muted audit-page__intro">
+                        История действий пользователей и изменений
+                        в организации.
+                    </p>
+                </div>
+                <div className="audit-page__timezone">
+                    <span aria-hidden="true">◷</span>
+                    Время показано в вашем часовом поясе
+                </div>
+            </header>
 
             <AuditFilters
                 draftFilter={
@@ -452,9 +461,9 @@ function AdminAuditPageContent() {
                 && events.length === 0
                 && (
                     <EmptyState
+                        title="Событий не найдено"
                         message={
-                            'События аудита '
-                            + 'не найдены.'
+                            'Попробуйте изменить период или убрать часть фильтров.'
                         }
                     />
                 )}

@@ -1,5 +1,9 @@
 # D:\Java projects\Safeai-desk\backend\src\main\resources\application.yml
 spring:
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 26MB
   application:
     name: safeai-backend
 
@@ -91,6 +95,15 @@ app:
       audience: ${SAFEAI_JWT_AUDIENCE:safeai-desk-api}
 
 safeai:
+  knowledge:
+    storage:
+      type: ${SAFEAI_KNOWLEDGE_STORAGE_TYPE:local}
+      local-root: ${SAFEAI_KNOWLEDGE_STORAGE_ROOT:./var/knowledge-objects}
+      max-upload-bytes: ${SAFEAI_KNOWLEDGE_MAX_UPLOAD_BYTES:26214400}
+      endpoint: ${SAFEAI_KNOWLEDGE_S3_ENDPOINT:}
+      access-key: ${SAFEAI_KNOWLEDGE_S3_ACCESS_KEY:}
+      secret-key: ${SAFEAI_KNOWLEDGE_S3_SECRET_KEY:}
+      bucket: ${SAFEAI_KNOWLEDGE_S3_BUCKET:safeai-knowledge}
   platform:
     organization-id: ${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}
 

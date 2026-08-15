@@ -173,22 +173,10 @@ export async function getKnowledgeBases(
     )
 }
 
-/*
- * Намеренно нет отдельного
- * getKnowledgeBase(id).
- *
- * Текущий UI работает с объектами,
- * полученными через getKnowledgeBases().
- *
- * Неиспользуемый wrapper для
- * GET /api/knowledge-bases/{id}
- * удалён, чтобы не держать dead code.
- *
- * Сам backend endpoint удалять не нужно:
- * он понадобится при отдельной details-page,
- * deep link или независимой перезагрузке
- * конкретной Knowledge Base.
- */
+export async function getKnowledgeBase(knowledgeBaseId:string,options:RequestOptions={}):Promise<KnowledgeBase>{
+    const response=await apiRequest<unknown>(`${BASE_PATH}/${uuidPathSegment(knowledgeBaseId)}`,{method:'GET',signal:options.signal,timeoutMs:API_TIMEOUTS.default})
+    return parseKnowledgeBase(response,'knowledgeBase')
+}
 
 export async function createKnowledgeBase(
     request:

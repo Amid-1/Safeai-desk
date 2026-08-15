@@ -225,6 +225,7 @@ npm install
 Запусти frontend:
 
 ```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk/frontend
 npm run dev
 ```
 

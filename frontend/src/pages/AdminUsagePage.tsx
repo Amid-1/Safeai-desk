@@ -31,6 +31,7 @@ import {
     normalizePageResponse,
 } from '../utils/page'
 import {
+    toUtcExclusiveEndOfDayIso,
     toUtcStartOfDayIso,
 } from '../utils/date'
 import {
@@ -43,6 +44,7 @@ import PageErrorBoundary
 import {
     useAuth,
 } from '../auth/AuthContext'
+import './AdminUsagePage.css'
 
 const PAGE_SIZE = 50
 const UUID_PATTERN =
@@ -150,15 +152,11 @@ function AdminUsagePageContent() {
             setError('')
 
             try {
-                /*
-                 * В URL страницы сохраняются удобные date-only значения
-                 * YYYY-MM-DD, но backend-контракт usage принимает Instant.
-                 * DateTo уже является EXCLUSIVE границей, поэтому обе даты
-                 * преобразуются в начало соответствующего UTC-дня без +1 дня.
-                 */
+                // В интерфейсе обе календарные даты включительны.
+                // Backend по-прежнему получает exclusive dateTo.
                 const dateFilter = {
                     dateFrom: toUtcStartOfDayIso(appliedDateFrom),
-                    dateTo: toUtcStartOfDayIso(appliedDateTo),
+                    dateTo: toUtcExclusiveEndOfDayIso(appliedDateTo),
                 }
 
                 if (tab === 'summary') {
@@ -455,34 +453,40 @@ function AdminUsagePageContent() {
     }
 
     return (
-        <div className="page">
-            <h1>Использование AI</h1>
+        <div className="page usage-page">
+            <header className="usage-page__header">
+                <div>
+                    <h1>Использование AI</h1>
+                    <p className="muted">
+                        Контролируйте расход токенов, стоимость и качество данных.
+                    </p>
+                </div>
+                <div className="usage-scope" aria-label="Область отчёта">
+                    <span className="usage-scope__label">Отчёт</span>
+                    <strong>
+                        {isSuperAdmin
+                            ? effectiveOrganizationId
+                                ? 'Выбранная организация'
+                                : 'Все организации'
+                            : 'Моя организация'}
+                    </strong>
+                </div>
+            </header>
 
-            <div className="card">
-                <strong>
-                    Scope:
-                    {' '}
-                    {isSuperAdmin
-                        ? effectiveOrganizationId
-                            ? `ORGANIZATION — ${effectiveOrganizationId}`
-                            : 'GLOBAL'
-                        : `ORGANIZATION — ${effectiveOrganizationId ?? '—'}`}
-                </strong>
-                <p className="muted">
-                    Период интерпретируется как UTC calendar days.
-                    {' '}
-                    DateTo является exclusive.
-                    {' '}
-                    Денежные суммы не агрегируются в JavaScript.
-                </p>
-            </div>
+            <section
+                className="card usage-filters"
+                aria-labelledby="usage-filters-title"
+            >
+                <div className="usage-section-heading">
+                    <div>
+                        <h2 id="usage-filters-title">Период и фильтры</h2>
+                        <p className="muted">Обе даты включены в отчёт.</p>
+                    </div>
+                </div>
 
-            <div className="card form-card">
-                <h2>Фильтры</h2>
-
-                <div className="form">
+                <div className="usage-filter-grid">
                     <label>
-                        Дата с
+                        С
                         <input
                             type="date"
                             value={draftDateFrom}
@@ -495,7 +499,7 @@ function AdminUsagePageContent() {
                     </label>
 
                     <label>
-                        Дата по (exclusive)
+                        По
                         <input
                             type="date"
                             value={draftDateTo}
@@ -507,27 +511,23 @@ function AdminUsagePageContent() {
                         />
                     </label>
 
-                    <label>
-                        Модель
-                        <input
-                            value={draftModel}
-                            onChange={(event) =>
-                                setDraftModel(
-                                    event.target.value,
-                                )
-                            }
-                            maxLength={100}
-                            disabled={tab !== 'summary'}
-                            placeholder="например, mock-safeai"
-                        />
-                        <small className="muted">
-                            Фильтр модели применяется только к вкладке «Сводка».
-                        </small>
-                    </label>
+                    {tab === 'summary' && (
+                        <label>
+                            Модель
+                            <input
+                                value={draftModel}
+                                onChange={(event) =>
+                                    setDraftModel(event.target.value)
+                                }
+                                maxLength={100}
+                                placeholder="Все модели"
+                            />
+                        </label>
+                    )}
 
                     {isSuperAdmin && (
                         <label>
-                            Организация UUID
+                            Организация
                             <input
                                 value={draftOrganizationId}
                                 onChange={(event) =>
@@ -536,66 +536,82 @@ function AdminUsagePageContent() {
                                     )
                                 }
                                 maxLength={36}
-                                placeholder="пусто = все организации"
+                                placeholder="UUID или все организации"
                             />
+                            <small className="muted">
+                                Оставьте пустым для общего отчёта.
+                            </small>
                         </label>
                     )}
-
-                    {filterError && (
-                        <div
-                            className="error"
-                            role="alert"
-                        >
-                            {filterError}
-                        </div>
-                    )}
-
-                    <div className="modal-actions">
-                        <button
-                            type="button"
-                            disabled={loading}
-                            onClick={applyFilters}
-                        >
-                            Применить фильтры
-                        </button>
-                        <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={loading}
-                            onClick={resetFilters}
-                        >
-                            Сбросить к 30 дням
-                        </button>
-                    </div>
                 </div>
-            </div>
 
-            <div className="user-toolbar">
-                <TabButton
-                    active={tab === 'summary'}
-                    onClick={() => selectTab('summary')}
+                {filterError && (
+                    <div className="error" role="alert">
+                        {filterError}
+                    </div>
+                )}
+
+                <div className="usage-filter-actions">
+                    <button
+                        type="button"
+                        disabled={loading}
+                        onClick={applyFilters}
+                    >
+                        Показать
+                    </button>
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={loading}
+                        onClick={resetFilters}
+                    >
+                        Последние 30 дней
+                    </button>
+                </div>
+            </section>
+
+            <section
+                className="usage-report"
+                aria-labelledby="usage-report-title"
+            >
+                <div
+                    className="usage-tabs"
+                    role="tablist"
+                    aria-label="Вид отчёта"
                 >
-                    Сводка
-                </TabButton>
-                <TabButton
-                    active={tab === 'users'}
-                    onClick={() => selectTab('users')}
-                >
-                    По пользователям
-                </TabButton>
-                <TabButton
-                    active={tab === 'models'}
-                    onClick={() => selectTab('models')}
-                >
-                    По моделям
-                </TabButton>
-                <TabButton
-                    active={tab === 'daily'}
-                    onClick={() => selectTab('daily')}
-                >
-                    По дням
-                </TabButton>
-            </div>
+                    <TabButton
+                        active={tab === 'summary'}
+                        onClick={() => selectTab('summary')}
+                    >
+                        Сводка
+                    </TabButton>
+                    <TabButton
+                        active={tab === 'users'}
+                        onClick={() => selectTab('users')}
+                    >
+                        По пользователям
+                    </TabButton>
+                    <TabButton
+                        active={tab === 'models'}
+                        onClick={() => selectTab('models')}
+                    >
+                        По моделям
+                    </TabButton>
+                    <TabButton
+                        active={tab === 'daily'}
+                        onClick={() => selectTab('daily')}
+                    >
+                        По дням
+                    </TabButton>
+                </div>
+                <div className="usage-report-heading">
+                    <h2 id="usage-report-title">
+                        {reportTitle(tab)}
+                    </h2>
+                    <p className="muted">
+                        {reportDescription(tab)}
+                    </p>
+                </div>
 
             {loading && (
                 <LoadingState
@@ -630,7 +646,7 @@ function AdminUsagePageContent() {
                     />
 
                     {(tab === 'summary'
-                        || tab === 'users')
+                        || tab === 'users') && rows.length > 0
                         && (
                             <div className="pagination">
                                 <button
@@ -660,6 +676,7 @@ function AdminUsagePageContent() {
                         )}
                 </div>
             )}
+            </section>
         </div>
     )
 }
@@ -677,8 +694,8 @@ function UsageRows({
     if (rows.length === 0) {
         return (
             <EmptyState
-                title="Нет данных"
-                message="За выбранный период данные использования не найдены."
+                title="За этот период использования нет"
+                message="Данные появятся после завершённых обращений к AI. Выберите другой период или покажите последние 30 дней."
             />
         )
     }
@@ -773,7 +790,7 @@ function UsageRows({
         <table className="admin-table usage-table">
             <thead>
                 <tr>
-                    <th>Дата UTC</th>
+                    <th>Дата</th>
                     <th>Вход</th>
                     <th>Выход</th>
                     <th>Всего</th>
@@ -787,8 +804,6 @@ function UsageRows({
                         <tr key={row.usageDate}>
                             <td>
                                 {formatIsoDate(row.usageDate)}
-                                {' '}
-                                ({row.aggregationZone})
                             </td>
                             <UsageAmountCells row={row} />
                         </tr>
@@ -868,32 +883,32 @@ function CoverageView({
     coverage: UsageCoverage
 }) {
     const usageText = coverage.usageComplete === true
-        ? 'usage: полно'
+        ? 'Токены учтены полностью'
         : coverage.usageComplete === false
-            ? 'usage: неполно'
-            : 'usage: статус неизвестен'
+            ? 'Токены учтены частично'
+            : 'Полнота токенов неизвестна'
 
     const pricingText = coverage.pricingComplete === true
-        ? 'pricing: полно'
+        ? 'Стоимость рассчитана'
         : coverage.pricingComplete === false
-            ? 'pricing: неполно'
-            : 'pricing: статус неизвестен'
+            ? 'Стоимость рассчитана частично'
+            : 'Полнота стоимости неизвестна'
 
     const details = [
         countPart(
-            'partial',
+            'частичных ответов',
             coverage.partialUsageMessages,
         ),
         countPart(
-            'missing',
+            'без данных',
             coverage.missingUsageMessages,
         ),
         countPart(
-            'unpriced',
+            'без цены',
             coverage.unpricedMessages,
         ),
         countPart(
-            'pricing errors',
+            'ошибок расчёта',
             coverage.pricingFailedMessages,
         ),
     ].filter(Boolean)
@@ -923,6 +938,8 @@ function TabButton({
     return (
         <button
             type="button"
+            role="tab"
+            aria-selected={active}
             className={
                 active
                     ? 'filter-button active'
@@ -951,8 +968,8 @@ function validateFilters(
         return 'Некорректная календарная дата.'
     }
 
-    if (dateFrom >= dateTo) {
-        return 'Дата с должна быть раньше даты по.'
+    if (dateFrom > dateTo) {
+        return 'Дата начала не может быть позже даты окончания.'
     }
 
     const rangeDays = Math.round(
@@ -962,7 +979,7 @@ function validateFilters(
         ) / 86_400_000,
     )
 
-    if (rangeDays > 366) {
+    if (rangeDays + 1 > 366) {
         return 'Период не должен превышать 366 дней.'
     }
 
@@ -989,9 +1006,7 @@ function defaultUtcRange(): {
     dateTo.setUTCHours(0, 0, 0, 0)
 
     const dateFrom = new Date(dateTo)
-    dateFrom.setUTCDate(
-        dateFrom.getUTCDate() - 30,
-    )
+    dateFrom.setUTCDate(dateFrom.getUTCDate() - 29)
 
     return {
         dateFrom: dateFrom
@@ -1011,6 +1026,32 @@ function parseTab(value: string | null): Tab {
             return value
         default:
             return 'summary'
+    }
+}
+
+function reportTitle(tab: Tab): string {
+    switch (tab) {
+        case 'users':
+            return 'Расход по сотрудникам'
+        case 'models':
+            return 'Расход по моделям'
+        case 'daily':
+            return 'Динамика использования'
+        default:
+            return 'Детальная сводка'
+    }
+}
+
+function reportDescription(tab: Tab): string {
+    switch (tab) {
+        case 'users':
+            return 'Суммарные токены и стоимость для каждого сотрудника.'
+        case 'models':
+            return 'Сравнение объёма и стоимости используемых AI-моделей.'
+        case 'daily':
+            return 'Изменение расхода токенов и стоимости по календарным дням.'
+        default:
+            return 'Использование с разбивкой по сотрудникам и моделям.'
     }
 }
 

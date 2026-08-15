@@ -10,9 +10,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 @Documented
-@Constraint(
-        validatedBy = PasswordValidator.class
-)
+@Constraint(validatedBy = PasswordValidator.class)
 @Target({
         ElementType.FIELD,
         ElementType.PARAMETER,
@@ -22,12 +20,9 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface ValidPassword {
 
-    String message()
-            default PasswordPolicy.MESSAGE;
+    String message() default PasswordPolicy.MESSAGE;
 
-    Class<?>[] groups()
-            default {};
+    Class<?>[] groups() default {};
 
-    Class<? extends Payload>[] payload()
-            default {};
+    Class<? extends Payload>[] payload() default {};
 }

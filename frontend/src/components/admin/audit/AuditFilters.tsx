@@ -199,8 +199,11 @@ function AuditFilters({
             }
         >
             <h2 id="audit-filters-title">
-                Фильтры аудита
+                Найти события
             </h2>
+            <p className="muted audit-filters__subtitle">
+                Уточните тип события, участника или период.
+            </p>
 
             <div className="form">
                 <label>
@@ -341,8 +344,7 @@ function AuditFilters({
                 )}
 
                 <label>
-                    Поиск по справочнику
-                    инициаторов
+                    Найти пользователя
 
                     <input
                         type="search"
@@ -360,11 +362,6 @@ function AuditFilters({
                         }
                     />
 
-                    <small className="muted">
-                        Поиск обновляет список.
-                        Он не изменяет фильтр
-                        автоматически.
-                    </small>
                 </label>
 
                 <label>
@@ -416,8 +413,7 @@ function AuditFilters({
                 </label>
 
                 <label>
-                    Email инициатора
-                    или префикс
+                    Email пользователя
 
                     <input
                         type="search"
@@ -456,7 +452,7 @@ function AuditFilters({
                             'audit-date-presets__label'
                         }
                     >
-                        Быстрый период
+                        Период
                     </span>
 
                     <div
@@ -572,12 +568,8 @@ function AuditFilters({
                     />
                 </label>
 
-                <small className="muted">
-                    Период трактуется как
-                    локальные календарные дни
-                    часового пояса браузера.
-                    Конечная дата включается
-                    полностью.
+                <small className="muted audit-date-help">
+                    Обе даты включены в отчёт.
                 </small>
 
                 {filtersDirty && (
@@ -588,9 +580,7 @@ function AuditFilters({
                         role="status"
                         aria-live="polite"
                     >
-                        Фильтры изменены.
-                        Нажмите
-                        «Применить фильтры».
+                        Есть несохранённые изменения фильтров.
                     </div>
                 )}
 
@@ -624,7 +614,7 @@ function AuditFilters({
                         }
                         onClick={onApply}
                     >
-                        Применить фильтры
+                        Показать события
                     </button>
 
                     <button
@@ -635,7 +625,7 @@ function AuditFilters({
                         disabled={loading}
                         onClick={onReset}
                     >
-                        Сбросить к 30 дням
+                        Последние 30 дней
                     </button>
                 </div>
             </div>

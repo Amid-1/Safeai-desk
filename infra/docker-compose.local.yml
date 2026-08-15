@@ -32,6 +32,11 @@ services:
       REDIS_PORT: "6379"
       REDIS_PASSWORD: "${REDIS_PASSWORD}"
 
+      SAFEAI_KNOWLEDGE_STORAGE_TYPE: s3
+      SAFEAI_KNOWLEDGE_S3_ENDPOINT: http://minio:9000
+      SAFEAI_KNOWLEDGE_S3_ACCESS_KEY: "${MINIO_ROOT_USER:-safeai}"
+      SAFEAI_KNOWLEDGE_S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-safeai-local-change-me}"
+
     ports:
       - target: 8080
         published: "8080"
@@ -42,6 +47,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
     healthcheck:
@@ -130,9 +137,32 @@ services:
     logging: *default-logging
     restart: unless-stopped
 
+  minio:
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-safeai}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-safeai-local-change-me}"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - safeai_minio_local_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - safeai_local
+    logging: *default-logging
+    restart: unless-stopped
+
 volumes:
   safeai_postgres_local_data:
     name: safeai_postgres_local_data
+  safeai_minio_local_data:
+    name: safeai_minio_local_data
 
 networks:
   safeai_local:

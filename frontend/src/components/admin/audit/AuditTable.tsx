@@ -118,7 +118,10 @@ function AuditTable({
                                         >
                                             <span
                                                 className={
-                                                    'event-type-badge'
+                                                    'event-type-badge '
+                                                    + getEventToneClass(
+                                                        event.eventType,
+                                                    )
                                                 }
                                             >
                                                 {
@@ -168,7 +171,7 @@ function AuditTable({
                                                             )
                                                         }
                                                     >
-                                                        Показать детали
+                                                        Подробнее
                                                     </button>
                                                 )}
 
@@ -249,3 +252,29 @@ function OrganizationCell({
 }
 
 export default AuditTable
+
+function getEventToneClass(eventType: string): string {
+    if (eventType.includes('FAILED')
+        || eventType.includes('EXCEEDED')
+        || eventType.includes('SECURITY_')
+        || eventType.includes('DELETED')) {
+        return 'event-type-badge--danger'
+    }
+
+    if (eventType.includes('LOGIN_SUCCESS')
+        || eventType.includes('CREATED')
+        || eventType.includes('ADDED')) {
+        return 'event-type-badge--success'
+    }
+
+    if (eventType.startsWith('KNOWLEDGE_')) {
+        return 'event-type-badge--knowledge'
+    }
+
+    if (eventType.startsWith('AI_')
+        || eventType.startsWith('CHAT_')) {
+        return 'event-type-badge--ai'
+    }
+
+    return 'event-type-badge--neutral'
+}

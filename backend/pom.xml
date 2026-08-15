@@ -32,6 +32,9 @@
         <java.version>21</java.version>
 
         <testcontainers.version>2.0.5</testcontainers.version>
+        <minio.version>8.6.0</minio.version>
+        <okhttp.version>5.1.0</okhttp.version>
+        <bouncycastle.version>1.84</bouncycastle.version>
         <commons-compress.version>1.28.0</commons-compress.version>
         <logstash-logback-encoder.version>
             9.0
@@ -70,10 +73,30 @@
                 <version>${commons-compress.version}</version>
             </dependency>
 
+            <!-- Security override for MinIO's transitive crypto provider. -->
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+
         </dependencies>
     </dependencyManagement>
 
     <dependencies>
+
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>${minio.version}</version>
+        </dependency>
+
+        <!-- MinIO 8.6 uses the OkHttp multiplatform facade; Java needs its JVM implementation. -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp-jvm</artifactId>
+            <version>${okhttp.version}</version>
+        </dependency>
 
         <!-- REST API, servlet stack, Spring MVC -->
         <dependency>

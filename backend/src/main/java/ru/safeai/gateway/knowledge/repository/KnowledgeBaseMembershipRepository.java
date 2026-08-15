@@ -22,6 +22,10 @@ public interface KnowledgeBaseMembershipRepository
             UUID userId
     );
 
+    Optional<KnowledgeBaseMembershipEntity> findByKnowledgeBaseIdAndOrganizationIdAndUserId(
+            UUID knowledgeBaseId, UUID organizationId, UUID userId
+    );
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select membership

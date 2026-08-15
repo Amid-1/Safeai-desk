@@ -355,15 +355,16 @@ function KnowledgeMembersModal({
                 size="lg"
             >
                 <p className="modal-subtitle">
-                    Участники — resource-level
-                    permissions. Они не создают
-                    новые глобальные роли.
+                    Добавляйте сотрудников организации и назначайте им права
+                    только на эту базу знаний.
                 </p>
 
                 <div className="knowledge-member-search">
                     <label>
-                        Найти пользователя организации
+                        Добавить сотрудника
                         <input
+                            aria-label="Имя или email сотрудника"
+                            placeholder="Введите имя или email"
                             value={query}
                             maxLength={255}
                             onChange={(event) =>
@@ -447,7 +448,7 @@ function KnowledgeMembersModal({
                                                     )
                                                 }
                                             >
-                                                Добавить
+                                                Добавить как наблюдателя
                                             </button>
                                         </div>
                                     ),
@@ -490,13 +491,10 @@ function KnowledgeMembersModal({
                                     <thead>
                                         <tr>
                                             <th>
-                                                Пользователь
+                                                Участник базы
                                             </th>
                                             <th>
-                                                Доступ
-                                            </th>
-                                            <th>
-                                                Версия
+                                                Уровень доступа
                                             </th>
                                             <th>
                                                 Действия
@@ -530,6 +528,7 @@ function KnowledgeMembersModal({
 
                                                         <td>
                                                             <select
+                                                                aria-label={`Уровень доступа для ${member.email}`}
                                                                 value={
                                                                     member.accessLevel
                                                                 }
@@ -546,21 +545,15 @@ function KnowledgeMembersModal({
                                                                 }
                                                             >
                                                                 <option value="VIEWER">
-                                                                    VIEWER
+                                                                    Наблюдатель
                                                                 </option>
                                                                 <option value="EDITOR">
-                                                                    EDITOR
+                                                                    Редактор
                                                                 </option>
                                                                 <option value="OWNER">
-                                                                    OWNER
+                                                                    Владелец
                                                                 </option>
                                                             </select>
-                                                        </td>
-
-                                                        <td>
-                                                            {
-                                                                member.version
-                                                            }
                                                         </td>
 
                                                         <td>
@@ -606,10 +599,10 @@ function KnowledgeMembersModal({
                 />
 
                 <p className="knowledge-members-note">
-                    В V38 VIEWER/EDITOR/OWNER
-                    задают membership. Права
-                    EDITOR/OWNER на документы
-                    будут активированы в V39.
+                    Наблюдатель читает и скачивает документы. Редактор также
+                    загружает документы и новые версии. Владелец управляет
+                    настройками базы и доступом других сотрудников. Изменение
+                    уровня сохраняется сразу.
                 </p>
 
                 <div className="modal-actions">
@@ -625,10 +618,11 @@ function KnowledgeMembersModal({
 
             {removeTarget && (
                 <ConfirmDialog
-                    title="Удалить доступ"
+                    title="Удалить персональный доступ?"
                     message={
-                        `Удалить ${removeTarget.email} `
-                        + 'из этой базы знаний?'
+                        knowledgeBase.visibility === 'MEMBERS'
+                            ? `${removeTarget.fullName ?? removeTarget.email} больше не сможет открывать эту базу знаний и скачивать её документы.`
+                            : `Персональные права для ${removeTarget.fullName ?? removeTarget.email} будут удалены. База доступна всей организации, поэтому сотрудник сохранит просмотр документов как наблюдатель.`
                     }
                     confirmText="Удалить доступ"
                     danger

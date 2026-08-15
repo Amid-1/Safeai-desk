@@ -293,16 +293,6 @@ function KnowledgePage() {
                 )}
             </header>
 
-            <div
-                className="knowledge-foundation-note"
-                role="status"
-            >
-                V38 создаёт tenant-aware
-                Knowledge Base и доступы.
-                Документы, версии и RAG
-                подключаются в следующих этапах.
-            </div>
-
             {success && (
                 <div
                     className="success"
@@ -349,9 +339,8 @@ function KnowledgePage() {
                         message={
                             canManage
                                 ? (
-                                    'Создайте первую базу знаний. '
-                                    + 'Документы будут подключены '
-                                    + 'на следующем этапе.'
+                                    'Создайте первую базу для '
+                                    + 'корпоративных документов и инструкций.'
                                 )
                                 : (
                                     'Вам пока не доступна '

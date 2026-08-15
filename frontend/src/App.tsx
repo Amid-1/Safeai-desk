@@ -27,6 +27,9 @@ const AdminOrganizationsPage = lazy(
 const KnowledgePage = lazy(
     () => import('./pages/KnowledgePage'),
 )
+const KnowledgeDetailsPage = lazy(
+    () => import('./pages/KnowledgeDetailsPage'),
+)
 const AdminAuditPage = lazy(
     () => import('./pages/AdminAuditPage'),
 )
@@ -410,6 +413,10 @@ function AppLayout() {
                                     <KnowledgePage />
                                 </ProtectedRoute>
                             }
+                        />
+                        <Route
+                            path="/knowledge/:knowledgeBaseId"
+                            element={<ProtectedRoute roles={['ADMIN','USER']}><KnowledgeDetailsPage /></ProtectedRoute>}
                         />
 
                         <Route
