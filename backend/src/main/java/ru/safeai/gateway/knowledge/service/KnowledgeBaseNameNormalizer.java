@@ -12,38 +12,111 @@ public final class KnowledgeBaseNameNormalizer {
     }
 
     public static String normalize(String value) {
-        Objects.requireNonNull(value, "value не должен быть null");
+        Objects.requireNonNull(
+                value,
+                "value не должен быть null"
+        );
 
-        for (int offset = 0; offset < value.length(); ) {
-            int codePoint = value.codePointAt(offset);
+        validateNoControlCharacters(value);
 
-            if (Character.isISOControl(codePoint)) {
-                throw new BadRequestException(
-                        "Название базы знаний содержит управляющие символы"
-                );
+        String normalized =
+                normalizeWhitespace(value);
+
+        validateNotBlank(normalized);
+        validateLength(normalized);
+
+        return normalized;
+    }
+
+    private static void validateNoControlCharacters(
+            String value
+    ) {
+        value.codePoints()
+                .filter(Character::isISOControl)
+                .findFirst()
+                .ifPresent(codePoint -> {
+                    throw new BadRequestException(
+                            "Название базы знаний содержит управляющие символы"
+                    );
+                });
+    }
+
+    private static String normalizeWhitespace(
+            String value
+    ) {
+        String stripped = value.strip();
+        StringBuilder result =
+                new StringBuilder(stripped.length());
+
+        boolean previousWasWhitespace = false;
+
+        for (
+                int offset = 0;
+                offset < stripped.length();
+        ) {
+            int codePoint =
+                    stripped.codePointAt(offset);
+
+            boolean whitespace =
+                    Character.isWhitespace(codePoint)
+                            || Character.isSpaceChar(codePoint);
+
+            if (whitespace) {
+                if (
+                        !previousWasWhitespace
+                                && !result.isEmpty()
+                ) {
+                    result.append(' ');
+                }
+
+                previousWasWhitespace = true;
+            } else {
+                result.appendCodePoint(codePoint);
+                previousWasWhitespace = false;
             }
 
-            offset += Character.charCount(codePoint);
+            offset += Character.charCount(
+                    codePoint
+            );
         }
 
-        String normalized = value
-                .strip()
-                .replaceAll("\\s+", " ");
+        int length = result.length();
 
-        if (normalized.isEmpty()) {
+        if (
+                length > 0
+                        && result.charAt(length - 1) == ' '
+        ) {
+            result.setLength(length - 1);
+        }
+
+        return result.toString();
+    }
+
+    private static void validateNotBlank(
+            String value
+    ) {
+        if (value.isEmpty()) {
             throw new BadRequestException(
                     "Название базы знаний не должно быть пустым"
             );
         }
+    }
 
-        if (normalized.length() > MAX_LENGTH) {
+    private static void validateLength(
+            String value
+    ) {
+        int characterCount =
+                value.codePointCount(
+                        0,
+                        value.length()
+                );
+
+        if (characterCount > MAX_LENGTH) {
             throw new BadRequestException(
                     "Название базы знаний не должно превышать "
                             + MAX_LENGTH
                             + " символов"
             );
         }
-
-        return normalized;
     }
 }
