@@ -137,7 +137,7 @@ function KnowledgePage() {
                 if (
                     response.totalPages > 0
                     && targetPage
-                        >= response.totalPages
+                    >= response.totalPages
                 ) {
                     setPage(
                         response.totalPages - 1,
@@ -218,7 +218,7 @@ function KnowledgePage() {
                     form.description.trim()
                     || null,
                 visibility:
-                    form.visibility,
+                form.visibility,
             })
 
             setCreateOpen(false)
@@ -251,11 +251,11 @@ function KnowledgePage() {
                         form.description.trim()
                         || null,
                     visibility:
-                        form.visibility,
+                    form.visibility,
                     enabled:
-                        form.enabled,
+                    form.enabled,
                     expectedVersion:
-                        editing.version,
+                    editing.version,
                 },
             )
 
@@ -330,7 +330,7 @@ function KnowledgePage() {
             {!error
                 && !loading
                 && basePage.content.length
-                    === 0
+                === 0
                 && (
                     <EmptyState
                         title={
@@ -353,7 +353,7 @@ function KnowledgePage() {
             {!error
                 && !loading
                 && basePage.content.length
-                    > 0
+                > 0
                 && (
                     <>
                         <div className="knowledge-grid">
@@ -433,9 +433,9 @@ function KnowledgePage() {
                             editing.description
                             ?? '',
                         visibility:
-                            editing.visibility,
+                        editing.visibility,
                         enabled:
-                            editing.enabled,
+                        editing.enabled,
                     }}
                     busy={busy}
                     allowEnabled

@@ -243,7 +243,7 @@ Control + C
 
 ```bash
 cd ~/Workspace/Projects/Products/SafeAI-Desk/backend
-./mvnw test
+./mvnw clean test
 ```
 
 Очистка backend-сборки:
@@ -358,4 +358,64 @@ tail -f .local-run/frontend.log
 
 ```bash
 ./scripts/stop-local.sh
+```
+
+# MinIO в локальной разработке SafeAI Desk
+
+http://localhost:9001
+
+Локальные данные для входа:
+```text
+Login:    safeai
+Password: safeai-local-change-me
+```
+
+## Что такое MinIO
+
+MinIO — это локальное объектное хранилище с S3-compatible API.
+
+В SafeAI Desk оно используется для хранения самих файлов Knowledge Base:
+
+- PDF
+- DOCX
+- TXT
+- MD
+- других загружаемых документов
+
+При этом PostgreSQL хранит не сами файлы, а их метаданные:
+
+- идентификатор документа
+- принадлежность к Knowledge Base
+- имя файла
+- версию
+- статус обработки
+- размер
+- storage/object key
+- другую служебную информацию
+
+Схема:
+
+```text
+SafeAI Backend
+     │
+     ├── PostgreSQL
+     │     └── metadata документов
+     │
+     └── MinIO
+           └── реальные байты файлов
+```
+
+```text
+SafeAI Backend
+     │
+     ├── PostgreSQL :5432
+     │     └── users, organizations, knowledge_documents,
+     │         knowledge_document_versions, jobs, metadata...
+     │
+     ├── Redis :6379
+     │     └── cache, locks, rate limits
+     │
+     └── MinIO :9000
+           └── bucket safeai-knowledge
+                 └── реальные загруженные файлы
 ```

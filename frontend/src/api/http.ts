@@ -131,6 +131,7 @@ const PUBLIC_MESSAGE_ERROR_CODES = new Set([
     'CHAT_LEASE_UNAVAILABLE',
     'CHAT_PROCESSOR_FENCED',
     'RESOURCE_CONFLICT',
+    'CONFLICT',
 ])
 
 const MAX_ERROR_BODY_BYTES = 64 * 1024
@@ -166,12 +167,19 @@ export function subscribeUnauthorized(
     }
 }
 
-export function getApiErrorMessage(
+export type ApiErrorPresentation = {
+    message: string
+    requestId?: string
+}
+
+export function getApiErrorPresentation(
     error: unknown,
     fallback: string,
-): string {
+): ApiErrorPresentation {
     if (!(error instanceof ApiError)) {
-        return fallback
+        return {
+            message: fallback,
+        }
     }
 
     const fieldErrorText = formatFieldErrors(
@@ -183,15 +191,61 @@ export function getApiErrorMessage(
         ? error.message
         : ''
 
-    const requestIdPart = error.requestId
-        ? ` Request ID: ${error.requestId}`
-        : ''
+    const requestId =
+        shouldShowRequestId(error)
+            ? error.requestId
+            : undefined
+
+    return {
+        message:
+            fieldErrorText
+            || publicMessage
+            || fallback,
+        requestId,
+    }
+}
+
+export function getApiErrorMessage(
+    error: unknown,
+    fallback: string,
+): string {
+    const presentation =
+        getApiErrorPresentation(
+            error,
+            fallback,
+        )
+
+    const requestIdPart =
+        presentation.requestId
+            ? ` Request ID: ${presentation.requestId}`
+            : ''
 
     return `${
-        fieldErrorText
-        || publicMessage
-        || fallback
+        presentation.message
     }${requestIdPart}`
+}
+
+function shouldShowRequestId(
+    error: ApiError,
+): boolean {
+    if (!error.requestId) {
+        return false
+    }
+
+    /*
+     * Ожидаемые клиентские ошибки (400/409/413/429 и другие 4xx)
+     * пользователь может исправить сам, поэтому технический идентификатор
+     * запроса в UI только создаёт шум.
+     *
+     * Для 5xx Request ID полезен службе поддержки для поиска конкретного
+     * запроса в backend/proxy logs.
+     *
+     * status === 0 используется клиентом для сетевых/transport ошибок:
+     * запрос мог успеть уйти на сервер, поэтому ID также полезен
+     * для диагностики.
+     */
+    return error.status === 0
+        || error.status >= 500
 }
 
 export function validateApiBasePath(
