@@ -6,17 +6,27 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ProductionSecurityStartupContractTest {
 
-    private static final String VALID_SECRET =
-            Base64.getEncoder()
-                    .encodeToString(
-                            new byte[32]
-                    );
+    private static final String ACTIVE_KEY_ID =
+            "test-active-key";
+
+    private static final KeyPair RSA_KEY_PAIR =
+            generateRsaKeyPair();
+
+    private static final String PUBLIC_KEY =
+            toPublicKeyPem();
+
+    private static final String PRIVATE_KEY =
+            toPrivateKeyPem();
 
     private final ApplicationContextRunner contextRunner =
             new ApplicationContextRunner()
@@ -33,8 +43,19 @@ class ProductionSecurityStartupContractTest {
                     .withPropertyValues(
                             "app.security.jwt.expiration-minutes=15",
                             "app.security.jwt.audience=safeai-desk-api",
-                            "safeai.cors.allowed-origins[0]=https://app.example.com",
-                            "safeai.security.client-ip.trusted-proxy-cidrs[0]=172.28.0.0/24",
+                            "app.security.jwt.active-key-id="
+                                    + ACTIVE_KEY_ID,
+                            "app.security.jwt.keys[0].id="
+                                    + ACTIVE_KEY_ID,
+                            "app.security.jwt.keys[0].public-key="
+                                    + PUBLIC_KEY,
+                            "app.security.jwt.keys[0].private-key="
+                                    + PRIVATE_KEY,
+                            "safeai.cors.allowed-origins[0]="
+                                    + "https://app.example.com",
+                            "safeai.security.client-ip."
+                                    + "trusted-proxy-cidrs[0]="
+                                    + "172.28.0.0/24",
                             "server.forward-headers-strategy=none"
                     );
 
@@ -42,8 +63,6 @@ class ProductionSecurityStartupContractTest {
     void prodWithNonUriIssuerFailsStartup() {
         contextRunner
                 .withPropertyValues(
-                        "app.security.jwt.secret="
-                                + VALID_SECRET,
                         "app.security.jwt.issuer=safeai-desk"
                 )
                 .run(context ->
@@ -56,12 +75,8 @@ class ProductionSecurityStartupContractTest {
     void prodWithHttpIssuerFailsStartup() {
         contextRunner
                 .withPropertyValues(
-                        "app.security.jwt.secret="
-                                + VALID_SECRET,
                         "app.security.jwt.issuer="
-                                + insecureHttpUrl(
-                                        "safeai.example.com"
-                                )
+                                + insecureHttpIssuer()
                 )
                 .run(context ->
                         assertThat(context)
@@ -73,9 +88,8 @@ class ProductionSecurityStartupContractTest {
     void prodWithHttpsIssuerStarts() {
         contextRunner
                 .withPropertyValues(
-                        "app.security.jwt.secret="
-                                + VALID_SECRET,
-                        "app.security.jwt.issuer=https://safeai.example.com"
+                        "app.security.jwt.issuer="
+                                + "https://safeai.example.com"
                 )
                 .run(context ->
                         assertThat(context)
@@ -83,43 +97,75 @@ class ProductionSecurityStartupContractTest {
                 );
     }
 
-    @Test
-    void prodWithShortDecodedSecretFailsStartup() {
-        String shortSecret =
-                Base64.getEncoder()
+    private static String insecureHttpIssuer() {
+        return String.join(
+                "",
+                "http",
+                "://",
+                "safeai.example.com"
+        );
+    }
+
+    private static KeyPair generateRsaKeyPair() {
+        try {
+            KeyPairGenerator generator =
+                    KeyPairGenerator.getInstance(
+                            "RSA"
+                    );
+
+            generator.initialize(
+                    2048
+            );
+
+            return generator.generateKeyPair();
+        } catch (GeneralSecurityException exception) {
+            throw new IllegalStateException(
+                    "Не удалось создать RSA key pair для теста",
+                    exception
+            );
+        }
+    }
+
+    private static String toPublicKeyPem() {
+        return toPem(
+                "PUBLIC KEY",
+                RSA_KEY_PAIR
+                        .getPublic()
+                        .getEncoded()
+        );
+    }
+
+    private static String toPrivateKeyPem() {
+        return toPem(
+                "PRIVATE KEY",
+                RSA_KEY_PAIR
+                        .getPrivate()
+                        .getEncoded()
+        );
+    }
+
+    private static String toPem(
+            String type,
+            byte[] encoded
+    ) {
+        String body =
+                Base64.getMimeEncoder(
+                                64,
+                                "\n".getBytes(
+                                        StandardCharsets.US_ASCII
+                                )
+                        )
                         .encodeToString(
-                                new byte[31]
+                                encoded
                         );
 
-        contextRunner
-                .withPropertyValues(
-                        "app.security.jwt.secret="
-                                + shortSecret,
-                        "app.security.jwt.issuer=https://safeai.example.com"
-                )
-                .run(context ->
-                        assertThat(context)
-                                .hasFailed()
-                );
-    }
-
-    @Test
-    void prodWithNonBase64SecretFailsStartup() {
-        contextRunner
-                .withPropertyValues(
-                        "app.security.jwt.secret=not-base64!!!",
-                        "app.security.jwt.issuer=https://safeai.example.com"
-                )
-                .run(context ->
-                        assertThat(context)
-                                .hasFailed()
-                );
-    }
-
-    private static String insecureHttpUrl(
-            String authority
-    ) {
-        return String.join("", "http", "://", authority);
+        return "-----BEGIN "
+                + type
+                + "-----\n"
+                + body
+                + "\n-----END "
+                + type
+                + "-----";
     }
 
     @Configuration(proxyBeanMethods = false)

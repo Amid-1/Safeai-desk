@@ -1,8 +1,10 @@
 package ru.safeai.gateway.common.security;
 
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -28,7 +30,6 @@ class AccessTokenSubjectTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         7L,
                         11L,
                         Set.of("USER")
@@ -39,11 +40,6 @@ class AccessTokenSubjectTest {
 
         assertThat(subject.organizationId())
                 .isEqualTo(ORGANIZATION_ID);
-
-        assertThat(subject.email())
-                .isEqualTo(
-                        "user@example.com"
-                );
 
         assertThat(subject.tokenVersion())
                 .isEqualTo(7L);
@@ -62,7 +58,6 @@ class AccessTokenSubjectTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         1L,
                         2L,
                         Set.of(
@@ -127,15 +122,11 @@ class AccessTokenSubjectTest {
     }
 
     @Test
-    @SuppressWarnings("DataFlowIssue")
     void nullUserIdIsRejected() {
-        assertThatThrownBy(() ->
-                new AccessTokenSubject(
+        assertThat(
+                constructorFailure(
                         null,
                         ORGANIZATION_ID,
-                        "user@example.com",
-                        0L,
-                        0L,
                         Set.of("USER")
                 )
         )
@@ -148,15 +139,11 @@ class AccessTokenSubjectTest {
     }
 
     @Test
-    @SuppressWarnings("DataFlowIssue")
     void nullOrganizationIdIsRejected() {
-        assertThatThrownBy(() ->
-                new AccessTokenSubject(
+        assertThat(
+                constructorFailure(
                         USER_ID,
                         null,
-                        "user@example.com",
-                        0L,
-                        0L,
                         Set.of("USER")
                 )
         )
@@ -169,94 +156,11 @@ class AccessTokenSubjectTest {
     }
 
     @Test
-    @SuppressWarnings("DataFlowIssue")
-    void nullEmailIsRejected() {
-        assertThatThrownBy(() ->
-                new AccessTokenSubject(
-                        USER_ID,
-                        ORGANIZATION_ID,
-                        null,
-                        0L,
-                        0L,
-                        Set.of("USER")
-                )
-        )
-                .isInstanceOf(
-                        NullPointerException.class
-                )
-                .hasMessage(
-                        "email не должен быть null"
-                );
-    }
-
-    @Test
-    void blankEmailIsRejected() {
-        assertInvalidEmail(" ");
-    }
-
-    @Test
-    void emailWithLeadingWhitespaceIsRejected() {
-        assertInvalidEmail(
-                " user@example.com"
-        );
-    }
-
-    @Test
-    void emailWithTrailingWhitespaceIsRejected() {
-        assertInvalidEmail(
-                "user@example.com "
-        );
-    }
-
-    @Test
-    void uppercaseEmailIsRejectedBeforeTokenIssuance() {
-        assertInvalidEmail(
-                "User@example.com"
-        );
-    }
-
-    @Test
-    void emailLongerThan255CharactersIsRejected() {
-        String email =
-                "a".repeat(244)
-                        + "@example.com";
-
-        assertThat(email.length())
-                .isGreaterThan(255);
-
-        assertInvalidEmail(email);
-    }
-
-    @Test
-    void emailWithExactly255CharactersIsAccepted() {
-        String email =
-                "a".repeat(243)
-                        + "@example.com";
-
-        assertThat(email)
-                .hasSize(255);
-
-        AccessTokenSubject subject =
-                new AccessTokenSubject(
-                        USER_ID,
-                        ORGANIZATION_ID,
-                        email,
-                        0L,
-                        0L,
-                        Set.of("USER")
-                );
-
-        assertThat(subject.email())
-                .isEqualTo(email);
-    }
-
-    @Test
     void negativeTokenVersionIsRejected() {
         assertThatThrownBy(() ->
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         -1L,
                         0L,
                         Set.of("USER")
@@ -276,7 +180,6 @@ class AccessTokenSubjectTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         0L,
                         -1L,
                         Set.of("USER")
@@ -296,7 +199,6 @@ class AccessTokenSubjectTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         0L,
                         0L,
                         Set.of("USER")
@@ -316,7 +218,6 @@ class AccessTokenSubjectTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         Long.MAX_VALUE,
                         Long.MAX_VALUE,
                         Set.of("USER")
@@ -331,15 +232,11 @@ class AccessTokenSubjectTest {
     }
 
     @Test
-    @SuppressWarnings("DataFlowIssue")
     void nullRolesAreRejected() {
-        assertThatThrownBy(() ->
-                new AccessTokenSubject(
+        assertThat(
+                constructorFailure(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
-                        0L,
-                        0L,
                         null
                 )
         )
@@ -357,7 +254,6 @@ class AccessTokenSubjectTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         0L,
                         0L,
                         Set.of()
@@ -377,7 +273,6 @@ class AccessTokenSubjectTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         0L,
                         0L,
                         Set.of("ROOT")
@@ -397,7 +292,6 @@ class AccessTokenSubjectTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         1L,
                         9L,
                         Set.of(
@@ -410,7 +304,6 @@ class AccessTokenSubjectTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         1L,
                         9L,
                         Set.of(
@@ -423,7 +316,6 @@ class AccessTokenSubjectTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@example.com",
                         1L,
                         10L,
                         Set.of(
@@ -443,25 +335,33 @@ class AccessTokenSubjectTest {
     }
 
     @Test
-    void legacyConstructorWithoutOrganizationAuthVersionDoesNotExist() {
-        assertThat(
-                Arrays.stream(
-                        AccessTokenSubject.class
-                                .getDeclaredConstructors()
-                )
-        ).noneMatch(constructor ->
-                Arrays.equals(
-                        constructor
-                                .getParameterTypes(),
-                        new Class<?>[]{
+    void canonicalConstructorContainsOnlySecurityClaims()
+            throws NoSuchMethodException {
+        Constructor<AccessTokenSubject> constructor =
+                AccessTokenSubject.class
+                        .getDeclaredConstructor(
                                 UUID.class,
                                 UUID.class,
-                                String.class,
+                                long.class,
                                 long.class,
                                 Set.class
-                        }
-                )
-        );
+                        );
+
+        assertThat(constructor)
+                .isNotNull();
+    }
+
+    @Test
+    void noConstructorContainsEmailParameter() {
+        for (Constructor<?> constructor :
+                AccessTokenSubject.class
+                        .getDeclaredConstructors()) {
+            assertThat(
+                    constructor.getParameterTypes()
+            ).doesNotContain(
+                    String.class
+            );
+        }
     }
 
     private AccessTokenSubject validSubject(
@@ -470,31 +370,59 @@ class AccessTokenSubjectTest {
         return new AccessTokenSubject(
                 USER_ID,
                 ORGANIZATION_ID,
-                "user@example.com",
                 1L,
                 2L,
                 roles
         );
     }
 
-    private void assertInvalidEmail(
-            String email
+    /**
+     * Проверяет runtime null-contract конструктора без прямой передачи null
+     * в параметры AccessTokenSubject, которые static analysis считает @NotNull.
+     */
+    private Throwable constructorFailure(
+            @Nullable UUID userId,
+            @Nullable UUID organizationId,
+            @Nullable Set<String> roles
     ) {
-        assertThatThrownBy(() ->
-                new AccessTokenSubject(
-                        USER_ID,
-                        ORGANIZATION_ID,
-                        email,
-                        0L,
-                        0L,
-                        Set.of("USER")
-                )
-        )
-                .isInstanceOf(
-                        IllegalArgumentException.class
-                )
-                .hasMessageContaining(
-                        "каноническим lowercase email"
+        try {
+            Constructor<AccessTokenSubject> constructor =
+                    AccessTokenSubject.class
+                            .getDeclaredConstructor(
+                                    UUID.class,
+                                    UUID.class,
+                                    long.class,
+                                    long.class,
+                                    Set.class
+                            );
+
+            constructor.newInstance(
+                    userId,
+                    organizationId,
+                    0L,
+                    0L,
+                    roles
+            );
+
+            throw new AssertionError(
+                    "Ожидалось исключение конструктора AccessTokenSubject"
+            );
+        } catch (InvocationTargetException exception) {
+            Throwable cause = exception.getCause();
+
+            if (cause == null) {
+                throw new AssertionError(
+                        "InvocationTargetException не содержит cause",
+                        exception
                 );
+            }
+
+            return cause;
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError(
+                    "Не удалось вызвать canonical constructor AccessTokenSubject",
+                    exception
+            );
+        }
     }
 }

@@ -37,26 +37,20 @@ public class SafeAiJwtAuthenticationConverter
             );
         }
 
-        String userId =
-                requiredStringClaim(
-                        jwt,
-                        "userId"
-                );
+        String userId = requiredStringClaim(
+                jwt,
+                "userId"
+        );
 
-        String organizationId =
-                requiredStringClaim(
-                        jwt,
-                        "organizationId"
-                );
+        String organizationId = requiredStringClaim(
+                jwt,
+                "organizationId"
+        );
 
-        String email =
-                requiredCanonicalEmail(jwt);
-
-        long tokenVersion =
-                requiredNonNegativeLongClaim(
-                        jwt,
-                        "tokenVersion"
-                );
+        long tokenVersion = requiredNonNegativeLongClaim(
+                jwt,
+                "tokenVersion"
+        );
 
         long organizationAuthVersion =
                 requiredNonNegativeLongClaim(
@@ -102,9 +96,8 @@ public class SafeAiJwtAuthenticationConverter
         Set<SimpleGrantedAuthority> authorities;
 
         try {
-            authorities =
-                    RoleAuthorityMapper
-                            .toAuthorities(roles);
+            authorities = RoleAuthorityMapper
+                    .toAuthorities(roles);
         } catch (IllegalArgumentException
                  | NullPointerException exception) {
             throw new BadJwtException(
@@ -120,21 +113,16 @@ public class SafeAiJwtAuthenticationConverter
         }
 
         SafeAiUserPrincipal principal =
-                SafeAiUserPrincipal
-                        .accessTokenPrincipal(
-                                parseUuid(
-                                        userId,
-                                        "userId"
-                                ),
-                                parseUuid(
-                                        organizationId,
-                                        "organizationId"
-                                ),
-                                email,
-                                tokenVersion,
-                                organizationAuthVersion,
-                                authorities
-                        );
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        parseUuid(userId, "userId"),
+                        parseUuid(
+                                organizationId,
+                                "organizationId"
+                        ),
+                        tokenVersion,
+                        organizationAuthVersion,
+                        authorities
+                );
 
         /*
          * Raw Jwt/token value намеренно не сохраняется
@@ -148,16 +136,6 @@ public class SafeAiJwtAuthenticationConverter
                 );
     }
 
-    /**
-     * Адаптер для Spring Security OAuth2 Resource Server.
-     *
-     * <p>Доменный strict-converter намеренно бросает {@link BadJwtException},
-     * чтобы unit-тесты и прямые вызовы различали причину отклонения JWT.
-     * BearerTokenAuthenticationFilter, однако, должен получить
-     * {@link org.springframework.security.core.AuthenticationException}.
-     * Поэтому на границе resource-server переводим ожидаемую ошибку
-     * в {@link InvalidBearerTokenException}; детали токена наружу не утекают.</p>
-     */
     public AbstractAuthenticationToken convertForResourceServer(
             Jwt jwt
     ) {
@@ -188,27 +166,6 @@ public class SafeAiJwtAuthenticationConverter
         return value;
     }
 
-    private String requiredCanonicalEmail(
-            Jwt jwt
-    ) {
-        String email =
-                requiredStringClaim(
-                        jwt,
-                        "email"
-                );
-
-        try {
-            return SecurityIdentityValidator
-                    .requireCanonicalEmail(email);
-        } catch (IllegalArgumentException
-                 | NullPointerException exception) {
-            throw new BadJwtException(
-                    "JWT email is not canonical",
-                    exception
-            );
-        }
-    }
-
     private long requiredNonNegativeLongClaim(
             Jwt jwt,
             String claimName
@@ -226,18 +183,12 @@ public class SafeAiJwtAuthenticationConverter
 
         try {
             result = switch (number) {
-                case Byte value ->
-                        value.longValue();
-                case Short value ->
-                        value.longValue();
-                case Integer value ->
-                        value.longValue();
-                case Long value ->
-                        value;
-                case BigInteger value ->
-                        value.longValueExact();
-                case BigDecimal value ->
-                        value.longValueExact();
+                case Byte value -> value.longValue();
+                case Short value -> value.longValue();
+                case Integer value -> value.longValue();
+                case Long value -> value;
+                case BigInteger value -> value.longValueExact();
+                case BigDecimal value -> value.longValueExact();
                 case Double value -> {
                     if (!Double.isFinite(value)
                             || value % 1.0D != 0.0D) {
@@ -245,9 +196,7 @@ public class SafeAiJwtAuthenticationConverter
                                 "not integral"
                         );
                     }
-
-                    yield BigDecimal
-                            .valueOf(value)
+                    yield BigDecimal.valueOf(value)
                             .longValueExact();
                 }
                 case Float value -> {
@@ -257,17 +206,13 @@ public class SafeAiJwtAuthenticationConverter
                                 "not integral"
                         );
                     }
-
                     yield BigDecimal
-                            .valueOf(
-                                    value.doubleValue()
-                            )
+                            .valueOf(value.doubleValue())
                             .longValueExact();
                 }
-                default ->
-                        throw new ArithmeticException(
-                                "unsupported numeric type"
-                        );
+                default -> throw new ArithmeticException(
+                        "unsupported numeric type"
+                );
             };
         } catch (ArithmeticException exception) {
             throw new BadJwtException(

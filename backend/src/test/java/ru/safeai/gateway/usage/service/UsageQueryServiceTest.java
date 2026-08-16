@@ -717,7 +717,6 @@ class UsageQueryServiceTest {
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 ADMIN_ID,
                 ORGANIZATION_ID,
-                "admin@test.com",
                 0L,
                 0L,
                 List.of(
@@ -732,7 +731,6 @@ class UsageQueryServiceTest {
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
-                "superadmin@test.com",
                 0L,
                 0L,
                 List.of(

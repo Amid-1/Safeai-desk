@@ -552,7 +552,6 @@ class ChatTurnStateMachineIntegrationTest
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 USER_ID,
                 ORGANIZATION_ID,
-                "chat-state-machine@test.com",
                 0L,
                 0L,
                 Set.of(

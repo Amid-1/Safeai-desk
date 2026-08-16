@@ -1,7 +1,7 @@
 package ru.safeai.gateway.common.security;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -9,9 +9,10 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwtException;
 
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -37,37 +38,39 @@ class JwtCodecConfigurationTest {
                     ZoneOffset.UTC
             );
 
-    private static final byte[] SECRET_BYTES =
-            "0123456789abcdef0123456789abcdef"
-                    .getBytes(StandardCharsets.UTF_8);
+    private static final String ISSUER =
+            "https://safeai.example.com";
+
+    private static final String AUDIENCE =
+            "safeai-api";
+
+    private static final String ACTIVE_KEY_ID =
+            "safeai-test-active";
+
+    private static final KeyPair ACTIVE_KEY_PAIR =
+            generateRsaKeyPair();
 
     private final JwtProperties properties =
-            new JwtProperties(
-                    Base64.getEncoder()
-                            .encodeToString(
-                                    SECRET_BYTES
-                            ),
-                    15L,
-                    "https://safeai.example.com",
-                    "safeai-api"
+            createProperties(
+                    ACTIVE_KEY_PAIR
             );
 
     private final JwtCodecConfiguration configuration =
             new JwtCodecConfiguration();
 
-    private final SecretKey secretKey =
-            configuration.jwtSecretKey(
+    private final JwtRsaKeyRing keyRing =
+            new JwtRsaKeyRing(
                     properties
             );
 
     private final JwtEncoder encoder =
             configuration.jwtEncoder(
-                    secretKey
+                    keyRing
             );
 
     private final JwtDecoder decoder =
             configuration.jwtDecoder(
-                    secretKey,
+                    keyRing,
                     properties,
                     CLOCK
             );
@@ -81,11 +84,13 @@ class JwtCodecConfigurationTest {
                         CLOCK
                 );
 
+        UUID userId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+
         AccessTokenSubject subject =
                 new AccessTokenSubject(
-                        UUID.randomUUID(),
-                        UUID.randomUUID(),
-                        "user@example.com",
+                        userId,
+                        organizationId,
                         4L,
                         9L,
                         Set.of("USER")
@@ -103,23 +108,61 @@ class JwtCodecConfigurationTest {
                         .get("typ")
         ).isEqualTo("JWT");
 
+        assertThat(
+                jwt.getHeaders()
+                        .get("kid")
+        ).isEqualTo(
+                ACTIVE_KEY_ID
+        );
+
         assertThat(jwt.getIssuer())
                 .hasToString(
-                        "https://safeai.example.com"
+                        ISSUER
                 );
 
         assertThat(jwt.getAudience())
                 .containsExactly(
-                        "safeai-api"
+                        AUDIENCE
+                );
+
+        assertThat(jwt.getSubject())
+                .isEqualTo(
+                        userId.toString()
                 );
 
         assertThat(
                 jwt.getClaimAsString(
-                        "email"
+                        "userId"
                 )
         ).isEqualTo(
-                "user@example.com"
+                userId.toString()
         );
+
+        assertThat(
+                jwt.getClaimAsString(
+                        "organizationId"
+                )
+        ).isEqualTo(
+                organizationId.toString()
+        );
+
+        assertThat(
+                jwt.getClaims()
+        ).doesNotContainKey(
+                "email"
+        );
+
+        Number tokenVersion =
+                Objects.requireNonNull(
+                        jwt.getClaim(
+                                "tokenVersion"
+                        ),
+                        "tokenVersion claim must be present"
+                );
+
+        assertThat(
+                tokenVersion.longValue()
+        ).isEqualTo(4L);
 
         Number organizationAuthVersion =
                 Objects.requireNonNull(
@@ -132,6 +175,14 @@ class JwtCodecConfigurationTest {
         assertThat(
                 organizationAuthVersion.longValue()
         ).isEqualTo(9L);
+
+        assertThat(
+                jwt.getClaimAsStringList(
+                        "roles"
+                )
+        ).containsExactly(
+                "USER"
+        );
     }
 
     @Test
@@ -201,7 +252,10 @@ class JwtCodecConfigurationTest {
                         JwtEncoderParameters.from(
                                 JwsHeader
                                         .with(
-                                                MacAlgorithm.HS256
+                                                SignatureAlgorithm.RS256
+                                        )
+                                        .keyId(
+                                                properties.activeKeyId()
                                         )
                                         .type("JWT")
                                         .build(),
@@ -222,7 +276,10 @@ class JwtCodecConfigurationTest {
                         JwtEncoderParameters.from(
                                 JwsHeader
                                         .with(
-                                                MacAlgorithm.HS256
+                                                SignatureAlgorithm.RS256
+                                        )
+                                        .keyId(
+                                                properties.activeKeyId()
                                         )
                                         .build(),
                                 claims
@@ -248,19 +305,20 @@ class JwtCodecConfigurationTest {
     }
 
     @Test
-    void tokenSignedWithDifferentSecretIsRejected() {
-        SecretKey otherKey =
-                new SecretKeySpec(
-                        "fedcba9876543210fedcba9876543210"
-                                .getBytes(
-                                        StandardCharsets.UTF_8
-                                ),
-                        "HmacSHA256"
+    void tokenSignedWithDifferentRsaKeyIsRejected() {
+        JwtProperties otherProperties =
+                createProperties(
+                        generateRsaKeyPair()
+                );
+
+        JwtRsaKeyRing otherKeyRing =
+                new JwtRsaKeyRing(
+                        otherProperties
                 );
 
         JwtEncoder otherEncoder =
                 configuration.jwtEncoder(
-                        otherKey
+                        otherKeyRing
                 );
 
         String rawToken =
@@ -268,7 +326,16 @@ class JwtCodecConfigurationTest {
                         JwtEncoderParameters.from(
                                 JwsHeader
                                         .with(
-                                                MacAlgorithm.HS256
+                                                SignatureAlgorithm.RS256
+                                        )
+                                        /*
+                                         * Намеренно используем тот же kid:
+                                         * decoder найдёт public key по kid,
+                                         * но signature verification должна
+                                         * провалиться из-за другой RSA пары.
+                                         */
+                                        .keyId(
+                                                properties.activeKeyId()
                                         )
                                         .type("JWT")
                                         .build(),
@@ -323,7 +390,10 @@ class JwtCodecConfigurationTest {
                 JwtEncoderParameters.from(
                         JwsHeader
                                 .with(
-                                        MacAlgorithm.HS256
+                                        SignatureAlgorithm.RS256
+                                )
+                                .keyId(
+                                        properties.activeKeyId()
                                 )
                                 .type(type)
                                 .build(),
@@ -340,5 +410,90 @@ class JwtCodecConfigurationTest {
         ).isInstanceOf(
                 JwtException.class
         );
+    }
+
+    private static JwtProperties createProperties(
+            KeyPair keyPair
+    ) {
+        return new JwtProperties(
+                15L,
+                ISSUER,
+                AUDIENCE,
+                ACTIVE_KEY_ID,
+                List.of(
+                        new JwtProperties.KeyEntry(
+                                ACTIVE_KEY_ID,
+                                toPublicPem(keyPair),
+                                toPrivatePem(keyPair)
+                        )
+                )
+        );
+    }
+
+    private static KeyPair generateRsaKeyPair() {
+        try {
+            KeyPairGenerator generator =
+                    KeyPairGenerator.getInstance(
+                            "RSA"
+                    );
+
+            /*
+             * Production может использовать 3072/4096.
+             * Для unit-теста 2048 достаточно и соответствует
+             * минимальному invariant JwtRsaKeyRing.
+             */
+            generator.initialize(2048);
+
+            return generator.generateKeyPair();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(
+                    "RSA KeyPairGenerator недоступен",
+                    exception
+            );
+        }
+    }
+
+    private static String toPublicPem(
+            KeyPair keyPair
+    ) {
+        return pem(
+                "PUBLIC KEY",
+                keyPair.getPublic()
+                        .getEncoded()
+        );
+    }
+
+    private static String toPrivatePem(
+            KeyPair keyPair
+    ) {
+        return pem(
+                "PRIVATE KEY",
+                keyPair.getPrivate()
+                        .getEncoded()
+        );
+    }
+
+    private static String pem(
+            String type,
+            byte[] encoded
+    ) {
+        String body =
+                Base64.getMimeEncoder(
+                                64,
+                                "\n".getBytes(
+                                        StandardCharsets.US_ASCII
+                                )
+                        )
+                        .encodeToString(
+                                encoded
+                        );
+
+        return "-----BEGIN "
+                + type
+                + "-----\n"
+                + body
+                + "\n-----END "
+                + type
+                + "-----";
     }
 }

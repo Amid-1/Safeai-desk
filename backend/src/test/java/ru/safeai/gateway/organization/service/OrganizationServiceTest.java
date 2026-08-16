@@ -1206,7 +1206,6 @@ class OrganizationServiceTest {
                 .accessTokenPrincipal(
                         ADMIN_ID,
                         ORGANIZATION_ID,
-                        "admin@test.com",
                         0L,
                         AUTH_VERSION,
                         Set.of(
@@ -1222,7 +1221,6 @@ class OrganizationServiceTest {
                 .accessTokenPrincipal(
                         SUPER_ADMIN_ID,
                         PLATFORM_ORGANIZATION_ID,
-                        "superadmin@test.com",
                         0L,
                         0L,
                         Set.of(

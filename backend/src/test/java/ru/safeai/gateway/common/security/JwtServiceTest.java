@@ -6,19 +6,18 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.Base64;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -58,14 +57,20 @@ class JwtServiceTest {
     private static final String AUDIENCE =
             "safeai-desk-api";
 
-    private static final String VALID_BASE64_SECRET =
-            Base64.getEncoder()
-                    .encodeToString(
-                            "0123456789abcdef0123456789abcdef"
-                                    .getBytes(
-                                            StandardCharsets.UTF_8
-                                    )
-                    );
+    private static final String ACTIVE_KEY_ID =
+            "safeai-test-active";
+
+    /*
+     * JwtServiceTest мокает JwtEncoder и не строит JwtRsaKeyRing,
+     * поэтому здесь достаточно syntactically non-blank test-only
+     * key material. Корректность PEM/RSA parsing покрывается
+     * JwtRsaKeyRing/JwtCodecConfiguration integration tests.
+     */
+    private static final String TEST_PUBLIC_KEY =
+            "test-only-public-key";
+
+    private static final String TEST_PRIVATE_KEY =
+            "test-only-private-key";
 
     @Mock
     private JwtEncoder jwtEncoder;
@@ -76,11 +81,17 @@ class JwtServiceTest {
     void setUp() {
         JwtProperties jwtProperties =
                 new JwtProperties(
-                        VALID_BASE64_SECRET,
-                        TOKEN_LIFETIME
-                                .toMinutes(),
+                        TOKEN_LIFETIME.toMinutes(),
                         ISSUER,
-                        AUDIENCE
+                        AUDIENCE,
+                        ACTIVE_KEY_ID,
+                        List.of(
+                                new JwtProperties.KeyEntry(
+                                        ACTIVE_KEY_ID,
+                                        TEST_PUBLIC_KEY,
+                                        TEST_PRIVATE_KEY
+                                )
+                        )
                 );
 
         Clock clock =
@@ -105,11 +116,15 @@ class JwtServiceTest {
                         )
                         .header(
                                 "alg",
-                                "HS256"
+                                "RS256"
                         )
                         .header(
                                 "typ",
                                 "JWT"
+                        )
+                        .header(
+                                "kid",
+                                ACTIVE_KEY_ID
                         )
                         .issuedAt(NOW)
                         .expiresAt(
@@ -135,7 +150,6 @@ class JwtServiceTest {
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "admin@test.com",
                         7L,
                         12L,
                         Set.of(
@@ -174,27 +188,36 @@ class JwtServiceTest {
 
         JwsHeader headers =
                 Objects.requireNonNull(
-                        parameters
-                                .getJwsHeader(),
+                        parameters.getJwsHeader(),
                         "JWS header не должен быть null"
                 );
 
         assertThat(
                 headers.getAlgorithm()
         ).isEqualTo(
-                MacAlgorithm.HS256
+                SignatureAlgorithm.RS256
         );
 
         assertThat(
                 headers.getType()
-        ).isEqualTo("JWT");
+        ).isEqualTo(
+                "JWT"
+        );
+
+        assertThat(
+                headers.getKeyId()
+        ).isEqualTo(
+                ACTIVE_KEY_ID
+        );
 
         JwtClaimsSet claims =
                 parameters.getClaims();
 
         assertThat(
                 claims.getIssuer()
-        ).hasToString(ISSUER);
+        ).hasToString(
+                ISSUER
+        );
 
         assertThat(
                 claims.getAudience()
@@ -210,7 +233,9 @@ class JwtServiceTest {
 
         assertThat(
                 claims.getIssuedAt()
-        ).isEqualTo(NOW);
+        ).isEqualTo(
+                NOW
+        );
 
         assertThat(
                 claims.getExpiresAt()
@@ -222,19 +247,23 @@ class JwtServiceTest {
 
         assertThat(
                 Duration.between(
-                        claims.getIssuedAt(),
-                        claims.getExpiresAt()
+                        Objects.requireNonNull(
+                                claims.getIssuedAt(),
+                                "issuedAt не должен быть null"
+                        ),
+                        Objects.requireNonNull(
+                                claims.getExpiresAt(),
+                                "expiresAt не должен быть null"
+                        )
                 )
         ).isEqualTo(
                 TOKEN_LIFETIME
         );
 
         assertThat(
-                claims.getClaimAsString(
-                        "email"
-                )
-        ).isEqualTo(
-                "admin@test.com"
+                claims.getClaims()
+        ).doesNotContainKey(
+                "email"
         );
 
         assertThat(
@@ -263,29 +292,27 @@ class JwtServiceTest {
         );
 
         Number tokenVersion =
-                claims.getClaim(
-                        "tokenVersion"
+                Objects.requireNonNull(
+                        claims.getClaim(
+                                "tokenVersion"
+                        ),
+                        "tokenVersion claim must be present"
                 );
-
-        assertThat(tokenVersion)
-                .isNotNull();
 
         assertThat(
                 tokenVersion.longValue()
         ).isEqualTo(7L);
 
         Number organizationAuthVersion =
-                claims.getClaim(
-                        "organizationAuthVersion"
+                Objects.requireNonNull(
+                        claims.getClaim(
+                                "organizationAuthVersion"
+                        ),
+                        "organizationAuthVersion claim must be present"
                 );
 
         assertThat(
-                organizationAuthVersion
-        ).isNotNull();
-
-        assertThat(
-                organizationAuthVersion
-                        .longValue()
+                organizationAuthVersion.longValue()
         ).isEqualTo(12L);
 
         String tokenId =
@@ -297,7 +324,12 @@ class JwtServiceTest {
                 .isNotBlank();
 
         assertThat(
-                UUID.fromString(tokenId)
+                UUID.fromString(
+                        Objects.requireNonNull(
+                                tokenId,
+                                "jti не должен быть null"
+                        )
+                )
         ).isNotNull();
     }
 

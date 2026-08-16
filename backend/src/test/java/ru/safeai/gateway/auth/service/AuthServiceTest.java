@@ -842,7 +842,6 @@ class AuthServiceTest {
         return new AccessTokenSubject(
                 USER_ID,
                 ORGANIZATION_ID,
-                EMAIL,
                 0L,
                 0L,
                 Set.of("ADMIN")

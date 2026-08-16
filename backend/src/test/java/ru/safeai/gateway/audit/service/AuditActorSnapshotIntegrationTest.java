@@ -63,9 +63,6 @@ class AuditActorSnapshotIntegrationTest
                 principal(
                         adminId,
                         organizationId,
-                        "admin-"
-                                + adminId
-                                + "@test.com",
                         "ROLE_ADMIN"
                 );
 
@@ -172,9 +169,6 @@ class AuditActorSnapshotIntegrationTest
                 principal(
                         superAdminId,
                         platformOrganizationId,
-                        "super-"
-                                + superAdminId
-                                + "@test.com",
                         "ROLE_SUPER_ADMIN"
                 );
 
@@ -279,7 +273,6 @@ class AuditActorSnapshotIntegrationTest
                 principal(
                         adminId,
                         organizationId,
-                        oldEmail,
                         "ROLE_ADMIN"
                 ),
                 "Email Admin",
@@ -361,7 +354,6 @@ class AuditActorSnapshotIntegrationTest
                 principal(
                         adminId,
                         organizationId,
-                        email,
                         "ROLE_ADMIN"
                 ),
                 "Deleted Admin",
@@ -473,7 +465,6 @@ class AuditActorSnapshotIntegrationTest
                 principal(
                         adminId,
                         organizationId,
-                        email,
                         "ROLE_ADMIN"
                 ),
                 "Deleted Before Worker",
@@ -544,14 +535,12 @@ class AuditActorSnapshotIntegrationTest
     private SafeAiUserPrincipal principal(
             UUID userId,
             UUID organizationId,
-            String email,
             String authority
     ) {
         return SafeAiUserPrincipal
                 .accessTokenPrincipal(
                         userId,
                         organizationId,
-                        email,
                         0L,
                         0L,
                         List.of(

@@ -100,7 +100,6 @@ class AuditCursorPaginationIntegrationTest
                         .accessTokenPrincipal(
                                 adminId,
                                 organizationId,
-                                "admin@test.com",
                                 0L,
                                 0L,
                                 List.of(

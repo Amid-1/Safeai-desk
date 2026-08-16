@@ -1,0 +1,51 @@
+{
+  "properties": [
+    {
+      "name": "safeai.knowledge.storage.type",
+      "description": "Тип объектного хранилища базы знаний.",
+      "defaultValue": "local"
+    },
+    {
+      "name": "safeai.knowledge.storage.local-root",
+      "description": "Корневая директория локального объектного хранилища базы знаний.",
+      "defaultValue": "./var/knowledge-objects"
+    },
+    {
+      "name": "safeai.knowledge.storage.max-upload-bytes",
+      "description": "Максимальный размер загружаемого объекта базы знаний в байтах.",
+      "defaultValue": 26214400
+    },
+    {
+      "name": "safeai.knowledge.storage.endpoint",
+      "description": "Endpoint S3-совместимого объектного хранилища. Обязателен при type=s3."
+    },
+    {
+      "name": "safeai.knowledge.storage.access-key",
+      "description": "Access key для S3-совместимого объектного хранилища. В production должен поступать из секретного окружения."
+    },
+    {
+      "name": "safeai.knowledge.storage.secret-key",
+      "description": "Secret key для S3-совместимого объектного хранилища. В production должен поступать из секретного окружения."
+    },
+    {
+      "name": "safeai.knowledge.storage.bucket",
+      "description": "Имя bucket для объектов базы знаний.",
+      "defaultValue": "safeai-knowledge"
+    }
+  ],
+  "hints": [
+    {
+      "name": "safeai.knowledge.storage.type",
+      "values": [
+        {
+          "value": "local",
+          "description": "Локальная файловая система."
+        },
+        {
+          "value": "s3",
+          "description": "S3-совместимое объектное хранилище."
+        }
+      ]
+    }
+  ]
+}

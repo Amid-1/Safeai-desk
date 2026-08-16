@@ -3,7 +3,6 @@ package ru.safeai.gateway.common.security;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 
-import java.util.Base64;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -11,11 +10,34 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ProductionSecurityInvariantValidatorTest {
 
-    private static final String SECRET =
-            Base64.getEncoder()
-                    .encodeToString(
-                            new byte[32]
-                    );
+    private static final String ACTIVE_KEY_ID =
+            "test-active-key";
+
+    /*
+     * В этом тесте криптографический материал не используется:
+     * ProductionSecurityInvariantValidator проверяет production-инварианты
+     * issuer/CORS/proxy/forward headers. Для JwtProperties достаточно
+     * корректно заполненного key-ring контракта.
+     *
+     * String.join используется намеренно, чтобы тестовые PEM-строки
+     * не содержали завершающий перевод строки. JwtProperties запрещает
+     * внешний whitespace у public/private key.
+     */
+    private static final String TEST_PUBLIC_KEY =
+            String.join(
+                    "\n",
+                    "-----BEGIN PUBLIC KEY-----",
+                    "test-public-key",
+                    "-----END PUBLIC KEY-----"
+            );
+
+    private static final String TEST_PRIVATE_KEY =
+            String.join(
+                    "\n",
+                    "-----BEGIN PRIVATE KEY-----",
+                    "test-private-key",
+                    "-----END PRIVATE KEY-----"
+            );
 
     @Test
     void nonUriIssuerFailsBeforeProductionInvariantValidation() {
@@ -205,7 +227,9 @@ class ProductionSecurityInvariantValidatorTest {
                         List.of(
                                 "https://app.example.com"
                         ),
-                        List.of(cidr),
+                        List.of(
+                                cidr
+                        ),
                         "none"
                 );
 
@@ -235,11 +259,15 @@ class ProductionSecurityInvariantValidatorTest {
                         );
 
         return new ProductionSecurityInvariantValidator(
-                new CorsProperties(origins),
+                new CorsProperties(
+                        origins
+                ),
                 new ClientIpProperties(
                         proxyCidrs
                 ),
-                properties(issuer),
+                properties(
+                        issuer
+                ),
                 environment
         );
     }
@@ -248,16 +276,28 @@ class ProductionSecurityInvariantValidatorTest {
             String issuer
     ) {
         return new JwtProperties(
-                SECRET,
                 15L,
                 issuer,
-                "safeai-desk-api"
+                "safeai-desk-api",
+                ACTIVE_KEY_ID,
+                List.of(
+                        new JwtProperties.KeyEntry(
+                                ACTIVE_KEY_ID,
+                                TEST_PUBLIC_KEY,
+                                TEST_PRIVATE_KEY
+                        )
+                )
         );
     }
 
     private static String insecureHttpUrl(
             String authority
     ) {
-        return String.join("", "http", "://", authority);
+        return String.join(
+                "",
+                "http",
+                "://",
+                authority
+        );
     }
 }

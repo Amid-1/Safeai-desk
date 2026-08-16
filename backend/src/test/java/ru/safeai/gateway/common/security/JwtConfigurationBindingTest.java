@@ -9,7 +9,6 @@ import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -25,15 +24,24 @@ class JwtConfigurationBindingTest {
                     "localhost:9999"
             );
 
-    @Test
-    void safeAiEnvironmentVariablesAreBridgedThroughApplicationYaml()
-            throws IOException {
+    private static final String ACTIVE_KEY_ID =
+            "test-active-key";
 
-        String secret =
-                Base64.getEncoder()
-                        .encodeToString(
-                                new byte[32]
-                        );
+    private static final String PUBLIC_KEY = """
+            -----BEGIN PUBLIC KEY-----
+            test-public-key
+            -----END PUBLIC KEY-----\
+            """;
+
+    private static final String PRIVATE_KEY = """
+            -----BEGIN PRIVATE KEY-----
+            test-private-key
+            -----END PRIVATE KEY-----\
+            """;
+
+    @Test
+    void safeAiEnvironmentVariablesAreBridgedThroughApplicationYml()
+            throws IOException {
 
         StandardEnvironment environment =
                 new StandardEnvironment();
@@ -43,14 +51,18 @@ class JwtConfigurationBindingTest {
                         new MapPropertySource(
                                 "safeai-test-env",
                                 Map.of(
-                                        "SAFEAI_JWT_SECRET",
-                                        secret,
                                         "SAFEAI_JWT_EXPIRATION_MINUTES",
                                         "17",
                                         "SAFEAI_JWT_ISSUER",
                                         LOCAL_ISSUER,
                                         "SAFEAI_JWT_AUDIENCE",
-                                        "test-audience"
+                                        "test-audience",
+                                        "SAFEAI_JWT_ACTIVE_KEY_ID",
+                                        ACTIVE_KEY_ID,
+                                        "SAFEAI_JWT_PUBLIC_KEY",
+                                        PUBLIC_KEY,
+                                        "SAFEAI_JWT_PRIVATE_KEY",
+                                        PRIVATE_KEY
                                 )
                         )
                 );
@@ -62,7 +74,7 @@ class JwtConfigurationBindingTest {
                 loader.load(
                         "application",
                         new ClassPathResource(
-                                "application.yaml"
+                                "application.yml"
                         )
                 );
 
@@ -85,12 +97,6 @@ class JwtConfigurationBindingTest {
                         );
 
         assertThat(
-                properties.secret()
-        ).isEqualTo(
-                secret
-        );
-
-        assertThat(
                 properties.expirationMinutes()
         ).isEqualTo(
                 17L
@@ -109,10 +115,37 @@ class JwtConfigurationBindingTest {
         );
 
         assertThat(
-                properties.secretKey()
-                        .getEncoded()
+                properties.activeKeyId()
+        ).isEqualTo(
+                ACTIVE_KEY_ID
+        );
+
+        assertThat(
+                properties.keys()
         ).hasSize(
-                32
+                1
+        );
+
+        JwtProperties.KeyEntry activeKey =
+                properties.keys()
+                        .getFirst();
+
+        assertThat(
+                activeKey.id()
+        ).isEqualTo(
+                ACTIVE_KEY_ID
+        );
+
+        assertThat(
+                activeKey.publicKey()
+        ).isEqualTo(
+                PUBLIC_KEY
+        );
+
+        assertThat(
+                activeKey.privateKey()
+        ).isEqualTo(
+                PRIVATE_KEY
         );
     }
 }

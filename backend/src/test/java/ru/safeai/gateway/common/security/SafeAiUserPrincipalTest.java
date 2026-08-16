@@ -29,7 +29,7 @@ class SafeAiUserPrincipalTest {
             "user@example.com";
 
     private static final String PASSWORD_HASH =
-            "{bcrypt}$2a$12$abcdefghijklmnopqrstuuuuuuuuuuuuuuuuuuuuuuuuuu";
+            "{bcrypt}$2a$12$abcdefghijklmnopqrstuuuuuuuuuuuuuuuuuuuuuu";
 
     @Test
     void passwordPrincipalContainsExpectedSecurityState() {
@@ -88,13 +88,12 @@ class SafeAiUserPrincipalTest {
     }
 
     @Test
-    void accessTokenPrincipalNeverContainsPassword() {
+    void accessTokenPrincipalContainsNoEmailOrPassword() {
         SafeAiUserPrincipal principal =
                 SafeAiUserPrincipal
                         .accessTokenPrincipal(
                                 USER_ID,
                                 ORGANIZATION_ID,
-                                EMAIL,
                                 3L,
                                 9L,
                                 List.of(
@@ -105,8 +104,18 @@ class SafeAiUserPrincipalTest {
                         );
 
         assertThat(
+                principal.getEmail()
+        ).isNull();
+
+        assertThat(
                 principal.getPassword()
         ).isNull();
+
+        assertThat(
+                principal.getUsername()
+        ).isEqualTo(
+                USER_ID.toString()
+        );
 
         assertThat(
                 principal.isEnabled()
@@ -132,7 +141,6 @@ class SafeAiUserPrincipalTest {
                         .accessTokenPrincipal(
                                 USER_ID,
                                 ORGANIZATION_ID,
-                                EMAIL,
                                 1L,
                                 2L,
                                 List.of(
@@ -203,7 +211,6 @@ class SafeAiUserPrincipalTest {
                         .accessTokenPrincipal(
                                 USER_ID,
                                 ORGANIZATION_ID,
-                                EMAIL,
                                 3L,
                                 9L,
                                 List.of(
@@ -218,7 +225,6 @@ class SafeAiUserPrincipalTest {
                         .accessTokenPrincipal(
                                 USER_ID,
                                 UUID.randomUUID(),
-                                EMAIL,
                                 99L,
                                 100L,
                                 List.of(
@@ -240,7 +246,6 @@ class SafeAiUserPrincipalTest {
                         .accessTokenPrincipal(
                                 USER_ID,
                                 ORGANIZATION_ID,
-                                EMAIL,
                                 -1L,
                                 0L,
                                 List.of(
@@ -265,7 +270,6 @@ class SafeAiUserPrincipalTest {
                         .accessTokenPrincipal(
                                 USER_ID,
                                 ORGANIZATION_ID,
-                                EMAIL,
                                 0L,
                                 -1L,
                                 List.of(
@@ -303,7 +307,7 @@ class SafeAiUserPrincipalTest {
     }
 
     @Test
-    void legacyAccessTokenPrincipalFactoryWithoutOrganizationVersionDoesNotExist() {
+    void accessTokenPrincipalUsesCurrentFiveArgumentContract() {
         assertThat(
                 Arrays.stream(
                         SafeAiUserPrincipal.class
@@ -316,9 +320,43 @@ class SafeAiUserPrincipalTest {
                                         )
                         )
                         .map(
-                                Method::getParameterCount
+                                Method::getParameterTypes
                         )
-        ).doesNotContain(5);
+        ).anyMatch(parameterTypes ->
+                Arrays.equals(
+                        parameterTypes,
+                        new Class<?>[]{
+                                UUID.class,
+                                UUID.class,
+                                long.class,
+                                long.class,
+                                Collection.class
+                        }
+                )
+        );
+    }
+
+    @Test
+    void legacyAccessTokenPrincipalFactoryWithEmailDoesNotExist() {
+        assertThat(
+                Arrays.stream(
+                        SafeAiUserPrincipal.class
+                                .getDeclaredMethods()
+                )
+                        .filter(method ->
+                                method.getName()
+                                        .equals(
+                                                "accessTokenPrincipal"
+                                        )
+                        )
+                        .map(
+                                Method::getParameterTypes
+                        )
+        ).noneMatch(parameterTypes ->
+                Arrays.asList(
+                        parameterTypes
+                ).contains(String.class)
+        );
     }
 
     private SafeAiUserPrincipal

@@ -2,27 +2,49 @@ package ru.safeai.gateway.common.security;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Base64;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JwtPropertiesTest {
 
-    @Test
-    void validBase64SecretAndHttpsIssuerAreAccepted() {
-        JwtProperties properties =
-                new JwtProperties(
-                        secretOfBytes(32),
-                        15L,
-                        "https://safeai.example.com",
-                        "safeai-desk-api"
-                );
+    private static final String ACTIVE_KEY_ID =
+            "active-2026-08";
 
-        assertThat(
-                properties.secretKey()
-                        .getEncoded()
-        ).hasSize(32);
+    private static final String PREVIOUS_KEY_ID =
+            "previous-2026-07";
+
+    private static final String PUBLIC_KEY =
+            String.join(
+                    "\n",
+                    "-----BEGIN PUBLIC KEY-----",
+                    "test-public-key",
+                    "-----END PUBLIC KEY-----"
+            );
+
+    private static final String PRIVATE_KEY =
+            String.join(
+                    "\n",
+                    "-----BEGIN PRIVATE KEY-----",
+                    "test-private-key",
+                    "-----END PRIVATE KEY-----"
+            );
+
+    private static final String PREVIOUS_PUBLIC_KEY =
+            String.join(
+                    "\n",
+                    "-----BEGIN PUBLIC KEY-----",
+                    "previous-test-public-key",
+                    "-----END PUBLIC KEY-----"
+            );
+
+    @Test
+    void validRs256ConfigurationIsAccepted() {
+        JwtProperties properties =
+                properties(
+                        "https://safeai.example.com"
+                );
 
         assertThat(
                 properties.expirationMinutes()
@@ -39,101 +61,241 @@ class JwtPropertiesTest {
         ).isEqualTo(
                 "safeai-desk-api"
         );
+
+        assertThat(
+                properties.activeKeyId()
+        ).isEqualTo(
+                ACTIVE_KEY_ID
+        );
+
+        assertThat(
+                properties.keys()
+        ).containsExactly(
+                new JwtProperties.KeyEntry(
+                        ACTIVE_KEY_ID,
+                        PUBLIC_KEY,
+                        PRIVATE_KEY
+                ),
+                new JwtProperties.KeyEntry(
+                        PREVIOUS_KEY_ID,
+                        PREVIOUS_PUBLIC_KEY,
+                        null
+                )
+        );
     }
 
     @Test
-    void validBase64UrlSecretIsAccepted() {
-        String secret =
-                Base64.getUrlEncoder()
-                        .withoutPadding()
-                        .encodeToString(
-                                new byte[32]
-                        );
-
+    void previousVerificationOnlyKeyIsAccepted() {
         JwtProperties properties =
                 new JwtProperties(
-                        secret,
                         15L,
-                        "http://localhost:8080",
-                        "safeai-desk-api"
+                        "https://safeai.example.com",
+                        "safeai-desk-api",
+                        ACTIVE_KEY_ID,
+                        List.of(
+                                activeKey(),
+                                new JwtProperties.KeyEntry(
+                                        PREVIOUS_KEY_ID,
+                                        PREVIOUS_PUBLIC_KEY,
+                                        null
+                                )
+                        )
+                );
+
+        JwtProperties.KeyEntry previousKey =
+                properties.keys()
+                        .get(1);
+
+        assertThat(
+                previousKey.id()
+        ).isEqualTo(
+                PREVIOUS_KEY_ID
+        );
+
+        assertThat(
+                previousKey.publicKey()
+        ).isEqualTo(
+                PREVIOUS_PUBLIC_KEY
+        );
+
+        assertThat(
+                previousKey.privateKey()
+        ).isNull();
+    }
+
+    @Test
+    void activeKeyWithoutPrivateKeyIsRejected() {
+        assertThatThrownBy(() ->
+                new JwtProperties(
+                        15L,
+                        "https://safeai.example.com",
+                        "safeai-desk-api",
+                        ACTIVE_KEY_ID,
+                        List.of(
+                                new JwtProperties.KeyEntry(
+                                        ACTIVE_KEY_ID,
+                                        PUBLIC_KEY,
+                                        null
+                                )
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "private-key"
+                )
+                .hasMessageContaining(
+                        ACTIVE_KEY_ID
+                );
+    }
+
+    @Test
+    void activeKeyIdMustExistInKeyRing() {
+        assertThatThrownBy(() ->
+                new JwtProperties(
+                        15L,
+                        "https://safeai.example.com",
+                        "safeai-desk-api",
+                        "missing-key",
+                        List.of(
+                                activeKey()
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "не найден"
+                )
+                .hasMessageContaining(
+                        "missing-key"
+                );
+    }
+
+    @Test
+    void emptyKeyRingIsRejected() {
+        assertThatThrownBy(() ->
+                new JwtProperties(
+                        15L,
+                        "https://safeai.example.com",
+                        "safeai-desk-api",
+                        ACTIVE_KEY_ID,
+                        List.of()
+                )
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "хотя бы один RSA key"
+                );
+    }
+
+    @Test
+    void duplicateKeyIdsAreRejected() {
+        assertThatThrownBy(() ->
+                new JwtProperties(
+                        15L,
+                        "https://safeai.example.com",
+                        "safeai-desk-api",
+                        ACTIVE_KEY_ID,
+                        List.of(
+                                activeKey(),
+                                new JwtProperties.KeyEntry(
+                                        ACTIVE_KEY_ID,
+                                        PREVIOUS_PUBLIC_KEY,
+                                        null
+                                )
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "Повторяющийся JWT key id"
+                )
+                .hasMessageContaining(
+                        ACTIVE_KEY_ID
+                );
+    }
+
+    @Test
+    void invalidActiveKeyIdIsRejected() {
+        assertThatThrownBy(() ->
+                new JwtProperties(
+                        15L,
+                        "https://safeai.example.com",
+                        "safeai-desk-api",
+                        "invalid key id",
+                        List.of(
+                                activeKey()
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "active-key-id"
+                )
+                .hasMessageContaining(
+                        "[A-Za-z0-9._-]{1,64}"
+                );
+    }
+
+    @Test
+    void invalidKeyEntryIdIsRejected() {
+        assertThatThrownBy(() ->
+                new JwtProperties.KeyEntry(
+                        "invalid key id",
+                        PUBLIC_KEY,
+                        PRIVATE_KEY
+                )
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "keys[].id"
+                )
+                .hasMessageContaining(
+                        "[A-Za-z0-9._-]{1,64}"
+                );
+    }
+
+    @Test
+    void blankPublicKeyIsRejected() {
+        assertThatThrownBy(() ->
+                new JwtProperties.KeyEntry(
+                        ACTIVE_KEY_ID,
+                        " ",
+                        PRIVATE_KEY
+                )
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "public-key"
+                );
+    }
+
+    @Test
+    void blankPrivateKeyIsNormalizedToNullForPreviousKey() {
+        JwtProperties.KeyEntry key =
+                new JwtProperties.KeyEntry(
+                        PREVIOUS_KEY_ID,
+                        PREVIOUS_PUBLIC_KEY,
+                        "   "
                 );
 
         assertThat(
-                properties.secretKey()
-                        .getEncoded()
-        ).hasSize(32);
-    }
-
-    @Test
-    void decodedSecretShorterThan32BytesIsRejected() {
-        assertThatThrownBy(() ->
-                new JwtProperties(
-                        secretOfBytes(31),
-                        15L,
-                        "https://safeai.example.com",
-                        "safeai-desk-api"
-                )
-        )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "минимум 32"
-                );
-    }
-
-    @Test
-    void decodedSecretLongerThan128BytesIsRejected() {
-        assertThatThrownBy(() ->
-                new JwtProperties(
-                        secretOfBytes(129),
-                        15L,
-                        "https://safeai.example.com",
-                        "safeai-desk-api"
-                )
-        )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "недопустимо большой"
-                );
-    }
-
-    @Test
-    void nonBase64SecretIsRejected() {
-        assertThatThrownBy(() ->
-                new JwtProperties(
-                        "not base64 !!!",
-                        15L,
-                        "https://safeai.example.com",
-                        "safeai-desk-api"
-                )
-        )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "Base64"
-                );
-    }
-
-    @Test
-    void missingSecretIsRejected() {
-        assertThatThrownBy(() ->
-                new JwtProperties(
-                        null,
-                        15L,
-                        "https://safeai.example.com",
-                        "safeai-desk-api"
-                )
-        )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "SAFEAI_JWT_SECRET"
-                );
+                key.privateKey()
+        ).isNull();
     }
 
     @Test
@@ -184,11 +346,8 @@ class JwtPropertiesTest {
     @Test
     void issuerWithPathIsAccepted() {
         JwtProperties properties =
-                new JwtProperties(
-                        secretOfBytes(32),
-                        15L,
-                        "https://safeai.example.com/auth",
-                        "safeai-desk-api"
+                properties(
+                        "https://safeai.example.com/auth"
                 );
 
         assertThat(
@@ -202,10 +361,13 @@ class JwtPropertiesTest {
     void audienceLongerThan255CharactersIsRejected() {
         assertThatThrownBy(() ->
                 new JwtProperties(
-                        secretOfBytes(32),
                         15L,
                         "https://safeai.example.com",
-                        "a".repeat(256)
+                        "a".repeat(256),
+                        ACTIVE_KEY_ID,
+                        List.of(
+                                activeKey()
+                        )
                 )
         )
                 .isInstanceOf(
@@ -221,10 +383,13 @@ class JwtPropertiesTest {
     ) {
         assertThatThrownBy(() ->
                 new JwtProperties(
-                        secretOfBytes(32),
                         minutes,
                         "https://safeai.example.com",
-                        "safeai-desk-api"
+                        "safeai-desk-api",
+                        ACTIVE_KEY_ID,
+                        List.of(
+                                activeKey()
+                        )
                 )
         )
                 .isInstanceOf(
@@ -240,10 +405,13 @@ class JwtPropertiesTest {
     ) {
         assertThatThrownBy(() ->
                 new JwtProperties(
-                        secretOfBytes(32),
                         15L,
                         issuer,
-                        "safeai-desk-api"
+                        "safeai-desk-api",
+                        ACTIVE_KEY_ID,
+                        List.of(
+                                activeKey()
+                        )
                 )
         )
                 .isInstanceOf(
@@ -254,12 +422,30 @@ class JwtPropertiesTest {
                 );
     }
 
-    private String secretOfBytes(
-            int size
+    private JwtProperties properties(
+            String issuer
     ) {
-        return Base64.getEncoder()
-                .encodeToString(
-                        new byte[size]
-                );
+        return new JwtProperties(
+                15L,
+                issuer,
+                "safeai-desk-api",
+                ACTIVE_KEY_ID,
+                List.of(
+                        activeKey(),
+                        new JwtProperties.KeyEntry(
+                                PREVIOUS_KEY_ID,
+                                PREVIOUS_PUBLIC_KEY,
+                                null
+                        )
+                )
+        );
+    }
+
+    private JwtProperties.KeyEntry activeKey() {
+        return new JwtProperties.KeyEntry(
+                ACTIVE_KEY_ID,
+                PUBLIC_KEY,
+                PRIVATE_KEY
+        );
     }
 }

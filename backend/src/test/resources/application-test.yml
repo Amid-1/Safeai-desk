@@ -2,10 +2,51 @@
 app:
   security:
     jwt:
-      secret: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       expiration-minutes: 15
       issuer: https://issuer.safeai.test
       audience: safeai-desk-api
+      active-key-id: test-rsa-2026-08
+      keys:
+        - id: test-rsa-2026-08
+          public-key: |-
+            -----BEGIN PUBLIC KEY-----
+            MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp6nw0kAjSpxaTElz8bqP
+            prYStyjxZSQXtPvEvw6KgK0sOQMxApGXiNaWcesZZ+tRwIGI8tAi+BGJbAjcVTQc
+            JzHZYuSWwytmHTG2Vr5DmpoeTn5Rgy+D7OpjHacWSm1HQmnziiblkWODbao7wdDH
+            AXT8o6LAl5i9fcpyYc28Rcx1gQ0vXnkiKea20zvFjSQ2JEWGMbY1lpxag1hrU5q8
+            nK81HoLph9ovlg4UUZnoeYX6XI9nlTrCGPeiEMrFLJQW7vKz36HppnJhZ96WLgMD
+            wsHGMJ/io78Yk/B5CLkXtHYaNjrs/pT5UYT2ZKm3nTo+qh5YD0GIJBBwndbGAQvy
+            +wIDAQAB
+            -----END PUBLIC KEY-----
+          private-key: |-
+            -----BEGIN PRIVATE KEY-----
+            MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCnqfDSQCNKnFpM
+            SXPxuo+mthK3KPFlJBe0+8S/DoqArSw5AzECkZeI1pZx6xln61HAgYjy0CL4EYls
+            CNxVNBwnMdli5JbDK2YdMbZWvkOamh5OflGDL4Ps6mMdpxZKbUdCafOKJuWRY4Nt
+            qjvB0McBdPyjosCXmL19ynJhzbxFzHWBDS9eeSIp5rbTO8WNJDYkRYYxtjWWnFqD
+            WGtTmrycrzUegumH2i+WDhRRmeh5hfpcj2eVOsIY96IQysUslBbu8rPfoemmcmFn
+            3pYuAwPCwcYwn+KjvxiT8HkIuRe0dho2Ouz+lPlRhPZkqbedOj6qHlgPQYgkEHCd
+            1sYBC/L7AgMBAAECggEAST2Svf2XjQ2s4ltJ40QoYV5y4YDoplJ0arJ6mS1McnZz
+            dXo/7AvWgseek6fsArnIjgvn243xYKUkf0WFnlCzpamAeVM6yooIQuOG7/CQTpZZ
+            e9dxWxmkCxe+cWMeeSewc8IdyXFBYlfyvzKYhQtjC29jt0Wu1Oo7iJopijDZuDEp
+            r7rPypkhtr6ybiCNCDzAEiM1o7HFbIQw5aOBovMXGVEPLVJWeaNAYH+4IXtFh1Rn
+            NQRSR756vglNmXSu2RHQafZP1HL+xl4wYY4So08M/phK1UdgEjEW5aXHS2Hal4Dn
+            jlSSttMID7FnE4bIYV3d1rMv+IwbVINtvZHRAiIIEQKBgQDbGWVYRDJSkCEyAbpD
+            gdz4v4nkTvRlffwKESIZrQs9MnjqCi68W0NL2S9Zs1XqQyhv96yJPtE4hoBXwOtz
+            Qd9TVrpFehlNNAYvOuLzzeqUFPt9oUNQTZ1LNxGMDiXvo/tKZTYWoaofg2DqmMrZ
+            1SVPRfl42HZIsFgQjpz8sQ/biwKBgQDD5uAc6QYkoMq8KItbOByUHqxaLNbKQkXw
+            +PLe0zTkHPbJSQwL6N5a47fiF2xqdeQVbDWlzyog+c4uCN6GoOMmyrAWfRRxGeZ3
+            9BkTFUipt2le7HTS9Mp8Y7yepOz7ArxW2FrR8SYlqxeop9AKhbBMaB5bJmSzVQYl
+            r2oofjX0UQKBgQCjrTovkWrCkRerYu0CR36LeZOKso0TUOW7o4cFBWfzBMSdmpPF
+            dKw2en5MFZQmWJtZ4f3L3diw0JIKfH2ocdpjSNQI2SkTqrzABc7L8dW/YFlsRc+i
+            qwjJys7aASvH9YnhzvB0Qbt0pVH+j7xitT+VFCJFa/gZX1u6qr+Oarv89wKBgGZP
+            ho4yuO2aOCdKeXVbebl1x4eU0VxyfjqamaT74yybX9vB1ZPGu5H2Scu/dfSnu0Xg
+            7Ke66QKt1BtAsI7ZKajRxGMKUgm7gBz3k7zeqcNRMavMjDq8c5/BKvojokx5okks
+            10m7yrNzhnijo8hLB8bvvaLXC1KJPhuiYCvjtmPxAoGAMbb2iMvW1/svrGUhCzwr
+            T9O3WClm6moDoknCV5+q+gr+pvHsmcEOBr/vLpOR6dvYYAQIxlRYz4w9f6x+kjFA
+            sWi8kqNXrfgC9GI3zzBKSls6pgqIuZTJPTxRfjTXBOtPE3Gw3p/EA3T5HeOhMK8F
+            o/g/Mew6nIhocgAJgZ6bF1M=
+            -----END PRIVATE KEY-----
 
 spring:
   data:

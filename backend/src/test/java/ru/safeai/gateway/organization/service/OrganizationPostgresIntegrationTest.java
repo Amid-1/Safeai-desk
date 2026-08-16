@@ -474,7 +474,6 @@ class OrganizationPostgresIntegrationTest
                 .accessTokenPrincipal(
                         SUPER_ADMIN_ID,
                         PLATFORM_ORGANIZATION_ID,
-                        "superadmin@test.com",
                         0L,
                         0L,
                         Set.of(

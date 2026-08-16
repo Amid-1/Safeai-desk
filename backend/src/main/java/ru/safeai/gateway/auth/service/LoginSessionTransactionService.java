@@ -60,22 +60,13 @@ public class LoginSessionTransactionService {
                 )
                 .orElseThrow(this::securityStateChanged);
 
-        UUID organizationId =
-                user.getOrganization().getId();
-
+        UUID organizationId = user.getOrganization().getId();
         long organizationAuthVersion =
                 user.getOrganization().getAuthVersion();
-
-        String canonicalEmail =
-                canonicalEmail(user.getEmail());
-
-        Set<String> roleNames =
-                UserRoleMapper.toRoleNames(user);
-
+        String canonicalEmail = canonicalEmail(user.getEmail());
+        Set<String> roleNames = UserRoleMapper.toRoleNames(user);
         Set<String> authenticatedRoleNames =
-                authenticatedRoleNames(
-                        authenticatedPrincipal
-                );
+                authenticatedRoleNames(authenticatedPrincipal);
 
         validateAuthenticatedSnapshot(
                 authenticatedPrincipal,
@@ -88,7 +79,6 @@ public class LoginSessionTransactionService {
         );
 
         Instant now = clock.instant();
-
         user.setLastLoginAt(now);
 
         RefreshTokenService.CreatedRefreshToken refreshToken =
@@ -102,7 +92,6 @@ public class LoginSessionTransactionService {
                 new AccessTokenSubject(
                         user.getId(),
                         organizationId,
-                        canonicalEmail,
                         user.getTokenVersion(),
                         organizationAuthVersion,
                         roleNames
@@ -139,18 +128,24 @@ public class LoginSessionTransactionService {
                 user.isEnabled()
                         && user.getOrganization().isEnabled()
                         && organizationId.equals(
-                        principal.getOrganizationId()
-                )
+                                principal.getOrganizationId()
+                        )
                         && organizationAuthVersion
                         == principal.getOrganizationAuthVersion()
+                        /*
+                         * canonicalEmail гарантированно non-null.
+                         * String#equals(null) безопасно возвращает false,
+                         * поэтому отдельная principalEmail != null проверка
+                         * не требуется.
+                         */
                         && canonicalEmail.equals(
-                        principal.getEmail()
-                )
+                                principal.getEmail()
+                        )
                         && user.getTokenVersion()
                         == principal.getTokenVersion()
                         && currentRoleNames.equals(
-                        authenticatedRoleNames
-                );
+                                authenticatedRoleNames
+                        );
 
         if (!valid) {
             throw securityStateChanged();
@@ -180,9 +175,7 @@ public class LoginSessionTransactionService {
         );
     }
 
-    private String canonicalEmail(
-            String email
-    ) {
+    private String canonicalEmail(String email) {
         Objects.requireNonNull(
                 email,
                 "email пользователя не должен быть null"

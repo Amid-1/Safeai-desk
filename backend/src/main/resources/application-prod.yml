@@ -1,4 +1,4 @@
-# application-prod.yml
+# # D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod.yml
 
 spring:
   datasource:
@@ -57,6 +57,15 @@ logging:
     org.hibernate.SQL: WARN
     org.hibernate.orm.jdbc.bind: "OFF"
     org.springframework.web.filter.CommonsRequestLoggingFilter: "OFF"
+
+app:
+  security:
+    jwt:
+      active-key-id: ${SAFEAI_JWT_ACTIVE_KEY_ID}
+      keys:
+        - id: ${SAFEAI_JWT_ACTIVE_KEY_ID}
+          public-key: ${SAFEAI_JWT_ACTIVE_PUBLIC_KEY}
+          private-key: ${SAFEAI_JWT_ACTIVE_PRIVATE_KEY}
 
 safeai:
   ai:

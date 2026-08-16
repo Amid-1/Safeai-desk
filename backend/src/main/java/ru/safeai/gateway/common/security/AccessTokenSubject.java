@@ -5,25 +5,28 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Полезная нагрузка для выпуска access JWT.
+ * Минимальная security-нагрузка для выпуска access JWT.
  *
- * <p>organizationAuthVersion является обязательной частью
- * security contract. Перегрузок с неявным значением 0 быть
- * не должно: отсутствие версии должно обнаруживаться компилятором.</p>
+ * <p>PII вроде email намеренно не включается: access token содержит
+ * только идентификаторы и данные, необходимые для авторизации и
+ * немедленной инвалидизации security state.</p>
  */
 public record AccessTokenSubject(
         UUID userId,
         UUID organizationId,
-        String email,
         long tokenVersion,
         long organizationAuthVersion,
         Set<String> roles
 ) {
 
+    /**
+     * Явный canonical constructor используется вместо compact constructor,
+     * чтобы validation/normalization были очевидны для IDE и статического
+     * анализа и не создавали ложные предупреждения о повторном присваивании.
+     */
     public AccessTokenSubject(
             UUID userId,
             UUID organizationId,
-            String email,
             long tokenVersion,
             long organizationAuthVersion,
             Set<String> roles
@@ -37,10 +40,6 @@ public record AccessTokenSubject(
                 organizationId,
                 "organizationId не должен быть null"
         );
-
-        this.email =
-                SecurityIdentityValidator
-                        .requireCanonicalEmail(email);
 
         this.tokenVersion =
                 SecurityIdentityValidator
@@ -56,8 +55,7 @@ public record AccessTokenSubject(
                                 "organizationAuthVersion"
                         );
 
-        this.roles =
-                SecurityIdentityValidator
-                        .normalizeRoleNames(roles);
+        this.roles = SecurityIdentityValidator
+                .normalizeRoleNames(roles);
     }
 }

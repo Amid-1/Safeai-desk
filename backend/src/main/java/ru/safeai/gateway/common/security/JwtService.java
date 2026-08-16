@@ -1,7 +1,7 @@
 package ru.safeai.gateway.common.security;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -37,8 +37,7 @@ public class JwtService {
 
         Instant expiresAt = issuedAt.plus(
                 Duration.ofMinutes(
-                        jwtProperties
-                                .expirationMinutes()
+                        jwtProperties.expirationMinutes()
                 )
         );
 
@@ -48,58 +47,38 @@ public class JwtService {
                 .toList();
 
         JwsHeader headers = JwsHeader
-                .with(MacAlgorithm.HS256)
+                .with(SignatureAlgorithm.RS256)
                 .type(TOKEN_TYPE)
+                .keyId(jwtProperties.activeKeyId())
                 .build();
 
-        JwtClaimsSet claims =
-                JwtClaimsSet.builder()
-                        .issuer(
-                                jwtProperties.issuer()
-                        )
-                        .audience(
-                                List.of(
-                                        jwtProperties
-                                                .audience()
-                                )
-                        )
-                        .issuedAt(issuedAt)
-                        .expiresAt(expiresAt)
-                        .subject(
-                                subject.userId()
-                                        .toString()
-                        )
-                        .id(
-                                UUID.randomUUID()
-                                        .toString()
-                        )
-                        .claim(
-                                "userId",
-                                subject.userId()
-                                        .toString()
-                        )
-                        .claim(
-                                "organizationId",
-                                subject.organizationId()
-                                        .toString()
-                        )
-                        .claim(
-                                "email",
-                                subject.email()
-                        )
-                        .claim(
-                                "tokenVersion",
-                                subject.tokenVersion()
-                        )
-                        .claim(
-                                "organizationAuthVersion",
-                                subject.organizationAuthVersion()
-                        )
-                        .claim(
-                                "roles",
-                                roles
-                        )
-                        .build();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer(jwtProperties.issuer())
+                .audience(
+                        List.of(jwtProperties.audience())
+                )
+                .issuedAt(issuedAt)
+                .expiresAt(expiresAt)
+                .subject(subject.userId().toString())
+                .id(UUID.randomUUID().toString())
+                .claim(
+                        "userId",
+                        subject.userId().toString()
+                )
+                .claim(
+                        "organizationId",
+                        subject.organizationId().toString()
+                )
+                .claim(
+                        "tokenVersion",
+                        subject.tokenVersion()
+                )
+                .claim(
+                        "organizationAuthVersion",
+                        subject.organizationAuthVersion()
+                )
+                .claim("roles", roles)
+                .build();
 
         return jwtEncoder.encode(
                 JwtEncoderParameters.from(

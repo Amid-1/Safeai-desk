@@ -35,12 +35,15 @@ class SafeAiJwtAuthenticationConverterTest {
                     "2026-08-12T12:00:00Z"
             );
 
+    private static final String TEST_KEY_ID =
+            "safeai-test-active";
+
     private final SafeAiJwtAuthenticationConverter
             converter =
             new SafeAiJwtAuthenticationConverter();
 
     @Test
-    void validJwtCreatesAuthenticatedPrincipalWithoutCredentials() {
+    void validJwtCreatesAuthenticatedPrincipalWithoutCredentialsOrPii() {
         AbstractAuthenticationToken authentication =
                 convert(
                         USER_ID.toString(),
@@ -61,8 +64,7 @@ class SafeAiJwtAuthenticationConverterTest {
         SafeAiUserPrincipal principal =
                 assertInstanceOf(
                         SafeAiUserPrincipal.class,
-                        authentication
-                                .getPrincipal()
+                        authentication.getPrincipal()
                 );
 
         assertThat(principal.getId())
@@ -73,6 +75,9 @@ class SafeAiJwtAuthenticationConverterTest {
         ).isEqualTo(
                 ORGANIZATION_ID
         );
+
+        assertThat(principal.getEmail())
+                .isNull();
 
         assertThat(principal.getTokenVersion())
                 .isEqualTo(4L);
@@ -90,10 +95,16 @@ class SafeAiJwtAuthenticationConverterTest {
         assertThat(
                 principal.getPassword()
         ).isNull();
+
+        assertThat(
+                principal.getUsername()
+        ).isEqualTo(
+                USER_ID.toString()
+        );
     }
 
     @Test
-    void rawJwtAndEmailAreNotExposedByPrincipalToString() {
+    void rawJwtIsNotExposedByPrincipalToString() {
         SafeAiUserPrincipal principal =
                 convertPrincipal(
                         USER_ID.toString(),
@@ -103,9 +114,6 @@ class SafeAiJwtAuthenticationConverterTest {
         assertThat(principal.toString())
                 .doesNotContain(
                         "raw-secret-token"
-                )
-                .doesNotContain(
-                        "user@example.com"
                 );
     }
 
@@ -246,8 +254,7 @@ class SafeAiJwtAuthenticationConverterTest {
                     );
 
             assertThat(
-                    principal
-                            .getOrganizationAuthVersion()
+                    principal.getOrganizationAuthVersion()
             ).isEqualTo(
                     version.longValue()
             );
@@ -267,6 +274,23 @@ class SafeAiJwtAuthenticationConverterTest {
                 USER_ID.toString(),
                 claims,
                 "tokenVersion"
+        );
+    }
+
+    @Test
+    void negativeTokenVersionIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "tokenVersion",
+                -1L
+        );
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "negative"
         );
     }
 
@@ -313,10 +337,68 @@ class SafeAiJwtAuthenticationConverterTest {
     @Test
     void subjectMismatchIsRejected() {
         assertRejected(
-                UUID.randomUUID()
-                        .toString(),
+                UUID.randomUUID().toString(),
                 validClaims(),
                 "subject does not match userId"
+        );
+    }
+
+    @Test
+    void missingUserIdIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.remove("userId");
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "userId"
+        );
+    }
+
+    @Test
+    void missingOrganizationIdIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.remove("organizationId");
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "organizationId"
+        );
+    }
+
+    @Test
+    void missingRolesIsRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.remove("roles");
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "roles"
+        );
+    }
+
+    @Test
+    void emptyRolesAreRejected() {
+        Map<String, Object> claims =
+                validClaims();
+
+        claims.put(
+                "roles",
+                List.of()
+        );
+
+        assertRejected(
+                USER_ID.toString(),
+                claims,
+                "roles"
         );
     }
 
@@ -417,23 +499,6 @@ class SafeAiJwtAuthenticationConverterTest {
     }
 
     @Test
-    void nonCanonicalEmailIsRejected() {
-        Map<String, Object> claims =
-                validClaims();
-
-        claims.put(
-                "email",
-                "User@example.com"
-        );
-
-        assertRejected(
-                USER_ID.toString(),
-                claims,
-                "not canonical"
-        );
-    }
-
-    @Test
     void missingSubjectIsRejected() {
         assertThatThrownBy(() ->
                 converter.convert(
@@ -491,8 +556,7 @@ class SafeAiJwtAuthenticationConverterTest {
                 );
     }
 
-    private Map<String, Object>
-    validClaims() {
+    private Map<String, Object> validClaims() {
         Map<String, Object> claims =
                 new LinkedHashMap<>();
 
@@ -504,11 +568,6 @@ class SafeAiJwtAuthenticationConverterTest {
         claims.put(
                 "organizationId",
                 ORGANIZATION_ID.toString()
-        );
-
-        claims.put(
-                "email",
-                "user@example.com"
         );
 
         claims.put(
@@ -570,13 +629,19 @@ class SafeAiJwtAuthenticationConverterTest {
                         )
                         .header(
                                 "alg",
-                                "HS256"
+                                "RS256"
+                        )
+                        .header(
+                                "typ",
+                                "JWT"
+                        )
+                        .header(
+                                "kid",
+                                TEST_KEY_ID
                         )
                         .issuedAt(NOW)
                         .expiresAt(
-                                NOW.plusSeconds(
-                                        300
-                                )
+                                NOW.plusSeconds(300)
                         );
 
         if (subject != null) {

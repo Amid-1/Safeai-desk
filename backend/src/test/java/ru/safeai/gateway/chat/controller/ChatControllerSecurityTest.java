@@ -473,7 +473,6 @@ class ChatControllerSecurityTest {
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 USER_ID,
                 ORGANIZATION_ID,
-                "admin@test.com",
                 0L,
                 0L,
                 List.of(

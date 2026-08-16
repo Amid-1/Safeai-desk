@@ -162,7 +162,6 @@ public final class ChatTestFixtures {
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 USER_ID,
                 ORGANIZATION_ID,
-                "chat-user@test.com",
                 0L,
                 0L,
                 List.of(

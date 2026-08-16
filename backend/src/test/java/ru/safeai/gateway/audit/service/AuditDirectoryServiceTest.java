@@ -1,4 +1,3 @@
-
 package ru.safeai.gateway.audit.service;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -161,7 +160,6 @@ class AuditDirectoryServiceTest {
                 .accessTokenPrincipal(
                         ADMIN_ID,
                         ORGANIZATION_ID,
-                        "admin@test.com",
                         0L,
                         0L,
                         Set.of(
@@ -177,7 +175,6 @@ class AuditDirectoryServiceTest {
                 .accessTokenPrincipal(
                         SUPER_ADMIN_ID,
                         PLATFORM_ORGANIZATION_ID,
-                        "superadmin@test.com",
                         0L,
                         0L,
                         Set.of(

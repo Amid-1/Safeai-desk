@@ -235,7 +235,6 @@ class ChatConcurrencyIntegrationTest
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 USER_ID,
                 ORGANIZATION_ID,
-                "chat-concurrency@test.com",
                 0L,
                 0L,
                 Set.of(

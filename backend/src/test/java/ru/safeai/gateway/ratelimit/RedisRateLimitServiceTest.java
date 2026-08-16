@@ -514,7 +514,6 @@ void setUp() {
                 .accessTokenPrincipal(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@test.com",
                         0L,
                         0L,
                         List.of(

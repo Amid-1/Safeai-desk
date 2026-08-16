@@ -16,11 +16,9 @@ import java.util.UUID;
 /**
  * Безопасное представление authenticated user.
  *
- * <p>organizationAuthVersion обязательна как для password
- * authentication, так и для principal, восстановленного из JWT.</p>
- *
- * <p>Password hash намеренно не имеет отдельного getter и
- * не попадает в toString().</p>
+ * <p>Password-auth principal временно содержит canonical email и password
+ * hash, необходимый DaoAuthenticationProvider. JWT-auth principal не хранит
+ * email и вообще не содержит credentials/PII, которых нет в access token.</p>
  */
 public final class SafeAiUserPrincipal
         implements UserDetails, CredentialsContainer {
@@ -31,9 +29,7 @@ public final class SafeAiUserPrincipal
     @Getter
     private final UUID organizationId;
 
-    @Getter
-    private final String email;
-
+    private final @Nullable String email;
     private final boolean enabled;
 
     @Getter
@@ -50,7 +46,7 @@ public final class SafeAiUserPrincipal
     private SafeAiUserPrincipal(
             UUID id,
             UUID organizationId,
-            String email,
+            @Nullable String email,
             @Nullable String passwordHash,
             boolean enabled,
             long tokenVersion,
@@ -62,15 +58,15 @@ public final class SafeAiUserPrincipal
                 "id не должен быть null"
         );
 
-        this.organizationId =
-                Objects.requireNonNull(
-                        organizationId,
-                        "organizationId не должен быть null"
-                );
+        this.organizationId = Objects.requireNonNull(
+                organizationId,
+                "organizationId не должен быть null"
+        );
 
-        this.email =
-                SecurityIdentityValidator
-                        .requireCanonicalEmail(email);
+        this.email = email == null
+                ? null
+                : SecurityIdentityValidator
+                .requireCanonicalEmail(email);
 
         this.passwordHash = passwordHash;
         this.enabled = enabled;
@@ -95,10 +91,9 @@ public final class SafeAiUserPrincipal
                                 authorities
                         );
 
-        this.authorities =
-                createAuthorities(
-                        authorityNames
-                );
+        this.authorities = createAuthorities(
+                authorityNames
+        );
     }
 
     public static SafeAiUserPrincipal passwordPrincipal(
@@ -111,11 +106,10 @@ public final class SafeAiUserPrincipal
             long organizationAuthVersion,
             Collection<? extends GrantedAuthority> authorities
     ) {
-        String credentials =
-                Objects.requireNonNull(
-                        passwordHash,
-                        "passwordHash не должен быть null"
-                );
+        String credentials = Objects.requireNonNull(
+                passwordHash,
+                "passwordHash не должен быть null"
+        );
 
         if (credentials.isBlank()) {
             throw new IllegalArgumentException(
@@ -126,7 +120,10 @@ public final class SafeAiUserPrincipal
         return new SafeAiUserPrincipal(
                 id,
                 organizationId,
-                email,
+                Objects.requireNonNull(
+                        email,
+                        "email не должен быть null"
+                ),
                 credentials,
                 enabled,
                 tokenVersion,
@@ -138,7 +135,6 @@ public final class SafeAiUserPrincipal
     public static SafeAiUserPrincipal accessTokenPrincipal(
             UUID id,
             UUID organizationId,
-            String email,
             long tokenVersion,
             long organizationAuthVersion,
             Collection<? extends GrantedAuthority> authorities
@@ -146,13 +142,21 @@ public final class SafeAiUserPrincipal
         return new SafeAiUserPrincipal(
                 id,
                 organizationId,
-                email,
+                null,
                 null,
                 true,
                 tokenVersion,
                 organizationAuthVersion,
                 authorities
         );
+    }
+
+    /**
+     * Возвращает email только для password-auth principal.
+     * JWT-auth principal намеренно не содержит email.
+     */
+    public @Nullable String getEmail() {
+        return email;
     }
 
     public List<String> authorityNames() {
@@ -164,36 +168,28 @@ public final class SafeAiUserPrincipal
         return authorities;
     }
 
-    /**
-     * Реализация UserDetails.
-     *
-     * <p>Это единственный password getter.
-     * Отдельный getPasswordHash() намеренно отсутствует.</p>
-     */
     @Override
     public @Nullable String getPassword() {
         return passwordHash;
     }
 
+    /**
+     * Для password-auth сохраняется привычный username=email.
+     * Для JWT-auth username является стабильным non-PII userId.
+     */
     @Override
     public String getUsername() {
-        return email;
+        return email != null
+                ? email
+                : id.toString();
     }
 
-    @Override
-    public boolean isAccountNonExpired() {
-        return true;
-    }
-
-    @Override
-    public boolean isAccountNonLocked() {
-        return true;
-    }
-
-    @Override
-    public boolean isCredentialsNonExpired() {
-        return true;
-    }
+    /*
+     * isAccountNonExpired(), isAccountNonLocked() и
+     * isCredentialsNonExpired() намеренно не переопределяются:
+     * в используемой версии Spring Security UserDetails уже содержит
+     * default-реализации, возвращающие true.
+     */
 
     @Override
     public boolean isEnabled() {
@@ -222,9 +218,7 @@ public final class SafeAiUserPrincipal
             List<String> authorityNames
     ) {
         ArrayList<GrantedAuthority> result =
-                new ArrayList<>(
-                        authorityNames.size()
-                );
+                new ArrayList<>(authorityNames.size());
 
         for (String authorityName : authorityNames) {
             result.add(

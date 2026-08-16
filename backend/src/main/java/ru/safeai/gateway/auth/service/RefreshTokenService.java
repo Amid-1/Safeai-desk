@@ -94,10 +94,6 @@ public class RefreshTokenService {
         }
     }
 
-    /**
-     * Создаёт первую refresh-token запись новой session family.
-     * Вызывается только внутри login transaction после user lock.
-     */
     @Transactional(propagation = Propagation.MANDATORY)
     public CreatedRefreshToken createForLogin(
             UserEntity user,
@@ -123,8 +119,9 @@ public class RefreshTokenService {
     }
 
     /**
-     * Строгая одноразовая rotation. Security termination updates должны
-     * зафиксироваться даже при контролируемом refresh exception.
+     * Strict one-time rotation is intentionally preserved.
+     * Cross-tab duplicate refresh is prevented on the frontend coordinator,
+     * not weakened here with a server-side replay grace window.
      */
     @Transactional(
             noRollbackFor = {
@@ -221,7 +218,6 @@ public class RefreshTokenService {
 
         if (oldToken.getIssuedTokenVersion()
                 != user.getTokenVersion()) {
-
             terminateForSecurityState(
                     familyId,
                     now,
@@ -231,7 +227,6 @@ public class RefreshTokenService {
 
         if (oldToken.getIssuedOrganizationAuthVersion()
                 != user.getOrganization().getAuthVersion()) {
-
             terminateForSecurityState(
                     familyId,
                     now,
@@ -262,9 +257,6 @@ public class RefreshTokenService {
         );
     }
 
-    /**
-     * Logout блокирует предъявленную token row и закрывает всю family.
-     */
     @Transactional
     public Optional<LogoutAuditSubject> revokeFamilyAndReturnSubject(
             String rawToken
@@ -407,15 +399,10 @@ public class RefreshTokenService {
         entity.setId(tokenId);
         entity.setUser(user);
         entity.setTokenHash(hash(rawToken));
-
-        entity.setIssuedTokenVersion(
-                user.getTokenVersion()
-        );
-
+        entity.setIssuedTokenVersion(user.getTokenVersion());
         entity.setIssuedOrganizationAuthVersion(
                 user.getOrganization().getAuthVersion()
         );
-
         entity.setTokenFamilyId(tokenFamilyId);
         entity.setCreatedAt(now);
         entity.setExpiresAt(expiresAt);
@@ -423,7 +410,9 @@ public class RefreshTokenService {
         entity.setFamilyExpiresAt(familyExpiresAt);
         entity.setCreatedByIp(clientIpResolver.resolve(request));
         entity.setUserAgent(
-                truncateUserAgent(request.getHeader("User-Agent"))
+                truncateUserAgent(
+                        request.getHeader("User-Agent")
+                )
         );
 
         refreshTokenRepository.save(entity);
@@ -441,7 +430,6 @@ public class RefreshTokenService {
         return new AccessTokenSubject(
                 user.getId(),
                 user.getOrganization().getId(),
-                canonicalEmail(user.getEmail()),
                 user.getTokenVersion(),
                 user.getOrganization().getAuthVersion(),
                 UserRoleMapper.toRoleNames(user)
@@ -477,7 +465,9 @@ public class RefreshTokenService {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(
-                    digest.digest(rawToken.getBytes(StandardCharsets.UTF_8))
+                    digest.digest(
+                            rawToken.getBytes(StandardCharsets.UTF_8)
+                    )
             );
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(
@@ -487,16 +477,26 @@ public class RefreshTokenService {
         }
     }
 
-    private Duration cookieMaxAge(Instant now, Instant expiresAt) {
-        long seconds = Duration.between(now, expiresAt).toSeconds();
-        return Duration.ofSeconds(Math.max(1, seconds));
+    private Duration cookieMaxAge(
+            Instant now,
+            Instant expiresAt
+    ) {
+        long seconds = Duration.between(
+                now,
+                expiresAt
+        ).toSeconds();
+
+        return Duration.ofSeconds(
+                Math.max(1, seconds)
+        );
     }
 
     private String canonicalEmail(String email) {
         Objects.requireNonNull(email, "email не должен быть null");
         String canonical = email.trim().toLowerCase(Locale.ROOT);
 
-        if (canonical.isBlank() || canonical.length() > MAX_EMAIL_LENGTH) {
+        if (canonical.isBlank()
+                || canonical.length() > MAX_EMAIL_LENGTH) {
             throw new IllegalStateException(
                     "Некорректный email пользователя"
             );
@@ -528,7 +528,10 @@ public class RefreshTokenService {
         requirePositiveDuration(maxAge, maxAgeFieldName);
     }
 
-    private static void requireText(String value, String fieldName) {
+    private static void requireText(
+            String value,
+            String fieldName
+    ) {
         Objects.requireNonNull(
                 value,
                 fieldName + " не должен быть null"

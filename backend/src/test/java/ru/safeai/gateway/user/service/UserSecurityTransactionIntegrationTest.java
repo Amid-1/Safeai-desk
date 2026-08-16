@@ -171,7 +171,6 @@ class UserSecurityTransactionIntegrationTest
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 ADMIN_ID,
                 ORGANIZATION_ID,
-                "admin@test.com",
                 0L,
                 0L,
                 Set.of(

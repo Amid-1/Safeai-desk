@@ -4,7 +4,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtAudienceValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -15,7 +14,6 @@ import org.springframework.security.oauth2.jwt.JwtTypeValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
-import javax.crypto.SecretKey;
 import java.time.Clock;
 import java.time.Duration;
 
@@ -29,42 +27,25 @@ public class JwtCodecConfiguration {
             "JWT";
 
     @Bean
-    SecretKey jwtSecretKey(
-            JwtProperties properties
-    ) {
-        return properties.secretKey();
-    }
-
-    @Bean
     JwtEncoder jwtEncoder(
-            SecretKey jwtSecretKey
+            JwtRsaKeyRing keyRing
     ) {
-        return NimbusJwtEncoder
-                .withSecretKey(jwtSecretKey)
-                .algorithm(MacAlgorithm.HS256)
-                .build();
+        return new NimbusJwtEncoder(
+                keyRing.signingJwkSource()
+        );
     }
 
     @Bean
     JwtDecoder jwtDecoder(
-            SecretKey jwtSecretKey,
+            JwtRsaKeyRing keyRing,
             JwtProperties properties,
             Clock clock
     ) {
         NimbusJwtDecoder decoder =
                 NimbusJwtDecoder
-                        .withSecretKey(
-                                jwtSecretKey
+                        .withJwkSource(
+                                keyRing.verificationJwkSource()
                         )
-                        .macAlgorithm(
-                                MacAlgorithm.HS256
-                        )
-                        /*
-                         * typ проверяется явно ниже.
-                         * Это не позволяет silently принять
-                         * token без typ.
-                         */
-                        .validateType(false)
                         .build();
 
         decoder.setJwtValidator(
@@ -104,29 +85,19 @@ public class JwtCodecConfiguration {
                 );
 
         validator.setClock(clock);
-        validator.setAllowEmptyExpiryClaim(
-                false
-        );
-        validator.setAllowEmptyNotBeforeClaim(
-                true
-        );
+        validator.setAllowEmptyExpiryClaim(false);
+        validator.setAllowEmptyNotBeforeClaim(true);
 
         return validator;
     }
 
-    private JwtTypeValidator
-    createTypeValidator() {
+    private JwtTypeValidator createTypeValidator() {
         JwtTypeValidator validator =
                 new JwtTypeValidator(
                         REQUIRED_TOKEN_TYPE
                 );
 
-        /*
-         * JwtTypeValidator.jwt() здесь не используем:
-         * в нашем контракте typ обязателен.
-         */
         validator.setAllowEmpty(false);
-
         return validator;
     }
 }

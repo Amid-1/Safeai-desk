@@ -12,14 +12,15 @@ import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,9 +28,14 @@ import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,8 +47,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Проверяет полный bearer pipeline.
- * <p>signed JWT -> JwtDecoder -> SafeAiJwtAuthenticationConverter
+ *
+ * <p>RS256 signed JWT -> JwtDecoder -> SafeAiJwtAuthenticationConverter
  * -> Spring Security -> RestAuthenticationEntryPoint -> JSON 401.</p>
+ *
  * <p>JwtProperties создаётся только через property binding.
  * Ручного {@code @Bean JwtProperties} здесь быть не должно.</p>
  */
@@ -52,6 +60,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         JwtBearerSecurityIntegrationTest.TestSecurityConfiguration.class,
 
         JwtCodecConfiguration.class,
+        JwtRsaKeyRing.class,
         SafeAiJwtAuthenticationConverter.class,
         RestAuthenticationEntryPoint.class,
         RestAccessDeniedHandler.class,
@@ -59,13 +68,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         ApiErrorResponseWriter.class,
         ApiErrorResponseFactory.class,
         RequestIdFilter.class
-})
-@TestPropertySource(properties = {
-        "app.security.jwt.secret="
-                + "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
-        "app.security.jwt.expiration-minutes=15",
-        "app.security.jwt.issuer=https://issuer.safeai.test",
-        "app.security.jwt.audience=safeai-api"
 })
 class JwtBearerSecurityIntegrationTest {
 
@@ -92,14 +94,14 @@ class JwtBearerSecurityIntegrationTest {
                     "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
             );
 
-    private static final String EMAIL =
-            "user@test.com";
-
     private static final String ISSUER =
             "https://issuer.safeai.test";
 
     private static final String AUDIENCE =
             "safeai-api";
+
+    private static final String ACTIVE_KEY_ID =
+            "test-active-key";
 
     private static final long TOKEN_VERSION =
             7L;
@@ -107,11 +109,60 @@ class JwtBearerSecurityIntegrationTest {
     private static final long ORGANIZATION_AUTH_VERSION =
             11L;
 
+    private static final KeyPair RSA_KEY_PAIR =
+            generateRsaKeyPair();
+
+    private static final String PUBLIC_KEY =
+            toPublicKeyPem();
+
+    private static final String PRIVATE_KEY =
+            toPrivateKeyPem();
+
     @Autowired
     private MockMvc mockMvc;
 
     @Autowired
     private JwtEncoder jwtEncoder;
+
+    @DynamicPropertySource
+    static void jwtProperties(
+            DynamicPropertyRegistry registry
+    ) {
+        registry.add(
+                "app.security.jwt.expiration-minutes",
+                () -> "15"
+        );
+
+        registry.add(
+                "app.security.jwt.issuer",
+                () -> ISSUER
+        );
+
+        registry.add(
+                "app.security.jwt.audience",
+                () -> AUDIENCE
+        );
+
+        registry.add(
+                "app.security.jwt.active-key-id",
+                () -> ACTIVE_KEY_ID
+        );
+
+        registry.add(
+                "app.security.jwt.keys[0].id",
+                () -> ACTIVE_KEY_ID
+        );
+
+        registry.add(
+                "app.security.jwt.keys[0].public-key",
+                () -> PUBLIC_KEY
+        );
+
+        registry.add(
+                "app.security.jwt.keys[0].private-key",
+                () -> PRIVATE_KEY
+        );
+    }
 
     @RestController
     static class ProbeController {
@@ -470,7 +521,6 @@ class JwtBearerSecurityIntegrationTest {
                 USER_ID.toString(),
                 USER_ID,
                 ORGANIZATION_ID,
-                EMAIL,
                 TOKEN_VERSION,
                 ORGANIZATION_AUTH_VERSION,
                 List.of("USER")
@@ -481,19 +531,20 @@ class JwtBearerSecurityIntegrationTest {
             TokenClaims claims,
             String type
     ) {
-        JwsHeader headers =
-                type == null
-                        ? JwsHeader
+        JwsHeader.Builder headerBuilder =
+                JwsHeader
                         .with(
-                                MacAlgorithm.HS256
+                                SignatureAlgorithm.RS256
                         )
-                        .build()
-                        : JwsHeader
-                        .with(
-                                MacAlgorithm.HS256
-                        )
-                        .type(type)
-                        .build();
+                        .keyId(
+                                ACTIVE_KEY_ID
+                        );
+
+        if (type != null) {
+            headerBuilder.type(
+                    type
+            );
+        }
 
         JwtClaimsSet.Builder builder =
                 JwtClaimsSet.builder()
@@ -527,10 +578,6 @@ class JwtBearerSecurityIntegrationTest {
                                         .toString()
                         )
                         .claim(
-                                "email",
-                                claims.email()
-                        )
-                        .claim(
                                 "tokenVersion",
                                 claims.tokenVersion()
                         )
@@ -551,7 +598,7 @@ class JwtBearerSecurityIntegrationTest {
         return jwtEncoder
                 .encode(
                         JwtEncoderParameters.from(
-                                headers,
+                                headerBuilder.build(),
                                 builder.build()
                         )
                 )
@@ -564,6 +611,68 @@ class JwtBearerSecurityIntegrationTest {
         return "Bearer " + token;
     }
 
+    private static KeyPair generateRsaKeyPair() {
+        try {
+            KeyPairGenerator generator =
+                    KeyPairGenerator.getInstance(
+                            "RSA"
+                    );
+
+            generator.initialize(
+                    2048
+            );
+
+            return generator.generateKeyPair();
+        } catch (GeneralSecurityException exception) {
+            throw new IllegalStateException(
+                    "Не удалось создать RSA key pair для теста",
+                    exception
+            );
+        }
+    }
+
+    private static String toPublicKeyPem() {
+        return toPem(
+                "PUBLIC KEY",
+                RSA_KEY_PAIR
+                        .getPublic()
+                        .getEncoded()
+        );
+    }
+
+    private static String toPrivateKeyPem() {
+        return toPem(
+                "PRIVATE KEY",
+                RSA_KEY_PAIR
+                        .getPrivate()
+                        .getEncoded()
+        );
+    }
+
+    private static String toPem(
+            String type,
+            byte[] encoded
+    ) {
+        String body =
+                Base64.getMimeEncoder(
+                                64,
+                                "\n".getBytes(
+                                        StandardCharsets.US_ASCII
+                                )
+                        )
+                        .encodeToString(
+                                encoded
+                        );
+
+        return "-----BEGIN "
+                + type
+                + "-----\n"
+                + body
+                + "\n-----END "
+                + type
+                + "-----";
+    }
+
     private record TokenClaims(
             String issuer,
             List<String> audience,
@@ -572,7 +681,6 @@ class JwtBearerSecurityIntegrationTest {
             String subject,
             UUID userId,
             UUID organizationId,
-            String email,
             long tokenVersion,
             Object organizationAuthVersion,
             List<String> roles
@@ -589,7 +697,6 @@ class JwtBearerSecurityIntegrationTest {
                     subject,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     value,
                     roles
@@ -607,7 +714,6 @@ class JwtBearerSecurityIntegrationTest {
                     value,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     organizationAuthVersion,
                     roles
@@ -625,7 +731,6 @@ class JwtBearerSecurityIntegrationTest {
                     subject,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     organizationAuthVersion,
                     value
@@ -641,7 +746,6 @@ class JwtBearerSecurityIntegrationTest {
                     subject,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     organizationAuthVersion,
                     roles
@@ -659,7 +763,6 @@ class JwtBearerSecurityIntegrationTest {
                     subject,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     organizationAuthVersion,
                     roles

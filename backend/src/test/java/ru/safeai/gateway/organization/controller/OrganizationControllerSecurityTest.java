@@ -815,7 +815,6 @@ class OrganizationControllerSecurityTest {
                 .accessTokenPrincipal(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@test.com",
                         0L,
                         0L,
                         List.of(
@@ -831,7 +830,6 @@ class OrganizationControllerSecurityTest {
                 .accessTokenPrincipal(
                         ADMIN_ID,
                         ORGANIZATION_ID,
-                        "admin@test.com",
                         0L,
                         0L,
                         List.of(
@@ -847,7 +845,6 @@ class OrganizationControllerSecurityTest {
                 .accessTokenPrincipal(
                         SUPER_ADMIN_ID,
                         PLATFORM_ORGANIZATION_ID,
-                        "superadmin@test.com",
                         0L,
                         0L,
                         List.of(

@@ -1066,6 +1066,7 @@ git status
 git add -A
 git restore --staged commit-message.txt
 git diff --cached --stat
+git diff --cached
 git commit -F commit-message.txt
 git log -1 --stat
 git push

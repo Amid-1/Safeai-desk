@@ -112,7 +112,6 @@ class ChatTenantIsolationIntegrationTest
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 userId,
                 organizationId,
-                "principal@test.example",
                 0L,
                 0L,
                 List.of(

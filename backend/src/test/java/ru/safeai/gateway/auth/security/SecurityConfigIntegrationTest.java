@@ -1,6 +1,5 @@
 package ru.safeai.gateway.auth.security;
 
-import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import jakarta.servlet.http.Cookie;
 import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.Nullable;
@@ -16,12 +15,11 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
-import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -40,6 +38,8 @@ import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 import ru.safeai.gateway.common.security.AccessTokenSubject;
 import ru.safeai.gateway.common.security.JwtCodecConfiguration;
 import ru.safeai.gateway.common.security.JwtService;
+import ru.safeai.gateway.common.security.JwtProperties;
+import ru.safeai.gateway.common.security.JwtRsaKeyRing;
 import ru.safeai.gateway.common.security.PasswordEncodingConfiguration;
 import ru.safeai.gateway.common.security.RequestIdFilter;
 import ru.safeai.gateway.common.security.RestAccessDeniedHandler;
@@ -49,9 +49,6 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.service.UserSecurityStatus;
 import ru.safeai.gateway.user.service.UserStatusCacheService;
 
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -101,13 +98,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         RequestIdFilter.class,
 
         JwtCodecConfiguration.class,
+        JwtRsaKeyRing.class,
         JwtService.class,
 
         SecurityConfigIntegrationTest.TestClockConfiguration.class
 })
 @TestPropertySource(properties = {
-        "app.security.jwt.secret="
-                + "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
         "app.security.jwt.expiration-minutes=15",
         "app.security.jwt.issuer=https://issuer.safeai.test",
         "app.security.jwt.audience=safeai-api",
@@ -168,15 +164,6 @@ class SecurityConfigIntegrationTest {
     private static final String CLIENT_REQUEST_ID =
             "security-integration-test";
 
-    private static final String JWT_ISSUER =
-            "https://issuer.safeai.test";
-
-    private static final String JWT_AUDIENCE =
-            "safeai-api";
-
-    private static final String OTHER_SECRET =
-            "fedcba9876543210fedcba9876543210";
-
     @Autowired
     private MockMvc mockMvc;
 
@@ -185,6 +172,9 @@ class SecurityConfigIntegrationTest {
 
     @Autowired
     private JwtEncoder jwtEncoder;
+
+    @Autowired
+    private JwtProperties jwtProperties;
 
     @MockitoBean
     private AuthService authService;
@@ -614,7 +604,7 @@ class SecurityConfigIntegrationTest {
 
         assertThat(
                 principal.getEmail()
-        ).isEqualTo(EMAIL);
+        ).isNull();
 
         assertThat(
                 principal.getTokenVersion()
@@ -803,16 +793,10 @@ class SecurityConfigIntegrationTest {
     void tokenWithInvalidSignatureReturns401()
             throws Exception {
 
-        String token =
-                encodeToken(
-                        encoder(
-                                otherSecretKey()
-                        ),
-                        defaultClaims()
-                );
-
         assertInvalidJwt(
-                token
+                corruptSignature(
+                        validUserToken()
+                )
         );
     }
 
@@ -1630,7 +1614,6 @@ class SecurityConfigIntegrationTest {
                         new AccessTokenSubject(
                                 USER_ID,
                                 ORGANIZATION_ID,
-                                EMAIL,
                                 TOKEN_VERSION,
                                 ORGANIZATION_AUTH_VERSION,
                                 roles
@@ -1654,16 +1637,15 @@ class SecurityConfigIntegrationTest {
                 Instant.now();
 
         return new TokenClaims(
-                JWT_ISSUER,
+                jwtProperties.issuer(),
                 List.of(
-                        JWT_AUDIENCE
+                        jwtProperties.audience()
                 ),
                 now.minusSeconds(5),
                 now.plusSeconds(600),
                 USER_ID.toString(),
                 USER_ID,
                 ORGANIZATION_ID,
-                EMAIL,
                 TOKEN_VERSION,
                 ORGANIZATION_AUTH_VERSION,
                 List.of("USER")
@@ -1677,9 +1659,12 @@ class SecurityConfigIntegrationTest {
         JwsHeader headers =
                 JwsHeader
                         .with(
-                                MacAlgorithm.HS256
+                                SignatureAlgorithm.RS256
                         )
                         .type("JWT")
+                        .keyId(
+                                jwtProperties.activeKeyId()
+                        )
                         .build();
 
         JwtClaimsSet.Builder builder =
@@ -1720,13 +1705,6 @@ class SecurityConfigIntegrationTest {
             );
         }
 
-        if (claims.email() != null) {
-            builder.claim(
-                    "email",
-                    claims.email()
-            );
-        }
-
         if (claims.tokenVersion() != null) {
             builder.claim(
                     "tokenVersion",
@@ -1758,23 +1736,39 @@ class SecurityConfigIntegrationTest {
         ).getTokenValue();
     }
 
-    private static JwtEncoder encoder(
-            SecretKey secretKey
+    private static String corruptSignature(
+            String token
     ) {
-        return new NimbusJwtEncoder(
-                new ImmutableSecret<>(
-                        secretKey
-                )
-        );
-    }
+        int signatureSeparator =
+                token.lastIndexOf('.');
 
-    private static SecretKey otherSecretKey() {
-        return new SecretKeySpec(
-                OTHER_SECRET.getBytes(
-                        StandardCharsets.UTF_8
-                ),
-                "HmacSHA256"
-        );
+        if (signatureSeparator < 0
+                || signatureSeparator == token.length() - 1) {
+            throw new IllegalArgumentException(
+                    "JWT не содержит signature segment"
+            );
+        }
+
+        int signatureStart =
+                signatureSeparator + 1;
+
+        char original =
+                token.charAt(
+                        signatureStart
+                );
+
+        char replacement =
+                original == 'A'
+                        ? 'B'
+                        : 'A';
+
+        return token.substring(
+                0,
+                signatureStart
+        ) + replacement
+                + token.substring(
+                        signatureStart + 1
+                );
     }
 
     private static String bearer(
@@ -1822,7 +1816,6 @@ class SecurityConfigIntegrationTest {
             String subject,
             @Nullable UUID userId,
             @Nullable UUID organizationId,
-            @Nullable String email,
             @Nullable Long tokenVersion,
             @Nullable Long organizationAuthVersion,
             @Nullable List<String> roles
@@ -1867,7 +1860,6 @@ class SecurityConfigIntegrationTest {
                     subject,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     organizationAuthVersion,
                     roles
@@ -1883,7 +1875,6 @@ class SecurityConfigIntegrationTest {
                     subject,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     organizationAuthVersion,
                     roles
@@ -1901,7 +1892,6 @@ class SecurityConfigIntegrationTest {
                     subject,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     organizationAuthVersion,
                     roles
@@ -1919,7 +1909,6 @@ class SecurityConfigIntegrationTest {
                     newSubject,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     organizationAuthVersion,
                     roles
@@ -1937,7 +1926,6 @@ class SecurityConfigIntegrationTest {
                     subject,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     organizationAuthVersion,
                     newRoles
@@ -1953,7 +1941,6 @@ class SecurityConfigIntegrationTest {
                     subject,
                     userId,
                     null,
-                    email,
                     tokenVersion,
                     organizationAuthVersion,
                     roles
@@ -1969,7 +1956,6 @@ class SecurityConfigIntegrationTest {
                     subject,
                     userId,
                     organizationId,
-                    email,
                     tokenVersion,
                     null,
                     roles

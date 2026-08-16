@@ -35,11 +35,15 @@ public class RateLimitAuditListener {
         );
 
         Map<String, Object> details =
-                buildAuditDetails(event);
+                buildAuditDetails(
+                        event
+                );
 
         /*
-         * Login rejection возникает до аутентификации, поэтому actorUserId
-         * отсутствует. Не пытаемся искать пользователя по введённому email:
+         * Login rejection возникает до аутентификации,
+         * поэтому actorUserId отсутствует.
+         *
+         * Не пытаемся искать пользователя по введённому email:
          * пишем системное событие в targetOrganizationId.
          */
         if (event.actorUserId() == null) {
@@ -52,12 +56,20 @@ public class RateLimitAuditListener {
             return;
         }
 
-        AuditActor actor = new AuditActor(
-                event.actorUserId(),
-                event.actorOrganizationId(),
-                event.actorEmail(),
-                event.actorDisplayName()
-        );
+        /*
+         * actorEmail / actorDisplayName могут быть null.
+         *
+         * Это штатно для access-token principal:
+         * access JWT намеренно не содержит PII.
+         * AuditActor поддерживает частичный snapshot identity.
+         */
+        AuditActor actor =
+                new AuditActor(
+                        event.actorUserId(),
+                        event.actorOrganizationId(),
+                        event.actorEmail(),
+                        event.actorDisplayName()
+                );
 
         auditEventService.record(
                 actor,
@@ -81,9 +93,12 @@ public class RateLimitAuditListener {
         );
 
         /*
-         * Для BOTH limit намеренно null: у события два независимых лимита.
-         * Map.copyOf не допускает null values, поэтому поле добавляется
-         * только для одномерного превышения.
+         * Для BOTH limit намеренно null:
+         * у события два независимых лимита.
+         *
+         * Map.copyOf не допускает null values,
+         * поэтому поле добавляется только
+         * для одномерного превышения.
          */
         if (event.limit() != null) {
             result.putIfAbsent(
@@ -97,6 +112,8 @@ public class RateLimitAuditListener {
                 event.window()
         );
 
-        return Map.copyOf(result);
+        return Map.copyOf(
+                result
+        );
     }
 }

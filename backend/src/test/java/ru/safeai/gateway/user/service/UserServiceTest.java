@@ -902,7 +902,6 @@ void permanentDeletionDeletesEmptyDisabledUser() {
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 ADMIN_ID,
                 ORGANIZATION_A_ID,
-                "admin-a@test.com",
                 0L,
                 0L,
                 Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
@@ -913,7 +912,6 @@ void permanentDeletionDeletesEmptyDisabledUser() {
         return SafeAiUserPrincipal.accessTokenPrincipal(
                 SUPER_ADMIN_ID,
                 PLATFORM_ORGANIZATION_ID,
-                "super-admin@test.com",
                 0L,
                 0L,
                 Set.of(new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"))

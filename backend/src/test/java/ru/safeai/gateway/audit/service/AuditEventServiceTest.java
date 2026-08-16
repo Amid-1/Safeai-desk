@@ -9,10 +9,13 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.model.AuditActor;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.user.entity.UserEntity;
+import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,11 +40,20 @@ class AuditEventServiceTest {
     private static final UUID TARGET_ORGANIZATION_ID =
             UUID.randomUUID();
 
+    private static final String ACTOR_EMAIL =
+            "admin@test.com";
+
     @Mock
     private AuditCommandFactory commandFactory;
 
     @Mock
     private AuditOutboxWriter outboxWriter;
+
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private UserEntity userEntity;
 
     @Test
     void recordFromPrincipalBuildsImmutableActorSnapshot() {
@@ -53,6 +65,13 @@ class AuditEventServiceTest {
 
         AuditCommand command =
                 command();
+
+        /*
+         * В этом overload displayName передаётся явно,
+         * поэтому AuditEventService не вызывает userEntity.getFullName().
+         * Стабим только реально используемый email.
+         */
+        stubActorUserEmail();
 
         when(
                 commandFactory.create(
@@ -114,7 +133,7 @@ class AuditEventServiceTest {
         assertThat(
                 actor.email()
         ).isEqualTo(
-                "admin@test.com"
+                ACTOR_EMAIL
         );
 
         assertThat(
@@ -134,6 +153,12 @@ class AuditEventServiceTest {
     void serializationFailureDoesNotCreatePartialOutboxIntent() {
         AuditEventService service =
                 service();
+
+        /*
+         * Здесь displayName явно не передаётся,
+         * поэтому snapshot читает и email, и fullName из БД.
+         */
+        stubActorUserWithName();
 
         doThrow(
                 new IllegalArgumentException(
@@ -182,6 +207,12 @@ class AuditEventServiceTest {
 
         AuditCommand command =
                 command();
+
+        /*
+         * Здесь displayName явно не передаётся,
+         * поэтому snapshot читает и email, и fullName из БД.
+         */
+        stubActorUserWithName();
 
         when(
                 commandFactory.create(
@@ -232,7 +263,8 @@ class AuditEventServiceTest {
     private AuditEventService service() {
         return new AuditEventService(
                 commandFactory,
-                outboxWriter
+                outboxWriter,
+                userRepository
         );
     }
 
@@ -242,7 +274,7 @@ class AuditEventServiceTest {
                 new AuditActor(
                         USER_ID,
                         ACTOR_ORGANIZATION_ID,
-                        "admin@test.com",
+                        ACTOR_EMAIL,
                         "Admin"
                 ),
                 TARGET_ORGANIZATION_ID,
@@ -254,12 +286,41 @@ class AuditEventServiceTest {
         );
     }
 
+    private void stubActorUserEmail() {
+        when(
+                userRepository
+                        .findByIdAndOrganizationId(
+                                USER_ID,
+                                ACTOR_ORGANIZATION_ID
+                        )
+        ).thenReturn(
+                Optional.of(
+                        userEntity
+                )
+        );
+
+        when(
+                userEntity.getEmail()
+        ).thenReturn(
+                ACTOR_EMAIL
+        );
+    }
+
+    private void stubActorUserWithName() {
+        stubActorUserEmail();
+
+        when(
+                userEntity.getFullName()
+        ).thenReturn(
+                "Admin"
+        );
+    }
+
     private SafeAiUserPrincipal principal() {
         return SafeAiUserPrincipal
                 .accessTokenPrincipal(
                         USER_ID,
                         ACTOR_ORGANIZATION_ID,
-                        "admin@test.com",
                         0L,
                         0L,
                         List.of(

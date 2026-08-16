@@ -436,7 +436,6 @@ class UserStatusFilterTest {
                 .accessTokenPrincipal(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "user@test.com",
                         TOKEN_VERSION,
                         ORGANIZATION_AUTH_VERSION,
                         Set.of(

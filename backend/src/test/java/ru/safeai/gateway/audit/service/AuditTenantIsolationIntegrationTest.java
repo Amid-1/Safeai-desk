@@ -418,7 +418,6 @@ class AuditTenantIsolationIntegrationTest
                     .accessTokenPrincipal(
                             adminActorId,
                             adminOrganizationId,
-                            "admin@test.com",
                             0L,
                             0L,
                             List.of(
@@ -434,7 +433,6 @@ class AuditTenantIsolationIntegrationTest
                     .accessTokenPrincipal(
                             superAdminId,
                             platformOrganizationId,
-                            "superadmin@test.com",
                             0L,
                             0L,
                             List.of(
