@@ -9,52 +9,80 @@ x-logging: &default-logging
 
 services:
   backend:
-    image: "${SAFEAI_BACKEND_IMAGE}"
+    image: "${SAFEAI_BACKEND_IMAGE:?SAFEAI_BACKEND_IMAGE is required}"
 
-    # env_file передаёт переменные контейнеру, но не является
-    # источником интерполяции самого Compose-файла. Запускать с:
-    # --env-file ../backend/.env.prod
+    # Этот env_file передаёт в контейнер только НЕсекретные runtime-настройки.
+    # Для интерполяции ${...} самого Compose-файла всё равно запускайте Compose
+    # с --env-file ../backend/.env.prod.
     env_file:
       - ../backend/.env.prod
 
     environment:
       SPRING_PROFILES_ACTIVE: prod
 
-      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
-      SPRING_CONFIG_ADDITIONAL_LOCATION: "file:/run/config/pricing.yml"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}"
 
-      SAFEAI_DB_APP_USER: "${SAFEAI_DB_APP_USER}"
-      SAFEAI_DB_MIGRATOR_USER: "${SAFEAI_DB_MIGRATOR_USER}"
+      # pricing.yml — обычная внешняя конфигурация.
+      # jwt-keys.yml — секретный RSA key ring.
+      SPRING_CONFIG_ADDITIONAL_LOCATION: >-
+        file:/run/config/pricing.yml,file:/run/secrets/jwt-keys.yml
+
+      SAFEAI_DB_APP_USER: "${SAFEAI_DB_APP_USER:?SAFEAI_DB_APP_USER is required}"
+      SAFEAI_DB_MIGRATOR_USER: "${SAFEAI_DB_MIGRATOR_USER:?SAFEAI_DB_MIGRATOR_USER is required}"
 
       REDIS_HOST: redis
       REDIS_PORT: "6379"
 
+      # Production storage принудительно S3 в application-prod.yml.
+      # Здесь задаются только несекретные параметры S3.
+      SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT: "${SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT:?SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT is required}"
+      SAFEAI_KNOWLEDGE_STORAGE_BUCKET: "${SAFEAI_KNOWLEDGE_STORAGE_BUCKET:-safeai-knowledge}"
+
     secrets:
+      # Эти секреты импортируются Spring Boot через:
+      # spring.config.import=optional:configtree:/run/secrets/
       - source: db_app_password
         target: SAFEAI_DB_APP_PASSWORD
+
       - source: db_migrator_password
         target: SAFEAI_DB_MIGRATOR_PASSWORD
+
       - source: redis_password
         target: REDIS_PASSWORD
-      - source: jwt_secret
-        target: SAFEAI_JWT_SECRET
+
       - source: rate_limit_hmac_secret
         target: SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET
+
       - source: openai_api_key
         target: OPENAI_API_KEY
+
       - source: anthropic_api_key
         target: ANTHROPIC_API_KEY
 
+      - source: knowledge_storage_access_key
+        target: SAFEAI_KNOWLEDGE_STORAGE_ACCESS_KEY
+
+      - source: knowledge_storage_secret_key
+        target: SAFEAI_KNOWLEDGE_STORAGE_SECRET_KEY
+
+      # Этот secret не является одной scalar-property.
+      # Spring читает его как полноценный YAML через
+      # SPRING_CONFIG_ADDITIONAL_LOCATION.
+      - source: jwt_keys
+        target: jwt-keys.yml
+
     volumes:
       - type: bind
-        source: "${SAFEAI_CONFIG_DIR}/pricing.yml"
+        source: "${SAFEAI_CONFIG_DIR:?SAFEAI_CONFIG_DIR is required}/pricing.yml"
         target: /run/config/pricing.yml
         read_only: true
 
     user: "10001:10001"
 
+    # SAFEAI_SECRET_GID должен соответствовать группе,
+    # которой на host доступны secret-файлы.
     group_add:
-      - "${SAFEAI_SECRET_GID}"
+      - "${SAFEAI_SECRET_GID:?SAFEAI_SECRET_GID is required}"
 
     expose:
       - "8080"
@@ -83,6 +111,7 @@ services:
 
     init: true
     stop_grace_period: 105s
+
     read_only: true
 
     tmpfs:
@@ -103,15 +132,15 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: "${POSTGRES_IMAGE}"
+    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
 
     environment:
-      POSTGRES_DB: "${POSTGRES_DB}"
-      POSTGRES_USER: "${POSTGRES_BOOTSTRAP_USER}"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
+      POSTGRES_USER: "${POSTGRES_BOOTSTRAP_USER:?POSTGRES_BOOTSTRAP_USER is required}"
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_bootstrap_password
 
-      SAFEAI_DB_MIGRATOR_USER: "${SAFEAI_DB_MIGRATOR_USER}"
-      SAFEAI_DB_APP_USER: "${SAFEAI_DB_APP_USER}"
+      SAFEAI_DB_MIGRATOR_USER: "${SAFEAI_DB_MIGRATOR_USER:?SAFEAI_DB_MIGRATOR_USER is required}"
+      SAFEAI_DB_APP_USER: "${SAFEAI_DB_APP_USER:?SAFEAI_DB_APP_USER is required}"
 
     secrets:
       - source: postgres_bootstrap_password
@@ -149,7 +178,7 @@ services:
     restart: unless-stopped
 
   db-bootstrap:
-    image: "${POSTGRES_IMAGE}"
+    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
 
     entrypoint:
       - /bin/bash
@@ -158,11 +187,11 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
-      POSTGRES_DB: "${POSTGRES_DB}"
-      POSTGRES_USER: "${POSTGRES_BOOTSTRAP_USER}"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
+      POSTGRES_USER: "${POSTGRES_BOOTSTRAP_USER:?POSTGRES_BOOTSTRAP_USER is required}"
 
-      SAFEAI_DB_MIGRATOR_USER: "${SAFEAI_DB_MIGRATOR_USER}"
-      SAFEAI_DB_APP_USER: "${SAFEAI_DB_APP_USER}"
+      SAFEAI_DB_MIGRATOR_USER: "${SAFEAI_DB_MIGRATOR_USER:?SAFEAI_DB_MIGRATOR_USER is required}"
+      SAFEAI_DB_APP_USER: "${SAFEAI_DB_APP_USER:?SAFEAI_DB_APP_USER is required}"
 
     secrets:
       - source: postgres_bootstrap_password
@@ -201,7 +230,7 @@ services:
     restart: "no"
 
   redis:
-    image: "${REDIS_IMAGE}"
+    image: "${REDIS_IMAGE:?REDIS_IMAGE is required}"
 
     entrypoint:
       - /bin/sh
@@ -274,7 +303,7 @@ services:
     restart: unless-stopped
 
   nginx:
-    image: "${SAFEAI_NGINX_IMAGE}"
+    image: "${SAFEAI_NGINX_IMAGE:?SAFEAI_NGINX_IMAGE is required}"
 
     ports:
       - target: 8080
@@ -347,25 +376,31 @@ networks:
 
 secrets:
   postgres_bootstrap_password:
-    file: "${SAFEAI_SECRETS_DIR}/postgres_bootstrap_password"
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/postgres_bootstrap_password"
 
   db_migrator_password:
-    file: "${SAFEAI_SECRETS_DIR}/db_migrator_password"
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/db_migrator_password"
 
   db_app_password:
-    file: "${SAFEAI_SECRETS_DIR}/db_app_password"
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/db_app_password"
 
   redis_password:
-    file: "${SAFEAI_SECRETS_DIR}/redis_password"
-
-  jwt_secret:
-    file: "${SAFEAI_SECRETS_DIR}/jwt_secret"
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/redis_password"
 
   rate_limit_hmac_secret:
-    file: "${SAFEAI_SECRETS_DIR}/rate_limit_hmac_secret"
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/rate_limit_hmac_secret"
 
   openai_api_key:
-    file: "${SAFEAI_SECRETS_DIR}/openai_api_key"
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/openai_api_key"
 
   anthropic_api_key:
-    file: "${SAFEAI_SECRETS_DIR}/anthropic_api_key"
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/anthropic_api_key"
+
+  knowledge_storage_access_key:
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/knowledge_storage_access_key"
+
+  knowledge_storage_secret_key:
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/knowledge_storage_secret_key"
+
+  jwt_keys:
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/jwt-keys.yml"

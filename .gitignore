@@ -1,44 +1,41 @@
+### Build ###
 HELP.md
 target/
-.mvn/wrapper/maven-wrapper.jar
+build/
+out/
+
 !**/src/main/**/target/
 !**/src/test/**/target/
-build/
-!gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+backend/target/
+
+### Maven / Gradle wrappers ###
+.mvn/wrapper/maven-wrapper.jar
 !.mvn/wrapper/maven-wrapper.jar
 
-### STS ###
+!gradle/wrapper/gradle-wrapper.jar
+
+### Compiled files ###
+*.class
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+
+### STS / Eclipse ###
 .apt_generated
 .classpath
 .factorypath
 .project
-.settings
+.settings/
 .springBeans
 .sts4-cache
-
-### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
-*.iws
-*.iml
-*.ipr
-.idea
-out/
-!**/src/main/**/out/
-!**/src/test/**/out/
-
-lib/
-
-/.idea
-/.out
-*.class
-/.com
-/.company
-/.udemy
 
 ### NetBeans ###
 /nbproject/private/
@@ -50,14 +47,18 @@ lib/
 ### VS Code ###
 .vscode/
 
-### Mac OS ###
+### Run configurations ###
+.run/
+
+### macOS / Windows ###
 .DS_Store
+Thumbs.db
+
+### Temporary files ###
+*~
 
 ### Allure ###
-.allure
-
-*~
-.run/
+.allure/
 
 ### Runtime logs ###
 logs/
@@ -69,37 +70,45 @@ logs/
 ### Docker runtime logs ###
 docker-compose/docker-logs/
 
-**/src/main/resources/twitter4j.properties
-
-### Environment and secrets ###
+### Environment files ###
 .env
 .env.*
 **/.env
 **/.env.*
+
+# Безопасные шаблоны должны попадать в Git
 !**/.env.example
 !**/.env.*.example
 
-# Build output
-backend/target/
+### Local secrets / RSA ###
+.local-secrets/
+**/.local-secrets/
 
+# Настоящий JWT key ring никогда не коммитим
+jwt-keys.yml
+**/jwt-keys.yml
+
+# Шаблон JWT key ring должен попадать в Git
+!**/jwt-keys.yml.example
+
+### Local helper files ###
+commit-message.txt
+
+### Application-specific ###
+**/src/main/resources/twitter4j.properties
+
+lib/
+
+/.com
+/.company
+/.udemy
+
+### Documentation ###
 !docs/.gitkeep
 
+### Frontend ###
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/.env
 frontend/.env.local
-
-.idea/
-
-Thumbs.db
-
-commit-messageа.txt
-
-
-
-
-
-
-
-

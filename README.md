@@ -2333,3 +2333,42 @@ provider_call_started_at != null
 ```
 
 Полная последовательность развития — в [`ROADMAP.md`](ROADMAP.md).
+
+
+```text
+SafeAI-Desk/
+├── backend/
+│   ├── .env                    ← LOCAL настоящий, Git ❌
+│   ├── .env.example            ← LOCAL шаблон, Git ✅
+│   ├── .env.prod               ← PROD настоящий, Git ❌
+│   ├── .env.prod.example       ← PROD шаблон, Git ✅
+│   └── .local-secrets/         ← LOCAL RSA keys, Git ❌
+│
+├── infra/
+│   ├── docker-compose.local.yml
+│   ├── docker-compose.yml
+│   └── secrets/
+│       └── jwt-keys.yml.example ← шаблон RS256, Git ✅
+│
+└── ...
+```
+
+
+
+На production-сервере отдельно от проекта:
+```text
+/etc/safeai/
+├── config/
+│   └── pricing.yml
+└── secrets/
+    ├── postgres_bootstrap_password
+    ├── db_migrator_password
+    ├── db_app_password
+    ├── redis_password
+    ├── rate_limit_hmac_secret
+    ├── openai_api_key
+    ├── anthropic_api_key
+    ├── knowledge_storage_access_key
+    ├── knowledge_storage_secret_key
+    └── jwt-keys.yml
+```

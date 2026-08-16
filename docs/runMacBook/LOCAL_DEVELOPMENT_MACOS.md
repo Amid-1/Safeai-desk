@@ -109,9 +109,12 @@ cd ~/Workspace/Projects/Products/SafeAI-Desk
 Запусти PostgreSQL и Redis:
 
 ```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk
+
 docker compose \
+  --env-file backend/.env \
   -f infra/docker-compose.local.yml \
-  up -d postgres redis
+  up -d postgres redis minio
 ```
 
 Проверь состояние:
@@ -171,22 +174,17 @@ cd backend
 Установи переменные окружения:
 
 ```bash
-cd ~/Workspace/Projects/Products/SafeAI-Desk/backend && \
-chmod +x mvnw && \
-export SPRING_PROFILES_ACTIVE=local && \
-export SAFEAI_JWT_SECRET="safeai-local-development-secret-key-change-this-value-please-123456789" && \
-export SAFEAI_JWT_EXPIRATION_MINUTES=15 && \
-export SAFEAI_JWT_ISSUER="safeai-desk" && \
-export SAFEAI_AUTH_COOKIES_SECURE=false && \
-export SAFEAI_AUTH_COOKIES_SAME_SITE=Lax && \
-export SAFEAI_AUTH_ACCESS_TOKEN_MAX_AGE=15m && \
-export SAFEAI_AUTH_COOKIES_REFRESH_TOKEN_MAX_AGE=30d && \
-export REDIS_HOST=localhost && \
-export REDIS_PORT=6379 && \
-export REDIS_PASSWORD="safeai_redis_password" && \
-export SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX="safeai:local" && \
-export SAFEAI_RATE_LIMIT_LOGIN_ENABLED=true && \
-export SAFEAI_RATE_LIMIT_AI_MESSAGES_ENABLED=true && \
+cd ~/Workspace/Projects/Products/SafeAI-Desk/backend
+
+unset SAFEAI_JWT_SECRET
+
+set -a
+source ./.env
+set +a
+
+export SAFEAI_JWT_PUBLIC_KEY="$(cat .local-secrets/jwt-public.pem)"
+export SAFEAI_JWT_PRIVATE_KEY="$(cat .local-secrets/jwt-private.pem)"
+
 ./mvnw spring-boot:run
 ```
 

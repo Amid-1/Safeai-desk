@@ -49,7 +49,7 @@ class JwtConfigurationBindingTest {
         environment.getPropertySources()
                 .addFirst(
                         new MapPropertySource(
-                                "safeai-test-env",
+                                "safeai-test-.env",
                                 Map.of(
                                         "SAFEAI_JWT_EXPIRATION_MINUTES",
                                         "17",
