@@ -1,9 +1,11 @@
 # SafeAI Desk
 
-**SafeAI Desk** — production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного использования внешних AI-моделей внутри организаций.
+**SafeAI Desk** — production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного использования 
+внешних AI-моделей внутри организаций.
 
 > **Актуальность:** август 2026.  
-> Документ описывает фактически реализованную архитектуру текущих backend/frontend исходников и Flyway-миграций до `V37`. Будущее развитие вынесено в [`ROADMAP.md`](ROADMAP.md).
+> Документ описывает фактически реализованную архитектуру текущих backend/frontend исходников и Flyway-миграций до `V37`. 
+> Будущее развитие вынесено в [`ROADMAP.md`](ROADMAP.md).
 
 SafeAI Desk — не просто UI над LLM. Проект строит управляемый слой вокруг корпоративного AI:
 
@@ -24,7 +26,8 @@ SafeAI Desk — не просто UI над LLM. Проект строит уп�
 - PostgreSQL/Flyway constraints как часть integrity model;
 - React frontend с runtime validation API contracts, abortable requests и production error handling.
 
-Текущий статус: **production-oriented pre-1.0 / portfolio-ready baseline**. Это серьёзная база для B2B-продукта, но не заявление о compliance certification, billing-grade accounting или формально доказанной HA/SLA.
+Текущий статус: **production-oriented pre-1.0 / portfolio-ready baseline**. Это серьёзная база для B2B-продукта, но 
+не заявление о compliance certification, billing-grade accounting или формально доказанной HA/SLA.
 
 ---
 
@@ -138,7 +141,8 @@ Demo Company
 └──────────────────────────────┘
 ```
 
-**PostgreSQL — source of truth.** Redis — coordination/rate-limit/cache layer; security correctness не должна зависеть только от наличия Redis cache.
+**PostgreSQL — source of truth.** Redis — coordination/rate-limit/cache layer; security correctness не должна зависеть 
+только от наличия Redis cache.
 
 ---
 
@@ -250,7 +254,8 @@ ADMIN       -> organization scope
 USER        -> own-resource scope
 ```
 
-Tenant isolation применяется к users, organizations, sessions/messages/turns, quota reservations, audit, usage, rate limiting и security-state lookup.
+Tenant isolation применяется к users, organizations, sessions/messages/turns, quota reservations, audit, usage, rate 
+limiting и security-state lookup.
 
 Схема БД дополнительно содержит composite tenant-safe relationships, например:
 
@@ -329,7 +334,8 @@ aud
 
 `organizations.auth_version` — отдельный organization-level epoch.
 
-Организацию не нужно инвалидировать массовым increment `tokenVersion` каждого пользователя. Access/refresh state проверяет также `organizationAuthVersion`.
+Организацию не нужно инвалидировать массовым increment `tokenVersion` каждого пользователя. Access/refresh state 
+проверяет также `organizationAuthVersion`.
 
 `UserStatusFilter` сопоставляет:
 
@@ -424,7 +430,8 @@ Forwarded headers доверяются только при direct peer из `tru
 
 ## CORS
 
-Origins нормализуются. Запрещены wildcard, unsupported schemes, userinfo, query, fragment, path и invalid port. Production validator требует HTTPS origins.
+Origins нормализуются. Запрещены wildcard, unsupported schemes, userinfo, query, fragment, path и invalid port. 
+Production validator требует HTTPS origins.
 
 ## Errors
 
@@ -1536,7 +1543,8 @@ common/
 
 ### `config`
 
-`TimeConfiguration` даёт UTC `Clock`, что делает timestamps тестируемыми. `SchedulingConfiguration` включает scheduler; multi-instance jobs обязаны иметь собственную DB/distributed coordination.
+`TimeConfiguration` даёт UTC `Clock`, что делает timestamps тестируемыми. `SchedulingConfiguration` включает scheduler; 
+multi-instance jobs обязаны иметь собственную DB/distributed coordination.
 
 ### `exception`
 
@@ -1574,7 +1582,8 @@ INTERNAL_SERVER_ERROR
 
 ### `persistence`
 
-`DatabaseConstraintClassifier` классифицирует PostgreSQL unique/FK failures по SQLSTATE/constraint name, чтобы ожидаемый concurrency conflict не маскировался как случайный 500.
+`DatabaseConstraintClassifier` классифицирует PostgreSQL unique/FK failures по SQLSTATE/constraint name, чтобы ожидаемый 
+concurrency conflict не маскировался как случайный 500.
 
 ### `platform`
 
@@ -1586,7 +1595,8 @@ Platform organization default UUID:
 
 ### `security`
 
-Общие contracts: JWT, role mapping, principal, identity validation, password encoding, CORS, trusted IP, request correlation, production fail-fast invariants.
+Общие contracts: JWT, role mapping, principal, identity validation, password encoding, CORS, trusted IP, request correlation, 
+production fail-fast invariants.
 
 `SafeAiUserPrincipal` не должен раскрывать password/token в `toString`; access-token principal не несёт password credentials.
 
@@ -1708,7 +1718,8 @@ OpenAiProvider
 AnthropicProvider
 ```
 
-Есть provider error taxonomy: timeout, rate-limit, overload, quota/billing, context limit, response-too-large, unavailable и generic provider error.
+Есть provider error taxonomy: timeout, rate-limit, overload, quota/billing, context limit, response-too-large, unavailable 
+и generic provider error.
 
 ## Usage / pricing status
 
@@ -1864,7 +1875,8 @@ Mutations используют `expectedVersion` для optimistic concurrency.
 
 Wire `roles` остаётся массивом для compatibility, но требует ровно одну role.
 
-Permanent deletion — restricted flow с eligibility/retention, confirmation email, version check, dependencies и audit; historical data не должно случайно исчезать каскадом.
+Permanent deletion — restricted flow с eligibility/retention, confirmation email, version check, dependencies и audit; 
+historical data не должно случайно исчезать каскадом.
 
 ---
 
@@ -2131,7 +2143,8 @@ Postgres: localhost:5432
 Redis:    localhost:6379
 ```
 
-`R__seed_local_demo_data.sql` содержит deterministic local identities и проверки перед privileged role assignment. Demo credentials не использовать в production.
+`R__seed_local_demo_data.sql` содержит deterministic local identities и проверки перед privileged role assignment. 
+Demo credentials не использовать в production.
 
 ---
 
@@ -2173,7 +2186,8 @@ npm run ci
 npm run audit:prod
 ```
 
-Текущие backend tests включают security, auth, PostgreSQL concurrency, tenant isolation, migrations, audit outbox/retention, ChatTurn state machine/recovery, usage reconciliation/performance и provider contracts.
+Текущие backend tests включают security, auth, PostgreSQL concurrency, tenant isolation, migrations, audit outbox/retention, 
+ChatTurn state machine/recovery, usage reconciliation/performance и provider contracts.
 
 ## Flyway
 
@@ -2288,11 +2302,14 @@ autonomous agent platform
 
 Для собеседования:
 
-> **SafeAI Desk — modular-monolith корпоративного AI Gateway с multi-tenancy, one-role RBAC, cookie JWT + CSRF, refresh rotation/reuse detection, user/org security epochs, durable idempotent ChatTurn, provider ambiguity protection, transactional audit outbox и usage/pricing quality analytics.**
+> **SafeAI Desk — modular-monolith корпоративного AI Gateway с multi-tenancy, one-role RBAC, cookie JWT + CSRF, refresh 
+> rotation/reuse detection, user/org security epochs, durable idempotent ChatTurn, provider ambiguity protection, 
+> transactional audit outbox и usage/pricing quality analytics.**
 
 Для будущего продукта:
 
-> **Управляемая корпоративная AI-платформа, где известно кто, к каким данным и через какую модель получил доступ, какой контекст был использован, какие действия были разрешены и сколько это стоило.**
+> **Управляемая корпоративная AI-платформа, где известно кто, к каким данным и через какую модель получил доступ, 
+> какой контекст был использован, какие действия были разрешены и сколько это стоило.**
 
 ---
 
