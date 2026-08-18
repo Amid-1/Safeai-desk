@@ -8,6 +8,12 @@ git status
 git pull origin main
 ```
 
+```bash
+cd /d "D:\Java projects\Safeai-desk"
+git status
+git pull origin main
+```
+
 Если локальных изменений нет
 ```bash
 cd ~/Workspace/Projects/Products/SafeAI-Desk
