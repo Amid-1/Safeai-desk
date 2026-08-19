@@ -221,7 +221,7 @@ frontend/dist/
 
 ```bat
 cd /d "D:\Java projects\Safeai-desk\infra"
-docker compose -f docker-compose.local.yml up -d postgres redis
+docker compose -f docker-compose.local.yml up -d postgres redis minio
 ```
 
 Проверка контейнеров:
