@@ -206,7 +206,7 @@ function AuditFilters({
             </p>
 
             <div className="form">
-                <label>
+                <label className="audit-filter-field audit-filter-field--event-type">
                     Тип события
 
                     <select
@@ -255,7 +255,7 @@ function AuditFilters({
 
                 {superAdmin && (
                     <>
-                        <label>
+                        <label className="audit-filter-field audit-filter-field--organization-search">
                             Поиск целевой
                             организации
 
@@ -284,7 +284,7 @@ function AuditFilters({
                             </small>
                         </label>
 
-                        <label>
+                        <label className="audit-filter-field audit-filter-field--organization">
                             Целевая организация
 
                             <select
@@ -343,7 +343,7 @@ function AuditFilters({
                     </>
                 )}
 
-                <label>
+                <label className="audit-filter-field audit-filter-field--actor-search">
                     Найти пользователя
 
                     <input
@@ -364,7 +364,7 @@ function AuditFilters({
 
                 </label>
 
-                <label>
+                <label className="audit-filter-field audit-filter-field--actor">
                     Инициатор
 
                     <select
@@ -412,7 +412,7 @@ function AuditFilters({
                     </select>
                 </label>
 
-                <label>
+                <label className="audit-filter-field audit-filter-field--email">
                     Email пользователя
 
                     <input
@@ -512,7 +512,7 @@ function AuditFilters({
                     </div>
                 </div>
 
-                <label>
+                <label className="audit-filter-field audit-filter-field--date">
                     Дата с
 
                     <input
@@ -540,7 +540,7 @@ function AuditFilters({
                     />
                 </label>
 
-                <label>
+                <label className="audit-filter-field audit-filter-field--date">
                     Дата по
 
                     <input
@@ -586,7 +586,7 @@ function AuditFilters({
 
                 {directoriesLoading && (
                     <div
-                        className="muted"
+                        className="muted audit-directory-loading"
                         role="status"
                         aria-live="polite"
                     >

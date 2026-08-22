@@ -227,8 +227,8 @@ export async function getAuditEvents(
                 filter.eventType,
             ),
 
-        // Текущий backend использует старые query names.
-        // Во frontend-модели они семантически называются actor/target.
+        // HTTP-контракт AuditEventFilter использует userId/userEmail/organizationId.
+        // Во frontend-модели сохраняем более точные actor/target-имена и маппим их здесь.
         userId:
             filter.actorUserId
                 ? uuidPathSegment(
@@ -465,62 +465,6 @@ export async function getUsageDaily(
 ): Promise<UsageDailySummary[]> {
     return getUsageArray(
         `/api/admin/usage/daily${usageQuery(
-            filter,
-        )}`,
-        parseUsageDailySummary,
-        options,
-    )
-}
-
-/**
- * Production organization-scoped aggregate endpoints.
- * Никакой client-side финансовой агрегации detail rows.
- */
-export async function getOrganizationUsageUsers(
-    organizationId: string,
-    page: number,
-    size: number,
-    filter: UsageDateRangeFilter = {},
-    options: RequestOptions = {},
-): Promise<PageResponse<UsageUserSummary>> {
-    return getUsagePage(
-        `/api/admin/usage/organizations/${uuidPathSegment(
-            organizationId,
-        )}/users${usagePagedQuery(
-            page,
-            size,
-            filter,
-        )}`,
-        parseUsageUserSummary,
-        options,
-    )
-}
-
-export async function getOrganizationUsageModels(
-    organizationId: string,
-    filter: UsageDateRangeFilter = {},
-    options: RequestOptions = {},
-): Promise<UsageModelSummary[]> {
-    return getUsageArray(
-        `/api/admin/usage/organizations/${uuidPathSegment(
-            organizationId,
-        )}/models${usageQuery(
-            filter,
-        )}`,
-        parseUsageModelSummary,
-        options,
-    )
-}
-
-export async function getOrganizationUsageDaily(
-    organizationId: string,
-    filter: UsageDateRangeFilter = {},
-    options: RequestOptions = {},
-): Promise<UsageDailySummary[]> {
-    return getUsageArray(
-        `/api/admin/usage/organizations/${uuidPathSegment(
-            organizationId,
-        )}/daily${usageQuery(
             filter,
         )}`,
         parseUsageDailySummary,

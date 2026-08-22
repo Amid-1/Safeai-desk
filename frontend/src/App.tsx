@@ -274,13 +274,17 @@ function AppLayout() {
     const canAccessOrganizations = isSuperAdmin(currentUser)
     const displayRole = getDisplayRole(currentUser)
     const isChatRoute = location.pathname === '/chat'
-    const isViewportWorkspaceRoute = [
-        '/chat',
-        '/knowledge',
-        '/admin/users',
-        '/admin/audit',
-        '/admin/usage',
-    ].includes(location.pathname)
+    const isKnowledgeRoute =
+        location.pathname === '/knowledge'
+        || location.pathname.startsWith('/knowledge/')
+    const isViewportWorkspaceRoute =
+        isKnowledgeRoute
+        || [
+            '/chat',
+            '/admin/users',
+            '/admin/audit',
+            '/admin/usage',
+        ].includes(location.pathname)
     const appClassName = [
         'app',
         isViewportWorkspaceRoute ? 'app--workspace' : '',

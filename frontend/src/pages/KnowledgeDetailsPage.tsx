@@ -40,10 +40,26 @@ import {
     LoadingState,
 } from '../components/StateBlock'
 import Modal from '../components/Modal'
+import KnowledgePagination
+    from '../components/knowledge/KnowledgePagination'
+import type {
+    PageResponse,
+} from '../utils/page'
 import './KnowledgeDetailsPage.css'
 
 const MAX_FILE_SIZE =
     25 * 1024 * 1024
+
+const DOCUMENT_PAGE_SIZE = 50
+
+const EMPTY_DOCUMENT_PAGE:
+    PageResponse<KnowledgeDocument> = {
+    content: [],
+    page: 0,
+    size: DOCUMENT_PAGE_SIZE,
+    totalElements: 0,
+    totalPages: 0,
+}
 
 const ACCEPT =
     '.pdf,.docx,.txt,.html,.htm,.md,.csv,.xlsx,.pptx,.json,.xml,'
@@ -58,7 +74,8 @@ const STATUS_LABEL:
     Record<KnowledgeIngestionStatus, string> = {
         PENDING: 'Ожидает обработки',
         VALIDATING: 'Проверяется',
-        EXTRACTING: 'Обрабатывается',
+        EXTRACTING: 'Извлекается текст',
+        CHUNKING: 'Формируются фрагменты',
         READY: 'Готов',
         FAILED: 'Ошибка обработки',
     }
@@ -71,6 +88,8 @@ const STATUS_HINT:
             'Система выполняет дополнительную проверку документа.',
         EXTRACTING:
             'Из документа извлекается содержимое для базы знаний.',
+        CHUNKING:
+            'Документ разбивается на фрагменты для полнотекстового и смыслового поиска.',
         READY:
             'Документ обработан и готов к использованию.',
         FAILED:
@@ -95,11 +114,28 @@ function KnowledgeDetailsPage() {
     )
 
     const [
-        documents,
-        setDocuments,
-    ] = useState<KnowledgeDocument[]>(
-        [],
+        documentPage,
+        setDocumentPage,
+    ] = useState(0)
+
+    const [
+        documentsPage,
+        setDocumentsPage,
+    ] = useState<PageResponse<KnowledgeDocument>>(
+        EMPTY_DOCUMENT_PAGE,
     )
+
+    const [
+        documentsLoading,
+        setDocumentsLoading,
+    ] = useState(true)
+
+    const [
+        documentsError,
+        setDocumentsError,
+    ] = useState('')
+
+    const documents = documentsPage.content
 
     const [health, setHealth] = useState<KnowledgeHealth | null>(null)
     const [reindexingDocumentId, setReindexingDocumentId] = useState('')
@@ -154,14 +190,13 @@ function KnowledgeDetailsPage() {
         setRequestIdCopied,
     ] = useState(false)
 
-    const load =
+    const loadOverview =
         useCallback(
             async (
                 signal?: AbortSignal,
             ) => {
                 const [
                     knowledgeBase,
-                    page,
                     knowledgeHealth,
                 ] = await Promise.all([
                     getKnowledgeBase(
@@ -170,12 +205,6 @@ function KnowledgeDetailsPage() {
                             signal,
                         },
                     ),
-                    getKnowledgeDocuments(
-                        knowledgeBaseId,
-                        0,
-                        100,
-                        signal,
-                    ),
                     getKnowledgeHealth(
                         knowledgeBaseId,
                         signal,
@@ -183,10 +212,37 @@ function KnowledgeDetailsPage() {
                 ])
 
                 setBase(knowledgeBase)
-                setDocuments(
-                    page.content,
-                )
                 setHealth(knowledgeHealth)
+            },
+            [knowledgeBaseId],
+        )
+
+    const loadDocuments =
+        useCallback(
+            async (
+                targetPage: number,
+                signal?: AbortSignal,
+            ) => {
+                const response =
+                    await getKnowledgeDocuments(
+                        knowledgeBaseId,
+                        targetPage,
+                        DOCUMENT_PAGE_SIZE,
+                        signal,
+                    )
+
+                if (
+                    response.totalPages > 0
+                    && targetPage
+                    >= response.totalPages
+                ) {
+                    setDocumentPage(
+                        response.totalPages - 1,
+                    )
+                    return
+                }
+
+                setDocumentsPage(response)
             },
             [knowledgeBaseId],
         )
@@ -199,9 +255,11 @@ function KnowledgeDetailsPage() {
             if (controller.signal.aborted) {
                 return
             }
+
             setLoading(true)
             setError('')
-            void load(
+
+            void loadOverview(
                 controller.signal,
             )
                 .catch((loadError) => {
@@ -227,7 +285,51 @@ function KnowledgeDetailsPage() {
 
         return () =>
             controller.abort()
-    }, [load])
+    }, [loadOverview])
+
+    useEffect(() => {
+        const controller =
+            new AbortController()
+
+        queueMicrotask(() => {
+            if (controller.signal.aborted) {
+                return
+            }
+
+            setDocumentsLoading(true)
+            setDocumentsError('')
+
+            void loadDocuments(
+                documentPage,
+                controller.signal,
+            )
+                .catch((loadError) => {
+                    if (
+                        !controller.signal.aborted
+                    ) {
+                        setDocumentsError(
+                            getApiErrorMessage(
+                                loadError,
+                                'Не удалось загрузить документы базы знаний.',
+                            ),
+                        )
+                    }
+                })
+                .finally(() => {
+                    if (
+                        !controller.signal.aborted
+                    ) {
+                        setDocumentsLoading(false)
+                    }
+                })
+        })
+
+        return () =>
+            controller.abort()
+    }, [
+        documentPage,
+        loadDocuments,
+    ])
 
     function openUpload(
         target:
@@ -357,7 +459,19 @@ function KnowledgeDetailsPage() {
                 )
             }
 
-            await load()
+            const targetPage =
+                uploadTarget === 'new'
+                    ? 0
+                    : documentPage
+
+            if (uploadTarget === 'new') {
+                setDocumentPage(0)
+            }
+
+            await Promise.all([
+                loadOverview(),
+                loadDocuments(targetPage),
+            ])
 
             setUploadTarget(null)
             setUploadFile(null)
@@ -407,7 +521,10 @@ function KnowledgeDetailsPage() {
         setError('')
         try {
             await reindexKnowledgeDocument(knowledgeBaseId, document.id)
-            await load()
+            await Promise.all([
+                loadOverview(),
+                loadDocuments(documentPage),
+            ])
         } catch (reindexFailure) {
             setError(getApiErrorMessage(
                 reindexFailure,
@@ -487,7 +604,7 @@ function KnowledgeDetailsPage() {
                             }
                         >
                             Документы
-                            <strong>{documents.length}</strong>
+                            <strong>{documentsPage.totalElements}</strong>
                         </button>
 
                         <span
@@ -561,28 +678,41 @@ function KnowledgeDetailsPage() {
             )}
 
             {error && (
-                <ErrorState
-                    message={error}
-                    action={
-                        <button
-                            type="button"
-                            onClick={() =>
-                                void load()
-                            }
-                        >
-                            Повторить
-                        </button>
-                    }
-                />
+                <div className="knowledge-details__notice">
+                    <ErrorState
+                        variant="inline"
+                        message={error}
+                        action={
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setError('')
+                                    void Promise.all([
+                                        loadOverview(),
+                                        loadDocuments(documentPage),
+                                    ]).catch((loadError) => {
+                                        setError(
+                                            getApiErrorMessage(
+                                                loadError,
+                                                'Не удалось обновить данные базы знаний.',
+                                            ),
+                                        )
+                                    })
+                                }}
+                            >
+                                Повторить
+                            </button>
+                        }
+                    />
+                </div>
             )}
 
-            {!error && (
-                <section
-                    ref={documentsSectionRef}
-                    id="knowledge-documents"
-                    className="knowledge-documents-section"
-                    aria-labelledby="knowledge-documents-title"
-                >
+            <section
+                ref={documentsSectionRef}
+                id="knowledge-documents"
+                className="knowledge-documents-section"
+                aria-labelledby="knowledge-documents-title"
+            >
                     <div className="knowledge-documents-section__header">
                         <div>
                             <span>Содержимое базы</span>
@@ -592,21 +722,72 @@ function KnowledgeDetailsPage() {
                                 доступные действия с файлами.
                             </p>
                         </div>
-                        <strong aria-label={`${documents.length} документов`}>
-                            {documents.length}
+                        <strong aria-label={`${documentsPage.totalElements} документов`}>
+                            {documentsPage.totalElements}
                         </strong>
                     </div>
 
-                    {documents.length === 0 && (
-                        <EmptyState
-                            title="Документов пока нет"
-                            message="Загрузите первый корпоративный документ. Поддерживаются PDF, DOCX, TXT, HTML, MD, CSV, XLSX, PPTX, JSON и XML до 25 МБ."
-                        />
+                    {documentsLoading && (
+                        <div className="knowledge-documents-state">
+                            <LoadingState
+                                variant="inline"
+                                message="Загрузка документов..."
+                            />
+                        </div>
                     )}
 
-                    {documents.length > 0 && (
-                        <div className="table-wrapper knowledge-documents-card">
-                            <table className="knowledge-documents">
+                    {!documentsLoading && documentsError && (
+                        <div className="knowledge-documents-state">
+                            <ErrorState
+                                variant="inline"
+                                message={documentsError}
+                                action={
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setDocumentsError('')
+                                            setDocumentsLoading(true)
+                                            void loadDocuments(documentPage)
+                                                .catch((loadError) => {
+                                                    setDocumentsError(
+                                                        getApiErrorMessage(
+                                                            loadError,
+                                                            'Не удалось загрузить документы базы знаний.',
+                                                        ),
+                                                    )
+                                                })
+                                                .finally(() => {
+                                                    setDocumentsLoading(false)
+                                                })
+                                        }}
+                                    >
+                                        Повторить
+                                    </button>
+                                }
+                            />
+                        </div>
+                    )}
+
+                    {!documentsLoading
+                        && !documentsError
+                        && documentsPage.totalElements === 0
+                        && (
+                            <div className="knowledge-documents-state">
+                                <EmptyState
+                                    variant="inline"
+                                    title="Документов пока нет"
+                                    message="Загрузите первый корпоративный документ. Поддерживаются PDF, DOCX, TXT, HTML, MD, CSV, XLSX, PPTX, JSON и XML до 25 МБ."
+                                />
+                            </div>
+                        )}
+
+                    {!documentsLoading
+                        && !documentsError
+                        && documents.length > 0
+                        && (
+                            <div className="knowledge-documents-card">
+                                <div className="table-wrapper knowledge-documents-scroll">
+                                    <table className="knowledge-documents">
                         <thead>
                             <tr>
                                 <th>
@@ -787,12 +968,22 @@ function KnowledgeDetailsPage() {
                                     },
                                 )
                             }
-                        </tbody>
-                            </table>
-                        </div>
-                    )}
-                </section>
-            )}
+                                    </tbody>
+                                    </table>
+                                </div>
+
+                                <KnowledgePagination
+                                    page={documentsPage.page}
+                                    totalPages={documentsPage.totalPages}
+                                    totalElements={documentsPage.totalElements}
+                                    disabled={documentsLoading || busy}
+                                    ariaLabel="Пагинация документов базы знаний"
+                                    singlePageMessage="Все документы показаны"
+                                    onPageChange={setDocumentPage}
+                                />
+                            </div>
+                        )}
+            </section>
 
             {uploadTarget && (
                 <Modal

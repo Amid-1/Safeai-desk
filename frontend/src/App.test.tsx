@@ -63,6 +63,22 @@ vi.mock('./pages/ChatPage', () => ({
     ),
 }))
 
+vi.mock('./pages/KnowledgePage', () => ({
+    default: () => (
+        <div data-testid="knowledge-page">
+            Knowledge page
+        </div>
+    ),
+}))
+
+vi.mock('./pages/KnowledgeDetailsPage', () => ({
+    default: () => (
+        <div data-testid="knowledge-details-page">
+            Knowledge details page
+        </div>
+    ),
+}))
+
 vi.mock('./pages/AdminUsersPage', () => ({
     default: () => (
         <div data-testid="admin-users-page">
@@ -228,7 +244,7 @@ describe(
         )
 
         it(
-            'включает viewport-каркас только для рабочего чата',
+            'включает chat-specific классы только для рабочего чата',
             async () => {
                 setAuth(
                     USER,
@@ -261,6 +277,37 @@ describe(
                 expect(
                     auditPage.closest('main'),
                 ).not.toHaveClass('content--chat')
+            },
+        )
+
+        it(
+            'включает viewport workspace и для страницы конкретной базы знаний',
+            async () => {
+                setAuth(
+                    USER,
+                    'authenticated',
+                )
+
+                renderAt(
+                    '/knowledge/28ae4cac-2f14-42af-85e9-e3f1385a249f',
+                )
+
+                const detailsPage =
+                    await screen.findByTestId(
+                        'knowledge-details-page',
+                    )
+
+                expect(
+                    detailsPage.closest('.app'),
+                ).toHaveClass(
+                    'app--workspace',
+                )
+
+                expect(
+                    detailsPage.closest('main'),
+                ).toHaveClass(
+                    'content--workspace',
+                )
             },
         )
 

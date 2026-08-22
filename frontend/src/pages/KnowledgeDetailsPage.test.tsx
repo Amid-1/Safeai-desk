@@ -250,7 +250,7 @@ describe(
                         DOCUMENT,
                     ],
                     page: 0,
-                    size: 100,
+                    size: 50,
                     totalElements: 1,
                     totalPages: 1,
                 })
@@ -358,6 +358,82 @@ describe(
                     expect(reindexKnowledgeDocumentMock).toHaveBeenCalledWith(
                         KNOWLEDGE_BASE_ID,
                         DOCUMENT_ID,
+                    )
+                })
+            },
+        )
+
+        it(
+            'поддерживает backend-статус CHUNKING',
+            async () => {
+                getKnowledgeDocumentsMock
+                    .mockResolvedValue({
+                        content: [
+                            {
+                                ...DOCUMENT,
+                                status: 'CHUNKING',
+                            },
+                        ],
+                        page: 0,
+                        size: 50,
+                        totalElements: 1,
+                        totalPages: 1,
+                    })
+
+                renderPage()
+
+                expect(
+                    await screen.findByText(
+                        'Формируются фрагменты',
+                    ),
+                ).toBeInTheDocument()
+            },
+        )
+
+        it(
+            'загружает следующую страницу документов через backend pagination',
+            async () => {
+                getKnowledgeDocumentsMock
+                    .mockImplementation(
+                        async (
+                            _knowledgeBaseId,
+                            requestedPage,
+                            size,
+                        ) => ({
+                            content: [
+                                DOCUMENT,
+                            ],
+                            page:
+                                requestedPage
+                                ?? 0,
+                            size:
+                                size
+                                ?? 50,
+                            totalElements: 51,
+                            totalPages: 2,
+                        }),
+                    )
+
+                renderPage()
+
+                const nextButton =
+                    await screen.findByRole(
+                        'button',
+                        {
+                            name: 'Вперёд',
+                        },
+                    )
+
+                fireEvent.click(nextButton)
+
+                await waitFor(() => {
+                    expect(
+                        getKnowledgeDocumentsMock,
+                    ).toHaveBeenCalledWith(
+                        KNOWLEDGE_BASE_ID,
+                        1,
+                        50,
+                        expect.anything(),
                     )
                 })
             },

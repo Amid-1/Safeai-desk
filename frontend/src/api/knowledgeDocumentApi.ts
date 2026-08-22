@@ -13,7 +13,7 @@ import {
 } from './runtime'
 import type {PageResponse} from '../utils/page'
 
-const STATUSES = ['PENDING', 'VALIDATING', 'EXTRACTING', 'READY', 'FAILED'] as const
+const STATUSES = ['PENDING', 'VALIDATING', 'EXTRACTING', 'CHUNKING', 'READY', 'FAILED'] as const
 const HEALTH_STATES = ['EMPTY', 'HEALTHY', 'INDEXING', 'DEGRADED'] as const
 export type KnowledgeIngestionStatus = typeof STATUSES[number]
 export type KnowledgeHealthState = typeof HEALTH_STATES[number]

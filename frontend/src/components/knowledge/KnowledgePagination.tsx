@@ -3,6 +3,8 @@ type KnowledgePaginationProps = {
     totalPages: number
     totalElements: number
     disabled?: boolean
+    ariaLabel?: string
+    singlePageMessage?: string
     onPageChange:
         (page: number) => void
 }
@@ -12,6 +14,8 @@ function KnowledgePagination({
     totalPages,
     totalElements,
     disabled = false,
+    ariaLabel = 'Пагинация баз знаний',
+    singlePageMessage = 'Все базы показаны',
     onPageChange,
 }: KnowledgePaginationProps) {
     if (totalElements === 0) {
@@ -22,10 +26,10 @@ function KnowledgePagination({
         return (
             <nav
                 className="pagination pagination--single"
-                aria-label="Сведения о списке баз знаний"
+                aria-label={ariaLabel}
             >
                 <div className="pagination__summary">
-                    <strong>Все базы показаны</strong>
+                    <strong>{singlePageMessage}</strong>
                     <span>Всего: {totalElements}</span>
                 </div>
             </nav>
@@ -35,7 +39,7 @@ function KnowledgePagination({
     return (
         <nav
             className="pagination"
-            aria-label="Пагинация Knowledge"
+            aria-label={ariaLabel}
         >
             <button
                 type="button"
