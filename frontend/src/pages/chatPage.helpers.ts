@@ -3,6 +3,7 @@ import type {
     Chat,
     ChatDetails,
     ChatMessage,
+    KnowledgeMode,
 } from '../api/chatApi'
 
 export type PendingTurnStatus =
@@ -24,6 +25,8 @@ export type PendingTurn = {
     status: PendingTurnStatus
     error: string | null
     retryAfterUntil: number | null
+    knowledgeBaseId: string | null
+    knowledgeMode: KnowledgeMode
 }
 
 export type DisplayMessage = ChatMessage & {
@@ -48,6 +51,8 @@ export function createPendingTurn(
     chatId: string,
     content: string,
     clientRequestId: string,
+    knowledgeBaseId: string | null = null,
+    knowledgeMode: KnowledgeMode = 'GENERAL',
 ): PendingTurn {
     return {
         chatId,
@@ -58,6 +63,8 @@ export function createPendingTurn(
         status: 'SENDING',
         error: null,
         retryAfterUntil: null,
+        knowledgeBaseId,
+        knowledgeMode,
     }
 }
 
@@ -262,24 +269,30 @@ export function moveChatToTop(
 export function formatUsage(
     message: ChatMessage,
 ): string {
+    return `Токены: ${formatUsageValue(message)}`
+}
+
+export function formatUsageValue(
+    message: ChatMessage,
+): string {
     switch (message.usageStatus) {
         case 'NOT_APPLICABLE':
-            return 'usage: —'
+            return 'не применимо'
 
         case 'MISSING':
-            return 'usage: данные отсутствуют'
+            return 'данные провайдера отсутствуют'
 
         case 'AVAILABLE':
             return (
-                `usage: вход ${message.inputTokens ?? '—'}, `
-                + `выход ${message.outputTokens ?? '—'}`
+                `${message.inputTokens ?? '—'} вход · `
+                + `${message.outputTokens ?? '—'} выход`
             )
 
         case 'PARTIAL':
             return (
-                'usage: неполные данные — вход '
-                + `${message.inputTokens ?? '—'}, `
-                + `выход ${message.outputTokens ?? '—'}`
+                'неполные данные · '
+                + `${message.inputTokens ?? '—'} вход · `
+                + `${message.outputTokens ?? '—'} выход`
             )
     }
 }
@@ -287,28 +300,78 @@ export function formatUsage(
 export function formatPricing(
     message: ChatMessage,
 ): string {
+    return `Стоимость: ${formatPricingValue(message)}`
+}
+
+export function formatPricingValue(
+    message: ChatMessage,
+): string {
     switch (message.pricingStatus) {
         case 'NOT_APPLICABLE':
-            return 'стоимость: —'
+            return 'не применимо'
 
         case 'FREE':
-            return `стоимость: ${formatMoney(
+            return `${formatMoney(
                 '0',
                 message.currency,
-            )} — подтверждённо бесплатно`
+            )} · ${isMockModel(message.model)
+                ? 'демо-модель'
+                : 'модель не тарифицируется'}`
 
         case 'PRICED':
-            return `стоимость: ${formatMoney(
+            return formatMoney(
                 message.costUsd,
                 message.currency,
-            )}`
+            )
 
         case 'UNPRICED':
-            return 'стоимость: не рассчитана'
+            return 'ещё не рассчитана'
 
         case 'CALCULATION_FAILED':
-            return 'стоимость: ошибка расчёта'
+            return 'ошибка расчёта'
     }
+}
+
+export function isMockModel(
+    model: string | null,
+): boolean {
+    return model?.toLowerCase()
+        === 'mock-safeai'
+}
+
+export function getModelDisplayName(
+    model: string | null,
+): string {
+    if (!model) {
+        return 'Модель не указана'
+    }
+
+    if (isMockModel(model)) {
+        return 'Демонстрационная модель SafeAI'
+    }
+
+    return model
+}
+
+export function getVisibleMessageContent(
+    message: ChatMessage,
+): string {
+    const mockPrefix =
+        'Mock AI provider response:'
+
+    if (
+        message.role === 'ASSISTANT'
+        && isMockModel(message.model)
+        && message.content.startsWith(
+            mockPrefix,
+        )
+    ) {
+        return message.content
+            .slice(mockPrefix.length)
+            .trimStart()
+    }
+
+    return message.content
 }
 
 export function getAiResponseLabel(

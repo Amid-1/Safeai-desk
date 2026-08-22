@@ -3,6 +3,7 @@ package ru.safeai.gateway.chat.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 
 import java.util.UUID;
 
@@ -16,6 +17,41 @@ public record SendMessageRequest(
         String content,
 
         @NotNull
-        UUID clientRequestId
+        UUID clientRequestId,
+
+        UUID knowledgeBaseId,
+
+        KnowledgeMode knowledgeMode
 ) {
+    public SendMessageRequest {
+        knowledgeMode = knowledgeMode == null
+                ? (knowledgeBaseId == null
+                        ? KnowledgeMode.GENERAL
+                        : KnowledgeMode.KNOWLEDGE_ASSISTED)
+                : knowledgeMode;
+
+        if (knowledgeMode.usesKnowledge()) {
+            if (knowledgeBaseId == null) {
+                throw new IllegalArgumentException(
+                        "knowledgeBaseId обязателен для knowledge-режима"
+                );
+            }
+        } else if (knowledgeBaseId != null) {
+            throw new IllegalArgumentException(
+                    "knowledgeBaseId недопустим вне knowledge-режима"
+            );
+        }
+    }
+
+    public SendMessageRequest(
+            String content,
+            UUID clientRequestId
+    ) {
+        this(
+                content,
+                clientRequestId,
+                null,
+                KnowledgeMode.GENERAL
+        );
+    }
 }

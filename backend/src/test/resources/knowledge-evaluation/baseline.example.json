@@ -1,0 +1,12 @@
+{
+  "datasetName": "safeai-rag-baseline-v1",
+  "topK": 10,
+  "cases": [
+    {
+      "query": "Какая политика регулирует доступ к корпоративным данным?",
+      "expectedDocumentVersionIds": [
+        "00000000-0000-0000-0000-000000000001"
+      ]
+    }
+  ]
+}

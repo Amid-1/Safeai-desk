@@ -6,7 +6,7 @@ import {
 } from '../../utils/format'
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { getKnowledgeDocuments } from '../../api/knowledgeDocumentApi'
+import { getKnowledgeHealth } from '../../api/knowledgeDocumentApi'
 
 type KnowledgeBaseCardProps = {
     knowledgeBase: KnowledgeBase
@@ -32,21 +32,16 @@ function KnowledgeBaseCard({
     useEffect(() => {
         const controller = new AbortController()
 
-        getKnowledgeDocuments(
+        getKnowledgeHealth(
             knowledgeBase.id,
-            0,
-            100,
             controller.signal,
-        ).then((page) => {
+        ).then((health) => {
             setStats({
-                total: page.totalElements,
-                ready: page.content.filter(
-                    (document) => document.status === 'READY',
-                ).length,
-                processing: page.content.filter(
-                    (document) => document.status !== 'READY'
-                        && document.status !== 'FAILED',
-                ).length,
+                total: health.totalDocuments,
+                ready: health.searchableDocuments,
+                processing:
+                    health.pendingDocuments
+                    + health.processingDocuments,
             })
         }).catch(() => {
             if (!controller.signal.aborted) setStats(null)
@@ -94,8 +89,8 @@ function KnowledgeBaseCard({
                     {
                         knowledgeBase.visibility
                             === 'ORGANIZATION'
-                            ? 'Вся организация'
-                            : 'Только участники'
+                            ? 'Все сотрудники организации'
+                            : 'Только приглашённые сотрудники'
                     }
                 </span>
             </div>
@@ -107,56 +102,77 @@ function KnowledgeBaseCard({
                 }
             </p>
 
-            <dl className="knowledge-card__meta">
-                <div>
-                    <dt>Версия</dt>
-                    <dd>
-                        {knowledgeBase.version}
-                    </dd>
-                </div>
-
-                <div>
-                    <dt>Обновлена</dt>
-                    <dd>
-                        {
-                            formatDateTime(
-                                knowledgeBase.updatedAt,
-                            )
-                        }
-                    </dd>
-                </div>
-            </dl>
+            <p className="knowledge-card__updated">
+                Последнее изменение
+                {' '}
+                <time dateTime={knowledgeBase.updatedAt}>
+                    {
+                        formatDateTime(
+                            knowledgeBase.updatedAt,
+                        )
+                    }
+                </time>
+            </p>
 
             <dl className="knowledge-card__document-stats">
-                <div><dt>Документы</dt><dd>{stats?.total ?? '—'}</dd></div>
-                <div><dt>Готово</dt><dd>{stats?.ready ?? '—'}</dd></div>
-                <div><dt>Обрабатывается</dt><dd>{stats?.processing ?? '—'}</dd></div>
+                <div>
+                    <dt>Всего документов</dt>
+                    <dd>{stats?.total ?? '—'}</dd>
+                    <Link
+                        className="knowledge-card__documents-link"
+                        to={`/knowledge/${knowledgeBase.id}#knowledge-documents`}
+                    >
+                        Открыть список →
+                    </Link>
+                </div>
+                <div><dt>Готовы к поиску</dt><dd>{stats?.ready ?? '—'}</dd></div>
+                <div><dt>Обрабатываются</dt><dd>{stats?.processing ?? '—'}</dd></div>
             </dl>
 
             {canManage && (
                 <div className="knowledge-card__actions">
                     <button
                         type="button"
-                        className="secondary-button"
+                        className="knowledge-card__management-action knowledge-card__management-action--access"
+                        title="Настроить доступ сотрудников"
                         onClick={() =>
                             onMembers(
                                 knowledgeBase,
                             )
                         }
                     >
-                        Доступ
+                        <span className="knowledge-card__management-copy">
+                            <strong>Доступ</strong>
+                            <small>Участники и права</small>
+                        </span>
+                        <span
+                            className="knowledge-card__management-arrow"
+                            aria-hidden="true"
+                        >
+                            →
+                        </span>
                     </button>
 
                     <button
                         type="button"
-                        className="secondary-button"
+                        className="knowledge-card__management-action knowledge-card__management-action--settings"
+                        title="Изменить настройки базы знаний"
                         onClick={() =>
                             onEdit(
                                 knowledgeBase,
                             )
                         }
                     >
-                        Настройки
+                        <span className="knowledge-card__management-copy">
+                            <strong>Настройки</strong>
+                            <small>Название, доступ и статус</small>
+                        </span>
+                        <span
+                            className="knowledge-card__management-arrow"
+                            aria-hidden="true"
+                        >
+                            →
+                        </span>
                     </button>
                 </div>
             )}

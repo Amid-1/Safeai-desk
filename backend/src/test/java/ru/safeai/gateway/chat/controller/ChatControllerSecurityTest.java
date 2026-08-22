@@ -50,6 +50,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -211,6 +212,19 @@ class ChatControllerSecurityTest {
                                 && pageable.getPageSize() == 20
                 )
         );
+    }
+
+    @Test
+    void archiveWithAuthenticatedUserReturns204() throws Exception {
+        SafeAiUserPrincipal currentUser = currentUser();
+
+        mockMvc.perform(
+                        delete("/api/chats/{chatId}", CHAT_ID)
+                                .with(authentication(authToken(currentUser)))
+                )
+                .andExpect(status().isNoContent());
+
+        verify(chatService).archive(CHAT_ID, currentUser);
     }
 
     @Test

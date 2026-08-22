@@ -33,6 +33,9 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.common.security.SystemRole;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.knowledge.rag.KnowledgeRagService;
+import ru.safeai.gateway.knowledge.rag.RagCompletion;
+import ru.safeai.gateway.knowledge.rag.RagPreparation;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -58,6 +61,7 @@ public class ChatService {
     private final ChatTurnLeaseService leaseService;
     private final ChatProperties properties;
     private final Clock clock;
+    private final KnowledgeRagService ragService;
 
     public ChatService(
             ChatSessionRepository sessionRepository,
@@ -72,7 +76,8 @@ public class ChatService {
             ChatLockService lockService,
             ChatTurnLeaseService leaseService,
             ChatProperties properties,
-            Clock clock
+            Clock clock,
+            KnowledgeRagService ragService
     ) {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
@@ -87,6 +92,7 @@ public class ChatService {
         this.leaseService = leaseService;
         this.properties = properties;
         this.clock = clock;
+        this.ragService = ragService;
     }
 
     @Transactional
@@ -135,11 +141,33 @@ public class ChatService {
     ) {
         requireCurrentUser(currentUser);
         Objects.requireNonNull(pageable, "pageable не должен быть null");
-        return sessionRepository.findByUser_IdAndOrganization_Id(
+        return sessionRepository.findByUser_IdAndOrganization_IdAndArchivedAtIsNull(
                 currentUser.getId(),
                 currentUser.getOrganizationId(),
                 pageable
         ).map(mapper::toChatResponse);
+    }
+
+    @Transactional
+    public void archive(
+            UUID chatId,
+            SafeAiUserPrincipal currentUser
+    ) {
+        ChatSessionEntity session = findOwnedSession(chatId, currentUser);
+        Instant archivedAt = clock.instant();
+        session.archive(currentUser.getId(), archivedAt);
+        sessionRepository.saveAndFlush(session);
+
+        auditEventService.record(
+                currentUser,
+                currentUser.getOrganizationId(),
+                AuditEventType.CHAT_ARCHIVED,
+                Map.of(
+                        "chatId", session.getId(),
+                        "archivedAt", archivedAt.toString(),
+                        "retentionMode", "AUDIT_PRESERVED"
+                )
+        );
     }
 
     @Transactional(readOnly = true)
@@ -233,10 +261,39 @@ public class ChatService {
             }
 
 
+            RagPreparation ragPreparation;
+            try {
+                ragPreparation = ragService.prepare(context, currentUser);
+                context = context.withAiRequest(ragPreparation.aiRequest());
+            } catch (RuntimeException exception) {
+                try {
+                    finalizationService.failBeforeProviderCall(
+                            context,
+                            "RAG_PREPARATION_FAILED",
+                            "KNOWLEDGE_RAG_PREPARATION_FAILED",
+                            currentUser
+                    );
+                } catch (RuntimeException persistenceException) {
+                    exception.addSuppressed(persistenceException);
+                }
+                throw new ChatTurnFailedException(
+                        context.chatId(),
+                        context.turnId(),
+                        context.clientRequestId(),
+                        "KNOWLEDGE_RAG_PREPARATION_FAILED",
+                        exception
+                );
+            }
+
             // Durable marker is committed before any provider HTTP attempt.
             finalizationService.markProviderCallStarted(context);
 
             AiChatResponse response = invokeProvider(context, currentUser);
+            RagCompletion ragCompletion = ragService.complete(
+                    ragPreparation,
+                    response
+            );
+            response = ragCompletion.response();
 
             try {
                 lockService.ensureValid(redisLock);
@@ -262,9 +319,9 @@ public class ChatService {
 
             SendMessageResponse result;
             try {
-                result = finalizationService.succeed(
+                result = finalizationService.succeedRag(
                         context,
-                        response,
+                        ragCompletion,
                         currentUser
                 );
             } catch (ChatStaleProcessorException exception) {
@@ -436,7 +493,7 @@ public class ChatService {
             UUID chatId,
             SafeAiUserPrincipal currentUser
     ) {
-        if (!sessionRepository.existsByIdAndUser_IdAndOrganization_Id(
+        if (!sessionRepository.existsByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
                 chatId,
                 currentUser.getId(),
                 currentUser.getOrganizationId()
@@ -451,7 +508,7 @@ public class ChatService {
     ) {
         requireCurrentUser(currentUser);
         Objects.requireNonNull(chatId, "chatId не должен быть null");
-        return sessionRepository.findByIdAndUser_IdAndOrganization_Id(
+        return sessionRepository.findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
                 chatId,
                 currentUser.getId(),
                 currentUser.getOrganizationId()

@@ -1277,3 +1277,33 @@ body.modal-open {
 .user-details dd > .status-chip {
     vertical-align: middle;
 }
+.users-page {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    gap: clamp(10px, 1.2vh, 18px);
+}
+
+.users-page-header,
+.users-filter-bar,
+.users-page > .error,
+.users-page > .success {
+    flex: 0 0 auto;
+}
+
+.users-table-card {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.users-table-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    scrollbar-gutter: stable;
+}

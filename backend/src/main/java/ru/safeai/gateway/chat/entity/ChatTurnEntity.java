@@ -16,6 +16,7 @@ import lombok.Getter;
 import lombok.Setter;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
+import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -93,6 +94,13 @@ public class ChatTurnEntity {
     @Column(name = "outcome_ambiguous", nullable = false)
     private boolean outcomeAmbiguous;
 
+    @Column(name = "knowledge_base_id")
+    private UUID knowledgeBaseId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "knowledge_mode", nullable = false, length = 32)
+    private KnowledgeMode knowledgeMode;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -117,6 +125,36 @@ public class ChatTurnEntity {
             Instant now,
             Instant leaseUntil,
             String provider
+    ) {
+        return processing(
+                id,
+                session,
+                clientRequestId,
+                requestContentHash,
+                providerOperationId,
+                userMessageId,
+                processingToken,
+                now,
+                leaseUntil,
+                provider,
+                null,
+                KnowledgeMode.GENERAL
+        );
+    }
+
+    public static ChatTurnEntity processing(
+            UUID id,
+            ChatSessionEntity session,
+            UUID clientRequestId,
+            String requestContentHash,
+            UUID providerOperationId,
+            UUID userMessageId,
+            UUID processingToken,
+            Instant now,
+            Instant leaseUntil,
+            String provider,
+            UUID knowledgeBaseId,
+            KnowledgeMode knowledgeMode
     ) {
         Objects.requireNonNull(session, "session не должен быть null");
         ChatTurnEntity turn = new ChatTurnEntity();
@@ -153,6 +191,10 @@ public class ChatTurnEntity {
                 "leaseUntil не должен быть null"
         );
         turn.provider = normalize(provider, 32, "provider");
+        turn.knowledgeBaseId = knowledgeBaseId;
+        turn.knowledgeMode = knowledgeMode == null
+                ? KnowledgeMode.GENERAL
+                : knowledgeMode;
         turn.createdAt = Objects.requireNonNull(now, "now не должен быть null");
         turn.updatedAt = now;
         turn.validateInvariant();
@@ -172,6 +214,15 @@ public class ChatTurnEntity {
         Objects.requireNonNull(state, "state не должен быть null");
         Objects.requireNonNull(createdAt, "createdAt не должен быть null");
         Objects.requireNonNull(updatedAt, "updatedAt не должен быть null");
+        Objects.requireNonNull(
+                knowledgeMode,
+                "knowledgeMode не должен быть null"
+        );
+        if (knowledgeMode.usesKnowledge() != (knowledgeBaseId != null)) {
+            throw new IllegalStateException(
+                    "ChatTurn knowledge scope неконсистентен"
+            );
+        }
 
         if (requestContentHash == null
                 || !requestContentHash.matches("[0-9a-f]{64}")) {

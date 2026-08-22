@@ -5,6 +5,7 @@ import {
 import {
     MemoryRouter,
 } from 'react-router-dom'
+
 import {
     beforeEach,
     describe,
@@ -42,7 +43,7 @@ const authMock = vi.hoisted(() => ({
     },
 }))
 
-vi.mock('./auth/AuthContext', () => ({
+vi.mock('./auth/useAuth', () => ({
     useAuth: () => authMock.state,
 }))
 
@@ -223,6 +224,43 @@ describe(
                             'chat-page',
                         ),
                 ).toBeInTheDocument()
+            },
+        )
+
+        it(
+            'включает viewport-каркас только для рабочего чата',
+            async () => {
+                setAuth(
+                    USER,
+                    'authenticated',
+                )
+
+                const view = renderAt('/chat')
+                const chatPage = await screen.findByTestId('chat-page')
+
+                expect(
+                    chatPage.closest('.app'),
+                ).toHaveClass('app--chat')
+                expect(
+                    chatPage.closest('main'),
+                ).toHaveClass('content--chat')
+
+                view.unmount()
+
+                setAuth(
+                    ADMIN,
+                    'authenticated',
+                )
+
+                renderAt('/admin/audit')
+                const auditPage = await screen.findByTestId('admin-audit-page')
+
+                expect(
+                    auditPage.closest('.app'),
+                ).not.toHaveClass('app--chat')
+                expect(
+                    auditPage.closest('main'),
+                ).not.toHaveClass('content--chat')
             },
         )
 

@@ -1,3 +1,4 @@
+// /* frontend/src/api/_tests_/usageApi.test.ts */
 import {
     describe,
     expect,
@@ -7,7 +8,7 @@ import {
     parseUsageDailySummary,
     parseUsagePageResponse,
     parseUsageSummary,
-} from './usageApi'
+} from '../usageApi'
 
 const USER_ID =
     '11111111-1111-4111-8111-111111111111'
@@ -109,6 +110,7 @@ describe('usageApi current production contract', () => {
 
     it('keeps large token counters as decimal strings without JS Number aggregation', () => {
         const source = nestedSummary()
+
         source.usage.confirmedInputTokens =
             '9007199254740993' as unknown as number
         source.usage.confirmedOutputTokens =
@@ -125,6 +127,7 @@ describe('usageApi current production contract', () => {
 
     it('does not present known zero as complete pricing when unpriced messages exist', () => {
         const source = nestedSummary()
+
         source.cost.knownCostUsd = '0'
         source.cost.pricingComplete = false
         source.cost.unpricedMessages = 2
@@ -155,6 +158,7 @@ describe('usageApi current production contract', () => {
 
     it('fails fast when backend total differs from components', () => {
         const source = nestedSummary()
+
         source.usage.confirmedTotalTokens = 151
 
         expect(() =>

@@ -4,12 +4,14 @@
 import type {
     ChangeEvent,
 } from 'react'
-import type { UserRole } from '../../api/types'
+import {
+    parseAssignableUserRole,
+} from './userRole'
+import type {
+    AssignableUserRole,
+} from './userRole'
 
-export type AssignableUserRole = Exclude<
-    UserRole,
-    'SUPER_ADMIN'
->
+export type { AssignableUserRole } from './userRole'
 
 type UserRoleSelectorProps = {
     name: string
@@ -21,7 +23,7 @@ type UserRoleSelectorProps = {
 }
 
 type FixedUserRoleProps = {
-    role: AssignableUserRole
+    userRole: AssignableUserRole
     title?: string
     description?: string
 }
@@ -136,13 +138,13 @@ export function UserRoleSelector({
 }
 
 export function FixedUserRole({
-    role,
+    userRole,
     title = 'Роль',
     description,
 }: FixedUserRoleProps) {
     const option =
         ROLE_OPTIONS.find(
-            (item) => item.role === role,
+            (item) => item.role === userRole,
         )
 
     if (!option) {
@@ -152,7 +154,7 @@ export function FixedUserRole({
     return (
         <section
             className={
-                `users-fixed-role users-fixed-role--${role.toLowerCase()}`
+                `users-fixed-role users-fixed-role--${userRole.toLowerCase()}`
             }
             aria-label={title}
         >
@@ -182,19 +184,6 @@ export function FixedUserRole({
             </div>
         </section>
     )
-}
-
-export function parseAssignableUserRole(
-    value: string,
-): AssignableUserRole | null {
-    if (
-        value === 'USER'
-        || value === 'ADMIN'
-    ) {
-        return value
-    }
-
-    return null
 }
 
 function getRoleOptionClassName(

@@ -52,7 +52,7 @@ class UsageQueryRepositoryTest {
     @ServiceConnection
     static final PostgreSQLContainer POSTGRES =
             new PostgreSQLContainer(
-                    "postgres:16-alpine"
+                    "pgvector/pgvector:pg16"
             );
 
     private static final UUID ORGANIZATION_ID =

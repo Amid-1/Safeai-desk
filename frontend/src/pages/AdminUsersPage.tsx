@@ -405,10 +405,18 @@ function AdminUsersPageContent({
             ?.abort()
 
         if (!currentUserIsSuperAdmin) {
-            setOrganizations([])
-            setSelectedOrganizationId('')
-            setOrganizationsLoading(false)
-            return
+            let active = true
+            queueMicrotask(() => {
+                if (!active) {
+                    return
+                }
+                setOrganizations([])
+                setSelectedOrganizationId('')
+                setOrganizationsLoading(false)
+            })
+            return () => {
+                active = false
+            }
         }
 
         const controller =
@@ -1707,7 +1715,7 @@ function AdminUsersPageContent({
                             )
                             : (
                                 <FixedUserRole
-                                    role="USER"
+                                    userRole="USER"
                                     title="Роль пользователя"
                                     description={
                                         'Пользователь будет создан '

@@ -34,6 +34,7 @@ import ru.safeai.gateway.knowledge.model.KnowledgeBaseVisibility;
 import ru.safeai.gateway.knowledge.model.KnowledgeIngestionStatus;
 import ru.safeai.gateway.knowledge.service.KnowledgeBaseService;
 import ru.safeai.gateway.knowledge.service.KnowledgeDocumentService;
+import ru.safeai.gateway.knowledge.service.KnowledgeOperationsService;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -110,6 +111,9 @@ class KnowledgeControllerSecurityTest {
 
     @MockitoBean
     private KnowledgeDocumentService knowledgeDocumentService;
+
+    @MockitoBean
+    private KnowledgeOperationsService knowledgeOperationsService;
 
     @MockitoBean
     private UserDetailsService userDetailsService;

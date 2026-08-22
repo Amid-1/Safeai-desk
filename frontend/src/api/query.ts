@@ -8,9 +8,6 @@ export type QueryValue =
 const UUID_PATTERN =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const CONTROL_CHARACTER_PATTERN =
-    /[\u0000-\u001f\u007f]/
-
 export function buildQueryString(
     values: Record<string, QueryValue>,
 ): string {
@@ -106,7 +103,7 @@ export function pathSegment(value: string): string {
         || value === '..'
         || value.includes('/')
         || value.includes('\\')
-        || CONTROL_CHARACTER_PATTERN.test(value)
+        || containsControlCharacter(value)
     ) {
         throw new Error(
             'Недопустимый path segment',
@@ -120,6 +117,13 @@ export function pathSegment(value: string): string {
             'Path segment содержит некорректные символы',
         )
     }
+}
+
+function containsControlCharacter(value: string): boolean {
+    return Array.from(value).some((character) => {
+        const codePoint = character.codePointAt(0) ?? 0
+        return codePoint < 32 || codePoint === 127
+    })
 }
 
 export function uuidPathSegment(

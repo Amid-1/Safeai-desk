@@ -21,7 +21,7 @@ const authMock = vi.hoisted(() => ({
     currentUser: null as AuthUser | null,
 }))
 
-vi.mock('../auth/AuthContext', () => ({
+vi.mock('../auth/useAuth', () => ({
     useAuth: () => authMock,
 }))
 

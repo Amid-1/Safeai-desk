@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/api/chatApi.ts
+// ============================================================
 import {
     API_TIMEOUTS,
     apiRequest,
@@ -132,9 +135,48 @@ export type ChatCapabilities = {
     detailsMessageLimit: number
 }
 
+export type KnowledgeMode =
+    | 'GENERAL'
+    | 'KNOWLEDGE_ASSISTED'
+    | 'KNOWLEDGE_ONLY'
+
+export type AnswerCitation = {
+    label: string
+    chunkId: string
+    documentId: string
+    documentVersionId: string
+    documentName: string
+    versionNumber: number
+    chunkOrdinal: number
+    pageFrom: number | null
+    pageTo: number | null
+    heading: string | null
+    contentSha256: string
+}
+
+export type AnswerPassport = {
+    id: string
+    chatTurnId: string
+    retrievalRunId: string
+    knowledgeBaseId: string
+    knowledgeMode: Exclude<KnowledgeMode, 'GENERAL'>
+    provider: string
+    requestedModel: string
+    resolvedModel: string
+    embeddingModel: string
+    contextSha256: string
+    answerSha256: string
+    evidenceSufficient: boolean
+    citationsValid: boolean
+    createdAt: string
+    citations: AnswerCitation[]
+}
+
 export type SendMessageRequest = {
     content: string
     clientRequestId: string
+    knowledgeBaseId?: string | null
+    knowledgeMode?: KnowledgeMode
 }
 
 export type SendMessageResponse = {
@@ -149,6 +191,7 @@ export type SendMessageResponse = {
     chatUpdatedAt: string | null
     createdAt: string
     completedAt: string
+    answerPassport: AnswerPassport | null
 }
 
 export type ChatTurnStatus = {
@@ -284,6 +327,20 @@ export async function createChat(
     )
 
     return parseChat(response)
+}
+
+export async function archiveChat(
+    chatId: string,
+    options: RequestOptions = {},
+): Promise<void> {
+    await apiRequest<void>(
+        `/api/chats/${uuidPathSegment(chatId)}`,
+        {
+            method: 'DELETE',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
 }
 
 export async function sendMessage(
@@ -576,6 +633,91 @@ export function parseSendMessageResponse(
             record.completedAt,
             `${field}.completedAt`,
         ),
+        answerPassport: record.answerPassport == null
+            ? null
+            : parseAnswerPassport(
+                record.answerPassport,
+                `${field}.answerPassport`,
+            ),
+    }
+}
+
+export function parseAnswerPassport(
+    value: unknown,
+    field = 'answerPassport',
+): AnswerPassport {
+    const record = expectRecord(value, field)
+    const mode = expectEnum(
+        record.knowledgeMode,
+        `${field}.knowledgeMode`,
+        ['KNOWLEDGE_ASSISTED', 'KNOWLEDGE_ONLY'] as const,
+    )
+    if (!Array.isArray(record.citations)) {
+        throw contractError(`${field}.citations должен быть массивом`)
+    }
+    return {
+        id: expectUuid(record.id, `${field}.id`),
+        chatTurnId: expectUuid(record.chatTurnId, `${field}.chatTurnId`),
+        retrievalRunId: expectUuid(
+            record.retrievalRunId,
+            `${field}.retrievalRunId`,
+        ),
+        knowledgeBaseId: expectUuid(
+            record.knowledgeBaseId,
+            `${field}.knowledgeBaseId`,
+        ),
+        knowledgeMode: mode,
+        provider: expectString(record.provider, `${field}.provider`),
+        requestedModel: expectString(
+            record.requestedModel,
+            `${field}.requestedModel`,
+        ),
+        resolvedModel: expectString(
+            record.resolvedModel,
+            `${field}.resolvedModel`,
+        ),
+        embeddingModel: expectString(
+            record.embeddingModel,
+            `${field}.embeddingModel`,
+        ),
+        contextSha256: expectString(
+            record.contextSha256,
+            `${field}.contextSha256`,
+            { maxLength: 64 },
+        ),
+        answerSha256: expectString(
+            record.answerSha256,
+            `${field}.answerSha256`,
+            { maxLength: 64 },
+        ),
+        evidenceSufficient: expectBoolean(
+            record.evidenceSufficient,
+            `${field}.evidenceSufficient`,
+        ),
+        citationsValid: expectBoolean(
+            record.citationsValid,
+            `${field}.citationsValid`,
+        ),
+        createdAt: expectInstant(record.createdAt, `${field}.createdAt`),
+        citations: record.citations.map((citation, index) => {
+            const item = expectRecord(
+                citation,
+                `${field}.citations[${index}]`,
+            )
+            return {
+                label: expectString(item.label, `${field}.citations[${index}].label`),
+                chunkId: expectUuid(item.chunkId, `${field}.citations[${index}].chunkId`),
+                documentId: expectUuid(item.documentId, `${field}.citations[${index}].documentId`),
+                documentVersionId: expectUuid(item.documentVersionId, `${field}.citations[${index}].documentVersionId`),
+                documentName: expectString(item.documentName, `${field}.citations[${index}].documentName`),
+                versionNumber: expectNullableNonNegativeInteger(item.versionNumber, `${field}.citations[${index}].versionNumber`) ?? 0,
+                chunkOrdinal: expectNullableNonNegativeInteger(item.chunkOrdinal, `${field}.citations[${index}].chunkOrdinal`) ?? 0,
+                pageFrom: expectNullableNonNegativeInteger(item.pageFrom ?? null, `${field}.citations[${index}].pageFrom`),
+                pageTo: expectNullableNonNegativeInteger(item.pageTo ?? null, `${field}.citations[${index}].pageTo`),
+                heading: expectNullableString(item.heading ?? null, `${field}.citations[${index}].heading`),
+                contentSha256: expectString(item.contentSha256, `${field}.citations[${index}].contentSha256`, { maxLength: 64 }),
+            }
+        }),
     }
 }
 

@@ -3,6 +3,7 @@
 // ============================================================
 import {
     useEffect,
+    useLayoutEffect,
     useRef,
     useState,
 } from 'react'
@@ -71,8 +72,10 @@ function useAuditEvents({
     const callbackRef =
         useRef(onPageOutOfRange)
 
-    callbackRef.current =
-        onPageOutOfRange
+    useLayoutEffect(() => {
+        callbackRef.current =
+            onPageOutOfRange
+    }, [onPageOutOfRange])
 
     useEffect(() => {
         const sequence =
@@ -160,12 +163,7 @@ function useAuditEvents({
         }
     }, [
         page,
-        filter.eventType,
-        filter.actorUserId,
-        filter.actorEmail,
-        filter.dateFrom,
-        filter.dateTo,
-        filter.targetOrganizationId,
+        filter,
         reloadToken,
     ])
 

@@ -15,19 +15,19 @@ import java.util.UUID;
 public interface ChatSessionRepository
         extends JpaRepository<ChatSessionEntity, UUID> {
 
-    Slice<ChatSessionEntity> findByUser_IdAndOrganization_Id(
+    Slice<ChatSessionEntity> findByUser_IdAndOrganization_IdAndArchivedAtIsNull(
             UUID userId,
             UUID organizationId,
             Pageable pageable
     );
 
-    Optional<ChatSessionEntity> findByIdAndUser_IdAndOrganization_Id(
+    Optional<ChatSessionEntity> findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
             UUID id,
             UUID userId,
             UUID organizationId
     );
 
-    boolean existsByIdAndUser_IdAndOrganization_Id(
+    boolean existsByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
             UUID id,
             UUID userId,
             UUID organizationId

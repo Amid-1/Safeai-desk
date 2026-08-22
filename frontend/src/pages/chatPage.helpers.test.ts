@@ -12,6 +12,8 @@ import {
     createPendingTurn,
     formatPricing,
     formatUsage,
+    getModelDisplayName,
+    getVisibleMessageContent,
     isSafeToPrepareNewRequest,
     mergeMessages,
     normalizeMessageContent,
@@ -138,7 +140,26 @@ describe('chatPage helpers', () => {
                     pricingStatus: 'UNPRICED',
                 }),
             ),
-        ).toBe('стоимость: не рассчитана')
+        ).toBe('Стоимость: ещё не рассчитана')
+    })
+
+    it('explains the demo model without exposing the mock provider prefix', () => {
+        const message = assistant({
+            content: 'Mock AI provider response: Ответ пользователю',
+        })
+
+        expect(
+            getModelDisplayName(message.model),
+        ).toBe('Демонстрационная модель SafeAI')
+        expect(
+            getVisibleMessageContent(message),
+        ).toBe('Ответ пользователю')
+        expect(formatUsage(message)).toBe(
+            'Токены: 10 вход · 5 выход',
+        )
+        expect(formatPricing(message)).toContain(
+            'демо-модель',
+        )
     })
 
     it('never prepares a fresh automatic request from ambiguous outcome', () => {

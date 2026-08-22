@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG POSTGRES_BASE_IMAGE=postgres:16
+ARG POSTGRES_BASE_IMAGE=pgvector/pgvector:pg16
 
 FROM ${POSTGRES_BASE_IMAGE}
 

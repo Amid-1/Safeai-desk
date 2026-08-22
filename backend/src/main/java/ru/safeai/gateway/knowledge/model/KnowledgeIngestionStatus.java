@@ -4,6 +4,7 @@ public enum KnowledgeIngestionStatus {
     PENDING,
     VALIDATING,
     EXTRACTING,
+    CHUNKING,
     READY,
     FAILED
 }

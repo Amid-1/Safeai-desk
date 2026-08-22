@@ -5,6 +5,7 @@ import ru.safeai.gateway.ai.dto.AiChatRequest;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
+import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 
 public record ChatProcessingContext(
         UUID chatId,
@@ -15,6 +16,8 @@ public record ChatProcessingContext(
         UUID processingToken,
         Instant leaseUntil,
         AiChatRequest aiRequest,
+        UUID knowledgeBaseId,
+        KnowledgeMode knowledgeMode,
         boolean replay
 ) {
     public ChatProcessingContext {
@@ -32,6 +35,14 @@ public record ChatProcessingContext(
                 providerOperationId,
                 "providerOperationId не должен быть null"
         );
+        knowledgeMode = knowledgeMode == null
+                ? KnowledgeMode.GENERAL
+                : knowledgeMode;
+        if (knowledgeMode.usesKnowledge() != (knowledgeBaseId != null)) {
+            throw new IllegalArgumentException(
+                    "Некорректная knowledge scope у ChatProcessingContext"
+            );
+        }
         if (replay) {
             if (processingToken != null || leaseUntil != null || aiRequest != null) {
                 throw new IllegalArgumentException(
@@ -51,5 +62,50 @@ public record ChatProcessingContext(
                 );
             }
         }
+    }
+
+    public ChatProcessingContext(
+            UUID chatId,
+            UUID turnId,
+            UUID userMessageId,
+            UUID clientRequestId,
+            UUID providerOperationId,
+            UUID processingToken,
+            Instant leaseUntil,
+            AiChatRequest aiRequest,
+            boolean replay
+    ) {
+        this(
+                chatId,
+                turnId,
+                userMessageId,
+                clientRequestId,
+                providerOperationId,
+                processingToken,
+                leaseUntil,
+                aiRequest,
+                null,
+                KnowledgeMode.GENERAL,
+                replay
+        );
+    }
+
+    public ChatProcessingContext withAiRequest(AiChatRequest request) {
+        if (replay) {
+            throw new IllegalStateException("Replay context нельзя изменять");
+        }
+        return new ChatProcessingContext(
+                chatId,
+                turnId,
+                userMessageId,
+                clientRequestId,
+                providerOperationId,
+                processingToken,
+                leaseUntil,
+                request,
+                knowledgeBaseId,
+                knowledgeMode,
+                false
+        );
     }
 }

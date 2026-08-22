@@ -20,7 +20,7 @@ class SafeaiBackendApplicationTests {
     @Container
     @ServiceConnection
     static final PostgreSQLContainer POSTGRES =
-            new PostgreSQLContainer("postgres:16-alpine")
+            new PostgreSQLContainer("pgvector/pgvector:pg16")
                     .withDatabaseName("safeai_test")
                     .withUsername("safeai")
                     .withPassword("safeai_password");

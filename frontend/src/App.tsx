@@ -9,11 +9,13 @@ import {
     Navigate,
     Route,
     Routes,
+    useLocation,
     useNavigate,
 } from 'react-router-dom'
 import type { AuthUser } from './api/authApi'
 import type { UserRole } from './api/types'
-import { AuthProvider, useAuth } from './auth/AuthContext'
+import { AuthProvider } from './auth/AuthContext'
+import { useAuth } from './auth/useAuth'
 import { ErrorState, LoadingState } from './components/StateBlock'
 
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -249,6 +251,7 @@ function NotFoundRoute() {
 
 function AppLayout() {
     const navigate = useNavigate()
+    const location = useLocation()
     const {
         currentUser,
         logoutUser,
@@ -270,6 +273,24 @@ function AppLayout() {
     )
     const canAccessOrganizations = isSuperAdmin(currentUser)
     const displayRole = getDisplayRole(currentUser)
+    const isChatRoute = location.pathname === '/chat'
+    const isViewportWorkspaceRoute = [
+        '/chat',
+        '/knowledge',
+        '/admin/users',
+        '/admin/audit',
+        '/admin/usage',
+    ].includes(location.pathname)
+    const appClassName = [
+        'app',
+        isViewportWorkspaceRoute ? 'app--workspace' : '',
+        isChatRoute ? 'app--chat' : '',
+    ].filter(Boolean).join(' ')
+    const contentClassName = [
+        'content',
+        isViewportWorkspaceRoute ? 'content--workspace' : '',
+        isChatRoute ? 'content--chat' : '',
+    ].filter(Boolean).join(' ')
 
     async function handleLogout() {
         if (logoutPending) {
@@ -284,15 +305,25 @@ function AppLayout() {
             // AuthContext очищает локальную сессию в finally.
         } finally {
             setLogoutPending(false)
-            navigate('/login', { replace: true })
+            void navigate('/login', { replace: true })
         }
     }
 
     return (
-        <div className="app">
+        <div className={appClassName}>
             {isAuthenticated && (
                 <header className="topbar">
-                    <div className="logo">SafeAI Desk</div>
+                    <NavLink
+                        to={currentUser
+                            ? getDefaultAuthenticatedRoute(currentUser)
+                            : '/'}
+                        className="logo"
+                        aria-label="SafeAI Desk — на главную"
+                        title="На главную"
+                    >
+                        <span className="logo__mark" aria-hidden="true">S</span>
+                        <span>SafeAI Desk</span>
+                    </NavLink>
 
                     <nav aria-label="Основная навигация">
                         {canAccessChat && (
@@ -380,7 +411,7 @@ function AppLayout() {
                 </header>
             )}
 
-            <main className="content">
+            <main className={contentClassName}>
                 <Suspense fallback={<RouteLoadingState />}>
                     <Routes>
                         <Route

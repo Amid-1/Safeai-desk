@@ -24,6 +24,7 @@ import ru.safeai.gateway.chat.repository.ChatTurnMutexRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.common.exception.ChatBusyException;
+import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 
 import java.time.Duration;
@@ -373,7 +374,7 @@ class ChatTurnReservationServiceTest {
     }
 
     private void stubOwnedSession() {
-        when(sessionRepository.findByIdAndUser_IdAndOrganization_Id(
+        when(sessionRepository.findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
                 ChatTestFixtures.CHAT_ID,
                 ChatTestFixtures.USER_ID,
                 ChatTestFixtures.ORGANIZATION_ID
@@ -395,7 +396,11 @@ class ChatTurnReservationServiceTest {
                 ChatTestFixtures.TURN_ID,
                 ChatTestFixtures.session(),
                 ChatTestFixtures.CLIENT_REQUEST_ID,
-                normalizer.sha256(normalizer.normalize(content)),
+                normalizer.requestHash(
+                        normalizer.normalize(content),
+                        null,
+                        KnowledgeMode.GENERAL
+                ),
                 ChatTestFixtures.PROVIDER_OPERATION_ID,
                 ChatTestFixtures.USER_MESSAGE_ID,
                 ChatTestFixtures.PROCESSING_TOKEN,

@@ -5,6 +5,8 @@ import ru.safeai.gateway.chat.config.ChatProperties;
 import ru.safeai.gateway.common.exception.BadRequestException;
 
 import java.time.Duration;
+import java.util.UUID;
+import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -62,6 +64,30 @@ class ChatContentNormalizerTest {
     void differentContentHasDifferentIdempotencyHash() {
         assertThat(normalizer.sha256("one"))
                 .isNotEqualTo(normalizer.sha256("two"));
+    }
+
+    @Test
+    void idempotencyHashIncludesKnowledgeScopeAndMode() {
+        UUID knowledgeBaseId = UUID.randomUUID();
+
+        String general = normalizer.requestHash(
+                "same question",
+                null,
+                KnowledgeMode.GENERAL
+        );
+        String assisted = normalizer.requestHash(
+                "same question",
+                knowledgeBaseId,
+                KnowledgeMode.KNOWLEDGE_ASSISTED
+        );
+        String knowledgeOnly = normalizer.requestHash(
+                "same question",
+                knowledgeBaseId,
+                KnowledgeMode.KNOWLEDGE_ONLY
+        );
+
+        assertThat(java.util.Set.of(general, assisted, knowledgeOnly))
+                .hasSize(3);
     }
 
     private static ChatProperties properties(int maxMessageChars) {

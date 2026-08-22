@@ -118,10 +118,11 @@ public class ChatTurnReservationService {
                         request.content()
                 );
 
-        String contentHash =
-                contentNormalizer.sha256(
-                        content
-                );
+        String contentHash = contentNormalizer.requestHash(
+                content,
+                request.knowledgeBaseId(),
+                request.knowledgeMode()
+        );
 
         UUID clientRequestId =
                 request.clientRequestId();
@@ -236,7 +237,9 @@ public class ChatTurnReservationService {
                         processingToken,
                         now,
                         leaseUntil,
-                        providerProperties.provider()
+                        providerProperties.provider(),
+                        request.knowledgeBaseId(),
+                        request.knowledgeMode()
                 );
 
         turnRepository.saveAndFlush(
@@ -299,6 +302,8 @@ public class ChatTurnReservationService {
                 processingToken,
                 leaseUntil,
                 aiRequest,
+                request.knowledgeBaseId(),
+                request.knowledgeMode(),
                 false
         );
     }
@@ -331,6 +336,8 @@ public class ChatTurnReservationService {
                             null,
                             null,
                             null,
+                            turn.getKnowledgeBaseId(),
+                            turn.getKnowledgeMode(),
                             true
                     );
 
@@ -459,7 +466,7 @@ public class ChatTurnReservationService {
             SafeAiUserPrincipal currentUser
     ) {
         return sessionRepository
-                .findByIdAndUser_IdAndOrganization_Id(
+                .findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
                         chatId,
                         currentUser.getId(),
                         currentUser.getOrganizationId()

@@ -582,20 +582,19 @@ describe('http API client', () => {
 
         vi.stubGlobal('fetch', fetchMock)
 
-        const request = apiRequest(
+        const assertion = expect(apiRequest(
             '/api/users',
             {
                 timeoutMs: 10,
             },
-        )
+        )).rejects.toMatchObject({
+            errorCode:
+                'REQUEST_TIMEOUT',
+        })
 
         await vi.advanceTimersByTimeAsync(11)
 
-        await expect(request).rejects
-            .toMatchObject({
-                errorCode:
-                    'REQUEST_TIMEOUT',
-            })
+        await assertion
     })
 
     it('отклоняет некорректный timeout', async () => {

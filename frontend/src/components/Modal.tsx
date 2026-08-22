@@ -83,15 +83,9 @@ function Modal({
             null,
         )
 
-    const modalIdRef =
-        useRef<symbol | null>(null)
-
-    if (!modalIdRef.current) {
-        modalIdRef.current =
-            Symbol('safeai-modal')
-    }
-
-    const modalId = modalIdRef.current
+    const [modalId] = useState(
+        () => Symbol('safeai-modal'),
+    )
 
     const onCloseRef = useRef(onClose)
     const closeDisabledRef =
@@ -99,13 +93,17 @@ function Modal({
     const initialFocusRefRef =
         useRef(initialFocusRef)
 
-    // Обновляются синхронно при render, но основной
-    // focus/listener effect остаётся mount-only.
-    onCloseRef.current = onClose
-    closeDisabledRef.current =
-        closeDisabled
-    initialFocusRefRef.current =
-        initialFocusRef
+    useLayoutEffect(() => {
+        onCloseRef.current = onClose
+        closeDisabledRef.current =
+            closeDisabled
+        initialFocusRefRef.current =
+            initialFocusRef
+    }, [
+        onClose,
+        closeDisabled,
+        initialFocusRef,
+    ])
 
     const [portalRoot] =
         useState<HTMLElement>(

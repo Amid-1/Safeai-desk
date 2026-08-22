@@ -113,20 +113,26 @@ Demo Company — тестовая customer organization для локально�
 
 ### 4.3 USER
 
-| № | Email            | Password               | Role | Организация     | Полное имя / комментарий                                                                  |
-|--:|------------------|------------------------|---|-----------------|-------------------------------------------------------------------------------------------|
-| 1 | `dimac@mail.com` | `v2F4r1C4!#SD`         | `USER` | `Demo Company`  | Dima Dmitriev. Создан вручную через frontend/admin users.                                 |
-| 2 | `user@test.com`  | `useR12345678%^A`      | `USER` | `Demo Company`  | UserTest UserTestov. Если пароль менялся через reset password, использовать новый пароль. |
-| 3 | `vasiya@gmail.com` | `dfghjGH75!+Sdd`       | `USER` | `ООО "Сокол"`   | VasiyaSokol VasiyaSokolov. В БД email нормализуется к lower-case.                         |
-| 4 | `petiyadf@yandex.com` | `DGFGFNjghj&*46`       | `USER` | `ООО "Ромашка"` | PetiyaRomashka PetiyaRomashkov. В БД email нормализуется к lower-case.                    |
-| 5 | `user1@klever.ru` | `DGFGFNjghj&*46Dfg`    | `USER` | `ООО "Клевер"`  | User1Klever User1Kleverov. В БД email нормализуется к lower-case.                         |
-| 6 | `user2@klever.ru` | `DGFGFNjghj&*46Dfg!@`  | `USER` | `ООО "Клевер"`  | User2Klever User2Kleverov. В БД email нормализуется к lower-case.                         |
-| 6 | `use12@zil.ru`   | `DGFGFNjghj&*46Dfg**`  | `USER` | `ООО "Зил"`     | User1Zil User1Zilov. В БД email нормализуется к lower-case.                               |
-| 6 | `user2@zil.ru`   | `DGFGFNjghj&*46Df*&(`  | `USER` | `ООО "Зил"`     | User2Zil User2Zilov. В БД email нормализуется к lower-case.                               |
-| 6 | `USER-A1@proton.ru` | `DGFGFNjghj&*46Df&&&`  | `USER` | ``     |   USER-A1                          |
-| 6 | `USER-A2@proton.ru` | `DGFGFNjghj&*46Df***`  | `USER` | ``     |   USER-A2                            |
-| 6 | `USER-B1@mail.ru`  | `DGFGFNjghj&*46D))*`   | `USER` | ``     |     USER-B1                         |
-| 6 | `@mail.ru`       | `DGFGFNjghj&*46Df*&(^` | `USER` | ``     |                              |
+| № | Email                 | Password                  | Role | Организация     | Полное имя / комментарий                                                                  |
+|--:|-----------------------|---------------------------|---|-----------------|-------------------------------------------------------------------------------------------|
+| 1 | `dimac@mail.com`      | `v2F4r1C4!#SD`            | `USER` | `Demo Company`  | Dima Dmitriev. Создан вручную через frontend/admin users.                                 |
+| 2 | `user@test.com`       | `useR12345678%^A`         | `USER` | `Demo Company`  | UserTest UserTestov. Если пароль менялся через reset password, использовать новый пароль. |
+| 3 | `vasiya@gmail.com`    | `dfghjGH75!+Sdd`          | `USER` | `ООО "Сокол"`   | VasiyaSokol VasiyaSokolov. В БД email нормализуется к lower-case.                         |
+| 4 | `petiyadf@yandex.com` | `DGFGFNjghj&*46`          | `USER` | `ООО "Ромашка"` | PetiyaRomashka PetiyaRomashkov. В БД email нормализуется к lower-case.                    |
+| 5 | `user1@klever.ru`     | `DGFGFNjghj&*46Dfg`       | `USER` | `ООО "Клевер"`  | User1Klever User1Kleverov. В БД email нормализуется к lower-case.                         |
+| 6 | `user2@klever.ru`     | `DGFGFNjghj&*46Dfg!@`     | `USER` | `ООО "Клевер"`  | User2Klever User2Kleverov. В БД email нормализуется к lower-case.                         |
+| 6 | `use12@zil.ru`        | `DGFGFNjghj&*46Dfg**`     | `USER` | `ООО "Зил"`     | User1Zil User1Zilov. В БД email нормализуется к lower-case.                               |
+| 6 | `user2@zil.ru`        | `DGFGFNjghj&*46Df*&(`     | `USER` | `ООО "Зил"`     | User2Zil User2Zilov. В БД email нормализуется к lower-case.                               |
+| 6 | `USER-A1@proton.ru`   | `DGFGFNjghj&*46Df&&&`     | `USER` | ``     | USER-A1                                                                                   |
+| 6 | `USER-A2@proton.ru`   | `DGFGFNjghj&*46Df***`     | `USER` | ``     | USER-A2                                                                                   |
+| 6 | `USER-B1@mail.ru`     | `DGFGFNjghj&*46D))*`      | `USER` | ``     | USER-B1                                                                                   |
+| 6 | `user2@test.com`      | `DGFGFNjghj&*46Df*&df`    | `USER` | `Demo Company`     | UserTest2 UserTestov                                                                      |
+| 6 | `user3@test.com`      | `DGFGFNjghj&*46Df*&(dd`   | `USER` | `Demo Company`     | UserTest3 UserTestov                                                                      |
+| 6 | `user4@test.com`      | `DGFGFNjghj&*46Df*&++`    | `USER` | `Demo Company`     | UserTest4 UserTestov                                                                      |
+| 6 | `user5@test.com`      | `DGFGFNjghj&*46Df*&+++`   | `USER` | `Demo Company`     | UserTest5 UserTestov                                                                      |
+| 6 | `user6@test.com`      | `DGFGFNjghj&*46Df*===`    | `USER` | `Demo Company`     | UserTest6 UserTestov                                                                      |
+| 6 | `user7@test.com`      | `DGFGFNjghj&*46Df++--))`  | `USER` | `Demo Company`     | UserTest7 UserTestov                                                                      |
+| 6 | `user8@test.com`      | `DGFGFNjghj&*46Df====+++` | `USER` | `Demo Company`     | UserTest8 UserTestov                                                                      |
 
 ---
 

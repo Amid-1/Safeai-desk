@@ -2,9 +2,7 @@
 // frontend/src/auth/AuthContext.tsx
 // ============================================================
 import {
-    createContext,
     useCallback,
-    useContext,
     useEffect,
     useMemo,
     useReducer,
@@ -30,12 +28,14 @@ import {
     subscribeAuthEvents,
 } from '../api/authCoordinator'
 
-export type AuthStatus =
-    | 'loading'
-    | 'authenticated'
-    | 'unauthenticated'
-    | 'temporarily-unavailable'
-    | 'logout-unconfirmed'
+import {
+    AuthContext,
+} from './authContext.definition'
+import type {
+    AuthContextValue,
+} from './authContext.definition'
+
+export type { AuthStatus } from './authContext.definition'
 
 type AuthState =
     | {
@@ -80,18 +80,6 @@ type AuthAction =
         error: string
     }
 
-type AuthContextValue = {
-    currentUser: AuthUser | null
-    authStatus: AuthStatus
-    authLoading: boolean
-    authError: string | null
-    loginUser: (
-        request: LoginRequest,
-    ) => Promise<void>
-    logoutUser: () => Promise<void>
-    reloadCurrentUser: () => Promise<void>
-}
-
 type AuthOperation = {
     id: number
     signal: AbortSignal
@@ -102,9 +90,6 @@ const INITIAL_STATE: AuthState = {
     user: null,
     error: null,
 }
-
-const AuthContext =
-    createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({
     children,
@@ -377,18 +362,6 @@ export function AuthProvider({
             {children}
         </AuthContext.Provider>
     )
-}
-
-export function useAuth(): AuthContextValue {
-    const context = useContext(AuthContext)
-
-    if (!context) {
-        throw new Error(
-            'useAuth должен использоваться внутри AuthProvider',
-        )
-    }
-
-    return context
 }
 
 function authReducer(

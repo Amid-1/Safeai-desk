@@ -43,7 +43,7 @@ import PageErrorBoundary
     from '../components/PageErrorBoundary'
 import {
     useAuth,
-} from '../auth/AuthContext'
+} from '../auth/useAuth'
 import './AdminUsagePage.css'
 
 const PAGE_SIZE = 50
@@ -454,8 +454,11 @@ function AdminUsagePageContent() {
 
     return (
         <div className="page usage-page">
-            <header className="usage-page__header">
+            <header className="usage-page__header page-hero page-hero--usage">
                 <div>
+                    <span className="page-hero__eyebrow">
+                        Стоимость и прозрачность
+                    </span>
                     <h1>Использование AI</h1>
                     <p className="muted">
                         Контролируйте расход токенов, стоимость и качество данных.
@@ -640,38 +643,52 @@ function AdminUsagePageContent() {
 
             {!loading && !error && (
                 <div className="card table-card">
-                    <UsageRows
-                        tab={tab}
-                        rows={rows}
-                    />
+                    <div className="usage-table-scroll">
+                        <UsageRows
+                            tab={tab}
+                            rows={rows}
+                        />
+                    </div>
 
                     {(tab === 'summary'
                         || tab === 'users') && rows.length > 0
                         && (
-                            <div className="pagination">
-                                <button
-                                    type="button"
-                                    className="secondary-button"
-                                    disabled={!hasPrevious}
-                                    onClick={() =>
-                                        goToPage(page - 1)
-                                    }
-                                >
-                                    Назад
-                                </button>
-                                <span>
-                                    Страница {page + 1}
-                                </span>
-                                <button
-                                    type="button"
-                                    className="secondary-button"
-                                    disabled={!hasNext}
-                                    onClick={() =>
-                                        goToPage(page + 1)
-                                    }
-                                >
-                                    Далее
-                                </button>
+                            <div className={hasPrevious || hasNext
+                                ? 'pagination'
+                                : 'pagination pagination--single'}
+                            >
+                                {!hasPrevious && !hasNext ? (
+                                    <div className="pagination__summary">
+                                        <strong>Все записи показаны</strong>
+                                        <span>Записей: {rows.length}</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <button
+                                            type="button"
+                                            className="secondary-button"
+                                            disabled={!hasPrevious}
+                                            onClick={() =>
+                                                goToPage(page - 1)
+                                            }
+                                        >
+                                            Назад
+                                        </button>
+                                        <span>
+                                            Страница {page + 1}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            className="secondary-button"
+                                            disabled={!hasNext}
+                                            onClick={() =>
+                                                goToPage(page + 1)
+                                            }
+                                        >
+                                            Далее
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         )}
                 </div>
@@ -913,8 +930,18 @@ function CoverageView({
         ),
     ].filter(Boolean)
 
+    const quality = coverage.usageComplete === true
+        && coverage.pricingComplete === true
+        ? 'complete'
+        : coverage.usageComplete === false
+            || coverage.pricingComplete === false
+            ? 'partial'
+            : 'unknown'
+
     return (
-        <div>
+        <div className={`usage-coverage usage-coverage--${quality}`}>
+            <span className="usage-coverage__indicator" aria-hidden="true" />
+            <div>
             <div>{usageText}</div>
             <div>{pricingText}</div>
             {details.length > 0 && (
@@ -922,6 +949,7 @@ function CoverageView({
                     {details.join(', ')}
                 </small>
             )}
+            </div>
         </div>
     )
 }

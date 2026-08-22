@@ -12,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.*;
 import ru.safeai.gateway.knowledge.service.KnowledgeDocumentService;
+import ru.safeai.gateway.knowledge.service.KnowledgeOperationsService;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -23,6 +24,25 @@ import java.util.UUID;
 @PreAuthorize("hasAnyRole('ADMIN','USER')")
 public class KnowledgeDocumentController {
     private final KnowledgeDocumentService service;
+    private final KnowledgeOperationsService operations;
+
+    @GetMapping("/health")
+    public KnowledgeHealthResponse health(
+            @PathVariable UUID knowledgeBaseId,
+            @AuthenticationPrincipal SafeAiUserPrincipal user
+    ) {
+        return operations.health(knowledgeBaseId, user);
+    }
+
+    @PostMapping("/{documentId}/reindex")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public KnowledgeReindexResponse reindex(
+            @PathVariable UUID knowledgeBaseId,
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal SafeAiUserPrincipal user
+    ) {
+        return operations.reindex(knowledgeBaseId, documentId, user);
+    }
 
     @GetMapping
     public KnowledgeDocumentPageResponse list(

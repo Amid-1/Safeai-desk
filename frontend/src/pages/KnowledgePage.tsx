@@ -16,7 +16,7 @@ import {
 } from '../api/http'
 import {
     useAuth,
-} from '../auth/AuthContext'
+} from '../auth/useAuth'
 import KnowledgeBaseCard
     from '../components/knowledge/KnowledgeBaseCard'
 import KnowledgeBaseFormModal

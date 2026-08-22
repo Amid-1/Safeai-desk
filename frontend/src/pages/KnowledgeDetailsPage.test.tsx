@@ -2,6 +2,7 @@ import {
     fireEvent,
     render,
     screen,
+    waitFor,
 } from '@testing-library/react'
 import {
     MemoryRouter,
@@ -26,6 +27,8 @@ import type {
 } from '../api/knowledgeApi'
 import {
     getKnowledgeDocuments,
+    getKnowledgeHealth,
+    reindexKnowledgeDocument,
     uploadKnowledgeDocument,
     uploadKnowledgeDocumentVersion,
 } from '../api/knowledgeDocumentApi'
@@ -56,6 +59,10 @@ vi.mock(
         return {
             ...actual,
             getKnowledgeDocuments:
+                vi.fn(),
+            getKnowledgeHealth:
+                vi.fn(),
+            reindexKnowledgeDocument:
                 vi.fn(),
             uploadKnowledgeDocument:
                 vi.fn(),
@@ -134,6 +141,9 @@ const getKnowledgeDocumentsMock =
     vi.mocked(
         getKnowledgeDocuments,
     )
+
+const getKnowledgeHealthMock = vi.mocked(getKnowledgeHealth)
+const reindexKnowledgeDocumentMock = vi.mocked(reindexKnowledgeDocument)
 
 const uploadKnowledgeDocumentMock =
     vi.mocked(
@@ -244,6 +254,30 @@ describe(
                     totalElements: 1,
                     totalPages: 1,
                 })
+
+            getKnowledgeHealthMock.mockResolvedValue({
+                knowledgeBaseId: KNOWLEDGE_BASE_ID,
+                state: 'HEALTHY',
+                activeEmbeddingModel: 'text-embedding-3-small',
+                totalDocuments: 1,
+                enabledDocuments: 1,
+                searchableDocuments: 1,
+                pendingDocuments: 0,
+                processingDocuments: 0,
+                failedDocuments: 0,
+                staleEmbeddingDocuments: 0,
+                activeChunks: 12,
+                checkedAt: '2026-08-21T10:00:00Z',
+            })
+
+            reindexKnowledgeDocumentMock.mockResolvedValue({
+                knowledgeBaseId: KNOWLEDGE_BASE_ID,
+                documentId: DOCUMENT_ID,
+                documentVersionId: DOCUMENT.currentVersionId!,
+                ingestionJobId: '7d35ae31-1881-4a55-8a54-2464da832929',
+                status: 'PENDING',
+                requestedAt: '2026-08-21T10:00:00Z',
+            })
         })
 
         it(
@@ -295,6 +329,37 @@ describe(
                         'href',
                         `/api/knowledge-bases/${KNOWLEDGE_BASE_ID}/documents/${DOCUMENT_ID}/download`,
                     )
+            },
+        )
+
+        it(
+            'показывает здоровье индекса и запускает reindex текущей версии',
+            async () => {
+                renderPage()
+
+                expect(
+                    await screen.findByText('База готова к ответам'),
+                ).toBeInTheDocument()
+                expect(
+                    screen.getByText('Фрагменты для AI'),
+                ).toBeInTheDocument()
+                expect(
+                    screen.getByRole('heading', {
+                        name: 'Загруженные документы',
+                    }),
+                ).toBeInTheDocument()
+                expect(screen.getByText('12')).toBeInTheDocument()
+
+                fireEvent.click(screen.getByRole('button', {
+                    name: 'Переиндексировать',
+                }))
+
+                await waitFor(() => {
+                    expect(reindexKnowledgeDocumentMock).toHaveBeenCalledWith(
+                        KNOWLEDGE_BASE_ID,
+                        DOCUMENT_ID,
+                    )
+                })
             },
         )
 

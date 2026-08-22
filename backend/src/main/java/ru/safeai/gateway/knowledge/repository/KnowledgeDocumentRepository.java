@@ -21,16 +21,17 @@ public interface KnowledgeDocumentRepository
             Pageable pageable
     );
 
-    Page<KnowledgeDocumentEntity> findAllByKnowledgeBaseIdAndOrganizationIdAndEnabledTrue(
-            UUID knowledgeBaseId,
-            UUID organizationId,
-            Pageable pageable
-    );
-
+    @Query("""
+            select document
+            from KnowledgeDocumentEntity document
+            where document.id = :documentId
+              and document.knowledgeBaseId = :knowledgeBaseId
+              and document.organizationId = :organizationId
+            """)
     Optional<KnowledgeDocumentEntity> findByIdAndKnowledgeBaseIdAndOrganizationId(
-            UUID id,
-            UUID knowledgeBaseId,
-            UUID organizationId
+            @Param("documentId") UUID documentId,
+            @Param("knowledgeBaseId") UUID knowledgeBaseId,
+            @Param("organizationId") UUID organizationId
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -54,10 +55,10 @@ public interface KnowledgeDocumentRepository
     );
 
     @Query("""
-            select coalesce(max(version.versionNumber), 0)
-            from KnowledgeDocumentVersionEntity version
-            where version.documentId = :documentId
-              and version.organizationId = :organizationId
+            select coalesce(max(documentVersion.versionNumber), 0)
+            from KnowledgeDocumentVersionEntity documentVersion
+            where documentVersion.documentId = :documentId
+              and documentVersion.organizationId = :organizationId
             """)
     int currentVersionNumber(
             @Param("documentId") UUID documentId,

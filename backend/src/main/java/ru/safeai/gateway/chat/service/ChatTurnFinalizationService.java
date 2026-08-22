@@ -22,6 +22,10 @@ import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.knowledge.dto.AnswerPassportResponse;
+import ru.safeai.gateway.knowledge.rag.AnswerPassportService;
+import ru.safeai.gateway.knowledge.rag.RagCompletion;
+import ru.safeai.gateway.knowledge.rag.RagPreparation;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -39,6 +43,7 @@ public class ChatTurnFinalizationService {
     private final ChatMapper mapper;
     private final ChatMetrics metrics;
     private final Clock clock;
+    private final AnswerPassportService answerPassportService;
 
     public ChatTurnFinalizationService(
             ChatTurnRepository turnRepository,
@@ -48,7 +53,8 @@ public class ChatTurnFinalizationService {
             AuditEventService auditEventService,
             ChatMapper mapper,
             ChatMetrics metrics,
-            Clock clock
+            Clock clock,
+            AnswerPassportService answerPassportService
     ) {
         this.turnRepository = Objects.requireNonNull(
                 turnRepository,
@@ -81,6 +87,10 @@ public class ChatTurnFinalizationService {
         this.clock = Objects.requireNonNull(
                 clock,
                 "clock не должен быть null"
+        );
+        this.answerPassportService = Objects.requireNonNull(
+                answerPassportService,
+                "answerPassportService не должен быть null"
         );
     }
 
@@ -167,6 +177,26 @@ public class ChatTurnFinalizationService {
             AiChatResponse response,
             SafeAiUserPrincipal currentUser
     ) {
+        return succeedRag(
+                context,
+                RagCompletion.general(
+                        RagPreparation.general(context.aiRequest()),
+                        response
+                ),
+                currentUser
+        );
+    }
+
+    @Transactional
+    public SendMessageResponse succeedRag(
+            ChatProcessingContext context,
+            RagCompletion completion,
+            SafeAiUserPrincipal currentUser
+    ) {
+        AiChatResponse response = Objects.requireNonNull(
+                completion,
+                "completion не должен быть null"
+        ).response();
         Objects.requireNonNull(
                 context,
                 "context не должен быть null"
@@ -240,6 +270,16 @@ public class ChatTurnFinalizationService {
 
         messageRepository.saveAndFlush(assistant);
 
+        AnswerPassportResponse answerPassport =
+                answerPassportService.persist(
+                        context,
+                        assistantMessageId,
+                        provider,
+                        completion,
+                        currentUser,
+                        now
+                );
+
         quotaService.settleSuccess(
                 context.turnId(),
                 response,
@@ -293,7 +333,8 @@ public class ChatTurnFinalizationService {
                 assistantMessage,
                 now,
                 turnCreatedAt,
-                now
+                now,
+                answerPassport
         );
     }
 
@@ -495,6 +536,13 @@ public class ChatTurnFinalizationService {
                         )
                 );
 
+        AnswerPassportResponse answerPassport =
+                answerPassportService.findByTurn(
+                        turn.getId(),
+                        currentUser.getOrganizationId(),
+                        currentUser.getId()
+                );
+
         return new SendMessageResponse(
                 context.chatId(),
                 turn.getId(),
@@ -506,7 +554,8 @@ public class ChatTurnFinalizationService {
                 assistant,
                 turn.getUpdatedAt(),
                 turn.getCreatedAt(),
-                turn.getCompletedAt()
+                turn.getCompletedAt(),
+                answerPassport
         );
     }
 

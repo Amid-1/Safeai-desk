@@ -14,6 +14,7 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentPageResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentResponse;
 import ru.safeai.gateway.knowledge.service.KnowledgeDocumentService;
+import ru.safeai.gateway.knowledge.service.KnowledgeOperationsService;
 import ru.safeai.gateway.knowledge.storage.StoredObject;
 
 import java.nio.charset.StandardCharsets;
@@ -32,11 +33,12 @@ class KnowledgeDocumentControllerTest {
     private static final UUID DOCUMENT_ID = UUID.fromString("40000000-0000-0000-0000-000000000004");
 
     @Mock KnowledgeDocumentService service;
+    @Mock KnowledgeOperationsService operations;
     KnowledgeDocumentController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new KnowledgeDocumentController(service);
+        controller = new KnowledgeDocumentController(service, operations);
     }
 
     @Test

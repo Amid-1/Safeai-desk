@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.UUID;
+import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 
 @Component
 public class ChatContentNormalizer {
@@ -62,5 +64,20 @@ public class ChatContentNormalizer {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 недоступен", exception);
         }
+    }
+
+    public String requestHash(
+            String normalizedContent,
+            UUID knowledgeBaseId,
+            KnowledgeMode knowledgeMode
+    ) {
+        KnowledgeMode mode = knowledgeMode == null
+                ? KnowledgeMode.GENERAL
+                : knowledgeMode;
+        String canonical = normalizedContent
+                + "\n\u001fknowledge-mode=" + mode.name()
+                + "\n\u001fknowledge-base="
+                + (knowledgeBaseId == null ? "-" : knowledgeBaseId);
+        return sha256(canonical);
     }
 }

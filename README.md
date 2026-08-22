@@ -4,7 +4,7 @@
 внешних AI-моделей внутри организаций.
 
 > **Актуальность:** август 2026.  
-> Документ описывает фактически реализованную архитектуру текущих backend/frontend исходников и Flyway-миграций до `V37`. 
+> Документ описывает фактически реализованную архитектуру текущих backend/frontend исходников и Flyway-миграций до `V42`.
 > Будущее развитие вынесено в [`ROADMAP.md`](ROADMAP.md).
 
 SafeAI Desk — не просто UI над LLM. Проект строит управляемый слой вокруг корпоративного AI:
@@ -23,6 +23,13 @@ SafeAI Desk — не просто UI над LLM. Проект строит уп�
 - immutable actor/target audit snapshots;
 - usage/pricing quality model без подмены неизвестных данных нулём;
 - OpenAI/Anthropic/mock provider abstraction;
+- tenant/ACL-aware Knowledge Bases и immutable document versions;
+- durable ingestion с lease/fencing/retry и S3-compatible originals;
+- PDF/DOCX/HTML/TXT/Markdown/CSV/XLSX/PPTX/JSON/XML extraction и OCR adapter;
+- immutable chunks, pgvector + FTS hybrid retrieval и production embedding adapter;
+- RAG context assembly, inline citation validation и knowledge-only fail-closed mode;
+- retrieval-to-ChatTurn provenance и immutable Answer Passport;
+- Knowledge health/reindex и versioned retrieval evaluation metrics;
 - PostgreSQL/Flyway constraints как часть integrity model;
 - React frontend с runtime validation API contracts, abortable requests и production error handling.
 
@@ -122,6 +129,7 @@ Demo Company
 │ Spring Boot Backend          │
 │ auth / common / user / org   │
 │ chat / ai / audit / usage    │
+│ knowledge / RAG / retrieval  │
 │ ratelimit / admin            │
 └───────┬──────────────┬───────┘
         │              │
@@ -2268,23 +2276,20 @@ future document chunks
 
 # Текущие границы
 
-На август 2026 core ещё не содержит полноценный commercial Knowledge/RAG layer.
+V42 содержит работающий Knowledge/RAG vertical slice: object storage,
+immutable versions, durable ingestion, multi-format extraction, OCR adapter,
+pgvector/FTS hybrid retrieval, ACL, context assembly, LLM generation,
+validated inline citations, knowledge-only mode, evaluation baseline и Answer
+Passport. Production deployment обязан явно выбрать embedding/OCR providers.
 
-До 1.0/1.1 нужны:
+До следующих product targets нужны:
 
-- streaming;
-- object storage;
-- Knowledge Bases;
-- document versioning/ingestion;
-- embeddings/pgvector;
-- hybrid retrieval;
-- citations;
-- Answer Passport;
-- model policy control plane;
-- OIDC;
-- production observability/SLO;
-- backup/restore drills;
-- controlled tools/MCP.
+- streaming с сохранением durable/fenced semantics;
+- полноценный model policy/router и private model adapters;
+- OIDC/connectors/ACL sync;
+- автоматизированные evaluation gates и knowledge drift alerts;
+- production observability/SLO и backup/restore drills;
+- controlled tools/MCP, human approvals и durable agents.
 
 Не заявлять текущую версию как:
 
@@ -2313,9 +2318,9 @@ autonomous agent platform
 
 ---
 
-# Следующий этап
+# Реализованный Knowledge/RAG path
 
-Приоритет — Knowledge/RAG, сохраняя текущую короткую `reserveOrReplay()` transaction.
+Knowledge/RAG сохраняет текущую короткую `reserveOrReplay()` transaction.
 
 ```text
 reserveOrReplay()

@@ -102,6 +102,29 @@ app:
 
 safeai:
   knowledge:
+    embedding:
+      provider: ${SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER:hashing}
+      base-url: ${OPENAI_EMBEDDING_BASE_URL:https://api.openai.com/v1}
+      api-key: ${OPENAI_EMBEDDING_API_KEY:}
+      model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+      dimensions: 384
+      batch-size: ${SAFEAI_KNOWLEDGE_EMBEDDING_BATCH_SIZE:64}
+      max-input-chars: ${SAFEAI_KNOWLEDGE_EMBEDDING_MAX_INPUT_CHARS:20000}
+      connect-timeout: ${SAFEAI_KNOWLEDGE_EMBEDDING_CONNECT_TIMEOUT:5s}
+      read-timeout: ${SAFEAI_KNOWLEDGE_EMBEDDING_READ_TIMEOUT:30s}
+    ocr:
+      provider: ${SAFEAI_KNOWLEDGE_OCR_PROVIDER:disabled}
+      endpoint: ${SAFEAI_KNOWLEDGE_OCR_ENDPOINT:}
+      api-key: ${KNOWLEDGE_OCR_API_KEY:}
+      allowed-hosts: ${SAFEAI_KNOWLEDGE_OCR_ALLOWED_HOSTS:}
+      min-native-chars-per-page: ${SAFEAI_KNOWLEDGE_OCR_MIN_NATIVE_CHARS:20}
+      connect-timeout: ${SAFEAI_KNOWLEDGE_OCR_CONNECT_TIMEOUT:5s}
+      read-timeout: ${SAFEAI_KNOWLEDGE_OCR_READ_TIMEOUT:2m}
+      max-response-bytes: ${SAFEAI_KNOWLEDGE_OCR_MAX_RESPONSE_BYTES:16777216}
+    rag:
+      top-k: ${SAFEAI_KNOWLEDGE_RAG_TOP_K:8}
+      max-context-chars: ${SAFEAI_KNOWLEDGE_RAG_MAX_CONTEXT_CHARS:24000}
+      max-chunk-chars: ${SAFEAI_KNOWLEDGE_RAG_MAX_CHUNK_CHARS:6000}
     storage:
       type: ${SAFEAI_KNOWLEDGE_STORAGE_TYPE:local}
       local-root: ${SAFEAI_KNOWLEDGE_STORAGE_ROOT:./var/knowledge-objects}

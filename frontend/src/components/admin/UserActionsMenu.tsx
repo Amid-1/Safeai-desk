@@ -107,7 +107,9 @@ function UserActionsMenu({
             disabled
             || !hasSecondaryActions
         ) {
-            setOpen(false)
+            queueMicrotask(() => {
+                setOpen(false)
+            })
         }
     }, [
         disabled,
@@ -154,8 +156,12 @@ function UserActionsMenu({
                         aria-label={
                             'Дополнительные действия'
                         }
-                        aria-haspopup="menu"
                         aria-expanded={open}
+                        aria-controls={
+                            open
+                                ? 'user-actions-popup'
+                                : undefined
+                        }
                         disabled={disabled}
                         onClick={() =>
                             setOpen(
@@ -168,18 +174,17 @@ function UserActionsMenu({
 
                     {open && (
                         <div
+                            id="user-actions-popup"
                             className="action-menu__popup"
-                            role="menu"
                         >
                             {roleActionAvailable && (
                                 <button
                                     type="button"
-                                    role="menuitem"
                                     onClick={() =>
                                         run(onRoles)
                                     }
                                 >
-                                    Изменить роль
+                                    Управление ролями
                                 </button>
                             )}
 
@@ -187,7 +192,6 @@ function UserActionsMenu({
                                 <>
                                     <button
                                         type="button"
-                                        role="menuitem"
                                         onClick={() =>
                                             run(
                                                 onResetPassword,
@@ -199,7 +203,6 @@ function UserActionsMenu({
 
                                     <button
                                         type="button"
-                                        role="menuitem"
                                         onClick={() =>
                                             run(
                                                 onToggleEnabled,
@@ -216,7 +219,6 @@ function UserActionsMenu({
                             {canDelete && (
                                 <button
                                     type="button"
-                                    role="menuitem"
                                     className={
                                         'action-menu__danger'
                                     }

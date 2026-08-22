@@ -12,7 +12,7 @@ import type {
 } from '../api/adminApi'
 import {
     useAuth,
-} from '../auth/AuthContext'
+} from '../auth/useAuth'
 import {
     EmptyState,
     ErrorState,
@@ -165,9 +165,11 @@ function AdminAuditPageContent() {
 
     useEffect(() => {
         if (loading) {
-            setRequestTransitioning(
-                false,
-            )
+            queueMicrotask(() => {
+                setRequestTransitioning(
+                    false,
+                )
+            })
         }
     }, [loading])
 
@@ -205,29 +207,37 @@ function AdminAuditPageContent() {
             return
         }
 
-        setDraftFilter(
-            (current) => ({
-                ...current,
-                targetOrganizationId:
-                    '',
-            }),
-        )
+        let active = true
+        queueMicrotask(() => {
+            if (!active) {
+                return
+            }
+            setDraftFilter(
+                (current) => ({
+                    ...current,
+                    targetOrganizationId:
+                        '',
+                }),
+            )
+            setAppliedDraftFilter(
+                (current) => ({
+                    ...current,
+                    targetOrganizationId:
+                        '',
+                }),
+            )
+            setAppliedFilter(
+                (current) => ({
+                    ...current,
+                    targetOrganizationId:
+                        undefined,
+                }),
+            )
+        })
 
-        setAppliedDraftFilter(
-            (current) => ({
-                ...current,
-                targetOrganizationId:
-                    '',
-            }),
-        )
-
-        setAppliedFilter(
-            (current) => ({
-                ...current,
-                targetOrganizationId:
-                    undefined,
-            }),
-        )
+        return () => {
+            active = false
+        }
     }, [superAdmin])
 
     useEffect(() => {
@@ -345,7 +355,7 @@ function AdminAuditPageContent() {
 
     return (
         <div className="page audit-page">
-            <header className="audit-page__header">
+            <header className="audit-page__header page-hero page-hero--audit">
                 <div className="audit-page__heading">
                     <span className="audit-page__eyebrow">
                         Безопасность и контроль

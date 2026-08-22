@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ChatLegacyUpgradeMigrationIntegrationTest {
 
     private static final PostgreSQLContainer POSTGRES =
-            new PostgreSQLContainer("postgres:16-alpine")
+            new PostgreSQLContainer("pgvector/pgvector:pg16")
                     .withDatabaseName("safeai_chat_upgrade")
                     .withUsername("safeai")
                     .withPassword("safeai_password");

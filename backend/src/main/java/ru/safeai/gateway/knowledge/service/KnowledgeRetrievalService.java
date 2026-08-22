@@ -1,0 +1,391 @@
+package ru.safeai.gateway.knowledge.service;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.common.exception.BadRequestException;
+import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.knowledge.config.KnowledgeRetrievalProperties;
+import ru.safeai.gateway.knowledge.dto.KnowledgeRetrievalHitResponse;
+import ru.safeai.gateway.knowledge.dto.KnowledgeRetrievalRequest;
+import ru.safeai.gateway.knowledge.dto.KnowledgeRetrievalResponse;
+import ru.safeai.gateway.knowledge.embedding.KnowledgeEmbeddingProvider;
+import ru.safeai.gateway.knowledge.entity.KnowledgeBaseEntity;
+import ru.safeai.gateway.knowledge.model.KnowledgeBaseVisibility;
+import ru.safeai.gateway.knowledge.repository.KnowledgeBaseMembershipRepository;
+import ru.safeai.gateway.knowledge.repository.KnowledgeBaseRepository;
+import ru.safeai.gateway.knowledge.retrieval.KnowledgeRetrievalHit;
+import ru.safeai.gateway.knowledge.retrieval.KnowledgeRetrievalExecution;
+import ru.safeai.gateway.knowledge.retrieval.KnowledgeRetrievalRepository;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.PreparedStatement;
+import java.sql.Timestamp;
+import java.sql.Types;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Service
+@SuppressWarnings({"SqlResolve", "SqlNoDataSourceInspection"})
+public class KnowledgeRetrievalService {
+
+    private static final int DEFAULT_TOP_K = 8;
+
+    private final KnowledgeBaseRepository knowledgeBases;
+    private final KnowledgeBaseMembershipRepository memberships;
+    private final KnowledgeRetrievalRepository retrievalRepository;
+    private final KnowledgeEmbeddingProvider embeddingProvider;
+    private final KnowledgeRetrievalProperties properties;
+    private final JdbcTemplate jdbcTemplate;
+    private final AuditEventService audit;
+    private final Clock clock;
+    private final TransactionTemplate persistenceTransaction;
+
+    public KnowledgeRetrievalService(
+            KnowledgeBaseRepository knowledgeBases,
+            KnowledgeBaseMembershipRepository memberships,
+            KnowledgeRetrievalRepository retrievalRepository,
+            KnowledgeEmbeddingProvider embeddingProvider,
+            KnowledgeRetrievalProperties properties,
+            JdbcTemplate jdbcTemplate,
+            AuditEventService audit,
+            Clock clock,
+            PlatformTransactionManager transactionManager
+    ) {
+        this.knowledgeBases = knowledgeBases;
+        this.memberships = memberships;
+        this.retrievalRepository = retrievalRepository;
+        this.embeddingProvider = embeddingProvider;
+        this.properties = properties;
+        this.jdbcTemplate = jdbcTemplate;
+        this.audit = audit;
+        this.clock = clock;
+        this.persistenceTransaction = new TransactionTemplate(transactionManager);
+    }
+
+    public KnowledgeRetrievalResponse retrieve(
+            UUID knowledgeBaseId,
+            KnowledgeRetrievalRequest request,
+            SafeAiUserPrincipal user
+    ) {
+        KnowledgeRetrievalExecution execution = execute(
+                knowledgeBaseId,
+                request.query(),
+                request.topK(),
+                null,
+                user
+        );
+        List<KnowledgeRetrievalHitResponse> responseHits =
+                java.util.stream.IntStream.range(
+                                0,
+                                execution.hits().size()
+                        )
+                        .mapToObj(index -> KnowledgeRetrievalHitResponse.from(
+                                index + 1,
+                                execution.hits().get(index)
+                        ))
+                        .toList();
+        return new KnowledgeRetrievalResponse(
+                execution.retrievalRunId(),
+                execution.knowledgeBaseId(),
+                execution.querySha256(),
+                execution.embeddingModel(),
+                execution.completedAt(),
+                responseHits
+        );
+    }
+
+    public KnowledgeRetrievalExecution retrieveForChat(
+            UUID knowledgeBaseId,
+            UUID chatTurnId,
+            String query,
+            int topK,
+            SafeAiUserPrincipal user
+    ) {
+        return execute(
+                knowledgeBaseId,
+                query,
+                topK,
+                chatTurnId,
+                user
+        );
+    }
+
+    private KnowledgeRetrievalExecution execute(
+            UUID knowledgeBaseId,
+            String rawQuery,
+            Integer requestedTopK,
+            UUID chatTurnId,
+            SafeAiUserPrincipal user
+    ) {
+        boolean administrator = isAdministrator(user);
+        authorize(knowledgeBaseId, user, administrator);
+
+        String query = normalizeQuery(rawQuery);
+        int topK = requestedTopK == null ? DEFAULT_TOP_K : requestedTopK;
+        if (topK > properties.maxTopK()) {
+            throw new BadRequestException(
+                    "topK не должен превышать " + properties.maxTopK()
+            );
+        }
+
+        Instant startedAt = clock.instant();
+        float[] queryEmbedding = embeddingProvider.embed(query);
+        if (queryEmbedding.length != embeddingProvider.dimensions()
+                || queryEmbedding.length != 384) {
+            throw new IllegalStateException(
+                    "Knowledge embedding dimension must be 384"
+            );
+        }
+
+        List<KnowledgeRetrievalHit> hits = retrievalRepository.hybridSearch(
+                user.getOrganizationId(),
+                knowledgeBaseId,
+                user.getId(),
+                administrator,
+                query,
+                queryEmbedding,
+                embeddingProvider.model(),
+                topK,
+                properties.candidateLimit(),
+                properties.rrfK()
+        );
+
+        UUID runId = UUID.randomUUID();
+        String querySha256 = sha256(query);
+        Instant completedAt = clock.instant();
+        persistenceTransaction.executeWithoutResult(status -> {
+            persistRun(
+                    runId,
+                    knowledgeBaseId,
+                    user,
+                    query,
+                    querySha256,
+                    topK,
+                    startedAt,
+                    completedAt,
+                    chatTurnId
+            );
+            persistHits(
+                    runId,
+                    knowledgeBaseId,
+                    user.getOrganizationId(),
+                    hits
+            );
+            audit.record(
+                    user,
+                    user.getOrganizationId(),
+                    AuditEventType.KNOWLEDGE_RETRIEVAL_COMPLETED,
+                    Map.of(
+                            "knowledgeBaseId", knowledgeBaseId.toString(),
+                            "retrievalRunId", runId.toString(),
+                            "querySha256", querySha256,
+                            "embeddingModel", embeddingProvider.model(),
+                            "topK", topK,
+                            "hitCount", hits.size()
+                    )
+            );
+        });
+
+        return new KnowledgeRetrievalExecution(
+                runId,
+                knowledgeBaseId,
+                chatTurnId,
+                querySha256,
+                embeddingProvider.model(),
+                completedAt,
+                hits
+        );
+    }
+
+    private void authorize(
+            UUID knowledgeBaseId,
+            SafeAiUserPrincipal user,
+            boolean administrator
+    ) {
+        KnowledgeBaseEntity knowledgeBase = knowledgeBases
+                .findByIdAndOrganizationId(
+                        knowledgeBaseId,
+                        user.getOrganizationId()
+                )
+                .orElseThrow(this::notFound);
+        if (administrator) {
+            return;
+        }
+        if (!knowledgeBase.isEnabled()) {
+            throw notFound();
+        }
+        if (knowledgeBase.getVisibility() == KnowledgeBaseVisibility.MEMBERS
+                && memberships
+                        .findByKnowledgeBaseIdAndOrganizationIdAndUserId(
+                                knowledgeBaseId,
+                                user.getOrganizationId(),
+                                user.getId()
+                        )
+                        .isEmpty()) {
+            throw notFound();
+        }
+    }
+
+    private String normalizeQuery(String value) {
+        String query = value == null ? "" : value.strip();
+        if (query.isEmpty() || query.length() > properties.maxQueryChars()) {
+            throw new BadRequestException("Некорректный поисковый запрос.");
+        }
+        return query;
+    }
+
+    private void persistRun(
+            UUID runId,
+            UUID knowledgeBaseId,
+            SafeAiUserPrincipal user,
+            String query,
+            String querySha256,
+            int topK,
+            Instant startedAt,
+            Instant completedAt,
+            UUID chatTurnId
+    ) {
+        jdbcTemplate.update("""
+                insert into knowledge_retrieval_runs (
+                    id,
+                    organization_id,
+                    knowledge_base_id,
+                    user_id,
+                    chat_turn_id,
+                    query_text,
+                    query_sha256,
+                    embedding_model,
+                    top_k,
+                    candidate_limit,
+                    rrf_k,
+                    started_at,
+                    completed_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                runId,
+                user.getOrganizationId(),
+                knowledgeBaseId,
+                user.getId(),
+                chatTurnId,
+                query,
+                querySha256,
+                embeddingProvider.model(),
+                topK,
+                properties.candidateLimit(),
+                properties.rrfK(),
+                Timestamp.from(startedAt),
+                Timestamp.from(completedAt)
+        );
+    }
+
+    private void persistHits(
+            UUID runId,
+            UUID knowledgeBaseId,
+            UUID organizationId,
+            List<KnowledgeRetrievalHit> hits
+    ) {
+        List<RankedRetrievalHit> rankedHits =
+                java.util.stream.IntStream.range(0, hits.size())
+                        .mapToObj(index -> new RankedRetrievalHit(
+                                index + 1,
+                                hits.get(index)
+                        ))
+                        .toList();
+
+        jdbcTemplate.batchUpdate("""
+                insert into knowledge_retrieval_hits (
+                    id,
+                    retrieval_run_id,
+                    organization_id,
+                    knowledge_base_id,
+                    chunk_id,
+                    rank,
+                    fused_score,
+                    lexical_rank,
+                    semantic_rank,
+                    lexical_score,
+                    cosine_similarity
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rankedHits,
+                100,
+                (PreparedStatement statement, RankedRetrievalHit rankedHit) -> {
+                    KnowledgeRetrievalHit hit = rankedHit.hit();
+                    statement.setObject(1, UUID.randomUUID());
+                    statement.setObject(2, runId);
+                    statement.setObject(3, organizationId);
+                    statement.setObject(4, knowledgeBaseId);
+                    statement.setObject(5, hit.chunkId());
+                    statement.setInt(6, rankedHit.rank());
+                    statement.setDouble(7, hit.fusedScore());
+                    setNullableInteger(statement, 8, hit.lexicalRank());
+                    setNullableInteger(statement, 9, hit.semanticRank());
+                    setNullableFloat(statement, 10, hit.lexicalScore());
+                    setNullableFloat(statement, 11, hit.cosineSimilarity());
+                }
+        );
+    }
+
+    private static void setNullableInteger(
+            PreparedStatement statement,
+            int index,
+            Integer value
+    ) throws java.sql.SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.INTEGER);
+        } else {
+            statement.setInt(index, value);
+        }
+    }
+
+    private static void setNullableFloat(
+            PreparedStatement statement,
+            int index,
+            Float value
+    ) throws java.sql.SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.REAL);
+        } else {
+            statement.setFloat(index, value);
+        }
+    }
+
+    private ResourceNotFoundException notFound() {
+        return new ResourceNotFoundException("База знаний не найдена.");
+    }
+
+    private static boolean isAdministrator(SafeAiUserPrincipal user) {
+        return user.getAuthorities().stream().anyMatch(
+                authority -> "ROLE_ADMIN".equals(authority.getAuthority())
+        );
+    }
+
+    private static String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(
+                            value.getBytes(StandardCharsets.UTF_8)
+                    )
+            );
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    private record RankedRetrievalHit(
+            int rank,
+            KnowledgeRetrievalHit hit
+    ) {
+    }
+}

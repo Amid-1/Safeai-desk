@@ -35,6 +35,20 @@ import KnowledgePagination
 
 const MEMBER_PAGE_SIZE = 50
 
+const ACCESS_LEVEL_LABEL:
+    Record<KnowledgeBaseAccessLevel, string> = {
+    VIEWER: 'Только просмотр',
+    EDITOR: 'Просмотр и загрузка',
+    OWNER: 'Полное управление',
+}
+
+const ACCESS_LEVEL_HINT:
+    Record<KnowledgeBaseAccessLevel, string> = {
+    VIEWER: 'Читает, скачивает и использует документы в AI-чате.',
+    EDITOR: 'Также загружает документы и новые версии.',
+    OWNER: 'Также меняет настройки и управляет доступом.',
+}
+
 const EMPTY_MEMBER_PAGE:
     PageResponse<KnowledgeBaseMember> = {
     content: [],
@@ -349,7 +363,7 @@ function KnowledgeMembersModal({
         <>
             <Modal
                 title={
-                    `Доступ: ${knowledgeBase.name}`
+                    `Доступ к базе «${knowledgeBase.name}»`
                 }
                 onClose={onClose}
                 size="lg"
@@ -358,6 +372,21 @@ function KnowledgeMembersModal({
                     Добавляйте сотрудников организации и назначайте им права
                     только на эту базу знаний.
                 </p>
+
+                <div className="knowledge-access-guide" aria-label="Возможности уровней доступа">
+                    {
+                        (Object.keys(ACCESS_LEVEL_LABEL) as KnowledgeBaseAccessLevel[])
+                            .map((accessLevel) => (
+                                <div
+                                    key={accessLevel}
+                                    className={`knowledge-access-guide__item knowledge-access-guide__item--${accessLevel.toLowerCase()}`}
+                                >
+                                    <strong>{ACCESS_LEVEL_LABEL[accessLevel]}</strong>
+                                    <span>{ACCESS_LEVEL_HINT[accessLevel]}</span>
+                                </div>
+                            ))
+                    }
+                </div>
 
                 <div className="knowledge-member-search">
                     <label>
@@ -448,7 +477,7 @@ function KnowledgeMembersModal({
                                                     )
                                                 }
                                             >
-                                                Добавить как наблюдателя
+                                                Добавить для просмотра
                                             </button>
                                         </div>
                                     ),
@@ -494,7 +523,7 @@ function KnowledgeMembersModal({
                                                 Участник базы
                                             </th>
                                             <th>
-                                                Уровень доступа
+                                                Права в этой базе
                                             </th>
                                             <th>
                                                 Действия
@@ -528,7 +557,8 @@ function KnowledgeMembersModal({
 
                                                         <td>
                                                             <select
-                                                                aria-label={`Уровень доступа для ${member.email}`}
+                                                                aria-label={`Права в этой базе для ${member.email}`}
+                                                                className={`knowledge-member-access knowledge-member-access--${member.accessLevel.toLowerCase()}`}
                                                                 value={
                                                                     member.accessLevel
                                                                 }
@@ -545,15 +575,19 @@ function KnowledgeMembersModal({
                                                                 }
                                                             >
                                                                 <option value="VIEWER">
-                                                                    Наблюдатель
+                                                                    Только просмотр
                                                                 </option>
                                                                 <option value="EDITOR">
-                                                                    Редактор
+                                                                    Просмотр и загрузка
                                                                 </option>
                                                                 <option value="OWNER">
-                                                                    Владелец
+                                                                    Полное управление
                                                                 </option>
                                                             </select>
+
+                                                            <small className="knowledge-member-access-hint">
+                                                                {ACCESS_LEVEL_HINT[member.accessLevel]}
+                                                            </small>
                                                         </td>
 
                                                         <td>
@@ -599,10 +633,8 @@ function KnowledgeMembersModal({
                 />
 
                 <p className="knowledge-members-note">
-                    Наблюдатель читает и скачивает документы. Редактор также
-                    загружает документы и новые версии. Владелец управляет
-                    настройками базы и доступом других сотрудников. Изменение
-                    уровня сохраняется сразу.
+                    Эти права действуют только внутри данной базы и не меняют
+                    системную роль сотрудника. Изменения сохраняются сразу.
                 </p>
 
                 <div className="modal-actions">

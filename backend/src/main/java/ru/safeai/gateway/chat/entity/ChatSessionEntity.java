@@ -46,6 +46,12 @@ public class ChatSessionEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "archived_at")
+    private Instant archivedAt;
+
+    @Column(name = "archived_by_user_id")
+    private UUID archivedByUserId;
+
     @Version
     @Column(name = "version", nullable = false)
     private long version;
@@ -81,6 +87,17 @@ public class ChatSessionEntity {
         updatedAt = now;
     }
 
+    public void archive(UUID userId, Instant now) {
+        Objects.requireNonNull(userId, "userId не должен быть null");
+        Objects.requireNonNull(now, "now не должен быть null");
+        if (archivedAt != null) {
+            throw new IllegalStateException("Чат уже архивирован");
+        }
+        touch(now);
+        archivedAt = now;
+        archivedByUserId = userId;
+    }
+
     @PrePersist
     @PreUpdate
     void validateInvariant() {
@@ -96,6 +113,16 @@ public class ChatSessionEntity {
         if (updatedAt.isBefore(createdAt)) {
             throw new IllegalStateException(
                     "chat session updatedAt не может быть раньше createdAt"
+            );
+        }
+        if ((archivedAt == null) != (archivedByUserId == null)) {
+            throw new IllegalStateException(
+                    "archivedAt и archivedByUserId должны задаваться вместе"
+            );
+        }
+        if (archivedAt != null && archivedAt.isBefore(createdAt)) {
+            throw new IllegalStateException(
+                    "archivedAt не может быть раньше createdAt"
             );
         }
         if (user.getOrganization() != null

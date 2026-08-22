@@ -208,17 +208,20 @@ function normalizeModel(
         )
     }
 
-    if (
-        /[\u0000-\u001f\u007f]/.test(
-            normalized,
-        )
-    ) {
+    if (containsControlCharacter(normalized)) {
         throw new Error(
             'Название модели содержит управляющие символы.',
         )
     }
 
     return normalized
+}
+
+function containsControlCharacter(value: string): boolean {
+    return Array.from(value).some((character) => {
+        const codePoint = character.codePointAt(0) ?? 0
+        return codePoint < 32 || codePoint === 127
+    })
 }
 
 function normalizeOptionalUuid(

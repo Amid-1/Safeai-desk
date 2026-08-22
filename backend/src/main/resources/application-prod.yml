@@ -66,6 +66,13 @@ logging:
 
 safeai:
   knowledge:
+    embedding:
+      # Production must explicitly select a real adapter. Use "openai" with
+      # OPENAI_EMBEDDING_API_KEY; deterministic hashing is for local/test only.
+      provider: ${SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER}
+    ocr:
+      # Use "http" for scanned PDFs. The endpoint host must be allow-listed.
+      provider: ${SAFEAI_KNOWLEDGE_OCR_PROVIDER}
     storage:
       # Production не должен молча откатываться на локальную FS.
       # Backend-контейнер read-only, поэтому production storage

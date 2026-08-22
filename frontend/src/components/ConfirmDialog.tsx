@@ -46,13 +46,8 @@ function ConfirmDialog({
     const confirmingRef =
         useRef(false)
 
-    const loadingRef =
-        useRef(loading)
-
     const mountedRef =
         useRef(true)
-
-    loadingRef.current = loading
 
     useEffect(() => {
         return () => {
@@ -76,7 +71,7 @@ function ConfirmDialog({
     async function handleConfirm() {
         if (
             confirmingRef.current
-            || loadingRef.current
+            || loading
         ) {
             return
         }

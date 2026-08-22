@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type { KeyboardEvent } from 'react'
 import {
+    archiveChat,
     createChat,
     getChatById,
     getChatCapabilities,
@@ -18,13 +19,21 @@ import {
     sendMessage,
 } from '../api/chatApi'
 import type {
+    AnswerPassport,
     Chat,
     ChatCapabilities,
     ChatDetails,
     ChatMessage,
     ChatTurnStatus,
     SendMessageResponse,
+    KnowledgeMode,
 } from '../api/chatApi'
+import {
+    getKnowledgeBases,
+} from '../api/knowledgeApi'
+import type {
+    KnowledgeBase,
+} from '../api/knowledgeApi'
 import {
     ApiError,
     getApiErrorMessage,
@@ -36,13 +45,20 @@ import {
 } from '../components/StateBlock'
 import PageErrorBoundary
     from '../components/PageErrorBoundary'
+import ConfirmDialog
+    from '../components/ConfirmDialog'
+import Modal
+    from '../components/Modal'
 import {
     buildDisplayMessages,
     createPendingTurn,
-    formatPricing,
-    formatUsage,
+    formatPricingValue,
+    formatUsageValue,
     getAiResponseLabel,
+    getModelDisplayName,
+    getVisibleMessageContent,
     hasMeaningfulContent,
+    isMockModel,
     isProcessingPendingStatus,
     isSafeToPrepareNewRequest,
     mergeChatDetails,
@@ -57,6 +73,9 @@ import type {
 import {
     createSecureUuid,
 } from '../utils/secureUuid'
+import {
+    formatDateTime,
+} from '../utils/format'
 
 const DEFAULT_CHAT_PAGE_SIZE = 50
 const DEFAULT_MESSAGE_PAGE_SIZE = 50
@@ -71,6 +90,57 @@ const DEFAULT_CAPABILITIES: ChatCapabilities = {
     maxMessagePageSize: 100,
     detailsMessageLimit: 50,
 }
+
+type ChatTrustItem = {
+    id: 'TENANT' | 'AUDIT' | 'PASSPORT'
+    icon: string
+    label: string
+    title: string
+    description: string
+    checks: readonly string[]
+}
+
+const CHAT_TRUST_ITEMS: readonly ChatTrustItem[] = [
+    {
+        id: 'TENANT',
+        icon: '◫',
+        label: 'Изоляция данных',
+        title: 'Данные вашей организации изолированы',
+        description:
+            'SafeAI отделяет данные организаций и проверяет права пользователя до обращения к чату или базе знаний.',
+        checks: [
+            'Чаты и документы доступны только внутри вашей организации.',
+            'Базы знаний дополнительно защищены ролями и списками доступа.',
+            'Поиск выполняется только по разрешённым документам и версиям.',
+        ],
+    },
+    {
+        id: 'AUDIT',
+        icon: '✓',
+        label: 'Журнал действий',
+        title: 'Действия сохраняются для аудита',
+        description:
+            'SafeAI фиксирует доказательную цепочку AI-операции, чтобы администратор мог восстановить её ход.',
+        checks: [
+            'Сохраняются пользователь, организация, чат и время запроса.',
+            'Фиксируются выбранная модель, токены, стоимость и качество расчёта.',
+            'Для ответов по знаниям сохраняются поиск, документы, версии и фрагменты.',
+        ],
+    },
+    {
+        id: 'PASSPORT',
+        icon: 'i',
+        label: 'Паспорт ответа',
+        title: 'Паспорт объясняет происхождение ответа',
+        description:
+            'Для ответа с корпоративными знаниями SafeAI показывает, на каких источниках он основан и прошли ли ссылки проверку.',
+        checks: [
+            'Указаны база знаний, документ, версия, страница и фрагмент.',
+            'Видны режим ответа и достаточность найденных доказательств.',
+            'Паспорт открывается под ответом, когда использовались корпоративные знания.',
+        ],
+    },
+]
 
 type ScrollIntent =
     | { type: 'BOTTOM' }
@@ -99,6 +169,15 @@ function ChatPageContent() {
         useState<Chat[]>([])
     const [activeChat, setActiveChat] =
         useState<ChatDetails | null>(null)
+    const [knowledgeBases, setKnowledgeBases] =
+        useState<KnowledgeBase[]>([])
+    const [knowledgeMode, setKnowledgeMode] =
+        useState<KnowledgeMode>('GENERAL')
+    const [knowledgeBaseId, setKnowledgeBaseId] =
+        useState<string>('')
+    const [answerPassports, setAnswerPassports] = useState<
+        Record<string, AnswerPassport>
+    >({})
 
     const [drafts, setDrafts] = useState<
         Record<string, string>
@@ -122,6 +201,10 @@ function ChatPageContent() {
         useState(false)
     const [chatCreating, setChatCreating] =
         useState(false)
+    const [chatToArchive, setChatToArchive] =
+        useState<Chat | null>(null)
+    const [archivingChatId, setArchivingChatId] =
+        useState<string | null>(null)
     const [openingChatId, setOpeningChatId] =
         useState<string | null>(null)
     const [historyLoading, setHistoryLoading] =
@@ -139,6 +222,8 @@ function ChatPageContent() {
         useState(0)
     const [clock, setClock] =
         useState(Date.now())
+    const [selectedTrustItem, setSelectedTrustItem] =
+        useState<ChatTrustItem | null>(null)
 
     const messagesEndRef =
         useRef<HTMLDivElement | null>(null)
@@ -179,6 +264,21 @@ function ChatPageContent() {
     useEffect(() => {
         activeChatRef.current = activeChat
     }, [activeChat])
+
+    useEffect(() => {
+        const controller = new AbortController()
+        void getKnowledgeBases(0, 100, {
+            signal: controller.signal,
+        }).then((response) => {
+            setKnowledgeBases(
+                response.content.filter((base) => base.enabled),
+            )
+        }).catch(() => {
+            // Chat remains available in GENERAL mode if Knowledge is offline.
+            setKnowledgeBases([])
+        })
+        return () => controller.abort()
+    }, [])
 
     const activePendingTurn = activeChat
         ? pendingTurns[activeChat.id]
@@ -594,6 +694,49 @@ function ChatPageContent() {
         }
     }
 
+    async function handleArchiveChat(chat: Chat) {
+        if (archivingChatId || pendingTurnsRef.current[chat.id]) {
+            return
+        }
+
+        setArchivingChatId(chat.id)
+        setListError('')
+
+        try {
+            await archiveChat(chat.id)
+
+            const remainingChats = chats.filter(
+                (item) => item.id !== chat.id,
+            )
+
+            setChats(remainingChats)
+            setDrafts((current) => {
+                const next = { ...current }
+                delete next[chat.id]
+                return next
+            })
+            setChatToArchive(null)
+
+            if (activeChatRef.current?.id === chat.id) {
+                setActiveChat(null)
+                const nextChat = remainingChats[0]
+                if (nextChat) {
+                    await openChat(nextChat.id)
+                }
+            }
+        } catch (error) {
+            setListError(
+                getApiErrorMessage(
+                    error,
+                    'Не удалось убрать чат из списка.',
+                ),
+            )
+            throw error
+        } finally {
+            setArchivingChatId(null)
+        }
+    }
+
     async function handleSendMessage() {
         const chat = activeChatRef.current
 
@@ -623,6 +766,11 @@ function ChatPageContent() {
             return
         }
 
+        if (knowledgeMode !== 'GENERAL' && !knowledgeBaseId) {
+            setSendError('Выберите базу знаний для RAG-режима.')
+            return
+        }
+
         const clientRequestId =
             createSecureUuid()
 
@@ -630,6 +778,8 @@ function ChatPageContent() {
             chat.id,
             content,
             clientRequestId,
+            knowledgeMode === 'GENERAL' ? null : knowledgeBaseId,
+            knowledgeMode,
         )
 
         setSendError('')
@@ -686,6 +836,10 @@ function ChatPageContent() {
                     content: pending.content,
                     clientRequestId:
                         pending.clientRequestId,
+                    knowledgeBaseId:
+                        pending.knowledgeBaseId,
+                    knowledgeMode:
+                        pending.knowledgeMode,
                 },
             )
 
@@ -999,6 +1153,13 @@ function ChatPageContent() {
         }
 
         finishPendingTurn(pending.chatId)
+
+        if (result.answerPassport) {
+            setAnswerPassports((current) => ({
+                ...current,
+                [result.assistantMessage.id]: result.answerPassport!,
+            }))
+        }
 
         setActiveChat((current) => {
             if (
@@ -1370,8 +1531,33 @@ function ChatPageContent() {
             : 0
 
     return (
-        <div className="page">
-            <h1>Чат</h1>
+        <div className="page chat-page">
+            <header className="chat-hero">
+                <div>
+                    <span className="chat-hero__eyebrow">
+                        Защищённое рабочее пространство
+                    </span>
+                    <h1>Корпоративный AI</h1>
+                    <p>
+                        Общайтесь с AI, подключайте разрешённые базы знаний
+                        и проверяйте источники каждого ответа.
+                    </p>
+                </div>
+                <div className="chat-hero__trust" aria-label="Как SafeAI защищает работу с AI">
+                    {CHAT_TRUST_ITEMS.map((item) => (
+                        <button
+                            key={item.id}
+                            type="button"
+                            className="chat-trust-button"
+                            onClick={() => setSelectedTrustItem(item)}
+                            aria-label={`${item.label}: открыть объяснение`}
+                        >
+                            <span aria-hidden="true">{item.icon}</span>
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
+            </header>
 
             {listError && (
                 <ErrorState
@@ -1393,7 +1579,7 @@ function ChatPageContent() {
             )}
 
             <div className="chat-layout">
-                <aside className="card sidebar">
+                <aside className="card sidebar chat-sidebar">
                     <button
                         type="button"
                         onClick={() =>
@@ -1406,81 +1592,96 @@ function ChatPageContent() {
                             : 'Создать чат'}
                     </button>
 
-                    <h2>Чаты</h2>
+                    <div className="chat-sidebar__heading">
+                        <div>
+                            <span className="chat-sidebar__eyebrow">История</span>
+                            <h2>Ваши чаты</h2>
+                        </div>
+                        <span className="chat-count">{chats.length}</span>
+                    </div>
 
-                    {chatsLoading && (
-                        <p className="muted">
-                            Загрузка чатов...
-                        </p>
-                    )}
-
-                    {!chatsLoading
-                        && chats.length === 0
-                        && (
-                            <p>Чатов пока нет.</p>
+                    <div className="chat-list">
+                        {chatsLoading && (
+                            <p className="muted">
+                                Загрузка чатов...
+                            </p>
                         )}
 
-                    {chats.map((chat) => {
-                        const pending =
-                            pendingTurns[chat.id]
+                        {!chatsLoading
+                            && chats.length === 0
+                            && (
+                                <p>Чатов пока нет.</p>
+                            )}
 
-                        return (
+                        {chats.map((chat) => {
+                            const pending =
+                                pendingTurns[chat.id]
+
+                            return (
+                                <div
+                                    key={chat.id}
+                                    className={
+                                        activeChat?.id === chat.id
+                                            ? 'chat-list-row active'
+                                            : 'chat-list-row'
+                                    }
+                                >
+                                    <button
+                                        type="button"
+                                        className="chat-item"
+                                        disabled={openingChatId === chat.id}
+                                        onClick={() => void openChat(chat.id)}
+                                        title={`Открыть чат «${chat.title}»`}
+                                    >
+                                        <span className="chat-item__icon" aria-hidden="true">✦</span>
+                                        <span className="chat-item__body">
+                                            <strong>
+                                                {openingChatId === chat.id
+                                                    ? 'Открытие...'
+                                                    : chat.title}
+                                            </strong>
+                                            <small>{formatDateTime(chat.updatedAt)}</small>
+                                            {pending && (
+                                                <span
+                                                    className="chat-item__pending"
+                                                    aria-label={getPendingLabel(pending, clock)}
+                                                >
+                                                    {getPendingShortLabel(pending)}
+                                                </span>
+                                            )}
+                                        </span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="chat-archive-button"
+                                        aria-label={`Убрать чат «${chat.title}» из списка`}
+                                        title={pending
+                                            ? 'Дождитесь завершения запроса'
+                                            : 'Убрать из списка'}
+                                        disabled={Boolean(pending) || archivingChatId === chat.id}
+                                        onClick={() => setChatToArchive(chat)}
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            )
+                        })}
+
+                        {chatHasNext && (
                             <button
-                                key={chat.id}
                                 type="button"
-                                className={
-                                    activeChat?.id
-                                        === chat.id
-                                        ? 'chat-item active'
-                                        : 'chat-item'
-                                }
-                                disabled={
-                                    openingChatId
-                                        === chat.id
-                                }
+                                className="secondary-button"
+                                disabled={moreChatsLoading}
                                 onClick={() =>
-                                    void openChat(chat.id)
+                                    void loadMoreChats()
                                 }
                             >
-                                {openingChatId
-                                    === chat.id
-                                    ? 'Открытие...'
-                                    : chat.title}
-
-                                {pending && (
-                                    <span
-                                        className="muted"
-                                        aria-label={
-                                            getPendingLabel(
-                                                pending,
-                                                clock,
-                                            )
-                                        }
-                                    >
-                                        {' · '}
-                                        {getPendingShortLabel(
-                                            pending,
-                                        )}
-                                    </span>
-                                )}
+                                {moreChatsLoading
+                                    ? 'Загрузка...'
+                                    : 'Показать ещё чаты'}
                             </button>
-                        )
-                    })}
-
-                    {chatHasNext && (
-                        <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={moreChatsLoading}
-                            onClick={() =>
-                                void loadMoreChats()
-                            }
-                        >
-                            {moreChatsLoading
-                                ? 'Загрузка...'
-                                : 'Показать ещё чаты'}
-                        </button>
-                    )}
+                        )}
+                    </div>
                 </aside>
 
                 <section className="card chat-panel">
@@ -1502,7 +1703,22 @@ function ChatPageContent() {
 
                     {activeChat && (
                         <>
-                            <h2>{activeChat.title}</h2>
+                            <div className="chat-panel__header">
+                                <div>
+                                    <span className="chat-panel__eyebrow">Текущий чат</span>
+                                    <h2>{activeChat.title}</h2>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="chat-panel__status"
+                                    onClick={() => setSelectedTrustItem(
+                                        CHAT_TRUST_ITEMS[0],
+                                    )}
+                                >
+                                    <span aria-hidden="true">●</span>
+                                    Защищённый режим
+                                </button>
+                            </div>
 
                             {chatError && (
                                 <div
@@ -1527,6 +1743,7 @@ function ChatPageContent() {
                             {activePendingTurn && (
                                 <PendingTurnState
                                     pending={activePendingTurn}
+                                    now={clock}
                                     retryAfterSeconds={
                                         retryAfterSeconds
                                     }
@@ -1584,6 +1801,9 @@ function ChatPageContent() {
                                         <MessageView
                                             key={item.id}
                                             message={item}
+                                            answerPassport={
+                                                answerPassports[item.id]
+                                            }
                                         />
                                     ),
                                 )}
@@ -1617,7 +1837,51 @@ function ChatPageContent() {
                             </div>
 
                             <div className="message-form">
-                                <div style={{ width: '100%' }}>
+                                <div className="message-form__controls">
+                                    <label htmlFor="knowledge-mode">
+                                        Режим ответа
+                                    </label>
+                                    <select
+                                        id="knowledge-mode"
+                                        value={knowledgeMode}
+                                        disabled={activeChatBusy || activeChatHasPending}
+                                        onChange={(event) => {
+                                            const mode = event.target.value as KnowledgeMode
+                                            setKnowledgeMode(mode)
+                                            if (mode === 'GENERAL') {
+                                                setKnowledgeBaseId('')
+                                            }
+                                        }}
+                                    >
+                                        <option value="GENERAL">Обычный AI</option>
+                                        <option value="KNOWLEDGE_ASSISTED">AI + корпоративные знания</option>
+                                        <option value="KNOWLEDGE_ONLY">Только корпоративные знания</option>
+                                    </select>
+
+                                    {knowledgeMode !== 'GENERAL' && (
+                                        <>
+                                            <label htmlFor="knowledge-base">
+                                                База знаний
+                                            </label>
+                                            <select
+                                                id="knowledge-base"
+                                                value={knowledgeBaseId}
+                                                disabled={activeChatBusy || activeChatHasPending}
+                                                onChange={(event) =>
+                                                    setKnowledgeBaseId(event.target.value)
+                                                }
+                                            >
+                                                <option value="">Выберите базу знаний</option>
+                                                {knowledgeBases.map((base) => (
+                                                    <option key={base.id} value={base.id}>
+                                                        {base.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </>
+                                    )}
+                                </div>
+                                <div className="message-form__composer">
                                     <label htmlFor="chat-message">
                                         Сообщение
                                     </label>
@@ -1660,6 +1924,7 @@ function ChatPageContent() {
 
                                 <button
                                     type="button"
+                                    className="message-send-button"
                                     onClick={() =>
                                         void handleSendMessage()
                                     }
@@ -1670,6 +1935,10 @@ function ChatPageContent() {
                                         )
                                         || activeDraft.length
                                             > capabilities.maxMessageChars
+                                        || (
+                                            knowledgeMode !== 'GENERAL'
+                                            && !knowledgeBaseId
+                                        )
                                     }
                                 >
                                     {activeChatBusy
@@ -1694,6 +1963,50 @@ function ChatPageContent() {
                     )}
                 </section>
             </div>
+
+            {chatToArchive && (
+                <ConfirmDialog
+                    title="Убрать чат из списка?"
+                    message={
+                        `Чат «${chatToArchive.title}» исчезнет из рабочего списка. `
+                        + 'История, стоимость и доказательная цепочка сохранятся для аудита.'
+                    }
+                    confirmText="Убрать чат"
+                    danger
+                    loading={archivingChatId === chatToArchive.id}
+                    onCancel={() => setChatToArchive(null)}
+                    onConfirm={() => handleArchiveChat(chatToArchive)}
+                />
+            )}
+
+            {selectedTrustItem && (
+                <Modal
+                    title={selectedTrustItem.title}
+                    size="sm"
+                    descriptionId="chat-trust-description"
+                    onClose={() => setSelectedTrustItem(null)}
+                >
+                    <div className="chat-trust-dialog">
+                        <div className="chat-trust-dialog__icon" aria-hidden="true">
+                            {selectedTrustItem.icon}
+                        </div>
+                        <p id="chat-trust-description">
+                            {selectedTrustItem.description}
+                        </p>
+                        <ul>
+                            {selectedTrustItem.checks.map((check) => (
+                                <li key={check}>{check}</li>
+                            ))}
+                        </ul>
+                        <button
+                            type="button"
+                            onClick={() => setSelectedTrustItem(null)}
+                        >
+                            Понятно
+                        </button>
+                    </div>
+                </Modal>
+            )}
         </div>
     )
 }
@@ -1702,13 +2015,17 @@ type MessageViewProps = {
     message: ReturnType<
         typeof buildDisplayMessages
     >[number]
+    answerPassport?: AnswerPassport
 }
 
 function MessageView({
     message,
+    answerPassport,
 }: MessageViewProps) {
     const aiResponseLabel =
         getAiResponseLabel(message)
+    const mockModel =
+        isMockModel(message.model)
 
     return (
         <article
@@ -1720,7 +2037,27 @@ function MessageView({
                 }`
             }
         >
-            <strong>{message.role}</strong>
+            <div className="message__header">
+                <span className="message__avatar" aria-hidden="true">
+                    {message.role === 'ASSISTANT'
+                        ? 'AI'
+                        : message.role === 'USER'
+                            ? 'ВЫ'
+                            : 'SYS'}
+                </span>
+                <strong>
+                    {message.role === 'ASSISTANT'
+                        ? 'SafeAI'
+                        : message.role === 'USER'
+                            ? 'Вы'
+                            : 'Система'}
+                </strong>
+                {message.role === 'ASSISTANT' && mockModel && (
+                    <span className="message__demo-badge">
+                        Демо-режим
+                    </span>
+                )}
+            </div>
 
             {message.status === 'FAILED' && (
                 <span className="status-badge status-disabled">
@@ -1742,23 +2079,100 @@ function MessageView({
                 </span>
             )}
 
-            <p>{message.content}</p>
+            <p>{getVisibleMessageContent(message)}</p>
 
             {message.role === 'ASSISTANT' && (
-                <small>
-                    модель: {message.model ?? '—'}
-                    {' | '}
-                    {formatUsage(message)}
-                    {' | '}
-                    {formatPricing(message)}
-                </small>
+                <>
+                    <details className="answer-details">
+                        <summary>
+                            <span className="answer-details__icon" aria-hidden="true">
+                                i
+                            </span>
+                            <span className="answer-details__heading">
+                                <strong>Как сформирован ответ</strong>
+                                <small>Модель, объём и стоимость запроса</small>
+                            </span>
+                            <span className="answer-details__action">
+                                Подробнее
+                            </span>
+                        </summary>
+                        <dl className="answer-details__grid">
+                            <div>
+                                <dt>Модель AI</dt>
+                                <dd>{getModelDisplayName(message.model)}</dd>
+                                {message.model && (
+                                    <code>{message.model}</code>
+                                )}
+                                <small>
+                                    {mockModel
+                                        ? 'Тестовый провайдер для демонстрации интерфейса. Это не ответ внешней LLM.'
+                                        : 'Модель, которая фактически сформировала этот ответ.'}
+                                </small>
+                            </div>
+                            <div>
+                                <dt>Объём запроса</dt>
+                                <dd>{formatUsageValue(message)}</dd>
+                                <small>
+                                    Вход — запрос и контекст, выход — текст ответа модели.
+                                </small>
+                            </div>
+                            <div>
+                                <dt>Стоимость</dt>
+                                <dd>{formatPricingValue(message)}</dd>
+                                <small>
+                                    Расчёт хранится вместе с операцией и доступен в отчёте использования.
+                                </small>
+                            </div>
+                        </dl>
+                    </details>
+                    {answerPassport && (
+                        <details className="answer-passport">
+                            <summary>
+                                Паспорт ответа · источников: {answerPassport.citations.length}
+                            </summary>
+                            <p>
+                                Режим: {getKnowledgeModeLabel(answerPassport.knowledgeMode)}
+                                {' · '}Ссылки: {answerPassport.citationsValid ? 'проверены' : 'требуют проверки'}
+                                {' · '}Доказательств: {answerPassport.evidenceSufficient ? 'достаточно' : 'недостаточно'}
+                            </p>
+                            <ul>
+                                {answerPassport.citations.map((citation) => (
+                                    <li key={citation.chunkId}>
+                                        <strong>[{citation.label}]</strong>
+                                        {' '}{citation.documentName}
+                                        {' · v'}{citation.versionNumber}
+                                        {citation.pageFrom != null
+                                            ? ` · стр. ${citation.pageFrom}`
+                                            : ''}
+                                        {' · chunk '}{citation.chunkOrdinal}
+                                    </li>
+                                ))}
+                            </ul>
+                            <small>
+                                Идентификатор поиска: {answerPassport.retrievalRunId}
+                            </small>
+                        </details>
+                    )}
+                </>
             )}
         </article>
     )
 }
 
+function getKnowledgeModeLabel(mode: KnowledgeMode): string {
+    switch (mode) {
+        case 'KNOWLEDGE_ASSISTED':
+            return 'AI + корпоративные знания'
+        case 'KNOWLEDGE_ONLY':
+            return 'Только корпоративные знания'
+        default:
+            return 'Обычный AI'
+    }
+}
+
 type PendingTurnStateProps = {
     pending: PendingTurn
+    now: number
     retryAfterSeconds: number
     onRetry: () => void
     onCheck: () => void
@@ -1769,6 +2183,7 @@ type PendingTurnStateProps = {
 
 function PendingTurnState({
     pending,
+    now,
     retryAfterSeconds,
     onRetry,
     onCheck,
@@ -1816,7 +2231,7 @@ function PendingTurnState({
             <strong>
                 {getPendingLabel(
                     pending,
-                    Date.now(),
+                    now,
                 )}
             </strong>
 

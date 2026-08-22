@@ -22,8 +22,8 @@ import type { AuthUser } from '../api/authApi'
 import { ApiError } from '../api/http'
 import {
     AuthProvider,
-    useAuth,
 } from './AuthContext'
+import { useAuth } from './useAuth'
 
 type AuthApiModule =
     typeof import('../api/authApi')

@@ -13,7 +13,7 @@ import {
     ApiError,
     getApiErrorMessage,
 } from '../api/http'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import {
     ErrorState,
     LoadingState,
@@ -50,7 +50,7 @@ function LoginPage() {
     const [retryUntil, setRetryUntil] =
         useState<number | null>(null)
     const [now, setNow] = useState(
-        Date.now(),
+        0,
     )
 
     useEffect(() => {
@@ -60,7 +60,12 @@ function LoginPage() {
 
         const intervalId = window.setInterval(
             () => {
-                setNow(Date.now())
+                const currentTime = Date.now()
+                setNow(currentTime)
+                if (currentTime >= retryUntil) {
+                    window.clearInterval(intervalId)
+                    setRetryUntil(null)
+                }
             },
             1_000,
         )
@@ -84,18 +89,6 @@ function LoginPage() {
     }, [
         retryUntil,
         now,
-    ])
-
-    useEffect(() => {
-        if (
-            retryUntil !== null
-            && retryAfterSeconds === 0
-        ) {
-            setRetryUntil(null)
-        }
-    }, [
-        retryUntil,
-        retryAfterSeconds,
     ])
 
     async function handleSubmit(
@@ -347,8 +340,6 @@ function LoginPage() {
                     disabled={
                         loading
                         || retryAfterSeconds > 0
-                        || !email.trim()
-                        || !password
                     }
                     onKeyDown={
                         preventSubmitOnRetry

@@ -12,8 +12,10 @@ import {
 import {
     FixedUserRole,
     UserRoleSelector,
-    parseAssignableUserRole,
 } from '../UserRoleSelector'
+import {
+    parseAssignableUserRole,
+} from '../userRole'
 
 
 describe('UserRoleSelector', () => {
@@ -85,7 +87,7 @@ describe('UserRoleSelector', () => {
 
     it('renders the ADMIN fixed role without an interactive control', () => {
         render(
-            <FixedUserRole role="USER" />,
+            <FixedUserRole userRole="USER" />,
         )
 
         expect(

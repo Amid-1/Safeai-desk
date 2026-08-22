@@ -56,6 +56,12 @@ services:
       - source: openai_api_key
         target: OPENAI_API_KEY
 
+      - source: openai_api_key
+        target: OPENAI_EMBEDDING_API_KEY
+
+      - source: knowledge_ocr_api_key
+        target: KNOWLEDGE_OCR_API_KEY
+
       - source: anthropic_api_key
         target: ANTHROPIC_API_KEY
 
@@ -392,6 +398,9 @@ secrets:
 
   openai_api_key:
     file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/openai_api_key"
+
+  knowledge_ocr_api_key:
+    file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/knowledge_ocr_api_key"
 
   anthropic_api_key:
     file: "${SAFEAI_SECRETS_DIR:?SAFEAI_SECRETS_DIR is required}/anthropic_api_key"

@@ -13,6 +13,7 @@ import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.chat.config.ChatProperties;
 import ru.safeai.gateway.chat.dto.CreateChatRequest;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
@@ -28,9 +29,13 @@ import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.common.exception.ChatLockUnavailableException;
 import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.knowledge.rag.KnowledgeRagService;
+import ru.safeai.gateway.knowledge.rag.RagCompletion;
+import ru.safeai.gateway.knowledge.rag.RagPreparation;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import java.util.concurrent.ScheduledFuture;
@@ -39,6 +44,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -60,6 +66,7 @@ class ChatServiceTest {
     @Mock ChatSecurityStateService securityStateService;
     @Mock ChatLockService lockService;
     @Mock ChatTurnLeaseService leaseService;
+    @Mock KnowledgeRagService ragService;
 
     private ChatService service;
     private ChatLockService.ChatLock redisLock;
@@ -87,7 +94,8 @@ class ChatServiceTest {
                 lockService,
                 leaseService,
                 properties,
-                ChatTestFixtures.CLOCK
+                ChatTestFixtures.CLOCK,
+                ragService
         );
         redisLock = new ChatLockService.ChatLock(
                 ChatTestFixtures.CHAT_ID,
@@ -107,6 +115,16 @@ class ChatServiceTest {
                 new AtomicBoolean(false)
         );
         processing = processingContext();
+        org.mockito.Mockito.lenient().when(ragService.prepare(any(), any()))
+                .thenAnswer(invocation -> RagPreparation.general(
+                        invocation.<ChatProcessingContext>getArgument(0)
+                                .aiRequest()
+                ));
+        org.mockito.Mockito.lenient().when(ragService.complete(any(), any()))
+                .thenAnswer(invocation -> RagCompletion.general(
+                        invocation.getArgument(0),
+                        invocation.getArgument(1)
+                ));
     }
 
     @Test
@@ -115,9 +133,9 @@ class ChatServiceTest {
         when(aiProvider.sendMessage(processing.aiRequest()))
                 .thenReturn(ChatTestFixtures.freeResponse());
         SendMessageResponse expected = successResponse(false);
-        when(finalizationService.succeed(
+        when(finalizationService.succeedRag(
                 eq(processing),
-                eq(ChatTestFixtures.freeResponse()),
+                any(RagCompletion.class),
                 any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
         )).thenReturn(expected);
 
@@ -295,9 +313,9 @@ class ChatServiceTest {
         when(aiProvider.sendMessage(processing.aiRequest()))
                 .thenReturn(ChatTestFixtures.freeResponse());
         RuntimeException dbFailure = new RuntimeException("db failure");
-        when(finalizationService.succeed(
+        when(finalizationService.succeedRag(
                 eq(processing),
-                eq(ChatTestFixtures.freeResponse()),
+                any(RagCompletion.class),
                 any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
         )).thenThrow(dbFailure);
 
@@ -352,9 +370,9 @@ class ChatServiceTest {
         stubOwnedChatAndProcessing();
         when(aiProvider.sendMessage(processing.aiRequest()))
                 .thenReturn(ChatTestFixtures.freeResponse());
-        when(finalizationService.succeed(
+        when(finalizationService.succeedRag(
                 eq(processing),
-                eq(ChatTestFixtures.freeResponse()),
+                any(RagCompletion.class),
                 any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
         )).thenReturn(successResponse(false));
         doThrow(new ChatAccessRevokedException(
@@ -371,9 +389,9 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(ChatAccessRevokedException.class);
 
-        verify(finalizationService).succeed(
+        verify(finalizationService).succeedRag(
                 eq(processing),
-                eq(ChatTestFixtures.freeResponse()),
+                any(RagCompletion.class),
                 any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
         );
     }
@@ -398,8 +416,41 @@ class ChatServiceTest {
     }
 
     @Test
+    void archiveHidesChatWithoutDeletingItsAuditHistory() {
+        ChatSessionEntity session = ChatTestFixtures.session();
+        when(sessionRepository
+                .findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
+                        ChatTestFixtures.CHAT_ID,
+                        ChatTestFixtures.USER_ID,
+                        ChatTestFixtures.ORGANIZATION_ID
+                )).thenReturn(Optional.of(session));
+        when(sessionRepository.saveAndFlush(session)).thenReturn(session);
+
+        service.archive(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.principal()
+        );
+
+        assertThat(session.getArchivedAt()).isEqualTo(ChatTestFixtures.NOW);
+        assertThat(session.getArchivedByUserId())
+                .isEqualTo(ChatTestFixtures.USER_ID);
+        verify(sessionRepository).saveAndFlush(session);
+        verify(auditEventService).record(
+                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class),
+                eq(ChatTestFixtures.ORGANIZATION_ID),
+                eq(AuditEventType.CHAT_ARCHIVED),
+                argThat((Map<String, Object> details) ->
+                        ChatTestFixtures.CHAT_ID.equals(details.get("chatId"))
+                                && "AUDIT_PRESERVED".equals(
+                                details.get("retentionMode")
+                        )
+                )
+        );
+    }
+
+    @Test
     void userVisibleMessageQueryNeverReturnsSystemRowsByServiceContract() {
-        when(sessionRepository.findByIdAndUser_IdAndOrganization_Id(
+        when(sessionRepository.findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
                 ChatTestFixtures.CHAT_ID,
                 ChatTestFixtures.USER_ID,
                 ChatTestFixtures.ORGANIZATION_ID
@@ -422,7 +473,7 @@ class ChatServiceTest {
     }
 
     private void stubOwnedChat() {
-        when(sessionRepository.existsByIdAndUser_IdAndOrganization_Id(
+        when(sessionRepository.existsByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
                 ChatTestFixtures.CHAT_ID,
                 ChatTestFixtures.USER_ID,
                 ChatTestFixtures.ORGANIZATION_ID

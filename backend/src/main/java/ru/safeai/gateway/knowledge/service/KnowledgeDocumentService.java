@@ -1,14 +1,12 @@
 package ru.safeai.gateway.knowledge.service;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
@@ -16,6 +14,7 @@ import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.persistence.DatabaseConstraintClassifier;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentPageResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentResponse;
@@ -32,25 +31,22 @@ import ru.safeai.gateway.knowledge.repository.KnowledgeBaseRepository;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentRepository;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentVersionRepository;
 import ru.safeai.gateway.knowledge.repository.KnowledgeIngestionJobRepository;
-
 import ru.safeai.gateway.knowledge.storage.ObjectStorage;
 import ru.safeai.gateway.knowledge.storage.StoredObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.NoSuchFileException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class KnowledgeDocumentService {
 
-    private static final int MAX_PAGE_SIZE = 100;
+    private static final String DOCUMENT_NAME_UNIQUE =
+            "ux_knowledge_documents_kb_name_lower";
 
     private final KnowledgeBaseRepository bases;
     private final KnowledgeBaseMembershipRepository memberships;
@@ -63,41 +59,30 @@ public class KnowledgeDocumentService {
 
     @Transactional(readOnly = true)
     public KnowledgeDocumentPageResponse list(
-            UUID kbId,
+            UUID knowledgeBaseId,
             SafeAiUserPrincipal user,
             int page,
             int size
     ) {
-        KnowledgeBaseAccessLevel access = authorize(
-                kbId,
+        authorize(
+                knowledgeBaseId,
                 user,
                 KnowledgeBaseAccessLevel.VIEWER
         );
 
-        validatePage(page, size);
-
-        PageRequest request = PageRequest.of(
-                page,
-                size,
-                Sort.by(
-                        Sort.Order.desc("updatedAt"),
-                        Sort.Order.desc("id")
-                )
-        );
-
         Page<KnowledgeDocumentEntity> result =
-                isAdmin(user)
-                        || access == KnowledgeBaseAccessLevel.OWNER
-                        ? documents.findAllByKnowledgeBaseIdAndOrganizationId(
-                                kbId,
-                                user.getOrganizationId(),
-                                request
+                documents.findAllByKnowledgeBaseIdAndOrganizationId(
+                        knowledgeBaseId,
+                        user.getOrganizationId(),
+                        PageRequest.of(
+                                page,
+                                Math.min(size, 100),
+                                Sort.by(
+                                        Sort.Direction.DESC,
+                                        "updatedAt"
+                                )
                         )
-                        : documents.findAllByKnowledgeBaseIdAndOrganizationIdAndEnabledTrue(
-                                kbId,
-                                user.getOrganizationId(),
-                                request
-                        );
+                );
 
         List<KnowledgeDocumentResponse> content = result.getContent()
                 .stream()
@@ -115,58 +100,71 @@ public class KnowledgeDocumentService {
 
     @Transactional
     public KnowledgeDocumentResponse uploadNew(
-            UUID kbId,
+            UUID knowledgeBaseId,
             String requestedName,
             MultipartFile file,
             SafeAiUserPrincipal user
     ) {
         authorize(
-                kbId,
+                knowledgeBaseId,
                 user,
                 KnowledgeBaseAccessLevel.EDITOR
         );
 
-        KnowledgeDocumentFileValidator.ValidatedUpload upload = fileValidator.validate(file);
+        KnowledgeDocumentFileValidator.ValidatedUpload upload =
+                fileValidator.validate(file);
 
-        String name = KnowledgeDocumentNameNormalizer.normalize(
+        String name = normalizeName(
                 requestedName == null || requestedName.isBlank()
                         ? upload.originalFilename()
                         : requestedName
         );
 
-        if (documents.existsByKnowledgeBaseIdAndOrganizationIdAndNameIgnoreCase(
-                kbId,
-                user.getOrganizationId(),
-                name
-        )) {
-            throw new ConflictException(
-                    "Документ с таким названием уже существует."
-            );
+        if (documents
+                .existsByKnowledgeBaseIdAndOrganizationIdAndNameIgnoreCase(
+                        knowledgeBaseId,
+                        user.getOrganizationId(),
+                        name
+                )) {
+            throw duplicateDocumentName();
         }
 
-        KnowledgeDocumentEntity document = new KnowledgeDocumentEntity();
+        KnowledgeDocumentEntity document =
+                new KnowledgeDocumentEntity();
+
         document.setOrganizationId(user.getOrganizationId());
-        document.setKnowledgeBaseId(kbId);
+        document.setKnowledgeBaseId(knowledgeBaseId);
         document.setName(name);
         document.setEnabled(true);
         document.setCreatedByUserId(user.getId());
 
-        documents.saveAndFlush(document);
+        try {
+            documents.saveAndFlush(document);
+        } catch (DataIntegrityViolationException exception) {
+            if (DatabaseConstraintClassifier.isUniqueViolation(
+                    exception,
+                    DOCUMENT_NAME_UNIQUE
+            )) {
+                throw duplicateDocumentName();
+            }
 
-        KnowledgeDocumentResponse result = storeVersion(
-                document,
-                upload,
-                user
-        );
+            throw exception;
+        }
+
+        KnowledgeDocumentResponse result =
+                storeVersion(document, upload, user);
 
         audit.record(
                 user,
                 user.getOrganizationId(),
                 AuditEventType.KNOWLEDGE_DOCUMENT_CREATED,
                 Map.of(
-                        "knowledgeBaseId", kbId.toString(),
-                        "documentId", document.getId().toString(),
-                        "name", name
+                        "knowledgeBaseId",
+                        knowledgeBaseId.toString(),
+                        "documentId",
+                        document.getId().toString(),
+                        "name",
+                        name
                 )
         );
 
@@ -175,52 +173,45 @@ public class KnowledgeDocumentService {
 
     @Transactional
     public KnowledgeDocumentResponse uploadVersion(
-            UUID kbId,
+            UUID knowledgeBaseId,
             UUID documentId,
             MultipartFile file,
             SafeAiUserPrincipal user
     ) {
         authorize(
-                kbId,
+                knowledgeBaseId,
                 user,
                 KnowledgeBaseAccessLevel.EDITOR
         );
 
-        KnowledgeDocumentFileValidator.ValidatedUpload upload = fileValidator.validate(file);
+        KnowledgeDocumentFileValidator.ValidatedUpload upload =
+                fileValidator.validate(file);
 
-        KnowledgeDocumentEntity document = documents.findForUpdate(
+        KnowledgeDocumentEntity document =
+                requireDocumentForUpdate(
+                        knowledgeBaseId,
                         documentId,
-                        kbId,
                         user.getOrganizationId()
-                )
-                .orElseThrow(
-                        () -> new ResourceNotFoundException(
-                                "Документ не найден."
-                        )
                 );
 
-        return storeVersion(
-                document,
-                upload,
-                user
-        );
+        return storeVersion(document, upload, user);
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public Download download(
-            UUID kbId,
+            UUID knowledgeBaseId,
             UUID documentId,
             UUID versionId,
             SafeAiUserPrincipal user
     ) {
         authorize(
-                kbId,
+                knowledgeBaseId,
                 user,
                 KnowledgeBaseAccessLevel.VIEWER
         );
 
         KnowledgeDocumentEntity document = requireDocument(
-                kbId,
+                knowledgeBaseId,
                 documentId,
                 user.getOrganizationId()
         );
@@ -235,60 +226,27 @@ public class KnowledgeDocumentService {
                 ? document.getCurrentVersionId()
                 : versionId;
 
-        if (selectedVersionId == null) {
-            throw new ResourceNotFoundException(
-                    "Версия документа не найдена."
-            );
-        }
-
-        KnowledgeDocumentVersionEntity version = versions
-                .findByIdAndDocumentIdAndKnowledgeBaseIdAndOrganizationId(
+        KnowledgeDocumentVersionEntity version =
+                versions.findByIdAndDocumentIdAndKnowledgeBaseIdAndOrganizationId(
                         selectedVersionId,
                         documentId,
-                        kbId,
+                        knowledgeBaseId,
                         user.getOrganizationId()
-                )
-                .orElseThrow(
-                        () -> new ResourceNotFoundException(
-                                "Версия документа не найдена."
-                        )
-                );
+                ).orElseThrow(() -> new ResourceNotFoundException(
+                        "Версия документа не найдена."
+                ));
 
-        final StoredObject object;
         try {
-            object = storage.get(version.getStorageKey());
-        } catch (NoSuchFileException exception) {
-            throw new ResourceNotFoundException(
-                    "Файл документа отсутствует в объектном хранилище."
+            return new Download(
+                    storage.get(version.getStorageKey()),
+                    version.getOriginalFilename(),
+                    version.getMediaType()
             );
         } catch (IOException exception) {
-            throw new IllegalStateException(
-                    "Объектное хранилище временно недоступно.",
-                    exception
+            throw new ResourceNotFoundException(
+                    "Файл документа недоступен."
             );
         }
-
-        try {
-            audit.record(
-                    user,
-                    user.getOrganizationId(),
-                    AuditEventType.KNOWLEDGE_DOCUMENT_DOWNLOADED,
-                    Map.of(
-                            "knowledgeBaseId", kbId.toString(),
-                            "documentId", documentId.toString(),
-                            "documentVersionId", version.getId().toString()
-                    )
-            );
-        } catch (RuntimeException exception) {
-            closeQuietly(object);
-            throw exception;
-        }
-
-        return new Download(
-                object,
-                version.getOriginalFilename(),
-                version.getMediaType()
-        );
     }
 
     private KnowledgeDocumentResponse storeVersion(
@@ -296,12 +254,14 @@ public class KnowledgeDocumentService {
             KnowledgeDocumentFileValidator.ValidatedUpload upload,
             SafeAiUserPrincipal user
     ) {
+        byte[] bytes = upload.bytes();
+
         int versionNumber = documents.currentVersionNumber(
                 document.getId(),
                 user.getOrganizationId()
         ) + 1;
 
-        UUID versionId = UUID.randomUUID();
+        UUID documentVersionId = UUID.randomUUID();
 
         String storageKey = user.getOrganizationId()
                 + "/"
@@ -309,9 +269,7 @@ public class KnowledgeDocumentService {
                 + "/"
                 + document.getId()
                 + "/"
-                + versionId;
-
-        byte[] bytes = upload.bytes();
+                + documentVersionId;
 
         try {
             storage.put(
@@ -320,104 +278,91 @@ public class KnowledgeDocumentService {
             );
         } catch (IOException exception) {
             throw new BadRequestException(
-                    "Не удалось сохранить файл в объектном хранилище.",
+                    "Не удалось сохранить файл.",
                     exception
             );
         }
 
-        registerRollbackCleanup(storageKey);
+        try {
+            KnowledgeDocumentVersionEntity version =
+                    new KnowledgeDocumentVersionEntity();
 
-        KnowledgeDocumentVersionEntity version =
-                new KnowledgeDocumentVersionEntity();
+            version.setId(documentVersionId);
+            version.setOrganizationId(user.getOrganizationId());
+            version.setKnowledgeBaseId(document.getKnowledgeBaseId());
+            version.setDocumentId(document.getId());
+            version.setVersionNumber(versionNumber);
+            version.setOriginalFilename(upload.originalFilename());
+            version.setMediaType(upload.mediaType());
+            version.setSizeBytes((long) bytes.length);
+            version.setSha256(upload.sha256());
+            version.setStorageKey(storageKey);
+            version.setCreatedByUserId(user.getId());
 
-        version.setId(versionId);
-        version.setOrganizationId(user.getOrganizationId());
-        version.setKnowledgeBaseId(document.getKnowledgeBaseId());
-        version.setDocumentId(document.getId());
-        version.setVersionNumber(versionNumber);
-        version.setOriginalFilename(upload.originalFilename());
-        version.setMediaType(upload.mediaType());
-        version.setSizeBytes(bytes.length);
-        version.setSha256(upload.sha256());
-        version.setStorageKey(storageKey);
-        version.setCreatedByUserId(user.getId());
+            versions.saveAndFlush(version);
 
-        versions.saveAndFlush(version);
+            KnowledgeIngestionJobEntity job =
+                    new KnowledgeIngestionJobEntity();
 
-        KnowledgeIngestionJobEntity job = createIngestionJob(
-                document,
-                versionId,
-                user
-        );
+            job.setOrganizationId(user.getOrganizationId());
+            job.setKnowledgeBaseId(document.getKnowledgeBaseId());
+            job.setDocumentId(document.getId());
+            job.setDocumentVersionId(documentVersionId);
+            job.setStatus(KnowledgeIngestionStatus.PENDING);
 
-        document.setCurrentVersionId(versionId);
-        documents.saveAndFlush(document);
+            jobs.saveAndFlush(job);
 
-        audit.record(
-                user,
-                user.getOrganizationId(),
-                AuditEventType.KNOWLEDGE_DOCUMENT_VERSION_UPLOADED,
-                Map.of(
-                        "documentId", document.getId().toString(),
-                        "documentVersionId", versionId.toString(),
-                        "versionNumber", versionNumber,
-                        "sha256", version.getSha256()
-                )
-        );
+            document.setCurrentVersionId(documentVersionId);
+            documents.saveAndFlush(document);
 
-        return KnowledgeDocumentResponse.from(
-                document,
-                version,
-                job.getStatus()
-        );
-    }
+            audit.record(
+                    user,
+                    user.getOrganizationId(),
+                    AuditEventType.KNOWLEDGE_DOCUMENT_VERSION_UPLOADED,
+                    Map.of(
+                            "documentId",
+                            document.getId().toString(),
+                            "documentVersionId",
+                            documentVersionId.toString(),
+                            "versionNumber",
+                            versionNumber,
+                            "sha256",
+                            version.getSha256()
+                    )
+            );
 
-    private KnowledgeIngestionJobEntity createIngestionJob(
-            KnowledgeDocumentEntity document,
-            UUID documentVersionId,
-            SafeAiUserPrincipal user
-    ) {
-        KnowledgeIngestionJobEntity job =
-                new KnowledgeIngestionJobEntity();
+            return KnowledgeDocumentResponse.from(
+                    document,
+                    version,
+                    job.getStatus()
+            );
+        } catch (RuntimeException exception) {
+            try {
+                storage.delete(storageKey);
+            } catch (IOException ignored) {
+                // Reconciliation removes a possible orphan later.
+            }
 
-        job.setOrganizationId(user.getOrganizationId());
-        job.setKnowledgeBaseId(document.getKnowledgeBaseId());
-        job.setDocumentId(document.getId());
-        job.setDocumentVersionId(documentVersionId);
-        job.setStatus(KnowledgeIngestionStatus.PENDING);
-
-        return jobs.saveAndFlush(job);
+            throw exception;
+        }
     }
 
     private KnowledgeDocumentResponse response(
             KnowledgeDocumentEntity document
     ) {
-        UUID currentVersionId = document.getCurrentVersionId();
-
-        if (currentVersionId == null) {
-            return KnowledgeDocumentResponse.from(
-                    document,
-                    null,
-                    null
-            );
-        }
-
-        KnowledgeDocumentVersionEntity version = versions
-                .findByIdAndDocumentIdAndKnowledgeBaseIdAndOrganizationId(
-                        currentVersionId,
-                        document.getId(),
-                        document.getKnowledgeBaseId(),
-                        document.getOrganizationId()
-                )
-                .orElse(null);
+        KnowledgeDocumentVersionEntity version =
+                document.getCurrentVersionId() == null
+                        ? null
+                        : versions.findById(
+                                document.getCurrentVersionId()
+                        ).orElse(null);
 
         KnowledgeIngestionStatus status = version == null
                 ? null
                 : jobs.findByDocumentVersionIdAndOrganizationId(
-                                version.getId(),
-                                document.getOrganizationId()
-                        )
-                        .map(KnowledgeIngestionJobEntity::getStatus)
+                        version.getId(),
+                        document.getOrganizationId()
+                ).map(KnowledgeIngestionJobEntity::getStatus)
                         .orElse(null);
 
         return KnowledgeDocumentResponse.from(
@@ -427,28 +372,21 @@ public class KnowledgeDocumentService {
         );
     }
 
-    private KnowledgeBaseAccessLevel authorize(
-            UUID kbId,
+    private void authorize(
+            UUID knowledgeBaseId,
             SafeAiUserPrincipal user,
             KnowledgeBaseAccessLevel required
     ) {
-        Objects.requireNonNull(kbId, "kbId не должен быть null");
-        Objects.requireNonNull(user, "user не должен быть null");
-        Objects.requireNonNull(required, "required не должен быть null");
-
-        KnowledgeBaseEntity knowledgeBase = bases
-                .findByIdAndOrganizationId(
-                        kbId,
+        KnowledgeBaseEntity knowledgeBase =
+                bases.findByIdAndOrganizationId(
+                        knowledgeBaseId,
                         user.getOrganizationId()
-                )
-                .orElseThrow(
-                        () -> new ResourceNotFoundException(
-                                "База знаний не найдена."
-                        )
-                );
+                ).orElseThrow(() -> new ResourceNotFoundException(
+                        "База знаний не найдена."
+                ));
 
         if (isAdmin(user)) {
-            return KnowledgeBaseAccessLevel.OWNER;
+            return;
         }
 
         if (!knowledgeBase.isEnabled()) {
@@ -459,7 +397,7 @@ public class KnowledgeDocumentService {
 
         KnowledgeBaseAccessLevel actual = memberships
                 .findByKnowledgeBaseIdAndOrganizationIdAndUserId(
-                        kbId,
+                        knowledgeBaseId,
                         user.getOrganizationId(),
                         user.getId()
                 )
@@ -471,13 +409,24 @@ public class KnowledgeDocumentService {
                                 : null
                 );
 
-        if (actual == null || rank(actual) < rank(required)) {
+        if (actual == null) {
+            if (knowledgeBase.getVisibility()
+                    == KnowledgeBaseVisibility.MEMBERS) {
+                throw new ResourceNotFoundException(
+                        "База знаний не найдена."
+                );
+            }
+
             throw new ForbiddenOperationException(
                     "Недостаточно прав для операции с документом."
             );
         }
 
-        return actual;
+        if (rank(actual) < rank(required)) {
+            throw new ForbiddenOperationException(
+                    "Недостаточно прав для операции с документом."
+            );
+        }
     }
 
     private static int rank(KnowledgeBaseAccessLevel level) {
@@ -491,11 +440,10 @@ public class KnowledgeDocumentService {
     private static boolean isAdmin(SafeAiUserPrincipal user) {
         return user.getAuthorities()
                 .stream()
-                .anyMatch(
-                        authority -> "ROLE_ADMIN".equals(
-                                authority.getAuthority()
-                        )
-                );
+                .anyMatch(authority -> Objects.equals(
+                        "ROLE_ADMIN",
+                        authority.getAuthority()
+                ));
     }
 
     private KnowledgeDocumentEntity requireDocument(
@@ -503,73 +451,55 @@ public class KnowledgeDocumentService {
             UUID documentId,
             UUID organizationId
     ) {
-        return documents
-                .findByIdAndKnowledgeBaseIdAndOrganizationId(
-                        documentId,
-                        knowledgeBaseId,
-                        organizationId
-                )
-                .orElseThrow(
-                        () -> new ResourceNotFoundException(
-                                "Документ не найден."
-                        )
-                );
+        return documents.findByIdAndKnowledgeBaseIdAndOrganizationId(
+                documentId,
+                knowledgeBaseId,
+                organizationId
+        ).orElseThrow(() -> new ResourceNotFoundException(
+                "Документ не найден."
+        ));
     }
 
-    private void validatePage(int page, int size) {
-        if (page < 0) {
-            throw new BadRequestException(
-                    "page не должен быть отрицательным"
-            );
-        }
-
-        if (size < 1 || size > MAX_PAGE_SIZE) {
-            throw new BadRequestException(
-                    "size должен быть в диапазоне 1.."
-                            + MAX_PAGE_SIZE
-            );
-        }
+    private KnowledgeDocumentEntity requireDocumentForUpdate(
+            UUID knowledgeBaseId,
+            UUID documentId,
+            UUID organizationId
+    ) {
+        return documents.findForUpdate(
+                documentId,
+                knowledgeBaseId,
+                organizationId
+        ).orElseThrow(() -> new ResourceNotFoundException(
+                "Документ не найден."
+        ));
     }
 
-    private void registerRollbackCleanup(String storageKey) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            deleteStoredObjectQuietly(storageKey);
-            throw new IllegalStateException(
-                    "Загрузка документа должна выполняться внутри транзакции"
+    private static String normalizeName(String value) {
+        if (value == null) {
+            throw new BadRequestException(
+                    "Введите название документа."
             );
         }
 
-        TransactionSynchronizationManager.registerSynchronization(
-                new TransactionSynchronization() {
-                    @Override
-                    public void afterCompletion(int status) {
-                        if (status != STATUS_COMMITTED) {
-                            deleteStoredObjectQuietly(storageKey);
-                        }
-                    }
-                }
+        String normalized = value.strip();
+
+        if (normalized.isEmpty()
+                || normalized.length() > 255
+                || normalized.chars().anyMatch(
+                        Character::isISOControl
+                )) {
+            throw new BadRequestException(
+                    "Некорректное название документа."
+            );
+        }
+
+        return normalized;
+    }
+
+    private ConflictException duplicateDocumentName() {
+        return new ConflictException(
+                "Документ с таким названием уже существует."
         );
-    }
-
-    private void deleteStoredObjectQuietly(String storageKey) {
-        try {
-            storage.delete(storageKey);
-        } catch (IOException exception) {
-            log.error(
-                    "Не удалось удалить объект после rollback: storageKey={}",
-                    storageKey,
-                    exception
-            );
-        }
-    }
-
-    private static void closeQuietly(StoredObject object) {
-        try {
-            InputStream stream = object.resource().getInputStream();
-            stream.close();
-        } catch (IOException ignored) {
-            // Основное исключение важнее ошибки закрытия потока.
-        }
     }
 
     public record Download(

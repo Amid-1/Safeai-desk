@@ -20,6 +20,7 @@ import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
+import ru.safeai.gateway.knowledge.rag.AnswerPassportService;
 
 import java.time.Duration;
 import java.util.Optional;
@@ -43,6 +44,7 @@ class ChatTurnFinalizationServiceTest {
     @Mock ChatQuotaService quotaService;
     @Mock AuditEventService auditEventService;
     @Mock ChatMetrics metrics;
+    @Mock AnswerPassportService answerPassportService;
 
     private ChatTurnFinalizationService service;
     private ChatProcessingContext context;
@@ -60,7 +62,8 @@ class ChatTurnFinalizationServiceTest {
                 auditEventService,
                 new ChatMapper(),
                 metrics,
-                ChatTestFixtures.CLOCK
+                ChatTestFixtures.CLOCK,
+                answerPassportService
         );
         context = context();
         session = ChatTestFixtures.session();

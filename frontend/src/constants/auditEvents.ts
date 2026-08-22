@@ -2,6 +2,7 @@ export const AUDIT_EVENT_TYPES = [
     'USER_LOGIN_SUCCESS',
     'USER_LOGIN_FAILED',
     'CHAT_CREATED',
+    'CHAT_ARCHIVED',
     'CHAT_MESSAGE_SENT',
     'AI_RESPONSE_RECEIVED',
     'AI_RESPONSE_FAILED',
@@ -22,6 +23,14 @@ export const AUDIT_EVENT_TYPES = [
     'KNOWLEDGE_BASE_MEMBER_ADDED',
     'KNOWLEDGE_BASE_MEMBER_UPDATED',
     'KNOWLEDGE_BASE_MEMBER_REMOVED',
+    'KNOWLEDGE_DOCUMENT_CREATED',
+    'KNOWLEDGE_DOCUMENT_VERSION_UPLOADED',
+    'KNOWLEDGE_DOCUMENT_DOWNLOADED',
+    'KNOWLEDGE_INGESTION_READY',
+    'KNOWLEDGE_INGESTION_FAILED',
+    'KNOWLEDGE_RETRIEVAL_COMPLETED',
+    'KNOWLEDGE_ANSWER_GENERATED',
+    'KNOWLEDGE_REINDEX_REQUESTED',
 ] as const
 
 export type AuditEventType =
@@ -37,6 +46,9 @@ const AUDIT_EVENT_TYPE_LABELS:
 
     CHAT_CREATED:
         'Создан чат',
+
+    CHAT_ARCHIVED:
+        'Чат убран из списка',
 
     CHAT_MESSAGE_SENT:
         'Отправлено сообщение',
@@ -97,6 +109,30 @@ const AUDIT_EVENT_TYPE_LABELS:
 
     KNOWLEDGE_BASE_MEMBER_REMOVED:
         'Удалён участник базы знаний',
+
+    KNOWLEDGE_DOCUMENT_CREATED:
+        'Загружен документ',
+
+    KNOWLEDGE_DOCUMENT_VERSION_UPLOADED:
+        'Загружена версия документа',
+
+    KNOWLEDGE_DOCUMENT_DOWNLOADED:
+        'Скачан документ',
+
+    KNOWLEDGE_INGESTION_READY:
+        'Документ готов для поиска',
+
+    KNOWLEDGE_INGESTION_FAILED:
+        'Ошибка обработки документа',
+
+    KNOWLEDGE_RETRIEVAL_COMPLETED:
+        'Выполнен поиск по знаниям',
+
+    KNOWLEDGE_ANSWER_GENERATED:
+        'Сформирован ответ по знаниям',
+
+    KNOWLEDGE_REINDEX_REQUESTED:
+        'Запущена повторная индексация',
 }
 
 export function getAuditEventTypeLabel(

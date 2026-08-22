@@ -14,11 +14,22 @@ function KnowledgePagination({
     disabled = false,
     onPageChange,
 }: KnowledgePaginationProps) {
-    if (
-        totalPages <= 1
-        && totalElements === 0
-    ) {
+    if (totalElements === 0) {
         return null
+    }
+
+    if (totalPages <= 1) {
+        return (
+            <nav
+                className="pagination pagination--single"
+                aria-label="Сведения о списке баз знаний"
+            >
+                <div className="pagination__summary">
+                    <strong>Все базы показаны</strong>
+                    <span>Всего: {totalElements}</span>
+                </div>
+            </nav>
+        )
     }
 
     return (

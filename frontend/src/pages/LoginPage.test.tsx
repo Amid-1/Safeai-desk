@@ -27,7 +27,7 @@ const authMock = vi.hoisted(() => ({
     reloadCurrentUser: vi.fn(),
 }))
 
-vi.mock('../auth/AuthContext', () => ({
+vi.mock('../auth/useAuth', () => ({
     useAuth: () => authMock,
 }))
 

@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/api/chatApi.test.ts
+// ============================================================
 import {
     beforeEach,
     describe,
@@ -6,6 +9,7 @@ import {
     vi,
 } from 'vitest'
 import {
+    archiveChat,
     getChatTurnStatus,
     getChats,
     parseChatMessage,
@@ -16,7 +20,7 @@ import {
     apiRequest,
 } from './http'
 
-vi.mock('../http', async (importOriginal) => {
+vi.mock('./http', async (importOriginal) => {
     const actual =
         await importOriginal<
             typeof import('./http')
@@ -119,6 +123,19 @@ describe('chatApi production contract', () => {
         expect(response.content).toHaveLength(1)
         expect(response.hasNext).toBe(false)
         expect(response.page).toBe(0)
+    })
+
+    it('archives a chat through the tenant-scoped endpoint', async () => {
+        requestMock.mockResolvedValue(undefined)
+
+        await archiveChat(CHAT_ID)
+
+        expect(requestMock).toHaveBeenCalledWith(
+            `/api/chats/${CHAT_ID}`,
+            expect.objectContaining({
+                method: 'DELETE',
+            }),
+        )
     })
 
     it('sendMessage parses SendMessageResponse, not ChatDetails', async () => {

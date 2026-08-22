@@ -1,6 +1,7 @@
 import {
     useCallback,
     useEffect,
+    useRef,
     useState,
 } from 'react'
 import {
@@ -15,12 +16,15 @@ import type {
 } from '../api/knowledgeApi'
 import {
     getKnowledgeDocuments,
+    getKnowledgeHealth,
     knowledgeDocumentDownloadUrl,
+    reindexKnowledgeDocument,
     uploadKnowledgeDocument,
     uploadKnowledgeDocumentVersion,
 } from '../api/knowledgeDocumentApi'
 import type {
     KnowledgeDocument,
+    KnowledgeHealth,
     KnowledgeIngestionStatus,
 } from '../api/knowledgeDocumentApi'
 import {
@@ -97,6 +101,10 @@ function KnowledgeDetailsPage() {
         [],
     )
 
+    const [health, setHealth] = useState<KnowledgeHealth | null>(null)
+    const [reindexingDocumentId, setReindexingDocumentId] = useState('')
+    const documentsSectionRef = useRef<HTMLElement | null>(null)
+
     const [
         loading,
         setLoading,
@@ -154,6 +162,7 @@ function KnowledgeDetailsPage() {
                 const [
                     knowledgeBase,
                     page,
+                    knowledgeHealth,
                 ] = await Promise.all([
                     getKnowledgeBase(
                         knowledgeBaseId,
@@ -167,12 +176,17 @@ function KnowledgeDetailsPage() {
                         100,
                         signal,
                     ),
+                    getKnowledgeHealth(
+                        knowledgeBaseId,
+                        signal,
+                    ),
                 ])
 
                 setBase(knowledgeBase)
                 setDocuments(
                     page.content,
                 )
+                setHealth(knowledgeHealth)
             },
             [knowledgeBaseId],
         )
@@ -181,14 +195,16 @@ function KnowledgeDetailsPage() {
         const controller =
             new AbortController()
 
-        setLoading(true)
-        setError('')
-
-        load(
-            controller.signal,
-        )
-            .catch(
-                (loadError) => {
+        queueMicrotask(() => {
+            if (controller.signal.aborted) {
+                return
+            }
+            setLoading(true)
+            setError('')
+            void load(
+                controller.signal,
+            )
+                .catch((loadError) => {
                     if (
                         !controller.signal.aborted
                     ) {
@@ -199,15 +215,15 @@ function KnowledgeDetailsPage() {
                             ),
                         )
                     }
-                },
-            )
-            .finally(() => {
-                if (
-                    !controller.signal.aborted
-                ) {
-                    setLoading(false)
-                }
-            })
+                })
+                .finally(() => {
+                    if (
+                        !controller.signal.aborted
+                    ) {
+                        setLoading(false)
+                    }
+                })
+        })
 
         return () =>
             controller.abort()
@@ -383,6 +399,25 @@ function KnowledgeDetailsPage() {
         }
     }
 
+    async function requestReindex(document: KnowledgeDocument) {
+        if (reindexingDocumentId || !base?.enabled) {
+            return
+        }
+        setReindexingDocumentId(document.id)
+        setError('')
+        try {
+            await reindexKnowledgeDocument(knowledgeBaseId, document.id)
+            await load()
+        } catch (reindexFailure) {
+            setError(getApiErrorMessage(
+                reindexFailure,
+                'Не удалось запустить переиндексацию документа.',
+            ))
+        } finally {
+            setReindexingDocumentId('')
+        }
+    }
+
     if (loading) {
         return (
             <LoadingState
@@ -441,13 +476,19 @@ function KnowledgeDetailsPage() {
                     </p>
 
                     <div className="knowledge-details__summary">
-                        <span>
-                            Документов:
-                            {' '}
-                            <strong>
-                                {documents.length}
-                            </strong>
-                        </span>
+                        <button
+                            type="button"
+                            className="knowledge-details__documents-link"
+                            onClick={() =>
+                                documentsSectionRef.current?.scrollIntoView({
+                                    behavior: 'smooth',
+                                    block: 'start',
+                                })
+                            }
+                        >
+                            Документы
+                            <strong>{documents.length}</strong>
+                        </button>
 
                         <span
                             className={
@@ -492,6 +533,33 @@ function KnowledgeDetailsPage() {
                 </div>
             )}
 
+            {health && (
+                <section
+                    className={`knowledge-health knowledge-health--${health.state.toLowerCase()}`}
+                    aria-label="Готовность базы знаний к ответам AI"
+                >
+                    <div>
+                        <span className="knowledge-health__eyebrow">Готовность базы к поиску</span>
+                        <strong>{healthStateLabel(health.state)}</strong>
+                        <small>
+                            {embeddingModelLabel(health.activeEmbeddingModel)}
+                            {' · '}
+                            <code>{health.activeEmbeddingModel}</code>
+                        </small>
+                        <p>
+                            Документы подготовлены для полнотекстового и смыслового
+                            поиска, который подбирает источники для ответа AI.
+                        </p>
+                    </div>
+                    <dl>
+                        <HealthMetric label="Готовы к поиску" value={`${health.searchableDocuments} из ${health.enabledDocuments}`} hint="документов" />
+                        <HealthMetric label="Фрагменты для AI" value={health.activeChunks} hint="частей документов" />
+                        <HealthMetric label="Обрабатываются" value={health.pendingDocuments + health.processingDocuments} hint="документов" />
+                        <HealthMetric label="Ошибки обработки" value={health.failedDocuments + health.staleEmbeddingDocuments} hint="нужна проверка" />
+                    </dl>
+                </section>
+            )}
+
             {error && (
                 <ErrorState
                     message={error}
@@ -508,25 +576,44 @@ function KnowledgeDetailsPage() {
                 />
             )}
 
-            {!error
-                && documents.length === 0
-                && (
-                    <EmptyState
-                        title="Документов пока нет"
-                        message="Загрузите первый корпоративный документ. Поддерживаются PDF, DOCX, TXT, HTML, MD, CSV, XLSX, PPTX, JSON и XML до 25 МБ."
-                    />
-                )}
+            {!error && (
+                <section
+                    ref={documentsSectionRef}
+                    id="knowledge-documents"
+                    className="knowledge-documents-section"
+                    aria-labelledby="knowledge-documents-title"
+                >
+                    <div className="knowledge-documents-section__header">
+                        <div>
+                            <span>Содержимое базы</span>
+                            <h2 id="knowledge-documents-title">Загруженные документы</h2>
+                            <p>
+                                Здесь видны текущие версии, готовность к поиску и
+                                доступные действия с файлами.
+                            </p>
+                        </div>
+                        <strong aria-label={`${documents.length} документов`}>
+                            {documents.length}
+                        </strong>
+                    </div>
 
-            {documents.length > 0 && (
-                <div className="table-wrapper knowledge-documents-card">
-                    <table className="knowledge-documents">
+                    {documents.length === 0 && (
+                        <EmptyState
+                            title="Документов пока нет"
+                            message="Загрузите первый корпоративный документ. Поддерживаются PDF, DOCX, TXT, HTML, MD, CSV, XLSX, PPTX, JSON и XML до 25 МБ."
+                        />
+                    )}
+
+                    {documents.length > 0 && (
+                        <div className="table-wrapper knowledge-documents-card">
+                            <table className="knowledge-documents">
                         <thead>
                             <tr>
                                 <th>
                                     Название
                                 </th>
                                 <th>
-                                    Версия
+                                    Версия файла
                                 </th>
                                 <th>
                                     Статус
@@ -678,6 +765,21 @@ function KnowledgeDetailsPage() {
                                                         >
                                                             Новая версия
                                                         </button>
+
+                                                        <button
+                                                            type="button"
+                                                            className="secondary-button document-reindex-button"
+                                                            disabled={
+                                                                busy
+                                                                || !base.enabled
+                                                                || reindexingDocumentId === document.id
+                                                                || !document.currentVersionId
+                                                            }
+                                                            title="Повторно извлечь текст, создать chunks и embeddings для текущей версии"
+                                                            onClick={() => void requestReindex(document)}
+                                                        >
+                                                            {reindexingDocumentId === document.id ? 'Запускаем…' : 'Переиндексировать'}
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -686,8 +788,10 @@ function KnowledgeDetailsPage() {
                                 )
                             }
                         </tbody>
-                    </table>
-                </div>
+                            </table>
+                        </div>
+                    )}
+                </section>
             )}
 
             {uploadTarget && (
@@ -858,6 +962,39 @@ function KnowledgeDetailsPage() {
                     </div>
                 </Modal>
             )}
+        </div>
+    )
+}
+
+function healthStateLabel(state: KnowledgeHealth['state']): string {
+    switch (state) {
+        case 'HEALTHY': return 'База готова к ответам'
+        case 'INDEXING': return 'Документы подготавливаются'
+        case 'DEGRADED': return 'Некоторые документы требуют внимания'
+        default: return 'Документов пока нет'
+    }
+}
+
+function embeddingModelLabel(model: string): string {
+    return model === 'safeai-feature-hash-v1'
+        ? 'Демонстрационная векторизация'
+        : 'Модель смыслового поиска'
+}
+
+function HealthMetric({
+    label,
+    value,
+    hint,
+}: {
+    label: string
+    value: string | number
+    hint?: string
+}) {
+    return (
+        <div>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+            {hint && <small>{hint}</small>}
         </div>
     )
 }

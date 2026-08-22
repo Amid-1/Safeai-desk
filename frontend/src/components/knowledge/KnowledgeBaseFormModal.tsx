@@ -72,7 +72,6 @@ function KnowledgeBaseFormModal({
 
     const submitDisabled =
         busy
-        || submitInFlightRef.current
         || normalizedName.length === 0
 
     async function submitForm():
@@ -275,40 +274,71 @@ function KnowledgeBaseFormModal({
                     />
                 </label>
 
-                <label
-                    htmlFor={
-                        'knowledge-base-visibility'
-                    }
-                >
-                    Доступ
+                <fieldset className="knowledge-visibility-picker">
+                    <legend>
+                        Кто может использовать базу
+                    </legend>
 
-                    <select
-                        id={
-                            'knowledge-base-visibility'
-                        }
-                        value={
-                            form.visibility
-                        }
-                        disabled={busy}
-                        onChange={(event) =>
-                            updateVisibility(
-                                event.target.value,
-                            )
+                    <p>
+                        Доступ действует только внутри вашей организации.
+                        Пользователи других организаций никогда не добавляются
+                        автоматически.
+                    </p>
+
+                    <label
+                        className={
+                            form.visibility === 'ORGANIZATION'
+                                ? 'knowledge-visibility-option knowledge-visibility-option--selected'
+                                : 'knowledge-visibility-option'
                         }
                     >
-                        <option
+                        <input
+                            type="radio"
+                            name="knowledge-base-visibility"
                             value="ORGANIZATION"
-                        >
-                            Вся организация
-                        </option>
+                            checked={form.visibility === 'ORGANIZATION'}
+                            disabled={busy}
+                            onChange={(event) =>
+                                updateVisibility(event.target.value)
+                            }
+                        />
 
-                        <option
+                        <span>
+                            <strong>Все сотрудники организации</strong>
+                            <small>
+                                Любой активный сотрудник вашей организации может
+                                находить и использовать эту базу в AI-чате.
+                            </small>
+                        </span>
+                    </label>
+
+                    <label
+                        className={
+                            form.visibility === 'MEMBERS'
+                                ? 'knowledge-visibility-option knowledge-visibility-option--selected'
+                                : 'knowledge-visibility-option'
+                        }
+                    >
+                        <input
+                            type="radio"
+                            name="knowledge-base-visibility"
                             value="MEMBERS"
-                        >
-                            Только участники
-                        </option>
-                    </select>
-                </label>
+                            checked={form.visibility === 'MEMBERS'}
+                            disabled={busy}
+                            onChange={(event) =>
+                                updateVisibility(event.target.value)
+                            }
+                        />
+
+                        <span>
+                            <strong>Только приглашённые сотрудники</strong>
+                            <small>
+                                Базу видят только сотрудники, которых добавили
+                                на вкладке «Доступ».
+                            </small>
+                        </span>
+                    </label>
+                </fieldset>
 
                 {allowEnabled && (
                     <label

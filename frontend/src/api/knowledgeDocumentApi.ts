@@ -14,7 +14,9 @@ import {
 import type {PageResponse} from '../utils/page'
 
 const STATUSES = ['PENDING', 'VALIDATING', 'EXTRACTING', 'READY', 'FAILED'] as const
+const HEALTH_STATES = ['EMPTY', 'HEALTHY', 'INDEXING', 'DEGRADED'] as const
 export type KnowledgeIngestionStatus = typeof STATUSES[number]
+export type KnowledgeHealthState = typeof HEALTH_STATES[number]
 export type KnowledgeDocument = {
     id: string;
     knowledgeBaseId: string;
@@ -29,6 +31,30 @@ export type KnowledgeDocument = {
     status: KnowledgeIngestionStatus | null;
     createdAt: string;
     updatedAt: string
+}
+
+export type KnowledgeHealth = {
+    knowledgeBaseId: string
+    state: KnowledgeHealthState
+    activeEmbeddingModel: string
+    totalDocuments: number
+    enabledDocuments: number
+    searchableDocuments: number
+    pendingDocuments: number
+    processingDocuments: number
+    failedDocuments: number
+    staleEmbeddingDocuments: number
+    activeChunks: number
+    checkedAt: string
+}
+
+export type KnowledgeReindexResult = {
+    knowledgeBaseId: string
+    documentId: string
+    documentVersionId: string
+    ingestionJobId: string
+    status: string
+    requestedAt: string
 }
 
 const path = (kb: string) => `/api/knowledge-bases/${uuidPathSegment(kb)}/documents`
@@ -64,6 +90,108 @@ export async function uploadKnowledgeDocumentVersion(kb: string, documentId: str
 
 export function knowledgeDocumentDownloadUrl(kb: string, documentId: string): string {
     return `${path(kb)}/${uuidPathSegment(documentId)}/download`
+}
+
+export async function getKnowledgeHealth(
+    kb: string,
+    signal?: AbortSignal,
+): Promise<KnowledgeHealth> {
+    const value = await apiRequest<unknown>(`${path(kb)}/health`, {
+        method: 'GET',
+        signal,
+        timeoutMs: API_TIMEOUTS.default,
+    })
+    const record = expectRecord(value, 'knowledgeHealth')
+    return {
+        knowledgeBaseId: expectUuid(
+            record.knowledgeBaseId,
+            'knowledgeHealth.knowledgeBaseId',
+        ),
+        state: expectEnum(
+            record.state,
+            'knowledgeHealth.state',
+            HEALTH_STATES,
+        ),
+        activeEmbeddingModel: expectString(
+            record.activeEmbeddingModel,
+            'knowledgeHealth.activeEmbeddingModel',
+            {maxLength: 255},
+        ),
+        totalDocuments: expectNonNegativeInteger(
+            record.totalDocuments,
+            'knowledgeHealth.totalDocuments',
+        ),
+        enabledDocuments: expectNonNegativeInteger(
+            record.enabledDocuments,
+            'knowledgeHealth.enabledDocuments',
+        ),
+        searchableDocuments: expectNonNegativeInteger(
+            record.searchableDocuments,
+            'knowledgeHealth.searchableDocuments',
+        ),
+        pendingDocuments: expectNonNegativeInteger(
+            record.pendingDocuments,
+            'knowledgeHealth.pendingDocuments',
+        ),
+        processingDocuments: expectNonNegativeInteger(
+            record.processingDocuments,
+            'knowledgeHealth.processingDocuments',
+        ),
+        failedDocuments: expectNonNegativeInteger(
+            record.failedDocuments,
+            'knowledgeHealth.failedDocuments',
+        ),
+        staleEmbeddingDocuments: expectNonNegativeInteger(
+            record.staleEmbeddingDocuments,
+            'knowledgeHealth.staleEmbeddingDocuments',
+        ),
+        activeChunks: expectNonNegativeInteger(
+            record.activeChunks,
+            'knowledgeHealth.activeChunks',
+        ),
+        checkedAt: expectInstant(
+            record.checkedAt,
+            'knowledgeHealth.checkedAt',
+        ),
+    }
+}
+
+export async function reindexKnowledgeDocument(
+    kb: string,
+    documentId: string,
+): Promise<KnowledgeReindexResult> {
+    const value = await apiRequest<unknown>(
+        `${path(kb)}/${uuidPathSegment(documentId)}/reindex`,
+        {method: 'POST', timeoutMs: API_TIMEOUTS.default},
+    )
+    const record = expectRecord(value, 'knowledgeReindex')
+    return {
+        knowledgeBaseId: expectUuid(
+            record.knowledgeBaseId,
+            'knowledgeReindex.knowledgeBaseId',
+        ),
+        documentId: expectUuid(
+            record.documentId,
+            'knowledgeReindex.documentId',
+        ),
+        documentVersionId: expectUuid(
+            record.documentVersionId,
+            'knowledgeReindex.documentVersionId',
+        ),
+        ingestionJobId: expectUuid(
+            record.ingestionJobId,
+            'knowledgeReindex.ingestionJobId',
+        ),
+        status: expectString(
+            record.status,
+            'knowledgeReindex.status',
+            {maxLength: 32},
+        ),
+        requestedAt: expectInstant(
+            record.requestedAt,
+            'knowledgeReindex.requestedAt',
+        ),
+    }
 }
 
 export function parseKnowledgeDocument(value: unknown, field = 'document'): KnowledgeDocument {

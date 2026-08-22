@@ -1,241 +1,159 @@
 package ru.safeai.gateway.knowledge.integration;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import ru.safeai.gateway.audit.service.AuditOutboxScheduler;
 import ru.safeai.gateway.testsupport.AbstractPostgresIntegrationTest;
 
-import java.util.List;
-import java.util.Map;
+import java.time.Instant;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SuppressWarnings({
-        "SqlResolve",
-        "SqlNoDataSourceInspection"
+@SpringBootTest(properties = {
+        "safeai.rate-limit.ai-messages.enabled=false"
 })
-@SpringBootTest
 @ActiveProfiles("test")
 class KnowledgeMigrationIntegrityIntegrationTest
         extends AbstractPostgresIntegrationTest {
 
-    private static final String NOT_NULL = "NO";
-
-    @Autowired
-    private JdbcTemplate knowledgeJdbcTemplate;
-
-    @MockitoBean
-    private AuditOutboxScheduler auditOutboxScheduler;
-
     @Test
-    void requiredKnowledgeTablesExist() {
-        List<String> tables =
-                knowledgeJdbcTemplate.queryForList(
-                        """
-                        select table_name
-                        from information_schema.tables
-                        where table_schema = 'public'
-                          and table_name in (
-                              'knowledge_bases',
-                              'knowledge_base_memberships',
-                              'knowledge_documents',
-                              'knowledge_document_versions',
-                              'knowledge_ingestion_jobs'
-                          )
-                        order by table_name
-                        """,
-                        String.class
-                );
-
-        assertThat(tables)
-                .containsExactlyInAnyOrder(
-                        "knowledge_bases",
-                        "knowledge_base_memberships",
-                        "knowledge_documents",
-                        "knowledge_document_versions",
-                        "knowledge_ingestion_jobs"
-                );
-    }
-
-    @Test
-    void documentVersionIntegrityColumnsHaveExpectedShape() {
-        List<Map<String, Object>> rows =
-                knowledgeJdbcTemplate.queryForList(
-                        """
-                        select
-                            column_name,
-                            is_nullable,
-                            character_maximum_length
-                        from information_schema.columns
-                        where table_schema = 'public'
-                          and table_name = 'knowledge_document_versions'
-                          and column_name in (
-                              'original_filename',
-                              'media_type',
-                              'sha256',
-                              'storage_key'
-                          )
-                        """
-                );
-
-        assertThat(rows).hasSize(4);
-
-        assertRequiredVarcharColumn(
-                rows,
-                "original_filename",
-                255
+    void ingestionJobMustReferenceTheExactDocumentVersionIdentity() {
+        UUID userId = UUID.randomUUID();
+        insertUser(
+                userId,
+                PLATFORM_ORGANIZATION_ID,
+                "knowledge-integrity@example.test",
+                true,
+                "ADMIN",
+                Instant.now()
         );
 
-        assertRequiredVarcharColumn(
-                rows,
-                "media_type",
-                127
-        );
+        UUID knowledgeBaseId = UUID.randomUUID();
+        UUID firstDocumentId = UUID.randomUUID();
+        UUID secondDocumentId = UUID.randomUUID();
+        UUID versionId = UUID.randomUUID();
 
-        assertRequiredVarcharColumn(
-                rows,
-                "sha256",
-                64
-        );
+        insertKnowledgeBase(knowledgeBaseId, userId);
+        insertDocument(firstDocumentId, knowledgeBaseId, userId, "First");
+        insertDocument(secondDocumentId, knowledgeBaseId, userId, "Second");
+        insertVersion(versionId, firstDocumentId, knowledgeBaseId, userId);
 
-        assertRequiredVarcharColumn(
-                rows,
-                "storage_key",
-                1024
-        );
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into knowledge_ingestion_jobs (
+                    id, organization_id, knowledge_base_id, document_id,
+                    document_version_id, status, attempt, version
+                ) values (?, ?, ?, ?, ?, 'PENDING', 0, 0)
+                """,
+                UUID.randomUUID(),
+                PLATFORM_ORGANIZATION_ID,
+                knowledgeBaseId,
+                secondDocumentId,
+                versionId
+        )).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
-    void knowledgeBaseNameAndMembershipUniqueInvariantsExist() {
-        Integer nameIndex =
-                knowledgeJdbcTemplate.queryForObject(
-                        """
-                        select count(*)
-                        from pg_indexes
-                        where schemaname = 'public'
-                          and indexname = 'ux_knowledge_bases_org_name_lower'
-                        """,
-                        Integer.class
-                );
+    void versionIdentityConstraintIsValidated() {
+        Boolean validated = jdbcTemplate.queryForObject("""
+                select convalidated
+                from pg_constraint
+                where conname = 'fk_knowledge_ingestion_jobs_version_identity'
+                """, Boolean.class);
 
-        Integer membershipConstraint =
-                knowledgeJdbcTemplate.queryForObject(
-                        """
-                        select count(*)
-                        from pg_constraint
-                        where conname = 'uq_knowledge_base_memberships_kb_user'
-                        """,
-                        Integer.class
-                );
-
-        assertThat(nameIndex).isEqualTo(1);
-        assertThat(membershipConstraint).isEqualTo(1);
+        assertThat(validated).isTrue();
     }
 
     @Test
-    void documentVersionImmutabilityTriggerIsInstalled() {
-        Integer triggerCount =
-                knowledgeJdbcTemplate.queryForObject(
-                        """
-                        select count(*)
-                        from pg_trigger trigger
-                        join pg_class relation
-                          on relation.oid = trigger.tgrelid
-                        join pg_namespace namespace
-                          on namespace.oid = relation.relnamespace
-                        where namespace.nspname = 'public'
-                          and relation.relname = 'knowledge_document_versions'
-                          and not trigger.tgisinternal
-                        """,
-                        Integer.class
-                );
-
-        assertThat(triggerCount)
-                .isNotNull()
-                .isGreaterThanOrEqualTo(1);
-    }
-
-    @Test
-    void criticalKnowledgeForeignKeysArePresent() {
-        List<String> foreignKeyTables =
-                knowledgeJdbcTemplate.queryForList(
-                        """
-                        select distinct relation.relname
-                        from pg_constraint constraint_row
-                        join pg_class relation
-                          on relation.oid = constraint_row.conrelid
-                        join pg_namespace namespace
-                          on namespace.oid = relation.relnamespace
-                        where constraint_row.contype = 'f'
-                          and namespace.nspname = 'public'
-                          and relation.relname in (
-                              'knowledge_base_memberships',
-                              'knowledge_documents',
-                              'knowledge_document_versions',
-                              'knowledge_ingestion_jobs'
-                          )
-                        """,
-                        String.class
-                );
-
-        assertThat(foreignKeyTables)
-                .contains(
-                        "knowledge_base_memberships",
-                        "knowledge_documents",
-                        "knowledge_document_versions",
-                        "knowledge_ingestion_jobs"
-                );
-    }
-
-    private static void assertRequiredVarcharColumn(
-            List<Map<String, Object>> rows,
-            String columnName,
-            int maxLength
-    ) {
-        Map<String, Object> row =
-                findColumn(
-                        rows,
-                        columnName
-                );
-
-        assertThat(row.get("is_nullable"))
-                .as("%s must be NOT NULL", columnName)
-                .isEqualTo(NOT_NULL);
-
-        assertThat(row.get("character_maximum_length"))
-                .as("%s max length", columnName)
-                .isInstanceOf(Number.class);
-
-        assertThat(
-                ((Number) row.get(
-                        "character_maximum_length"
-                )).intValue()
-        )
-                .as("%s max length", columnName)
-                .isEqualTo(maxLength);
-    }
-
-    private static Map<String, Object> findColumn(
-            List<Map<String, Object>> rows,
-            String columnName
-    ) {
-        return rows.stream()
-                .filter(
-                        row ->
-                                columnName.equals(
-                                        row.get("column_name")
-                                )
+    void ragProvenanceConstraintsArePresentAndValidated() {
+        var constraints = jdbcTemplate.queryForList("""
+                select conname
+                from pg_constraint
+                where conname in (
+                    'fk_knowledge_retrieval_runs_chat_turn',
+                    'fk_knowledge_answer_passports_turn',
+                    'fk_knowledge_answer_passports_retrieval',
+                    'fk_knowledge_answer_citations_hit'
                 )
-                .findFirst()
-                .orElseThrow(
-                        () -> new AssertionError(
-                                "Column not found: "
-                                        + columnName
-                        )
-                );
+                  and convalidated
+                order by conname
+                """, String.class);
+
+        assertThat(constraints).containsExactlyInAnyOrder(
+                "fk_knowledge_retrieval_runs_chat_turn",
+                "fk_knowledge_answer_passports_turn",
+                "fk_knowledge_answer_passports_retrieval",
+                "fk_knowledge_answer_citations_hit"
+        );
+    }
+
+    @Test
+    void reindexUsesNonNullableCopyOnWriteGenerations() {
+        Integer nonNullableColumns = jdbcTemplate.queryForObject("""
+                select count(*)
+                from information_schema.columns
+                where table_schema = 'public'
+                  and column_name = 'index_generation'
+                  and table_name in (
+                      'knowledge_ingestion_jobs',
+                      'knowledge_document_chunks'
+                  )
+                  and is_nullable = 'NO'
+                """, Integer.class);
+
+        assertThat(nonNullableColumns).isEqualTo(2);
+    }
+
+    private void insertKnowledgeBase(UUID knowledgeBaseId, UUID userId) {
+        jdbcTemplate.update("""
+                insert into knowledge_bases (
+                    id, organization_id, name, visibility, enabled,
+                    created_by_user_id, version
+                ) values (?, ?, 'Knowledge integrity test', 'ORGANIZATION', true, ?, 0)
+                """, knowledgeBaseId, PLATFORM_ORGANIZATION_ID, userId);
+    }
+
+    private void insertDocument(
+            UUID documentId,
+            UUID knowledgeBaseId,
+            UUID userId,
+            String name
+    ) {
+        jdbcTemplate.update("""
+                insert into knowledge_documents (
+                    id, organization_id, knowledge_base_id, name, enabled,
+                    created_by_user_id, version
+                ) values (?, ?, ?, ?, true, ?, 0)
+                """,
+                documentId,
+                PLATFORM_ORGANIZATION_ID,
+                knowledgeBaseId,
+                name,
+                userId);
+    }
+
+    private void insertVersion(
+            UUID versionId,
+            UUID documentId,
+            UUID knowledgeBaseId,
+            UUID userId
+    ) {
+        jdbcTemplate.update("""
+                insert into knowledge_document_versions (
+                    id, organization_id, knowledge_base_id, document_id,
+                    version_number, original_filename, media_type, size_bytes,
+                    sha256, storage_key, created_by_user_id
+                ) values (?, ?, ?, ?, 1, 'source.txt', 'text/plain', 1,
+                          ?, ?, ?)
+                """,
+                versionId,
+                PLATFORM_ORGANIZATION_ID,
+                knowledgeBaseId,
+                documentId,
+                "0".repeat(64),
+                "knowledge-integrity/" + versionId,
+                userId);
     }
 }
