@@ -1,16 +1,36 @@
 package ru.safeai.gateway.knowledge.controller;
 
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
-import org.springframework.http.*;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.InvalidMediaTypeException;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.knowledge.dto.*;
+import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentPageResponse;
+import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentResponse;
+import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentVersionPageResponse;
+import ru.safeai.gateway.knowledge.dto.KnowledgeHealthResponse;
+import ru.safeai.gateway.knowledge.dto.KnowledgeReindexResponse;
+import ru.safeai.gateway.knowledge.dto.UpdateKnowledgeDocumentRequest;
 import ru.safeai.gateway.knowledge.service.KnowledgeDocumentService;
 import ru.safeai.gateway.knowledge.service.KnowledgeOperationsService;
 
@@ -23,15 +43,20 @@ import java.util.UUID;
 @RequestMapping("/api/knowledge-bases/{knowledgeBaseId}/documents")
 @PreAuthorize("hasAnyRole('ADMIN','USER')")
 public class KnowledgeDocumentController {
+
     private final KnowledgeDocumentService service;
     private final KnowledgeOperationsService operations;
 
     @GetMapping("/health")
     public KnowledgeHealthResponse health(
             @PathVariable UUID knowledgeBaseId,
-            @AuthenticationPrincipal SafeAiUserPrincipal user
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal user
     ) {
-        return operations.health(knowledgeBaseId, user);
+        return operations.health(
+                knowledgeBaseId,
+                user
+        );
     }
 
     @PostMapping("/{documentId}/reindex")
@@ -39,76 +64,197 @@ public class KnowledgeDocumentController {
     public KnowledgeReindexResponse reindex(
             @PathVariable UUID knowledgeBaseId,
             @PathVariable UUID documentId,
-            @AuthenticationPrincipal SafeAiUserPrincipal user
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal user
     ) {
-        return operations.reindex(knowledgeBaseId, documentId, user);
+        return operations.reindex(
+                knowledgeBaseId,
+                documentId,
+                user
+        );
     }
 
     @GetMapping
     public KnowledgeDocumentPageResponse list(
             @PathVariable UUID knowledgeBaseId,
             @RequestParam(defaultValue = "0")
-            @Min(0) int page,
+            @Min(0)
+            int page,
             @RequestParam(defaultValue = "50")
             @Min(1)
-            @Max(100) int size,
-            @AuthenticationPrincipal SafeAiUserPrincipal user) {
-        return service.list(knowledgeBaseId, user, page, size);
+            @Max(100)
+            int size,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal user
+    ) {
+        return service.list(
+                knowledgeBaseId,
+                user,
+                page,
+                size
+        );
     }
 
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @GetMapping("/{documentId}/versions")
+    public KnowledgeDocumentVersionPageResponse listVersions(
+            @PathVariable UUID knowledgeBaseId,
+            @PathVariable UUID documentId,
+            @RequestParam(defaultValue = "0")
+            @Min(0)
+            int page,
+            @RequestParam(defaultValue = "50")
+            @Min(1)
+            @Max(100)
+            int size,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal user
+    ) {
+        return service.listVersions(
+                knowledgeBaseId,
+                documentId,
+                user,
+                page,
+                size
+        );
+    }
+
+
+    @PatchMapping("/{documentId}")
+    public KnowledgeDocumentResponse update(
+            @PathVariable UUID knowledgeBaseId,
+            @PathVariable UUID documentId,
+            @jakarta.validation.Valid
+            @RequestBody
+            UpdateKnowledgeDocumentRequest request,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal user
+    ) {
+        return service.update(
+                knowledgeBaseId,
+                documentId,
+                request,
+                user
+        );
+    }
+
+    @PostMapping(
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
     @ResponseStatus(HttpStatus.CREATED)
     public KnowledgeDocumentResponse upload(
             @PathVariable UUID knowledgeBaseId,
-            @RequestPart("file") MultipartFile file,
+            @RequestPart("file")
+            MultipartFile file,
             @RequestParam(required = false)
-            @Size(max = 255) String name,
-            @AuthenticationPrincipal SafeAiUserPrincipal user) {
-        return service.uploadNew(knowledgeBaseId, name, file, user);
+            String name,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal user
+    ) {
+        return service.uploadNew(
+                knowledgeBaseId,
+                name,
+                file,
+                user
+        );
     }
 
-    @PostMapping(path = "/{documentId}/versions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(
+            path = "/{documentId}/versions",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
     @ResponseStatus(HttpStatus.CREATED)
     public KnowledgeDocumentResponse uploadVersion(
             @PathVariable UUID knowledgeBaseId,
             @PathVariable UUID documentId,
-            @RequestPart("file") MultipartFile file,
-            @AuthenticationPrincipal SafeAiUserPrincipal user) {
-        return service.uploadVersion(knowledgeBaseId, documentId, file, user);
+            @RequestPart("file")
+            MultipartFile file,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal user
+    ) {
+        return service.uploadVersion(
+                knowledgeBaseId,
+                documentId,
+                file,
+                user
+        );
     }
 
     @GetMapping("/{documentId}/download")
     public ResponseEntity<Resource> downloadCurrent(
             @PathVariable UUID knowledgeBaseId,
             @PathVariable UUID documentId,
-            @AuthenticationPrincipal SafeAiUserPrincipal user
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal user
     ) {
-        return download(service.download(knowledgeBaseId, documentId, null, user));
+        return download(
+                service.download(
+                        knowledgeBaseId,
+                        documentId,
+                        null,
+                        user
+                )
+        );
     }
 
-    @GetMapping("/{documentId}/versions/{versionId}/download")
+    @GetMapping(
+            "/{documentId}/versions/{versionId}/download"
+    )
     public ResponseEntity<Resource> downloadVersion(
             @PathVariable UUID knowledgeBaseId,
             @PathVariable UUID documentId,
             @PathVariable UUID versionId,
-            @AuthenticationPrincipal SafeAiUserPrincipal user
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal user
     ) {
-        return download(service.download(knowledgeBaseId, documentId, versionId, user));
+        return download(
+                service.download(
+                        knowledgeBaseId,
+                        documentId,
+                        versionId,
+                        user
+                )
+        );
     }
 
-    private ResponseEntity<Resource> download(KnowledgeDocumentService.Download value
+    private ResponseEntity<Resource> download(
+            KnowledgeDocumentService.Download value
     ) {
         MediaType mediaType;
+
         try {
-            mediaType = MediaType.parseMediaType(value.mediaType());
-        } catch (InvalidMediaTypeException e) {
-            mediaType = MediaType.APPLICATION_OCTET_STREAM;
+            mediaType = MediaType.parseMediaType(
+                    value.mediaType()
+            );
+        } catch (InvalidMediaTypeException exception) {
+            mediaType =
+                    MediaType.APPLICATION_OCTET_STREAM;
         }
-        ContentDisposition disposition = ContentDisposition.attachment().filename(value.filename(),
-                StandardCharsets.UTF_8).build();
-        return ResponseEntity.ok().contentType(mediaType).contentLength(value.object().contentLength())
-                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
-                .header("X-Content-Type-Options", "nosniff").body(value.object()
-                        .resource());
+
+        ContentDisposition disposition =
+                ContentDisposition
+                        .attachment()
+                        .filename(
+                                value.filename(),
+                                StandardCharsets.UTF_8
+                        )
+                        .build();
+
+        return ResponseEntity
+                .ok()
+                .contentType(mediaType)
+                .contentLength(
+                        value.object().contentLength()
+                )
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        disposition.toString()
+                )
+                .header(
+                        "X-Content-Type-Options",
+                        "nosniff"
+                )
+                .body(
+                        value.object().resource()
+                );
     }
 }

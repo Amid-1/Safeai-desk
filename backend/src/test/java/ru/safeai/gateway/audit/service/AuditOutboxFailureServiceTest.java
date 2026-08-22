@@ -24,17 +24,25 @@ import static org.mockito.Mockito.when;
 class AuditOutboxFailureServiceTest {
 
     private static final Instant NOW =
-            Instant.parse("2026-07-30T08:00:00Z");
+            Instant.parse(
+                    "2026-07-30T08:00:00Z"
+            );
 
     @Mock
     private AuditOutboxRepository repository;
 
     @Test
     void firstFailureSchedulesInitialBackoff() {
-        AuditOutboxEntity entity = entity(0);
+        AuditOutboxEntity entity =
+                entity(0);
 
-        when(repository.findByIdForUpdate(entity.getId()))
-                .thenReturn(Optional.of(entity));
+        when(
+                repository.findByIdForUpdate(
+                        entity.getId()
+                )
+        ).thenReturn(
+                Optional.of(entity)
+        );
 
         AuditOutboxFailureService.FailureResult result =
                 service(10).markFailure(
@@ -50,12 +58,15 @@ class AuditOutboxFailureServiceTest {
 
         assertThat(entity.getAttemptCount())
                 .isEqualTo(1);
+
         assertThat(entity.getNextAttemptAt())
                 .isEqualTo(
                         NOW.plusSeconds(2)
                 );
+
         assertThat(entity.getDeadLetteredAt())
                 .isNull();
+
         assertThat(entity.getLastError())
                 .isEqualTo(
                         IllegalStateException.class
@@ -67,10 +78,16 @@ class AuditOutboxFailureServiceTest {
 
     @Test
     void lastAllowedFailureMovesRowToDeadLetter() {
-        AuditOutboxEntity entity = entity(2);
+        AuditOutboxEntity entity =
+                entity(2);
 
-        when(repository.findByIdForUpdate(entity.getId()))
-                .thenReturn(Optional.of(entity));
+        when(
+                repository.findByIdForUpdate(
+                        entity.getId()
+                )
+        ).thenReturn(
+                Optional.of(entity)
+        );
 
         AuditOutboxFailureService.FailureResult result =
                 service(3).markFailure(
@@ -83,28 +100,40 @@ class AuditOutboxFailureServiceTest {
         assertThat(result.deadLettered()).isTrue();
         assertThat(result.attemptCount()).isEqualTo(3);
 
-        assertThat(entity.getNextAttemptAt()).isNull();
+        assertThat(entity.getNextAttemptAt())
+                .isNull();
+
         assertThat(entity.getDeadLetteredAt())
                 .isEqualTo(NOW);
+
         assertThat(entity.getLastError())
                 .isEqualTo(
                         IllegalArgumentException.class
                                 .getName()
                 );
+
+        verify(repository).save(entity);
     }
 
     @Test
     void sqlFailureStoresOnlySafeDiagnosticMetadata() {
-        AuditOutboxEntity entity = entity(0);
+        AuditOutboxEntity entity =
+                entity(0);
 
-        when(repository.findByIdForUpdate(entity.getId()))
-                .thenReturn(Optional.of(entity));
-
-        SQLException sqlException = new SQLException(
-                "SQL contained secret-token-value",
-                "23514",
-                99
+        when(
+                repository.findByIdForUpdate(
+                        entity.getId()
+                )
+        ).thenReturn(
+                Optional.of(entity)
         );
+
+        SQLException sqlException =
+                new SQLException(
+                        "SQL contained secret-token-value",
+                        "23514",
+                        99
+                );
 
         service(10).markFailure(
                 entity.getId(),
@@ -124,10 +153,14 @@ class AuditOutboxFailureServiceTest {
 
     @Test
     void missingRowHandlesUncertainCommit() {
-        UUID id = UUID.randomUUID();
+        UUID id =
+                UUID.randomUUID();
 
-        when(repository.findByIdForUpdate(id))
-                .thenReturn(Optional.empty());
+        when(
+                repository.findByIdForUpdate(id)
+        ).thenReturn(
+                Optional.empty()
+        );
 
         AuditOutboxFailureService.FailureResult result =
                 service(10).markFailure(
@@ -164,11 +197,21 @@ class AuditOutboxFailureServiceTest {
         AuditOutboxEntity entity =
                 new AuditOutboxEntity();
 
-        entity.setId(UUID.randomUUID());
-        entity.setOccurredAt(NOW);
-        entity.setCreatedAt(NOW);
-        entity.setAttemptCount(attemptCount);
-        entity.setNextAttemptAt(NOW);
+        entity.setId(
+                UUID.randomUUID()
+        );
+        entity.setOccurredAt(
+                NOW
+        );
+        entity.setCreatedAt(
+                NOW
+        );
+        entity.setAttemptCount(
+                attemptCount
+        );
+        entity.setNextAttemptAt(
+                NOW
+        );
 
         return entity;
     }

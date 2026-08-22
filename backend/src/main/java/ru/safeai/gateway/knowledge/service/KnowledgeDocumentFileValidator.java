@@ -34,13 +34,16 @@ public class KnowledgeDocumentFileValidator {
             "application/pdf";
 
     static final String DOCX_MEDIA_TYPE =
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            "application/vnd.openxmlformats-officedocument"
+                    + ".wordprocessingml.document";
 
     static final String XLSX_MEDIA_TYPE =
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            "application/vnd.openxmlformats-officedocument"
+                    + ".spreadsheetml.sheet";
 
     static final String PPTX_MEDIA_TYPE =
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            "application/vnd.openxmlformats-officedocument"
+                    + ".presentationml.presentation";
 
     static final String HTML_MEDIA_TYPE =
             "text/html";
@@ -79,13 +82,16 @@ public class KnowledgeDocumentFileValidator {
             128;
 
     private static final String DOCX_MAIN_CONTENT_TYPE =
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
+            "application/vnd.openxmlformats-officedocument"
+                    + ".wordprocessingml.document.main+xml";
 
     private static final String XLSX_MAIN_CONTENT_TYPE =
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+            "application/vnd.openxmlformats-officedocument"
+                    + ".spreadsheetml.sheet.main+xml";
 
     private static final String PPTX_MAIN_CONTENT_TYPE =
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml";
+            "application/vnd.openxmlformats-officedocument"
+                    + ".presentationml.presentation.main+xml";
 
     private static final Set<String> SUPPORTED_EXTENSIONS =
             Set.of(
@@ -107,20 +113,17 @@ public class KnowledgeDocumentFileValidator {
     public ValidatedUpload validate(
             MultipartFile file
     ) {
-        if (file == null || file.isEmpty()) {
-            throw new BadRequestException(
-                    "Выберите непустой файл."
-            );
-        }
+        requireNonEmptyFile(
+                file
+        );
 
         long maxUploadBytes =
                 properties.maxUploadBytes();
 
-        if (file.getSize() > maxUploadBytes) {
-            throw fileTooLarge(
-                    maxUploadBytes
-            );
-        }
+        requireWithinUploadLimit(
+                file.getSize(),
+                maxUploadBytes
+        );
 
         String originalFilename =
                 safeFilename(
@@ -136,29 +139,15 @@ public class KnowledgeDocumentFileValidator {
                 extension
         );
 
-        final byte[] bytes;
+        byte[] bytes =
+                readFileBytes(
+                        file
+                );
 
-        try {
-            bytes =
-                    file.getBytes();
-        } catch (IOException exception) {
-            throw new BadRequestException(
-                    "Не удалось прочитать загружаемый файл.",
-                    exception
-            );
-        }
-
-        if (bytes.length == 0) {
-            throw new BadRequestException(
-                    "Выберите непустой файл."
-            );
-        }
-
-        if (bytes.length > maxUploadBytes) {
-            throw fileTooLarge(
-                    maxUploadBytes
-            );
-        }
+        requireWithinUploadLimit(
+                bytes.length,
+                maxUploadBytes
+        );
 
         String mediaType =
                 detectTypeForExtension(
@@ -174,7 +163,48 @@ public class KnowledgeDocumentFileValidator {
         );
     }
 
-        private static String detectTypeForExtension(
+    private static void requireNonEmptyFile(
+            MultipartFile file
+    ) {
+        if (file == null
+                || file.isEmpty()) {
+            throw new BadRequestException(
+                    "Выберите непустой файл."
+            );
+        }
+    }
+
+    private static void requireWithinUploadLimit(
+            long size,
+            long maxUploadBytes
+    ) {
+        if (size < 1L) {
+            throw new BadRequestException(
+                    "Выберите непустой файл."
+            );
+        }
+
+        if (size > maxUploadBytes) {
+            throw fileTooLarge(
+                    maxUploadBytes
+            );
+        }
+    }
+
+    private static byte[] readFileBytes(
+            MultipartFile file
+    ) {
+        try {
+            return file.getBytes();
+        } catch (IOException exception) {
+            throw new BadRequestException(
+                    "Не удалось прочитать загружаемый файл.",
+                    exception
+            );
+        }
+    }
+
+    private static String detectTypeForExtension(
             byte[] bytes,
             String extension
     ) {
@@ -184,12 +214,10 @@ public class KnowledgeDocumentFileValidator {
                 );
 
         if (binaryMediaType != null) {
-            if (
-                    !extensionMatches(
-                            extension,
-                            binaryMediaType
-                    )
-            ) {
+            if (!extensionMatches(
+                    extension,
+                    binaryMediaType
+            )) {
                 throw extensionMismatch();
             }
 
@@ -207,7 +235,9 @@ public class KnowledgeDocumentFileValidator {
 
         return switch (extension) {
             case "txt" -> {
-                if (looksLikeHtml(text)) {
+                if (looksLikeHtml(
+                        text
+                )) {
                     throw extensionMismatch();
                 }
 
@@ -215,7 +245,9 @@ public class KnowledgeDocumentFileValidator {
             }
 
             case "html", "htm" -> {
-                if (!looksLikeHtml(text)) {
+                if (!looksLikeHtml(
+                        text
+                )) {
                     throw extensionMismatch();
                 }
 
@@ -244,10 +276,6 @@ public class KnowledgeDocumentFileValidator {
                 yield XML_MEDIA_TYPE;
             }
 
-            /*
-             * Если PDF/OOXML не был распознан по фактическим байтам,
-             * текст под бинарным расширением не принимаем.
-             */
             case "pdf",
                  "docx",
                  "xlsx",
@@ -262,7 +290,9 @@ public class KnowledgeDocumentFileValidator {
     private static String detectBinaryType(
             byte[] bytes
     ) {
-        if (isPdf(bytes)) {
+        if (isPdf(
+                bytes
+        )) {
             return PDF_MEDIA_TYPE;
         }
 
@@ -274,14 +304,12 @@ public class KnowledgeDocumentFileValidator {
     private static boolean isPdf(
             byte[] bytes
     ) {
-        if (
-                bytes.length < 10
+        if (bytes.length < 10
                 || bytes[0] != '%'
                 || bytes[1] != 'P'
                 || bytes[2] != 'D'
                 || bytes[3] != 'F'
-                || bytes[4] != '-'
-        ) {
+                || bytes[4] != '-') {
             return false;
         }
 
@@ -298,31 +326,17 @@ public class KnowledgeDocumentFileValidator {
                 );
 
         for (
-                int i =
+                int index =
                         bytes.length
                                 - marker.length;
-                i >= start;
-                i--
+                index >= start;
+                index--
         ) {
-            boolean matches =
-                    true;
-
-            for (
-                    int j = 0;
-                    j < marker.length;
-                    j++
-            ) {
-                if (
-                        bytes[i + j]
-                        != marker[j]
-                ) {
-                    matches =
-                            false;
-                    break;
-                }
-            }
-
-            if (matches) {
+            if (matchesAt(
+                    bytes,
+                    marker,
+                    index
+            )) {
                 return true;
             }
         }
@@ -330,10 +344,31 @@ public class KnowledgeDocumentFileValidator {
         return false;
     }
 
+    private static boolean matchesAt(
+            byte[] source,
+            byte[] marker,
+            int start
+    ) {
+        for (
+                int markerIndex = 0;
+                markerIndex < marker.length;
+                markerIndex++
+        ) {
+            if (source[start + markerIndex]
+                    != marker[markerIndex]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static String detectOoxmlType(
             byte[] bytes
     ) {
-        if (!hasZipLocalHeader(bytes)) {
+        if (!hasZipLocalHeader(
+                bytes
+        )) {
             return null;
         }
 
@@ -358,43 +393,55 @@ public class KnowledgeDocumentFileValidator {
                         )
         ) {
             ZipEntry entry;
-            int entries = 0;
+            int entries =
+                    0;
 
-            while (
-                    (entry = zip.getNextEntry())
-                            != null
-            ) {
+            while ((entry = zip.getNextEntry()) != null) {
                 entries++;
 
-                if (
-                        entries
-                        > MAX_ZIP_ENTRIES
-                ) {
+                if (entries > MAX_ZIP_ENTRIES) {
                     return null;
                 }
 
                 String name =
                         entry.getName();
 
+                if (isUnsafeZipEntryName(
+                        name
+                )) {
+                    return null;
+                }
+
                 switch (name) {
-                    case "word/document.xml" ->
-                            wordDocumentFound = true;
+                    case "word/document.xml" -> {
+                        if (wordDocumentFound) {
+                            return null;
+                        }
 
-                    case "xl/workbook.xml" ->
-                            workbookFound = true;
+                        wordDocumentFound =
+                                true;
+                    }
 
-                    case "ppt/presentation.xml" ->
-                            presentationFound = true;
+                    case "xl/workbook.xml" -> {
+                        if (workbookFound) {
+                            return null;
+                        }
+
+                        workbookFound =
+                                true;
+                    }
+
+                    case "ppt/presentation.xml" -> {
+                        if (presentationFound) {
+                            return null;
+                        }
+
+                        presentationFound =
+                                true;
+                    }
 
                     case "[Content_Types].xml" -> {
-                        if (
-                                contentTypesBytes
-                                != null
-                        ) {
-                            /*
-                             * Дубликат центрального OOXML descriptor
-                             * считаем подозрительным/неоднозначным.
-                             */
+                        if (contentTypesBytes != null) {
                             return null;
                         }
 
@@ -405,8 +452,7 @@ public class KnowledgeDocumentFileValidator {
                     }
 
                     default -> {
-                        // Остальные ZIP entries для upload-level
-                        // structural validation читать не требуется.
+                        // Structural upload validation only.
                     }
                 }
             }
@@ -429,20 +475,20 @@ public class KnowledgeDocumentFileValidator {
 
         boolean docx =
                 wordDocumentFound
-                && mainTypes.docx();
+                        && mainTypes.docx();
 
         boolean xlsx =
                 workbookFound
-                && mainTypes.xlsx();
+                        && mainTypes.xlsx();
 
         boolean pptx =
                 presentationFound
-                && mainTypes.pptx();
+                        && mainTypes.pptx();
 
         int matches =
                 (docx ? 1 : 0)
-                + (xlsx ? 1 : 0)
-                + (pptx ? 1 : 0);
+                        + (xlsx ? 1 : 0)
+                        + (pptx ? 1 : 0);
 
         if (matches != 1) {
             return null;
@@ -457,6 +503,17 @@ public class KnowledgeDocumentFileValidator {
         }
 
         return PPTX_MEDIA_TYPE;
+    }
+
+    private static boolean isUnsafeZipEntryName(
+            String name
+    ) {
+        return name.isBlank()
+                || name.startsWith("/")
+                || name.contains("\\")
+                || name.equals("..")
+                || name.startsWith("../")
+                || name.contains("/../");
     }
 
     private static boolean hasZipLocalHeader(
@@ -483,16 +540,14 @@ public class KnowledgeDocumentFileValidator {
 
         int read;
 
-        while (
-                (read = zip.read(buffer))
-                        != -1
-        ) {
-            total += read;
+        while ((read = zip.read(buffer)) != -1) {
+            total =
+                    Math.addExact(
+                            total,
+                            read
+                    );
 
-            if (
-                    total
-                    > MAX_CONTENT_TYPES_BYTES
-            ) {
+            if (total > MAX_CONTENT_TYPES_BYTES) {
                 throw new IOException(
                         "OOXML [Content_Types].xml exceeds validation limit"
                 );
@@ -511,7 +566,7 @@ public class KnowledgeDocumentFileValidator {
     private static OoxmlMainTypes parseOoxmlMainTypes(
             byte[] contentTypesBytes
     ) {
-        String contentTypesText;
+        final String contentTypesText;
 
         try {
             contentTypesText =
@@ -522,11 +577,9 @@ public class KnowledgeDocumentFileValidator {
             return null;
         }
 
-        if (
-                containsForbiddenXmlDeclaration(
-                        contentTypesText
-                )
-        ) {
+        if (containsForbiddenXmlDeclaration(
+                contentTypesText
+        )) {
             return null;
         }
 
@@ -559,13 +612,11 @@ public class KnowledgeDocumentFileValidator {
                 int event =
                         reader.next();
 
-                if (
-                        event
+                if (event
                         != XMLStreamConstants.START_ELEMENT
                         || !"Override".equals(
-                                reader.getLocalName()
-                        )
-                ) {
+                        reader.getLocalName()
+                )) {
                     continue;
                 }
 
@@ -581,32 +632,32 @@ public class KnowledgeDocumentFileValidator {
                                 "ContentType"
                         );
 
-                if (
-                        "/word/document.xml"
-                                .equals(partName)
-                        && DOCX_MAIN_CONTENT_TYPE
-                                .equals(contentType)
-                ) {
+                if ("/word/document.xml".equals(
+                        partName
+                )
+                        && DOCX_MAIN_CONTENT_TYPE.equals(
+                        contentType
+                )) {
                     docx =
                             true;
                 }
 
-                if (
-                        "/xl/workbook.xml"
-                                .equals(partName)
-                        && XLSX_MAIN_CONTENT_TYPE
-                                .equals(contentType)
-                ) {
+                if ("/xl/workbook.xml".equals(
+                        partName
+                )
+                        && XLSX_MAIN_CONTENT_TYPE.equals(
+                        contentType
+                )) {
                     xlsx =
                             true;
                 }
 
-                if (
-                        "/ppt/presentation.xml"
-                                .equals(partName)
-                        && PPTX_MAIN_CONTENT_TYPE
-                                .equals(contentType)
-                ) {
+                if ("/ppt/presentation.xml".equals(
+                        partName
+                )
+                        && PPTX_MAIN_CONTENT_TYPE.equals(
+                        contentType
+                )) {
                     pptx =
                             true;
                 }
@@ -655,17 +706,12 @@ public class KnowledgeDocumentFileValidator {
         value.codePoints()
                 .forEach(
                         codePoint -> {
-                            if (
-                                    Character.isISOControl(
-                                            codePoint
-                                    )
-                                    && codePoint
-                                    != '\n'
-                                    && codePoint
-                                    != '\r'
-                                    && codePoint
-                                    != '\t'
-                            ) {
+                            if (Character.isISOControl(
+                                    codePoint
+                            )
+                                    && codePoint != '\n'
+                                    && codePoint != '\r'
+                                    && codePoint != '\t') {
                                 throw unsupportedType();
                             }
                         }
@@ -684,14 +730,12 @@ public class KnowledgeDocumentFileValidator {
                                 Locale.ROOT
                         );
 
-        return normalizedHead
-                .startsWith(
-                        "<!doctype html"
-                )
-                || normalizedHead
-                .startsWith(
-                        "<html"
-                );
+        return normalizedHead.startsWith(
+                "<!doctype html"
+        )
+                || normalizedHead.startsWith(
+                "<html"
+        );
     }
 
     private static void validateJson(
@@ -712,11 +756,9 @@ public class KnowledgeDocumentFileValidator {
                         value
                 );
 
-        if (
-                containsForbiddenXmlDeclaration(
-                        xml
-                )
-        ) {
+        if (containsForbiddenXmlDeclaration(
+                xml
+        )) {
             throw invalidStructuredFormat(
                     "XML"
             );
@@ -743,10 +785,16 @@ public class KnowledgeDocumentFileValidator {
                 int event =
                         reader.next();
 
-                if (
-                        event
-                        == XMLStreamConstants.START_ELEMENT
-                ) {
+                if (event == XMLStreamConstants.DTD
+                        || event
+                        == XMLStreamConstants.ENTITY_REFERENCE) {
+                    throw invalidStructuredFormat(
+                            "XML"
+                    );
+                }
+
+                if (event
+                        == XMLStreamConstants.START_ELEMENT) {
                     rootElementFound =
                             true;
                 }
@@ -816,7 +864,7 @@ public class KnowledgeDocumentFileValidator {
         try {
             reader.close();
         } catch (XMLStreamException ignored) {
-            // Validation уже завершена; close не должен менять результат.
+            // Validation result is already determined.
         }
     }
 
@@ -824,8 +872,7 @@ public class KnowledgeDocumentFileValidator {
             String value
     ) {
         return !value.isEmpty()
-                && value.charAt(0)
-                == '\uFEFF'
+                && value.charAt(0) == '\uFEFF'
                 ? value.substring(1)
                 : value;
     }
@@ -852,10 +899,8 @@ public class KnowledgeDocumentFileValidator {
     private static void requireOriginalFilename(
             String value
     ) {
-        if (
-                value == null
-                || value.isBlank()
-        ) {
+        if (value == null
+                || value.isBlank()) {
             throw new BadRequestException(
                     "Исходное имя файла отсутствует."
             );
@@ -889,13 +934,10 @@ public class KnowledgeDocumentFileValidator {
             );
         }
 
-        if (
-                filename.codePointCount(
-                        0,
-                        filename.length()
-                )
-                > MAX_FILENAME_CODE_POINTS
-        ) {
+        if (filename.codePointCount(
+                0,
+                filename.length()
+        ) > MAX_FILENAME_CODE_POINTS) {
             throw new BadRequestException(
                     "Имя файла не должно превышать "
                             + MAX_FILENAME_CODE_POINTS
@@ -903,13 +945,10 @@ public class KnowledgeDocumentFileValidator {
             );
         }
 
-        boolean hasControl =
-                filename.codePoints()
-                        .anyMatch(
-                                Character::isISOControl
-                        );
-
-        if (hasControl) {
+        if (filename.codePoints()
+                .anyMatch(
+                        Character::isISOControl
+                )) {
             throw new BadRequestException(
                     "Имя файла содержит недопустимые управляющие символы."
             );
@@ -919,11 +958,9 @@ public class KnowledgeDocumentFileValidator {
     private static void requireSupportedExtension(
             String extension
     ) {
-        if (
-                !SUPPORTED_EXTENSIONS.contains(
-                        extension
-                )
-        ) {
+        if (!SUPPORTED_EXTENSIONS.contains(
+                extension
+        )) {
             throw unsupportedType();
         }
     }
@@ -966,37 +1003,32 @@ public class KnowledgeDocumentFileValidator {
                         '.'
                 );
 
-        if (
-                dot <= 0
+        if (dot <= 0
                 || dot
-                == filename.length() - 1
-        ) {
+                == filename.length() - 1) {
             return "";
         }
 
-        return filename
-                .substring(
-                        dot + 1
-                )
-                .toLowerCase(
-                        Locale.ROOT
-                );
+        return filename.substring(
+                dot + 1
+        ).toLowerCase(
+                Locale.ROOT
+        );
     }
 
     private static String sha256(
             byte[] bytes
     ) {
         try {
-            MessageDigest digest =
-                    MessageDigest.getInstance(
-                            "SHA-256"
-                    );
-
             return HexFormat.of()
                     .formatHex(
-                            digest.digest(
-                                    bytes
-                            )
+                            MessageDigest
+                                    .getInstance(
+                                            "SHA-256"
+                                    )
+                                    .digest(
+                                            bytes
+                                    )
                     );
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(
@@ -1049,6 +1081,19 @@ public class KnowledgeDocumentFileValidator {
             String mediaType,
             String sha256
     ) {
+        public ValidatedUpload {
+            bytes =
+                    bytes.clone();
+        }
+
+        @Override
+        public byte[] bytes() {
+            return bytes.clone();
+        }
+
+        public int sizeBytes() {
+            return bytes.length;
+        }
     }
 
     private record OoxmlMainTypes(
@@ -1058,17 +1103,9 @@ public class KnowledgeDocumentFileValidator {
     ) {
     }
 
-    /**
-     * Небольшой strict JSON syntax validator без привязки к Jackson 2/3.
-     *
-     * <p>Это намеренно upload-level validation: JSON не материализуется
-     * в object tree, поэтому большой документ не создаёт дополнительную
-     * память пропорционально количеству JSON nodes.</p>
-     */
     private static final class StrictJsonParser {
 
         private final String input;
-
         private int index;
 
         private StrictJsonParser(
@@ -1080,17 +1117,12 @@ public class KnowledgeDocumentFileValidator {
 
         private void parseDocument() {
             skipWhitespace();
-
             parseValue(
                     0
             );
-
             skipWhitespace();
 
-            if (
-                    index
-                    != input.length()
-            ) {
+            if (index != input.length()) {
                 fail();
             }
         }
@@ -1098,17 +1130,8 @@ public class KnowledgeDocumentFileValidator {
         private void parseValue(
                 int depth
         ) {
-            if (
-                    depth
-                    > MAX_JSON_DEPTH
-            ) {
-                fail();
-            }
-
-            if (
-                    index
-                    >= input.length()
-            ) {
+            if (depth > MAX_JSON_DEPTH
+                    || index >= input.length()) {
                 fail();
             }
 
@@ -1147,12 +1170,10 @@ public class KnowledgeDocumentFileValidator {
                         );
 
                 default -> {
-                    if (
-                            current == '-'
+                    if (current == '-'
                             || isDigit(
-                                    current
-                            )
-                    ) {
+                            current
+                    )) {
                         parseNumber();
                         return;
                     }
@@ -1171,22 +1192,21 @@ public class KnowledgeDocumentFileValidator {
 
             skipWhitespace();
 
-            if (consume('}')) {
+            if (consume(
+                    '}'
+            )) {
                 return;
             }
 
             while (true) {
-                if (
+                if (index >= input.length()
+                        || input.charAt(
                         index
-                                >= input.length()
-                        || input.charAt(index)
-                                != '"'
-                ) {
+                ) != '"') {
                     fail();
                 }
 
                 parseString();
-
                 skipWhitespace();
 
                 expect(
@@ -1201,7 +1221,9 @@ public class KnowledgeDocumentFileValidator {
 
                 skipWhitespace();
 
-                if (consume('}')) {
+                if (consume(
+                        '}'
+                )) {
                     return;
                 }
 
@@ -1222,7 +1244,9 @@ public class KnowledgeDocumentFileValidator {
 
             skipWhitespace();
 
-            if (consume(']')) {
+            if (consume(
+                    ']'
+            )) {
                 return;
             }
 
@@ -1233,7 +1257,9 @@ public class KnowledgeDocumentFileValidator {
 
                 skipWhitespace();
 
-                if (consume(']')) {
+                if (consume(
+                        ']'
+                )) {
                     return;
                 }
 
@@ -1250,10 +1276,7 @@ public class KnowledgeDocumentFileValidator {
                     '"'
             );
 
-            while (
-                    index
-                    < input.length()
-            ) {
+            while (index < input.length()) {
                 char current =
                         input.charAt(
                                 index++
@@ -1277,10 +1300,7 @@ public class KnowledgeDocumentFileValidator {
         }
 
         private void parseEscape() {
-            if (
-                    index
-                    >= input.length()
-            ) {
+            if (index >= input.length()) {
                 fail();
             }
 
@@ -1291,30 +1311,28 @@ public class KnowledgeDocumentFileValidator {
 
             if (escaped == 'u') {
                 parseUnicodeEscape();
-            } else if (
-                    !isSimpleEscape(
-                            escaped
-                    )
-            ) {
+                return;
+            }
+
+            if (!isSimpleEscape(
+                    escaped
+            )) {
                 fail();
             }
         }
 
         private void parseUnicodeEscape() {
             for (
-                    int i = 0;
-                    i < 4;
-                    i++
+                    int count = 0;
+                    count < 4;
+                    count++
             ) {
-                if (
-                        index
-                        >= input.length()
+                if (index >= input.length()
                         || !isHex(
-                                input.charAt(
-                                        index++
-                                )
+                        input.charAt(
+                                index++
                         )
-                ) {
+                )) {
                     fail();
                 }
             }
@@ -1336,12 +1354,10 @@ public class KnowledgeDocumentFileValidator {
         private void parseLiteral(
                 String literal
         ) {
-            if (
-                    !input.startsWith(
-                            literal,
-                            index
-                    )
-            ) {
+            if (!input.startsWith(
+                    literal,
+                    index
+            )) {
                 fail();
             }
 
@@ -1350,107 +1366,81 @@ public class KnowledgeDocumentFileValidator {
         }
 
         private void parseNumber() {
-            if (consume('-')) {
-                if (
-                        index
-                        >= input.length()
-                ) {
-                    fail();
-                }
+            if (consume(
+                    '-'
+            )
+                    && index >= input.length()) {
+                fail();
             }
 
-            if (consume('0')) {
-                if (
-                        index
-                                < input.length()
+            if (consume(
+                    '0'
+            )) {
+                if (index < input.length()
                         && isDigit(
-                                input.charAt(
-                                        index
-                                )
+                        input.charAt(
+                                index
                         )
-                ) {
+                )) {
                     fail();
                 }
             } else {
                 requireDigitOneToNine();
 
-                while (
-                        index
-                                < input.length()
+                while (index < input.length()
                         && isDigit(
-                                input.charAt(
-                                        index
-                                )
+                        input.charAt(
+                                index
                         )
-                ) {
+                )) {
                     index++;
                 }
             }
 
-            if (consume('.')) {
+            if (consume(
+                    '.'
+            )) {
                 requireDigit();
 
-                while (
-                        index
-                                < input.length()
+                while (index < input.length()
                         && isDigit(
-                                input.charAt(
-                                        index
-                                )
+                        input.charAt(
+                                index
                         )
-                ) {
+                )) {
                     index++;
                 }
             }
 
-            if (
-                    consume('e')
-                    || consume('E')
-            ) {
-                consumeOptionalSign();
+            if (consume(
+                    'e'
+            )
+                    || consume(
+                    'E'
+            )) {
+                if (index < input.length()
+                        && (
+                        input.charAt(index) == '+'
+                                || input.charAt(index) == '-'
+                )) {
+                    index++;
+                }
 
                 requireDigit();
 
-                while (
-                        index
-                                < input.length()
+                while (index < input.length()
                         && isDigit(
-                                input.charAt(
-                                        index
-                                )
+                        input.charAt(
+                                index
                         )
-                ) {
+                )) {
                     index++;
                 }
-            }
-        }
-
-        private void consumeOptionalSign() {
-            if (
-                    index
-                    >= input.length()
-            ) {
-                return;
-            }
-
-            char current =
-                    input.charAt(
-                            index
-                    );
-
-            if (
-                    current == '+'
-                    || current == '-'
-            ) {
-                index++;
             }
         }
 
         private void requireDigitOneToNine() {
-            if (
-                    index
-                    >= input.length()
-            ) {
+            if (index >= input.length()) {
                 fail();
             }
 
@@ -1459,10 +1449,8 @@ public class KnowledgeDocumentFileValidator {
                             index
                     );
 
-            if (
-                    current < '1'
-                    || current > '9'
-            ) {
+            if (current < '1'
+                    || current > '9') {
                 fail();
             }
 
@@ -1470,15 +1458,12 @@ public class KnowledgeDocumentFileValidator {
         }
 
         private void requireDigit() {
-            if (
-                    index
-                    >= input.length()
+            if (index >= input.length()
                     || !isDigit(
-                            input.charAt(
-                                    index
-                            )
+                    input.charAt(
+                            index
                     )
-            ) {
+            )) {
                 fail();
             }
 
@@ -1486,21 +1471,16 @@ public class KnowledgeDocumentFileValidator {
         }
 
         private void skipWhitespace() {
-            while (
-                    index
-                    < input.length()
-            ) {
+            while (index < input.length()) {
                 char current =
                         input.charAt(
                                 index
                         );
 
-                if (
-                        current != ' '
+                if (current != ' '
                         && current != '\t'
                         && current != '\r'
-                        && current != '\n'
-                ) {
+                        && current != '\n') {
                     return;
                 }
 
@@ -1511,12 +1491,10 @@ public class KnowledgeDocumentFileValidator {
         private boolean consume(
                 char expected
         ) {
-            if (
+            if (index < input.length()
+                    && input.charAt(
                     index
-                            < input.length()
-                    && input.charAt(index)
-                            == expected
-            ) {
+            ) == expected) {
                 index++;
                 return true;
             }
@@ -1527,7 +1505,9 @@ public class KnowledgeDocumentFileValidator {
         private void expect(
                 char expected
         ) {
-            if (!consume(expected)) {
+            if (!consume(
+                    expected
+            )) {
                 fail();
             }
         }

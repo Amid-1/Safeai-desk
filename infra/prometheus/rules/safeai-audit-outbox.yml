@@ -1,0 +1,21 @@
+# SafeAi-Desk/infra/prometheus/rules/safeai-audit-outbox.yml
+groups:
+  - name: safeai-audit-outbox
+    rules:
+      - alert: SafeAiAuditOutboxDeadLetter
+        expr: max(safeai_audit_outbox_dead_letter_rows) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SafeAI audit outbox contains dead-letter rows"
+          description: "At least one durable audit event could not be delivered."
+
+      - alert: SafeAiAuditOutboxOldestPendingTooOld
+        expr: max(safeai_audit_outbox_oldest_age_seconds) > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SafeAI audit outbox delivery is delayed"
+          description: "The oldest pending audit row has been waiting for more than 5 minutes."

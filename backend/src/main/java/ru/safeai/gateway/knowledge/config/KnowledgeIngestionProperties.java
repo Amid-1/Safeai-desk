@@ -94,7 +94,7 @@ public record KnowledgeIngestionProperties(
     }
 
     public Duration backoffForAttempt(int attempt) {
-        int exponent = Math.max(0, Math.min(attempt - 1, 30));
+        int exponent = Math.clamp(attempt - 1, 0, 30);
         long multiplier = 1L << exponent;
         long millis;
         try {

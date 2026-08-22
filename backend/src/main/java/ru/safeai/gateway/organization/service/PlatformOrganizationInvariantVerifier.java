@@ -14,7 +14,7 @@ import ru.safeai.gateway.organization.repository.OrganizationRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 @Component
-@Profile("prod")
+@Profile({"prod", "production"})
 @RequiredArgsConstructor
 public class PlatformOrganizationInvariantVerifier
         implements ApplicationRunner {
@@ -101,3 +101,4 @@ public class PlatformOrganizationInvariantVerifier
         }
     }
 }
+

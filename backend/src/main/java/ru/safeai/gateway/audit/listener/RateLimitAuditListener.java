@@ -21,6 +21,10 @@ public class RateLimitAuditListener {
     /**
      * Listener намеренно синхронный.
      *
+     * <p>Durable enqueue выполняется через отдельную REQUIRES_NEW
+     * transaction. Поэтому последующий rollback business transaction
+     * не удаляет RATE_LIMIT_EXCEEDED audit intent.</p>
+     *
      * <p>Ошибка durable enqueue должна выйти обратно в publisher.
      * Тогда rate-limit service сможет освободить notification marker
      * и повторить enqueue на следующем rejected request.</p>
@@ -47,7 +51,7 @@ public class RateLimitAuditListener {
          * пишем системное событие в targetOrganizationId.
          */
         if (event.actorUserId() == null) {
-            auditEventService.recordSystem(
+            auditEventService.recordSystemStandaloneRequired(
                     event.targetOrganizationId(),
                     AuditEventType.RATE_LIMIT_EXCEEDED,
                     details
@@ -71,7 +75,7 @@ public class RateLimitAuditListener {
                         event.actorDisplayName()
                 );
 
-        auditEventService.record(
+        auditEventService.recordStandaloneRequired(
                 actor,
                 event.targetOrganizationId(),
                 AuditEventType.RATE_LIMIT_EXCEEDED,

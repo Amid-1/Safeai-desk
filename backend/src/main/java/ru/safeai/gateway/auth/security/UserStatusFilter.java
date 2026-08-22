@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -25,6 +26,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public final class UserStatusFilter
         extends OncePerRequestFilter {
+
+    private static final String BEARER_PREFIX = "Bearer ";
 
     private final UserStatusCacheService
             userStatusCacheService;
@@ -135,12 +138,47 @@ public final class UserStatusFilter
         SecurityContextHolder
                 .clearContext();
 
+        if (isBearerRequest(request)) {
+            errorWriter.writeBearerUnauthorized(
+                    request,
+                    response,
+                    ApiErrorCode.TOKEN_REVOKED,
+                    "Токен больше не действителен"
+            );
+
+            return;
+        }
+
         errorWriter.write(
                 request,
                 response,
                 HttpStatus.UNAUTHORIZED,
                 ApiErrorCode.TOKEN_REVOKED,
                 "Токен больше не действителен"
+        );
+    }
+
+    /**
+     * К этому моменту request уже аутентифицирован. Поэтому наличие Bearer
+     * Authorization header однозначно отличает resource-server flow от
+     * cookie-authentication flow и позволяет выставить challenge только там,
+     * где он действительно соответствует механизму аутентификации.
+     */
+    private static boolean isBearerRequest(
+            HttpServletRequest request
+    ) {
+        String authorization = request.getHeader(
+                HttpHeaders.AUTHORIZATION
+        );
+
+        return authorization != null
+                && authorization.length() >= BEARER_PREFIX.length()
+                && authorization.regionMatches(
+                true,
+                0,
+                BEARER_PREFIX,
+                0,
+                BEARER_PREFIX.length()
         );
     }
 }

@@ -17,6 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class KnowledgeDtoValidationTest {
 
+    private static final int MAX_DESCRIPTION_LENGTH =
+            2_000;
+
     private static ValidatorFactory factory;
     private static Validator validator;
 
@@ -51,24 +54,50 @@ class KnowledgeDtoValidationTest {
     }
 
     @Test
+    void createKnowledgeBaseRequest_acceptsMaximumDescriptionLength() {
+        CreateKnowledgeBaseRequest request =
+                new CreateKnowledgeBaseRequest(
+                        "Production Runbooks",
+                        "x".repeat(
+                                MAX_DESCRIPTION_LENGTH
+                        ),
+                        KnowledgeBaseVisibility.MEMBERS
+                );
+
+        assertThat(
+                validator.validate(request)
+        ).isEmpty();
+    }
+
+    @Test
     void createKnowledgeBaseRequest_rejectsBlankNameNullVisibilityAndLongDescription() {
         CreateKnowledgeBaseRequest request =
                 new CreateKnowledgeBaseRequest(
                         " ",
-                        "x".repeat(2_001),
+                        "x".repeat(
+                                MAX_DESCRIPTION_LENGTH + 1
+                        ),
                         null
                 );
 
         var violations =
-                validator.validate(request);
+                validator.validate(
+                        request
+                );
 
-        assertThat(violations)
-                .hasSize(3);
+        assertThat(
+                violations
+        ).hasSize(
+                3
+        );
 
-        assertThat(violations)
+        assertThat(
+                violations
+        )
                 .extracting(
                         violation ->
-                                violation.getPropertyPath()
+                                violation
+                                        .getPropertyPath()
                                         .toString()
                 )
                 .containsExactlyInAnyOrder(
@@ -91,12 +120,19 @@ class KnowledgeDtoValidationTest {
                 );
 
         var violations =
-                validator.validate(request);
+                validator.validate(
+                        request
+                );
 
-        assertThat(violations)
-                .hasSize(1);
+        assertThat(
+                violations
+        ).hasSize(
+                1
+        );
 
-        assertThat(violations)
+        assertThat(
+                violations
+        )
                 .allSatisfy(
                         violation ->
                                 assertThat(
@@ -118,15 +154,23 @@ class KnowledgeDtoValidationTest {
                 );
 
         var violations =
-                validator.validate(request);
+                validator.validate(
+                        request
+                );
 
-        assertThat(violations)
-                .hasSize(2);
+        assertThat(
+                violations
+        ).hasSize(
+                2
+        );
 
-        assertThat(violations)
+        assertThat(
+                violations
+        )
                 .extracting(
                         violation ->
-                                violation.getPropertyPath()
+                                violation
+                                        .getPropertyPath()
                                         .toString()
                 )
                 .containsExactlyInAnyOrder(
@@ -145,15 +189,23 @@ class KnowledgeDtoValidationTest {
                 );
 
         var violations =
-                validator.validate(request);
+                validator.validate(
+                        request
+                );
 
-        assertThat(violations)
-                .hasSize(2);
+        assertThat(
+                violations
+        ).hasSize(
+                2
+        );
 
-        assertThat(violations)
+        assertThat(
+                violations
+        )
                 .extracting(
                         violation ->
-                                violation.getPropertyPath()
+                                violation
+                                        .getPropertyPath()
                                         .toString()
                 )
                 .containsExactlyInAnyOrder(

@@ -36,9 +36,14 @@ public class LoginSessionTransactionService {
     /**
      * Короткая транзакция создания login session.
      *
-     * <p>Проверка password hash должна завершиться до входа
-     * в этот метод. Pessimistic user lock синхронизирует login
-     * с password, role, email и enabled mutations.</p>
+     * <p>Password hash должен быть проверен до входа в этот метод.
+     * Pessimistic user lock синхронизирует login с изменениями
+     * password, role, email, enabled и другого security state.</p>
+     *
+     * <p>lastLoginAt обновляется отдельным bulk update без изменения
+     * optimistic {@code @Version}. Обычный успешный login поэтому
+     * не создаёт ложный business version conflict для административных
+     * операций над пользователем.</p>
      */
     @Transactional
     public LoginSessionResult createSession(
@@ -54,19 +59,37 @@ public class LoginSessionTransactionService {
                 "request не должен быть null"
         );
 
-        UserEntity user = userRepository
-                .findByIdForSecurityUpdate(
-                        authenticatedPrincipal.getId()
-                )
-                .orElseThrow(this::securityStateChanged);
+        UserEntity user =
+                userRepository
+                        .findByIdForSecurityUpdate(
+                                authenticatedPrincipal.getId()
+                        )
+                        .orElseThrow(
+                                this::securityStateChanged
+                        );
 
-        UUID organizationId = user.getOrganization().getId();
+        UUID organizationId =
+                user.getOrganization()
+                        .getId();
+
         long organizationAuthVersion =
-                user.getOrganization().getAuthVersion();
-        String canonicalEmail = canonicalEmail(user.getEmail());
-        Set<String> roleNames = UserRoleMapper.toRoleNames(user);
+                user.getOrganization()
+                        .getAuthVersion();
+
+        String canonicalEmail =
+                canonicalEmail(
+                        user.getEmail()
+                );
+
+        Set<String> roleNames =
+                UserRoleMapper.toRoleNames(
+                        user
+                );
+
         Set<String> authenticatedRoleNames =
-                authenticatedRoleNames(authenticatedPrincipal);
+                authenticatedRoleNames(
+                        authenticatedPrincipal
+                );
 
         validateAuthenticatedSnapshot(
                 authenticatedPrincipal,
@@ -78,8 +101,19 @@ public class LoginSessionTransactionService {
                 authenticatedRoleNames
         );
 
-        Instant now = clock.instant();
-        user.setLastLoginAt(now);
+        Instant now =
+                clock.instant();
+
+        int updatedLastLoginRows =
+                userRepository
+                        .updateLastLoginAtWithoutVersion(
+                                user.getId(),
+                                now
+                        );
+
+        if (updatedLastLoginRows != 1) {
+            throw securityStateChanged();
+        }
 
         RefreshTokenService.CreatedRefreshToken refreshToken =
                 refreshTokenService.createForLogin(
@@ -126,26 +160,21 @@ public class LoginSessionTransactionService {
     ) {
         boolean valid =
                 user.isEnabled()
-                        && user.getOrganization().isEnabled()
+                        && user.getOrganization()
+                        .isEnabled()
                         && organizationId.equals(
-                                principal.getOrganizationId()
-                        )
+                        principal.getOrganizationId()
+                )
                         && organizationAuthVersion
                         == principal.getOrganizationAuthVersion()
-                        /*
-                         * canonicalEmail гарантированно non-null.
-                         * String#equals(null) безопасно возвращает false,
-                         * поэтому отдельная principalEmail != null проверка
-                         * не требуется.
-                         */
                         && canonicalEmail.equals(
-                                principal.getEmail()
-                        )
+                        principal.getEmail()
+                )
                         && user.getTokenVersion()
                         == principal.getTokenVersion()
                         && currentRoleNames.equals(
-                                authenticatedRoleNames
-                        );
+                        authenticatedRoleNames
+                );
 
         if (!valid) {
             throw securityStateChanged();
@@ -161,7 +190,9 @@ public class LoginSessionTransactionService {
                             principal.getAuthorities()
                     )
             );
-        } catch (IllegalArgumentException exception) {
+        } catch (
+                IllegalArgumentException exception
+        ) {
             throw new BadCredentialsException(
                     SECURITY_STATE_CHANGED_MESSAGE,
                     exception
@@ -175,18 +206,23 @@ public class LoginSessionTransactionService {
         );
     }
 
-    private String canonicalEmail(String email) {
+    private String canonicalEmail(
+            String email
+    ) {
         Objects.requireNonNull(
                 email,
                 "email пользователя не должен быть null"
         );
 
-        String canonical = email
-                .trim()
-                .toLowerCase(Locale.ROOT);
+        String canonical =
+                email.trim()
+                        .toLowerCase(
+                                Locale.ROOT
+                        );
 
         if (canonical.isBlank()
                 || canonical.length() > MAX_EMAIL_LENGTH) {
+
             throw new IllegalStateException(
                     "Некорректный canonical email пользователя"
             );

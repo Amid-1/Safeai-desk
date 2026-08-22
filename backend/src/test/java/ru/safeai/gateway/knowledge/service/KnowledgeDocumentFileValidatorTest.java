@@ -27,7 +27,10 @@ import static org.mockito.Mockito.when;
 class KnowledgeDocumentFileValidatorTest {
 
     private static final long DEFAULT_MAX_UPLOAD_BYTES =
-            26_214_400L;
+            25L * 1024L * 1024L;
+
+    private static final long MIN_VALID_UPLOAD_LIMIT =
+            1024L * 1024L;
 
     private static final String TEST_BUCKET =
             "safeai-knowledge";
@@ -41,7 +44,9 @@ class KnowledgeDocumentFileValidatorTest {
         assertMediaType(
                 "notes.txt",
                 "Привет, SafeAI!\nLine 2\n"
-                        .getBytes(StandardCharsets.UTF_8),
+                        .getBytes(
+                                StandardCharsets.UTF_8
+                        ),
                 "application/x-client-lie",
                 KnowledgeDocumentFileValidator.TEXT_MEDIA_TYPE
         );
@@ -49,7 +54,9 @@ class KnowledgeDocumentFileValidatorTest {
         assertMediaType(
                 "page.html",
                 "\uFEFF<!doctype html><html><body>OK</body></html>"
-                        .getBytes(StandardCharsets.UTF_8),
+                        .getBytes(
+                                StandardCharsets.UTF_8
+                        ),
                 "application/octet-stream",
                 KnowledgeDocumentFileValidator.HTML_MEDIA_TYPE
         );
@@ -84,7 +91,9 @@ class KnowledgeDocumentFileValidatorTest {
 
                 - health
                 - rollback
-                """.getBytes(StandardCharsets.UTF_8),
+                """.getBytes(
+                        StandardCharsets.UTF_8
+                ),
                 "text/plain",
                 KnowledgeDocumentFileValidator.MARKDOWN_MEDIA_TYPE
         );
@@ -95,7 +104,9 @@ class KnowledgeDocumentFileValidatorTest {
                 id,name,status
                 1,SafeAI,ACTIVE
                 2,Gateway,READY
-                """.getBytes(StandardCharsets.UTF_8),
+                """.getBytes(
+                        StandardCharsets.UTF_8
+                ),
                 "application/octet-stream",
                 KnowledgeDocumentFileValidator.CSV_MEDIA_TYPE
         );
@@ -108,7 +119,9 @@ class KnowledgeDocumentFileValidatorTest {
                   "enabled": true,
                   "limits": [10, 20, 30]
                 }
-                """.getBytes(StandardCharsets.UTF_8),
+                """.getBytes(
+                        StandardCharsets.UTF_8
+                ),
                 "text/plain",
                 KnowledgeDocumentFileValidator.JSON_MEDIA_TYPE
         );
@@ -121,7 +134,9 @@ class KnowledgeDocumentFileValidatorTest {
                   <name>SafeAI</name>
                   <enabled>true</enabled>
                 </integration>
-                """.getBytes(StandardCharsets.UTF_8),
+                """.getBytes(
+                        StandardCharsets.UTF_8
+                ),
                 "text/plain",
                 KnowledgeDocumentFileValidator.XML_MEDIA_TYPE
         );
@@ -160,22 +175,34 @@ class KnowledgeDocumentFileValidatorTest {
                         "broken.json",
                         """
                         {"name":"SafeAI",}
-                        """.getBytes(StandardCharsets.UTF_8)
+                        """.getBytes(
+                                StandardCharsets.UTF_8
+                        )
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("JSON");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "JSON"
+                );
 
         assertThatThrownBy(
                 () -> validate(
                         "broken.xml",
                         """
                         <root><item></root>
-                        """.getBytes(StandardCharsets.UTF_8)
+                        """.getBytes(
+                                StandardCharsets.UTF_8
+                        )
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("XML");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "XML"
+                );
     }
 
     @Test
@@ -187,7 +214,9 @@ class KnowledgeDocumentFileValidatorTest {
                   <!ENTITY xxe SYSTEM "file:///etc/passwd">
                 ]>
                 <root>&xxe;</root>
-                """.getBytes(StandardCharsets.UTF_8);
+                """.getBytes(
+                        StandardCharsets.UTF_8
+                );
 
         assertThatThrownBy(
                 () -> validate(
@@ -195,8 +224,12 @@ class KnowledgeDocumentFileValidatorTest {
                         dangerousXml
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("XML");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "XML"
+                );
     }
 
     @Test
@@ -215,7 +248,9 @@ class KnowledgeDocumentFileValidatorTest {
                         xlsx
                 )
         )
-                .isInstanceOf(BadRequestException.class)
+                .isInstanceOf(
+                        BadRequestException.class
+                )
                 .hasMessageContaining(
                         "Расширение файла"
                 );
@@ -227,10 +262,14 @@ class KnowledgeDocumentFileValidatorTest {
                 () -> validate(
                         "fake.pdf",
                         "обычный текст"
-                                .getBytes(StandardCharsets.UTF_8)
+                                .getBytes(
+                                        StandardCharsets.UTF_8
+                                )
                 )
         )
-                .isInstanceOf(BadRequestException.class)
+                .isInstanceOf(
+                        BadRequestException.class
+                )
                 .hasMessageContaining(
                         "Расширение файла"
                 );
@@ -239,10 +278,14 @@ class KnowledgeDocumentFileValidatorTest {
                 () -> validate(
                         "legacy.doc",
                         "legacy"
-                                .getBytes(StandardCharsets.UTF_8)
+                                .getBytes(
+                                        StandardCharsets.UTF_8
+                                )
                 )
         )
-                .isInstanceOf(BadRequestException.class)
+                .isInstanceOf(
+                        BadRequestException.class
+                )
                 .hasMessageContaining(
                         "PDF, DOCX, TXT, HTML, MD, CSV, XLSX, PPTX, JSON и XML"
                 );
@@ -254,7 +297,9 @@ class KnowledgeDocumentFileValidatorTest {
                 "valid.json",
                 """
                 {"value":-12.50e+2,"escaped":"line\\n\\u0410"}
-                """.getBytes(StandardCharsets.UTF_8),
+                """.getBytes(
+                        StandardCharsets.UTF_8
+                ),
                 "application/json",
                 KnowledgeDocumentFileValidator.JSON_MEDIA_TYPE
         );
@@ -263,28 +308,42 @@ class KnowledgeDocumentFileValidatorTest {
                 () -> validate(
                         "leading-zero.json",
                         "{\"value\":01}"
-                                .getBytes(StandardCharsets.UTF_8)
+                                .getBytes(
+                                        StandardCharsets.UTF_8
+                                )
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("JSON");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "JSON"
+                );
 
         assertThatThrownBy(
                 () -> validate(
                         "two-roots.json",
                         "{} {}"
-                                .getBytes(StandardCharsets.UTF_8)
+                                .getBytes(
+                                        StandardCharsets.UTF_8
+                                )
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("JSON");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "JSON"
+                );
     }
 
     @Test
     void validate_ignoresClientMimeAndReturnsStableSha256() {
         byte[] bytes =
                 "# SafeAI\n"
-                        .getBytes(StandardCharsets.UTF_8);
+                        .getBytes(
+                                StandardCharsets.UTF_8
+                        );
 
         MockMultipartFile file =
                 new MockMultipartFile(
@@ -324,7 +383,9 @@ class KnowledgeDocumentFileValidatorTest {
                 result.sha256()
         )
                 .isEqualTo(
-                        sha256(bytes)
+                        sha256(
+                                bytes
+                        )
                 );
     }
 
@@ -349,7 +410,9 @@ class KnowledgeDocumentFileValidatorTest {
                 () -> validate(
                         "payload.md",
                         "hello\u0000world"
-                                .getBytes(StandardCharsets.UTF_8)
+                                .getBytes(
+                                        StandardCharsets.UTF_8
+                                )
                 )
         )
                 .isInstanceOf(
@@ -365,12 +428,16 @@ class KnowledgeDocumentFileValidatorTest {
                         "C:\\fakepath\\folder\\notes.txt",
                         "text/plain",
                         "text"
-                                .getBytes(StandardCharsets.UTF_8)
+                                .getBytes(
+                                        StandardCharsets.UTF_8
+                                )
                 );
 
         assertThat(
                 validator()
-                        .validate(pathFile)
+                        .validate(
+                                pathFile
+                        )
                         .originalFilename()
         )
                 .isEqualTo(
@@ -384,12 +451,18 @@ class KnowledgeDocumentFileValidatorTest {
                                 "",
                                 "text/plain",
                                 "text"
-                                        .getBytes(StandardCharsets.UTF_8)
+                                        .getBytes(
+                                                StandardCharsets.UTF_8
+                                        )
                         )
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("имя файла");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "имя файла"
+                );
 
         assertThatThrownBy(
                 () -> validator().validate(
@@ -398,15 +471,23 @@ class KnowledgeDocumentFileValidatorTest {
                                 "bad\u0000.txt",
                                 "text/plain",
                                 "text"
-                                        .getBytes(StandardCharsets.UTF_8)
+                                        .getBytes(
+                                                StandardCharsets.UTF_8
+                                        )
                         )
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("управляющие");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "управляющие"
+                );
 
         String tooLong =
-                "я".repeat(252)
+                "я".repeat(
+                        252
+                )
                         + ".txt";
 
         assertThatThrownBy(
@@ -416,20 +497,26 @@ class KnowledgeDocumentFileValidatorTest {
                                 tooLong,
                                 "text/plain",
                                 "text"
-                                        .getBytes(StandardCharsets.UTF_8)
+                                        .getBytes(
+                                                StandardCharsets.UTF_8
+                                        )
                         )
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("255");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "255"
+                );
     }
 
     @Test
     void validate_enforcesSizeBeforeAndAfterRead()
             throws IOException {
-        KnowledgeDocumentFileValidator small =
+        KnowledgeDocumentFileValidator validator =
                 validatorWithLimit(
-                        10
+                        MIN_VALID_UPLOAD_LIMIT
                 );
 
         MultipartFile reportedTooLarge =
@@ -440,31 +527,35 @@ class KnowledgeDocumentFileValidatorTest {
         when(
                 reportedTooLarge.isEmpty()
         )
-                .thenReturn(false);
+                .thenReturn(
+                        false
+                );
 
         when(
                 reportedTooLarge.getSize()
         )
-                .thenReturn(11L);
+                .thenReturn(
+                        MIN_VALID_UPLOAD_LIMIT + 1L
+                );
 
         assertThatThrownBy(
-                () -> small.validate(
+                () -> validator.validate(
                         reportedTooLarge
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("10 байт");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        MIN_VALID_UPLOAD_LIMIT
+                                + " байт"
+                );
 
         verify(
                 reportedTooLarge,
                 never()
         )
                 .getBytes();
-
-        KnowledgeDocumentFileValidator fourBytes =
-                validatorWithLimit(
-                        4
-                );
 
         MultipartFile actualTooLarge =
                 mock(
@@ -474,12 +565,16 @@ class KnowledgeDocumentFileValidatorTest {
         when(
                 actualTooLarge.isEmpty()
         )
-                .thenReturn(false);
+                .thenReturn(
+                        false
+                );
 
         when(
                 actualTooLarge.getSize()
         )
-                .thenReturn(4L);
+                .thenReturn(
+                        MIN_VALID_UPLOAD_LIMIT
+                );
 
         when(
                 actualTooLarge.getOriginalFilename()
@@ -488,21 +583,32 @@ class KnowledgeDocumentFileValidatorTest {
                         "a.txt"
                 );
 
+        byte[] bytesExceedingConfiguredLimit =
+                new byte[
+                        Math.toIntExact(
+                                MIN_VALID_UPLOAD_LIMIT + 1L
+                        )
+                ];
+
         when(
                 actualTooLarge.getBytes()
         )
                 .thenReturn(
-                        "12345"
-                                .getBytes(StandardCharsets.UTF_8)
+                        bytesExceedingConfiguredLimit
                 );
 
         assertThatThrownBy(
-                () -> fourBytes.validate(
+                () -> validator.validate(
                         actualTooLarge
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("4 байт");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        MIN_VALID_UPLOAD_LIMIT
+                                + " байт"
+                );
     }
 
     @Test
@@ -516,12 +622,16 @@ class KnowledgeDocumentFileValidatorTest {
         when(
                 file.isEmpty()
         )
-                .thenReturn(false);
+                .thenReturn(
+                        false
+                );
 
         when(
                 file.getSize()
         )
-                .thenReturn(10L);
+                .thenReturn(
+                        10L
+                );
 
         when(
                 file.getOriginalFilename()
@@ -544,8 +654,12 @@ class KnowledgeDocumentFileValidatorTest {
                         file
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Не удалось прочитать");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "Не удалось прочитать"
+                );
     }
 
     private void assertMediaType(

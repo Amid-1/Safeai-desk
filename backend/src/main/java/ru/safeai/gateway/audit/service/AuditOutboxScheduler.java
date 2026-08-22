@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 public class AuditOutboxScheduler {
 
     private final AuditOutboxProcessor processor;
+    private final AuditOutboxMetrics metrics;
 
     @Scheduled(
             fixedDelayString =
@@ -40,6 +41,8 @@ public class AuditOutboxScheduler {
                 );
             }
         } catch (RuntimeException exception) {
+            metrics.recordProcessorFailure();
+
             log.error(
                     "Unable to process audit outbox batch",
                     exception

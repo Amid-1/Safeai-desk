@@ -1,20 +1,33 @@
 package ru.safeai.gateway.ai.provider;
 
 import lombok.RequiredArgsConstructor;
+
 import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.stereotype.Component;
+
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+
 import ru.safeai.gateway.ai.exception.AiProviderException;
 
 import java.time.Duration;
+
+import java.util.Objects;
+
 import java.util.UUID;
+
 import java.util.concurrent.ThreadLocalRandom;
+
 import java.util.function.Function;
+
 import java.util.function.Supplier;
 
 @Slf4j
+
 @Component
+
 @RequiredArgsConstructor
+
 public class AiProviderRetryExecutor {
 
     private final AiRetryProperties properties;
@@ -26,11 +39,38 @@ public class AiProviderRetryExecutor {
             Duration attemptTimeout,
             Function<AiProviderAttemptContext, AiChatResponse> action
     ) {
+        Objects.requireNonNull(
+                operationId,
+                "operationId не должен быть null"
+        );
+        Objects.requireNonNull(
+                action,
+                "action не должен быть null"
+        );
+
+        Duration normalizedAttemptTimeout =
+                normalizeAttemptTimeout(
+                        attemptTimeout
+                );
+
+        Duration totalTimeout =
+                properties.effectiveTotalTimeout();
+
+        if (!normalizedAttemptTimeout.isZero()
+                && normalizedAttemptTimeout.compareTo(totalTimeout) > 0) {
+            throw new IllegalStateException(
+                    "AI provider attempt timeout "
+                            + normalizedAttemptTimeout
+                            + " превышает safeai.ai.retry.total-timeout "
+                            + totalTimeout
+            );
+        }
+
         int maxAttempts = properties.effectiveMaxAttempts();
         Duration backoff = properties.effectiveInitialBackoff();
         long deadlineNanos = safeAdd(
                 System.nanoTime(),
-                properties.effectiveTotalTimeout().toNanos()
+                totalTimeout.toNanos()
         );
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -57,7 +97,7 @@ public class AiProviderRetryExecutor {
 
                 if (!fitsDeadline(
                         delay,
-                        attemptTimeout,
+                        normalizedAttemptTimeout,
                         deadlineNanos
                 )) {
                     log.warn(
@@ -136,8 +176,8 @@ public class AiProviderRetryExecutor {
 
         return retryAfter == null
                 || retryAfter.compareTo(
-                        properties.effectiveMaxRetryAfter()
-                ) <= 0;
+                properties.effectiveMaxRetryAfter()
+        ) <= 0;
     }
 
     private Duration retryDelay(
@@ -159,12 +199,26 @@ public class AiProviderRetryExecutor {
         long now = System.nanoTime();
         long required = safeAdd(
                 delay.toNanos(),
-                attemptTimeout == null
-                        ? 0L
-                        : Math.max(0L, attemptTimeout.toNanos())
+                attemptTimeout.toNanos()
         );
 
         return safeAdd(now, required) <= deadlineNanos;
+    }
+
+    private Duration normalizeAttemptTimeout(
+            Duration attemptTimeout
+    ) {
+        if (attemptTimeout == null) {
+            return Duration.ZERO;
+        }
+
+        if (attemptTimeout.isNegative()) {
+            throw new IllegalArgumentException(
+                    "attemptTimeout не может быть отрицательным"
+            );
+        }
+
+        return attemptTimeout;
     }
 
     private Duration nextBackoff(Duration current) {
@@ -232,4 +286,5 @@ public class AiProviderRetryExecutor {
             return Long.MAX_VALUE;
         }
     }
+
 }

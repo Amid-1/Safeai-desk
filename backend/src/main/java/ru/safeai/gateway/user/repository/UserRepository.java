@@ -7,10 +7,12 @@ import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.safeai.gateway.user.entity.UserEntity;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -80,6 +82,29 @@ public interface UserRepository
     findByIdForSecurityUpdate(
             @Param("id")
             UUID id
+    );
+
+    /**
+     * Обновляет operational login metadata без изменения business @Version.
+     *
+     * <p>Метод вызывается внутри login transaction после получения
+     * PESSIMISTIC_WRITE lock на пользователя. JPQL bulk update намеренно
+     * не увеличивает version: обычный login не должен создавать ложный
+     * optimistic-lock conflict для admin user-management.</p>
+     */
+    @Modifying(
+            flushAutomatically = true
+    )
+    @Query("""
+            update UserEntity user
+            set user.lastLoginAt = :lastLoginAt
+            where user.id = :userId
+            """)
+    int updateLastLoginAtWithoutVersion(
+            @Param("userId")
+            UUID userId,
+            @Param("lastLoginAt")
+            Instant lastLoginAt
     );
 
     @Query(
@@ -310,31 +335,38 @@ public interface UserRepository
                         from public.chat_sessions
                                 as chat_session
                         where chat_session.user_id = :userId
-
+                    
                         union all
-
+                    
                         select 1
                         from public.usage_daily_user_model_rollups
                                 as usage_rollup
                         where usage_rollup.user_id = :userId
-
+                    
                         union all
-
+                    
                         select 1
                         from public.user_ai_quotas
                                 as user_quota
                         where user_quota.user_id = :userId
-
+                    
                         union all
-
+                    
+                        select 1
+                        from public.knowledge_base_memberships
+                                as knowledge_membership
+                        where knowledge_membership.user_id = :userId
+                    
+                        union all
+                    
                         select 1
                         from public.audit_events
                                 as audit_event
                         where audit_event.user_id = :userId
                            or audit_event.actor_user_id = :userId
-
+                    
                         union all
-
+                    
                         select 1
                         from public.audit_outbox
                                 as audit_outbox_event
@@ -386,3 +418,4 @@ public interface UserRepository
             String role
     );
 }
+

@@ -1,8 +1,6 @@
 package ru.safeai.gateway.knowledge.repository;
 
 import jakarta.persistence.LockModeType;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -15,12 +13,6 @@ import java.util.UUID;
 public interface KnowledgeDocumentRepository
         extends JpaRepository<KnowledgeDocumentEntity, UUID> {
 
-    Page<KnowledgeDocumentEntity> findAllByKnowledgeBaseIdAndOrganizationId(
-            UUID knowledgeBaseId,
-            UUID organizationId,
-            Pageable pageable
-    );
-
     @Query("""
             select document
             from KnowledgeDocumentEntity document
@@ -28,10 +20,14 @@ public interface KnowledgeDocumentRepository
               and document.knowledgeBaseId = :knowledgeBaseId
               and document.organizationId = :organizationId
             """)
-    Optional<KnowledgeDocumentEntity> findByIdAndKnowledgeBaseIdAndOrganizationId(
-            @Param("documentId") UUID documentId,
-            @Param("knowledgeBaseId") UUID knowledgeBaseId,
-            @Param("organizationId") UUID organizationId
+    Optional<KnowledgeDocumentEntity>
+    findByIdAndKnowledgeBaseIdAndOrganizationId(
+            @Param("documentId")
+            UUID documentId,
+            @Param("knowledgeBaseId")
+            UUID knowledgeBaseId,
+            @Param("organizationId")
+            UUID organizationId
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -43,9 +39,12 @@ public interface KnowledgeDocumentRepository
               and document.organizationId = :organizationId
             """)
     Optional<KnowledgeDocumentEntity> findForUpdate(
-            @Param("documentId") UUID documentId,
-            @Param("knowledgeBaseId") UUID knowledgeBaseId,
-            @Param("organizationId") UUID organizationId
+            @Param("documentId")
+            UUID documentId,
+            @Param("knowledgeBaseId")
+            UUID knowledgeBaseId,
+            @Param("organizationId")
+            UUID organizationId
     );
 
     boolean existsByKnowledgeBaseIdAndOrganizationIdAndNameIgnoreCase(
@@ -54,14 +53,32 @@ public interface KnowledgeDocumentRepository
             String name
     );
 
-    @Query("""
-            select coalesce(max(documentVersion.versionNumber), 0)
-            from KnowledgeDocumentVersionEntity documentVersion
-            where documentVersion.documentId = :documentId
-              and documentVersion.organizationId = :organizationId
-            """)
+    boolean existsByKnowledgeBaseIdAndOrganizationIdAndNameIgnoreCaseAndIdNot(
+            UUID knowledgeBaseId,
+            UUID organizationId,
+            String name,
+            UUID id
+    );
+
+    @Query(
+            value = """
+                    select coalesce(
+                        max(document_version.version_number),
+                        0
+                    )
+                    from knowledge_document_versions document_version
+                    where document_version.document_id = :documentId
+                      and document_version.knowledge_base_id = :knowledgeBaseId
+                      and document_version.organization_id = :organizationId
+                    """,
+            nativeQuery = true
+    )
     int currentVersionNumber(
-            @Param("documentId") UUID documentId,
-            @Param("organizationId") UUID organizationId
+            @Param("documentId")
+            UUID documentId,
+            @Param("knowledgeBaseId")
+            UUID knowledgeBaseId,
+            @Param("organizationId")
+            UUID organizationId
     );
 }

@@ -8,12 +8,19 @@ import java.util.Set;
 import java.util.UUID;
 
 public record KnowledgeEvaluationCaseRequest(
-        @NotBlank @Size(max = 4000) String query,
-        @NotEmpty @Size(max = 100) Set<UUID> expectedDocumentVersionIds
+        @NotBlank
+        String query,
+
+        @NotEmpty
+        @Size(max = 100)
+        Set<UUID> expectedDocumentVersionIds
 ) {
     public KnowledgeEvaluationCaseRequest {
-        expectedDocumentVersionIds = expectedDocumentVersionIds == null
-                ? Set.of()
-                : Set.copyOf(expectedDocumentVersionIds);
+        expectedDocumentVersionIds =
+                expectedDocumentVersionIds == null
+                        ? Set.of()
+                        : Set.copyOf(
+                        expectedDocumentVersionIds
+                );
     }
 }

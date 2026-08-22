@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -18,7 +19,7 @@ import java.util.UUID;
 
 @Component
 public class SafeAiJwtAuthenticationConverter
-        implements Converter<Jwt, AbstractAuthenticationToken> {
+implements Converter<Jwt, AbstractAuthenticationToken> {
 
     @Override
     public AbstractAuthenticationToken convert(
@@ -36,6 +37,26 @@ public class SafeAiJwtAuthenticationConverter
                     "JWT subject is missing"
             );
         }
+
+        Instant issuedAt = jwt.getIssuedAt();
+
+        if (issuedAt == null) {
+            throw new BadJwtException(
+                    "JWT issued-at claim is missing: iat"
+            );
+        }
+
+        String jwtId = requiredStringClaim(
+                jwt,
+                "jti"
+        );
+
+        /*
+         * jti является частью strict access-token schema и обязан быть UUID.
+         * Значение сейчас не используется как server-side session id, но
+         * валидируется, чтобы подписанный token не мог обходить schema contract.
+         */
+        parseUuid(jwtId, "jti");
 
         String userId = requiredStringClaim(
                 jwt,
@@ -67,37 +88,27 @@ public class SafeAiJwtAuthenticationConverter
         Object rawRoles = jwt.getClaim("roles");
 
         if (!(rawRoles instanceof List<?> roleValues)
-                || roleValues.isEmpty()) {
+                || roleValues.size() != 1) {
             throw new BadJwtException(
-                    "JWT claim is missing or invalid: roles"
+                    "JWT must contain exactly one role"
             );
         }
 
-        List<String> roles;
+        Object rawRole = roleValues.getFirst();
 
-        try {
-            roles = roleValues.stream()
-                    .map(value -> {
-                        if (!(value instanceof String role)) {
-                            throw new IllegalArgumentException(
-                                    "role is not a string"
-                            );
-                        }
-                        return role;
-                    })
-                    .toList();
-        } catch (RuntimeException exception) {
+        if (!(rawRole instanceof String role)
+                || role.isBlank()) {
             throw new BadJwtException(
-                    "JWT roles contain invalid values",
-                    exception
+                    "JWT roles contain invalid values"
             );
         }
 
         Set<SimpleGrantedAuthority> authorities;
 
         try {
-            authorities = RoleAuthorityMapper
-                    .toAuthorities(roles);
+            authorities = RoleAuthorityMapper.toAuthorities(
+                    List.of(role)
+            );
         } catch (IllegalArgumentException
                  | NullPointerException exception) {
             throw new BadJwtException(
@@ -106,34 +117,42 @@ public class SafeAiJwtAuthenticationConverter
             );
         }
 
-        if (authorities.isEmpty()) {
+        if (authorities.size() != 1) {
             throw new BadJwtException(
-                    "JWT roles are invalid"
+                    "JWT must contain exactly one system role"
             );
         }
 
-        SafeAiUserPrincipal principal =
-                SafeAiUserPrincipal.accessTokenPrincipal(
-                        parseUuid(userId, "userId"),
-                        parseUuid(
-                                organizationId,
-                                "organizationId"
-                        ),
-                        tokenVersion,
-                        organizationAuthVersion,
-                        authorities
-                );
+        SafeAiUserPrincipal principal;
+
+        try {
+            principal = SafeAiUserPrincipal.accessTokenPrincipal(
+                    parseUuid(userId, "userId"),
+                    parseUuid(
+                            organizationId,
+                            "organizationId"
+                    ),
+                    tokenVersion,
+                    organizationAuthVersion,
+                    authorities
+            );
+        } catch (IllegalArgumentException
+                 | NullPointerException exception) {
+            throw new BadJwtException(
+                    "JWT identity claims are invalid",
+                    exception
+            );
+        }
 
         /*
-         * Raw Jwt/token value намеренно не сохраняется
-         * ни в principal, ни в credentials.
+         * Raw Jwt/token value намеренно не сохраняется ни в principal,
+         * ни в credentials.
          */
-        return UsernamePasswordAuthenticationToken
-                .authenticated(
-                        principal,
-                        null,
-                        authorities
-                );
+        return UsernamePasswordAuthenticationToken.authenticated(
+                principal,
+                null,
+                authorities
+        );
     }
 
     public AbstractAuthenticationToken convertForResourceServer(

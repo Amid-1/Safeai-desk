@@ -36,10 +36,11 @@ import ru.safeai.gateway.auth.service.AuthService;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 import ru.safeai.gateway.common.security.AccessTokenSubject;
+import ru.safeai.gateway.common.security.BearerAuthenticationEntryPoint;
 import ru.safeai.gateway.common.security.JwtCodecConfiguration;
-import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.JwtProperties;
 import ru.safeai.gateway.common.security.JwtRsaKeyRing;
+import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.PasswordEncodingConfiguration;
 import ru.safeai.gateway.common.security.RequestIdFilter;
 import ru.safeai.gateway.common.security.RestAccessDeniedHandler;
@@ -57,6 +58,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -73,11 +75,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Integration test настоящей SecurityConfig.
+ * Integration test реальной production SecurityConfig.
  *
- * <p>Использует production JWT codec, JWT converter,
- * security handlers, CSRF, cookie bearer fallback,
- * RequestIdFilter и UserStatusFilter.</p>
+ * <p>Проверяет совместную работу:</p>
+ *
+ * <ul>
+ *     <li>JWT encoder/decoder;</li>
+ *     <li>strict JWT authentication converter;</li>
+ *     <li>Bearer и cookie authentication flows;</li>
+ *     <li>раздельные authentication entry points;</li>
+ *     <li>CSRF для cookie authentication;</li>
+ *     <li>UserStatusFilter;</li>
+ *     <li>RBAC;</li>
+ *     <li>actuator isolation;</li>
+ *     <li>fail-closed API rules;</li>
+ *     <li>CORS;</li>
+ *     <li>security headers;</li>
+ *     <li>RequestIdFilter.</li>
+ * </ul>
  */
 @WebMvcTest(useDefaultFilters = false)
 @Import({
@@ -92,7 +107,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         UserStatusFilter.class,
 
         RestAuthenticationEntryPoint.class,
+        BearerAuthenticationEntryPoint.class,
         RestAccessDeniedHandler.class,
+
         ApiErrorResponseWriter.class,
         ApiErrorResponseFactory.class,
         RequestIdFilter.class,
@@ -164,6 +181,21 @@ class SecurityConfigIntegrationTest {
     private static final String CLIENT_REQUEST_ID =
             "security-integration-test";
 
+    private static final String ADMIN_ENDPOINT =
+            "/api/admin/security-probe";
+
+    private static final String CHAT_ENDPOINT =
+            "/api/chats/security-probe";
+
+    private static final String ACTUATOR_ENDPOINT =
+            "/actuator/security-probe";
+
+    private static final String UNLISTED_API_ENDPOINT =
+            "/api/unlisted/security-probe";
+
+    private static final String ORGANIZATION_ENDPOINT =
+            "/api/organizations";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -180,8 +212,7 @@ class SecurityConfigIntegrationTest {
     private AuthService authService;
 
     @MockitoBean
-    private UserStatusCacheService
-            userStatusCacheService;
+    private UserStatusCacheService userStatusCacheService;
 
     @MockitoBean
     private UserDetailsService userDetailsService;
@@ -198,7 +229,7 @@ class SecurityConfigIntegrationTest {
     @RestController
     static class SecurityProbeController {
 
-        @GetMapping("/api/admin/security-probe")
+        @GetMapping(ADMIN_ENDPOINT)
         Map<String, String> adminProbe() {
             return Map.of(
                     "scope",
@@ -206,7 +237,7 @@ class SecurityConfigIntegrationTest {
             );
         }
 
-        @GetMapping("/api/chats/security-probe")
+        @GetMapping(CHAT_ENDPOINT)
         Map<String, String> chatProbe() {
             return Map.of(
                     "scope",
@@ -214,7 +245,7 @@ class SecurityConfigIntegrationTest {
             );
         }
 
-        @GetMapping("/actuator/security-probe")
+        @GetMapping(ACTUATOR_ENDPOINT)
         Map<String, String> actuatorProbe() {
             return Map.of(
                     "scope",
@@ -222,7 +253,15 @@ class SecurityConfigIntegrationTest {
             );
         }
 
-        @PostMapping("/api/organizations")
+        @GetMapping(UNLISTED_API_ENDPOINT)
+        Map<String, String> unlistedApiProbe() {
+            return Map.of(
+                    "scope",
+                    "unlisted"
+            );
+        }
+
+        @PostMapping(ORGANIZATION_ENDPOINT)
         Map<String, String> createOrganizationProbe() {
             return Map.of(
                     "result",
@@ -230,6 +269,12 @@ class SecurityConfigIntegrationTest {
             );
         }
     }
+
+    /*
+     * ============================================================
+     * CSRF
+     * ============================================================
+     */
 
     @Test
     void csrfEndpointIsPublicAndCreatesReadableCookie()
@@ -347,6 +392,17 @@ class SecurityConfigIntegrationTest {
                                 )
                 )
                 .andExpect(
+                        header().string(
+                                HttpHeaders.CACHE_CONTROL,
+                                "no-store"
+                        )
+                )
+                .andExpect(
+                        header().doesNotExist(
+                                HttpHeaders.WWW_AUTHENTICATE
+                        )
+                )
+                .andExpect(
                         jsonPath("$.status")
                                 .value(403)
                 )
@@ -404,6 +460,12 @@ class SecurityConfigIntegrationTest {
         );
     }
 
+    /*
+     * ============================================================
+     * Public auth endpoints
+     * ============================================================
+     */
+
     @Test
     void publicAuthEndpointIgnoresInvalidBearerToken()
             throws Exception {
@@ -445,8 +507,14 @@ class SecurityConfigIntegrationTest {
         );
     }
 
+    /*
+     * ============================================================
+     * Generic unauthenticated flow
+     * ============================================================
+     */
+
     @Test
-    void meWithoutTokenReturnsJson401()
+    void meWithoutTokenReturnsJson401WithoutBearerChallenge()
             throws Exception {
 
         mockMvc.perform(
@@ -468,12 +536,23 @@ class SecurityConfigIntegrationTest {
                         )
                 )
                 .andExpect(
+                        header().doesNotExist(
+                                HttpHeaders.WWW_AUTHENTICATE
+                        )
+                )
+                .andExpect(
                         jsonPath("$.status")
                                 .value(401)
                 )
                 .andExpect(
                         jsonPath("$.error")
                                 .value("UNAUTHORIZED")
+                )
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(
+                                        "Требуется авторизация"
+                                )
                 )
                 .andExpect(
                         jsonPath("$.path")
@@ -485,6 +564,12 @@ class SecurityConfigIntegrationTest {
                 userStatusCacheService
         );
     }
+
+    /*
+     * ============================================================
+     * Valid Bearer authentication
+     * ============================================================
+     */
 
     @Test
     void validBearerTokenIsDecodedConvertedAndAccepted()
@@ -534,7 +619,9 @@ class SecurityConfigIntegrationTest {
                         )
                         .andExpect(
                                 jsonPath("$.email")
-                                        .value(EMAIL)
+                                        .value(
+                                                EMAIL
+                                        )
                         )
                         .andExpect(
                                 header().exists(
@@ -594,7 +681,9 @@ class SecurityConfigIntegrationTest {
 
         assertThat(
                 principal.getId()
-        ).isEqualTo(USER_ID);
+        ).isEqualTo(
+                USER_ID
+        );
 
         assertThat(
                 principal.getOrganizationId()
@@ -602,6 +691,10 @@ class SecurityConfigIntegrationTest {
                 ORGANIZATION_ID
         );
 
+        /*
+         * Email intentionally отсутствует в JWT principal.
+         * DTO получает email из server-side source of truth.
+         */
         assertThat(
                 principal.getEmail()
         ).isNull();
@@ -638,6 +731,12 @@ class SecurityConfigIntegrationTest {
                 userStatusCacheService
         );
     }
+
+    /*
+     * ============================================================
+     * Cookie authentication
+     * ============================================================
+     */
 
     @Test
     void validAccessCookieIsDecodedAndAccepted()
@@ -692,7 +791,7 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void invalidAccessCookieReturnsJson401()
+    void invalidAccessCookieReturnsGenericJson401WithoutBearerChallenge()
             throws Exception {
 
         mockMvc.perform(
@@ -716,6 +815,11 @@ class SecurityConfigIntegrationTest {
                         header().string(
                                 HttpHeaders.CACHE_CONTROL,
                                 "no-store"
+                        )
+                )
+                .andExpect(
+                        header().doesNotExist(
+                                HttpHeaders.WWW_AUTHENTICATE
                         )
                 )
                 .andExpect(
@@ -789,11 +893,17 @@ class SecurityConfigIntegrationTest {
         );
     }
 
+    /*
+     * ============================================================
+     * Invalid Bearer JWT
+     * ============================================================
+     */
+
     @Test
-    void tokenWithInvalidSignatureReturns401()
+    void tokenWithInvalidSignatureReturnsBearer401()
             throws Exception {
 
-        assertInvalidJwt(
+        assertInvalidBearerJwt(
                 corruptSignature(
                         validUserToken()
                 )
@@ -801,7 +911,7 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void expiredTokenReturns401()
+    void expiredTokenReturnsBearer401()
             throws Exception {
 
         Instant now =
@@ -818,7 +928,7 @@ class SecurityConfigIntegrationTest {
                                 )
                         );
 
-        assertInvalidJwt(
+        assertInvalidBearerJwt(
                 encodeToken(
                         jwtEncoder,
                         claims
@@ -827,10 +937,10 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void tokenWithWrongIssuerReturns401()
+    void tokenWithWrongIssuerReturnsBearer401()
             throws Exception {
 
-        assertInvalidJwt(
+        assertInvalidBearerJwt(
                 encodeToken(
                         jwtEncoder,
                         defaultClaims()
@@ -840,10 +950,10 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void tokenWithWrongAudienceReturns401()
+    void tokenWithWrongAudienceReturnsBearer401()
             throws Exception {
 
-        assertInvalidJwt(
+        assertInvalidBearerJwt(
                 encodeToken(
                         jwtEncoder,
                         defaultClaims()
@@ -857,10 +967,10 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void tokenWithoutOrganizationIdReturns401()
+    void tokenWithoutOrganizationIdReturnsBearer401()
             throws Exception {
 
-        assertInvalidJwt(
+        assertInvalidBearerJwt(
                 encodeToken(
                         jwtEncoder,
                         defaultClaims()
@@ -870,10 +980,10 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void tokenWithoutOrganizationAuthVersionReturns401()
+    void tokenWithoutOrganizationAuthVersionReturnsBearer401()
             throws Exception {
 
-        assertInvalidJwt(
+        assertInvalidBearerJwt(
                 encodeToken(
                         jwtEncoder,
                         defaultClaims()
@@ -883,10 +993,10 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void tokenWithSubjectDifferentFromUserIdReturns401()
+    void tokenWithSubjectDifferentFromUserIdReturnsBearer401()
             throws Exception {
 
-        assertInvalidJwt(
+        assertInvalidBearerJwt(
                 encodeToken(
                         jwtEncoder,
                         defaultClaims()
@@ -899,10 +1009,10 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void tokenWithUnknownRoleReturns401()
+    void tokenWithUnknownRoleReturnsBearer401()
             throws Exception {
 
-        assertInvalidJwt(
+        assertInvalidBearerJwt(
                 encodeToken(
                         jwtEncoder,
                         defaultClaims()
@@ -915,6 +1025,12 @@ class SecurityConfigIntegrationTest {
         );
     }
 
+    /*
+     * ============================================================
+     * UserStatusFilter
+     * ============================================================
+     */
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("invalidSecurityStatuses")
     void userStatusFilterRejectsInvalidSecurityState(
@@ -923,7 +1039,9 @@ class SecurityConfigIntegrationTest {
 
         when(
                 userStatusCacheService
-                        .getStatus(USER_ID)
+                        .getStatus(
+                                USER_ID
+                        )
         ).thenReturn(
                 Optional.ofNullable(
                         testCase.securityStatus()
@@ -991,6 +1109,12 @@ class SecurityConfigIntegrationTest {
         );
     }
 
+    /*
+     * ============================================================
+     * RBAC
+     * ============================================================
+     */
+
     @Test
     void userRoleCannotAccessAdminEndpoint()
             throws Exception {
@@ -999,7 +1123,7 @@ class SecurityConfigIntegrationTest {
 
         mockMvc.perform(
                         get(
-                                "/api/admin/security-probe"
+                                ADMIN_ENDPOINT
                         )
                                 .header(
                                         HttpHeaders.AUTHORIZATION,
@@ -1010,6 +1134,11 @@ class SecurityConfigIntegrationTest {
                 )
                 .andExpect(
                         status().isForbidden()
+                )
+                .andExpect(
+                        header().doesNotExist(
+                                HttpHeaders.WWW_AUTHENTICATE
+                        )
                 )
                 .andExpect(
                         jsonPath("$.status")
@@ -1038,7 +1167,7 @@ class SecurityConfigIntegrationTest {
 
         mockMvc.perform(
                         get(
-                                "/api/admin/security-probe"
+                                ADMIN_ENDPOINT
                         )
                                 .header(
                                         HttpHeaders.AUTHORIZATION,
@@ -1077,7 +1206,7 @@ class SecurityConfigIntegrationTest {
 
         mockMvc.perform(
                         get(
-                                "/api/chats/security-probe"
+                                CHAT_ENDPOINT
                         )
                                 .header(
                                         HttpHeaders.AUTHORIZATION,
@@ -1105,19 +1234,147 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void regularUserCannotAccessActuatorEndpoint()
+    void adminCanAccessChatEndpoint()
             throws Exception {
 
         stubValidStatus();
 
         mockMvc.perform(
                         get(
-                                "/actuator/security-probe"
+                                CHAT_ENDPOINT
+                        )
+                                .header(
+                                        HttpHeaders.AUTHORIZATION,
+                                        bearer(
+                                                validToken(
+                                                        Set.of(
+                                                                "ADMIN"
+                                                        )
+                                                )
+                                        )
+                                )
+                )
+                .andExpect(
+                        status().isOk()
+                )
+                .andExpect(
+                        jsonPath("$.scope")
+                                .value("chat")
+                );
+
+        verify(userStatusCacheService)
+                .getStatus(
+                        USER_ID
+                );
+
+        verifyNoInteractions(
+                authService
+        );
+    }
+
+    @Test
+    void superAdminCannotAccessTenantChatEndpoint()
+            throws Exception {
+
+        stubValidStatus();
+
+        mockMvc.perform(
+                        get(
+                                CHAT_ENDPOINT
+                        )
+                                .header(
+                                        HttpHeaders.AUTHORIZATION,
+                                        bearer(
+                                                validToken(
+                                                        Set.of(
+                                                                "SUPER_ADMIN"
+                                                        )
+                                                )
+                                        )
+                                )
+                )
+                .andExpect(
+                        status().isForbidden()
+                )
+                .andExpect(
+                        jsonPath("$.status")
+                                .value(403)
+                )
+                .andExpect(
+                        jsonPath("$.error")
+                                .value("FORBIDDEN")
+                );
+
+        verify(userStatusCacheService)
+                .getStatus(
+                        USER_ID
+                );
+
+        verifyNoInteractions(
+                authService
+        );
+    }
+
+    /*
+     * ============================================================
+     * Actuator isolation
+     * ============================================================
+     */
+
+    @Test
+    void regularUserCannotAccessOperationalActuatorEndpoint()
+            throws Exception {
+
+        stubValidStatus();
+
+        mockMvc.perform(
+                        get(
+                                ACTUATOR_ENDPOINT
                         )
                                 .header(
                                         HttpHeaders.AUTHORIZATION,
                                         bearer(
                                                 validUserToken()
+                                        )
+                                )
+                )
+                .andExpect(
+                        status().isForbidden()
+                )
+                .andExpect(
+                        header().doesNotExist(
+                                HttpHeaders.WWW_AUTHENTICATE
+                        )
+                );
+
+        verify(userStatusCacheService)
+                .getStatus(
+                        USER_ID
+                );
+
+        verifyNoInteractions(
+                authService
+        );
+    }
+
+    @Test
+    void adminCannotAccessOperationalActuatorEndpoint()
+            throws Exception {
+
+        stubValidStatus();
+
+        mockMvc.perform(
+                        get(
+                                ACTUATOR_ENDPOINT
+                        )
+                                .header(
+                                        HttpHeaders.AUTHORIZATION,
+                                        bearer(
+                                                validToken(
+                                                        Set.of(
+                                                                "ADMIN"
+                                                        )
+                                                )
                                         )
                                 )
                 )
@@ -1136,14 +1393,14 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
-    void superAdminCanAccessActuatorEndpoint()
+    void superAdminCannotAccessOperationalActuatorEndpoint()
             throws Exception {
 
         stubValidStatus();
 
         mockMvc.perform(
                         get(
-                                "/actuator/security-probe"
+                                ACTUATOR_ENDPOINT
                         )
                                 .header(
                                         HttpHeaders.AUTHORIZATION,
@@ -1157,11 +1414,26 @@ class SecurityConfigIntegrationTest {
                                 )
                 )
                 .andExpect(
-                        status().isOk()
+                        status().isForbidden()
                 )
                 .andExpect(
-                        jsonPath("$.scope")
-                                .value("actuator")
+                        content()
+                                .contentTypeCompatibleWith(
+                                        MediaType.APPLICATION_JSON
+                                )
+                )
+                .andExpect(
+                        header().doesNotExist(
+                                HttpHeaders.WWW_AUTHENTICATE
+                        )
+                )
+                .andExpect(
+                        jsonPath("$.status")
+                                .value(403)
+                )
+                .andExpect(
+                        jsonPath("$.error")
+                                .value("FORBIDDEN")
                 );
 
         verify(userStatusCacheService)
@@ -1174,13 +1446,64 @@ class SecurityConfigIntegrationTest {
         );
     }
 
+    /*
+     * ============================================================
+     * Fail closed
+     * ============================================================
+     */
+
+    @Test
+    void authenticatedUserCannotAccessUnlistedApiEndpoint()
+            throws Exception {
+
+        stubValidStatus();
+
+        mockMvc.perform(
+                        get(
+                                UNLISTED_API_ENDPOINT
+                        )
+                                .header(
+                                        HttpHeaders.AUTHORIZATION,
+                                        bearer(
+                                                validUserToken()
+                                        )
+                                )
+                )
+                .andExpect(
+                        status().isForbidden()
+                )
+                .andExpect(
+                        jsonPath("$.status")
+                                .value(403)
+                )
+                .andExpect(
+                        jsonPath("$.error")
+                                .value("FORBIDDEN")
+                );
+
+        verify(userStatusCacheService)
+                .getStatus(
+                        USER_ID
+                );
+
+        verifyNoInteractions(
+                authService
+        );
+    }
+
+    /*
+     * ============================================================
+     * Organization mutation + CSRF + RBAC
+     * ============================================================
+     */
+
     @Test
     void organizationCreationWithAccessCookieRequiresCsrf()
             throws Exception {
 
         mockMvc.perform(
                         post(
-                                "/api/organizations"
+                                ORGANIZATION_ENDPOINT
                         )
                                 .cookie(
                                         accessCookie(
@@ -1200,6 +1523,10 @@ class SecurityConfigIntegrationTest {
                                 .value("FORBIDDEN")
                 );
 
+        /*
+         * CSRF rejects the request before cookie authentication
+         * and before UserStatusFilter.
+         */
         verifyNoInteractions(
                 authService,
                 userStatusCacheService
@@ -1214,7 +1541,7 @@ class SecurityConfigIntegrationTest {
 
         mockMvc.perform(
                         post(
-                                "/api/organizations"
+                                ORGANIZATION_ENDPOINT
                         )
                                 .header(
                                         HttpHeaders.AUTHORIZATION,
@@ -1250,6 +1577,45 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void adminBearerCannotCreateOrganization()
+            throws Exception {
+
+        stubValidStatus();
+
+        mockMvc.perform(
+                        post(
+                                ORGANIZATION_ENDPOINT
+                        )
+                                .header(
+                                        HttpHeaders.AUTHORIZATION,
+                                        bearer(
+                                                validToken(
+                                                        Set.of(
+                                                                "ADMIN"
+                                                        )
+                                                )
+                                        )
+                                )
+                )
+                .andExpect(
+                        status().isForbidden()
+                )
+                .andExpect(
+                        jsonPath("$.error")
+                                .value("FORBIDDEN")
+                );
+
+        verify(userStatusCacheService)
+                .getStatus(
+                        USER_ID
+                );
+
+        verifyNoInteractions(
+                authService
+        );
+    }
+
+    @Test
     void adminAccessCookieCannotCreateOrganizationWithValidCsrf()
             throws Exception {
 
@@ -1260,7 +1626,7 @@ class SecurityConfigIntegrationTest {
 
         mockMvc.perform(
                         post(
-                                "/api/organizations"
+                                ORGANIZATION_ENDPOINT
                         )
                                 .cookie(
                                         csrf.cookie(),
@@ -1307,7 +1673,7 @@ class SecurityConfigIntegrationTest {
 
         mockMvc.perform(
                         post(
-                                "/api/organizations"
+                                ORGANIZATION_ENDPOINT
                         )
                                 .cookie(
                                         csrf.cookie(),
@@ -1343,20 +1709,26 @@ class SecurityConfigIntegrationTest {
         );
     }
 
+    /*
+     * ============================================================
+     * CORS
+     * ============================================================
+     */
+
     @Test
     void optionsRequestIsPublic()
             throws Exception {
 
         mockMvc.perform(
                         options(
-                                "/api/admin/security-probe"
+                                ADMIN_ENDPOINT
                         )
                                 .header(
-                                        "Origin",
+                                        HttpHeaders.ORIGIN,
                                         "https://app.safeai.test"
                                 )
                                 .header(
-                                        "Access-Control-Request-Method",
+                                        HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD,
                                         "GET"
                                 )
                 )
@@ -1365,13 +1737,13 @@ class SecurityConfigIntegrationTest {
                 )
                 .andExpect(
                         header().string(
-                                "Access-Control-Allow-Origin",
+                                HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN,
                                 "https://app.safeai.test"
                         )
                 )
                 .andExpect(
                         header().string(
-                                "Access-Control-Allow-Credentials",
+                                HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS,
                                 "true"
                         )
                 );
@@ -1382,11 +1754,16 @@ class SecurityConfigIntegrationTest {
         );
     }
 
-    private static java.util.stream.Stream<
-            InvalidSecurityStatusCase>
+    /*
+     * ============================================================
+     * Test cases
+     * ============================================================
+     */
+
+    private static Stream<InvalidSecurityStatusCase>
     invalidSecurityStatuses() {
 
-        return java.util.stream.Stream.of(
+        return Stream.of(
                 new InvalidSecurityStatusCase(
                         "user status is absent",
                         null
@@ -1444,7 +1821,13 @@ class SecurityConfigIntegrationTest {
         );
     }
 
-    private void assertInvalidJwt(
+    /*
+     * ============================================================
+     * Assertions / helpers
+     * ============================================================
+     */
+
+    private void assertInvalidBearerJwt(
             String token
     ) throws Exception {
 
@@ -1471,6 +1854,16 @@ class SecurityConfigIntegrationTest {
                         )
                 )
                 .andExpect(
+                        /*
+                         * Это именно Resource Server rejection.
+                         * Поэтому challenge обязателен.
+                         */
+                        header().string(
+                                HttpHeaders.WWW_AUTHENTICATE,
+                                "Bearer"
+                        )
+                )
+                .andExpect(
                         jsonPath("$.status")
                                 .value(401)
                 )
@@ -1478,6 +1871,12 @@ class SecurityConfigIntegrationTest {
                         jsonPath("$.error")
                                 .value(
                                         "UNAUTHORIZED"
+                                )
+                )
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(
+                                        "Требуется авторизация"
                                 )
                 )
                 .andExpect(
@@ -1496,7 +1895,9 @@ class SecurityConfigIntegrationTest {
     private void stubValidStatus() {
         when(
                 userStatusCacheService
-                        .getStatus(USER_ID)
+                        .getStatus(
+                                USER_ID
+                        )
         ).thenReturn(
                 Optional.of(
                         new UserSecurityStatus(
@@ -1585,7 +1986,7 @@ class SecurityConfigIntegrationTest {
         );
     }
 
-    private Cookie accessCookie(
+    private static Cookie accessCookie(
             String token
     ) {
         Cookie cookie =
@@ -1602,7 +2003,9 @@ class SecurityConfigIntegrationTest {
 
     private String validUserToken() {
         return validToken(
-                Set.of("USER")
+                Set.of(
+                        "USER"
+                )
         );
     }
 
@@ -1621,16 +2024,24 @@ class SecurityConfigIntegrationTest {
                 );
     }
 
-    private CurrentUserResponse currentUserResponse() {
+    private static CurrentUserResponse currentUserResponse() {
         return new CurrentUserResponse(
                 USER_ID,
                 ORGANIZATION_ID,
                 EMAIL,
                 "Test User",
                 true,
-                Set.of("USER")
+                Set.of(
+                        "USER"
+                )
         );
     }
+
+    /*
+     * ============================================================
+     * Raw signed JWT factory
+     * ============================================================
+     */
 
     private TokenClaims defaultClaims() {
         Instant now =
@@ -1641,14 +2052,20 @@ class SecurityConfigIntegrationTest {
                 List.of(
                         jwtProperties.audience()
                 ),
-                now.minusSeconds(5),
-                now.plusSeconds(600),
+                now.minusSeconds(
+                        5
+                ),
+                now.plusSeconds(
+                        600
+                ),
                 USER_ID.toString(),
                 USER_ID,
                 ORGANIZATION_ID,
                 TOKEN_VERSION,
                 ORGANIZATION_AUTH_VERSION,
-                List.of("USER")
+                List.of(
+                        "USER"
+                )
         );
     }
 
@@ -1661,7 +2078,9 @@ class SecurityConfigIntegrationTest {
                         .with(
                                 SignatureAlgorithm.RS256
                         )
-                        .type("JWT")
+                        .type(
+                                "JWT"
+                        )
                         .keyId(
                                 jwtProperties.activeKeyId()
                         )
@@ -1728,12 +2147,14 @@ class SecurityConfigIntegrationTest {
             );
         }
 
-        return encoder.encode(
-                JwtEncoderParameters.from(
-                        headers,
-                        builder.build()
+        return encoder
+                .encode(
+                        JwtEncoderParameters.from(
+                                headers,
+                                builder.build()
+                        )
                 )
-        ).getTokenValue();
+                .getTokenValue();
     }
 
     private static String corruptSignature(
@@ -1743,7 +2164,9 @@ class SecurityConfigIntegrationTest {
                 token.lastIndexOf('.');
 
         if (signatureSeparator < 0
-                || signatureSeparator == token.length() - 1) {
+                || signatureSeparator
+                == token.length() - 1) {
+
             throw new IllegalArgumentException(
                     "JWT не содержит signature segment"
             );
@@ -1765,10 +2188,11 @@ class SecurityConfigIntegrationTest {
         return token.substring(
                 0,
                 signatureStart
-        ) + replacement
+        )
+                + replacement
                 + token.substring(
-                        signatureStart + 1
-                );
+                signatureStart + 1
+        );
     }
 
     private static String bearer(
@@ -1776,6 +2200,12 @@ class SecurityConfigIntegrationTest {
     ) {
         return "Bearer " + token;
     }
+
+    /*
+     * ============================================================
+     * Records
+     * ============================================================
+     */
 
     private record InvalidSecurityStatusCase(
             String description,

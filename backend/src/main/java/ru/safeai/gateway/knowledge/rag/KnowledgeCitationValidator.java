@@ -5,7 +5,6 @@ import ru.safeai.gateway.ai.dto.AiChatResponse;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -16,68 +15,176 @@ public class KnowledgeCitationValidator {
     public static final String ABSTENTION =
             "Недостаточно данных в разрешённой базе знаний.";
 
-    private static final Pattern CITATION =
-            Pattern.compile("\\[C([1-9][0-9]{0,2})]", Pattern.CASE_INSENSITIVE);
+    /*
+     * Match every numeric citation-looking marker first. Validation then
+     * decides whether its ordinal is legal and present in the exact source set.
+     * This prevents malformed markers such as [C0] / [C1000] from surviving
+     * as visually convincing but unverified citations.
+     */
+    private static final Pattern NUMERIC_CITATION =
+            Pattern.compile(
+                    "\\[C([0-9]+)]",
+                    Pattern.CASE_INSENSITIVE
+            );
 
     public RagCompletion validate(
             RagPreparation preparation,
             AiChatResponse response
     ) {
-        if (!preparation.usesKnowledge()) {
-            return RagCompletion.general(preparation, response);
+        if (!preparation.mode().usesKnowledge()) {
+            return RagCompletion.general(
+                    preparation,
+                    response
+            );
         }
 
-        Map<String, KnowledgeContextSource> allowed = new LinkedHashMap<>();
-        preparation.sources().forEach(source ->
-                allowed.put(source.label(), source)
-        );
+        Map<String, KnowledgeContextSource> allowed =
+                new LinkedHashMap<>();
 
-        Matcher matcher = CITATION.matcher(response.content());
-        Map<String, RagCitation> citations = new LinkedHashMap<>();
-        boolean valid = true;
-        StringBuffer sanitized = new StringBuffer();
-        while (matcher.find()) {
-            String label = "C" + matcher.group(1);
-            KnowledgeContextSource source = allowed.get(label);
-            if (source == null) {
-                valid = false;
-                matcher.appendReplacement(sanitized, "");
-            } else {
-                citations.putIfAbsent(
-                        label,
-                        new RagCitation(
-                                label,
-                                Integer.parseInt(matcher.group(1)),
-                                source.hit().chunkId()
-                        )
+        preparation.sources()
+                .forEach(
+                        source ->
+                                allowed.put(
+                                        source.label(),
+                                        source
+                                )
                 );
+
+        Matcher matcher =
+                NUMERIC_CITATION.matcher(
+                        response.content()
+                );
+
+        Map<String, RagCitation> citations =
+                new LinkedHashMap<>();
+
+        boolean valid =
+                true;
+
+        StringBuilder sanitized =
+                new StringBuilder();
+
+        while (matcher.find()) {
+            String rawOrdinal =
+                    matcher.group(1);
+
+            Integer ordinal =
+                    parseOrdinal(
+                            rawOrdinal
+                    );
+
+            if (ordinal == null) {
+                valid =
+                        false;
+
                 matcher.appendReplacement(
                         sanitized,
-                        Matcher.quoteReplacement("[" + label + "]")
+                        ""
                 );
+                continue;
             }
+
+            String label =
+                    "C" + ordinal;
+
+            KnowledgeContextSource source =
+                    allowed.get(
+                            label
+                    );
+
+            if (source == null) {
+                valid =
+                        false;
+
+                matcher.appendReplacement(
+                        sanitized,
+                        ""
+                );
+                continue;
+            }
+
+            citations.putIfAbsent(
+                    label,
+                    new RagCitation(
+                            label,
+                            ordinal,
+                            source.hit()
+                                    .chunkId()
+                    )
+            );
+
+            matcher.appendReplacement(
+                    sanitized,
+                    Matcher.quoteReplacement(
+                            "[" + label + "]"
+                    )
+            );
         }
-        matcher.appendTail(sanitized);
 
-        boolean evidenceSufficient = !allowed.isEmpty()
-                && !citations.isEmpty()
-                && valid;
-        String content = sanitized.toString().strip();
+        matcher.appendTail(
+                sanitized
+        );
 
-        if (preparation.mode() == KnowledgeMode.KNOWLEDGE_ONLY
-                && (!evidenceSufficient || content.isBlank())) {
-            content = ABSTENTION;
+        boolean evidenceSufficient =
+                !allowed.isEmpty()
+                        && !citations.isEmpty()
+                        && valid;
+
+        String content =
+                sanitized.toString()
+                        .strip();
+
+        if (preparation.mode()
+                == KnowledgeMode.KNOWLEDGE_ONLY
+                && (
+                !evidenceSufficient
+                        || content.isBlank()
+        )) {
+            content =
+                    ABSTENTION;
+
             citations.clear();
-            evidenceSufficient = false;
+            evidenceSufficient =
+                    false;
         }
 
         return new RagCompletion(
                 preparation,
-                withContent(response, content),
-                new ArrayList<>(citations.values()),
+                withContent(
+                        response,
+                        content
+                ),
+                new ArrayList<>(
+                        citations.values()
+                ),
                 valid,
                 evidenceSufficient
         );
+    }
+
+    private static Integer parseOrdinal(
+            String value
+    ) {
+        if (value == null
+                || value.isEmpty()
+                || value.length() > 3
+                || value.charAt(0) == '0') {
+            return null;
+        }
+
+        try {
+            int ordinal =
+                    Integer.parseInt(
+                            value
+                    );
+
+            return ordinal >= 1
+                    && ordinal <= 999
+                    ? ordinal
+                    : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private static AiChatResponse withContent(

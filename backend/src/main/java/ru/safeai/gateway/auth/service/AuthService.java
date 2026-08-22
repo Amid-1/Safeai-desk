@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.common.exception.AuthServiceUnavailableException;
+import ru.safeai.gateway.common.exception.ExpiredRefreshTokenException;
 import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
@@ -58,8 +59,8 @@ public class AuthService {
     /**
      * Метод намеренно не является транзакционным.
      *
-     * <p>Проверка password hash выполняется до начала короткой
-     * транзакции создания login session.</p>
+     * <p>Проверка password hash выполняется до начала короткой транзакции
+     * создания login session.</p>
      */
     public CurrentUserResponse login(
             LoginRequest request,
@@ -164,10 +165,10 @@ public class AuthService {
         );
 
         /*
-         * Аудит успешного входа выполняется до выдачи cookies.
-         * Если политика аудита считает событие обязательным и enqueue
-         * завершится ошибкой, клиент не получит частично сформированный
-         * успешный login response.
+         * AuthEventService использует BestEffortStandaloneAuditService.
+         * Поэтому audit success является best-effort side effect: сбой audit
+         * storage логируется внутри audit layer и не отменяет уже committed
+         * login session.
          */
         authEventService.loginSuccess(
                 session.currentUser(),
@@ -227,7 +228,7 @@ public class AuthService {
                 authCookieService.extractRefreshToken(request);
 
         if (rawRefreshToken == null) {
-            authCookieService.clearAuthCookies(response);
+            clearAuthCookies(response);
 
             throw new InvalidRefreshTokenException(
                     "Refresh token не найден"
@@ -267,11 +268,15 @@ public class AuthService {
 
             clearAuthCookies(response);
             throw exception;
-        } catch (InvalidRefreshTokenException exception) {
+        } catch (ExpiredRefreshTokenException exception) {
             /*
-             * Сюда также попадает ExpiredRefreshTokenException,
-             * если он наследуется от InvalidRefreshTokenException.
+             * ExpiredRefreshTokenException не наследуется от
+             * InvalidRefreshTokenException, поэтому cleanup обязан быть
+             * отдельным catch branch.
              */
+            clearAuthCookies(response);
+            throw exception;
+        } catch (InvalidRefreshTokenException exception) {
             clearAuthCookies(response);
             throw exception;
         } catch (DataAccessException
@@ -287,9 +292,8 @@ public class AuthService {
     /**
      * Идемпотентен для отсутствующего и повреждённого refresh token.
      *
-     * <p>При DB outage локальные cookies всё равно очищаются,
-     * но клиент получает 503, поскольку server-side revocation
-     * не была подтверждена.</p>
+     * <p>При DB outage локальные cookies всё равно очищаются, но клиент
+     * получает 503, поскольку server-side revocation не была подтверждена.</p>
      */
     public void logout(
             HttpServletRequest request,

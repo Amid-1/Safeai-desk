@@ -16,7 +16,7 @@ public class AiProviderResponseTooLargeException
                 null,
                 AiProviderErrorType.RESPONSE_TOO_LARGE,
                 false,
-                false,
+                true,
                 null,
                 message,
                 cause

@@ -7,9 +7,11 @@ import java.util.UUID;
 /**
  * Минимальная security-нагрузка для выпуска access JWT.
  *
- * <p>PII вроде email намеренно не включается: access token содержит
- * только идентификаторы и данные, необходимые для авторизации и
- * немедленной инвалидизации security state.</p>
+ * <p>PII вроде email намеренно не включается: access token содержит только
+ * идентификаторы и данные, необходимые для авторизации и немедленной
+ * инвалидизации security state.</p>
+ *
+ * <p>Security invariant: subject содержит ровно одну системную роль.</p>
  */
 public record AccessTokenSubject(
         UUID userId,
@@ -19,11 +21,6 @@ public record AccessTokenSubject(
         Set<String> roles
 ) {
 
-    /**
-     * Явный canonical constructor используется вместо compact constructor,
-     * чтобы validation/normalization были очевидны для IDE и статического
-     * анализа и не создавали ложные предупреждения о повторном присваивании.
-     */
     public AccessTokenSubject(
             UUID userId,
             UUID organizationId,
@@ -42,20 +39,17 @@ public record AccessTokenSubject(
         );
 
         this.tokenVersion =
-                SecurityIdentityValidator
-                        .requireNonNegativeVersion(
-                                tokenVersion,
-                                "tokenVersion"
-                        );
+                SecurityIdentityValidator.requireNonNegativeVersion(
+                        tokenVersion,
+                        "tokenVersion"
+                );
 
         this.organizationAuthVersion =
-                SecurityIdentityValidator
-                        .requireNonNegativeVersion(
-                                organizationAuthVersion,
-                                "organizationAuthVersion"
-                        );
+                SecurityIdentityValidator.requireNonNegativeVersion(
+                        organizationAuthVersion,
+                        "organizationAuthVersion"
+                );
 
-        this.roles = SecurityIdentityValidator
-                .normalizeRoleNames(roles);
+        this.roles = SecurityIdentityValidator.normalizeRoleNames(roles);
     }
 }

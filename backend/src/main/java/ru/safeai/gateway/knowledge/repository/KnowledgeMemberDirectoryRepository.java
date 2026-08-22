@@ -24,15 +24,29 @@ public interface KnowledgeMemberDirectoryRepository
               and user.enabled = true
               and (
                     :query = ''
-                    or user.email like concat(:query, '%')
-                    or lower(coalesce(user.fullName, ''))
-                        like concat('%', :query, '%')
+                    or locate(
+                        :query,
+                        lower(user.email)
+                    ) = 1
+                    or locate(
+                        :query,
+                        lower(
+                            coalesce(
+                                user.fullName,
+                                ''
+                            )
+                        )
+                    ) > 0
               )
-            order by user.email asc, user.id asc
+            order by
+                lower(user.email) asc,
+                user.id asc
             """)
     List<KnowledgeMemberCandidateResponse> search(
-            @Param("organizationId") UUID organizationId,
-            @Param("query") String query,
+            @Param("organizationId")
+            UUID organizationId,
+            @Param("query")
+            String query,
             Pageable pageable
     );
 }

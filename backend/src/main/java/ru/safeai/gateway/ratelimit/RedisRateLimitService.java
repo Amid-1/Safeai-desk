@@ -370,7 +370,9 @@ public class RedisRateLimitService {
             case FIRST_EXCEEDED -> "user";
             case SECOND_EXCEEDED -> "organization";
             case BOTH_EXCEEDED -> "both";
-            case ALLOWED -> "none";
+            case ALLOWED -> throw new IllegalArgumentException(
+                    "ALLOWED не является превышением лимита"
+            );
         };
     }
 
@@ -380,21 +382,18 @@ public class RedisRateLimitService {
             int organizationLimit
     ) {
         return switch (decision) {
-            case FIRST_EXCEEDED ->
-                    "Превышен лимит AI-запросов пользователя. "
-                            + "Лимит: "
-                            + userLimit
-                            + " в час";
+            case FIRST_EXCEEDED -> "Превышен лимит AI-запросов пользователя. "
+                    + "Лимит: "
+                    + userLimit
+                    + " в час";
 
-            case SECOND_EXCEEDED ->
-                    "Превышен лимит AI-запросов организации. "
-                            + "Лимит: "
-                            + organizationLimit
-                            + " в час";
+            case SECOND_EXCEEDED -> "Превышен лимит AI-запросов организации. "
+                    + "Лимит: "
+                    + organizationLimit
+                    + " в час";
 
-            case BOTH_EXCEEDED ->
-                    "Превышены лимиты AI-запросов пользователя "
-                            + "и организации";
+            case BOTH_EXCEEDED -> "Превышены лимиты AI-запросов пользователя "
+                    + "и организации";
 
             case ALLOWED -> throw new IllegalArgumentException(
                     "ALLOWED не является превышением лимита"
@@ -414,4 +413,5 @@ public class RedisRateLimitService {
                                 .equals(authority)
                 );
     }
+
 }

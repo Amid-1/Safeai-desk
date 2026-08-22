@@ -10,7 +10,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class KnowledgeStorageConfigurationBindingTest {
 
     private static final long DEFAULT_MAX_UPLOAD_BYTES =
-            26_214_400L;
+            25L * 1024L * 1024L;
+
+    private static final long EXPLICIT_MAX_UPLOAD_BYTES =
+            2L * 1024L * 1024L;
+
+    private static final long MIN_MAX_UPLOAD_BYTES =
+            1024L * 1024L;
 
     private static final String DEFAULT_BUCKET =
             "safeai-knowledge";
@@ -27,7 +33,8 @@ class KnowledgeStorageConfigurationBindingTest {
                 .withPropertyValues(
                         "safeai.knowledge.storage.type=s3",
                         "safeai.knowledge.storage.local-root=./tmp/knowledge",
-                        "safeai.knowledge.storage.max-upload-bytes=123456",
+                        "safeai.knowledge.storage.max-upload-bytes="
+                                + EXPLICIT_MAX_UPLOAD_BYTES,
                         "safeai.knowledge.storage.endpoint=http://localhost:9000",
                         "safeai.knowledge.storage.access-key=safeai",
                         "safeai.knowledge.storage.secret-key=secret-value",
@@ -56,7 +63,9 @@ class KnowledgeStorageConfigurationBindingTest {
                             );
 
                             assertThat(properties.maxUploadBytes())
-                                    .isEqualTo(123_456L);
+                                    .isEqualTo(
+                                            EXPLICIT_MAX_UPLOAD_BYTES
+                                    );
 
                             assertThat(properties.endpoint())
                                     .isEqualTo(
@@ -64,7 +73,9 @@ class KnowledgeStorageConfigurationBindingTest {
                                     );
 
                             assertThat(properties.accessKey())
-                                    .isEqualTo("safeai");
+                                    .isEqualTo(
+                                            "safeai"
+                                    );
 
                             assertThat(properties.secretKey())
                                     .isEqualTo(
@@ -74,6 +85,31 @@ class KnowledgeStorageConfigurationBindingTest {
                             assertThat(properties.bucket())
                                     .isEqualTo(
                                             DEFAULT_BUCKET
+                                    );
+                        }
+                );
+    }
+
+    @Test
+    void uploadLimitBelowMinimumFailsContextStartup() {
+        contextRunner
+                .withPropertyValues(
+                        "safeai.knowledge.storage.max-upload-bytes="
+                                + (MIN_MAX_UPLOAD_BYTES - 1L)
+                )
+                .run(
+                        context -> {
+                            assertThat(context)
+                                    .hasFailed();
+
+                            assertThat(
+                                    context.getStartupFailure()
+                            )
+                                    .hasRootCauseInstanceOf(
+                                            IllegalStateException.class
+                                    )
+                                    .hasRootCauseMessage(
+                                            "Некорректное значение safeai.knowledge.storage.max-upload-bytes"
                                     );
                         }
                 );

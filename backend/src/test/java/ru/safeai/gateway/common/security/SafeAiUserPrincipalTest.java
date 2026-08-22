@@ -25,83 +25,154 @@ class SafeAiUserPrincipalTest {
                     "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
             );
 
+    private static final UUID OTHER_ORGANIZATION_ID =
+            UUID.fromString(
+                    "cccccccc-cccc-cccc-cccc-cccccccccccc"
+            );
+
     private static final String EMAIL =
             "user@example.com";
 
     private static final String PASSWORD_HASH =
             "{bcrypt}$2a$12$abcdefghijklmnopqrstuuuuuuuuuuuuuuuuuuuuuu";
 
+    private static final String EXACTLY_ONE_ROLE_MESSAGE =
+            "Должна быть ровно одна системная роль";
+
+    /*
+     * ============================================================
+     * Password principal
+     * ============================================================
+     */
+
     @Test
     void passwordPrincipalContainsExpectedSecurityState() {
         SafeAiUserPrincipal principal =
-                SafeAiUserPrincipal
-                        .passwordPrincipal(
-                                USER_ID,
-                                ORGANIZATION_ID,
-                                EMAIL,
-                                PASSWORD_HASH,
-                                true,
-                                3L,
-                                9L,
-                                List.of(
-                                        authority(
-                                                "role_user"
-                                        ),
-                                        authority(
-                                                "ROLE_ADMIN"
-                                        )
+                SafeAiUserPrincipal.passwordPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        EMAIL,
+                        PASSWORD_HASH,
+                        true,
+                        3L,
+                        9L,
+                        List.of(
+                                authority(
+                                        "role_user"
                                 )
-                        );
+                        )
+                );
 
-        assertThat(principal.getId())
-                .isEqualTo(USER_ID);
+        assertThat(
+                principal.getId()
+        ).isEqualTo(
+                USER_ID
+        );
 
         assertThat(
                 principal.getOrganizationId()
-        ).isEqualTo(ORGANIZATION_ID);
+        ).isEqualTo(
+                ORGANIZATION_ID
+        );
 
-        assertThat(principal.getEmail())
-                .isEqualTo(EMAIL);
+        assertThat(
+                principal.getEmail()
+        ).isEqualTo(
+                EMAIL
+        );
 
-        assertThat(principal.getUsername())
-                .isEqualTo(EMAIL);
+        assertThat(
+                principal.getUsername()
+        ).isEqualTo(
+                EMAIL
+        );
 
-        assertThat(principal.getPassword())
-                .isEqualTo(PASSWORD_HASH);
+        assertThat(
+                principal.getPassword()
+        ).isEqualTo(
+                PASSWORD_HASH
+        );
 
-        assertThat(principal.isEnabled())
-                .isTrue();
+        assertThat(
+                principal.isEnabled()
+        ).isTrue();
 
-        assertThat(principal.getTokenVersion())
-                .isEqualTo(3L);
+        assertThat(
+                principal.getTokenVersion()
+        ).isEqualTo(
+                3L
+        );
 
         assertThat(
                 principal.getOrganizationAuthVersion()
-        ).isEqualTo(9L);
+        ).isEqualTo(
+                9L
+        );
 
         assertThat(
                 principal.authorityNames()
         ).containsExactly(
-                "ROLE_ADMIN",
                 "ROLE_USER"
         );
     }
 
     @Test
+    void passwordPrincipalCanonicalizesSingleRoleAlias() {
+        SafeAiUserPrincipal principal =
+                SafeAiUserPrincipal.passwordPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        EMAIL,
+                        PASSWORD_HASH,
+                        true,
+                        3L,
+                        9L,
+                        List.of(
+                                authority(
+                                        "admin"
+                                )
+                        )
+                );
+
+        assertThat(
+                principal.authorityNames()
+        ).containsExactly(
+                "ROLE_ADMIN"
+        );
+    }
+
+    /*
+     * ============================================================
+     * Access-token principal
+     * ============================================================
+     */
+
+    @Test
     void accessTokenPrincipalContainsNoEmailOrPassword() {
         SafeAiUserPrincipal principal =
-                SafeAiUserPrincipal
-                        .accessTokenPrincipal(
-                                USER_ID,
-                                ORGANIZATION_ID,
-                                3L,
-                                9L,
-                                List.of(
-                                        authority(
-                                                "ROLE_USER"
-                                        )
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        3L,
+                        9L,
+                        List.of(
+                                authority(
+                                        "ROLE_USER"
                                 )
-                        );
+                        )
+                );
+
+        assertThat(
+                principal.getId()
+        ).isEqualTo(
+                USER_ID
+        );
+
+        assertThat(
+                principal.getOrganizationId()
+        ).isEqualTo(
+                ORGANIZATION_ID
+        );
 
         assertThat(
                 principal.getEmail()
@@ -120,51 +191,225 @@ class SafeAiUserPrincipalTest {
         assertThat(
                 principal.isEnabled()
         ).isTrue();
-    }
-
-    @Test
-    void eraseCredentialsRemovesPasswordHash() {
-        SafeAiUserPrincipal principal =
-                passwordPrincipal();
-
-        principal.eraseCredentials();
 
         assertThat(
-                principal.getPassword()
-        ).isNull();
-    }
+                principal.getTokenVersion()
+        ).isEqualTo(
+                3L
+        );
 
-    @Test
-    void authoritiesAreCanonicalSortedAndImmutable() {
-        SafeAiUserPrincipal principal =
-                SafeAiUserPrincipal
-                        .accessTokenPrincipal(
-                                USER_ID,
-                                ORGANIZATION_ID,
-                                1L,
-                                2L,
-                                List.of(
-                                        authority(
-                                                "user"
-                                        ),
-                                        authority(
-                                                "ROLE_SUPER_ADMIN"
-                                        ),
-                                        authority(
-                                                "admin"
-                                        ),
-                                        authority(
-                                                "ROLE_USER"
-                                        )
-                                )
-                        );
+        assertThat(
+                principal.getOrganizationAuthVersion()
+        ).isEqualTo(
+                9L
+        );
 
         assertThat(
                 principal.authorityNames()
         ).containsExactly(
-                "ROLE_ADMIN",
-                "ROLE_SUPER_ADMIN",
                 "ROLE_USER"
+        );
+    }
+
+    @Test
+    void accessTokenPrincipalCanonicalizesLowercaseRole() {
+        SafeAiUserPrincipal principal =
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        List.of(
+                                authority(
+                                        "super_admin"
+                                )
+                        )
+                );
+
+        assertThat(
+                principal.authorityNames()
+        ).containsExactly(
+                "ROLE_SUPER_ADMIN"
+        );
+    }
+
+    /*
+     * ============================================================
+     * Exactly-one-role invariant
+     * ============================================================
+     */
+
+    @Test
+    void passwordPrincipalRejectsMultipleDifferentRoles() {
+        assertThatThrownBy(() ->
+                SafeAiUserPrincipal.passwordPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        EMAIL,
+                        PASSWORD_HASH,
+                        true,
+                        3L,
+                        9L,
+                        List.of(
+                                authority(
+                                        "ROLE_USER"
+                                ),
+                                authority(
+                                        "ROLE_ADMIN"
+                                )
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessage(
+                        EXACTLY_ONE_ROLE_MESSAGE
+                );
+    }
+
+    @Test
+    void accessTokenPrincipalRejectsMultipleDifferentRoles() {
+        assertThatThrownBy(() ->
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        List.of(
+                                authority(
+                                        "ROLE_USER"
+                                ),
+                                authority(
+                                        "ROLE_SUPER_ADMIN"
+                                )
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessage(
+                        EXACTLY_ONE_ROLE_MESSAGE
+                );
+    }
+
+    @Test
+    void accessTokenPrincipalRejectsMultipleAliasesOfSameRole() {
+        assertThatThrownBy(() ->
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        List.of(
+                                authority(
+                                        "USER"
+                                ),
+                                authority(
+                                        "role_user"
+                                )
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessage(
+                        EXACTLY_ONE_ROLE_MESSAGE
+                );
+    }
+
+    @Test
+    void emptyAuthoritiesAreRejected() {
+        assertThatThrownBy(() ->
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        List.of()
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessage(
+                        EXACTLY_ONE_ROLE_MESSAGE
+                );
+    }
+
+    @Test
+    @SuppressWarnings("DataFlowIssue")
+    void nullAuthoritiesAreRejected() {
+        assertThatThrownBy(() ->
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        null
+                )
+        )
+                .isInstanceOf(
+                        NullPointerException.class
+                )
+                .hasMessage(
+                        "authorities не должен быть null"
+                );
+    }
+
+    @Test
+    void unknownAuthorityIsRejected() {
+        assertThatThrownBy(() ->
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        List.of(
+                                authority(
+                                        "ROLE_ROOT"
+                                )
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                );
+    }
+
+    /*
+     * ============================================================
+     * Authorities collection
+     * ============================================================
+     */
+
+    @Test
+    void authoritiesAreCanonicalAndImmutable() {
+        SafeAiUserPrincipal principal =
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        List.of(
+                                authority(
+                                        "role_user"
+                                )
+                        )
+                );
+
+        assertThat(
+                principal.authorityNames()
+        ).containsExactly(
+                "ROLE_USER"
+        );
+
+        assertThat(
+                principal.getAuthorities()
+        ).hasSize(
+                1
         );
 
         assertThatThrownBy(() ->
@@ -175,6 +420,36 @@ class SafeAiUserPrincipalTest {
                 UnsupportedOperationException.class
         );
     }
+
+    /*
+     * ============================================================
+     * Credentials
+     * ============================================================
+     */
+
+    @Test
+    void eraseCredentialsRemovesPasswordHash() {
+        SafeAiUserPrincipal principal =
+                passwordPrincipal();
+
+        assertThat(
+                principal.getPassword()
+        ).isEqualTo(
+                PASSWORD_HASH
+        );
+
+        principal.eraseCredentials();
+
+        assertThat(
+                principal.getPassword()
+        ).isNull();
+    }
+
+    /*
+     * ============================================================
+     * Logging / sensitive data
+     * ============================================================
+     */
 
     @Test
     void toStringDoesNotExposeEmailPasswordOrJwtLikeCredentials() {
@@ -189,13 +464,14 @@ class SafeAiUserPrincipalTest {
                         USER_ID.toString()
                 )
                 .contains(
-                        ORGANIZATION_ID
-                                .toString()
+                        ORGANIZATION_ID.toString()
                 )
                 .contains(
                         "organizationAuthVersion=9"
                 )
-                .doesNotContain(EMAIL)
+                .doesNotContain(
+                        EMAIL
+                )
                 .doesNotContain(
                         PASSWORD_HASH
                 )
@@ -204,56 +480,69 @@ class SafeAiUserPrincipalTest {
                 );
     }
 
+    /*
+     * ============================================================
+     * Identity semantics
+     * ============================================================
+     */
+
     @Test
     void principalsWithSameIdRemainDistinctInstances() {
         SafeAiUserPrincipal first =
-                SafeAiUserPrincipal
-                        .accessTokenPrincipal(
-                                USER_ID,
-                                ORGANIZATION_ID,
-                                3L,
-                                9L,
-                                List.of(
-                                        authority(
-                                                "ROLE_USER"
-                                        )
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        3L,
+                        9L,
+                        List.of(
+                                authority(
+                                        "ROLE_USER"
                                 )
-                        );
+                        )
+                );
 
         SafeAiUserPrincipal second =
-                SafeAiUserPrincipal
-                        .accessTokenPrincipal(
-                                USER_ID,
-                                UUID.randomUUID(),
-                                99L,
-                                100L,
-                                List.of(
-                                        authority(
-                                                "ROLE_ADMIN"
-                                        )
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        OTHER_ORGANIZATION_ID,
+                        99L,
+                        100L,
+                        List.of(
+                                authority(
+                                        "ROLE_ADMIN"
                                 )
-                        );
+                        )
+                );
 
         assertThat(first)
-                .isNotSameAs(second)
-                .isNotEqualTo(second);
+                .isNotSameAs(
+                        second
+                )
+                .isNotEqualTo(
+                        second
+                );
     }
+
+    /*
+     * ============================================================
+     * Version validation
+     * ============================================================
+     */
 
     @Test
     void negativeTokenVersionIsRejected() {
         assertThatThrownBy(() ->
-                SafeAiUserPrincipal
-                        .accessTokenPrincipal(
-                                USER_ID,
-                                ORGANIZATION_ID,
-                                -1L,
-                                0L,
-                                List.of(
-                                        authority(
-                                                "ROLE_USER"
-                                        )
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        -1L,
+                        0L,
+                        List.of(
+                                authority(
+                                        "ROLE_USER"
                                 )
                         )
+                )
         )
                 .isInstanceOf(
                         IllegalArgumentException.class
@@ -266,18 +555,17 @@ class SafeAiUserPrincipalTest {
     @Test
     void negativeOrganizationAuthVersionIsRejected() {
         assertThatThrownBy(() ->
-                SafeAiUserPrincipal
-                        .accessTokenPrincipal(
-                                USER_ID,
-                                ORGANIZATION_ID,
-                                0L,
-                                -1L,
-                                List.of(
-                                        authority(
-                                                "ROLE_USER"
-                                        )
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        0L,
+                        -1L,
+                        List.of(
+                                authority(
+                                        "ROLE_USER"
                                 )
                         )
+                )
         )
                 .isInstanceOf(
                         IllegalArgumentException.class
@@ -288,12 +576,157 @@ class SafeAiUserPrincipalTest {
     }
 
     @Test
+    void zeroVersionsAreAccepted() {
+        SafeAiUserPrincipal principal =
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        0L,
+                        0L,
+                        List.of(
+                                authority(
+                                        "ROLE_USER"
+                                )
+                        )
+                );
+
+        assertThat(
+                principal.getTokenVersion()
+        ).isZero();
+
+        assertThat(
+                principal.getOrganizationAuthVersion()
+        ).isZero();
+    }
+
+    @Test
+    void maximumVersionsAreAccepted() {
+        SafeAiUserPrincipal principal =
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        Long.MAX_VALUE,
+                        Long.MAX_VALUE,
+                        List.of(
+                                authority(
+                                        "ROLE_USER"
+                                )
+                        )
+                );
+
+        assertThat(
+                principal.getTokenVersion()
+        ).isEqualTo(
+                Long.MAX_VALUE
+        );
+
+        assertThat(
+                principal.getOrganizationAuthVersion()
+        ).isEqualTo(
+                Long.MAX_VALUE
+        );
+    }
+
+    /*
+     * ============================================================
+     * Null identity validation
+     * ============================================================
+     */
+
+    @Test
+    @SuppressWarnings("DataFlowIssue")
+    void nullUserIdIsRejected() {
+        assertThatThrownBy(() ->
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        null,
+                        ORGANIZATION_ID,
+                        0L,
+                        0L,
+                        List.of(
+                                authority(
+                                        "ROLE_USER"
+                                )
+                        )
+                )
+        )
+                .isInstanceOf(
+                        NullPointerException.class
+                )
+                .hasMessage(
+                        "id не должен быть null"
+                );
+    }
+
+    @Test
+    @SuppressWarnings("DataFlowIssue")
+    void nullOrganizationIdIsRejected() {
+        assertThatThrownBy(() ->
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        null,
+                        0L,
+                        0L,
+                        List.of(
+                                authority(
+                                        "ROLE_USER"
+                                )
+                        )
+                )
+        )
+                .isInstanceOf(
+                        NullPointerException.class
+                )
+                .hasMessageContaining(
+                        "organizationId"
+                );
+    }
+
+    /*
+     * ============================================================
+     * Factory API contract
+     * ============================================================
+     */
+
+    @Test
+    void passwordPrincipalUsesCurrentEightArgumentContract() {
+        assertThat(
+                Arrays.stream(
+                                SafeAiUserPrincipal.class
+                                        .getDeclaredMethods()
+                        )
+                        .filter(method ->
+                                method.getName()
+                                        .equals(
+                                                "passwordPrincipal"
+                                        )
+                        )
+                        .map(
+                                Method::getParameterTypes
+                        )
+        ).anyMatch(parameterTypes ->
+                Arrays.equals(
+                        parameterTypes,
+                        new Class<?>[]{
+                                UUID.class,
+                                UUID.class,
+                                String.class,
+                                String.class,
+                                boolean.class,
+                                long.class,
+                                long.class,
+                                Collection.class
+                        }
+                )
+        );
+    }
+
+    @Test
     void legacyPasswordPrincipalFactoryWithoutOrganizationVersionDoesNotExist() {
         assertThat(
                 Arrays.stream(
-                        SafeAiUserPrincipal.class
-                                .getDeclaredMethods()
-                )
+                                SafeAiUserPrincipal.class
+                                        .getDeclaredMethods()
+                        )
                         .filter(method ->
                                 method.getName()
                                         .equals(
@@ -303,16 +736,18 @@ class SafeAiUserPrincipalTest {
                         .map(
                                 Method::getParameterCount
                         )
-        ).doesNotContain(7);
+        ).doesNotContain(
+                7
+        );
     }
 
     @Test
     void accessTokenPrincipalUsesCurrentFiveArgumentContract() {
         assertThat(
                 Arrays.stream(
-                        SafeAiUserPrincipal.class
-                                .getDeclaredMethods()
-                )
+                                SafeAiUserPrincipal.class
+                                        .getDeclaredMethods()
+                        )
                         .filter(method ->
                                 method.getName()
                                         .equals(
@@ -340,9 +775,9 @@ class SafeAiUserPrincipalTest {
     void legacyAccessTokenPrincipalFactoryWithEmailDoesNotExist() {
         assertThat(
                 Arrays.stream(
-                        SafeAiUserPrincipal.class
-                                .getDeclaredMethods()
-                )
+                                SafeAiUserPrincipal.class
+                                        .getDeclaredMethods()
+                        )
                         .filter(method ->
                                 method.getName()
                                         .equals(
@@ -355,27 +790,33 @@ class SafeAiUserPrincipalTest {
         ).noneMatch(parameterTypes ->
                 Arrays.asList(
                         parameterTypes
-                ).contains(String.class)
+                ).contains(
+                        String.class
+                )
         );
     }
 
-    private SafeAiUserPrincipal
-    passwordPrincipal() {
-        return SafeAiUserPrincipal
-                .passwordPrincipal(
-                        USER_ID,
-                        ORGANIZATION_ID,
-                        EMAIL,
-                        PASSWORD_HASH,
-                        true,
-                        3L,
-                        9L,
-                        List.of(
-                                authority(
-                                        "ROLE_USER"
-                                )
+    /*
+     * ============================================================
+     * Helpers
+     * ============================================================
+     */
+
+    private SafeAiUserPrincipal passwordPrincipal() {
+        return SafeAiUserPrincipal.passwordPrincipal(
+                USER_ID,
+                ORGANIZATION_ID,
+                EMAIL,
+                PASSWORD_HASH,
+                true,
+                3L,
+                9L,
+                List.of(
+                        authority(
+                                "ROLE_USER"
                         )
-                );
+                )
+        );
     }
 
     private static void clearAuthorities(

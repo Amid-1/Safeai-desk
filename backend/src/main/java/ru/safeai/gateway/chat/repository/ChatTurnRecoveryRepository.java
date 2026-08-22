@@ -21,7 +21,7 @@ public class ChatTurnRecoveryRepository {
                     ct.provider_call_started_at
                 from chat_turns ct
                 where ct.state = 'PROCESSING'
-                  and ct.lease_until < ?
+                  and ct.lease_until <= ?
                 order by ct.lease_until, ct.id
                 for update skip locked
                 limit ?
@@ -97,33 +97,36 @@ public class ChatTurnRecoveryRepository {
 
         return jdbcTemplate.query(
                 RECOVER_EXPIRED_TURNS_SQL,
-                (resultSet, rowNumber) -> new RecoveredChatTurn(
-                        resultSet.getObject(
-                                "id",
-                                UUID.class
+                (resultSet, rowNumber) ->
+                        new RecoveredChatTurn(
+                                resultSet.getObject(
+                                        "id",
+                                        UUID.class
+                                ),
+                                resultSet.getObject(
+                                        "organization_id",
+                                        UUID.class
+                                ),
+                                resultSet.getObject(
+                                        "session_id",
+                                        UUID.class
+                                ),
+                                resultSet.getObject(
+                                        "client_request_id",
+                                        UUID.class
+                                ),
+                                ChatTurnState.valueOf(
+                                        resultSet.getString(
+                                                "state"
+                                        )
+                                ),
+                                resultSet.getString(
+                                        "failure_code"
+                                ),
+                                resultSet.getBoolean(
+                                        "outcome_ambiguous"
+                                )
                         ),
-                        resultSet.getObject(
-                                "organization_id",
-                                UUID.class
-                        ),
-                        resultSet.getObject(
-                                "session_id",
-                                UUID.class
-                        ),
-                        resultSet.getObject(
-                                "client_request_id",
-                                UUID.class
-                        ),
-                        ChatTurnState.valueOf(
-                                resultSet.getString("state")
-                        ),
-                        resultSet.getString(
-                                "failure_code"
-                        ),
-                        resultSet.getBoolean(
-                                "outcome_ambiguous"
-                        )
-                ),
                 timestamp,
                 batchSize,
                 timestamp,

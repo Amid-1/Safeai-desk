@@ -6,42 +6,66 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.util.stream.Collectors;
 
 final class ExtractionTextSupport {
 
     private ExtractionTextSupport() {
     }
 
-    static String normalize(String value) {
+    static String normalize(
+            String value
+    ) {
         if (value == null) {
             return "";
         }
+
+        /*
+         * Collectors.joining avoids the quadratic string-concatenation
+         * behaviour of reduce((left, right) -> left + "\n" + right).
+         */
         return value
                 .replace("\r\n", "\n")
                 .replace('\r', '\n')
                 .replace('\u0000', ' ')
                 .lines()
                 .map(String::stripTrailing)
-                .reduce((left, right) -> left + "\n" + right)
-                .orElse("")
+                .collect(
+                        Collectors.joining("\n")
+                )
                 .strip();
     }
 
-    static String decodeUtf8(byte[] content, String format) {
+    static String decodeUtf8(
+            byte[] content,
+            String format
+    ) {
         try {
-            String value = StandardCharsets.UTF_8
-                    .newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(CodingErrorAction.REPORT)
-                    .decode(ByteBuffer.wrap(content))
-                    .toString();
-            return !value.isEmpty() && value.charAt(0) == '\ufeff'
+            String value =
+                    StandardCharsets.UTF_8
+                            .newDecoder()
+                            .onMalformedInput(
+                                    CodingErrorAction.REPORT
+                            )
+                            .onUnmappableCharacter(
+                                    CodingErrorAction.REPORT
+                            )
+                            .decode(
+                                    ByteBuffer.wrap(
+                                            content
+                                    )
+                            )
+                            .toString();
+
+            return !value.isEmpty()
+                    && value.charAt(0) == '\ufeff'
                     ? value.substring(1)
                     : value;
         } catch (CharacterCodingException exception) {
             throw new KnowledgeIngestionException(
                     "INVALID_UTF8",
-                    format + " должен быть корректным UTF-8",
+                    format
+                            + " должен быть корректным UTF-8",
                     false,
                     exception
             );
@@ -54,14 +78,21 @@ final class ExtractionTextSupport {
             int maximum
     ) {
         int updated;
+
         try {
-            updated = Math.addExact(current, text.length());
+            updated =
+                    Math.addExact(
+                            current,
+                            text.length()
+                    );
         } catch (ArithmeticException exception) {
             throw tooLarge();
         }
+
         if (updated > maximum) {
             throw tooLarge();
         }
+
         return updated;
     }
 

@@ -61,10 +61,12 @@ class JwtServiceTest {
             "safeai-test-active";
 
     /*
-     * JwtServiceTest мокает JwtEncoder и не строит JwtRsaKeyRing,
-     * поэтому здесь достаточно syntactically non-blank test-only
-     * key material. Корректность PEM/RSA parsing покрывается
-     * JwtRsaKeyRing/JwtCodecConfiguration integration tests.
+     * JwtServiceTest мокает JwtEncoder и не создаёт JwtRsaKeyRing.
+     * Поэтому PEM material здесь нужен только для прохождения
+     * JwtProperties validation, если она не выполняет cryptographic parsing.
+     *
+     * Реальная корректность RSA key material должна покрываться
+     * JwtRsaKeyRing/JwtCodecConfiguration tests.
      */
     private static final String TEST_PUBLIC_KEY =
             "test-only-public-key";
@@ -126,7 +128,9 @@ class JwtServiceTest {
                                 "kid",
                                 ACTIVE_KEY_ID
                         )
-                        .issuedAt(NOW)
+                        .issuedAt(
+                                NOW
+                        )
                         .expiresAt(
                                 NOW.plus(
                                         TOKEN_LIFETIME
@@ -144,7 +148,9 @@ class JwtServiceTest {
                                 JwtEncoderParameters.class
                         )
                 )
-        ).thenReturn(encodedJwt);
+        ).thenReturn(
+                encodedJwt
+        );
 
         AccessTokenSubject subject =
                 new AccessTokenSubject(
@@ -153,8 +159,7 @@ class JwtServiceTest {
                         7L,
                         12L,
                         Set.of(
-                                "ROLE_USER",
-                                "admin"
+                                "USER"
                         )
                 );
 
@@ -168,8 +173,7 @@ class JwtServiceTest {
                         "encoded-token"
                 );
 
-        ArgumentCaptor<JwtEncoderParameters>
-                captor =
+        ArgumentCaptor<JwtEncoderParameters> captor =
                 ArgumentCaptor.forClass(
                         JwtEncoderParameters.class
                 );
@@ -215,9 +219,11 @@ class JwtServiceTest {
 
         assertThat(
                 claims.getIssuer()
-        ).hasToString(
-                ISSUER
-        );
+        )
+                .isNotNull()
+                .hasToString(
+                        ISSUER
+                );
 
         assertThat(
                 claims.getAudience()
@@ -260,6 +266,9 @@ class JwtServiceTest {
                 TOKEN_LIFETIME
         );
 
+        /*
+         * Access JWT intentionally не содержит PII.
+         */
         assertThat(
                 claims.getClaims()
         ).doesNotContainKey(
@@ -287,7 +296,6 @@ class JwtServiceTest {
                         "roles"
                 )
         ).containsExactly(
-                "ADMIN",
                 "USER"
         );
 
@@ -296,24 +304,28 @@ class JwtServiceTest {
                         claims.getClaim(
                                 "tokenVersion"
                         ),
-                        "tokenVersion claim must be present"
+                        "tokenVersion claim должен присутствовать"
                 );
 
         assertThat(
                 tokenVersion.longValue()
-        ).isEqualTo(7L);
+        ).isEqualTo(
+                7L
+        );
 
         Number organizationAuthVersion =
                 Objects.requireNonNull(
                         claims.getClaim(
                                 "organizationAuthVersion"
                         ),
-                        "organizationAuthVersion claim must be present"
+                        "organizationAuthVersion claim должен присутствовать"
                 );
 
         assertThat(
                 organizationAuthVersion.longValue()
-        ).isEqualTo(12L);
+        ).isEqualTo(
+                12L
+        );
 
         String tokenId =
                 claims.getClaimAsString(
@@ -323,14 +335,147 @@ class JwtServiceTest {
         assertThat(tokenId)
                 .isNotBlank();
 
-        assertThat(
+        UUID parsedTokenId =
                 UUID.fromString(
                         Objects.requireNonNull(
                                 tokenId,
                                 "jti не должен быть null"
                         )
-                )
+                );
+
+        assertThat(
+                parsedTokenId
         ).isNotNull();
+    }
+
+    @Test
+    void roleAliasIsCanonicalizedBeforeJwtEncoding() {
+        Jwt encodedJwt =
+                Jwt.withTokenValue(
+                                "encoded-token"
+                        )
+                        .header(
+                                "alg",
+                                "RS256"
+                        )
+                        .header(
+                                "typ",
+                                "JWT"
+                        )
+                        .header(
+                                "kid",
+                                ACTIVE_KEY_ID
+                        )
+                        .issuedAt(
+                                NOW
+                        )
+                        .expiresAt(
+                                NOW.plus(
+                                        TOKEN_LIFETIME
+                                )
+                        )
+                        .build();
+
+        when(
+                jwtEncoder.encode(
+                        any(
+                                JwtEncoderParameters.class
+                        )
+                )
+        ).thenReturn(
+                encodedJwt
+        );
+
+        AccessTokenSubject subject =
+                new AccessTokenSubject(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        Set.of(
+                                "role_user"
+                        )
+                );
+
+        jwtService.generateToken(
+                subject
+        );
+
+        ArgumentCaptor<JwtEncoderParameters> captor =
+                ArgumentCaptor.forClass(
+                        JwtEncoderParameters.class
+                );
+
+        verify(jwtEncoder)
+                .encode(
+                        captor.capture()
+                );
+
+        verifyNoMoreInteractions(
+                jwtEncoder
+        );
+
+        assertThat(
+                captor.getValue()
+                        .getClaims()
+                        .getClaimAsStringList(
+                                "roles"
+                        )
+        ).containsExactly(
+                "USER"
+        );
+    }
+
+    @Test
+    void multipleRolesAreRejectedBeforeEncoding() {
+        assertThatThrownBy(() ->
+                new AccessTokenSubject(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        7L,
+                        12L,
+                        Set.of(
+                                "USER",
+                                "ADMIN"
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessage(
+                        "Должна быть ровно одна системная роль"
+                );
+
+        verifyNoInteractions(
+                jwtEncoder
+        );
+    }
+
+    @Test
+    void multipleAliasesOfSameRoleAreRejectedBeforeEncoding() {
+        assertThatThrownBy(() ->
+                new AccessTokenSubject(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        7L,
+                        12L,
+                        Set.of(
+                                "USER",
+                                "role_user"
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessage(
+                        "Должна быть ровно одна системная роль"
+                );
+
+        verifyNoInteractions(
+                jwtEncoder
+        );
     }
 
     @Test

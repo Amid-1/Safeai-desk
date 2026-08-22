@@ -1,28 +1,49 @@
 package ru.safeai.gateway.ai.provider.mock;
 
 import lombok.RequiredArgsConstructor;
+
 import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import org.springframework.context.annotation.Profile;
+
 import org.springframework.stereotype.Service;
+
 import ru.safeai.gateway.ai.dto.AiChatRequest;
+
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+
 import ru.safeai.gateway.ai.dto.AiMessage;
+
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
+
 import ru.safeai.gateway.ai.metadata.UsageStatus;
+
 import ru.safeai.gateway.ai.pricing.ModelPricingService;
+
 import ru.safeai.gateway.ai.pricing.PricingResult;
+
 import ru.safeai.gateway.ai.provider.AiProvider;
 
 @Slf4j
+
 @Service
+
 @RequiredArgsConstructor
-@Profile("!prod")
+
+@Profile("!prod & !production")
+
 @ConditionalOnProperty(
+
         name = "safeai.ai.provider",
+
         havingValue = "mock",
+
         matchIfMissing = true
+
 )
+
 public class MockAiProvider implements AiProvider {
 
     private static final String MODEL = "mock-safeai";
@@ -91,4 +112,5 @@ public class MockAiProvider implements AiProvider {
 
         return Math.max(1, text.length() / 4);
     }
+
 }

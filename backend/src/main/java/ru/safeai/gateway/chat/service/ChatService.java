@@ -288,7 +288,42 @@ public class ChatService {
             // Durable marker is committed before any provider HTTP attempt.
             finalizationService.markProviderCallStarted(context);
 
-            AiChatResponse response = invokeProvider(context, currentUser);
+            /*
+             * Avoid provider I/O if either watchdog has already detected
+             * ownership loss immediately after the durable marker.
+             *
+             * This check cannot be atomic with the external HTTP call.
+             * The durable marker and AMBIGUOUS semantics therefore remain
+             * the correctness boundary for the residual race.
+             */
+            try {
+                lockService.ensureValid(redisLock);
+                leaseService.ensureValid(leaseWatch);
+            } catch (ChatLockUnavailableException
+                     | ChatStaleProcessorException exception) {
+                markAmbiguousQuietly(
+                        context,
+                        null,
+                        null,
+                        "PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL",
+                        "CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL",
+                        currentUser,
+                        exception
+                );
+
+                throw new AiOutcomeAmbiguousException(
+                        context.chatId(),
+                        context.turnId(),
+                        context.clientRequestId(),
+                        exception
+                );
+            }
+
+            AiChatResponse response =
+                    invokeProvider(
+                            context,
+                            currentUser
+                    );
             RagCompletion ragCompletion = ragService.complete(
                     ragPreparation,
                     response

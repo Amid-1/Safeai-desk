@@ -1,0 +1,58 @@
+# D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod-knowledge.example.yml
+safeai:
+  knowledge:
+    storage:
+      type: s3
+      endpoint: ${KNOWLEDGE_S3_ENDPOINT}
+      access-key: ${KNOWLEDGE_S3_ACCESS_KEY}
+      secret-key: ${KNOWLEDGE_S3_SECRET_KEY}
+      bucket: ${KNOWLEDGE_S3_BUCKET:safeai-knowledge}
+      max-upload-bytes: ${KNOWLEDGE_MAX_UPLOAD_BYTES:26214400}
+
+    embedding:
+      provider: openai
+      base-url: https://api.openai.com/v1
+      api-key: ${OPENAI_EMBEDDING_API_KEY}
+      model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+      dimensions: 384
+      batch-size: 64
+      max-input-chars: 20000
+      connect-timeout: 5s
+      read-timeout: 30s
+
+    ingestion:
+      enabled: true
+      poll-delay: 2s
+      batch-size: 4
+      processing-lease: 5m
+      extraction-timeout: 2m
+      extraction-threads: 2
+      max-attempts: 5
+      initial-backoff: 10s
+      max-backoff: 10m
+      max-extracted-chars: 2000000
+      max-docx-uncompressed-bytes: 104857600
+      chunk-size-chars: 1200
+      chunk-overlap-chars: 150
+
+    retrieval:
+      max-query-chars: 4000
+      max-top-k: 20
+      candidate-limit: 100
+      rrf-k: 60
+
+    rag:
+      top-k: 8
+      max-context-chars: 24000
+      max-chunk-chars: 6000
+
+    # OCR may remain disabled if scanned PDFs are intentionally rejected.
+    # For HTTP OCR, connect-timeout + read-timeout must not exceed
+    # ingestion.extraction-timeout.
+    ocr:
+      provider: disabled
+      allowed-hosts: []
+      min-native-chars-per-page: 20
+      connect-timeout: 5s
+      read-timeout: 90s
+      max-response-bytes: 16777216

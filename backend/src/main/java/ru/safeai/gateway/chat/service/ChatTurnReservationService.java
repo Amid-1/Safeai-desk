@@ -48,6 +48,7 @@ public class ChatTurnReservationService {
     private final ChatContentNormalizer contentNormalizer;
     private final RedisRateLimitService rateLimitService;
     private final ChatQuotaService quotaService;
+    private final ChatTurnRecoveryCoordinator recoveryCoordinator;
     private final AuditEventService auditEventService;
     private final AiProviderProperties providerProperties;
     private final ChatProperties chatProperties;
@@ -64,6 +65,7 @@ public class ChatTurnReservationService {
             ChatContentNormalizer contentNormalizer,
             RedisRateLimitService rateLimitService,
             ChatQuotaService quotaService,
+            ChatTurnRecoveryCoordinator recoveryCoordinator,
             AuditEventService auditEventService,
             AiProviderProperties providerProperties,
             ChatProperties chatProperties,
@@ -79,6 +81,7 @@ public class ChatTurnReservationService {
         this.contentNormalizer = contentNormalizer;
         this.rateLimitService = rateLimitService;
         this.quotaService = quotaService;
+        this.recoveryCoordinator = recoveryCoordinator;
         this.auditEventService = auditEventService;
         this.providerProperties = providerProperties;
         this.chatProperties = chatProperties;
@@ -185,6 +188,8 @@ public class ChatTurnReservationService {
                 historyBuilder.build(
                         historyRepository.findNewestSucceededTurns(
                                 chatId,
+                                currentUser.getOrganizationId(),
+                                currentUser.getId(),
                                 chatProperties.historyTurnLimit()
                         )
                 );
@@ -408,43 +413,10 @@ public class ChatTurnReservationService {
             ChatTurnEntity turn,
             Instant now
     ) {
-        if (turn.getProviderCallStartedAt() == null) {
-            int changed =
-                    turnRepository.markExpiredBeforeProviderFailed(
-                            turn.getId(),
-                            now
-                    );
-
-            if (changed == 1) {
-                quotaService.releaseFailure(
-                        turn.getId(),
-                        now
-                );
-
-                metrics.recordTerminalAfterCommit(
-                        ChatTurnState.FAILED
-                );
-            }
-
-            return;
-        }
-
-        int changed =
-                turnRepository.markExpiredProcessingAmbiguous(
-                        turn.getId(),
-                        now
-                );
-
-        if (changed == 1) {
-            quotaService.markAmbiguous(
-                    turn.getId(),
-                    now
-            );
-
-            metrics.recordTerminalAfterCommit(
-                    ChatTurnState.AMBIGUOUS
-            );
-        }
+        recoveryCoordinator.recoverInline(
+                turn,
+                now
+        );
     }
 
     private ChatProcessingContext throwInProgress(

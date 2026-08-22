@@ -10,7 +10,19 @@ public interface KnowledgeEmbeddingProvider {
 
     float[] embed(String text);
 
-    default List<float[]> embedAll(List<String> texts) {
-        return texts.stream().map(this::embed).toList();
+    default List<float[]> embedAll(
+            List<String> texts
+    ) {
+        return texts.stream()
+                .map(this::embed)
+                .toList();
+    }
+
+    /**
+     * Preferred upper bound for one provider batch.
+     * The ingestion processor uses it as a lease-renewal boundary.
+     */
+    default int preferredBatchSize() {
+        return 64;
     }
 }

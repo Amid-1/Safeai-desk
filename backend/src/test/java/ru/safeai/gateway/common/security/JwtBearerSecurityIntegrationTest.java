@@ -46,13 +46,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Проверяет полный bearer pipeline.
+ * Проверяет полный Bearer authentication pipeline.
  *
  * <p>RS256 signed JWT -> JwtDecoder -> SafeAiJwtAuthenticationConverter
- * -> Spring Security -> RestAuthenticationEntryPoint -> JSON 401.</p>
+ * -> Spring Security -> BearerAuthenticationEntryPoint -> JSON 401
+ * + WWW-Authenticate: Bearer.</p>
  *
- * <p>JwtProperties создаётся только через property binding.
- * Ручного {@code @Bean JwtProperties} здесь быть не должно.</p>
+ * <p>Generic application 401 и Bearer 401 намеренно используют
+ * разные AuthenticationEntryPoint.</p>
  */
 @WebMvcTest(useDefaultFilters = false)
 @Import({
@@ -62,7 +63,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         JwtCodecConfiguration.class,
         JwtRsaKeyRing.class,
         SafeAiJwtAuthenticationConverter.class,
+
         RestAuthenticationEntryPoint.class,
+        BearerAuthenticationEntryPoint.class,
         RestAccessDeniedHandler.class,
 
         ApiErrorResponseWriter.class,
@@ -192,10 +195,9 @@ class JwtBearerSecurityIntegrationTest {
                 HttpSecurity http,
                 JwtDecoder jwtDecoder,
                 SafeAiJwtAuthenticationConverter converter,
-                RestAuthenticationEntryPoint
-                        authenticationEntryPoint,
-                RestAccessDeniedHandler
-                        accessDeniedHandler
+                RestAuthenticationEntryPoint authenticationEntryPoint,
+                BearerAuthenticationEntryPoint bearerAuthenticationEntryPoint,
+                RestAccessDeniedHandler accessDeniedHandler
         ) {
 
             return http
@@ -215,6 +217,11 @@ class JwtBearerSecurityIntegrationTest {
                                     .anyRequest()
                                     .authenticated()
                     )
+
+                    /*
+                     * Generic application authentication failures.
+                     * Bearer challenge здесь намеренно не добавляется.
+                     */
                     .exceptionHandling(exceptions ->
                             exceptions
                                     .authenticationEntryPoint(
@@ -224,10 +231,17 @@ class JwtBearerSecurityIntegrationTest {
                                             accessDeniedHandler
                                     )
                     )
+
+                    /*
+                     * Ошибки именно Resource Server/Bearer flow.
+                     */
                     .oauth2ResourceServer(oauth2 ->
                             oauth2
                                     .authenticationEntryPoint(
-                                            authenticationEntryPoint
+                                            bearerAuthenticationEntryPoint
+                                    )
+                                    .accessDeniedHandler(
+                                            accessDeniedHandler
                                     )
                                     .jwt(jwt ->
                                             jwt
@@ -264,9 +278,7 @@ class JwtBearerSecurityIntegrationTest {
                         status().isOk()
                 )
                 .andExpect(
-                        content().string(
-                                "ok"
-                        )
+                        content().string("ok")
                 );
     }
 
@@ -375,8 +387,27 @@ class JwtBearerSecurityIntegrationTest {
         TokenClaims claims =
                 validClaims()
                         .withRoles(
+                                List.of("ROOT")
+                        );
+
+        assertRejected(
+                token(
+                        claims,
+                        "JWT"
+                )
+        );
+    }
+
+    @Test
+    void multipleRolesReturn401()
+            throws Exception {
+
+        TokenClaims claims =
+                validClaims()
+                        .withRoles(
                                 List.of(
-                                        "ROOT"
+                                        "USER",
+                                        "ADMIN"
                                 )
                         );
 
@@ -456,9 +487,7 @@ class JwtBearerSecurityIntegrationTest {
                         get(ENDPOINT)
                                 .header(
                                         HttpHeaders.AUTHORIZATION,
-                                        bearer(
-                                                rawToken
-                                        )
+                                        bearer(rawToken)
                                 )
                 )
                 .andExpect(
@@ -488,9 +517,7 @@ class JwtBearerSecurityIntegrationTest {
                 )
                 .andExpect(
                         jsonPath("$.error")
-                                .value(
-                                        "UNAUTHORIZED"
-                                )
+                                .value("UNAUTHORIZED")
                 )
                 .andExpect(
                         jsonPath("$.message")
@@ -500,9 +527,7 @@ class JwtBearerSecurityIntegrationTest {
                 )
                 .andExpect(
                         jsonPath("$.path")
-                                .value(
-                                        ENDPOINT
-                                )
+                                .value(ENDPOINT)
                 )
                 .andExpect(
                         jsonPath("$.fieldErrors")
@@ -513,9 +538,7 @@ class JwtBearerSecurityIntegrationTest {
     private TokenClaims validClaims() {
         return new TokenClaims(
                 ISSUER,
-                List.of(
-                        AUDIENCE
-                ),
+                List.of(AUDIENCE),
                 NOW.minusSeconds(5),
                 NOW.plusSeconds(300),
                 USER_ID.toString(),
@@ -541,9 +564,7 @@ class JwtBearerSecurityIntegrationTest {
                         );
 
         if (type != null) {
-            headerBuilder.type(
-                    type
-            );
+            headerBuilder.type(type);
         }
 
         JwtClaimsSet.Builder builder =
@@ -618,9 +639,7 @@ class JwtBearerSecurityIntegrationTest {
                             "RSA"
                     );
 
-            generator.initialize(
-                    2048
-            );
+            generator.initialize(2048);
 
             return generator.generateKeyPair();
         } catch (GeneralSecurityException exception) {

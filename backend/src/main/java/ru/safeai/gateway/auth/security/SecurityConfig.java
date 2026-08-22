@@ -1,8 +1,8 @@
 package ru.safeai.gateway.auth.security;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -41,6 +41,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import ru.safeai.gateway.auth.service.AuthCookieProperties;
 import ru.safeai.gateway.auth.service.AuthCookieService;
+import ru.safeai.gateway.common.security.BearerAuthenticationEntryPoint;
 import ru.safeai.gateway.common.security.ClientIpProperties;
 import ru.safeai.gateway.common.security.CorsProperties;
 import ru.safeai.gateway.common.security.JwtProperties;
@@ -57,7 +58,8 @@ import java.util.Set;
         JwtProperties.class,
         CorsProperties.class,
         AuthCookieProperties.class,
-        ClientIpProperties.class
+        ClientIpProperties.class,
+        HstsProperties.class
 })
 @RequiredArgsConstructor
 public class SecurityConfig {
@@ -79,15 +81,16 @@ public class SecurityConfig {
     private final RestAuthenticationEntryPoint
             authenticationEntryPoint;
 
+    private final BearerAuthenticationEntryPoint
+            bearerAuthenticationEntryPoint;
+
     private final RestAccessDeniedHandler
             accessDeniedHandler;
 
     private final UserStatusFilter userStatusFilter;
     private final CorsProperties corsProperties;
     private final AuthCookieProperties authCookieProperties;
-
-    @Value("${safeai.security.hsts.enabled:false}")
-    private boolean hstsEnabled;
+    private final HstsProperties hstsProperties;
 
     @Bean
     SecurityFilterChain securityFilterChain(
@@ -140,6 +143,15 @@ public class SecurityConfig {
                         )
                 )
                 .authorizeHttpRequests(authorize -> authorize
+                        /*
+                         * ERROR dispatch разрешается, чтобы контейнер мог
+                         * завершить уже сформированный error response.
+                         */
+                        .dispatcherTypeMatchers(
+                                DispatcherType.ERROR
+                        )
+                        .permitAll()
+
                         .requestMatchers(
                                 HttpMethod.OPTIONS,
                                 "/**"
@@ -166,65 +178,113 @@ public class SecurityConfig {
                         )
                         .authenticated()
 
+                        /*
+                         * На public application edge публикуется только
+                         * минимальный health endpoint.
+                         */
                         .requestMatchers(
                                 "/actuator/health",
                                 "/actuator/health/**"
                         )
                         .permitAll()
 
+                        /*
+                         * Operational actuator endpoints не являются частью
+                         * application RBAC. Prometheus и остальные endpoints
+                         * должны публиковаться через отдельный management
+                         * contour / internal network.
+                         */
                         .requestMatchers("/actuator/**")
-                        .hasRole("SUPER_ADMIN")
+                        .denyAll()
 
-                        .requestMatchers(
-                                HttpMethod.POST,
-                                "/api/organizations"
-                        )
-                        .hasRole("SUPER_ADMIN")
-
+                        /*
+                         * ADMIN сохраняет существующий read-only доступ к
+                         * своей organization. Все остальные HTTP methods под
+                         * /api/organizations/** требуют SUPER_ADMIN.
+                         *
+                         * Порядок matcher-ов принципиален: GET rule идёт первой.
+                         */
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/organizations",
+                                "/api/organizations/me",
+                                "/api/organizations/{id}"
+                        )
+                        .hasAnyRole(
+                                "ADMIN",
+                                "SUPER_ADMIN"
+                        )
+
+                        .requestMatchers(
+                                "/api/organizations",
                                 "/api/organizations/**"
                         )
+                        .hasRole("SUPER_ADMIN")
+
+                        .requestMatchers(
+                                "/api/users",
+                                "/api/users/**"
+                        )
                         .hasAnyRole(
                                 "ADMIN",
                                 "SUPER_ADMIN"
                         )
 
-                        .requestMatchers("/api/users/**")
+                        .requestMatchers(
+                                "/api/admin",
+                                "/api/admin/**"
+                        )
                         .hasAnyRole(
                                 "ADMIN",
                                 "SUPER_ADMIN"
                         )
 
-                        .requestMatchers("/api/admin/**")
-                        .hasAnyRole(
-                                "ADMIN",
-                                "SUPER_ADMIN"
+                        /*
+                         * Knowledge data plane принадлежит tenant roles.
+                         * Более тонкие create/update/member permissions
+                         * остаются вторым слоем в @PreAuthorize/service.
+                         */
+                        .requestMatchers(
+                                "/api/knowledge-bases",
+                                "/api/knowledge-bases/**"
                         )
-
-                        .requestMatchers("/api/chats/**")
                         .hasAnyRole(
                                 "ADMIN",
                                 "USER"
                         )
 
+                        .requestMatchers(
+                                "/api/chats",
+                                "/api/chats/**"
+                        )
+                        .hasAnyRole(
+                                "ADMIN",
+                                "USER"
+                        )
+
+                        /*
+                         * Fail closed: новый API endpoint не становится
+                         * доступен только потому, что разработчик забыл
+                         * добавить matcher/@PreAuthorize.
+                         */
+                        .requestMatchers("/api/**")
+                        .denyAll()
+
                         .anyRequest()
-                        .authenticated()
+                        .denyAll()
                 )
+
                 /*
                  * Resource Server получает только Authorization header.
-                 *
-                 * Spring Security автоматически исключает bearer-header
-                 * requests из CSRF-проверки. Это безопасно, поскольку
-                 * браузер не отправляет Authorization header автоматически.
+                 * Bearer 401 использует отдельный entry point и только здесь
+                 * получает WWW-Authenticate: Bearer.
                  */
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(
                                 bearerTokenResolver
                         )
                         .authenticationEntryPoint(
-                                authenticationEntryPoint
+                                bearerAuthenticationEntryPoint
                         )
                         .accessDeniedHandler(
                                 accessDeniedHandler
@@ -241,8 +301,8 @@ public class SecurityConfig {
                 )
                 /*
                  * Cookie JWT обрабатывается отдельным фильтром после
-                 * CsrfFilter. Поэтому unsafe cookie-authenticated
-                 * requests обязаны предъявить X-XSRF-TOKEN.
+                 * CsrfFilter. Поэтому unsafe cookie-authenticated requests
+                 * обязаны предъявить X-XSRF-TOKEN.
                  */
                 .addFilterAfter(
                         accessCookieAuthenticationFilter,
@@ -354,8 +414,8 @@ public class SecurityConfig {
     /**
      * Только Authorization header.
      *
-     * <p>Access-cookie намеренно не возвращается этим resolver,
-     * иначе OAuth2ResourceServerConfigurer автоматически исключит
+     * <p>Access-cookie намеренно не возвращается этим resolver, иначе
+     * OAuth2ResourceServerConfigurer автоматически исключит
      * cookie-authenticated request из CSRF-проверки.</p>
      */
     @Bean
@@ -427,7 +487,7 @@ public class SecurityConfig {
                 );
 
         headers.httpStrictTransportSecurity(hsts -> {
-            if (hstsEnabled) {
+            if (hstsProperties.enabled()) {
                 hsts
                         .includeSubDomains(true)
                         .preload(true)

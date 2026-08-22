@@ -31,17 +31,28 @@ public class ChatHistoryRepository {
              and assistant_message.status = 'COMPLETED'
              and assistant_message.reply_to_message_id = user_message.id
             where ct.session_id = ?
+              and ct.organization_id = ?
+              and ct.user_id = ?
               and ct.state = 'SUCCEEDED'
             order by ct.created_at desc, ct.id desc
             limit ?
             """;
 
-    private static final RowMapper<ChatHistoryTurn> HISTORY_TURN_ROW_MAPPER =
-            (resultSet, rowNumber) -> new ChatHistoryTurn(
-                    resultSet.getObject("turn_id", UUID.class),
-                    resultSet.getString("user_content"),
-                    resultSet.getString("assistant_content")
-            );
+    private static final RowMapper<ChatHistoryTurn>
+            HISTORY_TURN_ROW_MAPPER =
+            (resultSet, rowNumber) ->
+                    new ChatHistoryTurn(
+                            resultSet.getObject(
+                                    "turn_id",
+                                    UUID.class
+                            ),
+                            resultSet.getString(
+                                    "user_content"
+                            ),
+                            resultSet.getString(
+                                    "assistant_content"
+                            )
+                    );
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -56,11 +67,21 @@ public class ChatHistoryRepository {
 
     public List<ChatHistoryTurn> findNewestSucceededTurns(
             UUID sessionId,
+            UUID organizationId,
+            UUID userId,
             int limit
     ) {
         Objects.requireNonNull(
                 sessionId,
                 "sessionId не должен быть null"
+        );
+        Objects.requireNonNull(
+                organizationId,
+                "organizationId не должен быть null"
+        );
+        Objects.requireNonNull(
+                userId,
+                "userId не должен быть null"
         );
 
         if (limit < 1) {
@@ -72,8 +93,22 @@ public class ChatHistoryRepository {
         return jdbcTemplate.query(
                 FIND_NEWEST_SUCCEEDED_TURNS_SQL,
                 preparedStatement -> {
-                    preparedStatement.setObject(1, sessionId);
-                    preparedStatement.setInt(2, limit);
+                    preparedStatement.setObject(
+                            1,
+                            sessionId
+                    );
+                    preparedStatement.setObject(
+                            2,
+                            organizationId
+                    );
+                    preparedStatement.setObject(
+                            3,
+                            userId
+                    );
+                    preparedStatement.setInt(
+                            4,
+                            limit
+                    );
                 },
                 HISTORY_TURN_ROW_MAPPER
         );

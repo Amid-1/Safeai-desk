@@ -12,10 +12,14 @@ import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 
 import java.io.IOException;
 
+/**
+ * Общий JSON 401 entry point для browser/cookie authentication.
+ * Bearer challenge здесь намеренно не выставляется.
+ */
 @Component
 @RequiredArgsConstructor
 public class RestAuthenticationEntryPoint
-        implements AuthenticationEntryPoint {
+implements AuthenticationEntryPoint {
 
     private final ApiErrorResponseWriter errorResponseWriter;
 

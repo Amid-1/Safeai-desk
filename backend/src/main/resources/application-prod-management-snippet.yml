@@ -1,0 +1,17 @@
+# D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod-management-snippet.yml
+# Add "server" under the existing top-level management: block
+# in backend/src/main/resources/application-prod.yml.
+#
+# Keep the existing endpoints.web.exposure and endpoint.health sections.
+management:
+  server:
+    port: ${SAFEAI_MANAGEMENT_PORT:9091}
+    address: ${SAFEAI_MANAGEMENT_ADDRESS:127.0.0.1}
+
+  endpoints:
+    web:
+      exposure:
+        include:
+          - health
+          - info
+          - prometheus

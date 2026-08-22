@@ -14,6 +14,18 @@ import java.util.UUID;
 public interface AuditOutboxRepository
         extends JpaRepository<AuditOutboxEntity, UUID> {
 
+
+    long countByDeadLetteredAtIsNull();
+
+    long countByDeadLetteredAtIsNotNull();
+
+    @Query("""
+            select min(outbox.createdAt)
+            from AuditOutboxEntity outbox
+            where outbox.deadLetteredAt is null
+            """)
+    Optional<Instant> findOldestPendingCreatedAt();
+
     @SuppressWarnings({
             "SqlResolve",
             "SqlNoDataSourceInspection"

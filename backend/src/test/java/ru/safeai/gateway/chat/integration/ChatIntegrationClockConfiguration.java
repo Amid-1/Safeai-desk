@@ -8,7 +8,7 @@ import java.time.Clock;
 import java.time.ZoneOffset;
 
 @TestConfiguration(proxyBeanMethods = false)
-class ChatIntegrationClockConfiguration {
+public class ChatIntegrationClockConfiguration {
 
     @Bean
     @Primary

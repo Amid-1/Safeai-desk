@@ -35,6 +35,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -52,6 +53,7 @@ class ChatTurnReservationServiceTest {
     @Mock ChatHistoryRepository historyRepository;
     @Mock RedisRateLimitService rateLimitService;
     @Mock ChatQuotaService quotaService;
+    @Mock ChatTurnRecoveryCoordinator recoveryCoordinator;
     @Mock AuditEventService auditEventService;
     @Mock ChatMetrics metrics;
 
@@ -78,6 +80,7 @@ class ChatTurnReservationServiceTest {
                 normalizer,
                 rateLimitService,
                 quotaService,
+                recoveryCoordinator,
                 auditEventService,
                 new AiProviderProperties("openai"),
                 properties,
@@ -179,11 +182,6 @@ class ChatTurnReservationServiceTest {
                 ChatTestFixtures.CHAT_ID,
                 ChatTestFixtures.CLIENT_REQUEST_ID
         )).thenReturn(Optional.of(turn));
-        when(turnRepository.markExpiredBeforeProviderFailed(
-                turn.getId(),
-                ChatTestFixtures.NOW
-        )).thenReturn(1);
-
         assertThatThrownBy(() -> service.reserveOrReplay(
                 ChatTestFixtures.CHAT_ID,
                 request("Hello"),
@@ -192,9 +190,11 @@ class ChatTurnReservationServiceTest {
                 .extracting("code")
                 .isEqualTo("STALE_BEFORE_PROVIDER_CALL");
 
-        verify(quotaService).releaseFailure(turn.getId(), ChatTestFixtures.NOW);
-        verify(metrics).recordTerminalAfterCommit(ChatTurnState.FAILED);
-        verify(quotaService, never()).markAmbiguous(any(), any());
+        verify(recoveryCoordinator).recoverInline(
+                turn,
+                ChatTestFixtures.NOW
+        );
+        verifyNoInteractions(rateLimitService, quotaService);
     }
 
     @Test
@@ -207,19 +207,17 @@ class ChatTurnReservationServiceTest {
                 ChatTestFixtures.CHAT_ID,
                 ChatTestFixtures.CLIENT_REQUEST_ID
         )).thenReturn(Optional.of(turn));
-        when(turnRepository.markExpiredProcessingAmbiguous(
-                turn.getId(),
-                ChatTestFixtures.NOW
-        )).thenReturn(1);
-
         assertThatThrownBy(() -> service.reserveOrReplay(
                 ChatTestFixtures.CHAT_ID,
                 request("Hello"),
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(quotaService).markAmbiguous(turn.getId(), ChatTestFixtures.NOW);
-        verify(metrics).recordTerminalAfterCommit(ChatTurnState.AMBIGUOUS);
+        verify(recoveryCoordinator).recoverInline(
+                turn,
+                ChatTestFixtures.NOW
+        );
+        verifyNoInteractions(rateLimitService, quotaService);
     }
 
     @Test
@@ -287,6 +285,8 @@ class ChatTurnReservationServiceTest {
         )).thenReturn(Optional.empty());
         when(historyRepository.findNewestSucceededTurns(
                 ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.ORGANIZATION_ID,
+                ChatTestFixtures.USER_ID,
                 properties.historyTurnLimit()
         )).thenReturn(List.of(new ChatHistoryTurn(
                 UUID.randomUUID(),
@@ -369,8 +369,12 @@ class ChatTurnReservationServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(turnRepository.saveAndFlush(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(historyRepository.findNewestSucceededTurns(any(), org.mockito.ArgumentMatchers.anyInt()))
-                .thenReturn(List.of());
+        when(historyRepository.findNewestSucceededTurns(
+                any(UUID.class),
+                any(UUID.class),
+                any(UUID.class),
+                anyInt()
+        )).thenReturn(List.of());
     }
 
     private void stubOwnedSession() {

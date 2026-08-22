@@ -46,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -146,11 +147,26 @@ class ChatServiceTest {
         );
 
         assertThat(result).isSameAs(expected);
-        InOrder order = inOrder(finalizationService, aiProvider);
-        order.verify(finalizationService).markProviderCallStarted(processing);
-        order.verify(aiProvider).sendMessage(processing.aiRequest());
-        verify(lockService).ensureValid(redisLock);
-        verify(leaseService).ensureValid(leaseWatch);
+
+        InOrder order = inOrder(
+                finalizationService,
+                lockService,
+                leaseService,
+                aiProvider
+        );
+        order.verify(finalizationService)
+                .markProviderCallStarted(processing);
+        order.verify(lockService)
+                .ensureValid(redisLock);
+        order.verify(leaseService)
+                .ensureValid(leaseWatch);
+        order.verify(aiProvider)
+                .sendMessage(processing.aiRequest());
+        order.verify(lockService)
+                .ensureValid(redisLock);
+        order.verify(leaseService)
+                .ensureValid(leaseWatch);
+
         verify(securityStateService).assertStillActive(
                 eq(ChatTestFixtures.CHAT_ID),
                 eq(ChatTestFixtures.TURN_ID),
@@ -265,7 +281,14 @@ class ChatServiceTest {
         stubOwnedChatAndProcessing();
         when(aiProvider.sendMessage(processing.aiRequest()))
                 .thenReturn(ChatTestFixtures.freeResponse());
-        doThrow(new ChatLockUnavailableException("lost", null))
+
+        doNothing()
+                .doThrow(
+                        new ChatLockUnavailableException(
+                                "lost",
+                                null
+                        )
+                )
                 .when(lockService)
                 .ensureValid(redisLock);
 
@@ -275,7 +298,10 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(finalizationService, never()).succeed(any(), any(), any());
+        verify(aiProvider)
+                .sendMessage(processing.aiRequest());
+        verify(finalizationService, never())
+                .succeedRag(any(), any(), any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
                 org.mockito.ArgumentMatchers.isNull(),
@@ -292,11 +318,17 @@ class ChatServiceTest {
         stubOwnedChatAndProcessing();
         when(aiProvider.sendMessage(processing.aiRequest()))
                 .thenReturn(ChatTestFixtures.freeResponse());
-        doThrow(new ChatStaleProcessorException(
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.TURN_ID,
-                ChatTestFixtures.CLIENT_REQUEST_ID
-        )).when(leaseService).ensureValid(leaseWatch);
+
+        doNothing()
+                .doThrow(
+                        new ChatStaleProcessorException(
+                                ChatTestFixtures.CHAT_ID,
+                                ChatTestFixtures.TURN_ID,
+                                ChatTestFixtures.CLIENT_REQUEST_ID
+                        )
+                )
+                .when(leaseService)
+                .ensureValid(leaseWatch);
 
         assertThatThrownBy(() -> service.sendMessage(
                 ChatTestFixtures.CHAT_ID,
@@ -304,7 +336,92 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(finalizationService, never()).succeed(any(), any(), any());
+        verify(aiProvider)
+                .sendMessage(processing.aiRequest());
+        verify(finalizationService, never())
+                .succeedRag(any(), any(), any());
+        verify(finalizationService).markAmbiguous(
+                eq(processing),
+                org.mockito.ArgumentMatchers.isNull(),
+                eq("requested-model"),
+                eq("provider-request-id"),
+                eq("PROCESSING_OWNERSHIP_LOST"),
+                eq("CHAT_PROCESSING_OWNERSHIP_LOST"),
+                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+        );
+    }
+
+    @Test
+    void lostRedisOwnershipBeforeProviderCallSkipsProviderIo() {
+        stubOwnedChatAndProcessing();
+
+        doThrow(
+                new ChatLockUnavailableException(
+                        "lost",
+                        null
+                )
+        )
+                .when(lockService)
+                .ensureValid(redisLock);
+
+        assertThatThrownBy(() -> service.sendMessage(
+                ChatTestFixtures.CHAT_ID,
+                request(),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(AiOutcomeAmbiguousException.class);
+
+        verify(aiProvider, never())
+                .sendMessage(any());
+
+        verify(finalizationService).markAmbiguous(
+                eq(processing),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(),
+                eq("PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
+                eq("CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
+                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+        );
+
+        verify(finalizationService, never())
+                .succeedRag(any(), any(), any());
+    }
+
+    @Test
+    void staleDbLeaseBeforeProviderCallSkipsProviderIo() {
+        stubOwnedChatAndProcessing();
+
+        doThrow(
+                new ChatStaleProcessorException(
+                        ChatTestFixtures.CHAT_ID,
+                        ChatTestFixtures.TURN_ID,
+                        ChatTestFixtures.CLIENT_REQUEST_ID
+                )
+        )
+                .when(leaseService)
+                .ensureValid(leaseWatch);
+
+        assertThatThrownBy(() -> service.sendMessage(
+                ChatTestFixtures.CHAT_ID,
+                request(),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(AiOutcomeAmbiguousException.class);
+
+        verify(aiProvider, never())
+                .sendMessage(any());
+
+        verify(finalizationService).markAmbiguous(
+                eq(processing),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(),
+                eq("PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
+                eq("CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
+                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+        );
+
+        verify(finalizationService, never())
+                .succeedRag(any(), any(), any());
     }
 
     @Test

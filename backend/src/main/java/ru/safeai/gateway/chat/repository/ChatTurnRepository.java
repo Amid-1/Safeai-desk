@@ -216,7 +216,7 @@ public interface ChatTurnRepository
             @Param("completedAt") Instant completedAt
     );
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query(value = """
             update chat_turns
                set state = 'FAILED',
@@ -237,14 +237,14 @@ public interface ChatTurnRepository
              where id = :turnId
                and state = 'PROCESSING'
                and provider_call_started_at is null
-               and lease_until < :now
+               and lease_until <= :now
             """, nativeQuery = true)
     int markExpiredBeforeProviderFailed(
             @Param("turnId") UUID turnId,
             @Param("now") Instant now
     );
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query(value = """
             update chat_turns
                set state = 'AMBIGUOUS',
@@ -259,7 +259,7 @@ public interface ChatTurnRepository
              where id = :turnId
                and state = 'PROCESSING'
                and provider_call_started_at is not null
-               and lease_until < :now
+               and lease_until <= :now
             """, nativeQuery = true)
     int markExpiredProcessingAmbiguous(
             @Param("turnId") UUID turnId,

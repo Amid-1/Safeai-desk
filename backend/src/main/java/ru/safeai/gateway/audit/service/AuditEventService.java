@@ -126,6 +126,48 @@ public class AuditEventService {
     }
 
     /**
+     * Записывает durable audit intent в отдельной transaction.
+     *
+     * <p>В отличие от {@link #record(AuditActor, UUID, AuditEventType, Map)},
+     * этот метод не присоединяется к business transaction вызывающего кода.
+     * Ошибка enqueue намеренно не перехватывается и должна выйти вызывающему
+     * коду. Это требуется, например, rate limiter-у: при сбое audit enqueue
+     * он освобождает Redis notification marker, чтобы следующий rejected
+     * request повторил попытку durable audit.</p>
+     */
+    public void recordStandaloneRequired(
+            AuditActor actor,
+            UUID targetOrganizationId,
+            AuditEventType eventType,
+            Map<String, Object> details
+    ) {
+        AuditCommand command =
+                commandFactory.create(
+                        actor,
+                        targetOrganizationId,
+                        eventType,
+                        details
+                );
+
+        outboxWriter.writeStandalone(
+                command
+        );
+    }
+
+    public void recordSystemStandaloneRequired(
+            UUID targetOrganizationId,
+            AuditEventType eventType,
+            Map<String, Object> details
+    ) {
+        recordStandaloneRequired(
+                AuditActor.system(),
+                targetOrganizationId,
+                eventType,
+                details
+        );
+    }
+
+    /**
      * Access-token principal намеренно не содержит PII.
      *
      * <p>Поэтому email/fullName для immutable audit snapshot берутся

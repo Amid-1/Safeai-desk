@@ -1,6 +1,7 @@
 package ru.safeai.gateway.user.dto;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -16,4 +17,12 @@ public record UserResponse(
         Instant updatedAt,
         Instant lastLoginAt
 ) {
+    public UserResponse {
+        roles = Set.copyOf(
+                Objects.requireNonNull(
+                        roles,
+                        "roles не должен быть null"
+                )
+        );
+    }
 }

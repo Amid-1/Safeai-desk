@@ -24,6 +24,9 @@ class AccessTokenSubjectTest {
                     "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
             );
 
+    private static final String EXACTLY_ONE_ROLE_MESSAGE =
+            "Должна быть ровно одна системная роль";
+
     @Test
     void constructorCreatesSubjectWithExpectedValues() {
         AccessTokenSubject subject =
@@ -53,26 +56,76 @@ class AccessTokenSubjectTest {
     }
 
     @Test
-    void rolesAreCanonicalizedDeduplicatedAndSorted() {
+    void singleRoleAliasIsCanonicalized() {
         AccessTokenSubject subject =
                 new AccessTokenSubject(
                         USER_ID,
                         ORGANIZATION_ID,
                         1L,
                         2L,
-                        Set.of(
-                                "role_user",
-                                "USER",
-                                "admin",
-                                "ROLE_SUPER_ADMIN"
-                        )
+                        Set.of("role_user")
                 );
 
         assertThat(subject.roles())
-                .containsExactly(
-                        "ADMIN",
-                        "SUPER_ADMIN",
-                        "USER"
+                .containsExactly("USER");
+    }
+
+    @Test
+    void roleNameIsCaseInsensitiveAndCanonicalized() {
+        AccessTokenSubject subject =
+                new AccessTokenSubject(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        Set.of("admin")
+                );
+
+        assertThat(subject.roles())
+                .containsExactly("ADMIN");
+    }
+
+    @Test
+    void multipleDifferentSystemRolesAreRejected() {
+        assertThatThrownBy(() ->
+                new AccessTokenSubject(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        Set.of(
+                                "USER",
+                                "ADMIN"
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessage(
+                        EXACTLY_ONE_ROLE_MESSAGE
+                );
+    }
+
+    @Test
+    void multipleAliasesForSameSystemRoleAreRejected() {
+        assertThatThrownBy(() ->
+                new AccessTokenSubject(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        2L,
+                        Set.of(
+                                "USER",
+                                "role_user"
+                        )
+                )
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessage(
+                        EXACTLY_ONE_ROLE_MESSAGE
                 );
     }
 
@@ -87,21 +140,24 @@ class AccessTokenSubjectTest {
 
         assertThatThrownBy(() ->
                 subject.roles().add("ADMIN")
-        ).isInstanceOf(
-                UnsupportedOperationException.class
-        );
+        )
+                .isInstanceOf(
+                        UnsupportedOperationException.class
+                );
 
         assertThatThrownBy(() ->
                 subject.roles().remove("USER")
-        ).isInstanceOf(
-                UnsupportedOperationException.class
-        );
+        )
+                .isInstanceOf(
+                        UnsupportedOperationException.class
+                );
 
         assertThatThrownBy(() ->
                 subject.roles().clear()
-        ).isInstanceOf(
-                UnsupportedOperationException.class
-        );
+        )
+                .isInstanceOf(
+                        UnsupportedOperationException.class
+                );
     }
 
     @Test
@@ -263,7 +319,7 @@ class AccessTokenSubjectTest {
                         IllegalArgumentException.class
                 )
                 .hasMessage(
-                        "roles не должен быть пустым"
+                        EXACTLY_ONE_ROLE_MESSAGE
                 );
     }
 
@@ -294,10 +350,7 @@ class AccessTokenSubjectTest {
                         ORGANIZATION_ID,
                         1L,
                         9L,
-                        Set.of(
-                                "role_user",
-                                "admin"
-                        )
+                        Set.of("role_user")
                 );
 
         AccessTokenSubject second =
@@ -306,10 +359,7 @@ class AccessTokenSubjectTest {
                         ORGANIZATION_ID,
                         1L,
                         9L,
-                        Set.of(
-                                "USER",
-                                "ROLE_ADMIN"
-                        )
+                        Set.of("USER")
                 );
 
         AccessTokenSubject differentEpoch =
@@ -318,10 +368,7 @@ class AccessTokenSubjectTest {
                         ORGANIZATION_ID,
                         1L,
                         10L,
-                        Set.of(
-                                "USER",
-                                "ADMIN"
-                        )
+                        Set.of("ROLE_USER")
                 );
 
         assertThat(first)
@@ -335,8 +382,33 @@ class AccessTokenSubjectTest {
     }
 
     @Test
+    void differentRoleProducesDifferentSubject() {
+        AccessTokenSubject user =
+                new AccessTokenSubject(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        9L,
+                        Set.of("USER")
+                );
+
+        AccessTokenSubject admin =
+                new AccessTokenSubject(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        1L,
+                        9L,
+                        Set.of("ADMIN")
+                );
+
+        assertThat(user)
+                .isNotEqualTo(admin);
+    }
+
+    @Test
     void canonicalConstructorContainsOnlySecurityClaims()
             throws NoSuchMethodException {
+
         Constructor<AccessTokenSubject> constructor =
                 AccessTokenSubject.class
                         .getDeclaredConstructor(
@@ -356,11 +428,13 @@ class AccessTokenSubjectTest {
         for (Constructor<?> constructor :
                 AccessTokenSubject.class
                         .getDeclaredConstructors()) {
+
             assertThat(
                     constructor.getParameterTypes()
-            ).doesNotContain(
-                    String.class
-            );
+            )
+                    .doesNotContain(
+                            String.class
+                    );
         }
     }
 
@@ -378,7 +452,8 @@ class AccessTokenSubjectTest {
 
     /**
      * Проверяет runtime null-contract конструктора без прямой передачи null
-     * в параметры AccessTokenSubject, которые static analysis считает @NotNull.
+     * в параметры AccessTokenSubject, которые static analysis считает
+     * @NotNull.
      */
     private Throwable constructorFailure(
             @Nullable UUID userId,
@@ -408,7 +483,8 @@ class AccessTokenSubjectTest {
                     "Ожидалось исключение конструктора AccessTokenSubject"
             );
         } catch (InvocationTargetException exception) {
-            Throwable cause = exception.getCause();
+            Throwable cause =
+                    exception.getCause();
 
             if (cause == null) {
                 throw new AssertionError(
@@ -420,7 +496,8 @@ class AccessTokenSubjectTest {
             return cause;
         } catch (ReflectiveOperationException exception) {
             throw new AssertionError(
-                    "Не удалось вызвать canonical constructor AccessTokenSubject",
+                    "Не удалось вызвать canonical constructor "
+                            + "AccessTokenSubject",
                     exception
             );
         }

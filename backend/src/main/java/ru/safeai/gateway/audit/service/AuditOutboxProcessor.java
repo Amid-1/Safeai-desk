@@ -20,6 +20,7 @@ public class AuditOutboxProcessor {
     private final AuditOutboxRepository outboxRepository;
     private final AuditEventRepository eventRepository;
     private final AuditOutboxFailureService failureService;
+    private final AuditOutboxMetrics metrics;
     private final AuditOutboxProperties properties;
     private final Clock clock;
     private final TransactionTemplate itemTransaction;
@@ -28,6 +29,7 @@ public class AuditOutboxProcessor {
             AuditOutboxRepository outboxRepository,
             AuditEventRepository eventRepository,
             AuditOutboxFailureService failureService,
+            AuditOutboxMetrics metrics,
             AuditOutboxProperties properties,
             Clock clock,
             PlatformTransactionManager transactionManager
@@ -35,6 +37,7 @@ public class AuditOutboxProcessor {
         this.outboxRepository = outboxRepository;
         this.eventRepository = eventRepository;
         this.failureService = failureService;
+        this.metrics = metrics;
         this.properties = properties;
         this.clock = clock;
 
@@ -147,6 +150,10 @@ public class AuditOutboxProcessor {
                             outboxId,
                             failure
                     );
+
+            metrics.recordDeliveryFailure(
+                    result.deadLettered()
+            );
 
             if (!result.rowFound()) {
                 /*

@@ -36,7 +36,7 @@ public final class AiProductionConfigurationValidator {
 
     @PostConstruct
     void validate() {
-        if (!environment.acceptsProfiles(Profiles.of("prod"))) {
+        if (!environment.acceptsProfiles(Profiles.of("prod", "production"))) {
             return;
         }
 

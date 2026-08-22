@@ -36,6 +36,12 @@ services:
       REDIS_PORT: "6379"
       REDIS_PASSWORD: "${REDIS_PASSWORD}"
 
+      # Separate actuator port for local Prometheus.
+      # Local network is not a production security boundary, so binding
+      # management to all container interfaces is acceptable here.
+      SAFEAI_MANAGEMENT_PORT: "9091"
+      SAFEAI_MANAGEMENT_ADDRESS: "0.0.0.0"
+
       # Внутри Docker backend должен обращаться к MinIO
       # по service name, а не через localhost.
       SAFEAI_KNOWLEDGE_STORAGE_TYPE: s3
@@ -55,6 +61,9 @@ services:
         host_ip: 127.0.0.1
         protocol: tcp
 
+    expose:
+      - "9091"
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,7 +74,7 @@ services:
 
     healthcheck:
       test: >-
-        curl -fsS http://localhost:8080/actuator/health/readiness
+        curl -fsS http://localhost:9091/actuator/health/readiness
         | grep -q '"status":"UP"'
       interval: 10s
       timeout: 5s
@@ -81,7 +90,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: "${POSTGRES_IMAGE:-pgvector/pgvector:pg16}"
+    image: "pgvector/pgvector:pg16"
 
     environment:
       POSTGRES_DB: "${POSTGRES_DB}"
@@ -112,7 +121,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: "${REDIS_IMAGE:-redis:7}"
+    image: "redis:7"
 
     entrypoint:
       - /bin/sh
@@ -189,12 +198,65 @@ services:
     logging: *default-logging
     restart: unless-stopped
 
+  prometheus:
+    image: "prom/prometheus:v3.13.2"
+
+    profiles:
+      - full
+
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle=false
+
+    volumes:
+      - type: bind
+        source: ./prometheus/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+
+      - type: bind
+        source: ./prometheus/rules
+        target: /etc/prometheus/rules
+        read_only: true
+
+      - safeai_prometheus_local_data:/prometheus
+
+    ports:
+      - target: 9090
+        published: "9090"
+        host_ip: 127.0.0.1
+        protocol: tcp
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    healthcheck:
+      test: >-
+        wget -q -O - http://127.0.0.1:9090/-/ready
+        | grep -q 'Prometheus Server is Ready'
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - safeai_local
+
+    logging: *default-logging
+    restart: unless-stopped
+
 volumes:
   safeai_postgres_local_data:
     name: safeai_postgres_local_data
 
   safeai_minio_local_data:
     name: safeai_minio_local_data
+
+  safeai_prometheus_local_data:
+    name: safeai_prometheus_local_data
 
 networks:
   safeai_local:

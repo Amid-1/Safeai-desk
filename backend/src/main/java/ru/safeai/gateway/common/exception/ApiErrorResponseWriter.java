@@ -16,8 +16,12 @@ import java.nio.charset.StandardCharsets;
 /**
  * Записывает единый JSON-контракт ошибки из Spring Security filter chain.
  *
- * <p>Класс владеет полным HTTP-контрактом security error response:
- * status, cache policy, Bearer challenge для 401, content type и JSON body.</p>
+ * <p>Обычный {@link #write} не выставляет Bearer challenge. Это важно для
+ * cookie-authentication: 401 из cookie/security-state pipeline не должен
+ * притворяться OAuth2 Bearer challenge.</p>
+ *
+ * <p>{@link #writeBearerUnauthorized} используется только для Bearer/resource-server
+ * 401 paths и добавляет {@code WWW-Authenticate: Bearer}.</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -33,13 +37,47 @@ public class ApiErrorResponseWriter {
             ApiErrorCode error,
             String message
     ) throws IOException {
+        writeInternal(
+                request,
+                response,
+                status,
+                error,
+                message,
+                false
+        );
+    }
+
+    public void writeBearerUnauthorized(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            ApiErrorCode error,
+            String message
+    ) throws IOException {
+        writeInternal(
+                request,
+                response,
+                HttpStatus.UNAUTHORIZED,
+                error,
+                message,
+                true
+        );
+    }
+
+    private void writeInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            HttpStatusCode status,
+            ApiErrorCode error,
+            String message,
+            boolean bearerChallenge
+    ) throws IOException {
         if (response.isCommitted()) {
             return;
         }
 
         /*
-         * resetBuffer() очищает body, но не уничтожает уже установленные
-         * инфраструктурные headers, в частности server X-Request-Id.
+         * resetBuffer() очищает body, но сохраняет уже установленные headers,
+         * в частности server X-Request-Id.
          */
         response.resetBuffer();
         response.setStatus(status.value());
@@ -48,12 +86,7 @@ public class ApiErrorResponseWriter {
                 "no-store"
         );
 
-        /*
-         * Любой 401 этого writer относится к Bearer/resource-server
-         * security pipeline. Challenge выставляется после resetBuffer(),
-         * чтобы контракт не зависел от порядка вызовов entry point/filter.
-         */
-        if (status.value() == HttpStatus.UNAUTHORIZED.value()) {
+        if (bearerChallenge) {
             response.setHeader(
                     HttpHeaders.WWW_AUTHENTICATE,
                     "Bearer"

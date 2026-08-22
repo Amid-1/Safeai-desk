@@ -67,6 +67,8 @@ import java.util.stream.Collectors;
 )
 public class UserService {
 
+    private static final int MAX_PAGE_SIZE = 100;
+
     private static final Set<SystemRole>
             SUPER_ADMIN_ASSIGNABLE_ROLES =
             Set.of(
@@ -222,7 +224,7 @@ public class UserService {
                 new HashSet<>(
                         roles
                 )
-        );
+        ); 
 
         UserEntity saved;
 
@@ -478,7 +480,7 @@ public class UserService {
                                 false
                         )
         );
-    }
+    } 
 
     @Transactional
     public UserResponse updateUser(
@@ -645,7 +647,7 @@ public class UserService {
 
         return toResponse(saved);
     }
-
+    
     @Transactional
     public UserResponse updateEnabled(
             UUID id,
@@ -898,7 +900,7 @@ public class UserService {
 
         publishSecurityStateChanged(
                 saved.getId()
-        );
+        ); 
 
         auditEventService.record(
                 currentUser,
@@ -1145,7 +1147,7 @@ public class UserService {
                             + "удалением ещё не истёк: "
                             + deletionAllowedAt
             );
-        }
+        } 
 
         if (userRepository
                 .hasActiveRefreshTokens(
@@ -1364,7 +1366,7 @@ public class UserService {
 
         Hibernate.initialize(
                 locked.getRoles()
-        );
+        ); 
 
         if (!organizationId.equals(
                 lockedOrganizationId
@@ -1553,7 +1555,7 @@ public class UserService {
         }
 
         return normalized.roleName();
-    }
+    } 
 
     private Set<SystemRole> normalizeRoles(
             Set<String> roles
@@ -1774,7 +1776,7 @@ public class UserService {
         );
 
         return saved;
-    }
+    } 
 
     private void initializeUserAssociations(
             UserEntity user
@@ -1836,6 +1838,28 @@ public class UserService {
     private Pageable normalizePageable(
             Pageable pageable
     ) {
+        if (pageable.isUnpaged()) {
+            throw new BadRequestException(
+                    "Постраничный запрос обязателен"
+            );
+        }
+
+        int pageNumber = pageable.getPageNumber();
+        int pageSize = pageable.getPageSize();
+
+        if (pageNumber < 0) {
+            throw new BadRequestException(
+                    "Номер страницы не может быть отрицательным"
+            );
+        }
+
+        if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+            throw new BadRequestException(
+                    "Размер страницы должен быть от 1 до "
+                            + MAX_PAGE_SIZE
+            );
+        }
+
         validatePageableSort(
                 pageable
         );
@@ -1870,8 +1894,8 @@ public class UserService {
         }
 
         return PageRequest.of(
-                pageable.getPageNumber(),
-                pageable.getPageSize(),
+                pageNumber,
+                pageSize,
                 sort
         );
     }
@@ -2010,4 +2034,5 @@ public class UserService {
                 ? ""
                 : value;
     }
-}
+} 
+

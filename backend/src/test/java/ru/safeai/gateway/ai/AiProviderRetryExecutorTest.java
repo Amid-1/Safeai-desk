@@ -255,10 +255,13 @@ class AiProviderRetryExecutorTest {
                         PROVIDER,
                         MODEL,
                         OPERATION_ID,
-                        Duration.ofSeconds(2),
+                        Duration.ofMillis(900),
                         context -> {
                             attempts.incrementAndGet();
-                            throw rateLimit();
+
+                            throw rateLimitWithRetryAfter(
+                                    Duration.ofMillis(200)
+                            );
                         }
                 )
         )
@@ -266,8 +269,60 @@ class AiProviderRetryExecutorTest {
                         AiProviderRateLimitedException.class
                 );
 
+        /*
+         * Первый attempt допустим: 900 ms <= totalTimeout 1 s.
+         *
+         * Но retry потребовал бы ещё:
+         * 200 ms Retry-After + 900 ms attempt timeout = 1.1 s.
+         *
+         * Поэтому executor обязан вернуть исходную provider exception
+         * и не начинать второй attempt.
+         */
         assertThat(attempts)
                 .hasValue(1);
+    }
+
+    @Test
+    void attemptTimeoutLongerThanTotalTimeoutFailsFast() {
+        AiProviderRetryExecutor executor =
+                new AiProviderRetryExecutor(
+                        new AiRetryProperties(
+                                true,
+                                3,
+                                RETRY_BACKOFF,
+                                RETRY_BACKOFF,
+                                MAX_RETRY_AFTER,
+                                Duration.ofSeconds(1)
+                        )
+                );
+
+        AtomicInteger attempts =
+                new AtomicInteger();
+
+        assertThatThrownBy(
+                () -> executor.execute(
+                        PROVIDER,
+                        MODEL,
+                        OPERATION_ID,
+                        Duration.ofSeconds(2),
+                        context -> {
+                            attempts.incrementAndGet();
+                            return freeResponse();
+                        }
+                )
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "attempt timeout PT2S"
+                )
+                .hasMessageContaining(
+                        "total-timeout PT1S"
+                );
+
+        assertThat(attempts)
+                .hasValue(0);
     }
 
     @Test
@@ -374,15 +429,23 @@ class AiProviderRetryExecutorTest {
     }
 
     private static AiProviderRateLimitedException rateLimitWithDelay() {
-    return new AiProviderRateLimitedException(
-            PROVIDER,
-            MODEL,
-            429,
-            "request-id",
-            RETRY_BACKOFF,
-            true,
-            "rate limited",
-            null
-    );
-}
+        return rateLimitWithRetryAfter(
+                RETRY_BACKOFF
+        );
+    }
+
+    private static AiProviderRateLimitedException rateLimitWithRetryAfter(
+            Duration retryAfter
+    ) {
+        return new AiProviderRateLimitedException(
+                PROVIDER,
+                MODEL,
+                429,
+                "request-id",
+                retryAfter,
+                true,
+                "rate limited",
+                null
+        );
+    }
 }

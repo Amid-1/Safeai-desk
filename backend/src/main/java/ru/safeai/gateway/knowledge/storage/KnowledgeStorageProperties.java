@@ -2,14 +2,16 @@ package ru.safeai.gateway.knowledge.storage;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.net.URI;
 import java.nio.file.Path;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
- * Конфигурация объектного хранилища базы знаний.
+ * Object-storage configuration for Knowledge documents.
  *
- * <p>Секреты не должны храниться в application.yml репозитория.
- * Для production access-key/secret-key должны приходить из environment
- * variables или внешнего secret storage.</p>
+ * <p>Secrets must come from environment variables or an external secret
+ * manager. Do not keep real credentials in application*.yml committed to Git.</p>
  */
 @ConfigurationProperties(
         prefix = "safeai.knowledge.storage"
@@ -17,7 +19,7 @@ import java.nio.file.Path;
 public record KnowledgeStorageProperties(
         KnowledgeStorageType type,
         Path localRoot,
-        long maxUploadBytes,
+        Long maxUploadBytes,
         String endpoint,
         String accessKey,
         String secretKey,
@@ -30,23 +32,37 @@ public record KnowledgeStorageProperties(
             );
 
     private static final long DEFAULT_MAX_UPLOAD_BYTES =
-            26_214_400L;
+            25L * 1024L * 1024L;
+
+    private static final long MIN_MAX_UPLOAD_BYTES =
+            1024L * 1024L;
+
+    private static final long MAX_MAX_UPLOAD_BYTES =
+            100L * 1024L * 1024L;
 
     private static final String DEFAULT_BUCKET =
             "safeai-knowledge";
 
+    private static final Pattern BUCKET_NAME =
+            Pattern.compile(
+                    "[a-z0-9][a-z0-9.-]*[a-z0-9]"
+            );
+
     public KnowledgeStorageProperties {
-        type = type == null
-                ? KnowledgeStorageType.LOCAL
-                : type;
+        type =
+                type == null
+                        ? KnowledgeStorageType.LOCAL
+                        : type;
 
-        localRoot = localRoot == null
-                ? DEFAULT_LOCAL_ROOT
-                : localRoot;
+        localRoot =
+                localRoot == null
+                        ? DEFAULT_LOCAL_ROOT
+                        : localRoot.normalize();
 
-        maxUploadBytes = maxUploadBytes <= 0
-                ? DEFAULT_MAX_UPLOAD_BYTES
-                : maxUploadBytes;
+        maxUploadBytes =
+                resolveMaxUploadBytes(
+                        maxUploadBytes
+                );
 
         endpoint =
                 normalizeNullable(
@@ -69,8 +85,13 @@ public record KnowledgeStorageProperties(
                 );
 
         if (bucket == null) {
-            bucket = DEFAULT_BUCKET;
+            bucket =
+                    DEFAULT_BUCKET;
         }
+
+        validateBucket(
+                bucket
+        );
 
         if (type == KnowledgeStorageType.S3) {
             requireConfigured(
@@ -87,15 +108,37 @@ public record KnowledgeStorageProperties(
                     secretKey,
                     "secret-key"
             );
+
+            validateEndpoint(
+                    endpoint
+            );
         }
+    }
+
+    private static long resolveMaxUploadBytes(
+            Long value
+    ) {
+        if (value == null) {
+            return DEFAULT_MAX_UPLOAD_BYTES;
+        }
+
+        if (value < MIN_MAX_UPLOAD_BYTES
+                || value > MAX_MAX_UPLOAD_BYTES) {
+            throw invalid(
+                    "max-upload-bytes"
+            );
+        }
+
+        return value;
     }
 
     private static String normalizeNullable(
             String value
     ) {
-        return value == null || value.isBlank()
+        return value == null
+                || value.isBlank()
                 ? null
-                : value.trim();
+                : value.strip();
     }
 
     private static void requireConfigured(
@@ -110,5 +153,86 @@ public record KnowledgeStorageProperties(
                             + "для storage.type=s3"
             );
         }
+    }
+
+    private static void validateEndpoint(
+            String value
+    ) {
+        final URI uri;
+
+        try {
+            uri =
+                    URI.create(
+                            value
+                    );
+        } catch (IllegalArgumentException exception) {
+            throw invalidEndpoint(
+                    exception
+            );
+        }
+
+        String scheme =
+                uri.getScheme() == null
+                        ? ""
+                        : uri.getScheme()
+                        .toLowerCase(
+                                Locale.ROOT
+                        );
+
+        if (!scheme.equals(
+                "http"
+        )
+                && !scheme.equals(
+                "https"
+        )) {
+            throw invalid(
+                    "endpoint"
+            );
+        }
+
+        if (uri.getHost() == null
+                || uri.getHost().isBlank()
+                || uri.getUserInfo() != null
+                || uri.getFragment() != null
+                || uri.getQuery() != null) {
+            throw invalid(
+                    "endpoint"
+            );
+        }
+    }
+
+    private static void validateBucket(
+            String value
+    ) {
+        if (value.length() < 3
+                || value.length() > 63
+                || !BUCKET_NAME.matcher(
+                value
+        ).matches()
+                || value.contains(
+                ".."
+        )) {
+            throw invalid(
+                    "bucket"
+            );
+        }
+    }
+
+    private static IllegalStateException invalid(
+            String property
+    ) {
+        return new IllegalStateException(
+                "Некорректное значение safeai.knowledge.storage."
+                        + property
+        );
+    }
+
+    private static IllegalStateException invalidEndpoint(
+            Throwable cause
+    ) {
+        return new IllegalStateException(
+                "Некорректное значение safeai.knowledge.storage.endpoint",
+                cause
+        );
     }
 }

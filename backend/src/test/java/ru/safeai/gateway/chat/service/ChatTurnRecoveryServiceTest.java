@@ -4,10 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.config.ChatRecoveryProperties;
 import ru.safeai.gateway.chat.entity.ChatTurnState;
-import ru.safeai.gateway.chat.observability.ChatMetrics;
 import ru.safeai.gateway.chat.repository.ChatTurnRecoveryRepository;
 import ru.safeai.gateway.chat.repository.RecoveredChatTurn;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
@@ -22,58 +20,158 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ChatTurnRecoveryServiceTest {
 
-    @Mock ChatTurnRecoveryRepository repository;
-    @Mock ChatQuotaService quotaService;
-    @Mock AuditEventService auditEventService;
-    @Mock ChatMetrics metrics;
+    @Mock
+    private ChatTurnRecoveryRepository repository;
+
+    @Mock
+    private ChatTurnRecoveryCoordinator recoveryCoordinator;
 
     @Test
-    void recoverySeparatesSafePreCallFailureFromAmbiguousProviderOutcome() {
-        UUID failedTurnId = UUID.randomUUID();
-        UUID ambiguousTurnId = UUID.randomUUID();
-        when(repository.recoverExpired(ChatTestFixtures.NOW, 100))
-                .thenReturn(List.of(
-                        new RecoveredChatTurn(
-                                failedTurnId,
-                                ChatTestFixtures.ORGANIZATION_ID,
-                                ChatTestFixtures.CHAT_ID,
-                                UUID.randomUUID(),
-                                ChatTurnState.FAILED,
-                                "STALE_BEFORE_PROVIDER_CALL",
-                                false
-                        ),
-                        new RecoveredChatTurn(
-                                ambiguousTurnId,
-                                ChatTestFixtures.ORGANIZATION_ID,
-                                ChatTestFixtures.CHAT_ID,
-                                UUID.randomUUID(),
-                                ChatTurnState.AMBIGUOUS,
-                                "STALE_PROCESSING_LEASE",
-                                true
-                        )
-                ));
+    void recoveryDelegatesRecoveredBatchToCoordinator() {
+        UUID failedTurnId =
+                UUID.randomUUID();
 
-        ChatTurnRecoveryService service = new ChatTurnRecoveryService(
-                repository,
-                quotaService,
-                auditEventService,
-                properties(),
-                metrics,
-                ChatTestFixtures.CLOCK
+        UUID ambiguousTurnId =
+                UUID.randomUUID();
+
+        RecoveredChatTurn failed =
+                new RecoveredChatTurn(
+                        failedTurnId,
+                        ChatTestFixtures.ORGANIZATION_ID,
+                        ChatTestFixtures.CHAT_ID,
+                        UUID.randomUUID(),
+                        ChatTurnState.FAILED,
+                        "STALE_BEFORE_PROVIDER_CALL",
+                        false
+                );
+
+        RecoveredChatTurn ambiguous =
+                new RecoveredChatTurn(
+                        ambiguousTurnId,
+                        ChatTestFixtures.ORGANIZATION_ID,
+                        ChatTestFixtures.CHAT_ID,
+                        UUID.randomUUID(),
+                        ChatTurnState.AMBIGUOUS,
+                        "STALE_PROCESSING_LEASE",
+                        true
+                );
+
+        List<RecoveredChatTurn> recovered =
+                List.of(
+                        failed,
+                        ambiguous
+                );
+
+        when(
+                repository.recoverExpired(
+                        ChatTestFixtures.NOW,
+                        100
+                )
+        ).thenReturn(
+                recovered
         );
 
-        assertThat(service.recoverExpiredBatch()).isEqualTo(2);
-        verify(quotaService).releaseFailure(
-                failedTurnId,
-                ChatTestFixtures.NOW
+        ChatTurnRecoveryService service =
+                new ChatTurnRecoveryService(
+                        repository,
+                        recoveryCoordinator,
+                        properties(),
+                        ChatTestFixtures.CLOCK
+                );
+
+        int result =
+                service.recoverExpiredBatch();
+
+        assertThat(result)
+                .isEqualTo(2);
+
+        verify(repository)
+                .recoverExpired(
+                        ChatTestFixtures.NOW,
+                        100
+                );
+
+        verify(recoveryCoordinator)
+                .completeScheduledBatch(
+                        recovered,
+                        ChatTestFixtures.NOW
+                );
+    }
+
+    @Test
+    void emptyRecoveryBatchIsStillDelegatedToCoordinator() {
+        when(
+                repository.recoverExpired(
+                        ChatTestFixtures.NOW,
+                        100
+                )
+        ).thenReturn(
+                List.of()
         );
-        verify(quotaService).markAmbiguous(
-                ambiguousTurnId,
-                ChatTestFixtures.NOW
+
+        ChatTurnRecoveryService service =
+                new ChatTurnRecoveryService(
+                        repository,
+                        recoveryCoordinator,
+                        properties(),
+                        ChatTestFixtures.CLOCK
+                );
+
+        int result =
+                service.recoverExpiredBatch();
+
+        assertThat(result)
+                .isZero();
+
+        verify(repository)
+                .recoverExpired(
+                        ChatTestFixtures.NOW,
+                        100
+                );
+
+        verify(recoveryCoordinator)
+                .completeScheduledBatch(
+                        List.of(),
+                        ChatTestFixtures.NOW
+                );
+    }
+
+    @Test
+    void configuredBatchSizeIsPassedToRepository() {
+        ChatRecoveryProperties properties =
+                new ChatRecoveryProperties(
+                        true,
+                        37,
+                        20,
+                        "0 * * * * *"
+                );
+
+        when(
+                repository.recoverExpired(
+                        ChatTestFixtures.NOW,
+                        37
+                )
+        ).thenReturn(
+                List.of()
         );
-        verify(metrics).recordRecoveryBatchAfterCommit(
-                org.mockito.ArgumentMatchers.anyList()
-        );
+
+        ChatTurnRecoveryService service =
+                new ChatTurnRecoveryService(
+                        repository,
+                        recoveryCoordinator,
+                        properties,
+                        ChatTestFixtures.CLOCK
+                );
+
+        assertThat(
+                service.recoverExpiredBatch()
+        ).isZero();
+
+        verify(repository)
+                .recoverExpired(
+                        ChatTestFixtures.NOW,
+                        37
+                );
     }
 
     private static ChatRecoveryProperties properties() {

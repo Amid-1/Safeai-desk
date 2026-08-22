@@ -17,6 +17,12 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Shared deterministic fixtures for chat tests.
+ *
+ * <p>Entity factories return fresh mutable entity instances so state from one
+ * test cannot leak into another test through a shared JPA entity.</p>
+ */
 public final class ChatTestFixtures {
 
     public static final UUID ORGANIZATION_ID =
@@ -70,7 +76,9 @@ public final class ChatTestFixtures {
             );
 
     public static final Instant NOW =
-            Instant.parse("2026-08-02T09:00:00Z");
+            Instant.parse(
+                    "2026-08-02T09:00:00Z"
+            );
 
     public static final Clock CLOCK =
             Clock.fixed(
@@ -88,56 +96,49 @@ public final class ChatTestFixtures {
         organization.setId(
                 ORGANIZATION_ID
         );
-
         organization.setName(
                 "Chat Organization"
         );
-
         organization.setEnabled(
                 true
         );
-
         organization.setCreatedAt(
-                NOW.minusSeconds(3600)
+                NOW.minusSeconds(3_600)
         );
-
         organization.setUpdatedAt(
-                NOW.minusSeconds(3600)
+                NOW.minusSeconds(3_600)
         );
 
         return organization;
     }
 
     public static UserEntity user() {
+        OrganizationEntity organization =
+                organization();
+
         UserEntity user =
                 new UserEntity();
 
         user.setId(
                 USER_ID
         );
-
         user.setEmail(
                 "chat-user@test.com"
         );
-
         user.setFullName(
                 "Chat User"
         );
-
         user.setPasswordHash(
                 "encoded"
         );
-
         user.setEnabled(
                 true
         );
-
         user.setTokenVersion(
                 0L
         );
-
         user.setOrganization(
-                organization()
+                organization
         );
 
         return user;
@@ -179,7 +180,9 @@ public final class ChatTestFixtures {
                 PricingStatus.FREE,
                 10,
                 20,
-                new BigDecimal("0.000000000000")
+                new BigDecimal(
+                        "0.000000000000"
+                )
         );
     }
 
@@ -190,7 +193,9 @@ public final class ChatTestFixtures {
                 PricingStatus.PRICED,
                 100,
                 200,
-                new BigDecimal("0.012345678901")
+                new BigDecimal(
+                        "0.012345678901"
+                )
         );
     }
 
@@ -221,7 +226,9 @@ public final class ChatTestFixtures {
                 PricingStatus.PRICED,
                 7,
                 3,
-                new BigDecimal("0.001000000000")
+                new BigDecimal(
+                        "0.001000000000"
+                )
         );
     }
 

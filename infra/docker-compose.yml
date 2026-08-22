@@ -9,7 +9,7 @@ x-logging: &default-logging
 
 services:
   backend:
-    image: "${SAFEAI_BACKEND_IMAGE:?SAFEAI_BACKEND_IMAGE is required}"
+    image: "${SAFEAI_BACKEND_IMAGE}"
 
     # Этот env_file передаёт в контейнер только НЕсекретные runtime-настройки.
     # Для интерполяции ${...} самого Compose-файла всё равно запускайте Compose
@@ -32,6 +32,11 @@ services:
 
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+
+      # Actuator management server is bound only to the dedicated
+      # internal monitoring interface in production.
+      SAFEAI_MANAGEMENT_PORT: "9091"
+      SAFEAI_MANAGEMENT_ADDRESS: "172.31.0.20"
 
       # Production storage принудительно S3 в application-prod.yml.
       # Здесь задаются только несекретные параметры S3.
@@ -92,6 +97,7 @@ services:
 
     expose:
       - "8080"
+      - "9091"
 
     depends_on:
       db-bootstrap:
@@ -103,7 +109,7 @@ services:
 
     healthcheck:
       test: >-
-        curl -fsS http://localhost:8080/actuator/health/readiness
+        curl -fsS http://172.31.0.20:9091/actuator/health/readiness
         | grep -q '"status":"UP"'
       interval: 10s
       timeout: 5s
@@ -114,6 +120,8 @@ services:
       safeai_edge:
         ipv4_address: 172.28.0.20
       safeai_data: {}
+      safeai_monitoring:
+        ipv4_address: 172.31.0.20
 
     init: true
     stop_grace_period: 105s
@@ -138,7 +146,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+    image: "${POSTGRES_IMAGE}"
 
     environment:
       POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB is required}"
@@ -184,7 +192,7 @@ services:
     restart: unless-stopped
 
   db-bootstrap:
-    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+    image: "${POSTGRES_IMAGE}"
 
     entrypoint:
       - /bin/bash
@@ -236,7 +244,7 @@ services:
     restart: "no"
 
   redis:
-    image: "${REDIS_IMAGE:?REDIS_IMAGE is required}"
+    image: "${REDIS_IMAGE}"
 
     entrypoint:
       - /bin/sh
@@ -309,7 +317,7 @@ services:
     restart: unless-stopped
 
   nginx:
-    image: "${SAFEAI_NGINX_IMAGE:?SAFEAI_NGINX_IMAGE is required}"
+    image: "${SAFEAI_NGINX_IMAGE}"
 
     ports:
       - target: 8080
@@ -355,12 +363,82 @@ services:
     logging: *default-logging
     restart: unless-stopped
 
+  prometheus:
+    image: "prom/prometheus:v3.13.2"
+
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle=false
+
+    volumes:
+      - type: bind
+        source: ./prometheus/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+
+      - type: bind
+        source: ./prometheus/rules
+        target: /etc/prometheus/rules
+        read_only: true
+
+      - safeai_prometheus_data:/prometheus
+
+    # UI/API are reachable only from the host loopback.
+    # For remote administration use an SSH tunnel.
+    ports:
+      - target: 9090
+        published: "9090"
+        host_ip: 127.0.0.1
+        protocol: tcp
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    healthcheck:
+      test: >-
+        wget -q -O - http://127.0.0.1:9090/-/ready
+        | grep -q 'Prometheus Server is Ready'
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      safeai_monitoring:
+        ipv4_address: 172.31.0.30
+
+    init: true
+    read_only: true
+
+    tmpfs:
+      - "/tmp:size=32m,mode=1777,noexec,nosuid,nodev"
+
+    cap_drop:
+      - ALL
+
+    security_opt:
+      - no-new-privileges:true
+
+    cpus: "0.5"
+    mem_limit: 512m
+    mem_reservation: 128m
+    pids_limit: 128
+
+    logging: *default-logging
+    restart: unless-stopped
+
 volumes:
   safeai_postgres_data:
     name: safeai_postgres_data
 
   safeai_redis_data:
     name: safeai_redis_data
+
+  safeai_prometheus_data:
+    name: safeai_prometheus_data
 
 networks:
   safeai_edge:
@@ -379,6 +457,15 @@ networks:
       config:
         - subnet: 172.29.0.0/24
           gateway: 172.29.0.1
+
+  safeai_monitoring:
+    name: safeai_monitoring
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+          gateway: 172.31.0.1
 
 secrets:
   postgres_bootstrap_password:

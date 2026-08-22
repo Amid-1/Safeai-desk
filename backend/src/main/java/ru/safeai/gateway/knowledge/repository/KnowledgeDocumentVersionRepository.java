@@ -1,16 +1,29 @@
 package ru.safeai.gateway.knowledge.repository;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentVersionEntity;
 
 import java.util.Optional;
 import java.util.UUID;
 
-public interface KnowledgeDocumentVersionRepository extends JpaRepository<KnowledgeDocumentVersionEntity,
-        UUID> {
-    Optional<KnowledgeDocumentVersionEntity> findByIdAndDocumentIdAndKnowledgeBaseIdAndOrganizationId
-            (UUID id,
-             UUID documentId,
-             UUID knowledgeBaseId,
-             UUID organizationId);
+public interface KnowledgeDocumentVersionRepository
+        extends JpaRepository<KnowledgeDocumentVersionEntity, UUID> {
+
+    Optional<KnowledgeDocumentVersionEntity>
+    findByIdAndDocumentIdAndKnowledgeBaseIdAndOrganizationId(
+            UUID id,
+            UUID documentId,
+            UUID knowledgeBaseId,
+            UUID organizationId
+    );
+
+    Page<KnowledgeDocumentVersionEntity>
+    findAllByDocumentIdAndKnowledgeBaseIdAndOrganizationId(
+            UUID documentId,
+            UUID knowledgeBaseId,
+            UUID organizationId,
+            Pageable pageable
+    );
 }

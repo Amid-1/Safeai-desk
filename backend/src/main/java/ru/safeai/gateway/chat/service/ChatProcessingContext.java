@@ -1,11 +1,11 @@
 package ru.safeai.gateway.chat.service;
 
 import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
-import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 
 public record ChatProcessingContext(
         UUID chatId,
@@ -21,8 +21,14 @@ public record ChatProcessingContext(
         boolean replay
 ) {
     public ChatProcessingContext {
-        Objects.requireNonNull(chatId, "chatId не должен быть null");
-        Objects.requireNonNull(turnId, "turnId не должен быть null");
+        Objects.requireNonNull(
+                chatId,
+                "chatId не должен быть null"
+        );
+        Objects.requireNonNull(
+                turnId,
+                "turnId не должен быть null"
+        );
         Objects.requireNonNull(
                 userMessageId,
                 "userMessageId не должен быть null"
@@ -35,16 +41,20 @@ public record ChatProcessingContext(
                 providerOperationId,
                 "providerOperationId не должен быть null"
         );
+
         knowledgeMode = knowledgeMode == null
                 ? KnowledgeMode.GENERAL
                 : knowledgeMode;
-        if (knowledgeMode.usesKnowledge() != (knowledgeBaseId != null)) {
-            throw new IllegalArgumentException(
-                    "Некорректная knowledge scope у ChatProcessingContext"
-            );
-        }
+
+        validateKnowledgeScope(
+                knowledgeBaseId,
+                knowledgeMode
+        );
+
         if (replay) {
-            if (processingToken != null || leaseUntil != null || aiRequest != null) {
+            if (processingToken != null
+                    || leaseUntil != null
+                    || aiRequest != null) {
                 throw new IllegalArgumentException(
                         "Replay context не может содержать processing metadata"
                 );
@@ -54,9 +64,18 @@ public record ChatProcessingContext(
                     processingToken,
                     "processingToken не должен быть null"
             );
-            Objects.requireNonNull(leaseUntil, "leaseUntil не должен быть null");
-            Objects.requireNonNull(aiRequest, "aiRequest не должен быть null");
-            if (!providerOperationId.equals(aiRequest.providerOperationId())) {
+            Objects.requireNonNull(
+                    leaseUntil,
+                    "leaseUntil не должен быть null"
+            );
+            Objects.requireNonNull(
+                    aiRequest,
+                    "aiRequest не должен быть null"
+            );
+
+            if (!providerOperationId.equals(
+                    aiRequest.providerOperationId()
+            )) {
                 throw new IllegalArgumentException(
                         "providerOperationId context и AI request не совпадают"
                 );
@@ -90,10 +109,15 @@ public record ChatProcessingContext(
         );
     }
 
-    public ChatProcessingContext withAiRequest(AiChatRequest request) {
+    public ChatProcessingContext withAiRequest(
+            AiChatRequest request
+    ) {
         if (replay) {
-            throw new IllegalStateException("Replay context нельзя изменять");
+            throw new IllegalStateException(
+                    "Replay context нельзя изменять"
+            );
         }
+
         return new ChatProcessingContext(
                 chatId,
                 turnId,
@@ -107,5 +131,26 @@ public record ChatProcessingContext(
                 knowledgeMode,
                 false
         );
+    }
+
+    private static void validateKnowledgeScope(
+            UUID knowledgeBaseId,
+            KnowledgeMode knowledgeMode
+    ) {
+        if (knowledgeMode.usesKnowledge()) {
+            if (knowledgeBaseId == null) {
+                throw new IllegalArgumentException(
+                        "Некорректная knowledge scope у ChatProcessingContext"
+                );
+            }
+
+            return;
+        }
+
+        if (knowledgeBaseId != null) {
+            throw new IllegalArgumentException(
+                    "Некорректная knowledge scope у ChatProcessingContext"
+            );
+        }
     }
 }

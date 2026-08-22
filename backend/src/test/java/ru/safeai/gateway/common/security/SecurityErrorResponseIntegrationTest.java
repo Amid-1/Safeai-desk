@@ -72,8 +72,15 @@ class SecurityErrorResponseIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    /**
+     * Generic application authentication failure.
+     *
+     * <p>Этот flow использует RestAuthenticationEntryPoint,
+     * поэтому WWW-Authenticate: Bearer здесь намеренно отсутствует.
+     * Bearer challenge принадлежит только OAuth2 Resource Server flow.</p>
+     */
     @Test
-    void unauthenticatedRequestReturnsSafeJson401NoStore()
+    void unauthenticatedRequestReturnsSafeJson401NoStoreWithoutBearerChallenge()
             throws Exception {
 
         MvcResult result =
@@ -103,9 +110,8 @@ class SecurityErrorResponseIntegrationTest {
                                 )
                         )
                         .andExpect(
-                                header().string(
-                                        HttpHeaders.WWW_AUTHENTICATE,
-                                        "Bearer"
+                                header().doesNotExist(
+                                        HttpHeaders.WWW_AUTHENTICATE
                                 )
                         )
                         .andExpect(
@@ -158,6 +164,13 @@ class SecurityErrorResponseIntegrationTest {
         );
     }
 
+    /**
+     * Authenticated principal without the required role.
+     *
+     * <p>403 также не должен содержать WWW-Authenticate,
+     * потому что authentication уже существует, а отказ связан
+     * с authorization.</p>
+     */
     @Test
     void authenticatedButUnauthorizedRequestReturnsSafeJson403NoStore()
             throws Exception {

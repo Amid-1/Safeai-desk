@@ -54,6 +54,8 @@ class ChatHistoryIntegrationTest
 
         var rows = historyRepository.findNewestSucceededTurns(
                 CHAT_ID,
+                ORGANIZATION_ID,
+                USER_ID,
                 50
         );
 
@@ -92,6 +94,8 @@ class ChatHistoryIntegrationTest
         var history = historyBuilder.build(
                 historyRepository.findNewestSucceededTurns(
                         CHAT_ID,
+                        ORGANIZATION_ID,
+                        USER_ID,
                         50
                 )
         );
@@ -131,6 +135,8 @@ class ChatHistoryIntegrationTest
         var history = historyBuilder.build(
                 historyRepository.findNewestSucceededTurns(
                         CHAT_ID,
+                        ORGANIZATION_ID,
+                        USER_ID,
                         2
                 )
         );
@@ -164,6 +170,8 @@ class ChatHistoryIntegrationTest
         var history = historyBuilder.build(
                 historyRepository.findNewestSucceededTurns(
                         CHAT_ID,
+                        ORGANIZATION_ID,
+                        USER_ID,
                         50
                 )
         );

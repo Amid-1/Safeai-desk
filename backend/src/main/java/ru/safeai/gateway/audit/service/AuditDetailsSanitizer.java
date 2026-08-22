@@ -59,7 +59,20 @@ public class AuditDetailsSanitizer {
             "cookie",
             "setcookie",
             "apikey",
+            "xapikey",
+            "secret",
+            "apisecret",
+            "tokensecret",
+            "accesssecret",
             "clientsecret",
+            "clientkey",
+            "secretkey",
+            "signingkey",
+            "signingsecret",
+            "encryptionkey",
+            "webhooksecret",
+            "xauthtoken",
+            "proxyauthorization",
             "credential",
             "credentials",
             "passphrase",
@@ -95,7 +108,20 @@ public class AuditDetailsSanitizer {
             "cookie",
             "setcookie",
             "apikey",
+            "xapikey",
+            "secret",
+            "apisecret",
+            "tokensecret",
+            "accesssecret",
             "clientsecret",
+            "clientkey",
+            "secretkey",
+            "signingkey",
+            "signingsecret",
+            "encryptionkey",
+            "webhooksecret",
+            "xauthtoken",
+            "proxyauthorization",
             "credential",
             "credentials",
             "passphrase",
@@ -560,7 +586,7 @@ public class AuditDetailsSanitizer {
         }
 
         return false;
-    }
+    } 
 
     private String canonicalize(String value) {
         return value
