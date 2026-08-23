@@ -339,6 +339,46 @@ class UserControllerSecurityTest {
     }
 
     @Test
+    void createWithAdminRoleReturns201()
+            throws Exception {
+        when(userService.create(
+                any(),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(userResponse());
+
+        mockMvc.perform(
+                post("/api/users")
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "organizationId": "%s",
+                                  "email": "user@test.com",
+                                  "password": "Strong_User_123!",
+                                  "fullName": "Demo User",
+                                  "roles": ["USER"]
+                                }
+                                """.formatted(ORGANIZATION_ID))
+        )
+                .andExpect(status().isCreated())
+                .andExpect(
+                        jsonPath("$.id")
+                                .value(USER_ID.toString())
+                )
+                .andExpect(
+                        jsonPath("$.version")
+                                .value(USER_VERSION)
+                );
+
+        verify(userService).create(
+                any(),
+                any(SafeAiUserPrincipal.class)
+        );
+    }
+
+    @Test
     void createWithWeakPasswordReturns400AndDoesNotCallService()
             throws Exception {
         mockMvc.perform(
@@ -365,6 +405,77 @@ class UserControllerSecurityTest {
 
         verify(userService, never())
                 .create(any(), any());
+    }
+
+    @Test
+    void updateUserWithAdminRoleReturns200()
+            throws Exception {
+        when(userService.updateUser(
+                eq(USER_ID),
+                any(),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(userResponse());
+
+        mockMvc.perform(
+                patch("/api/users/{id}", USER_ID)
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "user@test.com",
+                                  "fullName": "Demo User",
+                                  "expectedVersion": %d
+                                }
+                                """.formatted(USER_VERSION))
+        )
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.id")
+                                .value(USER_ID.toString())
+                );
+
+        verify(userService).updateUser(
+                eq(USER_ID),
+                any(),
+                any(SafeAiUserPrincipal.class)
+        );
+    }
+
+    @Test
+    void updateRolesWithAdminRoleReturns200()
+            throws Exception {
+        when(userService.updateRoles(
+                eq(USER_ID),
+                any(),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(userResponse());
+
+        mockMvc.perform(
+                patch("/api/users/{id}/roles", USER_ID)
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "roles": ["USER"],
+                                  "expectedVersion": %d
+                                }
+                                """.formatted(USER_VERSION))
+        )
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.roles[0]")
+                                .value("USER")
+                );
+
+        verify(userService).updateRoles(
+                eq(USER_ID),
+                any(),
+                any(SafeAiUserPrincipal.class)
+        );
     }
 
     @Test

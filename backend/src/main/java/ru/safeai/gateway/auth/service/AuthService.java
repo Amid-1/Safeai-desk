@@ -26,6 +26,7 @@ import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.ratelimit.LoginRateLimitService;
+import ru.safeai.gateway.ratelimit.RefreshRateLimitService;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.mapper.UserRoleMapper;
 import ru.safeai.gateway.user.repository.UserRepository;
@@ -51,6 +52,7 @@ public class AuthService {
     private final AuthEventService authEventService;
     private final UserRepository userRepository;
     private final LoginRateLimitService loginRateLimitService;
+    private final RefreshRateLimitService refreshRateLimitService;
     private final ClientIpResolver clientIpResolver;
     private final RefreshTokenService refreshTokenService;
     private final AuthCookieService authCookieService;
@@ -222,6 +224,21 @@ public class AuthService {
         Objects.requireNonNull(
                 response,
                 "response не должен быть null"
+        );
+
+        /*
+         * Coarse anonymous IP-limit выполняется ДО чтения/хэширования
+         * refresh token и ДО PostgreSQL lookup. Поэтому поток случайных
+         * syntactically-valid Base64URL tokens сначала упирается в Redis.
+         *
+         * На 429/503 cookies намеренно не очищаются: refresh session
+         * остаётся пригодной для повторной попытки после Retry-After/
+         * восстановления rate-limit infrastructure.
+         */
+        refreshRateLimitService.checkAllowed(
+                clientIpResolver.resolve(
+                        request
+                )
         );
 
         String rawRefreshToken =

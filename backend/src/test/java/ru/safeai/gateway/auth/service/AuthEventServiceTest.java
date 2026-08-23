@@ -38,6 +38,9 @@ class AuthEventServiceTest {
     private static final UUID PLATFORM_ORGANIZATION_ID =
             UUID.randomUUID();
 
+    private static final String EMAIL =
+            "admin@test.com";
+
     @Mock
     private BestEffortStandaloneAuditService auditService;
 
@@ -71,18 +74,21 @@ class AuthEventServiceTest {
     }
 
     @Test
-    void loginSuccessUsesCurrentUserSnapshot() {
+    void loginSuccessUsesCanonicalCurrentUserSnapshot() {
         CurrentUserResponse user =
                 new CurrentUserResponse(
                         USER_ID,
                         ORGANIZATION_ID,
-                        "Admin@Test.Com",
+                        EMAIL,
                         "Admin Name",
                         true,
                         Set.of("ADMIN")
                 );
 
-        service.loginSuccess(user, request);
+        service.loginSuccess(
+                user,
+                request
+        );
 
         ArgumentCaptor<AuditActor> actorCaptor =
                 ArgumentCaptor.forClass(
@@ -99,7 +105,8 @@ class AuthEventServiceTest {
                 anyMap()
         );
 
-        AuditActor actor = actorCaptor.getValue();
+        AuditActor actor =
+                actorCaptor.getValue();
 
         assertThat(actor.userId())
                 .isEqualTo(USER_ID);
@@ -108,10 +115,12 @@ class AuthEventServiceTest {
                 .isEqualTo(ORGANIZATION_ID);
 
         assertThat(actor.email())
-                .isEqualTo("admin@test.com");
+                .isEqualTo(EMAIL);
 
         assertThat(actor.displayName())
-                .isEqualTo("Admin Name");
+                .isEqualTo(
+                        "Admin Name"
+                );
     }
 
     @Test
@@ -133,7 +142,8 @@ class AuthEventServiceTest {
 
     @Test
     void refreshReuseUsesTypedDetails() {
-        UUID familyId = UUID.randomUUID();
+        UUID familyId =
+                UUID.randomUUID();
 
         RefreshTokenReuseDetectedException exception =
                 new RefreshTokenReuseDetectedException(
@@ -170,7 +180,10 @@ class AuthEventServiceTest {
                 detailsCaptor.capture()
         );
 
-        assertThat(detailsCaptor.getValue().toMap())
+        assertThat(
+                detailsCaptor.getValue()
+                        .toMap()
+        )
                 .containsEntry(
                         "tokenFamilyId",
                         familyId
@@ -194,7 +207,10 @@ class AuthEventServiceTest {
                         "logout@test.com"
                 );
 
-        service.logout(subject, request);
+        service.logout(
+                subject,
+                request
+        );
 
         verify(auditService).tryRecord(
                 eq(
@@ -206,7 +222,9 @@ class AuthEventServiceTest {
                         )
                 ),
                 eq(ORGANIZATION_ID),
-                eq(AuditEventType.USER_LOGOUT),
+                eq(
+                        AuditEventType.USER_LOGOUT
+                ),
                 anyMap()
         );
     }

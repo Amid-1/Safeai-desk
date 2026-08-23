@@ -242,6 +242,55 @@ class OrganizationControllerSecurityTest {
     }
 
     @Test
+    void findCurrentOrganizationWithAdminReturnsOwnTenant()
+            throws Exception {
+        when(organizationService.findCurrentOrganization(
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(tenantResponse());
+
+        mockMvc.perform(
+                get("/api/organizations/me")
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+        )
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.id")
+                                .value(ORGANIZATION_ID.toString())
+                );
+
+        verify(organizationService)
+                .findCurrentOrganization(
+                        any(SafeAiUserPrincipal.class)
+                );
+    }
+
+    @Test
+    void findByIdWithAdminReturnsOwnTenantContract()
+            throws Exception {
+        when(organizationService.findById(
+                eq(ORGANIZATION_ID),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(tenantResponse());
+
+        mockMvc.perform(
+                get(
+                        "/api/organizations/{id}",
+                        ORGANIZATION_ID
+                )
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+        )
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.version")
+                                .value(VERSION)
+                );
+    }
+
+    @Test
     void directoryWithAdminRoleReturns403()
             throws Exception {
         mockMvc.perform(
@@ -681,6 +730,33 @@ class OrganizationControllerSecurityTest {
     }
 
     @Test
+    void disableWithAdminRoleReturns403()
+            throws Exception {
+        mockMvc.perform(
+                post(
+                        "/api/organizations/{id}/disable",
+                        ORGANIZATION_ID
+                )
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "expectedVersion": 7,
+                                  "confirmationName": "Demo Company"
+                                }
+                                """)
+        ).andExpect(status().isForbidden());
+
+        verify(organizationService, never()).disable(
+                any(),
+                any(),
+                any()
+        );
+    }
+
+    @Test
     void disableWithValidContractReturnsUpdatedVersion()
             throws Exception {
         OrganizationResponse disabled =
@@ -732,6 +808,32 @@ class OrganizationControllerSecurityTest {
                         jsonPath("$.version")
                                 .value(VERSION + 1L)
                 );
+    }
+
+    @Test
+    void enableWithAdminRoleReturns403()
+            throws Exception {
+        mockMvc.perform(
+                post(
+                        "/api/organizations/{id}/enable",
+                        ORGANIZATION_ID
+                )
+                        .with(authentication(
+                                authToken(adminPrincipal())
+                        ))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "expectedVersion": 7
+                                }
+                                """)
+        ).andExpect(status().isForbidden());
+
+        verify(organizationService, never()).enable(
+                any(),
+                any(),
+                any()
+        );
     }
 
     @Test

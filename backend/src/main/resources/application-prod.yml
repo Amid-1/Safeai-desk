@@ -26,6 +26,19 @@ server:
   forward-headers-strategy: none
 
 management:
+  # Production invariant:
+  # management server обязан слушать отдельный internal port/interface.
+  #
+  # В текущем infra/docker-compose.yml эти переменные передаются backend:
+  # SAFEAI_MANAGEMENT_PORT=9091
+  # SAFEAI_MANAGEMENT_ADDRESS=172.31.0.20
+  #
+  # Fallback намеренно отсутствует: при запуске prod вне корректного
+  # deployment environment приложение должно fail-fast.
+  server:
+    port: ${SAFEAI_MANAGEMENT_PORT}
+    address: ${SAFEAI_MANAGEMENT_ADDRESS}
+
   endpoints:
     web:
       exposure:
@@ -62,7 +75,7 @@ logging:
 # подключённого через SPRING_CONFIG_ADDITIONAL_LOCATION.
 #
 # Общие JWT-параметры expiration/issuer/audience
-# остаются в application.yml и приходят из ..env.prod.
+# остаются в application.yml и приходят из .env.prod.
 
 safeai:
   knowledge:
@@ -153,6 +166,14 @@ safeai:
       ip-limit: ${SAFEAI_RATE_LIMIT_LOGIN_IP_LIMIT:100}
       window: ${SAFEAI_RATE_LIMIT_LOGIN_WINDOW:10m}
       audit-organization-id: ${SAFEAI_RATE_LIMIT_LOGIN_AUDIT_ORGANIZATION_ID:${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}}
+
+    # Параметры также объявлены в application.yml.
+    # Здесь блок оставлен явно, чтобы production rate-limit policy
+    # была видна в одном месте с login/AI limits.
+    refresh:
+      enabled: ${SAFEAI_RATE_LIMIT_REFRESH_ENABLED:true}
+      ip-limit: ${SAFEAI_RATE_LIMIT_REFRESH_IP_LIMIT:600}
+      window: ${SAFEAI_RATE_LIMIT_REFRESH_WINDOW:1m}
 
     ai-messages:
       enabled: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ENABLED:true}

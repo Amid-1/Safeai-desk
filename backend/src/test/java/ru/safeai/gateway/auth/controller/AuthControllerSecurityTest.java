@@ -443,6 +443,80 @@ class AuthControllerSecurityTest {
     }
 
     @Test
+    void refreshWhenRateLimitExceededReturns429AndRetryAfter()
+            throws Exception {
+        doThrow(
+                new RateLimitExceededException(
+                        "Слишком много запросов обновления сессии",
+                        Duration.ofSeconds(45)
+                )
+        ).when(authService).refresh(
+                any(HttpServletRequest.class),
+                any(HttpServletResponse.class)
+        );
+
+        mockMvc.perform(
+                        post("/api/auth/refresh")
+                                .with(csrf().asHeader())
+                )
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(
+                        HttpHeaders.RETRY_AFTER,
+                        "45"
+                ))
+                .andExpect(jsonPath("$.status")
+                        .value(429))
+                .andExpect(jsonPath("$.error")
+                        .value("RATE_LIMIT_EXCEEDED"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/auth/refresh"));
+
+        verify(authService).refresh(
+                any(HttpServletRequest.class),
+                any(HttpServletResponse.class)
+        );
+
+        verifyNoMoreInteractions(authService);
+    }
+
+    @Test
+    void refreshWhenRateLimitServiceUnavailableReturns503()
+            throws Exception {
+        doThrow(
+                new RateLimitUnavailableException(
+                        "Redis refresh rate limit unavailable",
+                        new IllegalStateException(
+                                "redis.internal:6379"
+                        )
+                )
+        ).when(authService).refresh(
+                any(HttpServletRequest.class),
+                any(HttpServletResponse.class)
+        );
+
+        mockMvc.perform(
+                        post("/api/auth/refresh")
+                                .with(csrf().asHeader())
+                )
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status")
+                        .value(503))
+                .andExpect(jsonPath("$.error")
+                        .value("RATE_LIMIT_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message")
+                        .value("Сервис ограничения запросов временно недоступен"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/auth/refresh"));
+
+        verify(authService).refresh(
+                any(HttpServletRequest.class),
+                any(HttpServletResponse.class)
+        );
+
+        verifyNoMoreInteractions(authService);
+    }
+
+    @Test
     void refreshWithInvalidTokenReturns401()
             throws Exception {
         doThrow(

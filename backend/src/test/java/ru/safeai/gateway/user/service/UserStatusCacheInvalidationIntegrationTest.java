@@ -42,7 +42,8 @@ class UserStatusCacheInvalidationIntegrationTest
                     new UserSecurityStateChangedEvent(userId)
             );
 
-            verify(userStatusCacheService, never()).evict(userId);
+            verify(userStatusCacheService, never())
+                    .evict(userId);
         });
 
         verify(userStatusCacheService).evict(userId);
@@ -63,6 +64,7 @@ class UserStatusCacheInvalidationIntegrationTest
             status.setRollbackOnly();
         });
 
-        verify(userStatusCacheService, never()).evict(userId);
+        verify(userStatusCacheService, never())
+                .evict(userId);
     }
 }

@@ -98,7 +98,15 @@ public interface RefreshTokenRepository
                         select token.id
                         from public.refresh_tokens as token
                         where token.family_expires_at < :threshold
-                        order by token.family_expires_at, token.id
+                          and not exists (
+                              select 1
+                              from public.refresh_tokens as predecessor
+                              where predecessor.replaced_by_token_id = token.id
+                          )
+                        order by
+                            token.family_expires_at,
+                            token.created_at,
+                            token.id
                         for update of token skip locked
                         limit :batchSize
                     )

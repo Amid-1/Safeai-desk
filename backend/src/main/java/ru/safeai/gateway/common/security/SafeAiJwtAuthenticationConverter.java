@@ -6,7 +6,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -153,19 +152,6 @@ implements Converter<Jwt, AbstractAuthenticationToken> {
                 null,
                 authorities
         );
-    }
-
-    public AbstractAuthenticationToken convertForResourceServer(
-            Jwt jwt
-    ) {
-        try {
-            return convert(jwt);
-        } catch (BadJwtException exception) {
-            throw new InvalidBearerTokenException(
-                    "Invalid access token",
-                    exception
-            );
-        }
     }
 
     private String requiredStringClaim(

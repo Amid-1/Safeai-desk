@@ -1,5 +1,4 @@
 # D:\Java projects\Safeai-desk\backend\src\main\resources\application-local-nginx.yml
-#
 # Профиль local-nginx автоматически включает local
 # через spring.profiles.group.local-nginx.
 #

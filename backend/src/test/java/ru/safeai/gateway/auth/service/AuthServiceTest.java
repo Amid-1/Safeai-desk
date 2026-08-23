@@ -28,6 +28,7 @@ import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.ratelimit.LoginRateLimitService;
+import ru.safeai.gateway.ratelimit.RefreshRateLimitService;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Duration;
@@ -85,6 +86,9 @@ class AuthServiceTest {
     private LoginRateLimitService loginRateLimitService;
 
     @Mock
+    private RefreshRateLimitService refreshRateLimitService;
+
+    @Mock
     private ClientIpResolver clientIpResolver;
 
     @Mock
@@ -110,6 +114,7 @@ class AuthServiceTest {
                 authEventService,
                 userRepository,
                 loginRateLimitService,
+                refreshRateLimitService,
                 clientIpResolver,
                 refreshTokenService,
                 authCookieService,
@@ -601,7 +606,7 @@ class AuthServiceTest {
     }
 
     @Test
-    void successfulRefreshRotatesBothCookies() {
+    void successfulRefreshChecksIpLimitBeforeTokenLookupAndRotatesBothCookies() {
         MockHttpServletRequest request =
                 request();
 
@@ -621,6 +626,9 @@ class AuthServiceTest {
                         maxAge
                 );
 
+        when(clientIpResolver.resolve(request))
+                .thenReturn(IP_ADDRESS);
+
         when(authCookieService.extractRefreshToken(request))
                 .thenReturn("old-refresh-token");
 
@@ -637,6 +645,32 @@ class AuthServiceTest {
                 response
         );
 
+        InOrder order = inOrder(
+                clientIpResolver,
+                refreshRateLimitService,
+                authCookieService,
+                refreshTokenService,
+                jwtService
+        );
+
+        order.verify(clientIpResolver)
+                .resolve(request);
+
+        order.verify(refreshRateLimitService)
+                .checkAllowed(IP_ADDRESS);
+
+        order.verify(authCookieService)
+                .extractRefreshToken(request);
+
+        order.verify(refreshTokenService)
+                .rotate(
+                        "old-refresh-token",
+                        request
+                );
+
+        order.verify(jwtService)
+                .generateToken(subject);
+
         verify(authCookieService)
                 .addAccessTokenCookie(
                         response,
@@ -652,12 +686,108 @@ class AuthServiceTest {
     }
 
     @Test
+    void refreshRateLimitExceededStopsBeforeCookieReadOrDatabaseAndPreservesCookies() {
+        MockHttpServletRequest request =
+                request();
+
+        MockHttpServletResponse response =
+                new MockHttpServletResponse();
+
+        RateLimitExceededException exception =
+                new RateLimitExceededException(
+                        "Слишком много запросов обновления сессии",
+                        Duration.ofSeconds(45)
+                );
+
+        when(clientIpResolver.resolve(request))
+                .thenReturn(IP_ADDRESS);
+
+        doThrow(exception)
+                .when(refreshRateLimitService)
+                .checkAllowed(IP_ADDRESS);
+
+        assertThatThrownBy(() ->
+                authService.refresh(
+                        request,
+                        response
+                )
+        ).isSameAs(exception);
+
+        InOrder order = inOrder(
+                clientIpResolver,
+                refreshRateLimitService
+        );
+
+        order.verify(clientIpResolver)
+                .resolve(request);
+
+        order.verify(refreshRateLimitService)
+                .checkAllowed(IP_ADDRESS);
+
+        verifyNoInteractions(
+                refreshTokenService,
+                jwtService,
+                authEventService,
+                csrfTokenRepository
+        );
+
+        verifyNoInteractions(
+                authCookieService
+        );
+    }
+
+    @Test
+    void refreshRateLimitUnavailableStopsBeforeCookieReadOrDatabaseAndPreservesCookies() {
+        MockHttpServletRequest request =
+                request();
+
+        MockHttpServletResponse response =
+                new MockHttpServletResponse();
+
+        RateLimitUnavailableException exception =
+                new RateLimitUnavailableException(
+                        "Redis refresh rate limit недоступен",
+                        new IllegalStateException(
+                                "redis unavailable"
+                        )
+                );
+
+        when(clientIpResolver.resolve(request))
+                .thenReturn(IP_ADDRESS);
+
+        doThrow(exception)
+                .when(refreshRateLimitService)
+                .checkAllowed(IP_ADDRESS);
+
+        assertThatThrownBy(() ->
+                authService.refresh(
+                        request,
+                        response
+                )
+        ).isSameAs(exception);
+
+        verify(refreshRateLimitService)
+                .checkAllowed(IP_ADDRESS);
+
+        verifyNoInteractions(
+                authCookieService,
+                refreshTokenService,
+                jwtService,
+                authEventService,
+                csrfTokenRepository
+        );
+    }
+
+    @Test
     void refreshReuseAuditsAndClearsCookies() {
         MockHttpServletRequest request =
                 request();
 
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
+
+        when(clientIpResolver.resolve(request))
+                .thenReturn(IP_ADDRESS);
 
         RefreshTokenReuseDetectedException exception =
                 new RefreshTokenReuseDetectedException(
@@ -699,6 +829,9 @@ class AuthServiceTest {
 
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
+
+        when(clientIpResolver.resolve(request))
+                .thenReturn(IP_ADDRESS);
 
         when(authCookieService.extractRefreshToken(request))
                 .thenReturn("refresh-token");

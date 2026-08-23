@@ -101,9 +101,6 @@ class UserSecurityTransactionIntegrationTest
                         anyMap()
                 );
 
-        SafeAiUserPrincipal currentUser =
-                adminPrincipal();
-
         assertThatThrownBy(() ->
                 userService.updateEnabled(
                         USER_ID,
@@ -111,21 +108,14 @@ class UserSecurityTransactionIntegrationTest
                                 false,
                                 0L
                         ),
-                        currentUser
+                        adminPrincipal()
                 )
         )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "audit outbox unavailable"
-                );
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("audit outbox unavailable");
 
-        assertThat(userEnabled(USER_ID))
-                .isTrue();
-
-        assertThat(tokenVersion(USER_ID))
-                .isZero();
+        assertThat(userEnabled(USER_ID)).isTrue();
+        assertThat(tokenVersion(USER_ID)).isZero();
 
         Integer activeTokens =
                 jdbcTemplate.queryForObject("""
@@ -138,8 +128,7 @@ class UserSecurityTransactionIntegrationTest
                         USER_ID
                 );
 
-        assertThat(activeTokens)
-                .isEqualTo(1);
+        assertThat(activeTokens).isEqualTo(1);
 
         verify(userStatusCacheService, never())
                 .evict(USER_ID);
@@ -161,10 +150,7 @@ class UserSecurityTransactionIntegrationTest
                 Instant.parse("2026-07-20T10:00:00Z")
         );
 
-        insertActiveRefreshToken(
-                USER_ID,
-                0L
-        );
+        insertActiveRefreshToken(USER_ID, 0L);
     }
 
     private SafeAiUserPrincipal adminPrincipal() {

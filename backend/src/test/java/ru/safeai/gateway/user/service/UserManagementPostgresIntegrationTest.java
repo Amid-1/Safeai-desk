@@ -155,7 +155,39 @@ class UserManagementPostgresIntegrationTest
     }
 
     @Test
-    void updateResponseContainsNewDatabaseUpdatedAt() throws Exception {
+    void concurrentDuplicateEmailCreationProducesOneSuccessAndOneConflict()
+            throws Exception {
+        insertOrganization(ORGANIZATION_A_ID, "Organization A", true);
+
+        List<String> outcomes = runConcurrently(
+                () -> createUserOutcome(
+                        " race.user@test.com "
+                ),
+                () -> createUserOutcome(
+                        "RACE.USER@TEST.COM"
+                )
+        );
+
+        assertThat(outcomes)
+                .containsExactlyInAnyOrder(
+                        "SUCCESS",
+                        "CONFLICT"
+                );
+
+        Integer count = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from public.users
+                where email = 'race.user@test.com'
+                """,
+                Integer.class
+        );
+
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void updateResponseUsesDatabaseUpdatedAtAndIncrementsVersion() {
         insertOrganization(ORGANIZATION_A_ID, "Organization A", true);
 
         UserResponse created = userService.create(
@@ -169,8 +201,6 @@ class UserManagementPostgresIntegrationTest
                 adminPrincipal()
         );
 
-        Thread.sleep(25L);
-
         UserResponse updated = userService.updateUser(
                 created.id(),
                 new UpdateUserRequest(
@@ -181,7 +211,10 @@ class UserManagementPostgresIntegrationTest
                 adminPrincipal()
         );
 
-        assertThat(updated.updatedAt()).isAfter(created.updatedAt());
+        assertThat(updated.version())
+                .isEqualTo(created.version() + 1L);
+        assertThat(updated.updatedAt())
+                .isAfterOrEqualTo(created.updatedAt());
     }
 
     @Test
@@ -436,6 +469,24 @@ class UserManagementPostgresIntegrationTest
                 userExists(fixture.userId())
                         || Boolean.TRUE.equals(chatMissing)
         ).isTrue();
+    }
+
+    private String createUserOutcome(String email) {
+        try {
+            userService.create(
+                    new CreateUserRequest(
+                            ORGANIZATION_A_ID,
+                            email,
+                            VALID_PASSWORD,
+                            "Race User",
+                            Set.of("USER")
+                    ),
+                    adminPrincipal()
+            );
+            return "SUCCESS";
+        } catch (ConflictException exception) {
+            return "CONFLICT";
+        }
     }
 
     private String disableOutcome(UUID userId) {

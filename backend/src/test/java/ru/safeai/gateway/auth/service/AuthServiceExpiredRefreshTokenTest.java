@@ -5,6 +5,7 @@ import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
@@ -18,6 +19,7 @@ import ru.safeai.gateway.common.exception.ExpiredRefreshTokenException;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.ratelimit.LoginRateLimitService;
+import ru.safeai.gateway.ratelimit.RefreshRateLimitService;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Duration;
@@ -25,6 +27,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,6 +39,9 @@ class AuthServiceExpiredRefreshTokenTest {
 
     private static final String REFRESH_COOKIE =
             "safeai-refresh";
+
+    private static final String IP_ADDRESS =
+            "127.0.0.1";
 
     @Mock
     private AuthenticationManager authenticationManager;
@@ -55,6 +62,9 @@ class AuthServiceExpiredRefreshTokenTest {
     private LoginRateLimitService loginRateLimitService;
 
     @Mock
+    private RefreshRateLimitService refreshRateLimitService;
+
+    @Mock
     private ClientIpResolver clientIpResolver;
 
     @Mock
@@ -67,7 +77,8 @@ class AuthServiceExpiredRefreshTokenTest {
 
     @BeforeEach
     void setUp() {
-        AuthCookieService authCookieService = getAuthCookieService();
+        AuthCookieService authCookieService =
+                getAuthCookieService();
 
         authService = new AuthService(
                 authenticationManager,
@@ -76,6 +87,7 @@ class AuthServiceExpiredRefreshTokenTest {
                 authEventService,
                 userRepository,
                 loginRateLimitService,
+                refreshRateLimitService,
                 clientIpResolver,
                 refreshTokenService,
                 authCookieService,
@@ -83,27 +95,8 @@ class AuthServiceExpiredRefreshTokenTest {
         );
     }
 
-    private static @NonNull AuthCookieService getAuthCookieService() {
-        AuthCookieProperties cookieProperties =
-                new AuthCookieProperties(
-                        false,
-                        "Lax",
-                        Duration.ofMinutes(15),
-                        Duration.ofDays(30),
-                        Duration.ofDays(90),
-                        Duration.ofDays(7),
-                        null,
-                        ACCESS_COOKIE,
-                        REFRESH_COOKIE
-                );
-
-        return new AuthCookieService(
-                cookieProperties
-        );
-    }
-
     @Test
-    void expiredRefreshTokenClearsAccessAndRefreshCookiesAndPreservesException() {
+    void expiredRefreshTokenIsRateLimitedBeforeRotationThenClearsCookies() {
         MockHttpServletRequest request =
                 new MockHttpServletRequest();
 
@@ -132,6 +125,9 @@ class AuthServiceExpiredRefreshTokenTest {
                         ApiErrorCode.EXPIRED_REFRESH_TOKEN
                 );
 
+        when(clientIpResolver.resolve(request))
+                .thenReturn(IP_ADDRESS);
+
         when(refreshTokenService.rotate(
                 "expired-refresh-token",
                 request
@@ -144,25 +140,77 @@ class AuthServiceExpiredRefreshTokenTest {
                 )
         ).isSameAs(exception);
 
+        InOrder order = inOrder(
+                clientIpResolver,
+                refreshRateLimitService,
+                refreshTokenService
+        );
+
+        order.verify(clientIpResolver)
+                .resolve(request);
+
+        order.verify(refreshRateLimitService)
+                .checkAllowed(IP_ADDRESS);
+
+        order.verify(refreshTokenService)
+                .rotate(
+                        "expired-refresh-token",
+                        request
+                );
+
         List<String> setCookieHeaders =
                 response.getHeaders(
                         HttpHeaders.SET_COOKIE
                 );
 
         assertThat(setCookieHeaders)
-                .anySatisfy(header -> assertThat(header)
-                        .startsWith(
-                                ACCESS_COOKIE + "="
-                        )
-                        .contains("Max-Age=0")
-                        .contains("Path=/"));
+                .anySatisfy(header ->
+                        assertThat(header)
+                                .startsWith(
+                                        ACCESS_COOKIE + "="
+                                )
+                                .contains(
+                                        "Max-Age=0"
+                                )
+                                .contains(
+                                        "Path=/"
+                                )
+                );
 
         assertThat(setCookieHeaders)
-                .anySatisfy(header -> assertThat(header)
-                        .startsWith(
-                                REFRESH_COOKIE + "="
-                        )
-                        .contains("Max-Age=0")
-                        .contains("Path=/api/auth"));
+                .anySatisfy(header ->
+                        assertThat(header)
+                                .startsWith(
+                                        REFRESH_COOKIE + "="
+                                )
+                                .contains(
+                                        "Max-Age=0"
+                                )
+                                .contains(
+                                        "Path=/api/auth"
+                                )
+                );
+
+        verify(refreshRateLimitService)
+                .checkAllowed(IP_ADDRESS);
+    }
+
+    private static @NonNull AuthCookieService getAuthCookieService() {
+        AuthCookieProperties cookieProperties =
+                new AuthCookieProperties(
+                        false,
+                        "Lax",
+                        Duration.ofMinutes(15),
+                        Duration.ofDays(30),
+                        Duration.ofDays(90),
+                        Duration.ofDays(7),
+                        null,
+                        ACCESS_COOKIE,
+                        REFRESH_COOKIE
+                );
+
+        return new AuthCookieService(
+                cookieProperties
+        );
     }
 }

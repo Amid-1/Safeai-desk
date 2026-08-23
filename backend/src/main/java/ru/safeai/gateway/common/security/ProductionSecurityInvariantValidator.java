@@ -59,6 +59,7 @@ public final class ProductionSecurityInvariantValidator
         validateTrustedProxies();
         validateIssuer();
         validateForwardedHeadersStrategy();
+        validateManagementServer();
     }
 
     private void validateCors() {
@@ -142,6 +143,73 @@ public final class ProductionSecurityInvariantValidator
             throw new IllegalStateException(
                     "При использовании ClientIpResolver установите "
                             + "server.forward-headers-strategy=none"
+            );
+        }
+    }
+
+    private void validateManagementServer() {
+        Integer appPort =
+                environment.getProperty(
+                        "server.port",
+                        Integer.class,
+                        8080
+                );
+
+        Integer managementPort =
+                environment.getProperty(
+                        "management.server.port",
+                        Integer.class
+                );
+
+        String managementAddress =
+                environment.getProperty(
+                        "management.server.address"
+                );
+
+        if (managementPort == null) {
+            throw new IllegalStateException(
+                    "В production management.server.port "
+                            + "должен быть задан явно"
+            );
+        }
+
+        if (managementPort < 1
+                || managementPort > 65_535) {
+            throw new IllegalStateException(
+                    "В production management.server.port "
+                            + "должен быть в диапазоне 1..65535"
+            );
+        }
+
+        if (managementPort.equals(appPort)) {
+            throw new IllegalStateException(
+                    "В production management.server.port "
+                            + "должен отличаться от server.port"
+            );
+        }
+
+        if (managementAddress == null
+                || managementAddress.isBlank()) {
+            throw new IllegalStateException(
+                    "В production management.server.address "
+                            + "должен быть задан явно"
+            );
+        }
+
+        String normalizedAddress =
+                managementAddress.trim();
+
+        /*
+         * Архитектурный invariant проекта — management contour
+         * привязан к конкретному internal/ops interface, а не ко всем
+         * интерфейсам хоста.
+         */
+        if ("0.0.0.0".equals(normalizedAddress)
+                || "::".equals(normalizedAddress)
+                || "0:0:0:0:0:0:0:0".equals(normalizedAddress)) {
+            throw new IllegalStateException(
+                    "В production management.server.address "
+                            + "не должен быть wildcard address"
             );
         }
     }

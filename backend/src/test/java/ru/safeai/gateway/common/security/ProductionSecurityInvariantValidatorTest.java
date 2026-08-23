@@ -13,11 +13,28 @@ class ProductionSecurityInvariantValidatorTest {
     private static final String ACTIVE_KEY_ID =
             "test-active-key";
 
+    private static final String APPLICATION_PORT =
+            "8080";
+
+    private static final String MANAGEMENT_PORT =
+            "9091";
+
+    private static final String MANAGEMENT_ADDRESS =
+            "172.31.0.20";
+
     /*
-     * В этом тесте криптографический материал не используется:
-     * ProductionSecurityInvariantValidator проверяет production-инварианты
-     * issuer/CORS/proxy/forward headers. Для JwtProperties достаточно
-     * корректно заполненного key-ring контракта.
+     * В этом тесте криптографический материал не используется.
+     *
+     * ProductionSecurityInvariantValidator проверяет production-инварианты:
+     *
+     * - HTTPS issuer;
+     * - CORS;
+     * - trusted proxy CIDR;
+     * - forward headers strategy;
+     * - выделенный management server.
+     *
+     * Для JwtProperties достаточно корректно заполненного
+     * key-ring контракта.
      *
      * String.join используется намеренно, чтобы тестовые PEM-строки
      * не содержали завершающий перевод строки. JwtProperties запрещает
@@ -218,6 +235,121 @@ class ProductionSecurityInvariantValidatorTest {
                 );
     }
 
+    @Test
+    void prodRequiresExplicitManagementPort() {
+        MockEnvironment environment =
+                validProductionEnvironment();
+
+        environment.setProperty(
+                "management.server.port",
+                ""
+        );
+
+        ProductionSecurityInvariantValidator validator =
+                validator(
+                        "https://safeai.example.com",
+                        List.of(
+                                "https://app.example.com"
+                        ),
+                        List.of(
+                                "172.28.0.0/24"
+                        ),
+                        environment
+                );
+
+        assertThatThrownBy(
+                validator
+                        ::afterSingletonsInstantiated
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "management.server.port"
+                );
+    }
+
+    @Test
+    void prodRejectsManagementPortEqualToApplicationPort() {
+        MockEnvironment environment =
+                validProductionEnvironment()
+                        .withProperty(
+                                "management.server.port",
+                                APPLICATION_PORT
+                        );
+
+        ProductionSecurityInvariantValidator validator =
+                validator(
+                        "https://safeai.example.com",
+                        List.of(
+                                "https://app.example.com"
+                        ),
+                        List.of(
+                                "172.28.0.0/24"
+                        ),
+                        environment
+                );
+
+        assertThatThrownBy(
+                validator
+                        ::afterSingletonsInstantiated
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "management.server.port"
+                );
+    }
+
+    @Test
+    void prodRequiresExplicitManagementAddress() {
+        MockEnvironment environment =
+                validProductionEnvironment();
+
+        environment.setProperty(
+                "management.server.address",
+                ""
+        );
+
+        ProductionSecurityInvariantValidator validator =
+                validator(
+                        "https://safeai.example.com",
+                        List.of(
+                                "https://app.example.com"
+                        ),
+                        List.of(
+                                "172.28.0.0/24"
+                        ),
+                        environment
+                );
+
+        assertThatThrownBy(
+                validator
+                        ::afterSingletonsInstantiated
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "management.server.address"
+                );
+    }
+
+    @Test
+    void prodRejectsWildcardIpv4ManagementAddress() {
+        assertManagementAddressRejected(
+                "0.0.0.0"
+        );
+    }
+
+    @Test
+    void prodRejectsWildcardIpv6ManagementAddress() {
+        assertManagementAddressRejected(
+                "::"
+        );
+    }
+
     private void assertTrustAllRejected(
             String cidr
     ) {
@@ -245,6 +377,40 @@ class ProductionSecurityInvariantValidatorTest {
                 );
     }
 
+    private void assertManagementAddressRejected(
+            String address
+    ) {
+        MockEnvironment environment =
+                validProductionEnvironment()
+                        .withProperty(
+                                "management.server.address",
+                                address
+                        );
+
+        ProductionSecurityInvariantValidator validator =
+                validator(
+                        "https://safeai.example.com",
+                        List.of(
+                                "https://app.example.com"
+                        ),
+                        List.of(
+                                "172.28.0.0/24"
+                        ),
+                        environment
+                );
+
+        assertThatThrownBy(
+                validator
+                        ::afterSingletonsInstantiated
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "management.server.address"
+                );
+    }
+
     private ProductionSecurityInvariantValidator validator(
             String issuer,
             List<String> origins,
@@ -252,12 +418,26 @@ class ProductionSecurityInvariantValidatorTest {
             String forwardStrategy
     ) {
         MockEnvironment environment =
-                new MockEnvironment()
+                validProductionEnvironment()
                         .withProperty(
                                 "server.forward-headers-strategy",
                                 forwardStrategy
                         );
 
+        return validator(
+                issuer,
+                origins,
+                proxyCidrs,
+                environment
+        );
+    }
+
+    private ProductionSecurityInvariantValidator validator(
+            String issuer,
+            List<String> origins,
+            List<String> proxyCidrs,
+            MockEnvironment environment
+    ) {
         return new ProductionSecurityInvariantValidator(
                 new CorsProperties(
                         origins
@@ -270,6 +450,32 @@ class ProductionSecurityInvariantValidatorTest {
                 ),
                 environment
         );
+    }
+
+    /**
+     * Полностью валидный production environment baseline.
+     *
+     * <p>Каждый negative test должен изменять только тот invariant,
+     * который он непосредственно проверяет.</p>
+     */
+    private MockEnvironment validProductionEnvironment() {
+        return new MockEnvironment()
+                .withProperty(
+                        "server.port",
+                        APPLICATION_PORT
+                )
+                .withProperty(
+                        "management.server.port",
+                        MANAGEMENT_PORT
+                )
+                .withProperty(
+                        "management.server.address",
+                        MANAGEMENT_ADDRESS
+                )
+                .withProperty(
+                        "server.forward-headers-strategy",
+                        "none"
+                );
     }
 
     private JwtProperties properties(

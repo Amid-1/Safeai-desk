@@ -25,6 +25,7 @@ import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.persistence.DatabaseConstraintClassifier;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.common.security.SystemRole;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.DisableOrganizationRequest;
 import ru.safeai.gateway.organization.dto.EnableOrganizationRequest;
@@ -32,7 +33,6 @@ import ru.safeai.gateway.organization.dto.OrganizationDirectoryResponse;
 import ru.safeai.gateway.organization.dto.OrganizationDisableImpactResponse;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
 import ru.safeai.gateway.organization.dto.OrganizationType;
-import ru.safeai.gateway.organization.dto.UpdateOrganizationEnabledRequest;
 import ru.safeai.gateway.organization.dto.UpdateOrganizationRequest;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.event.OrganizationSecurityStateChangedEvent;
@@ -65,7 +65,10 @@ public class OrganizationService {
     private static final Set<String>
             ORGANIZATION_NAME_UNIQUE_CONSTRAINTS =
             Set.of(
-                    "ux_organizations_name_normalized"
+                    "ux_organizations_name_normalized",
+                    "ux_organizations_normalized_name",
+                    "uq_organizations_name_normalized",
+                    "uq_organizations_normalized_name"
             );
 
     private final OrganizationRepository
@@ -105,22 +108,16 @@ public class OrganizationService {
                         request.name()
                 );
 
-        String normalizedName =
-                OrganizationNameNormalizer.normalize(
-                        canonicalName
-                );
-
-        if (
-                organizationRepository
-                        .existsByNormalizedName(
-                                normalizedName
-                        )
-        ) {
-            throw duplicateOrganizationName(
-                    canonicalName
-            );
-        }
-
+        /*
+         * PostgreSQL canonicalization + UNIQUE indexes are the
+         * correctness boundary for organization-name identity.
+         *
+         * Do not preflight normalized-name uniqueness here: Java and
+         * PostgreSQL whitespace classes are not guaranteed to be
+         * byte-for-byte equivalent for exotic Unicode whitespace.
+         * saveAndFlush() below makes the DB decision observable inside
+         * this try/catch and maps the real concurrent race to 409.
+         */
         OrganizationEntity entity =
                 new OrganizationEntity();
 
@@ -172,10 +169,8 @@ public class OrganizationService {
             SafeAiUserPrincipal currentUser,
             Pageable pageable
     ) {
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        requireOrganizationReader(currentUser);
+
         Objects.requireNonNull(
                 pageable,
                 "pageable не должен быть null"
@@ -294,10 +289,7 @@ public class OrganizationService {
     findCurrentOrganization(
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        requireOrganizationReader(currentUser);
 
         UUID organizationId =
                 currentUser.getOrganizationId();
@@ -321,10 +313,7 @@ public class OrganizationService {
                 id,
                 "id не должен быть null"
         );
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        requireOrganizationReader(currentUser);
 
         if (
                 !isSuperAdmin(currentUser)
@@ -407,23 +396,11 @@ public class OrganizationService {
             return toResponse(entity);
         }
 
-        String normalizedName =
-                OrganizationNameNormalizer.normalize(
-                        canonicalName
-                );
-
-        if (
-                organizationRepository
-                        .existsByNormalizedNameAndIdNot(
-                                normalizedName,
-                                id
-                        )
-        ) {
-            throw duplicateOrganizationName(
-                    canonicalName
-            );
-        }
-
+        /*
+         * Same rule as create(): normalized-name uniqueness belongs to
+         * PostgreSQL. This avoids Java/DB Unicode whitespace drift and
+         * keeps concurrent rename races fail-closed through UNIQUE.
+         */
         String oldName =
                 entity.getName();
 
@@ -466,46 +443,6 @@ public class OrganizationService {
         );
 
         return toResponse(saved);
-    }
-
-    /**
-     * Совместимость со старым клиентом.
-     *
-     * @deprecated Новые клиенты должны использовать
-     * {@link #disable(UUID, DisableOrganizationRequest, SafeAiUserPrincipal)}
-     * или
-     * {@link #enable(UUID, EnableOrganizationRequest, SafeAiUserPrincipal)}.
-     */
-    @Deprecated
-    @Transactional
-    public OrganizationResponse updateEnabled(
-            UUID id,
-            UpdateOrganizationEnabledRequest request,
-            SafeAiUserPrincipal currentUser
-    ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
-
-        OrganizationEntity entity =
-                findMutableOrganizationForUpdate(
-                        id,
-                        currentUser
-                );
-
-        requireExpectedVersion(
-                entity,
-                request.expectedVersion()
-        );
-
-        return changeEnabled(
-                entity,
-                Boolean.TRUE.equals(
-                        request.enabled()
-                ),
-                currentUser
-        );
     }
 
     @Transactional
@@ -912,8 +849,44 @@ public class OrganizationService {
         }
     }
 
+    private void requireOrganizationReader(
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
+
+        if (!isAdmin(currentUser)
+                && !isSuperAdmin(currentUser)) {
+            throw new ForbiddenOperationException(
+                    "Только ADMIN или SUPER_ADMIN "
+                            + "может просматривать организации"
+            );
+        }
+    }
+
+    private boolean isAdmin(
+            SafeAiUserPrincipal currentUser
+    ) {
+        return hasAuthority(
+                currentUser,
+                SystemRole.ADMIN
+        );
+    }
+
     private boolean isSuperAdmin(
             SafeAiUserPrincipal currentUser
+    ) {
+        return hasAuthority(
+                currentUser,
+                SystemRole.SUPER_ADMIN
+        );
+    }
+
+    private boolean hasAuthority(
+            SafeAiUserPrincipal currentUser,
+            SystemRole role
     ) {
         return currentUser
                 .getAuthorities()
@@ -922,7 +895,7 @@ public class OrganizationService {
                         GrantedAuthority::getAuthority
                 )
                 .anyMatch(
-                        "ROLE_SUPER_ADMIN"::equals
+                        role.authority()::equals
                 );
     }
 

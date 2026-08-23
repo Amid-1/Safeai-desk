@@ -54,6 +54,7 @@ import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.ratelimit.LoginRateLimitService;
+import ru.safeai.gateway.ratelimit.RefreshRateLimitService;
 import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.RoleRepository;
@@ -132,6 +133,8 @@ class AuthPostgresConcurrencyIT {
     private static final String ADMIN_ROLE = "ADMIN";
     private static final String USER_ROLE = "USER";
 
+    private static final int CONCURRENT_CLEANUP_BATCH_SIZE = 4;
+
     @Container
     @ServiceConnection
     static final PostgreSQLContainer POSTGRES =
@@ -150,6 +153,9 @@ class AuthPostgresConcurrencyIT {
 
     @Autowired
     private RefreshTokenCleanupJob cleanupJob;
+
+    @Autowired
+    private RefreshTokenCleanupBatchService cleanupBatchService;
 
     @Autowired
     private AuthService authService;
@@ -180,6 +186,9 @@ class AuthPostgresConcurrencyIT {
 
     @MockitoBean
     private LoginRateLimitService loginRateLimitService;
+
+    @MockitoBean
+    private RefreshRateLimitService refreshRateLimitService;
 
     @MockitoBean
     private ClientIpResolver clientIpResolver;
@@ -407,6 +416,91 @@ class AuthPostgresConcurrencyIT {
                 .generateToken(any(AccessTokenSubject.class));
         verify(csrfTokenRepository, never())
                 .saveToken(any(), any(), any());
+    }
+
+    @Test
+    void cleanupChain_batchSizeOneDeletesPredecessorsBeforeReplacements() {
+        Seed seed = createSeed();
+        Instant threshold = NOW.minus(RETENTION);
+
+        RefreshChain chain = insertExpiredRefreshChain(
+                seed.userId(),
+                threshold.minus(Duration.ofDays(1))
+        );
+
+        assertThat(cleanupBatchService.deleteNextBatch(
+                threshold,
+                1
+        )).isEqualTo(1);
+
+        assertThat(tokenExists(chain.firstId()))
+                .isFalse();
+        assertThat(tokenExists(chain.secondId()))
+                .isTrue();
+        assertThat(tokenExists(chain.thirdId()))
+                .isTrue();
+
+        assertThat(cleanupBatchService.deleteNextBatch(
+                threshold,
+                1
+        )).isEqualTo(1);
+
+        assertThat(tokenExists(chain.secondId()))
+                .isFalse();
+        assertThat(tokenExists(chain.thirdId()))
+                .isTrue();
+
+        assertThat(cleanupBatchService.deleteNextBatch(
+                threshold,
+                1
+        )).isEqualTo(1);
+
+        assertThat(tokenExists(chain.thirdId()))
+                .isFalse();
+
+        assertThat(cleanupBatchService.deleteNextBatch(
+                threshold,
+                1
+        )).isZero();
+    }
+
+    @Test
+    void twoCleanupWorkers_deleteExpiredReplacementChainsWithoutFkViolations()
+            throws Exception {
+        Seed seed = createSeed();
+        Instant threshold = NOW.minus(RETENTION);
+
+        int chains = 32;
+
+        for (int index = 0; index < chains; index++) {
+            insertExpiredRefreshChain(
+                    seed.userId(),
+                    threshold.minus(
+                            Duration.ofDays(1)
+                                    .plusSeconds(index)
+                    )
+            );
+        }
+
+        RaceResult<Long, Long> race = race(
+                () -> deleteExpiredUntilIdle(
+                        threshold
+                ),
+                () -> deleteExpiredUntilIdle(
+                        threshold
+                )
+        );
+
+        long deleted = Math.addExact(
+                race.first(),
+                race.second()
+        );
+
+        assertThat(deleted)
+                .isEqualTo(chains * 3L);
+
+        assertThat(countExpiredRows(threshold))
+                .isZero();
     }
 
     @Test
@@ -889,6 +983,136 @@ class AuthPostgresConcurrencyIT {
         ) == 1L;
     }
 
+    private long deleteExpiredUntilIdle(
+            Instant threshold
+    ) {
+        long deletedRows = 0L;
+
+        for (int attempt = 0;
+             attempt < 10_000;
+             attempt++) {
+
+            int deleted =
+                    cleanupBatchService
+                            .deleteNextBatch(
+                                    threshold,
+                                    CONCURRENT_CLEANUP_BATCH_SIZE
+                            );
+
+            if (deleted == 0) {
+                return deletedRows;
+            }
+
+            deletedRows =
+                    Math.addExact(
+                            deletedRows,
+                            deleted
+                    );
+        }
+
+        throw new IllegalStateException(
+                "Cleanup worker did not become idle"
+        );
+    }
+
+    private RefreshChain insertExpiredRefreshChain(
+            UUID userId,
+            Instant familyExpiresAt
+    ) {
+        UUID familyId = UUID.randomUUID();
+
+        Instant familyCreatedAt =
+                familyExpiresAt.minus(
+                        Duration.ofDays(90)
+                );
+
+        Instant firstCreatedAt =
+                familyCreatedAt.plus(
+                        Duration.ofHours(1)
+                );
+
+        Instant secondCreatedAt =
+                firstCreatedAt.plus(
+                        Duration.ofHours(1)
+                );
+
+        Instant thirdCreatedAt =
+                secondCreatedAt.plus(
+                        Duration.ofHours(1)
+                );
+
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        UUID thirdId = UUID.randomUUID();
+
+        /*
+         * FK immediate: сначала вставляем replacement C,
+         * затем B -> C и только потом A -> B.
+         */
+        insertToken(new TokenRow(
+                thirdId,
+                userId,
+                hash(rawToken("cleanup-chain-c")),
+                0L,
+                0L,
+                thirdCreatedAt,
+                thirdCreatedAt.plus(
+                        Duration.ofDays(30)
+                ),
+                familyCreatedAt,
+                familyExpiresAt,
+                null,
+                null,
+                familyId,
+                null,
+                null
+        ));
+
+        insertToken(new TokenRow(
+                secondId,
+                userId,
+                hash(rawToken("cleanup-chain-b")),
+                0L,
+                0L,
+                secondCreatedAt,
+                secondCreatedAt.plus(
+                        Duration.ofDays(30)
+                ),
+                familyCreatedAt,
+                familyExpiresAt,
+                secondCreatedAt.plusSeconds(1),
+                RefreshTokenRevocationReason.ROTATED,
+                familyId,
+                thirdId,
+                null
+        ));
+
+        insertToken(new TokenRow(
+                firstId,
+                userId,
+                hash(rawToken("cleanup-chain-a")),
+                0L,
+                0L,
+                firstCreatedAt,
+                firstCreatedAt.plus(
+                        Duration.ofDays(30)
+                ),
+                familyCreatedAt,
+                familyExpiresAt,
+                firstCreatedAt.plusSeconds(1),
+                RefreshTokenRevocationReason.ROTATED,
+                familyId,
+                secondId,
+                null
+        ));
+
+        return new RefreshChain(
+                firstId,
+                secondId,
+                thirdId
+        );
+    }
+
     private void insertCleanupRows(
             UUID userId,
             int count,
@@ -1225,6 +1449,13 @@ class AuthPostgresConcurrencyIT {
             UUID userId,
             UUID organizationId,
             String email
+    ) {
+    }
+
+    private record RefreshChain(
+            UUID firstId,
+            UUID secondId,
+            UUID thirdId
     ) {
     }
 

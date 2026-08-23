@@ -5,7 +5,6 @@ import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -25,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
  * Unit tests for the strict SafeAI access-token identity contract.
  *
  * <p>Этот тест проверяет только responsibilities
- * {@link SafeAiJwtAuthenticationConverter}:
+ * {@link SafeAiJwtAuthenticationConverter}:</p>
  *
  * <ul>
  *     <li>security identity claims;</li>
@@ -35,13 +34,13 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
  *     <li>exactly-one-role invariant;</li>
  *     <li>role canonicalization;</li>
  *     <li>principal construction;</li>
- *     <li>absence of credentials/PII/raw JWT in principal;</li>
- *     <li>Resource Server exception translation.</li>
+ *     <li>absence of credentials/PII/raw JWT in principal.</li>
  * </ul>
  *
  * <p>Signature, issuer, audience, expiration, JOSE {@code typ},
- * algorithm and {@code kid} belong to JwtDecoder/resource-server
- * integration tests and intentionally are not re-tested here.</p>
+ * algorithm, {@code kid} и Resource Server exception translation
+ * принадлежат JwtDecoder/resource-server integration tests и
+ * намеренно здесь не проверяются.</p>
  */
 class SafeAiJwtAuthenticationConverterTest {
 
@@ -214,10 +213,9 @@ class SafeAiJwtAuthenticationConverterTest {
 
         assertThat(
                 principal.toString()
-        )
-                .doesNotContain(
-                        "private-user@example.test"
-                );
+        ).doesNotContain(
+                "private-user@example.test"
+        );
     }
 
     @Test
@@ -901,66 +899,6 @@ class SafeAiJwtAuthenticationConverterTest {
 
     /*
      * ------------------------------------------------------------
-     * Resource Server adapter
-     * ------------------------------------------------------------
-     */
-
-    @Test
-    void convertForResourceServerAcceptsValidJwt() {
-        AbstractAuthenticationToken authentication =
-                Objects.requireNonNull(
-                        converter.convertForResourceServer(
-                                jwt(
-                                        USER_ID.toString(),
-                                        validClaims()
-                                )
-                        ),
-                        "converter returned null authentication"
-                );
-
-        assertThat(
-                authentication.isAuthenticated()
-        ).isTrue();
-
-        SafeAiUserPrincipal principal =
-                assertInstanceOf(
-                        SafeAiUserPrincipal.class,
-                        authentication.getPrincipal()
-                );
-
-        assertThat(
-                principal.getId()
-        ).isEqualTo(
-                USER_ID
-        );
-    }
-
-    @Test
-    void convertForResourceServerTranslatesBadJwtToInvalidBearerToken() {
-        Jwt malformedJwt =
-                jwtWithoutJti(
-                        USER_ID.toString(),
-                        validClaims()
-                );
-
-        assertThatThrownBy(() ->
-                converter.convertForResourceServer(
-                        malformedJwt
-                )
-        )
-                .isInstanceOf(
-                        InvalidBearerTokenException.class
-                )
-                .hasMessage(
-                        "Invalid access token"
-                )
-                .hasCauseInstanceOf(
-                        BadJwtException.class
-                );
-    }
-
-    /*
-     * ------------------------------------------------------------
      * Null API contract
      * ------------------------------------------------------------
      */
@@ -1253,7 +1191,7 @@ class SafeAiJwtAuthenticationConverterTest {
      */
 
     /**
-     * Полностью валидный baseline Jwt для unit test.
+     * Полностью валидный baseline JWT для unit test.
      *
      * <p>Каждый negative test должен изменять только ту часть
      * контракта, которую он непосредственно проверяет.</p>
@@ -1369,7 +1307,7 @@ class SafeAiJwtAuthenticationConverterTest {
                 )
                 .expiresAt(
                         NOW.plusSeconds(
-                                300
+                                300L
                         )
                 );
     }

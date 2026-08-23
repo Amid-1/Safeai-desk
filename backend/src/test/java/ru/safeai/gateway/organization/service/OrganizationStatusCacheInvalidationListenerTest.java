@@ -39,32 +39,23 @@ class OrganizationStatusCacheInvalidationListenerTest {
     private UserRepository userRepository;
 
     @Mock
-    private UserStatusCacheService
-            userStatusCacheService;
+    private UserStatusCacheService userStatusCacheService;
 
     @Test
     void paginatesLargeOrganizationWithStableIdSort() {
         List<UUID> firstBatch =
-                IntStream.range(
-                                0,
-                                PAGE_SIZE
-                        )
-                        .mapToObj(index ->
-                                UUID.randomUUID()
-                        )
+                IntStream.range(0, PAGE_SIZE)
+                        .mapToObj(index -> UUID.randomUUID())
                         .toList();
 
         List<UUID> secondBatch =
-                List.of(
-                        UUID.randomUUID()
-                );
+                List.of(UUID.randomUUID());
 
         when(
-                userRepository
-                        .findIdsByOrganizationId(
-                                eq(ORGANIZATION_ID),
-                                any(Pageable.class)
-                        )
+                userRepository.findIdsByOrganizationId(
+                        eq(ORGANIZATION_ID),
+                        any(Pageable.class)
+                )
         )
                 .thenAnswer(invocation ->
                         new SliceImpl<>(
@@ -81,26 +72,18 @@ class OrganizationStatusCacheInvalidationListenerTest {
                         )
                 );
 
-        listener()
-                .onOrganizationSecurityStateChanged(
-                        new OrganizationSecurityStateChangedEvent(
-                                ORGANIZATION_ID,
-                                9L
-                        )
-                );
+        listener().onOrganizationSecurityStateChanged(
+                new OrganizationSecurityStateChangedEvent(
+                        ORGANIZATION_ID,
+                        9L
+                )
+        );
 
-        verify(
-                userStatusCacheService
-        ).evictAll(firstBatch);
-
-        verify(
-                userStatusCacheService
-        ).evictAll(secondBatch);
+        verify(userStatusCacheService).evictAll(firstBatch);
+        verify(userStatusCacheService).evictAll(secondBatch);
 
         ArgumentCaptor<Pageable> captor =
-                ArgumentCaptor.forClass(
-                        Pageable.class
-                );
+                ArgumentCaptor.forClass(Pageable.class);
 
         verify(
                 userRepository,
@@ -110,45 +93,30 @@ class OrganizationStatusCacheInvalidationListenerTest {
                 captor.capture()
         );
 
-        assertThat(
-                captor.getAllValues()
-        )
-                .extracting(
-                        Pageable::getPageNumber
-                )
-                .containsExactly(
-                        0,
-                        1
-                );
+        assertThat(captor.getAllValues())
+                .extracting(Pageable::getPageNumber)
+                .containsExactly(0, 1);
 
-        assertThat(
-                captor.getAllValues()
-        )
-                .extracting(
-                        Pageable::getPageSize
-                )
-                .containsOnly(
-                        PAGE_SIZE
-                );
+        assertThat(captor.getAllValues())
+                .extracting(Pageable::getPageSize)
+                .containsOnly(PAGE_SIZE);
 
-        assertThat(
-                captor.getAllValues()
-        ).allSatisfy(pageable ->
-                assertThat(
-                        pageable.getSort()
-                                .getOrderFor("id")
-                ).isNotNull()
-        );
+        assertThat(captor.getAllValues())
+                .allSatisfy(pageable ->
+                        assertThat(
+                                pageable.getSort()
+                                        .getOrderFor("id")
+                        ).isNotNull()
+                );
     }
 
     @Test
     void emptyOrganizationDoesNotCallCache() {
         when(
-                userRepository
-                        .findIdsByOrganizationId(
-                                eq(ORGANIZATION_ID),
-                                any(Pageable.class)
-                        )
+                userRepository.findIdsByOrganizationId(
+                        eq(ORGANIZATION_ID),
+                        any(Pageable.class)
+                )
         ).thenAnswer(invocation ->
                 new SliceImpl<>(
                         List.of(),
@@ -157,13 +125,12 @@ class OrganizationStatusCacheInvalidationListenerTest {
                 )
         );
 
-        listener()
-                .onOrganizationSecurityStateChanged(
-                        new OrganizationSecurityStateChangedEvent(
-                                ORGANIZATION_ID,
-                                10L
-                        )
-                );
+        listener().onOrganizationSecurityStateChanged(
+                new OrganizationSecurityStateChangedEvent(
+                        ORGANIZATION_ID,
+                        10L
+                )
+        );
 
         verify(
                 userStatusCacheService,
@@ -174,11 +141,10 @@ class OrganizationStatusCacheInvalidationListenerTest {
     @Test
     void repositoryFailureIsBestEffortAndDoesNotEscape() {
         when(
-                userRepository
-                        .findIdsByOrganizationId(
-                                eq(ORGANIZATION_ID),
-                                any(Pageable.class)
-                        )
+                userRepository.findIdsByOrganizationId(
+                        eq(ORGANIZATION_ID),
+                        any(Pageable.class)
+                )
         ).thenThrow(
                 new IllegalStateException(
                         "PostgreSQL unavailable"
@@ -186,22 +152,18 @@ class OrganizationStatusCacheInvalidationListenerTest {
         );
 
         assertThatCode(() ->
-                listener()
-                        .onOrganizationSecurityStateChanged(
-                                new OrganizationSecurityStateChangedEvent(
-                                        ORGANIZATION_ID,
-                                        11L
-                                )
+                listener().onOrganizationSecurityStateChanged(
+                        new OrganizationSecurityStateChangedEvent(
+                                ORGANIZATION_ID,
+                                11L
                         )
+                )
         ).doesNotThrowAnyException();
 
-        verifyNoInteractions(
-                userStatusCacheService
-        );
+        verifyNoInteractions(userStatusCacheService);
     }
 
-    private OrganizationStatusCacheInvalidationListener
-    listener() {
+    private OrganizationStatusCacheInvalidationListener listener() {
         return new OrganizationStatusCacheInvalidationListener(
                 userRepository,
                 userStatusCacheService

@@ -13,10 +13,12 @@ import org.springframework.security.web.SecurityFilterChain;
 /**
  * Security chain for the dedicated Actuator management server.
  *
- * <p>Production binds management.server.address to the dedicated internal
- * monitoring interface. Prometheus/health/info are therefore unauthenticated
- * only inside that network boundary. The public application SecurityConfig
- * remains fail-closed for /actuator/**.</p>
+ * <p>В production отдельные {@code management.server.port} и
+ * {@code management.server.address} являются fail-fast invariant,
+ * проверяемым {@link ProductionSecurityInvariantValidator}. Поэтому
+ * Prometheus/health/info остаются unauthenticated только внутри выделенного
+ * management contour. Application security chain не используется как
+ * единственная граница защиты Actuator.</p>
  */
 @Configuration(proxyBeanMethods = false)
 public class ManagementSecurityConfig {
@@ -67,3 +69,7 @@ public class ManagementSecurityConfig {
         return http.build();
     }
 }
+
+
+
+

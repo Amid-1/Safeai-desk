@@ -13,6 +13,7 @@ import java.sql.ResultSet;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -41,65 +42,45 @@ class OrganizationImpactQueryRepositoryTest {
                                 >>any()
                 )
         ).thenAnswer(invocation -> {
-            RowMapper<
-                    OrganizationImpactQueryRepository
-                            .ImpactSnapshot
-                    > rowMapper =
-                    invocation.getArgument(2);
+            RowMapper<OrganizationImpactQueryRepository.ImpactSnapshot>
+                    rowMapper = invocation.getArgument(2);
 
-            ResultSet resultSet =
-                    mock(ResultSet.class);
+            ResultSet resultSet = mock(ResultSet.class);
 
-            when(
-                    resultSet.getLong(
-                            "enabled_users"
-                    )
-            ).thenReturn(10L);
+            when(resultSet.getLong("enabled_users"))
+                    .thenReturn(10L);
+            when(resultSet.getLong("administrators"))
+                    .thenReturn(2L);
+            when(resultSet.getLong("active_refresh_sessions"))
+                    .thenReturn(4L);
+            when(resultSet.getLong("active_chat_operations"))
+                    .thenReturn(1L);
 
-            when(
-                    resultSet.getLong(
-                            "administrators"
-                    )
-            ).thenReturn(2L);
-
-            when(
-                    resultSet.getLong(
-                            "active_refresh_sessions"
-                    )
-            ).thenReturn(4L);
-
-            when(
-                    resultSet.getLong(
-                            "active_chat_operations"
-                    )
-            ).thenReturn(1L);
-
-            return rowMapper.mapRow(
-                    resultSet,
-                    0
-            );
+            return rowMapper.mapRow(resultSet, 0);
         });
 
-        OrganizationImpactQueryRepository
-                .ImpactSnapshot result =
+        OrganizationImpactQueryRepository.ImpactSnapshot result =
                 new OrganizationImpactQueryRepository(
                         jdbcTemplate
-                ).load(
-                        ORGANIZATION_ID
-                );
+                ).load(ORGANIZATION_ID);
 
-        assertThat(result.enabledUsers())
-                .isEqualTo(10L);
+        assertThat(result.enabledUsers()).isEqualTo(10L);
+        assertThat(result.administrators()).isEqualTo(2L);
+        assertThat(result.activeRefreshSessions()).isEqualTo(4L);
+        assertThat(result.activeChatOperations()).isEqualTo(1L);
+    }
 
-        assertThat(result.administrators())
-                .isEqualTo(2L);
-
-        assertThat(
-                result.activeRefreshSessions()
-        ).isEqualTo(4L);
-
-        assertThat(
-                result.activeChatOperations()
-        ).isEqualTo(1L);
+    @Test
+    void impactSnapshotRejectsNegativeCounters() {
+        assertThatThrownBy(() ->
+                new OrganizationImpactQueryRepository.ImpactSnapshot(
+                        -1L,
+                        0L,
+                        0L,
+                        0L
+                )
+        )
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("enabledUsers");
     }
 }

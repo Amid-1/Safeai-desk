@@ -15,6 +15,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
@@ -131,10 +132,7 @@ public class UserService {
                 "request не должен быть null"
         );
 
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        requireUserManager(currentUser);
 
         String email =
                 normalizeEmail(
@@ -283,16 +281,16 @@ public class UserService {
         return toResponse(saved);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(
+            readOnly = true,
+            isolation = Isolation.REPEATABLE_READ
+    )
     public Page<UserResponse> findAll(
             SafeAiUserPrincipal currentUser,
             String role,
             Pageable pageable
     ) {
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        requireUserManager(currentUser);
 
         Objects.requireNonNull(
                 pageable,
@@ -403,6 +401,8 @@ public class UserService {
             UUID id,
             SafeAiUserPrincipal currentUser
     ) {
+        requireUserManager(currentUser);
+
         return toDetailsResponse(
                 findUserVisibleForCurrentUser(
                         id,
@@ -415,10 +415,7 @@ public class UserService {
     public UserStatisticsResponse statistics(
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        requireUserManager(currentUser);
 
         if (isSuperAdmin(currentUser)) {
             return new UserStatisticsResponse(
@@ -492,6 +489,8 @@ public class UserService {
                 request,
                 "request не должен быть null"
         );
+
+        requireUserManager(currentUser);
 
         UserEntity user =
                 findUserForSecurityMutation(
@@ -659,6 +658,8 @@ public class UserService {
                 "request не должен быть null"
         );
 
+        requireUserManager(currentUser);
+
         UserEntity user =
                 findUserForSecurityMutation(
                         id,
@@ -789,6 +790,8 @@ public class UserService {
                 request,
                 "request не должен быть null"
         );
+
+        requireUserManager(currentUser);
 
         UserEntity user =
                 findUserForSecurityMutation(
@@ -950,6 +953,8 @@ public class UserService {
                 request,
                 "request не должен быть null"
         );
+
+        requireUserManager(currentUser);
 
         /*
          * Не полагаемся только на MVC Bean Validation.
@@ -1452,10 +1457,21 @@ public class UserService {
             );
         }
 
-        Set<SystemRole> assignableRoles =
-                isSuperAdmin(currentUser)
-                        ? SUPER_ADMIN_ASSIGNABLE_ROLES
-                        : ADMIN_ASSIGNABLE_ROLES;
+        Set<SystemRole> assignableRoles;
+
+        if (isSuperAdmin(currentUser)) {
+            assignableRoles =
+                    SUPER_ADMIN_ASSIGNABLE_ROLES;
+        } else if (isAdmin(currentUser)) {
+            assignableRoles =
+                    ADMIN_ASSIGNABLE_ROLES;
+        } else {
+            /*
+             * Defense in depth: private helper must not silently
+             * grant ADMIN semantics to an unknown caller.
+             */
+            throw userManagerRequired();
+        }
 
         if (!assignableRoles
                 .containsAll(
@@ -1605,8 +1621,49 @@ public class UserService {
         }
     }
 
+    private void requireUserManager(
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
+
+        if (!isAdmin(currentUser)
+                && !isSuperAdmin(currentUser)) {
+            throw userManagerRequired();
+        }
+    }
+
+    private ForbiddenOperationException
+    userManagerRequired() {
+        return new ForbiddenOperationException(
+                "Только ADMIN или SUPER_ADMIN "
+                        + "может управлять пользователями"
+        );
+    }
+
+    private boolean isAdmin(
+            SafeAiUserPrincipal currentUser
+    ) {
+        return hasAuthority(
+                currentUser,
+                SystemRole.ADMIN
+        );
+    }
+
     private boolean isSuperAdmin(
             SafeAiUserPrincipal currentUser
+    ) {
+        return hasAuthority(
+                currentUser,
+                SystemRole.SUPER_ADMIN
+        );
+    }
+
+    private boolean hasAuthority(
+            SafeAiUserPrincipal currentUser,
+            SystemRole role
     ) {
         return currentUser
                 .getAuthorities()
@@ -1616,10 +1673,7 @@ public class UserService {
                                 ::getAuthority
                 )
                 .anyMatch(
-                        SystemRole
-                                .SUPER_ADMIN
-                                .authority()
-                                ::equals
+                        role.authority()::equals
                 );
     }
 
@@ -2034,5 +2088,4 @@ public class UserService {
                 ? ""
                 : value;
     }
-} 
-
+}

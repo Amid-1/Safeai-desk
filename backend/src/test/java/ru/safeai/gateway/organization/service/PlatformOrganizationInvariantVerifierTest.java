@@ -40,165 +40,112 @@ class PlatformOrganizationInvariantVerifierTest {
                 organizationRepository.findById(
                         PLATFORM_ORGANIZATION_ID
                 )
-        ).thenReturn(
-                Optional.empty()
-        );
+        ).thenReturn(Optional.empty());
 
         assertThatThrownBy(() ->
-                verifier().run(
-                        applicationArguments
-                )
+                verifier().run(applicationArguments)
         )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "отсутствует"
-                );
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("отсутствует");
     }
 
     @Test
     void rejectsDisabledPlatformOrganization() {
-        OrganizationEntity platform =
-                platformOrganization();
-
+        OrganizationEntity platform = platformOrganization();
         platform.setEnabled(false);
 
         when(
                 organizationRepository.findById(
                         PLATFORM_ORGANIZATION_ID
                 )
-        ).thenReturn(
-                Optional.of(platform)
-        );
+        ).thenReturn(Optional.of(platform));
 
         assertThatThrownBy(() ->
-                verifier().run(
-                        applicationArguments
-                )
+                verifier().run(applicationArguments)
         )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "включена"
-                );
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("включена");
     }
 
     @Test
     void rejectsPlatformWithoutSuperAdmin() {
-        OrganizationEntity platform =
-                platformOrganization();
+        OrganizationEntity platform = platformOrganization();
 
         when(
                 organizationRepository.findById(
                         PLATFORM_ORGANIZATION_ID
                 )
-        ).thenReturn(
-                Optional.of(platform)
-        );
-
+        ).thenReturn(Optional.of(platform));
         when(
-                userRepository
-                        .countByOrganization_Id(
-                                PLATFORM_ORGANIZATION_ID
-                        )
+                userRepository.countByOrganization_Id(
+                        PLATFORM_ORGANIZATION_ID
+                )
         ).thenReturn(0L);
-
         when(
-                userRepository
-                        .countByOrganizationIdAndRole(
-                                PLATFORM_ORGANIZATION_ID,
-                                "SUPER_ADMIN"
-                        )
+                userRepository.countByOrganizationIdAndRole(
+                        PLATFORM_ORGANIZATION_ID,
+                        "SUPER_ADMIN"
+                )
         ).thenReturn(0L);
 
         assertThatThrownBy(() ->
-                verifier().run(
-                        applicationArguments
-                )
+                verifier().run(applicationArguments)
         )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "не содержит SUPER_ADMIN"
-                );
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("не содержит SUPER_ADMIN");
     }
 
     @Test
     void rejectsPlatformWithNonSuperAdminUsers() {
-        OrganizationEntity platform =
-                platformOrganization();
+        OrganizationEntity platform = platformOrganization();
 
         when(
                 organizationRepository.findById(
                         PLATFORM_ORGANIZATION_ID
                 )
-        ).thenReturn(
-                Optional.of(platform)
-        );
-
+        ).thenReturn(Optional.of(platform));
         when(
-                userRepository
-                        .countByOrganization_Id(
-                                PLATFORM_ORGANIZATION_ID
-                        )
+                userRepository.countByOrganization_Id(
+                        PLATFORM_ORGANIZATION_ID
+                )
         ).thenReturn(2L);
-
         when(
-                userRepository
-                        .countByOrganizationIdAndRole(
-                                PLATFORM_ORGANIZATION_ID,
-                                "SUPER_ADMIN"
-                        )
+                userRepository.countByOrganizationIdAndRole(
+                        PLATFORM_ORGANIZATION_ID,
+                        "SUPER_ADMIN"
+                )
         ).thenReturn(1L);
 
         assertThatThrownBy(() ->
-                verifier().run(
-                        applicationArguments
-                )
+                verifier().run(applicationArguments)
         )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "только SUPER_ADMIN"
-                );
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("только SUPER_ADMIN");
     }
 
     @Test
     void acceptsEnabledPlatformContainingOnlySuperAdmins() {
-        OrganizationEntity platform =
-                platformOrganization();
+        OrganizationEntity platform = platformOrganization();
 
         when(
                 organizationRepository.findById(
                         PLATFORM_ORGANIZATION_ID
                 )
-        ).thenReturn(
-                Optional.of(platform)
-        );
-
+        ).thenReturn(Optional.of(platform));
         when(
-                userRepository
-                        .countByOrganization_Id(
-                                PLATFORM_ORGANIZATION_ID
-                        )
+                userRepository.countByOrganization_Id(
+                        PLATFORM_ORGANIZATION_ID
+                )
         ).thenReturn(2L);
-
         when(
-                userRepository
-                        .countByOrganizationIdAndRole(
-                                PLATFORM_ORGANIZATION_ID,
-                                "SUPER_ADMIN"
-                        )
+                userRepository.countByOrganizationIdAndRole(
+                        PLATFORM_ORGANIZATION_ID,
+                        "SUPER_ADMIN"
+                )
         ).thenReturn(2L);
 
         assertThatCode(() ->
-                verifier().run(
-                        applicationArguments
-                )
+                verifier().run(applicationArguments)
         ).doesNotThrowAnyException();
     }
 
@@ -213,19 +160,12 @@ class PlatformOrganizationInvariantVerifierTest {
     }
 
     private OrganizationEntity platformOrganization() {
-        OrganizationEntity platform =
-                new OrganizationEntity();
-
-        platform.setId(
-                PLATFORM_ORGANIZATION_ID
-        );
-        platform.setName(
-                "SafeAI Platform"
-        );
+        OrganizationEntity platform = new OrganizationEntity();
+        platform.setId(PLATFORM_ORGANIZATION_ID);
+        platform.setName("SafeAI Platform");
         platform.setEnabled(true);
         platform.setAuthVersion(0L);
         platform.setVersion(0L);
-
         return platform;
     }
 }

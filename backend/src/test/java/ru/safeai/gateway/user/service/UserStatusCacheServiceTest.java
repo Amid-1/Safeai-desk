@@ -28,15 +28,10 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class UserStatusCacheServiceTest {
 
-    private static final UUID USER_ID =
-            UUID.randomUUID();
-
-    private static final UUID ORGANIZATION_ID =
-            UUID.randomUUID();
-
-    private static final long ORGANIZATION_AUTH_VERSION =
-            13L;
-
+    private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID OTHER_USER_ID = UUID.randomUUID();
+    private static final UUID ORGANIZATION_ID = UUID.randomUUID();
+    private static final long ORGANIZATION_AUTH_VERSION = 13L;
     private static final String KEY =
             "safeai:test:user-status:" + USER_ID;
 
@@ -52,27 +47,34 @@ class UserStatusCacheServiceTest {
     @Test
     void disabledCacheReadsPostgresAndNeverTouchesRedis() {
         when(userRepository.findByIdWithOrganization(USER_ID))
-                .thenReturn(Optional.of(
-                        user(true, true, 7L)
-                ));
+                .thenReturn(
+                        Optional.of(
+                                user(true, true, 7L)
+                        )
+                );
 
         UserStatusCacheService service = service(false);
 
-        assertThat(service.getStatus(USER_ID)).contains(
-                status(true, true, 7L)
-        );
+        assertThat(service.getStatus(USER_ID))
+                .contains(status(true, true, 7L));
 
         verify(userRepository)
                 .findByIdWithOrganization(USER_ID);
-
         verifyNoInteractions(redisTemplate);
+    }
+
+    @Test
+    void nullUserIdReturnsEmptyWithoutDependencies() {
+        UserStatusCacheService service = service(false);
+
+        assertThat(service.getStatus(null)).isEmpty();
+        verifyNoInteractions(userRepository, redisTemplate);
     }
 
     @Test
     void enabledCacheReturnsValidCachedStatusWithoutPostgres() {
         when(redisTemplate.opsForValue())
                 .thenReturn(valueOperations);
-
         when(valueOperations.get(KEY)).thenReturn(
                 ORGANIZATION_ID
                         + ":true:true:9:"
@@ -81,12 +83,10 @@ class UserStatusCacheServiceTest {
 
         UserStatusCacheService service = service(true);
 
-        assertThat(service.getStatus(USER_ID)).contains(
-                status(true, true, 9L)
-        );
+        assertThat(service.getStatus(USER_ID))
+                .contains(status(true, true, 9L));
 
         verifyNoInteractions(userRepository);
-
         verify(valueOperations, never()).set(
                 anyString(),
                 anyString(),
@@ -98,20 +98,19 @@ class UserStatusCacheServiceTest {
     void malformedCacheFallsBackToPostgresAndRewritesValue() {
         when(redisTemplate.opsForValue())
                 .thenReturn(valueOperations);
-
         when(valueOperations.get(KEY))
                 .thenReturn("broken-value");
-
         when(userRepository.findByIdWithOrganization(USER_ID))
-                .thenReturn(Optional.of(
-                        user(true, false, 11L)
-                ));
+                .thenReturn(
+                        Optional.of(
+                                user(true, false, 11L)
+                        )
+                );
 
         UserStatusCacheService service = service(true);
 
-        assertThat(service.getStatus(USER_ID)).contains(
-                status(true, false, 11L)
-        );
+        assertThat(service.getStatus(USER_ID))
+                .contains(status(true, false, 11L));
 
         verify(valueOperations).set(
                 KEY,
@@ -126,21 +125,20 @@ class UserStatusCacheServiceTest {
     void legacyFourPartCacheIsRejectedAndRewritten() {
         when(redisTemplate.opsForValue())
                 .thenReturn(valueOperations);
-
         when(valueOperations.get(KEY)).thenReturn(
                 ORGANIZATION_ID + ":true:true:9"
         );
-
         when(userRepository.findByIdWithOrganization(USER_ID))
-                .thenReturn(Optional.of(
-                        user(true, true, 9L)
-                ));
+                .thenReturn(
+                        Optional.of(
+                                user(true, true, 9L)
+                        )
+                );
 
         UserStatusCacheService service = service(true);
 
-        assertThat(service.getStatus(USER_ID)).contains(
-                status(true, true, 9L)
-        );
+        assertThat(service.getStatus(USER_ID))
+                .contains(status(true, true, 9L));
 
         verify(valueOperations).set(
                 KEY,
@@ -152,33 +150,54 @@ class UserStatusCacheServiceTest {
     }
 
     @Test
-    void redisReadFailureFallsBackToPostgres() {
+    void invalidBooleanOrNegativeVersionCacheIsRejected() {
         when(redisTemplate.opsForValue())
                 .thenReturn(valueOperations);
-
         when(valueOperations.get(KEY))
-                .thenThrow(new IllegalStateException(
-                        "Redis unavailable"
-                ));
-
+                .thenReturn(
+                        ORGANIZATION_ID + ":yes:true:-1:0"
+                );
         when(userRepository.findByIdWithOrganization(USER_ID))
-                .thenReturn(Optional.of(
-                        user(true, true, 3L)
-                ));
+                .thenReturn(Optional.empty());
 
         UserStatusCacheService service = service(true);
 
-        assertThat(service.getStatus(USER_ID)).contains(
-                status(true, true, 3L)
-        );
+        assertThat(service.getStatus(USER_ID)).isEmpty();
+        verify(userRepository)
+                .findByIdWithOrganization(USER_ID);
+    }
+
+    @Test
+    void redisReadFailureFallsBackToPostgres() {
+        when(redisTemplate.opsForValue())
+                .thenReturn(valueOperations);
+        when(valueOperations.get(KEY))
+                .thenThrow(
+                        new IllegalStateException(
+                                "Redis unavailable"
+                        )
+                );
+        when(userRepository.findByIdWithOrganization(USER_ID))
+                .thenReturn(
+                        Optional.of(
+                                user(true, true, 3L)
+                        )
+                );
+
+        UserStatusCacheService service = service(true);
+
+        assertThat(service.getStatus(USER_ID))
+                .contains(status(true, true, 3L));
     }
 
     @Test
     void postgresFailureIsNotSwallowed() {
         when(userRepository.findByIdWithOrganization(USER_ID))
-                .thenThrow(new IllegalStateException(
-                        "PostgreSQL unavailable"
-                ));
+                .thenThrow(
+                        new IllegalStateException(
+                                "PostgreSQL unavailable"
+                        )
+                );
 
         UserStatusCacheService service = service(false);
 
@@ -186,22 +205,38 @@ class UserStatusCacheServiceTest {
                 service.getStatus(USER_ID)
         )
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(
-                        "PostgreSQL unavailable"
-                );
+                .hasMessageContaining("PostgreSQL unavailable");
     }
 
     @Test
     void redisEvictionFailureIsBestEffortAndDoesNotEscape() {
         when(redisTemplate.delete(KEY))
-                .thenThrow(new IllegalStateException(
-                        "Redis unavailable"
-                ));
+                .thenThrow(
+                        new IllegalStateException(
+                                "Redis unavailable"
+                        )
+                );
 
         UserStatusCacheService service = service(true);
 
         assertThatCode(() -> service.evict(USER_ID))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void enabledCacheEvictsAllNonNullIds() {
+        UserStatusCacheService service = service(true);
+
+        service.evictAll(
+                List.of(USER_ID, OTHER_USER_ID)
+        );
+
+        verify(redisTemplate).delete(
+                List.of(
+                        "safeai:test:user-status:" + USER_ID,
+                        "safeai:test:user-status:" + OTHER_USER_ID
+                )
+        );
     }
 
     @Test
@@ -217,20 +252,16 @@ class UserStatusCacheServiceTest {
     @Test
     void disabledUserStatusIsReadFromPostgres() {
         when(userRepository.findByIdWithOrganization(USER_ID))
-                .thenReturn(Optional.of(
-                        user(false, true, 12L)
-                ));
+                .thenReturn(
+                        Optional.of(
+                                user(false, true, 12L)
+                        )
+                );
 
         UserStatusCacheService service = service(false);
 
-        assertThat(service.getStatus(USER_ID)).contains(
-                status(false, true, 12L)
-        );
-
-        verify(userRepository)
-                .findByIdWithOrganization(USER_ID);
-
-        verifyNoInteractions(redisTemplate);
+        assertThat(service.getStatus(USER_ID))
+                .contains(status(false, true, 12L));
     }
 
     private UserStatusCacheService service(
@@ -268,7 +299,6 @@ class UserStatusCacheServiceTest {
     ) {
         OrganizationEntity organization =
                 new OrganizationEntity();
-
         organization.setId(ORGANIZATION_ID);
         organization.setEnabled(organizationEnabled);
         organization.setAuthVersion(
@@ -280,7 +310,6 @@ class UserStatusCacheServiceTest {
         user.setOrganization(organization);
         user.setEnabled(userEnabled);
         user.setTokenVersion(tokenVersion);
-
         return user;
     }
 }

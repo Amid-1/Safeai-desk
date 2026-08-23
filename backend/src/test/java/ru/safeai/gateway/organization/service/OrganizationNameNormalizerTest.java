@@ -17,30 +17,23 @@ class OrganizationNameNormalizerTest {
                 OrganizationNameNormalizer.canonicalize(
                         " \t Demo\u00A0\u00A0Company \n "
                 )
-        ).isEqualTo(
-                "Demo Company"
-        );
+        ).isEqualTo("Demo Company");
     }
 
     @Test
     void createsStableRootLocaleNormalizedName() {
-        Locale previous =
-                Locale.getDefault();
+        Locale previous = Locale.getDefault();
 
         try {
             Locale.setDefault(
-                    Locale.forLanguageTag(
-                            "tr-TR"
-                    )
+                    Locale.forLanguageTag("tr-TR")
             );
 
             assertThat(
                     OrganizationNameNormalizer.normalize(
                             " INFORMATION "
                     )
-            ).isEqualTo(
-                    "information"
-            );
+            ).isEqualTo("information");
         } finally {
             Locale.setDefault(previous);
         }
@@ -67,8 +60,7 @@ class OrganizationNameNormalizerTest {
                 );
 
         assertThat(
-                acceptedVariants
-                        .stream()
+                acceptedVariants.stream()
                         .map(
                                 OrganizationNameNormalizer
                                         ::normalizeForConfirmation
@@ -96,8 +88,7 @@ class OrganizationNameNormalizerTest {
                 );
 
         assertThat(
-                rejectedVariants
-                        .stream()
+                rejectedVariants.stream()
                         .map(
                                 OrganizationNameNormalizer
                                         ::normalizeForConfirmation
@@ -107,14 +98,11 @@ class OrganizationNameNormalizerTest {
 
     @Test
     void confirmationUsesStableRootLocale() {
-        Locale previous =
-                Locale.getDefault();
+        Locale previous = Locale.getDefault();
 
         try {
             Locale.setDefault(
-                    Locale.forLanguageTag(
-                            "tr-TR"
-                    )
+                    Locale.forLanguageTag("tr-TR")
             );
 
             assertThat(
@@ -122,9 +110,7 @@ class OrganizationNameNormalizerTest {
                             .normalizeForConfirmation(
                                     " INFORMATION "
                             )
-            ).isEqualTo(
-                    "information"
-            );
+            ).isEqualTo("information");
         } finally {
             Locale.setDefault(previous);
         }
@@ -134,31 +120,21 @@ class OrganizationNameNormalizerTest {
     @SuppressWarnings("DataFlowIssue")
     void rejectsNullName() {
         assertThatThrownBy(() ->
-                OrganizationNameNormalizer
-                        .canonicalize(null)
+                OrganizationNameNormalizer.canonicalize(null)
         )
-                .isInstanceOf(
-                        BadRequestException.class
-                )
-                .hasMessageContaining(
-                        "не должно быть пустым"
-                );
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("не должно быть пустым");
     }
 
     @Test
     void rejectsBlankName() {
         assertThatThrownBy(() ->
-                OrganizationNameNormalizer
-                        .canonicalize(
-                                " \u00A0\t "
-                        )
-        )
-                .isInstanceOf(
-                        BadRequestException.class
+                OrganizationNameNormalizer.canonicalize(
+                        " \u00A0\t "
                 )
-                .hasMessageContaining(
-                        "не должно быть пустым"
-                );
+        )
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("не должно быть пустым");
     }
 
     @Test
@@ -169,26 +145,18 @@ class OrganizationNameNormalizerTest {
                                 " « \" ' ” "
                         )
         )
-                .isInstanceOf(
-                        BadRequestException.class
-                )
-                .hasMessageContaining(
-                        "подтверждения"
-                );
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("подтверждения");
     }
 
     @Test
     void rejectsCanonicalNameLongerThan255Characters() {
-        String value =
-                "a".repeat(256);
-
         assertThatThrownBy(() ->
-                OrganizationNameNormalizer
-                        .canonicalize(value)
-        )
-                .isInstanceOf(
-                        BadRequestException.class
+                OrganizationNameNormalizer.canonicalize(
+                        "a".repeat(256)
                 )
+        )
+                .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("255");
     }
 }

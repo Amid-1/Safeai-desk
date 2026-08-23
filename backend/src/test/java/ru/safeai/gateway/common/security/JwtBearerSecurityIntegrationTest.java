@@ -7,17 +7,22 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -46,14 +51,30 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Проверяет полный Bearer authentication pipeline.
+ * Проверяет полный Bearer authentication pipeline:
  *
- * <p>RS256 signed JWT -> JwtDecoder -> SafeAiJwtAuthenticationConverter
- * -> Spring Security -> BearerAuthenticationEntryPoint -> JSON 401
- * + WWW-Authenticate: Bearer.</p>
+ * <pre>
+ * RS256 signed JWT
+ *      ->
+ * JwtDecoder
+ *      ->
+ * SafeAiJwtAuthenticationConverter
+ *      ->
+ * Spring Security Resource Server
+ *      ->
+ * BearerAuthenticationEntryPoint
+ *      ->
+ * JSON 401 + WWW-Authenticate: Bearer
+ * </pre>
  *
- * <p>Generic application 401 и Bearer 401 намеренно используют
- * разные AuthenticationEntryPoint.</p>
+ * <p>Generic application 401 и Bearer/resource-server 401 намеренно
+ * используют разные {@link org.springframework.security.web.AuthenticationEntryPoint}.</p>
+ *
+ * <p>Strict SafeAI identity validation выполняется
+ * {@link SafeAiJwtAuthenticationConverter}. На resource-server boundary
+ * {@link BadJwtException} переводится в
+ * {@link InvalidBearerTokenException}, как и в production
+ * SecurityConfig.</p>
  */
 @WebMvcTest(useDefaultFilters = false)
 @Import({
@@ -105,6 +126,9 @@ class JwtBearerSecurityIntegrationTest {
 
     private static final String ACTIVE_KEY_ID =
             "test-active-key";
+
+    private static final String INVALID_ACCESS_TOKEN_MESSAGE =
+            "Access token is invalid";
 
     private static final long TOKEN_VERSION =
             7L;
@@ -200,7 +224,7 @@ class JwtBearerSecurityIntegrationTest {
                 RestAccessDeniedHandler accessDeniedHandler
         ) {
 
-            return http
+            http
                     .csrf(
                             AbstractHttpConfigurer::disable
                     )
@@ -220,7 +244,10 @@ class JwtBearerSecurityIntegrationTest {
 
                     /*
                      * Generic application authentication failures.
-                     * Bearer challenge здесь намеренно не добавляется.
+                     *
+                     * Bearer challenge здесь намеренно не добавляется:
+                     * обычный application 401 не должен притворяться
+                     * OAuth2 Bearer response.
                      */
                     .exceptionHandling(exceptions ->
                             exceptions
@@ -233,7 +260,14 @@ class JwtBearerSecurityIntegrationTest {
                     )
 
                     /*
-                     * Ошибки именно Resource Server/Bearer flow.
+                     * Resource Server/Bearer authentication contour.
+                     *
+                     * SafeAiJwtAuthenticationConverter занимается только
+                     * strict SafeAI identity contract.
+                     *
+                     * Перевод BadJwtException ->
+                     * InvalidBearerTokenException выполняется именно
+                     * на resource-server boundary.
                      */
                     .oauth2ResourceServer(oauth2 ->
                             oauth2
@@ -249,12 +283,32 @@ class JwtBearerSecurityIntegrationTest {
                                                             jwtDecoder
                                                     )
                                                     .jwtAuthenticationConverter(
-                                                            converter
-                                                                    ::convertForResourceServer
+                                                            resourceServerJwtAuthenticationConverter(
+                                                                    converter
+                                                            )
                                                     )
                                     )
-                    )
-                    .build();
+                    );
+
+            return http.build();
+        }
+
+        private static Converter<Jwt, AbstractAuthenticationToken>
+        resourceServerJwtAuthenticationConverter(
+                SafeAiJwtAuthenticationConverter converter
+        ) {
+            return jwt -> {
+                try {
+                    return converter.convert(
+                            jwt
+                    );
+                } catch (BadJwtException exception) {
+                    throw new InvalidBearerTokenException(
+                            INVALID_ACCESS_TOKEN_MESSAGE,
+                            exception
+                    );
+                }
+            };
         }
     }
 
@@ -278,7 +332,9 @@ class JwtBearerSecurityIntegrationTest {
                         status().isOk()
                 )
                 .andExpect(
-                        content().string("ok")
+                        content().string(
+                                "ok"
+                        )
                 );
     }
 
@@ -387,7 +443,9 @@ class JwtBearerSecurityIntegrationTest {
         TokenClaims claims =
                 validClaims()
                         .withRoles(
-                                List.of("ROOT")
+                                List.of(
+                                        "ROOT"
+                                )
                         );
 
         assertRejected(
@@ -487,7 +545,9 @@ class JwtBearerSecurityIntegrationTest {
                         get(ENDPOINT)
                                 .header(
                                         HttpHeaders.AUTHORIZATION,
-                                        bearer(rawToken)
+                                        bearer(
+                                                rawToken
+                                        )
                                 )
                 )
                 .andExpect(
@@ -513,11 +573,15 @@ class JwtBearerSecurityIntegrationTest {
                 )
                 .andExpect(
                         jsonPath("$.status")
-                                .value(401)
+                                .value(
+                                        401
+                                )
                 )
                 .andExpect(
                         jsonPath("$.error")
-                                .value("UNAUTHORIZED")
+                                .value(
+                                        "UNAUTHORIZED"
+                                )
                 )
                 .andExpect(
                         jsonPath("$.message")
@@ -527,7 +591,9 @@ class JwtBearerSecurityIntegrationTest {
                 )
                 .andExpect(
                         jsonPath("$.path")
-                                .value(ENDPOINT)
+                                .value(
+                                        ENDPOINT
+                                )
                 )
                 .andExpect(
                         jsonPath("$.fieldErrors")
@@ -538,15 +604,23 @@ class JwtBearerSecurityIntegrationTest {
     private TokenClaims validClaims() {
         return new TokenClaims(
                 ISSUER,
-                List.of(AUDIENCE),
-                NOW.minusSeconds(5),
-                NOW.plusSeconds(300),
+                List.of(
+                        AUDIENCE
+                ),
+                NOW.minusSeconds(
+                        5L
+                ),
+                NOW.plusSeconds(
+                        300L
+                ),
                 USER_ID.toString(),
                 USER_ID,
                 ORGANIZATION_ID,
                 TOKEN_VERSION,
                 ORGANIZATION_AUTH_VERSION,
-                List.of("USER")
+                List.of(
+                        "USER"
+                )
         );
     }
 
@@ -564,10 +638,12 @@ class JwtBearerSecurityIntegrationTest {
                         );
 
         if (type != null) {
-            headerBuilder.type(type);
+            headerBuilder.type(
+                    type
+            );
         }
 
-        JwtClaimsSet.Builder builder =
+        JwtClaimsSet.Builder claimsBuilder =
                 JwtClaimsSet.builder()
                         .issuer(
                                 claims.issuer()
@@ -610,7 +686,7 @@ class JwtBearerSecurityIntegrationTest {
         if (claims.organizationAuthVersion()
                 != null) {
 
-            builder.claim(
+            claimsBuilder.claim(
                     "organizationAuthVersion",
                     claims.organizationAuthVersion()
             );
@@ -620,7 +696,7 @@ class JwtBearerSecurityIntegrationTest {
                 .encode(
                         JwtEncoderParameters.from(
                                 headerBuilder.build(),
-                                builder.build()
+                                claimsBuilder.build()
                         )
                 )
                 .getTokenValue();
@@ -639,7 +715,9 @@ class JwtBearerSecurityIntegrationTest {
                             "RSA"
                     );
 
-            generator.initialize(2048);
+            generator.initialize(
+                    2048
+            );
 
             return generator.generateKeyPair();
         } catch (GeneralSecurityException exception) {

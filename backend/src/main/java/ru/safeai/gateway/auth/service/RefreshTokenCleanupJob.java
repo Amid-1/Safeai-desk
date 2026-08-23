@@ -103,18 +103,18 @@ public class RefreshTokenCleanupJob {
             committedBatches++;
 
             /*
-             * При одном worker это обычно означает конец очереди.
+             * Нельзя завершать run только потому, что deleted < batchSize.
              *
-             * При нескольких workers часть eligible rows может быть
-             * временно пропущена из-за SKIP LOCKED. Такие строки
-             * завершит другой worker либо следующий scheduled run.
+             * После FK-safe root-only delete следующий элемент той же
+             * replacement chain становится eligible только ПОСЛЕ commit
+             * текущего REQUIRES_NEW batch. Поэтому продолжаем до:
+             *
+             * 1) batch с deleted == 0; либо
+             * 2) maxBatchesPerRun.
+             *
+             * При нескольких workers SKIP LOCKED по-прежнему позволяет
+             * безопасно делить независимые roots между instances.
              */
-            if (deleted < batchSize) {
-                return CleanupResult.completed(
-                        totalDeleted,
-                        committedBatches
-                );
-            }
         }
 
         return CleanupResult.limitReached(

@@ -18,6 +18,7 @@ import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.exception.UserVersionConflictException;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
@@ -184,6 +185,60 @@ class UserServiceTest {
                 roleRepository,
                 passwordEncoder,
                 auditEventService
+        );
+    }
+
+    @Test
+    void createRejectsWeakPasswordBeforeRepositoryAccess() {
+        assertThatThrownBy(() -> userService.create(
+                new CreateUserRequest(
+                        ORGANIZATION_A_ID,
+                        "weak@test.com",
+                        "weak",
+                        "Weak",
+                        Set.of("USER")
+                ),
+                adminPrincipal()
+        ))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Пароль");
+
+        verifyNoInteractions(
+                userRepository,
+                roleRepository,
+                passwordEncoder,
+                auditEventService,
+                eventPublisher,
+                userSessionRevocationService,
+                entityManager
+        );
+    }
+
+    @Test
+    void createRejectsExistingEmailBeforeBcryptAndLock() {
+        when(userRepository.existsByEmail("existing@test.com"))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> userService.create(
+                new CreateUserRequest(
+                        ORGANIZATION_A_ID,
+                        " Existing@Test.com ",
+                        VALID_PASSWORD,
+                        "Existing",
+                        Set.of("USER")
+                ),
+                adminPrincipal()
+        ))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("уже существует");
+
+        verify(passwordEncoder, never()).encode(any());
+        verifyNoInteractions(
+                roleRepository,
+                auditEventService,
+                eventPublisher,
+                userSessionRevocationService,
+                entityManager
         );
     }
 
@@ -403,6 +458,62 @@ class UserServiceTest {
     }
 
     @Test
+    void staleExpectedVersionRejectsMutationBeforeSave() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "USER"
+        );
+        target.setVersion(3L);
+        stubMutationAsAdmin(target);
+
+        assertThatThrownBy(() -> userService.updateUser(
+                USER_ID,
+                new UpdateUserRequest(
+                        "new@test.com",
+                        "New Name",
+                        2L
+                ),
+                adminPrincipal()
+        ))
+                .isInstanceOf(UserVersionConflictException.class);
+
+        verify(userRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(userSessionRevocationService);
+    }
+
+    @Test
+    void unchangedUserUpdateHasNoPersistenceSecurityOrAuditSideEffects() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "USER"
+        );
+        stubMutationAsAdmin(target);
+
+        UserResponse response = userService.updateUser(
+                USER_ID,
+                new UpdateUserRequest(
+                        target.getEmail(),
+                        target.getFullName(),
+                        0L
+                ),
+                adminPrincipal()
+        );
+
+        assertThat(response.version()).isZero();
+        assertThat(target.getTokenVersion()).isZero();
+        verify(userRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(
+                userSessionRevocationService,
+                eventPublisher,
+                auditEventService
+        );
+    }
+
+    @Test
     void emailChangeIncrementsTokenVersionAndRevokesSessions() {
         UserEntity target = user(
                 USER_ID,
@@ -511,6 +622,32 @@ class UserServiceTest {
         verify(userSessionRevocationService).revokeAllForUser(
                 USER_ID,
                 RefreshTokenRevocationReason.USER_DISABLED
+        );
+    }
+
+    @Test
+    void unchangedEnabledStateHasNoSecurityOrAuditSideEffects() {
+        UserEntity target = user(
+                USER_ID,
+                organization(ORGANIZATION_A_ID, true),
+                true,
+                "USER"
+        );
+        stubMutationAsAdmin(target);
+
+        UserResponse response = userService.updateEnabled(
+                USER_ID,
+                new UpdateUserEnabledRequest(true, 0L),
+                adminPrincipal()
+        );
+
+        assertThat(response.enabled()).isTrue();
+        assertThat(target.getTokenVersion()).isZero();
+        verify(userRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(
+                userSessionRevocationService,
+                eventPublisher,
+                auditEventService
         );
     }
 

@@ -78,6 +78,26 @@ public class RateLimitKeyFactory {
     }
 
     /**
+     * Coarse refresh limiter использует отдельный namespace и HMAC domain,
+     * поэтому не интерферирует с login IP-limit.
+     *
+     * <p>Постоянный Redis Cluster hash-tag здесь намеренно НЕ используется:
+     * refresh increment является single-key operation и должен равномерно
+     * распределяться по cluster slots, а не создавать один hot slot.</p>
+     */
+    public String refreshIp(
+            String normalizedIp
+    ) {
+        return withPrefix(
+                "rate-limit:refresh:ip:"
+                        + hmac(
+                                "refresh-ip:",
+                                requireIdentity(normalizedIp)
+                        )
+        );
+    }
+
+    /**
      * User и organization AI keys получают одинаковый
      * organization-scoped hash tag и попадают в один cluster slot.
      */

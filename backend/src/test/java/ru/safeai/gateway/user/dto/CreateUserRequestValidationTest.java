@@ -27,8 +27,8 @@ class CreateUserRequestValidationTest {
 
     @BeforeAll
     static void createValidator() {
-        validatorFactory = Validation
-                .buildDefaultValidatorFactory();
+        validatorFactory =
+                Validation.buildDefaultValidatorFactory();
         validator = validatorFactory.getValidator();
     }
 
@@ -39,56 +39,83 @@ class CreateUserRequestValidationTest {
 
     @Test
     void acceptsExactlyOneRole() {
-        CreateUserRequest request = requestWithRoles(
-                Set.of("USER")
-        );
-
-        assertThat(validator.validate(request))
-                .isEmpty();
+        assertThat(
+                validator.validate(
+                        requestWithRoles(
+                                Set.of("USER")
+                        )
+                )
+        ).isEmpty();
     }
 
     @Test
     void rejectsNullRoles() {
-        CreateUserRequest request = requestWithRoles(null);
-
-        assertThat(validator.validate(request))
-                .anySatisfy(violation ->
-                        assertThat(
-                                violation
-                                        .getPropertyPath()
-                                        .toString()
-                        ).isEqualTo("roles")
-                );
+        assertRolesViolation(
+                requestWithRoles(null)
+        );
     }
 
     @Test
     void rejectsEmptyRoles() {
-        CreateUserRequest request = requestWithRoles(
-                Set.of()
+        assertRolesViolation(
+                requestWithRoles(Set.of())
         );
-
-        assertThat(validator.validate(request))
-                .anySatisfy(violation ->
-                        assertThat(
-                                violation
-                                        .getPropertyPath()
-                                        .toString()
-                        ).isEqualTo("roles")
-                );
     }
 
     @Test
     void rejectsMoreThanOneRole() {
-        CreateUserRequest request = requestWithRoles(
-                Set.of("USER", "ADMIN")
+        assertRolesViolation(
+                requestWithRoles(
+                        Set.of("USER", "ADMIN")
+                )
         );
+    }
+
+    @Test
+    void rejectsWeakPassword() {
+        CreateUserRequest request =
+                new CreateUserRequest(
+                        ORGANIZATION_ID,
+                        "user@example.com",
+                        "weak",
+                        "Test User",
+                        Set.of("USER")
+                );
 
         assertThat(validator.validate(request))
                 .anySatisfy(violation ->
                         assertThat(
-                                violation
-                                        .getPropertyPath()
-                                        .toString()
+                                violation.getPropertyPath().toString()
+                        ).isEqualTo("password")
+                );
+    }
+
+    @Test
+    void rejectsInvalidEmail() {
+        CreateUserRequest request =
+                new CreateUserRequest(
+                        ORGANIZATION_ID,
+                        "not-an-email",
+                        VALID_PASSWORD,
+                        "Test User",
+                        Set.of("USER")
+                );
+
+        assertThat(validator.validate(request))
+                .anySatisfy(violation ->
+                        assertThat(
+                                violation.getPropertyPath().toString()
+                        ).isEqualTo("email")
+                );
+    }
+
+    private void assertRolesViolation(
+            CreateUserRequest request
+    ) {
+        assertThat(validator.validate(request))
+                .anySatisfy(violation ->
+                        assertThat(
+                                violation.getPropertyPath().toString()
                         ).isEqualTo("roles")
                 );
     }

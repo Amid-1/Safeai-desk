@@ -48,7 +48,8 @@ class UserStatusCachePropertiesTest {
                         true,
                         Duration.ZERO,
                         "safeai:test:user-status"
-                ))
+                )
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("положительным");
 
@@ -57,7 +58,8 @@ class UserStatusCachePropertiesTest {
                         true,
                         Duration.ofSeconds(-1),
                         "safeai:test:user-status"
-                ))
+                )
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("положительным");
 
@@ -66,7 +68,8 @@ class UserStatusCachePropertiesTest {
                         true,
                         Duration.ofMinutes(6),
                         "safeai:test:user-status"
-                ))
+                )
+        )
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("5 минут");
     }
