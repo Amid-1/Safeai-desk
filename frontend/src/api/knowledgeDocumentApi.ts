@@ -33,6 +33,12 @@ export type KnowledgeDocument = {
     updatedAt: string
 }
 
+export type KnowledgeDocumentMutationResult =
+    Omit<
+        KnowledgeDocument,
+        'createdAt' | 'updatedAt'
+    >
+
 export type KnowledgeHealth = {
     knowledgeBaseId: string
     state: KnowledgeHealthState
@@ -67,29 +73,88 @@ export async function getKnowledgeDocuments(kb: string, page = 0, size = 50, sig
     return parsePageResponse(value, parseKnowledgeDocument)
 }
 
-export async function uploadKnowledgeDocument(kb: string, file: File, name: string): Promise<KnowledgeDocument> {
-    const form = new FormData();
-    form.append('file', file);
-    if (name.trim()) form.append('name', name.trim())
-    return parseKnowledgeDocument(await apiRequest<unknown>(path(kb), {
-        method: 'POST',
-        body: form,
-        timeoutMs: API_TIMEOUTS.default
-    }), 'document')
+export async function uploadKnowledgeDocument(
+    kb: string,
+    file: File,
+    name: string,
+): Promise<KnowledgeDocumentMutationResult> {
+    const form = new FormData()
+
+    form.append('file', file)
+
+    if (name.trim()) {
+        form.append(
+            'name',
+            name.trim(),
+        )
+    }
+
+    const value = await apiRequest<unknown>(
+        path(kb),
+        {
+            method: 'POST',
+            body: form,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    /*
+     * POST — command response. Backend может вернуть документ сразу после
+     * транзакции, когда DB-generated timestamps ещё не вошли в JSON.
+     * Для подтверждения успешной mutation timestamps не нужны: canonical
+     * read-model сразу перечитывается через getKnowledgeDocuments().
+     */
+    return parseKnowledgeDocumentMutationResult(
+        value,
+        'document',
+    )
 }
 
-export async function uploadKnowledgeDocumentVersion(kb: string, documentId: string, file: File): Promise<KnowledgeDocument> {
-    const form = new FormData();
+export async function uploadKnowledgeDocumentVersion(
+    kb: string,
+    documentId: string,
+    file: File,
+): Promise<KnowledgeDocumentMutationResult> {
+    const form = new FormData()
+
     form.append('file', file)
-    return parseKnowledgeDocument(await apiRequest<unknown>(`${path(kb)}/${uuidPathSegment(documentId)}/versions`, {
-        method: 'POST',
-        body: form,
-        timeoutMs: API_TIMEOUTS.default
-    }), 'document')
+
+    const value = await apiRequest<unknown>(
+        `${path(kb)}/${uuidPathSegment(documentId)}/versions`,
+        {
+            method: 'POST',
+            body: form,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseKnowledgeDocumentMutationResult(
+        value,
+        'document',
+    )
 }
 
 export function knowledgeDocumentDownloadUrl(kb: string, documentId: string): string {
     return `${path(kb)}/${uuidPathSegment(documentId)}/download`
+}
+
+export async function fetchKnowledgeDocumentBlob(
+    kb: string,
+    documentId: string,
+    signal?: AbortSignal,
+): Promise<Blob> {
+    return apiRequest<Blob>(
+        knowledgeDocumentDownloadUrl(
+            kb,
+            documentId,
+        ),
+        {
+            method: 'GET',
+            signal,
+            timeoutMs: API_TIMEOUTS.download,
+            responseType: 'blob',
+        },
+    )
 }
 
 export async function getKnowledgeHealth(
@@ -194,24 +259,139 @@ export async function reindexKnowledgeDocument(
     }
 }
 
-export function parseKnowledgeDocument(value: unknown, field = 'document'): KnowledgeDocument {
-    const r = expectRecord(value, field);
-    const nullableUuid = (v: unknown, n: string) => v == null ? null : expectUuid(v, n);
-    const nullableInt = (v: unknown, n: string) => v == null ? null : expectNonNegativeInteger(v, n);
-    const nullableStatus = (v: unknown, n: string) => v == null ? null : expectEnum(v, n, STATUSES)
+function parseKnowledgeDocumentCore(
+    value: unknown,
+    field: string,
+): KnowledgeDocumentMutationResult {
+    const record = expectRecord(
+        value,
+        field,
+    )
+
+    const nullableUuid = (
+        nestedValue: unknown,
+        nestedField: string,
+    ) => nestedValue == null
+        ? null
+        : expectUuid(
+            nestedValue,
+            nestedField,
+        )
+
+    const nullableInt = (
+        nestedValue: unknown,
+        nestedField: string,
+    ) => nestedValue == null
+        ? null
+        : expectNonNegativeInteger(
+            nestedValue,
+            nestedField,
+        )
+
+    const nullableStatus = (
+        nestedValue: unknown,
+        nestedField: string,
+    ) => nestedValue == null
+        ? null
+        : expectEnum(
+            nestedValue,
+            nestedField,
+            STATUSES,
+        )
+
     return {
-        id: expectUuid(r.id, `${field}.id`),
-        knowledgeBaseId: expectUuid(r.knowledgeBaseId, `${field}.knowledgeBaseId`),
-        name: expectString(r.name, `${field}.name`, {maxLength: 255}),
-        enabled: expectBoolean(r.enabled, `${field}.enabled`),
-        version: expectNonNegativeInteger(r.version, `${field}.version`),
-        currentVersionId: nullableUuid(r.currentVersionId, `${field}.currentVersionId`),
-        versionNumber: nullableInt(r.versionNumber, `${field}.versionNumber`),
-        originalFilename: expectNullableString(r.originalFilename, `${field}.originalFilename`, {maxLength: 255}),
-        mediaType: expectNullableString(r.mediaType, `${field}.mediaType`, {maxLength: 127}),
-        sizeBytes: expectNonNegativeInteger(r.sizeBytes, `${field}.sizeBytes`),
-        status: nullableStatus(r.status, `${field}.status`),
-        createdAt: expectInstant(r.createdAt, `${field}.createdAt`),
-        updatedAt: expectInstant(r.updatedAt, `${field}.updatedAt`)
+        id: expectUuid(
+            record.id,
+            `${field}.id`,
+        ),
+        knowledgeBaseId: expectUuid(
+            record.knowledgeBaseId,
+            `${field}.knowledgeBaseId`,
+        ),
+        name: expectString(
+            record.name,
+            `${field}.name`,
+            {
+                maxLength: 255,
+            },
+        ),
+        enabled: expectBoolean(
+            record.enabled,
+            `${field}.enabled`,
+        ),
+        version: expectNonNegativeInteger(
+            record.version,
+            `${field}.version`,
+        ),
+        currentVersionId: nullableUuid(
+            record.currentVersionId,
+            `${field}.currentVersionId`,
+        ),
+        versionNumber: nullableInt(
+            record.versionNumber,
+            `${field}.versionNumber`,
+        ),
+        originalFilename:
+            expectNullableString(
+                record.originalFilename,
+                `${field}.originalFilename`,
+                {
+                    maxLength: 255,
+                },
+            ),
+        mediaType:
+            expectNullableString(
+                record.mediaType,
+                `${field}.mediaType`,
+                {
+                    maxLength: 127,
+                },
+            ),
+        sizeBytes: expectNonNegativeInteger(
+            record.sizeBytes,
+            `${field}.sizeBytes`,
+        ),
+        status: nullableStatus(
+            record.status,
+            `${field}.status`,
+        ),
+    }
+}
+
+export function parseKnowledgeDocumentMutationResult(
+    value: unknown,
+    field = 'document',
+): KnowledgeDocumentMutationResult {
+    return parseKnowledgeDocumentCore(
+        value,
+        field,
+    )
+}
+
+export function parseKnowledgeDocument(
+    value: unknown,
+    field = 'document',
+): KnowledgeDocument {
+    const core =
+        parseKnowledgeDocumentCore(
+            value,
+            field,
+        )
+
+    const record = expectRecord(
+        value,
+        field,
+    )
+
+    return {
+        ...core,
+        createdAt: expectInstant(
+            record.createdAt,
+            `${field}.createdAt`,
+        ),
+        updatedAt: expectInstant(
+            record.updatedAt,
+            `${field}.updatedAt`,
+        ),
     }
 }

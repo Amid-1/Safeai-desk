@@ -47,6 +47,10 @@ export class ApiError extends Error {
     }
 }
 
+export type ApiResponseType =
+    | 'json'
+    | 'blob'
+
 export type ApiRequestOptions = Omit<
     RequestInit,
     'body' | 'credentials' | 'mode'
@@ -55,6 +59,7 @@ export type ApiRequestOptions = Omit<
     body?: BodyInit | null
     skipRefresh?: boolean
     timeoutMs?: number
+    responseType?: ApiResponseType
 }
 
 export type UnauthorizedReason =
@@ -89,6 +94,7 @@ export const API_TIMEOUTS = {
     chat: 95_000,
 
     report: 30_000,
+    download: 120_000,
 } as const
 
 const RAW_API_BASE_PATH =
@@ -136,6 +142,8 @@ const PUBLIC_MESSAGE_ERROR_CODES = new Set([
 
 const MAX_ERROR_BODY_BYTES = 64 * 1024
 const MAX_SUCCESS_BODY_BYTES = 4 * 1024 * 1024
+const MAX_BINARY_RESPONSE_BYTES =
+    100 * 1024 * 1024
 
 let refreshPromise: Promise<RefreshResult> | null = null
 
@@ -398,6 +406,7 @@ async function apiRequestInternal<T>(
         body: suppliedBody,
         skipRefresh: _skipRefresh,
         timeoutMs: _timeoutMs,
+        responseType = 'json',
         ...requestInit
     } = options
 
@@ -541,6 +550,12 @@ async function apiRequestInternal<T>(
         }
 
         throw error
+    }
+
+    if (responseType === 'blob') {
+        return await parseSuccessBlob(
+            response,
+        ) as T
     }
 
     return parseSuccessBody<T>(response)
@@ -1106,6 +1121,68 @@ async function parseErrorBody(
     }
 }
 
+async function parseSuccessBlob(
+    response: Response,
+): Promise<Blob> {
+    if (
+        response.status === 204
+        || response.status === 205
+    ) {
+        return new Blob()
+    }
+
+    const contentLength = Number(
+        response.headers.get(
+            'Content-Length',
+        ),
+    )
+
+    if (
+        Number.isFinite(contentLength)
+        && contentLength
+            > MAX_BINARY_RESPONSE_BYTES
+    ) {
+        throw new ApiError(
+            'Файл превышает допустимый размер ответа',
+            {
+                status: response.status,
+                error: 'RESPONSE_TOO_LARGE',
+                message:
+                    'Файл превышает допустимый размер ответа',
+                requestId:
+                    response.headers.get(
+                        REQUEST_ID_HEADER_NAME,
+                    ) ?? undefined,
+            },
+            response.status,
+        )
+    }
+
+    const blob = await response.blob()
+
+    if (
+        blob.size
+        > MAX_BINARY_RESPONSE_BYTES
+    ) {
+        throw new ApiError(
+            'Файл превышает допустимый размер ответа',
+            {
+                status: response.status,
+                error: 'RESPONSE_TOO_LARGE',
+                message:
+                    'Файл превышает допустимый размер ответа',
+                requestId:
+                    response.headers.get(
+                        REQUEST_ID_HEADER_NAME,
+                    ) ?? undefined,
+            },
+            response.status,
+        )
+    }
+
+    return blob
+}
+
 async function parseSuccessBody<T>(
     response: Response,
 ): Promise<T> {
@@ -1285,7 +1362,6 @@ function isAuthEndpoint(path: string): boolean {
         || requestPath === '/api/auth/refresh'
         || requestPath === '/api/auth/logout'
         || requestPath === '/api/auth/csrf'
-        || requestPath === '/api/auth/me'
 }
 
 function createRequestId(): string {

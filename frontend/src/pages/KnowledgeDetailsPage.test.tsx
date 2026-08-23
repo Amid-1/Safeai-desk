@@ -26,6 +26,7 @@ import type {
     KnowledgeBase,
 } from '../api/knowledgeApi'
 import {
+    fetchKnowledgeDocumentBlob,
     getKnowledgeDocuments,
     getKnowledgeHealth,
     reindexKnowledgeDocument,
@@ -58,6 +59,8 @@ vi.mock(
 
         return {
             ...actual,
+            fetchKnowledgeDocumentBlob:
+                vi.fn(),
             getKnowledgeDocuments:
                 vi.fn(),
             getKnowledgeHealth:
@@ -140,6 +143,11 @@ const getKnowledgeBaseMock =
 const getKnowledgeDocumentsMock =
     vi.mocked(
         getKnowledgeDocuments,
+    )
+
+const fetchKnowledgeDocumentBlobMock =
+    vi.mocked(
+        fetchKnowledgeDocumentBlob,
     )
 
 const getKnowledgeHealthMock = vi.mocked(getKnowledgeHealth)
@@ -255,6 +263,17 @@ describe(
                     totalPages: 1,
                 })
 
+            fetchKnowledgeDocumentBlobMock
+                .mockResolvedValue(
+                    new Blob(
+                        ['%PDF-1.7'],
+                        {
+                            type:
+                                'application/pdf',
+                        },
+                    ),
+                )
+
             getKnowledgeHealthMock.mockResolvedValue({
                 knowledgeBaseId: KNOWLEDGE_BASE_ID,
                 state: 'HEALTHY',
@@ -311,24 +330,99 @@ describe(
         )
 
         it(
-            'имя исходного файла является ссылкой на безопасный download endpoint',
+            'имя файла не ведёт напрямую на защищённый API endpoint',
             async () => {
                 renderPage()
 
-                const fileLink =
+                const openButton =
                     await screen.findByRole(
+                        'button',
+                        {
+                            name:
+                                `Открыть файл ${DOCUMENT.originalFilename} в новой вкладке`,
+                        },
+                    )
+
+                expect(openButton)
+                    .toBeInTheDocument()
+
+                expect(
+                    screen.queryByRole(
                         'link',
                         {
                             name:
                                 `Скачать файл ${DOCUMENT.originalFilename}`,
                         },
+                    ),
+                ).not.toBeInTheDocument()
+            },
+        )
+
+        it(
+            'скачивает документ через authenticated API client',
+            async () => {
+                const createObjectUrl =
+                    vi.fn(
+                        () =>
+                            'blob:safeai-test',
+                    )
+                const revokeObjectUrl =
+                    vi.fn()
+
+                Object.defineProperty(
+                    URL,
+                    'createObjectURL',
+                    {
+                        configurable: true,
+                        value:
+                            createObjectUrl,
+                    },
+                )
+
+                Object.defineProperty(
+                    URL,
+                    'revokeObjectURL',
+                    {
+                        configurable: true,
+                        value:
+                            revokeObjectUrl,
+                    },
+                )
+
+                const click =
+                    vi.spyOn(
+                        HTMLAnchorElement.prototype,
+                        'click',
+                    )
+                    .mockImplementation(
+                        () => undefined,
                     )
 
-                expect(fileLink)
-                    .toHaveAttribute(
-                        'href',
-                        `/api/knowledge-bases/${KNOWLEDGE_BASE_ID}/documents/${DOCUMENT_ID}/download`,
+                renderPage()
+
+                fireEvent.click(
+                    await screen.findByRole(
+                        'button',
+                        {
+                            name:
+                                `Скачать ${DOCUMENT.originalFilename}`,
+                        },
+                    ),
+                )
+
+                await waitFor(() => {
+                    expect(
+                        fetchKnowledgeDocumentBlobMock,
+                    ).toHaveBeenCalledWith(
+                        KNOWLEDGE_BASE_ID,
+                        DOCUMENT_ID,
                     )
+                })
+
+                expect(createObjectUrl)
+                    .toHaveBeenCalledTimes(1)
+                expect(click)
+                    .toHaveBeenCalledTimes(1)
             },
         )
 
@@ -385,6 +479,92 @@ describe(
                 expect(
                     await screen.findByText(
                         'Формируются фрагменты',
+                    ),
+                ).toBeInTheDocument()
+            },
+        )
+
+        it(
+            'не показывает ложную ошибку загрузки если POST успешен, а последующий refresh списка упал',
+            async () => {
+                const createdDocument:
+                    KnowledgeDocument = {
+                    ...DOCUMENT,
+                    id:
+                        'd72a991f-4a60-4eb2-894e-7cf13126f80a',
+                    name:
+                        'Повтор документа',
+                    originalFilename:
+                        'document.txt',
+                    mediaType:
+                        'text/plain',
+                    status:
+                        'PENDING',
+                }
+
+                uploadKnowledgeDocumentMock
+                    .mockResolvedValue(
+                        createdDocument,
+                    )
+
+                /*
+                 * Первый вызов нужен начальному render.
+                 * Второй вызывается уже после успешного POST и имитирует
+                 * transient/contract failure именно refresh-запроса.
+                 */
+                getKnowledgeDocumentsMock
+                    .mockResolvedValueOnce({
+                        content: [
+                            DOCUMENT,
+                        ],
+                        page: 0,
+                        size: 50,
+                        totalElements: 1,
+                        totalPages: 1,
+                    })
+                    .mockRejectedValueOnce(
+                        new Error(
+                            'temporary refresh failure',
+                        ),
+                    )
+
+                renderPage()
+
+                await screen.findByRole(
+                    'heading',
+                    {
+                        name:
+                            'Загруженные документы',
+                    },
+                )
+
+                await openUploadAndSelectFile()
+
+                await waitFor(() => {
+                    expect(
+                        uploadKnowledgeDocumentMock,
+                    ).toHaveBeenCalledTimes(
+                        1,
+                    )
+                })
+
+                await waitFor(() => {
+                    expect(
+                        screen.queryByText(
+                            'Загрузка документа',
+                        ),
+                    ).not.toBeInTheDocument()
+                })
+
+                expect(
+                    screen.queryByText(
+                        'Не удалось загрузить файл.',
+                    ),
+                ).not.toBeInTheDocument()
+
+                expect(
+                    await screen.findByText(
+                        'Документ загружен, но не удалось обновить список документов.',
                     ),
                 ).toBeInTheDocument()
             },

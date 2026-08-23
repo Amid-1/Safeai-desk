@@ -15,9 +15,9 @@ import type {
     KnowledgeBase,
 } from '../api/knowledgeApi'
 import {
+    fetchKnowledgeDocumentBlob,
     getKnowledgeDocuments,
     getKnowledgeHealth,
-    knowledgeDocumentDownloadUrl,
     reindexKnowledgeDocument,
     uploadKnowledgeDocument,
     uploadKnowledgeDocumentVersion,
@@ -139,6 +139,8 @@ function KnowledgeDetailsPage() {
 
     const [health, setHealth] = useState<KnowledgeHealth | null>(null)
     const [reindexingDocumentId, setReindexingDocumentId] = useState('')
+    const [openingDocumentId, setOpeningDocumentId] = useState('')
+    const [downloadingDocumentId, setDownloadingDocumentId] = useState('')
     const documentsSectionRef = useRef<HTMLElement | null>(null)
 
     const [
@@ -245,6 +247,54 @@ function KnowledgeDetailsPage() {
                 setDocumentsPage(response)
             },
             [knowledgeBaseId],
+        )
+
+    const refreshAfterSuccessfulUpload =
+        useCallback(
+            async (
+                targetPage: number,
+            ) => {
+                setError('')
+                setDocumentsError('')
+
+                const [
+                    overviewResult,
+                    documentsResult,
+                ] = await Promise.allSettled([
+                    loadOverview(),
+                    loadDocuments(
+                        targetPage,
+                    ),
+                ])
+
+                if (
+                    overviewResult.status
+                    === 'rejected'
+                ) {
+                    setError(
+                        getApiErrorMessage(
+                            overviewResult.reason,
+                            'Документ загружен, но не удалось обновить состояние базы знаний.',
+                        ),
+                    )
+                }
+
+                if (
+                    documentsResult.status
+                    === 'rejected'
+                ) {
+                    setDocumentsError(
+                        getApiErrorMessage(
+                            documentsResult.reason,
+                            'Документ загружен, но не удалось обновить список документов.',
+                        ),
+                    )
+                }
+            },
+            [
+                loadDocuments,
+                loadOverview,
+            ],
         )
 
     useEffect(() => {
@@ -442,9 +492,12 @@ function KnowledgeDetailsPage() {
         setUploadRequestId('')
         setRequestIdCopied(false)
 
+        const submittedTarget =
+            uploadTarget
+
         try {
             if (
-                uploadTarget === 'new'
+                submittedTarget === 'new'
             ) {
                 await uploadKnowledgeDocument(
                     knowledgeBaseId,
@@ -454,27 +507,10 @@ function KnowledgeDetailsPage() {
             } else {
                 await uploadKnowledgeDocumentVersion(
                     knowledgeBaseId,
-                    uploadTarget.id,
+                    submittedTarget.id,
                     uploadFile,
                 )
             }
-
-            const targetPage =
-                uploadTarget === 'new'
-                    ? 0
-                    : documentPage
-
-            if (uploadTarget === 'new') {
-                setDocumentPage(0)
-            }
-
-            await Promise.all([
-                loadOverview(),
-                loadDocuments(targetPage),
-            ])
-
-            setUploadTarget(null)
-            setUploadFile(null)
         } catch (uploadFailure) {
             const presentation =
                 getApiErrorPresentation(
@@ -492,9 +528,33 @@ function KnowledgeDetailsPage() {
             )
 
             setRequestIdCopied(false)
-        } finally {
             setBusy(false)
+            return
         }
+
+        const targetPage =
+            submittedTarget === 'new'
+                ? 0
+                : documentPage
+
+        if (submittedTarget === 'new') {
+            setDocumentPage(0)
+        }
+
+        /*
+         * POST уже успешно завершён. С этого момента ошибка повторного GET
+         * не должна превращаться в ложное "Не удалось загрузить файл".
+         * Закрываем modal как успешную mutation, а состояние страницы
+         * синхронизируем отдельно.
+         */
+        setUploadTarget(null)
+        setUploadFile(null)
+        setUploadName('')
+        setBusy(false)
+
+        await refreshAfterSuccessfulUpload(
+            targetPage,
+        )
     }
 
     async function copyUploadRequestId() {
@@ -510,6 +570,150 @@ function KnowledgeDetailsPage() {
             setRequestIdCopied(true)
         } catch {
             setRequestIdCopied(false)
+        }
+    }
+
+    async function openDocumentPreview(
+        knowledgeDocument: KnowledgeDocument,
+    ) {
+        if (
+            openingDocumentId
+            || downloadingDocumentId
+        ) {
+            return
+        }
+
+        const previewWindow =
+            window.open(
+                'about:blank',
+                '_blank',
+            )
+
+        if (!previewWindow) {
+            setError(
+                'Браузер заблокировал новую вкладку. Разрешите всплывающие окна для SafeAI Desk и повторите попытку.',
+            )
+            return
+        }
+
+        try {
+            previewWindow.opener = null
+            previewWindow.document.title =
+                'SafeAI Desk — загрузка документа'
+
+            if (previewWindow.document.body) {
+                previewWindow.document.body.textContent =
+                    'Загрузка документа...'
+            }
+        } catch {
+            // about:blank может быть недоступен отдельным browser implementation.
+        }
+
+        setOpeningDocumentId(
+            knowledgeDocument.id,
+        )
+        setError('')
+
+        try {
+            const blob =
+                await fetchKnowledgeDocumentBlob(
+                    knowledgeBaseId,
+                    knowledgeDocument.id,
+                )
+
+            const objectUrl =
+                URL.createObjectURL(blob)
+
+            previewWindow.location.replace(
+                objectUrl,
+            )
+
+            /*
+             * Не отзываем URL сразу: встроенному PDF viewer могут
+             * понадобиться дополнительные чтения при навигации по страницам.
+             */
+            window.setTimeout(
+                () => {
+                    URL.revokeObjectURL(
+                        objectUrl,
+                    )
+                },
+                60 * 60 * 1000,
+            )
+        } catch (previewFailure) {
+            previewWindow.close()
+
+            setError(
+                getApiErrorMessage(
+                    previewFailure,
+                    'Не удалось открыть документ.',
+                ),
+            )
+        } finally {
+            setOpeningDocumentId('')
+        }
+    }
+
+    async function downloadDocumentFile(
+        knowledgeDocument: KnowledgeDocument,
+    ) {
+        if (
+            downloadingDocumentId
+            || openingDocumentId
+        ) {
+            return
+        }
+
+        setDownloadingDocumentId(
+            knowledgeDocument.id,
+        )
+        setError('')
+
+        try {
+            const blob =
+                await fetchKnowledgeDocumentBlob(
+                    knowledgeBaseId,
+                    knowledgeDocument.id,
+                )
+
+            const objectUrl =
+                URL.createObjectURL(blob)
+
+            const link =
+                window.document.createElement(
+                    'a',
+                )
+
+            link.href = objectUrl
+            link.download =
+                knowledgeDocument.originalFilename
+                ?? knowledgeDocument.name
+            link.rel = 'noopener'
+
+            window.document.body.appendChild(
+                link,
+            )
+
+            link.click()
+            link.remove()
+
+            window.setTimeout(
+                () => {
+                    URL.revokeObjectURL(
+                        objectUrl,
+                    )
+                },
+                1_000,
+            )
+        } catch (downloadFailure) {
+            setError(
+                getApiErrorMessage(
+                    downloadFailure,
+                    'Не удалось скачать документ.',
+                ),
+            )
+        } finally {
+            setDownloadingDocumentId('')
         }
     }
 
@@ -819,12 +1023,6 @@ function KnowledgeDetailsPage() {
                                             document.status
                                             ?? 'PENDING'
 
-                                        const downloadUrl =
-                                            knowledgeDocumentDownloadUrl(
-                                                knowledgeBaseId,
-                                                document.id,
-                                            )
-
                                         const fileType =
                                             documentTypeLabel(
                                                 document,
@@ -855,16 +1053,27 @@ function KnowledgeDetailsPage() {
                                                         {
                                                             document.originalFilename
                                                                 ? (
-                                                                    <a
+                                                                    <button
+                                                                        type="button"
                                                                         className="knowledge-document-file-link"
-                                                                        href={downloadUrl}
-                                                                        aria-label={`Скачать файл ${document.originalFilename}`}
-                                                                        title="Скачать текущую версию файла"
+                                                                        disabled={
+                                                                            openingDocumentId === document.id
+                                                                            || downloadingDocumentId === document.id
+                                                                        }
+                                                                        aria-label={`Открыть файл ${document.originalFilename} в новой вкладке`}
+                                                                        title="Открыть текущую версию в новой вкладке"
+                                                                        onClick={() =>
+                                                                            void openDocumentPreview(
+                                                                                document,
+                                                                            )
+                                                                        }
                                                                     >
                                                                         {
-                                                                            document.originalFilename
+                                                                            openingDocumentId === document.id
+                                                                                ? 'Открываем…'
+                                                                                : document.originalFilename
                                                                         }
-                                                                    </a>
+                                                                    </button>
                                                                 )
                                                                 : (
                                                                     <span className="knowledge-document-file-missing">
@@ -923,13 +1132,26 @@ function KnowledgeDetailsPage() {
 
                                                 <td>
                                                     <div className="document-actions">
-                                                        <a
+                                                        <button
+                                                            type="button"
                                                             className="secondary-button document-download-button"
-                                                            href={downloadUrl}
+                                                            disabled={
+                                                                downloadingDocumentId === document.id
+                                                                || openingDocumentId === document.id
+                                                            }
                                                             aria-label={`Скачать ${document.originalFilename ?? document.name}`}
+                                                            onClick={() =>
+                                                                void downloadDocumentFile(
+                                                                    document,
+                                                                )
+                                                            }
                                                         >
-                                                            Скачать
-                                                        </a>
+                                                            {
+                                                                downloadingDocumentId === document.id
+                                                                    ? 'Скачиваем…'
+                                                                    : 'Скачать'
+                                                            }
+                                                        </button>
 
                                                         <button
                                                             type="button"
