@@ -16,6 +16,15 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 
+/**
+ * Executes usage reports with admission control local to this application
+ * instance.
+ *
+ * <p>{@code safeai.usage.max-concurrent-reports} is a per-JVM/per-replica
+ * limit, not a cluster-wide limit. With N replicas, the theoretical
+ * cluster-wide maximum is N multiplied by the configured value. A true
+ * cluster-wide ceiling requires distributed admission control.</p>
+ */
 @Component
 public class UsageReportExecutor {
 

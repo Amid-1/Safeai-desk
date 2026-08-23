@@ -2,8 +2,8 @@ package ru.safeai.gateway.usage.repository;
 
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import ru.safeai.gateway.usage.config.UsageJdbcClients;
 import org.springframework.stereotype.Repository;
+import ru.safeai.gateway.usage.config.UsageJdbcClients;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -47,7 +47,9 @@ public class UsageRollupStateRepository {
                 JOB_NAME
         );
 
-        return values.isEmpty() ? null : values.getFirst();
+        return values.isEmpty()
+                ? null
+                : values.getFirst();
     }
 
     public LocalDate findEarliestAssistantDate() {
@@ -110,12 +112,20 @@ public class UsageRollupStateRepository {
      * physical PostgreSQL connection. JdbcTemplate calls alone cannot provide
      * that guarantee outside a transaction, therefore this method keeps a
      * dedicated pooled connection for the complete rollup run.
+     *
+     * <p>If explicit unlock fails, the connection is aborted best-effort
+     * before it can be returned to the pool. This prevents a PostgreSQL
+     * session that may still own the advisory lock from being silently
+     * reused.</p>
      */
     public boolean executeWithAdvisoryLock(
             long lockKey,
             Runnable action
     ) {
-        Objects.requireNonNull(action, "action не должен быть null");
+        Objects.requireNonNull(
+                action,
+                "action не должен быть null"
+        );
 
         try (Connection connection = dataSource.getConnection()) {
             if (!tryLock(connection, lockKey)) {
@@ -141,8 +151,15 @@ public class UsageRollupStateRepository {
                                     exception
                             );
 
+                    abortConnectionAfterUnlockFailure(
+                            connection,
+                            unlockFailure
+                    );
+
                     if (actionFailure != null) {
-                        actionFailure.addSuppressed(unlockFailure);
+                        actionFailure.addSuppressed(
+                                unlockFailure
+                        );
                     } else {
                         throw unlockFailure;
                     }
@@ -161,12 +178,14 @@ public class UsageRollupStateRepository {
             Connection connection,
             long lockKey
     ) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                "select pg_try_advisory_lock(?)"
-        )) {
+        try (PreparedStatement statement =
+                     connection.prepareStatement(
+                             "select pg_try_advisory_lock(?)"
+                     )) {
             statement.setLong(1, lockKey);
 
-            try (ResultSet resultSet = statement.executeQuery()) {
+            try (ResultSet resultSet =
+                         statement.executeQuery()) {
                 if (!resultSet.next()) {
                     throw new SQLException(
                             "pg_try_advisory_lock не вернул строку"
@@ -182,19 +201,35 @@ public class UsageRollupStateRepository {
             Connection connection,
             long lockKey
     ) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                "select pg_advisory_unlock(?)"
-        )) {
+        try (PreparedStatement statement =
+                     connection.prepareStatement(
+                             "select pg_advisory_unlock(?)"
+                     )) {
             statement.setLong(1, lockKey);
 
-            try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next() || !resultSet.getBoolean(1)) {
+            try (ResultSet resultSet =
+                         statement.executeQuery()) {
+                if (!resultSet.next()
+                        || !resultSet.getBoolean(1)) {
                     throw new SQLException(
                             "PostgreSQL advisory lock usage rollup "
                                     + "не был освобождён"
                     );
                 }
             }
+        }
+    }
+
+    private void abortConnectionAfterUnlockFailure(
+            Connection connection,
+            DataAccessResourceFailureException unlockFailure
+    ) {
+        try {
+            connection.abort(Runnable::run);
+        } catch (SQLException | RuntimeException abortException) {
+            unlockFailure.addSuppressed(
+                    abortException
+            );
         }
     }
 }

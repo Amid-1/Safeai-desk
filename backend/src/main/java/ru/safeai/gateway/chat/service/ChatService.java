@@ -2,8 +2,8 @@ package ru.safeai.gateway.chat.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.data.domain.Slice;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
@@ -31,11 +31,11 @@ import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.common.security.SystemRole;
-import ru.safeai.gateway.user.entity.UserEntity;
-import ru.safeai.gateway.user.repository.UserRepository;
 import ru.safeai.gateway.knowledge.rag.KnowledgeRagService;
 import ru.safeai.gateway.knowledge.rag.RagCompletion;
 import ru.safeai.gateway.knowledge.rag.RagPreparation;
+import ru.safeai.gateway.user.entity.UserEntity;
+import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -100,7 +100,10 @@ public class ChatService {
             CreateChatRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
         requireCurrentUser(currentUser);
 
         UserEntity user = userRepository
@@ -108,29 +111,42 @@ public class ChatService {
                         currentUser.getId(),
                         currentUser.getOrganizationId()
                 )
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Пользователь не найден: " + currentUser.getId()
-                ));
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Пользователь не найден: "
+                                        + currentUser.getId()
+                        )
+                );
 
         Instant now = clock.instant();
-        ChatSessionEntity session = ChatSessionEntity.create(
-                user,
-                request.title(),
-                now
-        );
-        ChatSessionEntity saved = sessionRepository.saveAndFlush(session);
+
+        ChatSessionEntity session =
+                ChatSessionEntity.create(
+                        user,
+                        request.title(),
+                        now
+                );
+
+        ChatSessionEntity saved =
+                sessionRepository.saveAndFlush(
+                        session
+                );
 
         auditEventService.record(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.CHAT_CREATED,
                 Map.of(
-                        "chatId", saved.getId(),
-                        "titleLength", saved.getTitle().length(),
-                        "defaultTitle", request.title() == null
+                        "chatId",
+                        saved.getId(),
+                        "titleLength",
+                        saved.getTitle().length(),
+                        "defaultTitle",
+                        request.title() == null
                                 || request.title().isBlank()
                 )
         );
+
         return mapper.toChatResponse(saved);
     }
 
@@ -140,12 +156,18 @@ public class ChatService {
             Pageable pageable
     ) {
         requireCurrentUser(currentUser);
-        Objects.requireNonNull(pageable, "pageable не должен быть null");
-        return sessionRepository.findByUser_IdAndOrganization_IdAndArchivedAtIsNull(
-                currentUser.getId(),
-                currentUser.getOrganizationId(),
-                pageable
-        ).map(mapper::toChatResponse);
+        Objects.requireNonNull(
+                pageable,
+                "pageable не должен быть null"
+        );
+
+        return sessionRepository
+                .findByUser_IdAndOrganization_IdAndArchivedAtIsNull(
+                        currentUser.getId(),
+                        currentUser.getOrganizationId(),
+                        pageable
+                )
+                .map(mapper::toChatResponse);
     }
 
     @Transactional
@@ -153,19 +175,35 @@ public class ChatService {
             UUID chatId,
             SafeAiUserPrincipal currentUser
     ) {
-        ChatSessionEntity session = findOwnedSession(chatId, currentUser);
-        Instant archivedAt = clock.instant();
-        session.archive(currentUser.getId(), archivedAt);
-        sessionRepository.saveAndFlush(session);
+        ChatSessionEntity session =
+                findOwnedSession(
+                        chatId,
+                        currentUser
+                );
+
+        Instant archivedAt =
+                clock.instant();
+
+        session.archive(
+                currentUser.getId(),
+                archivedAt
+        );
+
+        sessionRepository.saveAndFlush(
+                session
+        );
 
         auditEventService.record(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.CHAT_ARCHIVED,
                 Map.of(
-                        "chatId", session.getId(),
-                        "archivedAt", archivedAt.toString(),
-                        "retentionMode", "AUDIT_PRESERVED"
+                        "chatId",
+                        session.getId(),
+                        "archivedAt",
+                        archivedAt.toString(),
+                        "retentionMode",
+                        "AUDIT_PRESERVED"
                 )
         );
     }
@@ -175,29 +213,39 @@ public class ChatService {
             UUID chatId,
             SafeAiUserPrincipal currentUser
     ) {
-        ChatSessionEntity session = findOwnedSession(chatId, currentUser);
-        List<MessageResponse> messages = messageRepository
-                .findVisibleBySessionId(
+        ChatSessionEntity session =
+                findOwnedSession(
                         chatId,
-                        org.springframework.data.domain.PageRequest.of(
-                                0,
-                                properties.detailsMessageLimit(),
-                                org.springframework.data.domain.Sort.by(
-                                        org.springframework.data.domain.Sort.Order.desc(
-                                                "createdAt"
-                                        ),
-                                        org.springframework.data.domain.Sort.Order.desc(
-                                                "id"
+                        currentUser
+                );
+
+        List<MessageResponse> messages =
+                messageRepository
+                        .findVisibleBySessionId(
+                                chatId,
+                                org.springframework.data.domain.PageRequest.of(
+                                        0,
+                                        properties.detailsMessageLimit(),
+                                        org.springframework.data.domain.Sort.by(
+                                                org.springframework.data.domain.Sort.Order.desc(
+                                                        "createdAt"
+                                                ),
+                                                org.springframework.data.domain.Sort.Order.desc(
+                                                        "id"
+                                                )
                                         )
                                 )
                         )
-                )
-                .getContent()
-                .reversed()
-                .stream()
-                .map(mapper::toMessageResponse)
-                .toList();
-        return mapper.toChatDetailsResponse(session, messages);
+                        .getContent()
+                        .reversed()
+                        .stream()
+                        .map(mapper::toMessageResponse)
+                        .toList();
+
+        return mapper.toChatDetailsResponse(
+                session,
+                messages
+        );
     }
 
     public SendMessageResponse sendMessage(
@@ -206,20 +254,30 @@ public class ChatService {
             SafeAiUserPrincipal currentUser
     ) {
         requireCurrentUser(currentUser);
-        Objects.requireNonNull(chatId, "chatId не должен быть null");
-        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(
+                chatId,
+                "chatId не должен быть null"
+        );
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
         Objects.requireNonNull(
                 request.clientRequestId(),
                 "clientRequestId не должен быть null"
         );
 
         // Foreign/nonexistent IDs never allocate Redis keys.
-        assertOwnedChatExists(chatId, currentUser);
+        assertOwnedChatExists(
+                chatId,
+                currentUser
+        );
 
         ChatLockService.ChatLock redisLock =
                 lockService.lock(chatId);
 
-        ChatTurnLeaseService.LeaseWatch leaseWatch = null;
+        ChatTurnLeaseService.LeaseWatch leaseWatch =
+                null;
 
         try {
             ChatProcessingContext context =
@@ -260,11 +318,18 @@ public class ChatService {
                 throw exception;
             }
 
-
             RagPreparation ragPreparation;
+
             try {
-                ragPreparation = ragService.prepare(context, currentUser);
-                context = context.withAiRequest(ragPreparation.aiRequest());
+                ragPreparation =
+                        ragService.prepare(
+                                context,
+                                currentUser
+                        );
+
+                context = context.withAiRequest(
+                        ragPreparation.aiRequest()
+                );
             } catch (RuntimeException exception) {
                 try {
                     finalizationService.failBeforeProviderCall(
@@ -274,8 +339,11 @@ public class ChatService {
                             currentUser
                     );
                 } catch (RuntimeException persistenceException) {
-                    exception.addSuppressed(persistenceException);
+                    exception.addSuppressed(
+                            persistenceException
+                    );
                 }
+
                 throw new ChatTurnFailedException(
                         context.chatId(),
                         context.turnId(),
@@ -285,8 +353,24 @@ public class ChatService {
                 );
             }
 
+            /*
+             * Knowledge ACL contract: snapshot authorization.
+             *
+             * Successful ragService.prepare(...) authorizes this turn and
+             * materializes the retrieval context that may be sent to the
+             * provider. A membership/ACL revoke after this point affects
+             * future turns, but does not cancel this already-authorized
+             * in-flight turn.
+             *
+             * Strict in-flight revocation is intentionally not guaranteed.
+             * If that policy is introduced later, perform a second Knowledge
+             * ACL authorization immediately before provider dispatch.
+             */
+
             // Durable marker is committed before any provider HTTP attempt.
-            finalizationService.markProviderCallStarted(context);
+            finalizationService.markProviderCallStarted(
+                    context
+            );
 
             /*
              * Avoid provider I/O if either watchdog has already detected
@@ -297,8 +381,12 @@ public class ChatService {
              * the correctness boundary for the residual race.
              */
             try {
-                lockService.ensureValid(redisLock);
-                leaseService.ensureValid(leaseWatch);
+                lockService.ensureValid(
+                        redisLock
+                );
+                leaseService.ensureValid(
+                        leaseWatch
+                );
             } catch (ChatLockUnavailableException
                      | ChatStaleProcessorException exception) {
                 markAmbiguousQuietly(
@@ -319,20 +407,67 @@ public class ChatService {
                 );
             }
 
-            AiChatResponse response =
+            AiChatResponse providerResponse =
                     invokeProvider(
                             context,
                             currentUser
                     );
-            RagCompletion ragCompletion = ragService.complete(
-                    ragPreparation,
-                    response
-            );
-            response = ragCompletion.response();
+
+            RagCompletion ragCompletion;
+            AiChatResponse response;
 
             try {
-                lockService.ensureValid(redisLock);
-                leaseService.ensureValid(leaseWatch);
+                ragCompletion =
+                        Objects.requireNonNull(
+                                ragService.complete(
+                                        ragPreparation,
+                                        providerResponse
+                                ),
+                                "ragCompletion не должен быть null"
+                        );
+
+                response =
+                        Objects.requireNonNull(
+                                ragCompletion.response(),
+                                "ragCompletion.response "
+                                        + "не должен быть null"
+                        );
+            } catch (RuntimeException exception) {
+                /*
+                 * Provider already returned a response, therefore external
+                 * side effects (including billing) may already have happened.
+                 * Any failure in local post-provider RAG processing is
+                 * conservatively classified as AMBIGUOUS immediately.
+                 *
+                 * The whole completion boundary is fenced here, including
+                 * invalid/null completion results, so no post-provider local
+                 * failure can leave the turn synchronously in PROCESSING.
+                 */
+                markAmbiguousQuietly(
+                        context,
+                        providerResponse.requestedModel(),
+                        providerResponse.providerRequestId(),
+                        exception.getClass().getSimpleName(),
+                        "RAG_COMPLETION_FAILED_AFTER_PROVIDER_RESPONSE",
+                        currentUser,
+                        exception
+                );
+
+                throw new AiOutcomeAmbiguousException(
+                        context.chatId(),
+                        context.turnId(),
+                        context.clientRequestId(),
+                        exception
+                );
+            }
+
+            try {
+                lockService.ensureValid(
+                        redisLock
+                );
+                leaseService.ensureValid(
+                        leaseWatch
+                );
             } catch (ChatLockUnavailableException
                      | ChatStaleProcessorException exception) {
                 markAmbiguousQuietly(
@@ -344,6 +479,7 @@ public class ChatService {
                         currentUser,
                         exception
                 );
+
                 throw new AiOutcomeAmbiguousException(
                         context.chatId(),
                         context.turnId(),
@@ -353,6 +489,7 @@ public class ChatService {
             }
 
             SendMessageResponse result;
+
             try {
                 result = finalizationService.succeedRag(
                         context,
@@ -368,16 +505,18 @@ public class ChatService {
                 );
             } catch (RuntimeException persistenceException) {
                 try {
-                    finalizationService.markAmbiguousAfterPersistenceFailure(
-                            context,
-                            response,
-                            currentUser
-                    );
+                    finalizationService
+                            .markAmbiguousAfterPersistenceFailure(
+                                    context,
+                                    response,
+                                    currentUser
+                            );
                 } catch (RuntimeException ambiguityPersistenceException) {
                     persistenceException.addSuppressed(
                             ambiguityPersistenceException
                     );
                 }
+
                 throw new AiOutcomeAmbiguousException(
                         context.chatId(),
                         context.turnId(),
@@ -392,10 +531,15 @@ public class ChatService {
                     context.clientRequestId(),
                     currentUser
             );
+
             return result;
         } finally {
-            leaseService.close(leaseWatch);
-            lockService.unlockQuietly(redisLock);
+            leaseService.close(
+                    leaseWatch
+            );
+            lockService.unlockQuietly(
+                    redisLock
+            );
         }
     }
 
@@ -405,11 +549,17 @@ public class ChatService {
             Pageable pageable,
             SafeAiUserPrincipal currentUser
     ) {
-        findOwnedSession(chatId, currentUser);
-        return messageRepository.findVisibleBySessionId(
+        findOwnedSession(
                 chatId,
-                pageable
-        ).map(mapper::toMessageResponse);
+                currentUser
+        );
+
+        return messageRepository
+                .findVisibleBySessionId(
+                        chatId,
+                        pageable
+                )
+                .map(mapper::toMessageResponse);
     }
 
     @Transactional(readOnly = true)
@@ -418,7 +568,11 @@ public class ChatService {
             UUID clientRequestId,
             SafeAiUserPrincipal currentUser
     ) {
-        findOwnedSession(chatId, currentUser);
+        findOwnedSession(
+                chatId,
+                currentUser
+        );
+
         return finalizationService.status(
                 chatId,
                 clientRequestId,
@@ -431,7 +585,9 @@ public class ChatService {
             SafeAiUserPrincipal currentUser
     ) {
         try {
-            return aiProvider.sendMessage(context.aiRequest());
+            return aiProvider.sendMessage(
+                    context.aiRequest()
+            );
         } catch (AiProviderException exception) {
             if (exception.isOutcomeAmbiguous()) {
                 markAmbiguousQuietly(
@@ -443,6 +599,7 @@ public class ChatService {
                         currentUser,
                         exception
                 );
+
                 throw new AiOutcomeAmbiguousException(
                         context.chatId(),
                         context.turnId(),
@@ -458,7 +615,10 @@ public class ChatService {
                         currentUser
                 );
             } catch (ChatStaleProcessorException staleProcessorException) {
-                exception.addSuppressed(staleProcessorException);
+                exception.addSuppressed(
+                        staleProcessorException
+                );
+
                 throw new AiOutcomeAmbiguousException(
                         context.chatId(),
                         context.turnId(),
@@ -466,13 +626,17 @@ public class ChatService {
                         exception
                 );
             } catch (RuntimeException finalizationException) {
-                exception.addSuppressed(finalizationException);
+                exception.addSuppressed(
+                        finalizationException
+                );
             }
+
             throw new ChatTurnFailedException(
                     context.chatId(),
                     context.turnId(),
                     context.clientRequestId(),
-                    "AI_PROVIDER_" + exception.getErrorType().name(),
+                    "AI_PROVIDER_"
+                            + exception.getErrorType().name(),
                     exception
             );
         } catch (RuntimeException unexpectedProviderException) {
@@ -481,11 +645,14 @@ public class ChatService {
                     context,
                     null,
                     null,
-                    unexpectedProviderException.getClass().getSimpleName(),
+                    unexpectedProviderException
+                            .getClass()
+                            .getSimpleName(),
                     "AI_PROVIDER_UNCLASSIFIED_OUTCOME",
                     currentUser,
                     unexpectedProviderException
             );
+
             throw new AiOutcomeAmbiguousException(
                     context.chatId(),
                     context.turnId(),
@@ -515,7 +682,10 @@ public class ChatService {
                     currentUser
             );
         } catch (RuntimeException exception) {
-            primary.addSuppressed(exception);
+            primary.addSuppressed(
+                    exception
+            );
+
             log.error(
                     "Failed to persist AMBIGUOUS chat turn: turnId={}",
                     context.turnId(),
@@ -528,12 +698,15 @@ public class ChatService {
             UUID chatId,
             SafeAiUserPrincipal currentUser
     ) {
-        if (!sessionRepository.existsByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
-                chatId,
-                currentUser.getId(),
-                currentUser.getOrganizationId()
-        )) {
-            throw new ResourceNotFoundException("Чат не найден: " + chatId);
+        if (!sessionRepository
+                .existsByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
+                        chatId,
+                        currentUser.getId(),
+                        currentUser.getOrganizationId()
+                )) {
+            throw new ResourceNotFoundException(
+                    "Чат не найден: " + chatId
+            );
         }
     }
 
@@ -541,15 +714,25 @@ public class ChatService {
             UUID chatId,
             SafeAiUserPrincipal currentUser
     ) {
-        requireCurrentUser(currentUser);
-        Objects.requireNonNull(chatId, "chatId не должен быть null");
-        return sessionRepository.findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
+        requireCurrentUser(
+                currentUser
+        );
+        Objects.requireNonNull(
                 chatId,
-                currentUser.getId(),
-                currentUser.getOrganizationId()
-        ).orElseThrow(() -> new ResourceNotFoundException(
-                "Чат не найден: " + chatId
-        ));
+                "chatId не должен быть null"
+        );
+
+        return sessionRepository
+                .findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
+                        chatId,
+                        currentUser.getId(),
+                        currentUser.getOrganizationId()
+                )
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Чат не найден: " + chatId
+                        )
+                );
     }
 
     private static void requireCurrentUser(
@@ -560,20 +743,32 @@ public class ChatService {
                 "currentUser не должен быть null"
         );
 
-        boolean superAdmin = currentUser.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch(SystemRole.SUPER_ADMIN.authority()::equals);
+        boolean superAdmin =
+                currentUser.getAuthorities()
+                        .stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .anyMatch(
+                                SystemRole.SUPER_ADMIN
+                                        .authority()::equals
+                        );
 
-        boolean tenantChatRole = currentUser.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .anyMatch(authority ->
-                        SystemRole.ADMIN.authority().equals(authority)
-                                || SystemRole.USER.authority().equals(authority)
-                );
+        boolean tenantChatRole =
+                currentUser.getAuthorities()
+                        .stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .anyMatch(authority ->
+                                SystemRole.ADMIN
+                                        .authority()
+                                        .equals(authority)
+                                        || SystemRole.USER
+                                        .authority()
+                                        .equals(authority)
+                        );
 
         if (superAdmin || !tenantChatRole) {
             throw new ForbiddenOperationException(
-                    "Платформенный администратор не имеет доступа к tenant-chat"
+                    "Платформенный администратор "
+                            + "не имеет доступа к tenant-chat"
             );
         }
     }

@@ -13,9 +13,11 @@ import java.util.UUID;
 public final class AuditEventQueryPolicy {
 
     /*
-     * Frontend allows 366 local calendar days. Because conversion to Instant
-     * crosses DST boundaries, the server permits up to 367 * 24h as a
-     * defensive transport-level ceiling.
+     * Frontend allows 366 local calendar days.
+     *
+     * Because conversion from a local calendar range to Instant may cross
+     * DST boundaries, the server permits up to 367 * 24h as a defensive
+     * transport-level ceiling.
      */
     private static final Duration MAX_QUERY_WINDOW =
             Duration.ofDays(367);
@@ -27,27 +29,27 @@ public final class AuditEventQueryPolicy {
             SafeAiUserPrincipal currentUser,
             AuditEventFilter filter
     ) {
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        requirePrincipal(currentUser);
+        requireAuditReader(currentUser);
+
+        boolean superAdmin =
+                isSuperAdmin(currentUser);
 
         AuditEventFilter effectiveFilter =
                 filter == null
                         ? emptyFilter()
                         : filter;
 
-        validateDateRange(effectiveFilter);
+        validateDateRange(
+                effectiveFilter
+        );
 
-        boolean superAdmin = currentUser
-                .authorityNames()
-                .contains(
-                        SystemRole.SUPER_ADMIN.authority()
-                );
-
-        UUID ownOrganizationId = superAdmin
-                ? null
-                : requireTenantOrganizationId(currentUser);
+        UUID ownOrganizationId =
+                superAdmin
+                        ? null
+                        : requireTenantOrganizationId(
+                                currentUser
+                        );
 
         validateOrganizationFilter(
                 effectiveFilter,
@@ -55,9 +57,10 @@ public final class AuditEventQueryPolicy {
                 ownOrganizationId
         );
 
-        UUID enforcedOrganizationId = superAdmin
-                ? effectiveFilter.organizationId()
-                : ownOrganizationId;
+        UUID enforcedOrganizationId =
+                superAdmin
+                        ? effectiveFilter.organizationId()
+                        : ownOrganizationId;
 
         return new QueryScope(
                 effectiveFilter,
@@ -65,10 +68,61 @@ public final class AuditEventQueryPolicy {
         );
     }
 
+    /**
+     * Application-layer authorization boundary.
+     *
+     * <p>HTTP audit endpoints уже защищены через {@code @PreAuthorize},
+     * однако policy дополнительно запрещает прямой service-level доступ
+     * пользователям без ADMIN/SUPER_ADMIN.</p>
+     */
+    private static void requireAuditReader(
+            SafeAiUserPrincipal currentUser
+    ) {
+        if (!isAdmin(currentUser)
+                && !isSuperAdmin(currentUser)) {
+
+            throw new ForbiddenOperationException(
+                    "Аудит доступен только ADMIN или SUPER_ADMIN"
+            );
+        }
+    }
+
+    private static boolean isAdmin(
+            SafeAiUserPrincipal currentUser
+    ) {
+        return hasAuthority(
+                currentUser,
+                SystemRole.ADMIN
+        );
+    }
+
+    private static boolean isSuperAdmin(
+            SafeAiUserPrincipal currentUser
+    ) {
+        return hasAuthority(
+                currentUser,
+                SystemRole.SUPER_ADMIN
+        );
+    }
+
+    private static boolean hasAuthority(
+            SafeAiUserPrincipal currentUser,
+            SystemRole role
+    ) {
+        return currentUser
+                .authorityNames()
+                .contains(
+                        role.authority()
+                );
+    }
+
     private static UUID requireTenantOrganizationId(
             SafeAiUserPrincipal currentUser
     ) {
-        return currentUser.getOrganizationId();
+        return Objects.requireNonNull(
+                currentUser.getOrganizationId(),
+                "organizationId текущего ADMIN не должен быть null"
+        );
     }
 
     private static void validateOrganizationFilter(
@@ -106,16 +160,28 @@ public final class AuditEventQueryPolicy {
             );
         }
 
-        Duration window = Duration.between(
-                filter.dateFrom(),
-                filter.dateTo()
-        );
+        Duration window =
+                Duration.between(
+                        filter.dateFrom(),
+                        filter.dateTo()
+                );
 
-        if (window.compareTo(MAX_QUERY_WINDOW) > 0) {
+        if (window.compareTo(
+                MAX_QUERY_WINDOW
+        ) > 0) {
             throw new BadRequestException(
                     "Период аудита не должен превышать 367 суток"
             );
         }
+    }
+
+    private static void requirePrincipal(
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(
+                currentUser,
+                "currentUser не должен быть null"
+        );
     }
 
     private static AuditEventFilter emptyFilter() {

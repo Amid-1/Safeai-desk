@@ -1,4 +1,3 @@
-
 package ru.safeai.gateway.audit.service;
 
 import lombok.RequiredArgsConstructor;
@@ -45,7 +44,7 @@ public class AuditDirectoryService {
             String query,
             int limit
     ) {
-        requirePrincipal(currentUser);
+        requireAuditReader(currentUser);
 
         if (!isSuperAdmin(currentUser)) {
             throw new ForbiddenOperationException(
@@ -69,7 +68,7 @@ public class AuditDirectoryService {
             UUID requestedTargetOrganizationId,
             int limit
     ) {
-        requirePrincipal(currentUser);
+        requireAuditReader(currentUser);
 
         UUID enforcedTargetOrganizationId =
                 resolveTargetOrganizationId(
@@ -98,7 +97,7 @@ public class AuditDirectoryService {
         UUID ownOrganizationId =
                 Objects.requireNonNull(
                         currentUser.getOrganizationId(),
-                        "organizationId текущего пользователя "
+                        "organizationId текущего ADMIN "
                                 + "не должен быть null"
                 );
 
@@ -149,6 +148,19 @@ public class AuditDirectoryService {
         return limit;
     }
 
+    private void requireAuditReader(
+            SafeAiUserPrincipal currentUser
+    ) {
+        requirePrincipal(currentUser);
+
+        if (!isAdmin(currentUser)
+                && !isSuperAdmin(currentUser)) {
+            throw new ForbiddenOperationException(
+                    "Аудит доступен только ADMIN или SUPER_ADMIN"
+            );
+        }
+    }
+
     private void requirePrincipal(
             SafeAiUserPrincipal currentUser
     ) {
@@ -158,13 +170,30 @@ public class AuditDirectoryService {
         );
     }
 
+    private boolean isAdmin(
+            SafeAiUserPrincipal currentUser
+    ) {
+        return hasAuthority(
+                currentUser,
+                SystemRole.ADMIN
+        );
+    }
+
     private boolean isSuperAdmin(
             SafeAiUserPrincipal currentUser
     ) {
+        return hasAuthority(
+                currentUser,
+                SystemRole.SUPER_ADMIN
+        );
+    }
+
+    private boolean hasAuthority(
+            SafeAiUserPrincipal currentUser,
+            SystemRole role
+    ) {
         return currentUser
                 .authorityNames()
-                .contains(
-                        SystemRole.SUPER_ADMIN.authority()
-                );
+                .contains(role.authority());
     }
 }
