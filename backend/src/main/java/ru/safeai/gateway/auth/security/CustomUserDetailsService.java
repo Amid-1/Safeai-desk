@@ -6,19 +6,23 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.security.RoleAuthorityMapper;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.user.validation.UserEmailNormalizer;
 
-import java.util.Locale;
 import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
 public class CustomUserDetailsService
         implements UserDetailsService {
+
+    private static final String USER_NOT_FOUND_MESSAGE =
+            "Пользователь не найден";
 
     private final UserRepository userRepository;
 
@@ -27,38 +31,47 @@ public class CustomUserDetailsService
     public UserDetails loadUserByUsername(
             String email
     ) throws UsernameNotFoundException {
-        String normalizedEmail = Objects.requireNonNull(
-                        email,
-                        "email не должен быть null"
-                )
-                .trim()
-                .toLowerCase(Locale.ROOT);
-
-        UserEntity user = userRepository
-                .findByEmail(normalizedEmail)
-                .orElseThrow(() ->
-                        new UsernameNotFoundException(
-                                "Пользователь не найден: "
-                                        + normalizedEmail
-                        )
+        String normalizedEmail =
+                normalizeAuthenticationEmail(
+                        email
                 );
 
-        var organization = Objects.requireNonNull(
-                user.getOrganization(),
-                "organization пользователя не должна быть null"
-        );
+        UserEntity user =
+                userRepository
+                        .findByEmail(
+                                normalizedEmail
+                        )
+                        .orElseThrow(() ->
+                                new UsernameNotFoundException(
+                                        USER_NOT_FOUND_MESSAGE
+                                )
+                        );
 
-        var authorities = RoleAuthorityMapper.toAuthorities(
-                user.getRoles()
-                        .stream()
-                        .map(RoleEntity::getName)
-                        .toList()
-        );
+        var organization =
+                Objects.requireNonNull(
+                        user.getOrganization(),
+                        "organization пользователя не должна быть null"
+                );
+
+        var authorities =
+                RoleAuthorityMapper.toAuthorities(
+                        user.getRoles()
+                                .stream()
+                                .map(
+                                        RoleEntity::getName
+                                )
+                                .toList()
+                );
+
+        String storedEmail =
+                UserEmailNormalizer.normalizeStored(
+                        user.getEmail()
+                );
 
         return SafeAiUserPrincipal.passwordPrincipal(
                 user.getId(),
                 organization.getId(),
-                normalizedEmail,
+                storedEmail,
                 user.getPasswordHash(),
                 user.isEnabled()
                         && organization.isEnabled(),
@@ -66,5 +79,21 @@ public class CustomUserDetailsService
                 organization.getAuthVersion(),
                 authorities
         );
+    }
+
+    private String normalizeAuthenticationEmail(
+            String email
+    ) {
+        try {
+            return UserEmailNormalizer
+                    .normalizeAndValidate(
+                            email
+                    );
+        } catch (BadRequestException exception) {
+            throw new UsernameNotFoundException(
+                    USER_NOT_FOUND_MESSAGE,
+                    exception
+            );
+        }
     }
 }

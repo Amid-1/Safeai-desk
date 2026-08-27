@@ -19,6 +19,7 @@ import org.springframework.transaction.TransactionSystemException;
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.common.exception.AuthServiceUnavailableException;
+import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.common.exception.RateLimitExceededException;
 import ru.safeai.gateway.common.exception.RateLimitUnavailableException;
@@ -116,6 +117,40 @@ class AuthServiceTest {
                 loginRateLimitService,
                 refreshRateLimitService,
                 clientIpResolver,
+                refreshTokenService,
+                authCookieService,
+                csrfTokenRepository
+        );
+    }
+
+    @Test
+    void malformedEmailIsRejectedBeforeRateLimitAndAuthentication() {
+        MockHttpServletRequest httpRequest =
+                request();
+
+        MockHttpServletResponse response =
+                new MockHttpServletResponse();
+
+        assertThatThrownBy(() ->
+                authService.login(
+                        new LoginRequest(
+                                "definitely-not-an-email",
+                                "legacy-password"
+                        ),
+                        httpRequest,
+                        response
+                )
+        )
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Некорректный формат email");
+
+        verifyNoInteractions(
+                clientIpResolver,
+                loginRateLimitService,
+                authenticationManager,
+                loginSessionTransactionService,
+                jwtService,
+                authEventService,
                 refreshTokenService,
                 authCookieService,
                 csrfTokenRepository

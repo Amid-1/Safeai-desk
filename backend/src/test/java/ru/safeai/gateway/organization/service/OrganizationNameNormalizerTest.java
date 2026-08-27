@@ -20,24 +20,6 @@ class OrganizationNameNormalizerTest {
         ).isEqualTo("Demo Company");
     }
 
-    @Test
-    void createsStableRootLocaleNormalizedName() {
-        Locale previous = Locale.getDefault();
-
-        try {
-            Locale.setDefault(
-                    Locale.forLanguageTag("tr-TR")
-            );
-
-            assertThat(
-                    OrganizationNameNormalizer.normalize(
-                            " INFORMATION "
-                    )
-            ).isEqualTo("information");
-        } finally {
-            Locale.setDefault(previous);
-        }
-    }
 
     @Test
     void confirmationIgnoresCaseQuotesAndWhitespace() {
@@ -135,6 +117,17 @@ class OrganizationNameNormalizerTest {
         )
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("не должно быть пустым");
+    }
+
+    @Test
+    void rejectsResidualIsoControlCharacter() {
+        assertThatThrownBy(() ->
+                OrganizationNameNormalizer.canonicalize(
+                        "Demo" + Character.toString(0) + "Company"
+                )
+        )
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("управляющие символы");
     }
 
     @Test

@@ -12,10 +12,10 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.mapper.UserRoleMapper;
 import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.user.validation.UserEmailNormalizer;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -23,8 +23,6 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class LoginSessionTransactionService {
-
-    private static final int MAX_EMAIL_LENGTH = 255;
 
     private static final String SECURITY_STATE_CHANGED_MESSAGE =
             "Security state changed during login";
@@ -54,6 +52,7 @@ public class LoginSessionTransactionService {
                 authenticatedPrincipal,
                 "authenticatedPrincipal не должен быть null"
         );
+
         Objects.requireNonNull(
                 request,
                 "request не должен быть null"
@@ -77,7 +76,7 @@ public class LoginSessionTransactionService {
                         .getAuthVersion();
 
         String canonicalEmail =
-                canonicalEmail(
+                UserEmailNormalizer.normalizeStored(
                         user.getEmail()
                 );
 
@@ -190,9 +189,7 @@ public class LoginSessionTransactionService {
                             principal.getAuthorities()
                     )
             );
-        } catch (
-                IllegalArgumentException exception
-        ) {
+        } catch (IllegalArgumentException exception) {
             throw new BadCredentialsException(
                     SECURITY_STATE_CHANGED_MESSAGE,
                     exception
@@ -204,30 +201,5 @@ public class LoginSessionTransactionService {
         return new BadCredentialsException(
                 SECURITY_STATE_CHANGED_MESSAGE
         );
-    }
-
-    private String canonicalEmail(
-            String email
-    ) {
-        Objects.requireNonNull(
-                email,
-                "email пользователя не должен быть null"
-        );
-
-        String canonical =
-                email.trim()
-                        .toLowerCase(
-                                Locale.ROOT
-                        );
-
-        if (canonical.isBlank()
-                || canonical.length() > MAX_EMAIL_LENGTH) {
-
-            throw new IllegalStateException(
-                    "Некорректный canonical email пользователя"
-            );
-        }
-
-        return canonical;
     }
 }

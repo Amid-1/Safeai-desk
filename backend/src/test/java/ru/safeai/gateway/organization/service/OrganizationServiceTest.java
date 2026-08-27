@@ -160,10 +160,6 @@ class OrganizationServiceTest {
         assertThat(response.updatedAt())
                 .isEqualTo(UPDATED_AT);
 
-        verify(
-                organizationRepository,
-                never()
-        ).existsByNormalizedName(any());
 
         verify(auditEventService).record(
                 any(SafeAiUserPrincipal.class),
@@ -312,6 +308,20 @@ class OrganizationServiceTest {
     }
 
     @Test
+    void findAllRejectsUnpagedApplicationCall() {
+        assertThatThrownBy(() ->
+                organizationService.findAll(
+                        superAdminPrincipal(),
+                        Pageable.unpaged()
+                )
+        )
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Постраничный запрос обязателен");
+
+        verifyNoInteractions(organizationRepository);
+    }
+
+    @Test
     void findAllRejectsUnsupportedSort() {
         assertThatThrownBy(() ->
                 organizationService.findAll(
@@ -442,6 +452,35 @@ class OrganizationServiceTest {
     }
 
     @Test
+    void directoryEscapesLikeWildcardsAsLiteralCharacters() {
+        when(
+                organizationRepository.searchDirectoryByName(
+                        eq("50!%!_!!"),
+                        any(Pageable.class)
+                )
+        ).thenAnswer(invocation -> {
+            Pageable pageable = invocation.getArgument(1);
+
+            return new PageImpl<>(
+                    List.of(),
+                    pageable,
+                    0L
+            );
+        });
+
+        organizationService.findDirectory(
+                " 50%_! ",
+                20,
+                superAdminPrincipal()
+        );
+
+        verify(organizationRepository).searchDirectoryByName(
+                eq("50!%!_!!"),
+                any(Pageable.class)
+        );
+    }
+
+    @Test
     void directoryRejectsQueryLongerThan255Characters() {
         assertThatThrownBy(() ->
                 organizationService.findDirectory(
@@ -547,10 +586,6 @@ class OrganizationServiceTest {
         assertThat(result.version())
                 .isEqualTo(VERSION + 1L);
 
-        verify(
-                organizationRepository,
-                never()
-        ).existsByNormalizedNameAndIdNot(any(), any());
 
         verify(auditEventService).record(
                 any(SafeAiUserPrincipal.class),

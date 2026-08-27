@@ -23,6 +23,7 @@ import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.OrganizationVersionConflictException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.persistence.DatabaseConstraintClassifier;
+import ru.safeai.gateway.common.pagination.StablePageableNormalizer;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.common.security.SystemRole;
@@ -51,6 +52,13 @@ import java.util.UUID;
 public class OrganizationService {
 
     private static final int MAX_PAGE_SIZE = 100;
+
+    private static final Sort DEFAULT_PAGE_SORT =
+            Sort.by(
+                    Sort.Order.desc(
+                            "createdAt"
+                    )
+            );
     private static final int MAX_DIRECTORY_LIMIT = 50;
 
     private static final Set<String>
@@ -272,7 +280,9 @@ public class OrganizationService {
                         .findAll(pageable)
                         : organizationRepository
                         .searchDirectoryByName(
-                                normalizedQuery,
+                                escapeDirectoryLikeLiteral(
+                                        normalizedQuery
+                                ),
                                 pageable
                         );
 
@@ -557,6 +567,13 @@ public class OrganizationService {
 
         boolean sessionsRevoked = false;
 
+        /*
+         * Product contract: disable fences NEW authenticated work after
+         * transaction commit through organization enabled/authVersion state.
+         * Already-started PROCESSING chat turns are intentionally not
+         * cancelled here; immediate in-flight cancellation would require
+         * a separate ChatTurn fencing/cancellation protocol.
+         */
         if (!newEnabled) {
             userSessionRevocationService
                     .revokeAllForOrganization(
@@ -669,88 +686,25 @@ public class OrganizationService {
     private Pageable normalizePageable(
             Pageable pageable
     ) {
-        if (
-                pageable.getPageSize() < 1
-                        || pageable.getPageSize()
-                        > MAX_PAGE_SIZE
-        ) {
-            throw new BadRequestException(
-                    "Размер страницы должен быть от 1 до "
-                            + MAX_PAGE_SIZE
-            );
-        }
-
-        validatePageableSort(pageable);
-
-        Sort sort =
-                pageable.getSort()
-                        .isUnsorted()
-                        ? Sort.by(
-                        Sort.Order.desc(
-                                "createdAt"
-                        )
-                )
-                        : pageable.getSort();
-
-        if (
-                sort.stream()
-                        .noneMatch(order ->
-                                "id".equals(
-                                        order.getProperty()
-                                )
-                        )
-        ) {
-            Sort.Direction tieBreakerDirection =
-                    sort.stream()
-                            .reduce(
-                                    (
-                                            first,
-                                            second
-                                    ) -> second
-                            )
-                            .map(
-                                    Sort.Order::getDirection
-                            )
-                            .orElse(
-                                    Sort.Direction.DESC
-                            );
-
-            sort = sort.and(
-                    Sort.by(
-                            new Sort.Order(
-                                    tieBreakerDirection,
-                                    "id"
-                            )
-                    )
-            );
-        }
-
-        return PageRequest.of(
-                pageable.getPageNumber(),
-                pageable.getPageSize(),
-                sort
+        return StablePageableNormalizer.normalize(
+                pageable,
+                MAX_PAGE_SIZE,
+                ALLOWED_SORT_PROPERTIES,
+                DEFAULT_PAGE_SORT,
+                "id",
+                StablePageableNormalizer
+                        .TieBreakerDirectionPolicy
+                        .FOLLOW_LAST_SORT_DIRECTION
         );
     }
 
-    private void validatePageableSort(
-            Pageable pageable
+    private String escapeDirectoryLikeLiteral(
+            String value
     ) {
-        for (
-                Sort.Order order
-                : pageable.getSort()
-        ) {
-            if (
-                    !ALLOWED_SORT_PROPERTIES
-                            .contains(
-                                    order.getProperty()
-                            )
-            ) {
-                throw new BadRequestException(
-                        "Сортировка по полю не разрешена: "
-                                + order.getProperty()
-                );
-            }
-        }
+        return value
+                .replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
     }
 
     private OrganizationResponse toResponse(

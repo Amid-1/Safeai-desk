@@ -15,29 +15,6 @@ import java.util.UUID;
 public interface OrganizationRepository
         extends JpaRepository<OrganizationEntity, UUID> {
 
-    @Query("""
-            select count(organization) > 0
-            from OrganizationEntity organization
-            where organization.normalizedName = :normalizedName
-            """)
-    boolean existsByNormalizedName(
-            @Param("normalizedName")
-            String normalizedName
-    );
-
-    @Query("""
-            select count(organization) > 0
-            from OrganizationEntity organization
-            where organization.normalizedName = :normalizedName
-              and organization.id <> :id
-            """)
-    boolean existsByNormalizedNameAndIdNot(
-            @Param("normalizedName")
-            String normalizedName,
-            @Param("id")
-            UUID id
-    );
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select organization
@@ -62,6 +39,7 @@ public interface OrganizationRepository
             from OrganizationEntity organization
             where lower(organization.name)
                   like lower(concat('%', :query, '%'))
+                  escape '!'
             """)
     Page<OrganizationEntity> searchDirectoryByName(
             @Param("query")

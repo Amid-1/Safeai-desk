@@ -54,9 +54,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
-/**
- * Единственный common-level MVC exception advice.
- */
 @Slf4j
 @RestControllerAdvice
 @RequiredArgsConstructor
@@ -1093,58 +1090,58 @@ public class GlobalExceptionHandler
      * textual representation Bean Validation implementation.
      */
     private String normalizeConstraintPath(
-        Path path
-) {
-    if (path == null) {
-        return "_global";
-    }
-
-    List<String> properties =
-            new ArrayList<>();
-
-    String parameterFallback = null;
-
-    for (Path.Node node : path) {
-        ElementKind kind =
-                node.getKind();
-
-        String name =
-                node.getName();
-
-        if (kind == ElementKind.PARAMETER
-                && name != null
-                && !name.isBlank()) {
-
-            parameterFallback =
-                    name.trim();
-
-            continue;
+            Path path
+    ) {
+        if (path == null) {
+            return "_global";
         }
 
-        if ((kind == ElementKind.PROPERTY
-                || kind == ElementKind.CONTAINER_ELEMENT)
-                && name != null
-                && !name.isBlank()
-                && !name.startsWith("<")) {
+        List<String> properties =
+                new ArrayList<>();
 
-            properties.add(
-                    name.trim()
+        String parameterFallback = null;
+
+        for (Path.Node node : path) {
+            ElementKind kind =
+                    node.getKind();
+
+            String name =
+                    node.getName();
+
+            if (kind == ElementKind.PARAMETER
+                    && name != null
+                    && !name.isBlank()) {
+
+                parameterFallback =
+                        name.trim();
+
+                continue;
+            }
+
+            if ((kind == ElementKind.PROPERTY
+                    || kind == ElementKind.CONTAINER_ELEMENT)
+                    && name != null
+                    && !name.isBlank()
+                    && !name.startsWith("<")) {
+
+                properties.add(
+                        name.trim()
+                );
+            }
+        }
+
+        if (!properties.isEmpty()) {
+            return String.join(
+                    ".",
+                    properties
             );
         }
-    }
 
-    if (!properties.isEmpty()) {
-        return String.join(
-                ".",
-                properties
+        return Objects.requireNonNullElse(
+                parameterFallback,
+                "_global"
         );
     }
-
-    return Objects.requireNonNullElse(
-            parameterFallback,
-            "_global"
-    );
-}
 
     private String defaultMessage(
             MessageSourceResolvable error

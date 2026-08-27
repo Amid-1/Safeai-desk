@@ -30,15 +30,13 @@ import ru.safeai.gateway.ratelimit.RefreshRateLimitService;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.mapper.UserRoleMapper;
 import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.user.validation.UserEmailNormalizer;
 
-import java.util.Locale;
 import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
-
-    private static final int MAX_EMAIL_LENGTH = 255;
 
     private static final String AUTH_UNAVAILABLE_INTERNAL_MESSAGE =
             "Authentication infrastructure is unavailable";
@@ -84,17 +82,16 @@ public class AuthService {
                 "response не должен быть null"
         );
 
-        String email = canonicalEmail(
-                Objects.requireNonNull(
-                        request.email(),
-                        "email не должен быть null"
-                )
-        );
+        String email =
+                UserEmailNormalizer.normalizeAndValidate(
+                        request.email()
+                );
 
-        String password = Objects.requireNonNull(
-                request.password(),
-                "password не должен быть null"
-        );
+        String password =
+                Objects.requireNonNull(
+                        request.password(),
+                        "password не должен быть null"
+                );
 
         /*
          * IP вычисляется один раз и используется как для предварительного
@@ -102,7 +99,9 @@ public class AuthService {
          * Это исключает расхождение при повторном разборе proxy headers.
          */
         String ipAddress =
-                clientIpResolver.resolve(httpRequest);
+                clientIpResolver.resolve(
+                        httpRequest
+                );
 
         /*
          * LoginRateLimitService самостоятельно:
@@ -131,6 +130,7 @@ public class AuthService {
 
             if (!(authentication.getPrincipal()
                     instanceof SafeAiUserPrincipal principal)) {
+
                 throw new AuthenticationServiceException(
                         "Некорректный тип principal после аутентификации"
                 );
@@ -140,12 +140,14 @@ public class AuthService {
              * Вызов выполняется через внешний Spring proxy.
              * К моменту возврата транзакция создания сессии уже committed.
              */
-            session = loginSessionTransactionService.createSession(
-                    principal,
-                    httpRequest
-            );
+            session =
+                    loginSessionTransactionService.createSession(
+                            principal,
+                            httpRequest
+                    );
         } catch (BadCredentialsException
                  | AccountStatusException exception) {
+
             authEventService.loginFailed(
                     email,
                     httpRequest
@@ -155,16 +157,20 @@ public class AuthService {
         } catch (AuthenticationException
                  | DataAccessException
                  | TransactionException exception) {
-            throw authServiceUnavailable(exception);
+
+            throw authServiceUnavailable(
+                    exception
+            );
         }
 
         /*
          * Генерация JWT выполняется после commit login transaction,
          * но до изменения HTTP response.
          */
-        String accessToken = jwtService.generateToken(
-                session.accessTokenSubject()
-        );
+        String accessToken =
+                jwtService.generateToken(
+                        session.accessTokenSubject()
+                );
 
         /*
          * AuthEventService использует BestEffortStandaloneAuditService.
@@ -228,12 +234,10 @@ public class AuthService {
 
         /*
          * Coarse anonymous IP-limit выполняется ДО чтения/хэширования
-         * refresh token и ДО PostgreSQL lookup. Поэтому поток случайных
-         * syntactically-valid Base64URL tokens сначала упирается в Redis.
+         * refresh token и ДО PostgreSQL lookup.
          *
-         * На 429/503 cookies намеренно не очищаются: refresh session
-         * остаётся пригодной для повторной попытки после Retry-After/
-         * восстановления rate-limit infrastructure.
+         * На 429/503 cookies намеренно не очищаются:
+         * refresh session остаётся пригодной для повторной попытки.
          */
         refreshRateLimitService.checkAllowed(
                 clientIpResolver.resolve(
@@ -242,10 +246,14 @@ public class AuthService {
         );
 
         String rawRefreshToken =
-                authCookieService.extractRefreshToken(request);
+                authCookieService.extractRefreshToken(
+                        request
+                );
 
         if (rawRefreshToken == null) {
-            clearAuthCookies(response);
+            clearAuthCookies(
+                    response
+            );
 
             throw new InvalidRefreshTokenException(
                     "Refresh token не найден"
@@ -263,9 +271,10 @@ public class AuthService {
              * Rotation transaction уже committed.
              * Только после этого формируются новые cookies.
              */
-            String newAccessToken = jwtService.generateToken(
-                    rotation.accessTokenSubject()
-            );
+            String newAccessToken =
+                    jwtService.generateToken(
+                            rotation.accessTokenSubject()
+                    );
 
             authCookieService.addAccessTokenCookie(
                     response,
@@ -283,26 +292,37 @@ public class AuthService {
                     request
             );
 
-            clearAuthCookies(response);
+            clearAuthCookies(
+                    response
+            );
+
             throw exception;
         } catch (ExpiredRefreshTokenException exception) {
             /*
              * ExpiredRefreshTokenException не наследуется от
-             * InvalidRefreshTokenException, поэтому cleanup обязан быть
-             * отдельным catch branch.
+             * InvalidRefreshTokenException.
              */
-            clearAuthCookies(response);
+            clearAuthCookies(
+                    response
+            );
+
             throw exception;
         } catch (InvalidRefreshTokenException exception) {
-            clearAuthCookies(response);
+            clearAuthCookies(
+                    response
+            );
+
             throw exception;
         } catch (DataAccessException
                  | TransactionException exception) {
+
             /*
              * При временной недоступности БД cookies сохраняются,
              * чтобы клиент мог повторить refresh.
              */
-            throw authServiceUnavailable(exception);
+            throw authServiceUnavailable(
+                    exception
+            );
         }
     }
 
@@ -328,7 +348,9 @@ public class AuthService {
 
         try {
             String rawRefreshToken =
-                    authCookieService.extractRefreshToken(request);
+                    authCookieService.extractRefreshToken(
+                            request
+                    );
 
             if (rawRefreshToken != null) {
                 refreshTokenService
@@ -349,9 +371,14 @@ public class AuthService {
              */
         } catch (DataAccessException
                  | TransactionException exception) {
-            throw authServiceUnavailable(exception);
+
+            throw authServiceUnavailable(
+                    exception
+            );
         } finally {
-            clearAuthCookies(response);
+            clearAuthCookies(
+                    response
+            );
 
             csrfTokenRepository.saveToken(
                     null,
@@ -370,30 +397,41 @@ public class AuthService {
                 "principal не должен быть null"
         );
 
-        UserEntity user = userRepository
-                .findByIdWithRolesAndOrganization(
-                        principal.getId()
-                )
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Пользователь не найден: "
-                                + principal.getId()
-                ));
+        UserEntity user =
+                userRepository
+                        .findByIdWithRolesAndOrganization(
+                                principal.getId()
+                        )
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        "Пользователь не найден: "
+                                                + principal.getId()
+                                )
+                        );
 
         return new CurrentUserResponse(
                 user.getId(),
-                user.getOrganization().getId(),
-                canonicalEmail(user.getEmail()),
+                user.getOrganization()
+                        .getId(),
+                UserEmailNormalizer.normalizeStored(
+                        user.getEmail()
+                ),
                 user.getFullName(),
                 user.isEnabled()
-                        && user.getOrganization().isEnabled(),
-                UserRoleMapper.toRoleNames(user)
+                        && user.getOrganization()
+                        .isEnabled(),
+                UserRoleMapper.toRoleNames(
+                        user
+                )
         );
     }
 
     private void clearAuthCookies(
             HttpServletResponse response
     ) {
-        authCookieService.clearAuthCookies(response);
+        authCookieService.clearAuthCookies(
+                response
+        );
     }
 
     private AuthServiceUnavailableException authServiceUnavailable(
@@ -403,27 +441,5 @@ public class AuthService {
                 AUTH_UNAVAILABLE_INTERNAL_MESSAGE,
                 cause
         );
-    }
-
-    private String canonicalEmail(
-            String email
-    ) {
-        Objects.requireNonNull(
-                email,
-                "email не должен быть null"
-        );
-
-        String canonical = email
-                .trim()
-                .toLowerCase(Locale.ROOT);
-
-        if (canonical.isBlank()
-                || canonical.length() > MAX_EMAIL_LENGTH) {
-            throw new IllegalArgumentException(
-                    "Некорректный email"
-            );
-        }
-
-        return canonical;
     }
 }

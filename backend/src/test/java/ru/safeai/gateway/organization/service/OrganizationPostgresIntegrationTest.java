@@ -349,6 +349,29 @@ class OrganizationPostgresIntegrationTest
     }
 
     @Test
+    void directoryTreatsLikeWildcardsAsLiteralCharacters() {
+        insertOrganization(
+                ORGANIZATION_ID,
+                "Discount 50%_Plan!",
+                true
+        );
+
+        List<OrganizationDirectoryResponse> result =
+                organizationService.findDirectory(
+                        "%_",
+                        20,
+                        superAdminPrincipal()
+                );
+
+        assertThat(result)
+                .singleElement()
+                .satisfies(item ->
+                        assertThat(item.id())
+                                .isEqualTo(ORGANIZATION_ID)
+                );
+    }
+
+    @Test
     void directoryReturnsVersionAndProtectionMetadata() {
         insertOrganization(
                 ORGANIZATION_ID,

@@ -9,7 +9,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.GrantedAuthority;
@@ -27,6 +26,7 @@ import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.exception.UserVersionConflictException;
 import ru.safeai.gateway.common.persistence.DatabaseConstraintClassifier;
+import ru.safeai.gateway.common.pagination.StablePageableNormalizer;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.common.security.SystemRole;
@@ -47,6 +47,7 @@ import ru.safeai.gateway.user.mapper.UserRoleMapper;
 import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 import ru.safeai.gateway.user.validation.PasswordPolicy;
+import ru.safeai.gateway.user.validation.UserEmailNormalizer;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -54,7 +55,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -69,6 +69,13 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private static final int MAX_PAGE_SIZE = 100;
+
+    private static final Sort DEFAULT_PAGE_SORT =
+            Sort.by(
+                    Sort.Order.desc(
+                            "createdAt"
+                    )
+            );
 
     private static final Set<SystemRole>
             SUPER_ADMIN_ASSIGNABLE_ROLES =
@@ -135,7 +142,7 @@ public class UserService {
         requireUserManager(currentUser);
 
         String email =
-                normalizeEmail(
+                UserEmailNormalizer.normalizeAndValidate(
                         request.email()
                 );
 
@@ -222,7 +229,7 @@ public class UserService {
                 new HashSet<>(
                         roles
                 )
-        ); 
+        );
 
         UserEntity saved;
 
@@ -477,7 +484,7 @@ public class UserService {
                                 false
                         )
         );
-    } 
+    }
 
     @Transactional
     public UserResponse updateUser(
@@ -517,7 +524,7 @@ public class UserService {
         );
 
         String normalizedEmail =
-                normalizeEmail(
+                UserEmailNormalizer.normalizeAndValidate(
                         request.email()
                 );
 
@@ -646,7 +653,7 @@ public class UserService {
 
         return toResponse(saved);
     }
-    
+
     @Transactional
     public UserResponse updateEnabled(
             UUID id,
@@ -903,7 +910,7 @@ public class UserService {
 
         publishSecurityStateChanged(
                 saved.getId()
-        ); 
+        );
 
         auditEventService.record(
                 currentUser,
@@ -1099,7 +1106,7 @@ public class UserService {
         }
 
         String confirmationEmail =
-                normalizeEmail(
+                UserEmailNormalizer.normalizeAndValidate(
                         request.confirmationEmail()
                 );
 
@@ -1152,7 +1159,7 @@ public class UserService {
                             + "удалением ещё не истёк: "
                             + deletionAllowedAt
             );
-        } 
+        }
 
         if (userRepository
                 .hasActiveRefreshTokens(
@@ -1371,7 +1378,7 @@ public class UserService {
 
         Hibernate.initialize(
                 locked.getRoles()
-        ); 
+        );
 
         if (!organizationId.equals(
                 lockedOrganizationId
@@ -1571,7 +1578,7 @@ public class UserService {
         }
 
         return normalized.roleName();
-    } 
+    }
 
     private Set<SystemRole> normalizeRoles(
             Set<String> roles
@@ -1830,7 +1837,7 @@ public class UserService {
         );
 
         return saved;
-    } 
+    }
 
     private void initializeUserAssociations(
             UserEntity user
@@ -1892,115 +1899,16 @@ public class UserService {
     private Pageable normalizePageable(
             Pageable pageable
     ) {
-        if (pageable.isUnpaged()) {
-            throw new BadRequestException(
-                    "Постраничный запрос обязателен"
-            );
-        }
-
-        int pageNumber = pageable.getPageNumber();
-        int pageSize = pageable.getPageSize();
-
-        if (pageNumber < 0) {
-            throw new BadRequestException(
-                    "Номер страницы не может быть отрицательным"
-            );
-        }
-
-        if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
-            throw new BadRequestException(
-                    "Размер страницы должен быть от 1 до "
-                            + MAX_PAGE_SIZE
-            );
-        }
-
-        validatePageableSort(
-                pageable
+        return StablePageableNormalizer.normalize(
+                pageable,
+                MAX_PAGE_SIZE,
+                ALLOWED_SORT_PROPERTIES,
+                DEFAULT_PAGE_SORT,
+                "id",
+                StablePageableNormalizer
+                        .TieBreakerDirectionPolicy
+                        .DESCENDING
         );
-
-        Sort sort =
-                pageable.getSort()
-                        .isUnsorted()
-                        ? Sort.by(
-                        Sort.Order.desc(
-                                "createdAt"
-                        )
-                )
-                        : pageable.getSort();
-
-        boolean hasId =
-                sort.stream()
-                        .anyMatch(order ->
-                                "id".equals(
-                                        order.getProperty()
-                                )
-                        );
-
-        if (!hasId) {
-            sort =
-                    sort.and(
-                            Sort.by(
-                                    Sort.Order.desc(
-                                            "id"
-                                    )
-                            )
-                    );
-        }
-
-        return PageRequest.of(
-                pageNumber,
-                pageSize,
-                sort
-        );
-    }
-
-    private void validatePageableSort(
-            Pageable pageable
-    ) {
-        for (Sort.Order order
-                : pageable.getSort()) {
-
-            if (!ALLOWED_SORT_PROPERTIES
-                    .contains(
-                            order.getProperty()
-                    )) {
-
-                throw new BadRequestException(
-                        "Сортировка по полю "
-                                + "не разрешена: "
-                                + order.getProperty()
-                );
-            }
-        }
-    }
-
-    private String normalizeEmail(
-            String email
-    ) {
-        Objects.requireNonNull(
-                email,
-                "email не должен быть null"
-        );
-
-        String normalized =
-                email.trim()
-                        .toLowerCase(
-                                Locale.ROOT
-                        );
-
-        if (normalized.isBlank()) {
-            throw new BadRequestException(
-                    "Email не должен быть пустым"
-            );
-        }
-
-        if (normalized.length() > 255) {
-            throw new BadRequestException(
-                    "Email не должен превышать 255 символов"
-            );
-        }
-
-        return normalized;
     }
 
     private String normalizeFullName(

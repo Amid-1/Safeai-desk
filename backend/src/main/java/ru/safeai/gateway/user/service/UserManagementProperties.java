@@ -4,6 +4,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 
+/**
+ * User-management operational policy.
+ *
+ * <p>{@code permanentDeletionRetention = 0} intentionally remains valid
+ * at the common configuration layer. A positive production minimum must
+ * only be introduced together with an explicit product/legal retention
+ * policy, preferably as a production-profile invariant, rather than by
+ * silently changing the existing cross-environment contract.</p>
+ */
 @ConfigurationProperties(prefix = "safeai.user-management")
 public record UserManagementProperties(
         Duration permanentDeletionRetention
@@ -31,3 +40,8 @@ public record UserManagementProperties(
         }
     }
 }
+
+
+
+
+

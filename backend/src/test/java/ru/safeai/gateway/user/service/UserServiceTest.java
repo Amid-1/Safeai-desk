@@ -189,6 +189,32 @@ class UserServiceTest {
     }
 
     @Test
+    void createRejectsMalformedEmailAtServiceBoundary() {
+        assertThatThrownBy(() -> userService.create(
+                new CreateUserRequest(
+                        ORGANIZATION_A_ID,
+                        "definitely-not-an-email",
+                        VALID_PASSWORD,
+                        "Malformed Email",
+                        Set.of("USER")
+                ),
+                adminPrincipal()
+        ))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Некорректный формат email");
+
+        verifyNoInteractions(
+                userRepository,
+                roleRepository,
+                passwordEncoder,
+                auditEventService,
+                eventPublisher,
+                userSessionRevocationService,
+                entityManager
+        );
+    }
+
+    @Test
     void createRejectsWeakPasswordBeforeRepositoryAccess() {
         assertThatThrownBy(() -> userService.create(
                 new CreateUserRequest(

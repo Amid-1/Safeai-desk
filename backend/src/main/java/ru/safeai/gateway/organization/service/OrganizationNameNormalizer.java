@@ -52,6 +52,10 @@ public final class OrganizationNameNormalizer {
             );
         }
 
+        rejectResidualControlCharacters(
+                canonical
+        );
+
         if (canonical.length() > MAX_NAME_LENGTH) {
             throw new BadRequestException(
                     "Название организации не должно превышать "
@@ -61,19 +65,6 @@ public final class OrganizationNameNormalizer {
         }
 
         return canonical;
-    }
-
-    /**
-     * Нормализация имени для уникальности и обычного сравнения.
-     *
-     * <p>Эту семантику нельзя смешивать с destructive confirmation:
-     * здесь кавычки остаются частью имени.</p>
-     */
-    public static String normalize(
-            @Nullable String value
-    ) {
-        return canonicalize(value)
-                .toLowerCase(Locale.ROOT);
     }
 
     /**
@@ -119,5 +110,25 @@ public final class OrganizationNameNormalizer {
         }
 
         return normalized;
+    }
+
+    private static void rejectResidualControlCharacters(
+            String value
+    ) {
+        for (int offset = 0;
+             offset < value.length();) {
+
+            int codePoint =
+                    value.codePointAt(offset);
+
+            if (Character.isISOControl(codePoint)) {
+                throw new BadRequestException(
+                        "Название организации не должно содержать "
+                                + "управляющие символы"
+                );
+            }
+
+            offset += Character.charCount(codePoint);
+        }
     }
 }
