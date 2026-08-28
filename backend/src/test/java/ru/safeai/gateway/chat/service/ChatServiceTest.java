@@ -277,6 +277,67 @@ class ChatServiceTest {
     }
 
     @Test
+    void ragCompletionFailureAfterProviderResponseIsMarkedAmbiguous() {
+        stubOwnedChatAndProcessing();
+
+        var providerResponse =
+                ChatTestFixtures.freeResponse();
+
+        when(aiProvider.sendMessage(
+                processing.aiRequest()
+        )).thenReturn(
+                providerResponse
+        );
+
+        RuntimeException completionFailure =
+                new IllegalStateException(
+                        "rag completion failed"
+                );
+
+        when(ragService.complete(
+                any(),
+                eq(providerResponse)
+        )).thenThrow(
+                completionFailure
+        );
+
+        assertThatThrownBy(() ->
+                service.sendMessage(
+                        ChatTestFixtures.CHAT_ID,
+                        request(),
+                        ChatTestFixtures.principal()
+                )
+        )
+                .isInstanceOf(
+                        AiOutcomeAmbiguousException.class
+                )
+                .hasCause(
+                        completionFailure
+                );
+
+        verify(aiProvider).sendMessage(
+                processing.aiRequest()
+        );
+
+        verify(finalizationService).markAmbiguous(
+                eq(processing),
+                org.mockito.ArgumentMatchers.isNull(),
+                eq(providerResponse.requestedModel()),
+                eq(providerResponse.providerRequestId()),
+                eq("IllegalStateException"),
+                eq("RAG_COMPLETION_FAILED_AFTER_PROVIDER_RESPONSE"),
+                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+        );
+
+        verify(finalizationService, never())
+                .succeedRag(
+                        any(),
+                        any(),
+                        any()
+                );
+    }
+
+    @Test
     void lostRedisOwnershipAfterResponseCannotPersistAssistant() {
         stubOwnedChatAndProcessing();
         when(aiProvider.sendMessage(processing.aiRequest()))

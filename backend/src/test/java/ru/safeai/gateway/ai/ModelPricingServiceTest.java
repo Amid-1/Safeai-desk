@@ -2,6 +2,7 @@ package ru.safeai.gateway.ai;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import ru.safeai.gateway.ai.metadata.AiTokenUsage;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
 import ru.safeai.gateway.ai.metadata.UsageStatus;
 import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
@@ -57,6 +58,112 @@ class ModelPricingServiceTest {
     }
 
     @Test
+    void specializedCachedInputIsUnpricedInsteadOfApproximatelyPriced() {
+        ModelPricingService service = service(List.of(
+                price("gpt-snapshot", "2", "8", "v1")
+        ));
+
+        PricingResult result = service.calculate(
+                "gpt-snapshot",
+                new AiTokenUsage(
+                        20_000,
+                        15_000,
+                        null,
+                        1_000,
+                        true,
+                        true
+                )
+        );
+
+        assertThat(result.status())
+                .isEqualTo(PricingStatus.UNPRICED);
+
+        assertThat(result.costUsd())
+                .isNull();
+
+        assertThat(result.currency())
+                .isNull();
+
+        assertThat(result.priceVersion())
+                .isNull();
+    }
+
+    @Test
+    void cacheWriteInputIsUnpricedInsteadOfApproximatelyPriced() {
+        ModelPricingService service = service(List.of(
+                price("gpt-snapshot", "2", "8", "v1")
+        ));
+
+        PricingResult result = service.calculate(
+                "gpt-snapshot",
+                new AiTokenUsage(
+                        20_000,
+                        null,
+                        5_000,
+                        1_000,
+                        true,
+                        true
+                )
+        );
+
+        assertThat(result.status())
+                .isEqualTo(PricingStatus.UNPRICED);
+
+        assertThat(result.costUsd())
+                .isNull();
+    }
+
+    @Test
+    void malformedSpecializedBillingMetadataFailsClosed() {
+        ModelPricingService service = service(List.of(
+                price("gpt-snapshot", "2", "8", "v1")
+        ));
+
+        PricingResult result = service.calculate(
+                "gpt-snapshot",
+                new AiTokenUsage(
+                        20_000,
+                        null,
+                        null,
+                        1_000,
+                        true,
+                        false
+                )
+        );
+
+        assertThat(result.status())
+                .isEqualTo(PricingStatus.CALCULATION_FAILED);
+
+        assertThat(result.costUsd())
+                .isNull();
+    }
+
+    @Test
+    void zeroSpecializedBillingCountersCanStillUseFlatPrice() {
+        ModelPricingService service = service(List.of(
+                price("gpt-snapshot", "2", "8", "v1")
+        ));
+
+        PricingResult result = service.calculate(
+                "gpt-snapshot",
+                new AiTokenUsage(
+                        1_000,
+                        0,
+                        0,
+                        500,
+                        true,
+                        true
+                )
+        );
+
+        assertThat(result.status())
+                .isEqualTo(PricingStatus.PRICED);
+
+        assertThat(result.costUsd())
+                .isEqualByComparingTo("0.006000000000");
+    }
+
+    @Test
     void actualModelWithoutExactRuleIsUnpriced() {
         PricingResult result = service(List.of(
                 price("gpt-alias", "2", "8", "alias-v1")
@@ -69,6 +176,28 @@ class ModelPricingServiceTest {
 
         assertThat(result.status()).isEqualTo(PricingStatus.UNPRICED);
         assertThat(result.costUsd()).isNull();
+    }
+
+    @Test
+    void negativeSpecializedCounterFailsClosed() {
+        ModelPricingService service = service(List.of(
+                price("gpt-snapshot", "2", "8", "v1")
+        ));
+
+        PricingResult result = service.calculate(
+                "gpt-snapshot",
+                new AiTokenUsage(
+                        1_000,
+                        -1,
+                        null,
+                        500,
+                        true,
+                        true
+                )
+        );
+
+        assertThat(result.status())
+                .isEqualTo(PricingStatus.CALCULATION_FAILED);
     }
 
     @Test

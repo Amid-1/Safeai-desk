@@ -2,7 +2,7 @@ package ru.safeai.gateway.ai.provider;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.metadata.AiTokenUsage;
 import ru.safeai.gateway.ai.metadata.UsageStatus;
 import ru.safeai.gateway.ai.pricing.ModelPricingService;
 import ru.safeai.gateway.ai.pricing.PricingResult;
@@ -18,38 +18,40 @@ public class AiResponseMetadataService {
             JsonNode response,
             String resolvedModel
     ) {
-        Integer inputTokens =
-                AiProviderSupport.extractInputTokens(response);
-
-        Integer outputTokens =
-                AiProviderSupport.extractOutputTokens(response);
+        AiTokenUsage tokenUsage =
+                AiProviderSupport.extractTokenUsage(
+                        response
+                );
 
         UsageStatus usageStatus =
-                AiChatResponse.determineUsageStatus(
-                        inputTokens,
-                        outputTokens
-                );
+                tokenUsage.usageStatus();
 
         PricingResult pricing =
                 pricingService.calculate(
                         resolvedModel,
-                        inputTokens,
-                        outputTokens,
-                        usageStatus
+                        tokenUsage
                 );
 
         return new AiResponseMetadata(
-                inputTokens,
-                outputTokens,
+                tokenUsage.inputTokens(),
+                tokenUsage.cachedInputTokens(),
+                tokenUsage.cacheWriteInputTokens(),
+                tokenUsage.outputTokens(),
                 usageStatus,
+                tokenUsage.specializedBillingDimensionsPresent(),
+                tokenUsage.specializedBillingDimensionsValid(),
                 pricing
         );
     }
 
     public record AiResponseMetadata(
             Integer inputTokens,
+            Integer cachedInputTokens,
+            Integer cacheWriteInputTokens,
             Integer outputTokens,
             UsageStatus usageStatus,
+            boolean specializedBillingDimensionsPresent,
+            boolean specializedBillingDimensionsValid,
             PricingResult pricing
     ) {
     }

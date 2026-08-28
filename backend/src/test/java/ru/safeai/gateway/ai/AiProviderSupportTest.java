@@ -9,6 +9,7 @@ import org.springframework.web.client.ResourceAccessException;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiMessage;
 import ru.safeai.gateway.ai.dto.AiMessageRole;
+import ru.safeai.gateway.ai.metadata.AiTokenUsage;
 import ru.safeai.gateway.ai.provider.AiProviderSupport;
 import ru.safeai.gateway.ai.provider.AiResponseTooLargeIOException;
 import tools.jackson.databind.JsonNode;
@@ -49,6 +50,148 @@ class AiProviderSupportTest {
                 .isEqualTo(12);
         assertThat(AiProviderSupport.extractOutputTokens(fallback))
                 .isEqualTo(34);
+    }
+
+    @Test
+    void extractsOpenAiSpecializedBillingDimensions() {
+        JsonNode response = mapper.readTree("""
+                {
+                  "usage":{
+                    "input_tokens":20000,
+                    "input_tokens_details":{
+                      "cached_tokens":15000,
+                      "cache_write_tokens":2000
+                    },
+                    "output_tokens":1000
+                  }
+                }
+                """);
+
+        AiTokenUsage usage =
+                AiProviderSupport.extractTokenUsage(
+                        response
+                );
+
+        assertThat(usage.inputTokens())
+                .isEqualTo(20_000);
+
+        assertThat(usage.cachedInputTokens())
+                .isEqualTo(15_000);
+
+        assertThat(usage.cacheWriteInputTokens())
+                .isEqualTo(2_000);
+
+        assertThat(usage.outputTokens())
+                .isEqualTo(1_000);
+
+        assertThat(
+                usage.specializedBillingDimensionsPresent()
+        ).isTrue();
+
+        assertThat(
+                usage.specializedBillingDimensionsValid()
+        ).isTrue();
+
+        assertThat(
+                usage.hasSpecializedBillableTokens()
+        ).isTrue();
+    }
+
+    @Test
+    void extractsAnthropicCacheBillingDimensions() {
+        JsonNode response = mapper.readTree("""
+                {
+                  "usage":{
+                    "input_tokens":100,
+                    "cache_read_input_tokens":80,
+                    "cache_creation_input_tokens":20,
+                    "output_tokens":10
+                  }
+                }
+                """);
+
+        AiTokenUsage usage =
+                AiProviderSupport.extractTokenUsage(
+                        response
+                );
+
+        assertThat(usage.cachedInputTokens())
+                .isEqualTo(80);
+
+        assertThat(usage.cacheWriteInputTokens())
+                .isEqualTo(20);
+
+        assertThat(
+                usage.specializedBillingDimensionsPresent()
+        ).isTrue();
+
+        assertThat(
+                usage.specializedBillingDimensionsValid()
+        ).isTrue();
+    }
+
+    @Test
+    void malformedSpecializedBillingDimensionIsNotTreatedAsAbsent() {
+        JsonNode response = mapper.readTree("""
+                {
+                  "usage":{
+                    "input_tokens":100,
+                    "input_tokens_details":{
+                      "cached_tokens":"not-a-number"
+                    },
+                    "output_tokens":10
+                  }
+                }
+                """);
+
+        AiTokenUsage usage =
+                AiProviderSupport.extractTokenUsage(
+                        response
+                );
+
+        assertThat(
+                usage.specializedBillingDimensionsPresent()
+        ).isTrue();
+
+        assertThat(
+                usage.specializedBillingDimensionsValid()
+        ).isFalse();
+
+        assertThat(usage.cachedInputTokens())
+                .isNull();
+    }
+
+    @Test
+    void zeroSpecializedBillingDimensionsRemainObservableButNotBillable() {
+        JsonNode response = mapper.readTree("""
+                {
+                  "usage":{
+                    "input_tokens":100,
+                    "input_tokens_details":{
+                      "cached_tokens":0,
+                      "cache_write_tokens":0
+                    },
+                    "output_tokens":10
+                  }
+                }
+                """);
+
+        AiTokenUsage usage =
+                AiProviderSupport.extractTokenUsage(
+                        response
+                );
+
+        assertThat(
+                usage.specializedBillingDimensionsPresent()
+        ).isTrue();
+
+        assertThat(
+                usage.specializedBillingDimensionsValid()
+        ).isTrue();
+
+        assertThat(
+                usage.hasSpecializedBillableTokens()
+        ).isFalse();
     }
 
     @Test

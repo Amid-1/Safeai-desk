@@ -285,7 +285,9 @@ public final class AnthropicProvider implements AiProvider {
                         + "operationId={}, attemptId={}, "
                         + "providerMessageId={}, providerRequestId={}, "
                         + "responseStatus={}, stopReason={}, durationMs={}, "
-                        + "inputTokens={}, outputTokens={}, pricingStatus={}",
+                        + "inputTokens={}, cachedInputTokens={}, "
+                        + "cacheWriteInputTokens={}, outputTokens={}, "
+                        + "pricingStatus={}",
                 properties.model(),
                 parsed.actualModel(),
                 attempt.operationId(),
@@ -296,6 +298,8 @@ public final class AnthropicProvider implements AiProvider {
                 parsed.stopReason(),
                 durationMs,
                 metadata.inputTokens(),
+                metadata.cachedInputTokens(),
+                metadata.cacheWriteInputTokens(),
                 metadata.outputTokens(),
                 metadata.pricing().status()
         );
@@ -472,32 +476,27 @@ public final class AnthropicProvider implements AiProvider {
 
         return switch (stopReason) {
             case STOP_END_TURN,
-                 STOP_SEQUENCE ->
-                    AiResponseStatus.COMPLETED;
+                 STOP_SEQUENCE -> AiResponseStatus.COMPLETED;
 
             case STOP_MAX_TOKENS,
                  STOP_CONTEXT_EXCEEDED,
-                 STOP_PAUSE_TURN ->
-                    AiResponseStatus.INCOMPLETE;
+                 STOP_PAUSE_TURN -> AiResponseStatus.INCOMPLETE;
 
-            case STOP_REFUSAL ->
-                    AiResponseStatus.REFUSED;
+            case STOP_REFUSAL -> AiResponseStatus.REFUSED;
 
-            case STOP_TOOL_USE ->
-                    throw parsingFailure(
-                            PROVIDER_NAME,
-                            actualModel,
-                            "Unexpected Anthropic tool_use response: "
-                                    + "tools are not enabled for this flow"
-                    );
+            case STOP_TOOL_USE -> throw parsingFailure(
+                    PROVIDER_NAME,
+                    actualModel,
+                    "Unexpected Anthropic tool_use response: "
+                            + "tools are not enabled for this flow"
+            );
 
-            default ->
-                    throw parsingFailure(
-                            PROVIDER_NAME,
-                            actualModel,
-                            "Unknown Anthropic stop_reason: "
-                                    + stopReason
-                    );
+            default -> throw parsingFailure(
+                    PROVIDER_NAME,
+                    actualModel,
+                    "Unknown Anthropic stop_reason: "
+                            + stopReason
+            );
         };
     }
 
@@ -531,9 +530,9 @@ public final class AnthropicProvider implements AiProvider {
 
         if (status == 402
                 || matchesError(
-                        errorCode,
-                        "billing_error"
-                )) {
+                errorCode,
+                "billing_error"
+        )) {
             return new AiProviderBillingException(
                     PROVIDER_NAME,
                     properties.model(),
@@ -547,9 +546,9 @@ public final class AnthropicProvider implements AiProvider {
 
         if (status == 429
                 || matchesError(
-                        errorCode,
-                        "rate_limit_error"
-                )) {
+                errorCode,
+                "rate_limit_error"
+        )) {
             return new AiProviderRateLimitedException(
                     PROVIDER_NAME,
                     properties.model(),
@@ -565,9 +564,9 @@ public final class AnthropicProvider implements AiProvider {
 
         if (status == 529
                 || matchesError(
-                        errorCode,
-                        "overloaded_error"
-                )) {
+                errorCode,
+                "overloaded_error"
+        )) {
             return new AiProviderOverloadedException(
                     PROVIDER_NAME,
                     properties.model(),
@@ -582,9 +581,9 @@ public final class AnthropicProvider implements AiProvider {
         if (status == 408
                 || status == 504
                 || matchesError(
-                        errorCode,
-                        "timeout_error"
-                )) {
+                errorCode,
+                "timeout_error"
+        )) {
             return new AiProviderTimeoutException(
                     PROVIDER_NAME,
                     properties.model(),
@@ -626,17 +625,17 @@ public final class AnthropicProvider implements AiProvider {
     ) {
         if (status == 401
                 || matchesError(
-                        errorCode,
-                        "authentication_error"
-                )) {
+                errorCode,
+                "authentication_error"
+        )) {
             return AiProviderErrorType.AUTHENTICATION;
         }
 
         if (status == 403
                 || matchesError(
-                        errorCode,
-                        "permission_error"
-                )) {
+                errorCode,
+                "permission_error"
+        )) {
             return AiProviderErrorType.PERMISSION_DENIED;
         }
 
@@ -646,29 +645,29 @@ public final class AnthropicProvider implements AiProvider {
                 || status == 413
                 || status == 422
                 || matchesError(
-                        errorCode,
-                        "invalid_request_error"
-                )
+                errorCode,
+                "invalid_request_error"
+        )
                 || matchesError(
-                        errorCode,
-                        "not_found_error"
-                )
+                errorCode,
+                "not_found_error"
+        )
                 || matchesError(
-                        errorCode,
-                        "conflict_error"
-                )
+                errorCode,
+                "conflict_error"
+        )
                 || matchesError(
-                        errorCode,
-                        "request_too_large"
-                )) {
+                errorCode,
+                "request_too_large"
+        )) {
             return AiProviderErrorType.INVALID_REQUEST;
         }
 
         if (status >= 500
                 || matchesError(
-                        errorCode,
-                        "api_error"
-                )) {
+                errorCode,
+                "api_error"
+        )) {
             return AiProviderErrorType.SERVER_ERROR;
         }
 

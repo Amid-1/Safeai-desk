@@ -186,6 +186,44 @@ class AuditTenantIsolationIntegrationTest
     }
 
     @Test
+    void superAdminCanReadGlobalAuditAcrossOrganizations() {
+        Fixture fixture =
+                fixture();
+
+        Page<AuditEventResponse> page =
+                queryService.findAll(
+                        fixture.superAdminPrincipal(),
+                        emptyFilter(),
+                        PageRequest.of(
+                                0,
+                                50
+                        )
+                );
+
+        assertThat(
+                page.getContent()
+        )
+                .extracting(
+                        AuditEventResponse::id
+                )
+                .containsExactly(
+                        fixture.foreignEventId(),
+                        fixture.adminEventId()
+                );
+
+        assertThat(
+                page.getContent()
+        )
+                .extracting(
+                        AuditEventResponse::organizationId
+                )
+                .containsExactly(
+                        fixture.foreignOrganizationId(),
+                        fixture.adminOrganizationId()
+                );
+    }
+
+    @Test
     void adminEmailPrefixFilterCannotExposeForeignTenant() {
         Fixture fixture =
                 fixture();

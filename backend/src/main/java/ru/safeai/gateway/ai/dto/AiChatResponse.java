@@ -1,6 +1,7 @@
 package ru.safeai.gateway.ai.dto;
 
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
+import ru.safeai.gateway.ai.metadata.AiTokenUsage;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
 import ru.safeai.gateway.ai.metadata.UsageStatus;
 import ru.safeai.gateway.ai.pricing.PricingResult;
@@ -36,7 +37,9 @@ public record AiChatResponse(
     private static final int MAX_COST_SCALE = 12;
 
     public AiChatResponse {
-        content = requireContent(content);
+        content = requireContent(
+                content
+        );
 
         requestedModel = requireModel(
                 requestedModel,
@@ -97,9 +100,13 @@ public record AiChatResponse(
                 "pricingStatus не должен быть null"
         );
 
-        validateCost(costUsd);
+        validateCost(
+                costUsd
+        );
 
-        currency = normalizeCurrency(currency);
+        currency = normalizeCurrency(
+                currency
+        );
 
         priceVersion = normalizeOptional(
                 priceVersion,
@@ -164,28 +171,33 @@ public record AiChatResponse(
         );
     }
 
+    /**
+     * Совместимый facade для определения provider usage status.
+     *
+     * <p>Каноническая логика принадлежит {@link AiTokenUsage}, поскольку
+     * именно этот тип представляет полный provider token-usage snapshot
+     * и используется pricing pipeline.</p>
+     */
     public static UsageStatus determineUsageStatus(
             Integer inputTokens,
             Integer outputTokens
     ) {
-        if (inputTokens == null && outputTokens == null) {
-            return UsageStatus.MISSING;
-        }
-
-        if (inputTokens == null || outputTokens == null) {
-            return UsageStatus.PARTIAL;
-        }
-
-        return UsageStatus.AVAILABLE;
+        return AiTokenUsage.basic(
+                inputTokens,
+                outputTokens
+        ).usageStatus();
     }
 
     private static void validateToken(
             Integer value,
             String fieldName
     ) {
-        if (value != null && value < 0) {
+        if (value != null
+                && value < 0) {
+
             throw new IllegalArgumentException(
-                    fieldName + " не может быть отрицательным"
+                    fieldName
+                            + " не может быть отрицательным"
             );
         }
     }
@@ -218,7 +230,9 @@ public record AiChatResponse(
     ) {
         switch (status) {
             case AVAILABLE -> {
-                if (inputTokens == null || outputTokens == null) {
+                if (inputTokens == null
+                        || outputTokens == null) {
+
                     throw new IllegalArgumentException(
                             "AVAILABLE требует оба token counter"
                     );
@@ -226,7 +240,9 @@ public record AiChatResponse(
             }
 
             case MISSING -> {
-                if (inputTokens != null || outputTokens != null) {
+                if (inputTokens != null
+                        || outputTokens != null) {
+
                     throw new IllegalArgumentException(
                             "MISSING требует отсутствующие token counters"
                     );
@@ -234,8 +250,11 @@ public record AiChatResponse(
             }
 
             case PARTIAL -> {
-                boolean inputMissing = inputTokens == null;
-                boolean outputMissing = outputTokens == null;
+                boolean inputMissing =
+                        inputTokens == null;
+
+                boolean outputMissing =
+                        outputTokens == null;
 
                 if (inputMissing == outputMissing) {
                     throw new IllegalArgumentException(
@@ -244,10 +263,11 @@ public record AiChatResponse(
                 }
             }
 
-            case NOT_APPLICABLE -> throw new IllegalArgumentException(
-                    "Provider response не может иметь "
-                            + "NOT_APPLICABLE usage"
-            );
+            case NOT_APPLICABLE ->
+                    throw new IllegalArgumentException(
+                            "Provider response не может иметь "
+                                    + "NOT_APPLICABLE usage"
+                    );
         }
     }
 
@@ -260,23 +280,25 @@ public record AiChatResponse(
             UsageStatus usageStatus
     ) {
         switch (status) {
-            case PRICED -> validateCalculatedPricing(
-                    costUsd,
-                    currency,
-                    priceVersion,
-                    calculatedAt,
-                    usageStatus,
-                    false
-            );
+            case PRICED ->
+                    validateCalculatedPricing(
+                            costUsd,
+                            currency,
+                            priceVersion,
+                            calculatedAt,
+                            usageStatus,
+                            false
+                    );
 
-            case FREE -> validateCalculatedPricing(
-                    costUsd,
-                    currency,
-                    priceVersion,
-                    calculatedAt,
-                    usageStatus,
-                    true
-            );
+            case FREE ->
+                    validateCalculatedPricing(
+                            costUsd,
+                            currency,
+                            priceVersion,
+                            calculatedAt,
+                            usageStatus,
+                            true
+                    );
 
             case UNPRICED, CALCULATION_FAILED ->
                     validateAbsentPricing(
@@ -287,10 +309,11 @@ public record AiChatResponse(
                             calculatedAt
                     );
 
-            case NOT_APPLICABLE -> throw new IllegalArgumentException(
-                    "Provider response не может иметь "
-                            + "NOT_APPLICABLE pricing"
-            );
+            case NOT_APPLICABLE ->
+                    throw new IllegalArgumentException(
+                            "Provider response не может иметь "
+                                    + "NOT_APPLICABLE pricing"
+                    );
         }
     }
 
@@ -324,18 +347,24 @@ public record AiChatResponse(
 
         if (usageStatus != UsageStatus.AVAILABLE) {
             throw new IllegalArgumentException(
-                    (free ? "FREE" : "PRICED")
+                    (free
+                            ? "FREE"
+                            : "PRICED")
                             + " требует AVAILABLE usage"
             );
         }
 
-        if (free && costUsd.signum() != 0) {
+        if (free
+                && costUsd.signum() != 0) {
+
             throw new IllegalArgumentException(
                     "FREE должен иметь costUsd = 0"
             );
         }
 
-        if (!free && costUsd.signum() <= 0) {
+        if (!free
+                && costUsd.signum() <= 0) {
+
             throw new IllegalArgumentException(
                     "PRICED требует costUsd > 0"
             );
@@ -352,6 +381,7 @@ public record AiChatResponse(
         if (costUsd != null
                 || currency != null
                 || priceVersion != null) {
+
             throw new IllegalArgumentException(
                     status
                             + " не должен содержать price metadata"
@@ -367,13 +397,17 @@ public record AiChatResponse(
     private static String requireContent(
             String value
     ) {
-        if (value == null || value.isBlank()) {
+        if (value == null
+                || value.isBlank()) {
+
             throw new IllegalArgumentException(
                     "content не должен быть пустым"
             );
         }
 
-        if (value.length() > MAX_CONTENT_CHARS) {
+        if (value.length()
+                > MAX_CONTENT_CHARS) {
+
             throw new IllegalArgumentException(
                     "content превышает "
                             + MAX_CONTENT_CHARS
@@ -392,17 +426,24 @@ public record AiChatResponse(
             String value,
             String fieldName
     ) {
-        if (value == null || value.isBlank()) {
+        if (value == null
+                || value.isBlank()) {
+
             throw new IllegalArgumentException(
-                    fieldName + " не должен быть пустым"
+                    fieldName
+                            + " не должен быть пустым"
             );
         }
 
-        String normalized = value.trim();
+        String normalized =
+                value.trim();
 
-        if (normalized.length() > MAX_MODEL_CHARS) {
+        if (normalized.length()
+                > MAX_MODEL_CHARS) {
+
             throw new IllegalArgumentException(
-                    fieldName + " превышает "
+                    fieldName
+                            + " превышает "
                             + MAX_MODEL_CHARS
                             + " символов"
             );
@@ -420,15 +461,19 @@ public record AiChatResponse(
             return null;
         }
 
-        String normalized = value.trim();
+        String normalized =
+                value.trim();
 
         if (normalized.isEmpty()) {
             return null;
         }
 
-        if (normalized.length() > maxLength) {
+        if (normalized.length()
+                > maxLength) {
+
             throw new IllegalArgumentException(
-                    fieldName + " превышает "
+                    fieldName
+                            + " превышает "
                             + maxLength
                             + " символов"
             );
@@ -440,22 +485,28 @@ public record AiChatResponse(
     private static String normalizeCurrency(
             String value
     ) {
-        String normalized = normalizeOptional(
-                value,
-                3,
-                "currency"
-        );
+        String normalized =
+                normalizeOptional(
+                        value,
+                        3,
+                        "currency"
+                );
 
         if (normalized == null) {
             return null;
         }
 
         String upperCase =
-                normalized.toUpperCase(Locale.ROOT);
+                normalized.toUpperCase(
+                        Locale.ROOT
+                );
 
-        if (!"USD".equals(upperCase)) {
+        if (!"USD".equals(
+                upperCase
+        )) {
             throw new IllegalArgumentException(
-                    "Текущая модель costUsd поддерживает только USD"
+                    "Текущая модель costUsd "
+                            + "поддерживает только USD"
             );
         }
 

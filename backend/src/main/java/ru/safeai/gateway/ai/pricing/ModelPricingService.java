@@ -2,6 +2,7 @@ package ru.safeai.gateway.ai.pricing;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import ru.safeai.gateway.ai.metadata.AiTokenUsage;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
 import ru.safeai.gateway.ai.metadata.UsageStatus;
 
@@ -29,37 +30,114 @@ public class ModelPricingService {
             Integer outputTokens,
             UsageStatus usageStatus
     ) {
-        Instant calculatedAt = clock.instant();
+        return calculate(
+                resolvedModel,
+                AiTokenUsage.basic(
+                        inputTokens,
+                        outputTokens
+                ),
+                usageStatus
+        );
+    }
 
-        if (usageStatus != UsageStatus.AVAILABLE) {
-            return PricingResult.unpriced(calculatedAt);
+    public PricingResult calculate(
+            String resolvedModel,
+            AiTokenUsage usage
+    ) {
+        if (usage == null) {
+            return PricingResult.calculationFailed(
+                    clock.instant()
+            );
         }
 
-        if (!validTokenCounters(inputTokens, outputTokens)) {
-            return PricingResult.calculationFailed(calculatedAt);
+        return calculate(
+                resolvedModel,
+                usage,
+                usage.usageStatus()
+        );
+    }
+
+    private PricingResult calculate(
+            String resolvedModel,
+            AiTokenUsage usage,
+            UsageStatus usageStatus
+    ) {
+        Instant calculatedAt =
+                clock.instant();
+
+        if (usageStatus != UsageStatus.AVAILABLE) {
+            return PricingResult.unpriced(
+                    calculatedAt
+            );
+        }
+
+        if (!validTokenCounters(
+                usage.inputTokens(),
+                usage.outputTokens()
+        )) {
+            return PricingResult.calculationFailed(
+                    calculatedAt
+            );
+        }
+
+        if (usage.specializedBillingDimensionsPresent()) {
+            if (!usage.specializedBillingDimensionsValid()
+                    || !validSpecializedTokenCounters(
+                            usage.cachedInputTokens(),
+                            usage.cacheWriteInputTokens()
+                    )) {
+                return PricingResult.calculationFailed(
+                        calculatedAt
+                );
+            }
+
+            /*
+             * Financial correctness boundary.
+             *
+             * Текущая ModelPrice описывает только ordinary input/output.
+             * Если provider фактически использовал cached/cache-write
+             * billing dimensions, нельзя выдавать приблизительную цену
+             * как PRICED. Нулевые specialized counters безопасны, потому
+             * что не изменяют фактическую стоимость запроса.
+             */
+            if (usage.hasSpecializedBillableTokens()) {
+                return PricingResult.unpriced(
+                        calculatedAt
+                );
+            }
         }
 
         ModelPricingProperties.ModelPrice price =
-                properties.find(resolvedModel);
+                properties.find(
+                        resolvedModel
+                );
 
         if (price == null) {
-            return PricingResult.unpriced(calculatedAt);
+            return PricingResult.unpriced(
+                    calculatedAt
+            );
         }
 
         try {
-            BigDecimal total = calculateTotalCost(
-                    inputTokens,
-                    outputTokens,
-                    price
-            );
+            BigDecimal total =
+                    calculateTotalCost(
+                            usage.inputTokens(),
+                            usage.outputTokens(),
+                            price
+                    );
 
-            PricingStatus pricingStatus = price.free()
-                    ? PricingStatus.FREE
-                    : PricingStatus.PRICED;
+            PricingStatus pricingStatus =
+                    price.free()
+                            ? PricingStatus.FREE
+                            : PricingStatus.PRICED;
 
-            if (pricingStatus == PricingStatus.PRICED
+            if (pricingStatus
+                    == PricingStatus.PRICED
                     && total.signum() == 0) {
-                return PricingResult.calculationFailed(calculatedAt);
+
+                return PricingResult.calculationFailed(
+                        calculatedAt
+                );
             }
 
             return new PricingResult(
@@ -70,7 +148,9 @@ public class ModelPricingService {
                     calculatedAt
             );
         } catch (ArithmeticException exception) {
-            return PricingResult.calculationFailed(calculatedAt);
+            return PricingResult.calculationFailed(
+                    calculatedAt
+            );
         }
     }
 
@@ -82,6 +162,16 @@ public class ModelPricingService {
                 && outputTokens != null
                 && inputTokens >= 0
                 && outputTokens >= 0;
+    }
+
+    private boolean validSpecializedTokenCounters(
+            Integer cachedInputTokens,
+            Integer cacheWriteInputTokens
+    ) {
+        return (cachedInputTokens == null
+                || cachedInputTokens >= 0)
+                && (cacheWriteInputTokens == null
+                || cacheWriteInputTokens >= 0);
     }
 
     private BigDecimal calculateTotalCost(

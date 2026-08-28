@@ -213,7 +213,9 @@ public class OpenAiProvider implements AiProvider {
                 "OpenAI response: requestedModel={}, actualModel={}, "
                         + "operationId={}, attemptId={}, providerRequestId={}, "
                         + "outcome={}, finishReason={}, durationMs={}, "
-                        + "inputTokens={}, outputTokens={}, pricingStatus={}",
+                        + "inputTokens={}, cachedInputTokens={}, "
+                        + "cacheWriteInputTokens={}, outputTokens={}, "
+                        + "pricingStatus={}",
                 properties.model(),
                 parsed.actualModel(),
                 attempt.operationId(),
@@ -223,6 +225,8 @@ public class OpenAiProvider implements AiProvider {
                 parsed.finishReason(),
                 durationMs,
                 metadata.inputTokens(),
+                metadata.cachedInputTokens(),
+                metadata.cacheWriteInputTokens(),
                 metadata.outputTokens(),
                 metadata.pricing().status()
         );

@@ -189,6 +189,27 @@ class RateLimitPropertiesTest {
     }
 
     @Test
+    void productionUnlimitedAiEscapeHatchDefaultsToFalse() {
+        RateLimitProductionProperties defaults =
+                new RateLimitProductionProperties(
+                        null
+                );
+
+        RateLimitProductionProperties explicit =
+                new RateLimitProductionProperties(
+                        true
+                );
+
+        assertThat(
+                defaults.isUnlimitedAiTrafficAllowed()
+        ).isFalse();
+
+        assertThat(
+                explicit.isUnlimitedAiTrafficAllowed()
+        ).isTrue();
+    }
+
+    @Test
     void redisKeyPropertiesNormalizePrefixAndDefaultVersion() {
         RateLimitRedisKeyProperties properties =
                 new RateLimitRedisKeyProperties(

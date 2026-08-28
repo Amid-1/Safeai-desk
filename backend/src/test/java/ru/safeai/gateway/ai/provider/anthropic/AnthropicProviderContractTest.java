@@ -172,6 +172,50 @@ class AnthropicProviderContractTest {
     }
 
     @Test
+    void cacheBillingUsageIsNotReportedAsPricedByFlatPricingModel() {
+        server.enqueue(
+                200,
+                """
+                {
+                  "id":"msg_cached",
+                  "model":"%s",
+                  "stop_reason":"end_turn",
+                  "content":[{"type":"text","text":"Ответ"}],
+                  "usage":{
+                    "input_tokens":1000,
+                    "cache_read_input_tokens":800,
+                    "cache_creation_input_tokens":200,
+                    "output_tokens":500
+                  }
+                }
+                """.formatted(ACTUAL_MODEL)
+        );
+
+        AiChatResponse result =
+                provider(
+                        List.of(
+                                price(
+                                        ACTUAL_MODEL
+                                )
+                        )
+                ).sendMessage(
+                        request()
+                );
+
+        assertThat(result.inputTokens())
+                .isEqualTo(1_000);
+
+        assertThat(result.outputTokens())
+                .isEqualTo(500);
+
+        assertThat(result.pricingStatus())
+                .isEqualTo(PricingStatus.UNPRICED);
+
+        assertThat(result.costUsd())
+                .isNull();
+    }
+
+    @Test
     void unknownResolvedModelIsUnpriced() {
         server.enqueue(200, response("end_turn", "Ответ"));
 

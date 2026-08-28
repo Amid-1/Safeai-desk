@@ -56,6 +56,14 @@ public final class ModelPricingProperties {
         );
     }
 
+    /**
+     * Flat ordinary input/output pricing snapshot.
+     *
+     * <p>Эта schema намеренно не утверждает поддержку cached input,
+     * cache-write или tiered/long-context pricing. Если provider сообщает
+     * фактически использованные specialized billing dimensions,
+     * ModelPricingService fail-closed возвращает UNPRICED.</p>
+     */
     public record ModelPrice(
             String model,
             BigDecimal inputUsdPer1mTokens,

@@ -126,6 +126,61 @@ class OpenAiProviderContractTest {
     }
 
     @Test
+    void cachedInputUsageIsNotReportedAsPricedByFlatPricingModel() {
+        server.enqueue(
+                200,
+                """
+                {
+                  "id":"resp_cached",
+                  "model":"%s",
+                  "status":"completed",
+                  "output_text":"Ответ",
+                  "usage":{
+                    "input_tokens":20000,
+                    "input_tokens_details":{
+                      "cached_tokens":15000,
+                      "cache_write_tokens":0
+                    },
+                    "output_tokens":1000
+                  }
+                }
+                """.formatted(ACTUAL_MODEL)
+        );
+
+        AiChatResponse response =
+                provider(
+                        100_000,
+                        disabledRetry(),
+                        List.of(
+                                price(
+                                        ACTUAL_MODEL,
+                                        "v-actual"
+                                )
+                        )
+                ).sendMessage(
+                        request()
+                );
+
+        assertThat(response.inputTokens())
+                .isEqualTo(20_000);
+
+        assertThat(response.outputTokens())
+                .isEqualTo(1_000);
+
+        assertThat(response.pricingStatus())
+                .isEqualTo(PricingStatus.UNPRICED);
+
+        assertThat(response.costUsd())
+                .isNull();
+
+        assertThat(response.currency())
+                .isNull();
+
+        assertThat(response.priceVersion())
+                .isNull();
+    }
+
+    @Test
     void incompleteResponsePreservesIncompleteDetailsReason() {
         server.enqueue(
                 200,
