@@ -1,16 +1,64 @@
-/* frontend/src/pages/AdminAuditPage.css */
+/* ============================================================
+   frontend/src/pages/AdminAuditPage.css
+
+   Итоговые стили страницы аудита для TRUE SPLIT layout.
+
+   Структура:
+   [ upper: hero + filters + CSV toolbar ]
+   [ draggable separator                 ]
+   [ scrollable audit table              ]
+   [ fixed pagination footer             ]
+
+   Важно:
+   - старые дубли .audit-page/.audit-table-card удалены;
+   - используется только одна модель layout;
+   - modern rgb(... / alpha) заменён на rgba(...),
+     чтобы IDE со старым CSS parser не показывала "Missing comma".
+   ============================================================ */
+
 .audit-page {
-    display: grid;
-    gap: 24px;
+    width: 100%;
+    height: 100%;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
 }
+
+/* ============================================================
+   UPPER WORKSPACE
+   ============================================================ */
+
+.audit-page__upper {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    gap: clamp(8px, 1vh, 12px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding-bottom: 8px;
+}
+
+/* ============================================================
+   HERO
+   ============================================================ */
 
 .audit-page__header {
     display: flex;
-    align-items: flex-end;
+    flex: 0 0 auto;
+    align-items: center;
     justify-content: space-between;
     gap: 24px;
-    padding: 4px 0 2px;
+}
+
+.audit-page__header.page-hero {
+    padding: 13px 18px !important;
+    border-radius: 16px;
+}
+
+.audit-page__heading {
+    min-width: 0;
 }
 
 .audit-page__heading h1,
@@ -18,11 +66,16 @@
     margin: 0;
 }
 
+.audit-page__heading h1 {
+    font-size: clamp(24px, 2.2vw, 32px);
+    line-height: 1.08;
+}
+
 .audit-page__eyebrow {
     display: inline-flex;
-    margin-bottom: 8px;
+    margin-bottom: 3px;
     color: #2563eb;
-    font-size: 13px;
+    font-size: 10px;
     font-weight: 800;
     letter-spacing: 0.055em;
     text-transform: uppercase;
@@ -30,93 +83,134 @@
 
 .audit-page__intro {
     max-width: 980px;
-    margin-top: 9px !important;
-    line-height: 1.5;
+    margin-top: 4px !important;
+    font-size: 12px;
+    line-height: 1.35;
 }
 
 .audit-page__timezone {
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: 8px;
-    padding: 10px 14px;
+    padding: 7px 10px;
     border: 1px solid #bfdbfe;
     border-radius: 999px;
     background: #eff6ff;
     color: #1e40af;
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 700;
     white-space: nowrap;
 }
 
-.audit-filters {
-    overflow: visible;
-    padding: 24px;
-    border: 1px solid #e2e8f0;
-    background:
-        linear-gradient(135deg, rgb(239 246 255 / 72%), transparent 42%),
-        #fff;
-}
+/* ============================================================
+   FILTERS
+   ============================================================ */
 
-.audit-filters .form {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+.audit-filters {
+    flex: 0 0 auto;
+    overflow: visible;
+    padding: 12px 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(239, 246, 255, 0.72),
+            transparent 42%
+        ),
+        #ffffff;
 }
 
 .audit-filters h2 {
     margin: 0;
+    font-size: 18px;
+    line-height: 1.15;
 }
 
 .audit-filters__subtitle {
-    margin: 7px 0 20px;
+    margin: 3px 0 9px;
+    font-size: 11px;
+}
+
+.audit-filters .form {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    align-items: end;
+    gap: 7px 10px;
 }
 
 .audit-filters label {
     display: grid;
-    gap: 8px;
+    min-width: 0;
+    gap: 4px;
+    font-size: 11px;
     font-weight: 700;
-}
-
-.audit-filters label:first-child,
-.audit-date-presets,
-.audit-date-help,
-.audit-filter-notice,
-.audit-directory-warning,
-.audit-filters .error,
-.audit-filters .filter-actions {
-    grid-column: 1 / -1;
 }
 
 .audit-filters input,
 .audit-filters select {
     min-width: 0;
+    min-height: 34px;
+    padding-block: 6px;
+    font-size: 12px;
     font-weight: 400;
 }
 
+.audit-filter-field--event-type,
+.audit-filter-field--organization-search,
+.audit-filter-field--organization,
+.audit-filter-field--actor-search,
+.audit-filter-field--actor,
+.audit-filter-field--email {
+    grid-column: span 4;
+}
+
+.audit-filter-field--date {
+    grid-column: span 3;
+}
+
+.audit-filters label:first-child {
+    grid-column: span 4;
+}
+
+.audit-filter-field--organization-search small {
+    display: none;
+}
+
+/* ============================================================
+   DATE PRESETS
+   ============================================================ */
+
 .audit-date-presets {
     display: flex;
-    align-items: center;
+    grid-column: span 6;
+    align-self: end;
+    flex-direction: row;
     flex-wrap: wrap;
-    gap: 10px;
-    padding-top: 4px;
+    gap: 6px;
+    padding-top: 0;
 }
 
 .audit-date-presets__label {
+    flex: 0 0 100%;
+    font-size: 11px;
     font-weight: 700;
 }
 
 .audit-date-presets__actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 5px;
 }
 
 .audit-date-presets__actions button {
-    min-height: 38px;
-    padding: 7px 14px;
+    min-height: 32px;
+    padding: 5px 9px;
     border: 1px solid #dbeafe;
     background: #eff6ff;
     color: #1d4ed8;
+    font-size: 11px;
 }
 
 .audit-date-presets__actions button:hover:not(:disabled) {
@@ -124,43 +218,115 @@
     background: #dbeafe;
 }
 
-.audit-filter-notice {
-    padding: 10px 12px;
-    border: 1px solid rgb(30 90 180 / 25%);
-    border-radius: 8px;
-    background: rgb(30 90 180 / 8%);
+.audit-date-help {
+    grid-column: span 6;
+    align-self: center;
+    margin: 0;
+    font-size: 10px;
 }
 
+/* ============================================================
+   FILTER ACTIONS / NOTICES
+   ============================================================ */
+
 .audit-filters .filter-actions {
+    display: flex;
+    grid-column: span 6;
+    align-self: center;
     justify-content: flex-end;
-    padding-top: 4px;
+    gap: 7px;
+    padding-top: 0;
+}
+
+.audit-filters .filter-actions button {
+    min-height: 34px;
+    padding: 6px 11px;
+    font-size: 11px;
 }
 
 .audit-filters .filter-actions button:first-child {
     background: linear-gradient(135deg, #2563eb, #4f46e5);
-    box-shadow: 0 8px 20px rgb(37 99 235 / 22%);
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22);
+}
+
+.audit-filter-notice,
+.audit-directory-warning,
+.audit-filters .error,
+.audit-directory-loading {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 7px 9px;
+    font-size: 11px;
+}
+
+.audit-filter-notice {
+    border: 1px solid rgba(30, 90, 180, 0.25);
+    border-radius: 8px;
+    background: rgba(30, 90, 180, 0.08);
 }
 
 .audit-directory-warning {
-    padding: 11px 13px;
-    border: 1px solid rgb(170 112 0 / 38%);
+    border: 1px solid rgba(170, 112, 0, 0.38);
     border-radius: 8px;
-    background: rgb(255 187 0 / 12%);
+    background: rgba(255, 187, 0, 0.12);
     color: #7a4b00;
     line-height: 1.45;
 }
 
-.audit-table-card {
-    min-width: 0;
+/* ============================================================
+   CSV TOOLBAR
+   ============================================================ */
+
+.audit-table-card__toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
     margin: 0;
-    padding: 8px 20px 18px;
-    border: 1px solid #e2e8f0;
+    padding: 10px 2px 4px;
 }
 
-.audit-table-card .admin-table-wrapper {
-    max-width: 100%;
-    overflow-x: auto;
+.audit-table-card__toolbar p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
 }
+
+.audit-table-card__toolbar .secondary-button {
+    flex: 0 0 auto;
+}
+
+/* ============================================================
+   LOWER TABLE AREA
+   This class is passed as lowerClassName to ResizableScrollRegion.
+   ============================================================ */
+
+.audit-page .audit-table-card {
+    display: flex;
+    box-sizing: border-box;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    margin: 0;
+    padding: 0 14px 8px;
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #ffffff;
+}
+
+.audit-page .admin-table-wrapper {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+/* ============================================================
+   TABLE
+   ============================================================ */
 
 .audit-table {
     min-width: 1040px;
@@ -193,9 +359,14 @@
 }
 
 .audit-table thead th {
-    padding-top: 17px;
-    padding-bottom: 14px;
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    padding-top: 11px;
+    padding-bottom: 10px;
+    background: #ffffff;
     color: #64748b;
+    box-shadow: 0 1px 0 #e2e8f0;
     font-size: 12px;
     letter-spacing: 0.045em;
 }
@@ -209,14 +380,18 @@
 }
 
 .audit-table tbody td {
-    padding-top: 18px;
-    padding-bottom: 18px;
+    padding-top: 12px;
+    padding-bottom: 12px;
 }
 
 .audit-time-cell {
     white-space: normal;
     line-height: 1.35;
 }
+
+/* ============================================================
+   IDENTITIES
+   ============================================================ */
 
 .audit-identity {
     display: grid;
@@ -249,6 +424,10 @@
 .audit-identity__system {
     font-weight: 700;
 }
+
+/* ============================================================
+   EVENT TYPE
+   ============================================================ */
 
 .audit-event-type {
     display: grid;
@@ -302,6 +481,10 @@
     line-height: 1.35;
 }
 
+/* ============================================================
+   DETAILS ACTION
+   ============================================================ */
+
 .audit-details-action {
     display: grid;
     justify-items: start;
@@ -321,13 +504,17 @@
 .audit-details-flag {
     display: inline-flex;
     padding: 3px 7px;
-    border: 1px solid rgb(170 112 0 / 32%);
+    border: 1px solid rgba(170, 112, 0, 0.32);
     border-radius: 999px;
-    background: rgb(255 187 0 / 12%);
+    background: rgba(255, 187, 0, 0.12);
     color: #7a4b00;
     font-size: 11px;
     font-weight: 700;
 }
+
+/* ============================================================
+   DETAILS MODAL
+   ============================================================ */
 
 .audit-details-list {
     display: grid;
@@ -337,12 +524,10 @@
 
 .audit-details-list > div {
     display: grid;
-    grid-template-columns:
-        minmax(170px, 220px)
-        minmax(0, 1fr);
+    grid-template-columns: minmax(170px, 220px) minmax(0, 1fr);
     gap: 18px;
     padding: 12px 0;
-    border-bottom: 1px solid rgb(127 127 127 / 18%);
+    border-bottom: 1px solid rgba(127, 127, 127, 0.18);
 }
 
 .audit-details-list dt {
@@ -377,254 +562,23 @@
         monospace;
 }
 
-@media (max-width: 760px) {
-    .audit-page__header {
-        align-items: flex-start;
-        flex-direction: column;
-    }
+/* ============================================================
+   FIXED FOOTER
+   ============================================================ */
 
-    .audit-page__timezone {
-        white-space: normal;
-    }
-
-    .audit-filters .form {
-        grid-template-columns: 1fr;
-    }
-
-    .audit-filters .form > * {
-        grid-column: auto;
-    }
-
-    .audit-filters .filter-actions,
-    .audit-filters .filter-actions button {
-        width: 100%;
-    }
-
-    .audit-details-list > div {
-        grid-template-columns: 1fr;
-        gap: 6px;
-    }
-
-    .audit-date-presets__actions {
-        display: grid;
-        grid-template-columns:
-            repeat(2, minmax(0, 1fr));
-    }
-
-    .audit-date-presets__actions button {
-        width: 100%;
-    }
-}
-.audit-page {
-    display: flex;
-    height: 100%;
-    min-height: 0;
-    flex-direction: column;
-    overflow: hidden;
-    gap: clamp(10px, 1.2vh, 18px);
-}
-
-.audit-page__header,
-.audit-filters {
+.audit-page .resizable-scroll-region__footer {
     flex: 0 0 auto;
+    padding: 0 14px 12px;
+    background: #ffffff;
 }
 
-.audit-table-card {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-.audit-table-card .admin-table-wrapper {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;
-    scrollbar-gutter: stable;
+.audit-page .resizable-scroll-region__footer .pagination {
+    margin-top: 0;
 }
 
 /* ============================================================
-   Viewport workspace: audit
-   Header and filters remain visible; only the event list scrolls.
+   RESPONSIVE <= 1100px
    ============================================================ */
-
-.audit-page {
-    gap: clamp(8px, 1vh, 12px);
-}
-
-.audit-page__header.page-hero {
-    align-items: center;
-    padding: 13px 18px !important;
-    border-radius: 16px;
-}
-
-.audit-page__eyebrow {
-    margin-bottom: 3px;
-    font-size: 10px;
-}
-
-.audit-page__heading h1 {
-    font-size: clamp(24px, 2.2vw, 32px);
-    line-height: 1.08;
-}
-
-.audit-page__intro {
-    margin-top: 4px !important;
-    font-size: 12px;
-    line-height: 1.35;
-}
-
-.audit-page__timezone {
-    padding: 7px 10px;
-    font-size: 11px;
-}
-
-.audit-filters {
-    padding: 12px 16px;
-    border-radius: 14px;
-}
-
-.audit-filters h2 {
-    font-size: 18px;
-    line-height: 1.15;
-}
-
-.audit-filters__subtitle {
-    margin: 3px 0 9px;
-    font-size: 11px;
-}
-
-.audit-filters .form {
-    grid-template-columns: repeat(12, minmax(0, 1fr));
-    gap: 7px 10px;
-    align-items: end;
-}
-
-.audit-filters label {
-    gap: 4px;
-    min-width: 0;
-    font-size: 11px;
-}
-
-.audit-filters input,
-.audit-filters select {
-    min-height: 34px;
-    padding-block: 6px;
-    font-size: 12px;
-}
-
-.audit-filter-field--event-type,
-.audit-filter-field--organization-search,
-.audit-filter-field--organization,
-.audit-filter-field--actor-search,
-.audit-filter-field--actor,
-.audit-filter-field--email {
-    grid-column: span 4;
-}
-
-.audit-filter-field--date {
-    grid-column: span 3;
-}
-
-.audit-filters label:first-child {
-    grid-column: span 4;
-}
-
-.audit-filter-field--organization-search small {
-    display: none;
-}
-
-.audit-date-presets {
-    grid-column: span 6;
-    align-self: end;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding-top: 0;
-}
-
-.audit-date-presets__label {
-    flex: 0 0 100%;
-    font-size: 11px;
-}
-
-.audit-date-presets__actions {
-    gap: 5px;
-}
-
-.audit-date-presets__actions button {
-    min-height: 32px;
-    padding: 5px 9px;
-    font-size: 11px;
-}
-
-.audit-date-help {
-    grid-column: span 6;
-    align-self: center;
-    margin: 0;
-    font-size: 10px;
-}
-
-.audit-filters .filter-actions {
-    grid-column: span 6;
-    align-self: center;
-    gap: 7px;
-    padding-top: 0;
-}
-
-.audit-filters .filter-actions button {
-    min-height: 34px;
-    padding: 6px 11px;
-    font-size: 11px;
-}
-
-.audit-filter-notice,
-.audit-directory-warning,
-.audit-filters .error,
-.audit-directory-loading {
-    grid-column: 1 / -1;
-    margin: 0;
-    padding: 7px 9px;
-    font-size: 11px;
-}
-
-.audit-page > .state-block {
-    flex: 1 1 auto;
-    min-height: 0;
-    margin: 0;
-    overflow: auto;
-}
-
-.audit-table-card {
-    padding: 0 14px 8px;
-    border-radius: 14px;
-}
-
-.audit-table-card .admin-table-wrapper {
-    overscroll-behavior: contain;
-}
-
-.audit-table thead th {
-    position: sticky;
-    z-index: 2;
-    top: 0;
-    padding-top: 11px;
-    padding-bottom: 10px;
-    background: #fff;
-    box-shadow: 0 1px 0 #e2e8f0;
-}
-
-.audit-table tbody td {
-    padding-top: 12px;
-    padding-bottom: 12px;
-}
-
-.audit-table-card > .pagination {
-    flex: 0 0 auto;
-    margin: 0;
-    padding-top: 8px;
-}
 
 @media (max-width: 1100px) {
     .audit-filter-field--event-type,
@@ -649,9 +603,14 @@
     }
 }
 
+/* ============================================================
+   RESPONSIVE <= 760px
+   ============================================================ */
+
 @media (max-width: 760px) {
-    .audit-page {
-        overflow: hidden;
+    .audit-page__header {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .audit-page__header.page-hero {
@@ -665,6 +624,7 @@
 
     .audit-page__timezone {
         padding: 5px 8px;
+        white-space: normal;
     }
 
     .audit-filters {
@@ -704,10 +664,28 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .audit-table-card {
+    .audit-table-card__toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .audit-table-card__toolbar button {
+        width: 100%;
+    }
+
+    .audit-page .audit-table-card {
         padding-inline: 8px;
     }
+
+    .audit-details-list > div {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
 }
+
+/* ============================================================
+   LOW HEIGHT DESKTOP
+   ============================================================ */
 
 @media (max-height: 760px) and (min-width: 761px) {
     .audit-page__intro,

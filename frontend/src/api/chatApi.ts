@@ -382,6 +382,28 @@ export async function getChatTurnStatus(
     return parseChatTurnStatus(response)
 }
 
+/**
+ * Retrieves the immutable citation record independently of a live send.
+ * This is required when a page is restored after the original
+ * SendMessageResponse has left browser memory.
+ */
+export async function getAnswerPassport(
+    chatId: string,
+    turnId: string,
+    options: RequestOptions = {},
+): Promise<AnswerPassport> {
+    const response = await apiRequest<unknown>(
+        `/api/chats/${uuidPathSegment(chatId)}/turns/${uuidPathSegment(turnId)}/answer-passport`,
+        {
+            method: 'GET',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseAnswerPassport(response)
+}
+
 export function parseChat(
     value: unknown,
     field = 'chat',

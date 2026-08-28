@@ -1,3984 +1,1401 @@
-# SafeAI Desk — ROADMAP
+SafeAI Desk — Roadmap развития с августа 2026
 
-> **Актуальность:** 16 августа 2026  
-> **Горизонт:** август 2026 → 2028+  
-> **Статус продукта:** production-oriented pre-1.0 / portfolio-ready baseline  
-> **Стратегическое направление:** Enterprise AI Control Plane + AI Gateway + Governed Knowledge & Retrieval + Tool/Agent 
-> Runtime
->
-> Этот документ заменяет предыдущий roadmap. Он учитывает уже реализованные модули SafeAI Desk, текущий Knowledge Core, 
-> S3/MinIO-хранилище, durable ChatTurn, audit/usage/security foundation и новый план развития Knowledge, Retrieval, 
-> AI Policy, Guardrails, Model Routing, Tools и Agents.
->
-> Даты ниже — ориентиры. **Последовательность и архитектурные инварианты важнее календаря.**
+Актуальность: 28 августа 2026
+Горизонт: осень 2026 → конец 2027
+Проект: SafeAI Desk
+Позиционирование: production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного использования внешних и локальных AI-моделей внутри организаций.
 
----
+1. Текущее состояние проекта
 
-# 1. Product vision
+SafeAI Desk уже выходит за рамки обычного интерфейса над LLM API.
 
-SafeAI Desk не должен превращаться в:
+На текущем этапе фундамент проекта включает:
 
-```text
-ещё один ChatGPT UI
-```
+organization-based multi-tenancy;
 
-и не должен останавливаться на:
+RBAC SUPER_ADMIN / ADMIN / USER;
 
-```text
-upload PDF
-→ chunks
-→ embeddings
-→ vector search
-→ LLM
-```
+HttpOnly cookie JWT authentication;
 
-Такой RAG сам по себе уже не является достаточным продуктовым отличием.
+CSRF-защиту;
 
-Целевая формулировка SafeAI Desk:
+строгую JWT validation;
 
-> **SafeAI Desk — корпоративный AI Control Plane и AI Gateway, который управляет тем, кто может использовать AI, какие 
-> модели и данные разрешены, какие знания были использованы, какие действия AI может выполнять, сколько это стоит и как 
-> полностью проследить каждую операцию.**
+user tokenVersion и organization authVersion;
 
-Главная инженерная ценность проекта:
+refresh-token rotation;
 
-```text
-Identity
-+ Tenant isolation
-+ Session security
-+ Durable AI operations
-+ Knowledge
-+ Retrieval
-+ Policy
-+ Model routing
-+ Guardrails
-+ Tools
-+ Cost
-+ Provenance
-+ Audit
-```
+refresh-token reuse detection;
 
----
+tenant-safe управление пользователями и организациями;
 
-# 2. Product pillars
+Redis rate limiting;
 
-SafeAI Desk развивается вокруг шести продуктовых pillar.
+transactional audit outbox;
 
-## 2.1. SafeAI Identity & Security
+usage analytics;
 
-```text
-кто пользователь
-из какой организации
-какие у него права
-активна ли организация
-активна ли сессия
-не была ли security state отозвана
-```
+pricing/data-quality semantics без подмены неизвестных значений нулём;
 
----
+OpenAI / Anthropic / mock provider abstraction;
 
-## 2.2. SafeAI Knowledge Control
+durable ChatTurn state machine;
 
-```text
-какие Knowledge Bases существуют
-кто имеет к ним доступ
-какая версия документа активна
-какая версия была использована в ответе
-какие документы устарели
-что было переиндексировано
-какие источники запрещены
-```
+idempotency;
 
----
+lease и fencing;
 
-## 2.3. SafeAI Model Control
+защиту от повторного provider call при неопределённом исходе;
 
-```text
-какие providers разрешены
-какие models разрешены
-какая модель выбрана policy
-какой fallback допустим
-какой бюджет доступен
-разрешён ли внешний provider
-нужна ли private/local model
-```
+tenant/ACL-aware Knowledge Bases;
 
----
+immutable document versions;
 
-## 2.4. SafeAI Answer Passport
+durable ingestion;
 
-Для каждого AI-ответа должна быть доступна provenance-цепочка:
+S3-compatible object storage;
 
-```text
-user
-organization
-chat
-chatTurn
-clientRequestId
+document extraction;
 
-policy version
+embeddings;
 
-knowledge bases
-retrieval run
-document versions
-chunks
-citations
+pgvector + FTS hybrid retrieval;
 
-requested model
-resolved model
-provider
-provider operation ID
-provider request ID
+RAG context assembly;
 
-usage
-pricing status
-cost status
+inline citations;
 
-tool executions
-approvals
+knowledge-only fail-closed mode;
 
-latency
-audit trail
-```
+retrieval provenance;
 
-Это не обещание детерминированно воспроизвести текст LLM.
+Answer Passport;
 
-Это доказуемая provenance операции.
+PostgreSQL/Flyway integrity constraints;
 
----
+React frontend с runtime validation API contracts и production error handling.
 
-## 2.5. SafeAI Action Gate
+Следующий этап проекта должен быть не «добавить ещё один чат» или «подключить ещё одну модель», а развить SafeAI Desk в полноценный корпоративный AI Control Plane.
 
-AI не должен напрямую получать неограниченный доступ к корпоративным инструментам.
+2. Целевое направление
 
-Целевой flow:
+Целевая архитектура:
 
-```text
-LLM proposes action
+                        SafeAI Desk
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+   AI Workspace        AI Control Plane      Governance
+        │                    │                    │
+ Chat / RAG / Agents     Models / Routing     Policies / Risk
+ Knowledge / Search      Budgets / Limits     Audit / Approvals
+ Tools / MCP             Providers            Compliance
+        │                    │                    │
+        └────────────────────┼────────────────────┘
+                             │
+                      Enterprise Data
+                             │
+       Confluence / Drive / SharePoint / Jira /
+       DB / CRM / Git / Slack / internal APIs
+
+Эволюция продукта:
+
+2026
+Безопасно пользоваться AI
+
         ↓
-SafeAI validates
+
+2027
+Безопасно давать AI доступ к корпоративным данным
+
         ↓
-authorization
-        ↓
-policy
-        ↓
-risk classification
-        ↓
-optional human approval
-        ↓
-execution
-        ↓
-durable result
-        ↓
-audit + provenance
-```
 
----
+2027+
+Безопасно позволять AI выполнять действия внутри компании
 
-## 2.6. SafeAI Evaluation & Operations
+3. Этап 1 — завершить Knowledge/RAG vertical slice
 
-Изменения AI-системы нельзя оценивать «на глаз».
+Приоритет: максимальный
+Период: сентябрь–октябрь 2026
 
-SafeAI должен уметь измерять:
+Нужно закончить полный пользовательский сценарий Knowledge.
 
-```text
-retrieval quality
-citation quality
-groundedness
-latency
-cost
-provider reliability
-security regressions
-tool correctness
-```
+ADMIN
 
----
-
-# 3. Что уже реализовано
-
-Текущий фундамент не требуется переписывать ради RAG или agents.
-
-## 3.1. Core platform
-
-```text
-✓ modular monolith
-✓ Java 21
-✓ Spring Boot
-✓ PostgreSQL
-✓ Flyway
-✓ Redis
-✓ React + TypeScript frontend
-```
-
----
-
-## 3.2. Identity / Auth / Security
-
-```text
-✓ organization-based multi-tenancy
-✓ SUPER_ADMIN / ADMIN / USER
-✓ HttpOnly cookie JWT
-✓ CSRF
-✓ refresh-token rotation
-✓ refresh-token reuse detection
-✓ user tokenVersion
-✓ organization authVersion
-✓ security-state invalidation
-✓ tenant-safe user/organization management
-✓ production auth configuration validation
-```
-
----
-
-## 3.3. Chat durability
-
-```text
-✓ durable ChatTurn state machine
-✓ clientRequestId idempotency
-✓ providerOperationId
-✓ lease
-✓ fencing
-✓ crash recovery
-✓ provider_call_started_at
-✓ ambiguous provider outcome protection
-✓ no blind retry after uncertain provider outcome
-✓ durable quota reservation
-```
-
-Это важный фундамент для будущего:
-
-```text
-tools
-agents
-approvals
-long-running AI operations
-```
-
----
-
-## 3.4. AI Provider abstraction
-
-```text
-✓ AiProvider abstraction
-✓ OpenAI adapter
-✓ Anthropic adapter
-✓ Mock provider
-✓ retry/error classification
-✓ provider-specific configuration
-✓ usage/pricing metadata foundation
-```
-
----
-
-## 3.5. Rate limiting / Quotas
-
-```text
-✓ Redis-backed rate limiting
-✓ login rate limiting
-✓ AI message limits
-✓ quota reservation model
-✓ durable chat quota semantics
-```
-
----
-
-## 3.6. Audit
-
-```text
-✓ transactional audit outbox
-✓ immutable actor snapshot
-✓ target organization snapshot
-✓ audit query layer
-✓ retention subsystem
-✓ sanitized audit details
-✓ correlation with security/business events
-```
-
----
-
-## 3.7. Usage / Pricing
-
-```text
-✓ usage collection
-✓ daily/model/user summaries
-✓ pricing metadata
-✓ pricing quality status
-✓ usage quality status
-✓ unknown data is not silently converted to zero
-✓ rollup subsystem
-```
-
----
-
-## 3.8. Knowledge Core
-
-На текущий момент реализовано:
-
-```text
-✓ Knowledge Bases
-✓ ORGANIZATION / MEMBERS visibility
-✓ VIEWER / EDITOR / OWNER
-✓ membership management
-✓ tenant isolation
-✓ document upload
-✓ immutable document versions
-✓ current version pointer
-✓ PostgreSQL metadata
-✓ LOCAL Object Storage
-✓ S3 / MinIO Object Storage
-✓ fail-fast S3 bucket validation
-✓ safe download endpoint
-✓ rollback compensation
-✓ SHA-256
-✓ upload size limit
-✓ production-oriented file validation
-✓ frontend Knowledge pages
-✓ user-friendly upload errors
-```
-
----
-
-## 3.9. Поддерживаемые Knowledge formats
-
-Upload whitelist:
-
-```text
-PDF
-DOCX
-TXT
-HTML / HTM
-MD
-CSV
-XLSX
-PPTX
-JSON
-XML
-```
-
-Старые форматы пока не поддерживаются:
-
-```text
-DOC
-XLS
-PPT
-RTF
-ODT
-ODS
-```
-
----
-
-## 3.10. Текущая граница Knowledge
-
-Сейчас успешный upload заканчивается примерно здесь:
-
-```text
-Upload
-  ↓
-Validation
-  ↓
-Object Storage
-  ↓
-DocumentVersion metadata
-  ↓
-IngestionJob
-  ↓
-PENDING
-```
-
-Пока отсутствуют:
-
-```text
-ingestion worker
-real extraction
-normalization
-chunking
-embeddings
-indexing
-retrieval
-citations
-chat knowledge integration
-```
-
-Поэтому **следующий основной engineering milestone — Knowledge Ingestion Core**.
-
----
-
-# 4. Главные архитектурные принципы
-
-## 4.1. Не строить «обычный RAG»
-
-SafeAI Knowledge должен быть:
-
-```text
-tenant-aware
-ACL-aware
-version-aware
-policy-aware
-provenance-aware
-auditable
-measurable
-revocable
-```
-
----
-
-## 4.2. Authorization до retrieval
-
-Запрещённая схема:
-
-```text
-искать по всем chunks
-→ получить top N
-→ убрать чужие данные в Java
-```
-
-Правильная схема:
-
-```text
-organization scope
-+ authorized knowledge bases
-+ authorized documents
-+ active versions
-        ↓
-retrieval
-        ↓
-ranking
-```
-
----
-
-## 4.3. Historical provenance immutable
-
-Если ответ использовал:
-
-```text
-DocumentVersion 7
-```
-
-а позже появилась:
-
-```text
-DocumentVersion 8
-```
-
-старый Answer Passport и citation продолжают ссылаться на `v7`.
-
----
-
-## 4.4. Provider не должен знать о Knowledge
-
-Запрещено помещать RAG-логику внутрь:
-
-```text
-OpenAiProvider
-AnthropicProvider
-```
-
-Provider остаётся transport/model adapter.
-
-Knowledge context формируется выше:
-
-```text
-Chat
-→ Context Builder
-→ Retrieval
-→ AiProvider
-```
-
----
-
-## 4.5. Upload success != READY
-
-```text
-file stored
-```
-
-не означает:
-
-```text
-document processed
-```
-
-`READY` допустим только после реального ingestion/indexing pipeline.
-
----
-
-## 4.6. PostgreSQL metadata — business source of truth
-
-Object Storage хранит immutable bytes.
-
-PostgreSQL хранит:
-
-```text
-tenant
-KB
-document
-version
-original filename
-storage key
-hash
-status
-provenance
-```
-
----
-
-## 4.7. Никаких premature distributed systems
-
-До измеренной необходимости не нужны:
-
-```text
-Kafka
-separate vector DB
-service mesh
-Kubernetes
-multi-agent swarm
-```
-
-Первый production target:
-
-```text
-modular monolith
-PostgreSQL + pgvector
-Redis
-S3/MinIO
-separate worker runtime role
-```
-
----
-
-# 5. Целевая архитектура SafeAI Desk
-
-```text
-                                ┌─────────────────────┐
-                                │   React Frontend    │
-                                └──────────┬──────────┘
-                                           │
-                                      HTTPS / SSE
-                                           │
-                                ┌──────────▼──────────┐
-                                │   Edge / Nginx      │
-                                └──────────┬──────────┘
-                                           │
-             ┌─────────────────────────────▼─────────────────────────────┐
-             │                     SafeAI Backend                      │
-             │                                                         │
-             │ Auth / Organization / User                              │
-             │ Chat / AI / Knowledge                                   │
-             │ Policy / Guardrails / Tools                             │
-             │ Audit / Usage / Evaluation                              │
-             └───────┬───────────────┬───────────────┬─────────────────┘
-                     │               │               │
-                     ▼               ▼               ▼
-                PostgreSQL         Redis          S3/MinIO
-                + pgvector      coordination      originals
-                     │
-                     ▼
-             ┌────────────────┐
-             │ Worker Runtime │
-             │                │
-             │ ingestion      │
-             │ extraction     │
-             │ chunking       │
-             │ embeddings     │
-             │ indexing       │
-             └───────┬────────┘
-                     │
-                     ▼
-           Governed Knowledge Index
-                     │
-                     ▼
-            Hybrid Retrieval Engine
-                     │
-                     ▼
-              Chat Context Builder
-                     │
-        ┌────────────┴────────────┐
-        ▼                         ▼
-   AI Providers              Tool Gateway
- OpenAI / Anthropic        MCP / internal APIs
- private/local models             │
-                                  ▼
-                              Approval
-                                  │
-                                  ▼
-                            Durable Agent
-```
-
-Поперёк всей системы:
-
-```text
-Security
-Policy
-Audit
-Usage
-Tracing
-Evaluation
-Cost Governance
-```
-
----
-
-# 6. High-level roadmap
-
-| Wave | Ориентир | Главный результат |
-|---|---|---|
-| Wave 0 | завершён / ongoing | Secure AI Gateway baseline |
-| Wave 1 | август–сентябрь 2026 | Knowledge Ingestion Core |
-| Wave 2 | сентябрь 2026 | 10-format extraction |
-| Wave 3 | сентябрь–октябрь 2026 | pgvector + FTS + Hybrid Retrieval |
-| Wave 4 | октябрь 2026 | Chat RAG + Citations + Answer Passport |
-| Wave 5 | октябрь–ноябрь 2026 | Retrieval Lab + Evaluation |
-| Wave 6 | ноябрь 2026 | AI Policy Engine + Guardrails |
-| Wave 7 | ноябрь–декабрь 2026 | Model Control Plane + Private AI |
-| Wave 8 | Q1 2027 | Connectors + ACL synchronization |
-| Wave 9 | Q1–Q2 2027 | Assistant / Prompt Registry |
-| Wave 10 | Q2 2027 | Tool/MCP Gateway + Human Approval |
-| Wave 11 | Q2–Q3 2027 | Durable Agent Runtime |
-| Wave 12 | 2027 | Enterprise identity / service accounts / cost governance |
-| Wave 13 | 2027 | 1.0 production hardening / packaging |
-| Wave 14 | 2028+ | governed workflows / advanced agents |
-
----
-
-# 7. Wave 1 — Knowledge Ingestion Core
-
-## Цель
-
-Довести документ от:
-
-```text
-PENDING
-```
-
-до реальной фоновой обработки.
-
-Не внедрять embeddings на первом же коммите.
-
-Сначала построить надёжную durable orchestration.
-
----
-
-## 7.1. State machine
-
-Целевая state machine:
-
-```text
-PENDING
-   ↓
-VALIDATING
-   ↓
-EXTRACTING
-   ↓
-NORMALIZING
-   ↓
-CHUNKING
-   ↓
-EMBEDDING
-   ↓
-INDEXING
-   ↓
-READY
-```
-
-Failure:
-
-```text
-любой processing state
-        ↓
-      FAILED
-```
-
-Позже для malware scanning:
-
-```text
-SCANNING
-QUARANTINED
-```
-
----
-
-## 7.2. Worker architecture
-
-```text
-knowledge/
-└── ingestion/
-    ├── config/
-    │   └── KnowledgeIngestionProperties
-    │
-    ├── worker/
-    │   ├── KnowledgeIngestionScheduler
-    │   ├── KnowledgeIngestionWorker
-    │   ├── KnowledgeIngestionLeaseService
-    │   └── KnowledgeIngestionRecoveryService
-    │
-    └── service/
-        └── KnowledgeIngestionService
-```
-
----
-
-## 7.3. Durable job fields
-
-`knowledge_ingestion_jobs` должен поддерживать:
-
-```text
-state/status
-attempt_count
-next_attempt_at
-last_error_code
-last_error_summary
-lease_owner
-lease_until
-started_at
-completed_at
-updated_at
-```
-
-Точные поля вводятся новой Flyway migration.
-
-Перед merge необходимо проверить реальный следующий свободный номер migration.
-
----
-
-## 7.4. Job reservation
-
-При нескольких workers одна job не должна выполняться дважды.
-
-Рекомендуемый механизм:
-
-```text
-PostgreSQL
-FOR UPDATE SKIP LOCKED
-```
-
-плюс:
-
-```text
-lease owner
-lease timeout
-attempt count
-recovery
-```
-
----
-
-## 7.5. Retry policy
-
-Retryable:
-
-```text
-temporary storage error
-temporary parser infrastructure failure
-embedding provider 429
-embedding provider 5xx
-transient DB/network failure
-```
-
-Non-retryable:
-
-```text
-unsupported/corrupt document
-malformed JSON/XML
-irrecoverable parser error
-policy quarantine
-```
-
----
-
-## 7.6. Recovery
-
-После crash:
-
-```text
-lease_until expired
-AND status processing
-→ eligible for recovery
-```
-
-Recovery не должен создавать:
-
-```text
-duplicate chunks
-duplicate embeddings
-duplicate index rows
-```
-
----
-
-## 7.7. Definition of Done
-
-```text
-✓ two workers cannot process same job concurrently
-✓ retry/backoff works
-✓ expired lease recovered
-✓ permanent failure becomes FAILED
-✓ crash does not duplicate output
-✓ PENDING no longer hangs forever
-✓ status visible in UI
-✓ integration tests with PostgreSQL
-```
-
----
-
-# 8. Wave 2 — Extraction subsystem
-
-## Цель
-
-Создать расширяемый parser/extractor registry.
-
-Нельзя делать giant switch внутри worker.
-
----
-
-## 8.1. Package structure
-
-```text
-knowledge/
-└── ingestion/
-    ├── extraction/
-    │   ├── KnowledgeDocumentExtractor
-    │   ├── KnowledgeDocumentExtractorRegistry
-    │   ├── PdfDocumentExtractor
-    │   ├── DocxDocumentExtractor
-    │   ├── TxtDocumentExtractor
-    │   ├── HtmlDocumentExtractor
-    │   ├── MarkdownDocumentExtractor
-    │   ├── CsvDocumentExtractor
-    │   ├── XlsxDocumentExtractor
-    │   ├── PptxDocumentExtractor
-    │   ├── JsonDocumentExtractor
-    │   └── XmlDocumentExtractor
-    │
-    └── normalization/
-```
-
----
-
-## 8.2. Extractor contract
-
-```java
-public interface KnowledgeDocumentExtractor {
-
-    boolean supports(String mediaType);
-
-    ExtractedDocument extract(
-            KnowledgeDocumentVersionEntity version,
-            byte[] content
-    );
-}
-```
-
----
-
-## 8.3. Structured result
-
-Не возвращать только один `String`.
-
-```java
-public record ExtractedDocument(
-        List<ExtractedSection> sections
-) {
-}
-
-public record ExtractedSection(
-        String heading,
-        String text,
-        Integer page,
-        String sheet,
-        Integer slide,
-        String path
-) {
-}
-```
-
----
-
-## 8.4. Format-specific provenance
-
-PDF:
-
-```text
-page
-heading
-```
-
-DOCX:
-
-```text
-heading hierarchy
-paragraph
-table
-```
-
-XLSX:
-
-```text
-sheet
-table
-row/column context
-```
-
-PPTX:
-
-```text
-slide
-title
-speaker notes
-tables
-```
-
-JSON/XML:
-
-```text
-source path
-```
-
-Пример:
-
-```text
-employees[5].department.name
-```
-
----
-
-## 8.5. Implementation order
-
-Сначала:
-
-```text
-TXT
-MD
-HTML
-JSON
-XML
-CSV
-```
-
-Потом:
-
-```text
-PDF
-DOCX
-XLSX
-PPTX
-```
-
-Причина:
-
-первые форматы позволяют стабилизировать ingestion orchestration без одновременной борьбы со сложными Office/PDF parsers.
-
----
-
-## 8.6. Security requirements
-
-HTML:
-
-```text
-scripts/styles ignored
-no active HTML execution
-```
-
-XML:
-
-```text
-DTD disabled
-external entities disabled
-no network access
-```
-
-OOXML/PDF:
-
-```text
-parser limits
-bounded memory
-bounded pages/entries
-zip bomb protection
-```
-
----
-
-## 8.7. Definition of Done
-
-```text
-✓ all 10 upload formats have extractor strategy
-✓ extractor result includes source metadata
-✓ malformed file becomes FAILED
-✓ parser resource limits exist
-✓ no outbound network access from parser
-✓ extraction tests use real fixtures
-```
-
----
-
-# 9. Wave 3 — Chunk model + Knowledge Index
-
-## 9.1. Chunk persistence
-
-Добавить таблицу:
-
-```text
-knowledge_document_chunks
-```
-
-Минимальные поля:
-
-```text
-id
-
-organization_id
-knowledge_base_id
-document_id
-document_version_id
-
-chunk_index
-content
-content_hash
-
-section_title
-page_number
-sheet_name
-slide_number
-source_path
-
-token_count
-
-embedding
-search_vector
-
-created_at
-```
-
----
-
-## 9.2. Strong tenant invariant
-
-Каждая chunk row должна содержать:
-
-```text
-organization_id
-knowledge_base_id
-document_id
-document_version_id
-```
-
-Нельзя полагаться только на join после retrieval.
-
----
-
-## 9.3. Chunker abstraction
-
-```text
-knowledge/
-└── ingestion/
-    └── chunking/
-        ├── KnowledgeChunker
-        ├── SemanticKnowledgeChunker
-        └── ChunkingProperties
-```
-
-Первый production algorithm:
-
-```text
-section-aware
-bounded token size
-controlled overlap
-preserve source metadata
-```
-
----
-
-## 9.4. Chunking profiles
-
-Позже:
-
-```text
-chunking_profiles
-```
-
-чтобы можно было сравнивать:
-
-```text
-v1 fixed
-v2 semantic
-v3 table-aware
-```
-
-через evaluation runs.
-
----
-
-# 10. Wave 3 — Embeddings
-
-## 10.1. Separate abstraction
-
-Generation и embeddings разделяются.
-
-```java
-interface AiProvider
-
-interface EmbeddingProvider
-```
-
----
-
-## 10.2. Embedding profile
-
-```text
-embedding_profiles
-
-id
-provider
-model
-dimensions
-distance
-version
-enabled
-created_at
-```
-
-Chunk должен быть связан с конкретным profile/version.
-
----
-
-## 10.3. Why profiles matter
-
-При замене embedding model нельзя делать:
-
-```text
-перезаписать всё без trace
-```
-
-Нужно поддержать:
-
-```text
-old index
-new index
-comparison
-controlled switch
-rollback
-```
-
----
-
-# 11. Wave 3 — PostgreSQL + pgvector + FTS
-
-Первый production search stack:
-
-```text
-PostgreSQL
-+
-pgvector
-+
-PostgreSQL Full Text Search
-```
-
-Не вводить отдельный vector DB без измеренной необходимости.
-
----
-
-## 11.1. Почему hybrid search
-
-Vector-only плохо работает для:
-
-```text
-ИНН
-ГОСТ
-артикул
-номер договора
-error code
-Java class
-SQL constraint
-точный термин
-```
-
-Поэтому:
-
-```text
-query
- ├── FTS top N
- └── vector top N
-       ↓
-candidate merge
-       ↓
-RRF
-       ↓
-top candidates
-```
-
-Первый production ranker:
-
-```text
-FTS + vector + Reciprocal Rank Fusion
-```
-
----
-
-# 12. Retrieval Engine
-
-Отдельный subsystem:
-
-```text
-knowledge/
-└── retrieval/
-    ├── KnowledgeRetrievalService
-    ├── KnowledgeRetrievalQuery
-    ├── KnowledgeRetrievalPolicy
-    ├── KnowledgeCandidateRetriever
-    ├── KnowledgeHybridRanker
-    ├── KnowledgeSearchResult
-    └── KnowledgeCitationMapper
-```
-
----
-
-## 12.1. Retrieval path
-
-```text
-query
-  ↓
-query embedding
-  ↓
-authorized scope
-  ↓
-FTS candidates
-+
-vector candidates
-  ↓
-merge
-  ↓
-RRF
-  ↓
-optional reranker
-  ↓
-context budget selector
-  ↓
-top K
-```
-
----
-
-## 12.2. Authorization inside query
-
-Правильно:
-
-```sql
-WHERE organization_id = :organizationId
-  AND knowledge_base_id IN (:allowedKnowledgeBaseIds)
-  AND document_version_id IN (:activeVersionIds)
-```
-
-и только после этого:
-
-```text
-ranking
-```
-
----
-
-## 12.3. Future ranking signals
-
-```text
-vector similarity
-lexical score
-recency
-document priority
-knowledge-base priority
-source type
-reranker score
-```
-
----
-
-# 13. Retrieval provenance
-
-RAG provenance является core data, а не optional telemetry.
-
----
-
-## 13.1. RetrievalRun
-
-```text
-retrieval_runs
-
-id
-organization_id
-user_id
-chat_turn_id
-
-strategy_version
-embedding_profile_id
-
-query_hash
-
-state
-candidate_count
-selected_count
-
-started_at
-completed_at
-duration_ms
-```
-
----
-
-## 13.2. RetrievalHit
-
-```text
-retrieval_hits
-
-retrieval_run_id
-document_id
-document_version_id
-chunk_id
-
-lexical_score
-vector_score
-reranker_score
-final_score
-
-rank
-selected
-```
-
-Хранить bounded top-N candidates, а не только final chunks.
-
----
-
-## 13.3. Почему это важно
-
-SafeAI должен отвечать на вопросы:
-
-```text
-Почему нужный документ не попал в ответ?
-Какой chunk был кандидатом?
-Какой rank?
-Какой retrieval strategy?
-Какая embedding model?
-```
-
----
-
-# 14. Chat integration
-
-Knowledge подключается к Chat только после самостоятельного retrieval слоя.
-
----
-
-## 14.1. Target flow
-
-```text
-POST message
-       ↓
-reserve durable ChatTurn
-       ↓
-commit
-       ↓
-KnowledgeRetrievalService
-       ↓
-persist RetrievalRun / Hits
-       ↓
-ChatContextBuilder
-       ↓
-markProviderCallStarted
-       ↓
-AiProvider
-       ↓
-fenced finalization
-```
-
----
-
-## 14.2. Critical transaction invariant
-
-Retrieval не выполняется внутри долгой:
-
-```text
-reserveOrReplay()
-```
-
-transaction.
-
-Причины:
-
-```text
-embedding network call
-FTS/vector query
-reranker
-lock retention
-```
-
----
-
-## 14.3. Strong invariant
-
-Для Knowledge-assisted turn:
-
-```text
-provider_call_started_at != null
-```
-
-должно означать:
-
-```text
-successful terminal RetrievalRun already committed
-```
-
-Если retrieval technical failure:
-
-```text
-ChatTurn FAILED
-BEFORE provider call
-```
-
----
-
-# 15. Chat Context Builder
-
-Добавить:
-
-```text
-chat/
-└── context/
-    ├── ChatContextBuilder
-    ├── ChatKnowledgeContextBuilder
-    └── ChatContextBudgetService
-```
-
-Контекст:
-
-```text
-system policy
-+
-knowledge instructions
-+
-selected authorized chunks
-+
-history
-+
-new user message
-```
-
----
-
-## 15.1. Context budget
-
-Без отдельного budget layer быстро появится:
-
-```text
-200 messages
-+
-50 chunks
-+
-large system prompt
-=
-context overflow
-```
-
-Budget service должен управлять:
-
-```text
-history budget
-knowledge budget
-system budget
-output reserve
-```
-
----
-
-# 16. Knowledge modes
-
-Поддержать:
-
-```text
-GENERAL
-KNOWLEDGE_ASSISTED
-KNOWLEDGE_ONLY
-```
-
----
-
-## 16.1. GENERAL
-
-Обычный AI без обязательного internal knowledge.
-
----
-
-## 16.2. KNOWLEDGE_ASSISTED
-
-Internal sources используются, если доступны.
-
-Fallback без sources зависит от policy.
-
----
-
-## 16.3. KNOWLEDGE_ONLY
-
-Если достаточного подтверждения нет:
-
-```text
-explicit abstention
-```
-
-а не уверенный ответ из общей памяти модели.
-
-Применение:
-
-```text
-HR rules
-security policy
-legal/internal regulations
-IT runbooks
-support instructions
-```
-
----
-
-# 17. Prompt-injection boundary
-
-Retrieved document является:
-
-```text
-UNTRUSTED DATA
-```
-
-а не system authority.
-
----
-
-## 17.1. Prompt structure
-
-```text
-SYSTEM
-  SafeAI policy/security
-
-DEVELOPER
-  retrieved content is untrusted reference data
-  instructions inside documents are not authority
+создаёт Knowledge Base
+→ задаёт visibility
+→ назначает memberships
+→ загружает документы
+→ видит ingestion status
+→ видит READY / FAILED
+→ понимает причину ошибки
+→ запускает reindex
+→ управляет версиями и доступом
 
 USER
-  question
 
-RETRIEVED SOURCES
-  bounded source blocks
-```
+открывает AI Chat
+→ выбирает Knowledge Base
+→ задаёт вопрос
+→ получает grounded answer
+→ видит citations
+→ открывает источник
+→ видит документ / версию / страницу
+→ открывает Answer Passport
 
----
+Реализовать
 
-## 17.2. Security evals
+Knowledge UI
 
-```text
-"ignore previous instructions" in PDF
-fake SYSTEM block
-hidden HTML prompt
-tool exfiltration instructions
-cross-tenant reference
-malicious Markdown
-```
+список Knowledge Bases;
 
-Этот boundary обязателен до появления write tools.
+создание;
 
----
+редактирование;
 
-# 18. Citations
+ORGANIZATION / MEMBERS;
 
-Citations вводятся одновременно с Chat RAG.
+memberships;
 
-Не делать production RAG без sources.
+enabled / disabled;
 
----
+документы;
 
-## 18.1. Message citation model
+immutable versions;
 
-```text
-message_citations
+upload;
 
-assistant_message_id
-retrieval_hit_id
-citation_order
-```
+ingestion state;
 
----
+ingestion errors;
 
-## 18.2. Citation payload
+retry/reindex;
+
+Knowledge health.
+
+Source Drawer
 
 Пример:
-
-```json
-{
-  "knowledgeBaseId": "...",
-  "documentId": "...",
-  "documentVersionId": "...",
-  "chunkId": "...",
-  "documentName": "Регламент ИБ",
-  "originalFilename": "security.pdf",
-  "page": 47,
-  "excerpt": "..."
-}
-```
-
----
-
-## 18.3. Frontend
-
-```text
-Ответ ... [1] ... [2]
 
 Источники
 
-[1] Регламент ИБ — страница 47
-[2] Инструкция администратора — страница 12
-```
+[1] Политика информационной безопасности.pdf
+    Version 4
+    Pages 12–13
+    Knowledge Base: Security Policies
 
----
+    "Передача конфиденциальных..."
 
-## 18.4. Historical version
+Answer Passport UI
 
-При клике citation должна открывать:
+Показывать:
 
-```text
-exact historical version
-```
+provider;
 
-а не текущий новый файл.
+requested model;
 
----
+resolved model;
 
-# 19. SafeAI Answer Passport
+embedding model;
 
-Одна из главных product differentiators.
+Knowledge Bases;
 
----
+retrieval run;
 
-## 19.1. User view
+retrieved chunks;
 
-```text
-Sources
-Knowledge Bases
-Document Versions
+source document;
+
+document version;
+
+page;
+
+citations;
+
+evidence status;
+
+token usage;
+
+cost;
+
+request ID;
+
+timestamps;
+
+prompt/config version в будущем.
+
+Knowledge modes
+
+GENERAL
+KNOWLEDGE_ASSISTED
+KNOWLEDGE_ONLY
+
+Для KNOWLEDGE_ONLY:
+
+нет достаточного evidence
+→ модель не должна придумывать ответ
+→ возвращается controlled abstention
+
+4. Этап 2 — Retrieval / RAG Evaluations
+
+Период: октябрь–ноябрь 2026
+
+До agents и сложной автоматизации необходимо создать Evaluation Framework.
+
+Evaluation Dataset
+
+Пример:
+
+Question:
+"Какой срок хранения договора?"
+
+Expected evidence:
+documentVersion = 7
+page = 14
+
+Expected concepts:
+"5 лет"
+
+Метрики
+
+retrieval recall;
+
+retrieval precision;
+
+groundedness;
+
+citation correctness;
+
+answer relevance;
+
+abstention correctness;
+
+latency;
+
+token usage;
+
+cost;
+
+provider/model comparison.
+
+Regression evaluations
+
+При изменении:
+
+system prompt;
+
+embedding model;
+
+chunking;
+
+retrieval parameters;
+
+RRF;
+
+model;
+
+provider;
+
+Knowledge ingestion;
+
+SafeAI Desk должен запускать regression suite.
+
+Пример:
+
+Old configuration:
+87.2%
+
+New configuration:
+82.4%
+
+Result:
+BLOCK RELEASE
+
+5. Этап 3 — Model Registry
+
+Период: ноябрь 2026
+
+Создать централизованный Model Registry.
+
 Model
-Provider
-Latency
-Usage status
-Pricing status
-Cost if known
-```
 
----
+Хранить:
 
-## 19.2. Admin view
+provider;
 
-Дополнительно:
+provider model ID;
 
-```text
-chatTurnId
-clientRequestId
-retrievalRunId
-providerOperationId
-providerRequestId
-strategyVersion
-embeddingProfile
-policyVersion
-pricingVersion
-```
+display name;
 
----
+capabilities;
 
-## 19.3. Future tool view
+context window;
 
-```text
-tool executions
-approval decisions
-action result
-```
+input price;
 
----
+cached input price;
 
-# 20. Wave 5 — Retrieval Lab
+cache-write price;
 
-Добавить отдельный admin/debug UI.
+output price;
 
-```text
-Retrieval Debugger
-```
+multimodal support;
 
----
+vision;
 
-## 20.1. Example
+tool calling;
 
-Вопрос:
+structured output;
 
-```text
-Как изменить пароль администратора?
-```
+reasoning;
 
-UI:
+data residency;
 
-```text
-Query
- ↓
-Embedding
- ↓
-FTS candidates
- ↓
-Vector candidates
- ↓
-Merged ranking
- ↓
-RRF
- ↓
-Reranker
+retention policy;
 
-#1 security.pdf page 17       0.941
-#2 admin-guide.docx page 32   0.903
-#3 onboarding.md              0.721
-```
+enabled;
 
----
+deprecated;
 
-## 20.2. Зачем
+production approved.
 
-Это одновременно:
+Frontend не должен хардкодить список моделей.
 
-```text
-operations tool
-RAG quality tool
-debugger
-portfolio differentiator
-demo feature
-```
+6. Этап 4 — Organization Model Policies
 
----
+Период: ноябрь–декабрь 2026
 
-# 21. Evaluation Platform
+Организация должна управлять тем, какие модели доступны её пользователям.
 
-RAG/model changes нельзя улучшать «на глаз».
+Пример:
 
----
-
-## 21.1. Schema
-
-```text
-evaluation_sets
-evaluation_cases
-evaluation_runs
-evaluation_case_results
-```
-
----
-
-## 21.2. Evaluation case
-
-```text
-question
-allowed KBs
-expected sources
-must include facts
-must not include facts
-expected abstention
-expected policy decision
-expected tool decision
-```
-
----
-
-## 21.3. Retrieval metrics
-
-```text
-Recall@K
-MRR
-nDCG
-source coverage
-empty retrieval rate
-```
-
----
-
-## 21.4. Answer metrics
-
-```text
-citation precision
-citation coverage
-groundedness
-correctness
-abstention correctness
-unsupported claim rate
-```
-
----
-
-## 21.5. Operational metrics
-
-```text
-latency
-time-to-first-token
-tokens
-cost
-provider failures
-```
-
----
-
-## 21.6. Release gate
-
-Перед изменением:
-
-```text
-embedding model
-chunking
-ranking
-reranker
-prompt policy
-routing
-```
-
-запускается comparison:
-
-```text
-old
-vs
-new
-```
-
----
-
-# 22. Knowledge Health
-
-Management page:
-
-```text
-stale documents
-failed documents
-quarantined documents
-documents never retrieved
-empty retrieval queries
-duplicate documents
-near-duplicate documents
-versions waiting for reindex
-```
-
-Позже:
-
-```text
-contradictory sources
-policy conflicts
-coverage gaps
-outdated references
-```
-
-Это превращает Knowledge из:
-
-```text
-chat with documents
-```
-
-в:
-
-```text
-knowledge governance platform
-```
-
----
-
-# 23. Wave 6 — AI Policy Engine
-
-Это один из ключевых слоёв, который отделяет SafeAI от обычного RAG.
-
----
-
-## 23.1. Package
-
-```text
-policy/
-├── model/
-├── repository/
-├── service/
-│   ├── AiPolicyService
-│   ├── AiPolicyEvaluator
-│   └── AiPolicyDecisionService
-└── enforcement/
-```
-
----
-
-## 23.2. Decision model
-
-```text
-ALLOW
-DENY
-REQUIRE_APPROVAL
-```
-
-Плюс:
-
-```text
-reasonCode
-policyVersion
-```
-
----
-
-## 23.3. Policies
-
-Организация должна управлять:
-
-```text
-providers
-models
-Knowledge Bases
-knowledge modes
-tools
-attachments
-budgets
-max context
-data classification
-external/private provider
-retention
-region
-```
-
----
-
-## 23.4. Example
-
-```text
 Organization A
 
-USER:
-  providers:
-    OpenAI: ALLOW
-    Anthropic: DENY
+Allowed:
+✓ premium OpenAI model
+✓ Anthropic model
+✓ Local Qwen
 
-  models:
-    fast: ALLOW
-    expensive: DENY
+Blocked:
+✕ experimental model
+✕ provider without approved retention policy
 
-  knowledge:
-    only assigned KBs
+Поддержать политики по:
 
-  tools:
-    internet: DENY
+organization;
 
-  maxCostPerRequest:
-    0.20 USD
-```
+role;
 
----
+group/department;
 
-## 23.5. Policy provenance
+use case;
 
-Каждое важное решение сохраняет:
+data classification;
 
-```text
-policyVersion
-decision
-reasonCode
-```
+budget;
 
-в:
+provider;
 
-```text
-audit
-Answer Passport
-tool execution
-routing decision
-```
+model capability.
 
----
+7. Этап 5 — AI FinOps / Budgets
 
-# 24. DLP / Guardrails
+Период: декабрь 2026
 
-Следующий enterprise security subsystem:
+Usage необходимо превратить из отчётности в control plane.
 
-```text
-guardrail/
-├── input/
-├── output/
-├── pii/
-├── secrets/
-├── classification/
-├── policy/
-└── service/
-```
+Budget hierarchy
 
----
+Organization
+→ Department
+→ User
+→ Assistant
+→ Agent
+→ Model
 
-## 24.1. Input pipeline
+Возможности
 
-```text
-User message
-   ↓
-DLP / secret / PII detection
-   ↓
-Policy
-   ↓
-BLOCK / REDACT / WARN / AUDIT_ONLY
-   ↓
-Retrieval
-   ↓
+monthly organization budget;
+
+user quota;
+
+department budget;
+
+model budget;
+
+token quota;
+
+request quota;
+
+daily limit;
+
+hard/soft budget.
+
+Реакции
+
+80% → warning
+100% → downgrade / restrict premium models
+110% → block premium traffic
+
+Dashboard
+
+cost by organization;
+
+cost by user;
+
+cost by department;
+
+cost by model;
+
+cost by use case;
+
+cost by assistant;
+
+cost by agent;
+
+cached-token savings;
+
+RAG cost;
+
+forecast;
+
+budget utilization.
+
+8. Этап 6 — Data Classification + DLP
+
+Период: конец 2026 → начало 2027
+
+Перед отправкой prompt внешнему provider:
+
+User input
+    ↓
+Data Classification
+    ↓
+DLP / PII / secrets
+    ↓
+Policy Engine
+    ↓
 Provider
-```
 
----
+Классы данных
 
-## 24.2. Output pipeline
-
-```text
-Provider response
-   ↓
-output policy
-   ↓
-PII/secrets
-   ↓
-redaction/block
-   ↓
-user
-```
-
----
-
-## 24.3. Initial targets
-
-```text
-API keys
-JWT
-private keys
-password patterns
-credentials
-personal data
-payment information
-restricted identifiers
-```
-
----
-
-# 25. Data classification
-
-Целевая модель:
-
-```text
 PUBLIC
 INTERNAL
 CONFIDENTIAL
 RESTRICTED
-```
 
-Policy example:
+Detection
 
-```text
-RESTRICTED
-→ PRIVATE_ONLY provider policy
-```
+email;
 
-Важно:
+phone;
 
-data residency можно обещать только если весь path соответствует требованиям:
+passport / ID;
 
-```text
-DB
-Object Storage
-logs
-telemetry
-backups
-provider
-```
+credit card;
 
----
+API keys;
 
-# 26. Wave 7 — Model Control Plane
+tokens;
 
-Provider abstraction уже есть.
+passwords;
 
-Следующий уровень:
+private keys;
 
-```text
-AiProviderRegistry
-ModelRegistry
-ModelSelectionService
-ProviderHealthService
-ProviderFallbackPolicy
-```
+access credentials;
 
----
+internal identifiers;
 
-## 26.1. Persistence
+company-specific secret dictionaries.
 
-```text
-provider_accounts
-ai_models
-model_aliases
-organization_model_policies
-model_routing_policies
-```
+Actions
 
----
+ALLOW
+WARN
+REDACT
+BLOCK
+REQUIRE_APPROVAL
+ROUTE_TO_LOCAL_MODEL
 
-## 26.2. User-facing aliases
+9. Этап 7 — Policy Engine
 
-Пользователь видит:
+Период: начало 2027
 
-```text
-Fast
-Balanced
-Advanced
-Private
-```
+Не размазывать enterprise policy по if внутри сервисов.
 
-Admin связывает alias с:
+Создать централизованный Policy Engine.
 
-```text
-provider/model
-```
+Пример:
 
-Сохранять:
+WHEN
+    organization = ACME
+    AND department = FINANCE
+    AND classification >= CONFIDENTIAL
 
-```text
-requestedModel
-resolvedModel
-```
+THEN
+    deny external providers
+    allow local models
+    audit = HIGH
 
----
+Другой пример:
 
-## 26.3. Routing
+WHEN
+    model = PREMIUM
+    AND monthlyBudget > 90%
 
-Первый release:
+THEN
+    route = STANDARD_MODEL
 
-```text
-QUALITY_FIRST
-COST_FIRST
-LATENCY_FIRST
-PRIVATE_ONLY
-```
+PolicyDecision
 
-Позже:
+ALLOW
+DENY
+WARN
+REDACT
+REQUIRE_APPROVAL
+ROUTE
 
-```text
-task-aware
-budget-aware
-health-aware
-organization-specific
-```
+10. Этап 8 — Groups / Departments
 
----
+Период: начало 2027
 
-## 26.4. Routing provenance
+Текущая модель:
 
-```text
-policyVersion
-candidate models
-selected model
-reasonCode
-```
+Organization
+→ Users
 
----
+Целевая:
 
-## 26.5. Ambiguous safety
-
-После:
-
-```text
-provider_call_started_at != null
-```
-
-нельзя делать blind fallback при uncertain outcome.
-
-Существующая `AMBIGUOUS` семантика сохраняется.
-
----
-
-# 27. Provider Health
-
-Добавить:
-
-```text
-provider latency
-error rates
-429 rates
-5xx rates
-timeouts
-availability state
-```
-
-Использовать для:
-
-```text
-routing
-admin dashboard
-operations
-```
-
----
-
-# 28. BYOK
-
-Поддержать:
-
-```text
-platform credentials
-organization-owned credentials
-```
-
-Plaintext key в PostgreSQL запрещён.
-
-Нужно:
-
-```text
-Vault/KMS/secrets backend
-envelope encryption
-key version
-status
-created_at
-last_verified_at
-rotation
-```
-
-Audit фиксирует lifecycle, но никогда не secret.
-
----
-
-# 29. Private / Local AI
-
-Добавить OpenAI-compatible adapter для:
-
-```text
-vLLM
-SGLang
-corporate inference endpoints
-```
-
-Dev-only возможно:
-
-```text
-Ollama
-```
-
-SafeAI остаётся единым gateway:
-
-```text
-Auth
-Policy
-Audit
-Usage
-Rate limit
-Knowledge
-Guardrails
-Routing
-```
-
-независимо от physical model runtime.
-
----
-
-# 30. Streaming / Chat UX
-
-Streaming остаётся важным UX milestone, но не должен ломать durable ChatTurn.
-
----
-
-## 30.1. SSE
-
-```text
-TURN_STARTED
-TOKEN_DELTA
-SOURCE_AVAILABLE
-USAGE_PROVISIONAL
-COMPLETED
-FAILED
-AMBIGUOUS
-```
-
-SSE — transport.
-
-Source of truth:
-
-```text
-ChatTurn in DB
-```
-
----
-
-## 30.2. Reconciliation
-
-После disconnect:
-
-```text
-browser reload
-→ ChatTurn status
-→ message reconciliation
-```
-
-Никакого duplicate provider call.
-
----
-
-## 30.3. Frontend
-
-```text
-incremental answer
-reconnect state
-Stop
-copy
-regenerate
-rename/archive
-search
-better loading
-source appearance during stream
-```
-
----
-
-# 31. Knowledge Connectors
-
-После стабильного ingestion manual upload перестаёт быть единственным source.
-
----
-
-## 31.1. Connector targets
-
-Приоритет:
-
-```text
-SharePoint / OneDrive
-Google Drive
-Confluence
-GitHub
-GitLab
-S3
-Web
-Database
-```
-
----
-
-## 31.2. Strong architecture rule
-
-Connector не пишет chunks напрямую.
-
-Правильно:
-
-```text
-Connector
-   ↓
-Source document
-   ↓
-KnowledgeDocumentVersion
-   ↓
-standard Ingestion Pipeline
-```
-
----
-
-## 31.3. Sync model
-
-```text
-external ID
-cursor/checkpoint
-incremental sync
-delete tombstone
-version mapping
-permission mapping
-retry
-dead-letter
-```
-
----
-
-# 32. ACL synchronization
-
-Будущая модель доступа:
-
-```text
-Knowledge Base ACL
-+
-Document ACL
-+
-Source ACL
-```
-
-Например:
-
-```text
-SharePoint file
-allowed only for Engineering
-```
-
-SafeAI retrieval должен учитывать это до ranking.
-
----
-
-# 33. URL ingestion
-
-Вводить только с полноценной SSRF defense.
-
-```text
-scheme allowlist
-private IP deny
-reserved IP deny
-redirect limit
-DNS rebinding protection
-download limit
-MIME validation
-timeout
-response size
-HTML sanitization
-```
-
-Не делать universal crawler раньше времени.
-
----
-
-# 34. Assistant entity
-
-После Knowledge + Policy + Model Control имеет смысл добавить:
-
-```text
-Assistant
-```
+Organization
+→ Groups / Departments
+→ Users
 
 Примеры:
 
-```text
-HR Assistant
-Legal Assistant
-DevOps Assistant
-Support Assistant
-Security Assistant
-```
+Finance;
 
----
+Legal;
 
-## 34.1. Assistant configuration
+HR;
 
-```text
-name
-description
-system prompt version
-allowed model aliases
-Knowledge Bases
-retrieval policy
-knowledge mode
-tools
-guardrail policy
-temperature/config
-enabled
-```
+Engineering;
 
----
+Sales;
 
-# 35. Prompt Registry
+Support.
 
-System prompts не должны жить как случайные hardcoded строки.
+На группы назначаются:
 
-Добавить:
+Knowledge access;
 
-```text
+Assistant access;
+
+Model access;
+
+budget;
+
+DLP policy;
+
+tool access;
+
+data classification rules.
+
+11. Этап 9 — Enterprise Knowledge Connectors
+
+Период: Q1 2027
+
+Ручной upload оставить, но добавить источники:
+
+Knowledge Source
+├── File upload
+├── Confluence
+├── SharePoint
+├── OneDrive
+├── Google Drive
+├── Notion
+├── Jira
+├── Git
+├── Web site
+└── Internal API
+
+Connector model
+
+Source
+→ sync cursor
+→ incremental sync
+→ immutable version
+→ extraction
+→ chunks
+→ embeddings
+→ index
+
+Обязательно
+
+ACL mirroring;
+
+source deletion handling;
+
+health;
+
+retry;
+
+sync status;
+
+last sync;
+
+next sync;
+
+partial failure;
+
+credential rotation.
+
+12. Этап 10 — SSO / SCIM
+
+Период: Q1 2027
+
+Для enterprise deployment добавить:
+
+Authentication
+
+OIDC;
+
+Microsoft Entra ID;
+
+Okta;
+
+Google Workspace;
+
+SAML при необходимости.
+
+Provisioning
+
+SCIM;
+
+automatic user create;
+
+automatic disable;
+
+group sync;
+
+department sync.
+
+Сценарий:
+
+Employee leaves company
+→ IdP disables user
+→ SafeAI revokes active sessions
+→ AI access disappears
+
+13. Этап 11 — AI Governance
+
+Период: Q1–Q2 2027
+
+Добавить AI Use Case Registry.
+
+Пример:
+
+Use case:
+HR CV Assistant
+
+Owner:
+HR
+
+Purpose:
+Candidate screening support
+
+Models:
+...
+
+Data:
+Personal data
+
+Human oversight:
+Required
+
+Risk:
+...
+
+Approved:
+YES
+
+Risk profile
+
+personal data;
+
+confidential data;
+
+autonomous actions;
+
+external provider;
+
+employment decisions;
+
+financial impact;
+
+customer-facing usage;
+
+legal impact;
+
+human oversight.
+
+SafeAI Desk должен обеспечивать технический governance workflow, а не выступать юридическим консультантом.
+
+14. Этап 12 — AI Literacy / Acceptable Use
+
+Период: Q1–Q2 2027
+
+При первом входе пользователь принимает корпоративную AI policy.
+
+Пример:
+
+Do not:
+- send passwords;
+- upload prohibited confidential documents;
+- treat generated output as final legal advice;
+- bypass company security policies.
+
+Хранить:
+
+policyVersion
+userId
+organizationId
+acceptedAt
+
+При обновлении policy:
+
+requiresReacceptance = true
+
+15. Этап 13 — Prompt / Configuration Registry
+
+Период: Q2 2027
+
+System prompts и AI configuration не должны существовать только в исходном коде.
+
+Создать:
+
 PromptTemplate
 PromptVersion
-PromptAssignment
-PromptService
-```
-
-Lifecycle:
-
-```text
-DRAFT
-PUBLISHED
-RETIRED
-```
-
-Поддержать:
-
-```text
-versioning
-publish
-rollback
-audit
-```
-
----
-
-# 36. Tool / MCP Gateway
-
-После зрелых:
-
-```text
-Knowledge
-Policy
-Audit
-Guardrails
-```
-
-можно безопасно переходить от AI answers к AI actions.
-
----
-
-## 36.1. Package
-
-```text
-tools/
-├── registry/
-├── policy/
-├── execution/
-├── approval/
-├── credential/
-└── audit/
-```
-
----
-
-## 36.2. Risk classes
-
-```text
-READ_ONLY
-SAFE_WRITE
-SENSITIVE_WRITE
-DESTRUCTIVE
-```
+ConfigurationVersion
 
 Пример:
 
-```text
-search_ticket      READ_ONLY
-create_ticket      SAFE_WRITE
-change_access      SENSITIVE_WRITE
-delete_repository  DESTRUCTIVE
-```
+Corporate Assistant
+v17
 
----
+Created by: ADMIN
+Approved by: SECURITY
+Deployed: 2027-04-04
 
-## 36.3. Execution pipeline
+ChatTurn сохраняет:
 
-```text
-LLM proposal
+promptVersionId
+configurationVersionId
+
+Answer Passport показывает точную конфигурацию.
+
+16. Этап 14 — AI Observability
+
+Период: Q2 2027
+
+Единый trace:
+
+HTTP request
+  ↓
+ChatTurn
+  ↓
+Retrieval
+  ↓
+Embedding
+  ↓
+Provider call
+  ↓
+Tool calls
+
+Пример:
+
+traceId abc
+
+ChatTurn                8.1s
+├─ Retrieval            120ms
+│  ├─ embedding          73ms
+│  └─ pgvector           29ms
+│
+└─ Provider              7.7s
+
+Использовать OpenTelemetry и GenAI semantic conventions.
+
+17. Этап 15 — Enterprise Assistants
+
+Период: Q2 2027
+
+Добавить сущность Assistant.
+
+ADMIN создаёт:
+
+Name:
+Legal Assistant
+
+Prompt:
+...
+
+Knowledge:
+Legal KB
+
+Models:
+approved legal models
+
+Tools:
+none / selected
+
+Available to:
+Legal Department
+
+Другие примеры:
+
+HR Assistant;
+
+IT Support Assistant;
+
+DevOps Assistant;
+
+Sales Assistant;
+
+Finance Assistant.
+
+Пользователь выбирает assistant, а не вручную настраивает model/KB/prompt.
+
+18. Этап 16 — MCP Gateway
+
+Период: Q2–Q3 2027
+
+SafeAI Desk не должен отдавать модели прямой доступ к произвольным MCP servers.
+
+Архитектура:
+
+AI Agent
+   │
    ↓
-schema validation
+SafeAI Tool Gateway
+   │
+   ├── authentication
+   ├── authorization
+   ├── tenant isolation
+   ├── policy
+   ├── approval
+   ├── audit
+   ├── secrets
+   ├── DLP
+   └── rate limits
+   │
    ↓
-tenant/user authorization
-   ↓
-policy
-   ↓
-risk classification
-   ↓
-budget / rate limit
-   ↓
-human approval if required
-   ↓
-execution
-   ↓
-bounded result
-   ↓
-persist
-   ↓
-audit + passport
-```
+MCP Servers
 
----
+19. Этап 17 — Tool Registry
 
-## 36.4. Remote connector security
+Период: Q2–Q3 2027
 
-```text
-egress allowlist
-SSRF defense
-TLS validation
-timeout
-response size limit
-redirect policy
-credential isolation
-```
+Подключаемые tools:
 
----
+Jira;
 
-# 37. Human-in-the-loop
+GitHub;
 
-Sensitive operations:
+CRM;
 
-```text
-model cannot self-approve
-```
+SQL read-only;
 
-UI:
+Confluence;
 
-```text
-AI хочет выполнить действие:
+ServiceNow;
 
-Отправить письмо клиенту
-Destination: ...
-Summary: ...
+Slack;
 
-[Разрешить]
-[Отклонить]
-```
+internal APIs.
 
-Decision сохраняется в:
+Для каждого tool:
 
-```text
-tool approval
-audit
-Answer Passport
-```
+name
+capabilities
+riskLevel
+organization
+groups
+read/write
+credential
+requiredRole
+approvalPolicy
 
----
+Пример:
 
-# 38. Durable Agent Runtime
+Jira.search
+risk = LOW
+approval = false
 
-Agents вводятся только после Tool Gateway.
+Jira.createTicket
+risk = MEDIUM
+approval = optional
 
-Не:
+ProductionDB.execute
+risk = CRITICAL
+approval = required
 
-```text
-while (model wants tool)
-```
+20. Этап 18 — Human-in-the-loop approvals
 
-а:
+Период: Q3 2027
 
-```text
-durable state machine
-```
+Перед опасным действием:
 
----
+AI wants to:
 
-## 38.1. Model
+Create Jira issue
+Project: PROD
+Title: Database latency incident
 
-```text
+[Approve]
+[Deny]
+
+Для более опасных действий:
+
+AI wants to send email to 427 customers.
+
+Requires:
+✓ user approval
+✓ manager approval
+
+Audit chain:
+
+agent proposed
+→ user approved
+→ tool invoked
+→ result stored
+
+21. Этап 19 — Durable Agent Runtime
+
+Период: Q3 2027
+
+Перенести принципы ChatTurn на agents.
+
+Создать:
+
 AgentRun
 AgentStep
-AgentToolCall
-AgentApproval
-AgentRunState
-```
+ToolExecution
+Approval
 
-States:
+State machine:
 
-```text
 CREATED
 RUNNING
-WAITING_TOOL
-WAITING_APPROVAL
-RETRYING
-COMPLETED
+WAITING_FOR_APPROVAL
+WAITING_FOR_TOOL
+SUCCEEDED
 FAILED
+AMBIGUOUS
 CANCELLED
-```
 
----
+Каждый external side effect должен поддерживать:
 
-## 38.2. Reuse existing ChatTurn ideas
+idempotency;
 
-Agents должны использовать те же proven patterns:
+lease;
 
-```text
-idempotency
-lease
-fencing
-recovery
-ambiguous external outcome protection
-```
+fencing;
 
----
+timeout;
 
-# 39. Governed workflows
+retry classification;
 
-Long-term agent model:
+audit;
 
-```text
-bounded workflow
-```
+provenance.
 
-а не uncontrolled autonomy.
+Не использовать простой бесконечный:
 
-Пример:
+LLM → tool → LLM → tool
 
-```text
-Analyze incident
-   ↓
-retrieve runbook
-   ↓
-read monitoring
-   ↓
-propose remediation
-   ↓
-human approval
-   ↓
-execute
-   ↓
-verify
-   ↓
-report
-```
+без durable execution semantics.
 
-Ограничения:
+22. Этап 20 — Agent Security
 
-```text
-step limit
-tool scope
+Период: одновременно с Agent Runtime
+
+Agent не получает «все инструменты».
+
+Использовать capability-based access:
+
+Agent
+→ exact tools
+→ exact scopes
+→ exact organization
+→ exact credentials
+
+Главный invariant:
+
+prompt content != authorization
+
+Документ из RAG или внешний сайт не может получить permission просто потому, что содержит инструкцию вызвать tool.
+
+23. Этап 21 — Sandboxed Code Interpreter
+
+Период: Q3–Q4 2027
+
+Для анализа файлов:
+
+CSV
+Excel
+PDF
+data analysis
+charts
+Python
+
+использовать ephemeral sandbox:
+
+CPU limit
+RAM limit
+disk limit
+timeout
+network disabled by default
+ephemeral filesystem
+
+Не исполнять пользовательский Python внутри backend JVM.
+
+24. Этап 22 — Service Accounts
+
+Период: Q3–Q4 2027
+
+Добавить machine identity:
+
+ServiceAccount
+
+Use cases:
+
+CI/CD reviewer;
+
+CRM summarizer;
+
+ticket classifier;
+
+nightly document analyzer;
+
+internal automation.
+
+ServiceAccount имеет:
+
+organization;
+
+scopes;
+
+allowed models;
+
+budget;
+
+rate limit;
+
+credentials;
+
+expiry;
+
+audit actor;
+
+allowed tools.
+
+25. Этап 23 — Enterprise API
+
+Период: Q4 2027
+
+SafeAI Desk становится инфраструктурой не только для собственного UI.
+
+Пример API:
+
+POST /api/v1/ai/responses
+POST /api/v1/retrieval/search
+POST /api/v1/assistants/{id}/runs
+POST /api/v1/agents/{id}/runs
+
+К нему могут подключаться:
+
+CRM;
+
+internal portal;
+
+support system;
+
+mobile app;
+
+automation;
+
+CI/CD.
+
+При этом SafeAI продолжает применять:
+
+routing;
+
+budget;
+
+DLP;
+
+policy;
+
+audit;
+
+usage;
+
+governance.
+
+26. Этап 24 — A2A / Agent interoperability
+
+Период: конец 2027
+
+После MCP/tool layer можно добавлять Agent-to-Agent взаимодействие.
+
+SafeAI Agent
+    ↓
+A2A
+    ↓
+External enterprise agent
+
+Но только через gateway:
+
+identity
+trust
+policy
+tenant isolation
+audit
 budget
-deadline
-approval rules
-durable checkpoints
-```
 
----
+27. Этап 25 — Data Retention / Legal Hold / Privacy
 
-# 40. AI Observability
+Период: 2027
 
-Добавить AI-level trace.
+Пример policy:
 
-Пример:
-
-```text
-Request
-├── auth/security          3 ms
-├── guardrail            11 ms
-├── embedding            72 ms
-├── retrieval            38 ms
-├── reranking           110 ms
-├── provider           1840 ms
-└── response
-```
-
----
-
-## 40.1. Correlation IDs
-
-Связать:
-
-```text
-requestId
-clientRequestId
-chatId
-chatTurnId
-retrievalRunId
-providerOperationId
-providerRequestId
-toolExecutionId
-agentRunId
-auditEventId
-```
-
----
-
-## 40.2. Metrics
-
-Без high-cardinality user/email labels.
-
-```text
-chat turns by state
-provider latency
-provider errors
-ambiguous rate
-retrieval latency
-empty retrieval rate
-ingestion queue depth
-ingestion failures
-quota rejects
-audit outbox lag
-usage rollup lag
-tool failures
-approval wait time
-agent failures
-```
-
----
-
-# 41. Cost Governance
-
-Текущий usage/pricing foundation развить до:
-
-```text
-budget/
-```
-
----
-
-## 41.1. Budget levels
-
-```text
-organization
-user
-assistant
-model
-provider
-feature
-```
-
-Пример:
-
-```text
-Organization:
-5000 USD/month
-
-User:
-50 USD/day
-
-Assistant:
-1000 USD/month
-```
-
----
-
-## 41.2. Policies
-
-```text
-80% → warning
-95% → downgrade/routing policy
-100% → block
-```
-
----
-
-## 41.3. Cost-aware routing
-
-Model Router учитывает:
-
-```text
-remaining budget
-request cost estimate
-organization policy
-model quality class
-```
-
----
-
-# 42. API / Service Accounts
-
-Для machine-to-machine нельзя переиспользовать browser refresh flow.
+Chat history        30 days
+Prompt content       7 days
+Audit              365 days
+Usage              3 years
+Answer Passports   365 days
 
 Добавить:
 
-```text
-service accounts
-scoped API tokens
-expiration
-rotation
-revocation
-last used
-network restriction
-audit
-```
+retention policies;
 
-Scopes:
+deletion jobs;
 
-```text
-chat:send
-knowledge:read
-knowledge:write
-audit:read
-usage:read
-tools:execute
-```
+legal hold;
 
----
+export;
 
-# 43. Enterprise Identity
+pseudonymization;
 
-## 43.1. OIDC first
+personal-data deletion workflow.
 
-Приоритет:
+28. Этап 26 — AI Security Center
 
-```text
-Microsoft Entra ID
-Keycloak
-generic OIDC
-```
+Период: 2027
 
-External identity:
+Отдельный dashboard:
 
-```text
-issuer + subject
-```
+Prompt injection attempts     34
+DLP blocks                    12
+Secret detections              7
+Blocked tool calls             3
+Policy violations             19
+Suspicious agents              1
 
-Email не использовать как единственный stable ID.
+Создать отдельную сущность:
 
----
+SecurityEvent
 
-## 43.2. Local auth
+а не смешивать всё только с AuditEvent.
 
-Сохранить для:
+29. Этап 27 — Continuous Red Team / Security Evals
 
-```text
-bootstrap
-small/self-hosted
-air-gapped
-break-glass
-```
+Период: конец 2027
 
----
+Автоматически тестировать:
 
-## 43.3. SCIM later
+prompt injection;
 
-После OIDC:
+jailbreak;
 
-```text
-users
-groups
-automatic provisioning
-automatic disable
-group → KB membership
-group → model policy
-group → tool policy
-```
+cross-tenant leakage;
 
----
+source poisoning;
 
-# 44. RLS
+secret exfiltration;
 
-PostgreSQL Row-Level Security — future defense-in-depth.
+system prompt extraction;
 
-Приоритет:
+unsafe tool usage;
 
-```text
-knowledge_bases
-knowledge_documents
-knowledge_document_versions
-knowledge_document_chunks
-retrieval_runs
-retrieval_hits
-```
+privilege escalation;
 
-Но:
+malicious MCP server behavior;
 
-```text
-RLS != replacement for service authorization
-```
+malicious retrieved documents.
 
-Цель:
+После изменения:
 
-```text
-application tenant checks
-+
-database tenant policy
-```
-
----
-
-# 45. Backup / Disaster Recovery
-
-Не считать production готовым без restore drill.
-
----
-
-## 45.1. PostgreSQL
-
-```text
-PITR
-WAL archive
-base backup
-restore verification
-```
-
----
-
-## 45.2. Object Storage
-
-```text
-versioning
-backup/replication
-lifecycle
-orphan checks
-```
-
----
-
-## 45.3. Drill
-
-```text
-new environment
-→ restore DB
-→ restore objects
-→ Flyway validate
-→ integrity checks
-→ smoke tests
-```
-
----
-
-## 45.4. Engineering targets
-
-Можно использовать внутренние targets:
-
-```text
-RPO <= 15 min
-RTO <= 2 h
-```
-
-Но не делать customer promise до регулярных подтверждённых restore drills.
-
----
-
-# 46. Production HA
-
-Не начинать сразу с Kubernetes.
-
-Первый HA layout:
-
-```text
-Load Balancer
-  ├── Backend A
-  └── Backend B
-
-Worker A
-Worker B
-
-PostgreSQL
-Redis
-S3/Object Storage
-```
-
-Backend не должен зависеть от process-local durable state.
-
----
-
-# 47. Health model
-
-Разделить:
-
-```text
-liveness
-readiness
-startup
-```
-
-Readiness должна учитывать критические dependencies.
-
----
-
-# 48. Release engineering
-
-Каждый major wave должен проходить reproducible CI.
-
-Backend:
-
-```text
-clean compile
-unit tests
-PostgreSQL integration
-migration tests
-concurrency tests
-S3/MinIO E2E where needed
-```
-
-Frontend:
-
-```text
-npm ci
-typecheck
-lint
-tests
-build
-```
-
-Security:
-
-```text
-dependency audit
-secret scan
-container scan
-SBOM
-```
-
-Release:
-
-```text
-container build
-startup smoke
-migration smoke
-```
-
----
-
-# 49. Flyway policy
-
-Нельзя редактировать migration, уже применённую в production-like environment.
-
-Каждая schema evolution:
-
-```text
-new migration
-```
-
-Проверять:
-
-```text
-empty DB
-V1 → latest
-
-representative previous DB
-previous → latest
-```
-
-Fresh schema test не доказывает upgrade correctness.
-
----
-
-# 50. Production Knowledge frontend
-
-Развить текущую страницу документов.
-
----
-
-## 50.1. Processing UX
-
-```text
-PENDING       Ожидает обработки
-VALIDATING    Проверяется
-EXTRACTING    Извлекается содержимое
-NORMALIZING   Нормализуется
-CHUNKING      Подготавливаются фрагменты
-EMBEDDING     Строится индекс
-INDEXING      Индексируется
-READY         Готов
-FAILED        Ошибка
-```
-
----
-
-## 50.2. READY metadata
-
-Показывать:
-
-```text
-Проиндексировано
-Количество chunks
-Embedding profile
-Последний successful ingestion
-```
-
----
-
-## 50.3. FAILED
-
-Admin:
-
-```text
-Ошибка обработки
-
-[Повторить]
-```
-
-Технические детали — только по допустимой error policy.
-
----
-
-## 50.4. Admin operations
-
-Позже:
-
-```text
-Reindex
-Disable
-Retry
-View extracted structure
-View chunks
-```
-
-Не давать пользователю необходимость работать напрямую с MinIO Console.
-
----
-
-# 51. Knowledge Connectors UI
-
-Admin flow:
-
-```text
-Add source
-→ choose connector
-→ credentials/config
-→ select scope
-→ sync policy
-→ ACL mode
-→ initial sync
-→ health/status
-```
-
----
-
-# 52. Model Control UI
-
-Admin:
-
-```text
-Providers
-Models
-Aliases
-Policies
-Routing
-Budgets
-Health
-BYOK
-```
-
-User:
-
-```text
-Fast
-Balanced
-Advanced
-Private
-```
-
----
-
-# 53. Policy UI
-
-Не показывать пользователю raw JSON policy как единственный UX.
-
-Admin UI:
-
-```text
-Models
-Knowledge
-Tools
-Budgets
-Data classification
-External AI
-Approvals
-```
-
-При этом backend policy representation должна оставаться versioned и auditable.
-
----
-
-# 54. Answer Passport UI
-
-User mode:
-
-```text
-Sources
-Model
-Provider
-Latency
-Usage
-Cost status
-```
-
-Admin mode:
-
-```text
-Identifiers
-Retrieval
-Policies
-Model routing
-Usage
-Tools
-Audit
-```
-
----
-
-# 55. Commercial packaging
-
-## Hosted
-
-```text
-managed deployment
-managed backups
-AI providers
-Knowledge
-Policy
-Audit
-Usage
-updates
-```
-
----
-
-## Self-hosted
-
-Сначала:
-
-```text
-Docker Compose
-documented VM
-```
-
-Позже при реальном спросе:
-
-```text
-Helm/Kubernetes
-```
-
----
-
-## Enterprise
-
-```text
-OIDC
-SCIM
-BYOK
-private models
-advanced retention
-audit export
-SIEM integration
-private connectors
-customer-managed keys
-dedicated deployment
-```
-
----
-
-## On-prem / air-gapped
-
-Позже:
-
-```text
-private model
-local object storage
-offline updates
-private artifact distribution
-no external dependency path
-```
-
----
-
-# 56. Billing / Showback
-
-Текущий usage не называть invoice-grade.
-
-Путь:
-
-```text
-provider price catalogs
-effective_from/effective_to
-pricing version
-currency
-model revision
-embedding cost
-reranker cost
-tool cost
-storage
-```
-
-Reports:
-
-```text
-organization
-user
-assistant
 model
-provider
-knowledge base
-feature
-```
-
-Modes:
-
-```text
-showback
-chargeback
-soft budget
-hard budget
-forecast
-```
-
-Invoice-grade accounting потребует reconciliation с provider statements.
-
----
-
-# 57. Demo milestones
-
-## Demo A — Secure AI Gateway
-
-```text
-login
-tenant users
-chat
-AI provider
-usage
-audit
-revocation
-```
-
----
-
-## Demo B — Governed Corporate Knowledge
-
-Главный ближайший demo.
-
-```text
-1. ADMIN создаёт Knowledge Base.
-2. Загружает документы.
-3. Ingestion worker обрабатывает их.
-4. USER задаёт вопрос.
-5. SafeAI делает hybrid retrieval.
-6. Ответ содержит citations.
-7. Citation открывает exact document version/page.
-8. Answer Passport показывает retrieval/model provenance.
-9. ADMIN отзывает доступ к KB.
-10. Следующий запрос больше не получает этот source.
-```
-
----
-
-## Demo C — Retrieval Lab
-
-```text
-1. ADMIN вводит вопрос.
-2. Видит FTS candidates.
-3. Видит vector candidates.
-4. Видит merge/ranking.
-5. Видит selected chunks.
-6. Сравнивает retrieval strategy v1/v2.
-```
-
----
-
-## Demo D — Model Control
-
-```text
-1. ADMIN разрешает Fast/Advanced/Private.
-2. USER выбирает alias.
-3. Policy выбирает provider/model.
-4. Passport показывает resolved model.
-5. Usage показывает cost/quality.
-6. Budget влияет на routing.
-```
-
----
-
-## Demo E — DLP
-
-```text
-1. USER вводит secret.
-2. SafeAI обнаруживает его.
-3. Policy BLOCK/REDACT.
-4. External provider не получает запрещённые данные.
-5. Audit фиксирует решение.
-```
-
----
-
-## Demo F — Action Gate
-
-```text
-1. USER спрашивает про incident.
-2. Knowledge находит runbook.
-3. AI предлагает создать ticket.
-4. SafeAI требует approval.
-5. USER подтверждает.
-6. Tool выполняется один раз.
-7. Audit + Passport показывают action.
-```
-
----
-
-# 58. Commercial differentiators
-
-Не говорить:
-
-> У нас есть RAG.
-
-Говорить:
-
-> **SafeAI даёт сотрудникам AI, сохраняя контроль над тем, какие знания и версии использовались, через какую модель 
-> прошёл запрос, какие политики применились, какие действия были разрешены и сколько стоила операция.**
-
-Ключевые differentiators:
-
-```text
-SafeAI Answer Passport
-→ provenance
-
-SafeAI Knowledge Control
-→ versioned ACL-aware knowledge
-
-SafeAI Model Control
-→ models/providers/routing/budgets
-
-SafeAI Policy Engine
-→ centrally governed AI decisions
-
-SafeAI Action Gate
-→ tool permissions/approval/audit
-
-SafeAI Evaluation
-→ measurable AI quality
-```
-
----
-
-# 59. Priority rules
-
-При конфликте сроков:
-
-```text
-1. tenant/security correctness
-2. durable operation correctness
-3. provenance/audit correctness
-4. policy correctness
-5. data-quality/accounting correctness
-6. UX
-7. performance
-8. breadth
-```
-
-Нельзя ускорять demo ценой:
-
-```text
-cross-tenant leakage
-blind provider retry
-lost audit
-unknown cost shown as zero
-unversioned source
-post-filtered tenant search
-tool execution without policy
-unbounded agent loop
-```
-
----
-
-# 60. Что НЕ делать раньше времени
-
-Не вводить до реальной необходимости:
-
-```text
-Kafka only for ingestion
-separate vector database
-Kubernetes for portfolio
-service mesh
-multi-agent swarm
-autonomous destructive tools
-universal crawler
-fine-tuning without eval set
-voice/video before enterprise core
-own IdP instead of OIDC
-```
-
----
-
-# 61. Immediate coding sequence
-
-Это практический порядок следующих коммитов.
-
-## Commit 1 — Ingestion Job foundation
-
-```text
-Flyway migration
-KnowledgeIngestionProperties
-job lease fields
-attempt_count
-next_attempt_at
-recovery fields
-repository reservation
-integration tests
-```
-
----
-
-## Commit 2 — Ingestion Worker
-
-```text
-KnowledgeIngestionScheduler
-KnowledgeIngestionWorker
-KnowledgeIngestionLeaseService
-KnowledgeIngestionRecoveryService
-KnowledgeIngestionService
-```
-
-Пока без embeddings.
-
----
-
-## Commit 3 — Extraction contract
-
-```text
-KnowledgeDocumentExtractor
-KnowledgeDocumentExtractorRegistry
-ExtractedDocument
-ExtractedSection
-```
-
----
-
-## Commit 4 — Text extractors
-
-```text
-TXT
-MD
-HTML
-JSON
-XML
-CSV
-```
-
----
-
-## Commit 5 — Binary extractors
-
-```text
-PDF
-DOCX
-XLSX
-PPTX
-```
-
----
-
-## Commit 6 — Normalization + chunks
-
-```text
-normalization
-KnowledgeChunker
-knowledge_document_chunks
-source metadata
-token estimation
-```
-
----
-
-## Commit 7 — pgvector + EmbeddingProvider
-
-```text
-pgvector extension
-EmbeddingProvider
-EmbeddingProfile
-chunk embeddings
-embedding worker stage
-```
-
----
-
-## Commit 8 — PostgreSQL FTS
-
-```text
-search_vector
-indexes
-lexical query
-```
-
----
-
-## Commit 9 — Hybrid Retrieval
-
-```text
-vector candidates
-FTS candidates
-RRF
-ACL filters
-KnowledgeRetrievalService
-```
-
----
-
-## Commit 10 — Retrieval provenance
-
-```text
-retrieval_runs
-retrieval_hits
-strategy version
-scores
-selected flag
-```
-
----
-
-## Commit 11 — Chat Context Builder
-
-```text
-ChatContextBuilder
-ChatKnowledgeContextBuilder
-ChatContextBudgetService
-```
-
----
-
-## Commit 12 — Knowledge modes
-
-```text
-GENERAL
-KNOWLEDGE_ASSISTED
-KNOWLEDGE_ONLY
-```
-
----
-
-## Commit 13 — Citations
-
-```text
-message_citations
-API response
-frontend source drawer
-historical version links
-```
-
----
-
-## Commit 14 — Answer Passport
-
-```text
-user view
-admin view
-retrieval/model/usage provenance
-```
-
----
-
-## Commit 15 — Retrieval Lab
-
-```text
-admin retrieval debugger
-candidate scores
-selected chunks
-```
-
----
-
-## Commit 16 — Evaluation foundation
-
-```text
-evaluation_sets
-evaluation_cases
-evaluation_runs
-retrieval metrics
-```
-
----
-
-## Commit 17+ — Control Plane
-
-После рабочего governed Knowledge:
-
-```text
-AI Policy Engine
-Guardrails/DLP
+prompt
+knowledge
+tool
+agent
+policy
+
+автоматически запускать security evaluation suite.
+
+30. Версии продукта
+
+SafeAI Desk 0.8 — сентябрь–октябрь 2026
+
+Knowledge frontend
+Ingestion UI
+Citations
+Source Drawer
+Answer Passport UI
+Knowledge-only mode
+Knowledge health
+Reindex
+Integration tests
+
+SafeAI Desk 0.9 — ноябрь–декабрь 2026
+
+Evaluation Framework
 Model Registry
-Model Router
-Provider Health
-Private AI
-```
+Organization Model Policies
+Correct pricing
+AI budgets
+Provider routing
+DLP v1
+Groups / Departments
+Knowledge connectors v1
 
----
+SafeAI Desk 1.0 — начало 2027
 
-# 62. Release gates
-
-## Knowledge ingestion gate
-
-```text
-✓ durable worker
-✓ lease/recovery
-✓ all 10 extractors
-✓ parser limits
-✓ no duplicate processing
-✓ failure observability
-```
-
----
-
-## Retrieval gate
-
-```text
-✓ tenant filter before ranking
-✓ ACL-aware query
-✓ pgvector
-✓ FTS
-✓ hybrid ranking
-✓ retrieval provenance
-✓ security tests
-```
-
----
-
-## Chat RAG gate
-
-```text
-✓ citations
-✓ historical source version
-✓ context budgeting
-✓ knowledge-only abstention
-✓ prompt injection boundary
-✓ no provider call on retrieval technical failure
-```
-
----
-
-## Policy gate
-
-```text
-✓ versioned policy
-✓ decision reason code
-✓ audit
-✓ enforcement tests
-```
-
----
-
-## Tool gate
-
-```text
-✓ registry
-✓ schema validation
-✓ authorization
-✓ policy
-✓ idempotency
-✓ approval
-✓ audit
-✓ bounded output
-```
-
----
-
-# 63. Target 1.0
-
-SafeAI Desk 1.0 должен означать не «чат работает».
-
-Минимальный target:
-
-```text
-✓ multi-tenant identity
-✓ secure session model
-✓ durable ChatTurn
-✓ rate limits / quotas
-✓ audit
-✓ usage/pricing quality
-
-✓ Knowledge Bases
-✓ immutable document versions
-✓ S3-compatible storage
-✓ ingestion worker
-✓ all supported extractors
-✓ chunks
-✓ pgvector
-✓ FTS
-✓ hybrid retrieval
-✓ ACL-aware retrieval
-✓ retrieval provenance
-✓ citations
-✓ Answer Passport
-✓ knowledge-only mode
-
-✓ provider/model registry
-✓ basic model policy
-✓ provider health
-
-✓ evaluation baseline
-
-✓ observability
-✓ backup/restore drill
-✓ reproducible deployment
-```
-
-Tool/MCP Gateway может быть:
-
-```text
-1.0 read-only beta
-```
-
-или:
-
-```text
-1.1 headline feature
-```
-
-в зависимости от готовности core.
-
----
-
-# 64. Target 1.5
-
-```text
-AI Policy Engine
-DLP/Guardrails
-Model Router
-Private AI
-OIDC
-Connectors
-ACL sync
-Assistant
+SSO / OIDC
+SCIM
+Model Control Plane
+Knowledge connectors
+DLP
+Policy Engine
+AI Use Case Registry
 Prompt Registry
-Cost Governance
-```
+Evaluations
+OpenTelemetry AI traces
+Production deployment
+Backup / restore
+HA
 
----
+SafeAI Desk 1.5 — середина 2027
 
-# 65. Target 2.0
-
-```text
-Tool/MCP Gateway
+Enterprise Assistants
+MCP Gateway
+Tool Registry
 Human approvals
-Durable agents
-Governed workflows
-Advanced Evaluation
-Advanced Knowledge Health
-Enterprise automation
-```
+Service Accounts
+Enterprise API
+Sandboxed Code Interpreter
 
----
+SafeAI Desk 2.0 — конец 2027
 
-# 66. Final product target
+Durable Agents
+Agent workflows
+A2A
+Multi-agent collaboration
+Agent Security Center
+Continuous AI red teaming
+Advanced policy engine
+Governance automation
 
-SafeAI Desk должен пройти путь:
+31. Практический порядок разработки с текущего момента
 
-```text
-Secure AI Gateway
+Не начинать сразу с agents.
+
+Рекомендуемый путь:
+
+1. Knowledge frontend
         ↓
-Governed Knowledge Platform
+2. Citations + Source Drawer
         ↓
-Enterprise AI Control Plane
+3. Answer Passport UI
         ↓
-Governed AI Execution Platform
-```
+4. Retrieval/RAG evaluations
+        ↓
+5. Model Registry
+        ↓
+6. Organization Model Policies
+        ↓
+7. Correct pricing + budgets
+        ↓
+8. Data Classification / DLP
+        ↓
+9. Groups / Departments
+        ↓
+10. Enterprise Knowledge Connectors
+        ↓
+11. SSO / SCIM
+        ↓
+12. Policy Engine / Governance
+        ↓
+13. Enterprise Assistants
+        ↓
+14. MCP Gateway / Tools
+        ↓
+15. Human approvals
+        ↓
+16. Durable Agents
+        ↓
+17. A2A
 
-Итоговый invariant продукта:
+32. Главные продуктовые приоритеты
 
-```text
-Identity
-+ Knowledge
-+ Policy
-+ Model
-+ Action
-+ Cost
-+ Provenance
-+ Audit
-```
+Если выбирать только три крупных эпика после завершения текущего Knowledge вертикального среза:
 
-SafeAI должен отвечать не только:
+1. Knowledge UX + Evaluations
 
-> Что ответил AI?
+Даёт контролируемые ответы по корпоративным данным и позволяет измерять качество.
 
-Но и:
+2. Model Control Plane + AI FinOps + DLP
 
-> **Кто запросил?**
+Превращает SafeAI Desk из чата в настоящий корпоративный AI Gateway.
 
-> **Из какой организации?**
+3. Enterprise Assistants + MCP Gateway
 
-> **Какие данные пользователь имел право использовать?**
+Даёт управляемую автоматизацию и подготавливает платформу к agents.
 
-> **Какая версия корпоративного знания попала в context?**
+33. Конечная идея SafeAI Desk
 
-> **Почему retrieval выбрал именно эти chunks?**
+SafeAI Desk должен стать системой, через которую организация контролирует:
 
-> **Какая policy разрешила этот запрос?**
+WHO
+кто использует AI
 
-> **Какой provider/model был выбран и почему?**
+WHAT
+какие данные и знания доступны
 
-> **Какие действия AI предложил или выполнил?**
+WHICH MODEL
+какие модели можно использовать
 
-> **Было ли человеческое approval?**
+HOW MUCH
+сколько можно потратить
 
-> **Сколько операция стоила и насколько достоверны cost данные?**
+WHY
+для какого use case используется AI
 
-> **Можно ли восстановить весь audit/provenance path?**
+WHAT HAPPENED
+что реально произошло
 
----
+WHAT EVIDENCE
+на каких данных основан ответ
 
-# 67. Главная формулировка проекта
+WHAT ACTION
+какое действие хочет выполнить AI
 
-> **SafeAI Desk — корпоративный AI Control Plane, который объединяет защищённый AI Gateway, управляемые корпоративные 
-> знания, model governance, data protection, controlled tools и полную provenance AI-операций.**
+WHO APPROVED
+кто разрешил это действие
 
-RAG внутри SafeAI — важная технология.
+Конечная архитектура SafeAI Desk — это не просто чат и не просто RAG.
 
-Но продуктовая ценность SafeAI Desk — не сам RAG.
+Это:
 
-Она в том, что AI становится:
-
-```text
-управляемым
-авторизованным
-проверяемым
-измеримым
-аудируемым
-контролируемым
-```
-
-и пригодным для реального корпоративного использования.
+AI Gateway + Knowledge Platform + Model Control Plane + Governance + FinOps + Secure Agent Runtime.

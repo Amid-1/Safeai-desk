@@ -1,11 +1,9 @@
 # SafeAI Desk
 
-**SafeAI Desk** — production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного использования 
-внешних AI-моделей внутри организаций.
+**SafeAI Desk** — production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного использования внешних AI-моделей внутри организаций.
 
 > **Актуальность:** август 2026.  
-> Документ описывает фактически реализованную архитектуру текущих backend/frontend исходников и Flyway-миграций до `V42`.
-> Будущее развитие вынесено в [`ROADMAP.md`](ROADMAP.md).
+> Документ описывает фактически реализованную архитектуру текущих backend/frontend исходников и Flyway-миграций до `V44`. Будущее развитие вынесено в [`ROADMAP.md`](ROADMAP.md).
 
 SafeAI Desk — не просто UI над LLM. Проект строит управляемый слой вокруг корпоративного AI:
 
@@ -23,18 +21,10 @@ SafeAI Desk — не просто UI над LLM. Проект строит уп�
 - immutable actor/target audit snapshots;
 - usage/pricing quality model без подмены неизвестных данных нулём;
 - OpenAI/Anthropic/mock provider abstraction;
-- tenant/ACL-aware Knowledge Bases и immutable document versions;
-- durable ingestion с lease/fencing/retry и S3-compatible originals;
-- PDF/DOCX/HTML/TXT/Markdown/CSV/XLSX/PPTX/JSON/XML extraction и OCR adapter;
-- immutable chunks, pgvector + FTS hybrid retrieval и production embedding adapter;
-- RAG context assembly, inline citation validation и knowledge-only fail-closed mode;
-- retrieval-to-ChatTurn provenance и immutable Answer Passport;
-- Knowledge health/reindex и versioned retrieval evaluation metrics;
 - PostgreSQL/Flyway constraints как часть integrity model;
 - React frontend с runtime validation API contracts, abortable requests и production error handling.
 
-Текущий статус: **production-oriented pre-1.0 / portfolio-ready baseline**. Это серьёзная база для B2B-продукта, но 
-не заявление о compliance certification, billing-grade accounting или формально доказанной HA/SLA.
+Текущий статус: **production-oriented pre-1.0 / portfolio-ready baseline**. Это серьёзная база для B2B-продукта, но не заявление о compliance certification, billing-grade accounting или формально доказанной HA/SLA.
 
 ---
 
@@ -111,8 +101,7 @@ Demo Company
 
 # Архитектура
 
-Проект — **модульный монолит**. Это сознательно сохраняет сильные transactional/tenant/security invariants без 
-преждевременной микросервисной сложности.
+Проект — **модульный монолит**. Это сознательно сохраняет сильные transactional/tenant/security invariants без преждевременной микросервисной сложности.
 
 ```text
 ┌──────────────────────────────┐
@@ -129,7 +118,6 @@ Demo Company
 │ Spring Boot Backend          │
 │ auth / common / user / org   │
 │ chat / ai / audit / usage    │
-│ knowledge / RAG / retrieval  │
 │ ratelimit / admin            │
 └───────┬──────────────┬───────┘
         │              │
@@ -149,8 +137,7 @@ Demo Company
 └──────────────────────────────┘
 ```
 
-**PostgreSQL — source of truth.** Redis — coordination/rate-limit/cache layer; security correctness не должна зависеть 
-только от наличия Redis cache.
+**PostgreSQL — source of truth.** Redis — coordination/rate-limit/cache layer; security correctness не должна зависеть только от наличия Redis cache.
 
 ---
 
@@ -262,8 +249,7 @@ ADMIN       -> organization scope
 USER        -> own-resource scope
 ```
 
-Tenant isolation применяется к users, organizations, sessions/messages/turns, quota reservations, audit, usage, rate 
-limiting и security-state lookup.
+Tenant isolation применяется к users, organizations, sessions/messages/turns, quota reservations, audit, usage, rate limiting и security-state lookup.
 
 Схема БД дополнительно содержит composite tenant-safe relationships, например:
 
@@ -342,8 +328,7 @@ aud
 
 `organizations.auth_version` — отдельный organization-level epoch.
 
-Организацию не нужно инвалидировать массовым increment `tokenVersion` каждого пользователя. Access/refresh state 
-проверяет также `organizationAuthVersion`.
+Организацию не нужно инвалидировать массовым increment `tokenVersion` каждого пользователя. Access/refresh state проверяет также `organizationAuthVersion`.
 
 `UserStatusFilter` сопоставляет:
 
@@ -438,8 +423,7 @@ Forwarded headers доверяются только при direct peer из `tru
 
 ## CORS
 
-Origins нормализуются. Запрещены wildcard, unsupported schemes, userinfo, query, fragment, path и invalid port. 
-Production validator требует HTTPS origins.
+Origins нормализуются. Запрещены wildcard, unsupported schemes, userinfo, query, fragment, path и invalid port. Production validator требует HTTPS origins.
 
 ## Errors
 
@@ -491,411 +475,16 @@ backend/
 │   │   │   └── ru/
 │   │   │       └── safeai/
 │   │   │           └── gateway/
-│   │   │               ├── admin/
-│   │   │               │   └── controller/
-│   │   │               │       └── AdminUsageController
-│   │   │               │
 │   │   │               ├── ai/
-│   │   │               │   ├── config/
-│   │   │               │   │   ├── 
-│   │   │               │   │   ├── AiConfiguration
-│   │   │               │   │   ├── AiProductionConfigurationValidator
-│   │   │               │   │   ├── AnthropicProviderConfiguration
-│   │   │               │   │   └── OpenAiProviderConfiguration
-│   │   │               │   ├── dto/
-│   │   │               │   │   ├── AiChatRequest
-│   │   │               │   │   ├── AiChatResponse
-│   │   │               │   │   ├── AiMessage
-│   │   │               │   │   └── AiMessageRole
-│   │   │               │   ├── exception/
-│   │   │               │   │   ├── AiContextLimitException
-│   │   │               │   │   ├── AiProviderBillingException
-│   │   │               │   │   ├── AiProviderErrorType
-│   │   │               │   │   ├── AiProviderException
-│   │   │               │   │   ├── AiProviderOverloadedException
-│   │   │               │   │   ├── AiProviderQuotaExceededException
-│   │   │               │   │   ├── AiProviderRateLimitedException
-│   │   │               │   │   ├── AiProviderResponseTooLargeException
-│   │   │               │   │   ├── AiProviderTimeoutException
-│   │   │               │   │   └── AiProviderUnavailableException
-│   │   │               │   ├── metadata/
-│   │   │               │   │   ├── AiResponseStatus
-│   │   │               │   │   ├── PricingStatus
-│   │   │               │   │   └── UsageStatus
-│   │   │               │   ├── pricing/
-│   │   │               │   │   ├── ModelPricingProperties
-│   │   │               │   │   ├── ModelPricingService
-│   │   │               │   │   └── PricingResult
-│   │   │               │   ├── provider/
-│   │   │               │   │   ├── anthropic/
-│   │   │               │   │   │   ├── AnthropicProperties
-│   │   │               │   │   │   └── AnthropicProvider
-│   │   │               │   │   ├── mock/
-│   │   │               │   │   │   └── MockAiProvider
-│   │   │               │   │   ├── openai/
-│   │   │               │   │   │   ├── OpenAiProperties
-│   │   │               │   │   │   └── OpenAiProvider
-│   │   │               │   │   ├── AiContextWindowProperties
-│   │   │               │   │   ├── AiContextWindowService
-│   │   │               │   │   ├── AiJsonNodeSupport
-│   │   │               │   │   ├── AiProvider
-│   │   │               │   │   ├── AiProviderAttemptContext
-│   │   │               │   │   ├── AiProviderExceptionFactory
-│   │   │               │   │   ├── AiProviderProperties
-│   │   │               │   │   ├── AiProviderRetryExecutor
-│   │   │               │   │   ├── AiProviderSupport
-│   │   │               │   │   ├── AiResponseMetadataService
-│   │   │               │   │   ├── AiResponseTooLargeIOException
-│   │   │               │   │   ├── AiRestClientFactory
-│   │   │               │   │   ├── AiRetryProperties
-│   │   │               │   │   └── ProviderPropertyValidator
-│   │   │               │   └── web/
-│   │   │               │       └── AiExceptionHandler
-│   │   │               │
 │   │   │               ├── audit/
-│   │   │               │   ├── config/
-│   │   │               │   │   ├── AuditDetailsProperties
-│   │   │               │   │   ├── AuditOutboxConfiguration
-│   │   │               │   │   ├── AuditOutboxProperties
-│   │   │               │   │   ├── AuditRetentionConfiguration
-│   │   │               │   │   └── AuditRetentionProperties
-│   │   │               │   ├── controller/
-│   │   │               │   │   ├── AuditController
-│   │   │               │   │   └── AuditDirectoryController
-│   │   │               │   ├── details/
-│   │   │               │   │   ├── AiResponseAuditDetails
-│   │   │               │   │   ├── AuditDetails
-│   │   │               │   │   ├── ChatTurnAuditDetails
-│   │   │               │   │   ├── RateLimitAuditDetails
-│   │   │               │   │   └── SecurityRefreshReuseAuditDetails
-│   │   │               │   ├── dto/
-│   │   │               │   │   ├── AuditActorDirectoryResponse
-│   │   │               │   │   ├── AuditEventCursorResponse
-│   │   │               │   │   ├── AuditEventFilter
-│   │   │               │   │   ├── AuditEventPageResponse
-│   │   │               │   │   ├── AuditEventResponse
-│   │   │               │   │   └── AuditTargetOrganizationDirectoryResponse
-│   │   │               │   ├── entity/
-│   │   │               │   │   ├── AuditEventEntity
-│   │   │               │   │   └── AuditOutboxEntity
-│   │   │               │   ├── listener/
-│   │   │               │   │   └── RateLimitAuditListener
-│   │   │               │   ├── model/
-│   │   │               │   │   └── AuditActor
-│   │   │               │   ├── repository/
-│   │   │               │   │   ├── AuditDirectoryQueryRepository
-│   │   │               │   │   ├── AuditEventCriteria
-│   │   │               │   │   ├── AuditEventCursorRepository
-│   │   │               │   │   ├── AuditEventCursorRepositoryImpl
-│   │   │               │   │   ├── AuditEventRepository
-│   │   │               │   │   └── AuditOutboxRepository
-│   │   │               │   ├── service/
-│   │   │               │   │   ├── AuditCommand
-│   │   │               │   │   ├── AuditCommandFactory
-│   │   │               │   │   ├── AuditCursorCodec
-│   │   │               │   │   ├── AuditDetailsSanitizer
-│   │   │               │   │   ├── AuditDirectoryService
-│   │   │               │   │   ├── AuditEventCursorService
-│   │   │               │   │   ├── AuditEventQueryPolicy
-│   │   │               │   │   ├── AuditEventQueryService
-│   │   │               │   │   ├── AuditEventService
-│   │   │               │   │   ├── AuditOutboxFailureService
-│   │   │               │   │   ├── AuditOutboxProcessor
-│   │   │               │   │   ├── AuditOutboxScheduler
-│   │   │               │   │   ├── AuditOutboxWriter
-│   │   │               │   │   ├── AuditRetentionBatchService
-│   │   │               │   │   ├── AuditRetentionLockService
-│   │   │               │   │   ├── AuditRetentionService
-│   │   │               │   │   └── BestEffortStandaloneAuditService
-│   │   │               │   │ 
-│   │   │               │   ├── spi/
-│   │   │               │   │   └── AuditTargetOrganizationSnapshotProvider
-│   │   │               │   │ 
-│   │   │               │   └── AuditEventType
-│   │   │               │
 │   │   │               ├── auth/
-│   │   │               │   ├── config/
-│   │   │               │   │   └── RefreshTokenCleanupConfiguration
-│   │   │               │   ├── controller/
-│   │   │               │   │   ├── AuthController
-│   │   │               │   │   └── CsrfController
-│   │   │               │   ├── dto/
-│   │   │               │   │   ├── CsrfTokenResponse
-│   │   │               │   │   ├── CurrentUserResponse
-│   │   │               │   │   └── LoginRequest
-│   │   │               │   ├── entity/
-│   │   │               │   │   ├── RefreshTokenEntity
-│   │   │               │   │   └── RefreshTokenRevocationReason
-│   │   │               │   ├── repository/
-│   │   │               │   │   └── RefreshTokenRepository
-│   │   │               │   ├── security/
-│   │   │               │   │   ├── AccessCookieAuthenticationFilter
-│   │   │               │   │   ├── CsrfCookieFilter
-│   │   │               │   │   ├── CustomUserDetailsService
-│   │   │               │   │   ├── package-info.java
-│   │   │               │   │   ├── SecurityConfig
-│   │   │               │   │   ├── SpaCsrfTokenRequestHandler
-│   │   │               │   │   └── UserStatusFilter
-│   │   │               │   ├── service/
-│   │   │               │   │   ├── AuthCookieConfigurationValidator
-│   │   │               │   │   ├── AuthCookieProperties
-│   │   │               │   │   ├── AuthCookieService
-│   │   │               │   │   ├── AuthEventService
-│   │   │               │   │   ├── AuthService
-│   │   │               │   │   ├── LoginSessionResult
-│   │   │               │   │   ├── LoginSessionTransactionService
-│   │   │               │   │   ├── LogoutAuditSubject
-│   │   │               │   │   ├── RefreshTokenCleanupBatchService
-│   │   │               │   │   ├── RefreshTokenCleanupJob
-│   │   │               │   │   ├── RefreshTokenCleanupProperties
-│   │   │               │   │   ├── RefreshTokenService
-│   │   │               │   │   └── UserSessionRevocationService
-│   │   │               │   └── validation/
-│   │   │               │       ├── Utf8ByteLength
-│   │   │               │       └── Utf8ByteLengthValidator
-│   │   │               │
 │   │   │               ├── chat/
-│   │   │               │   ├── config/
-│   │   │               │   │   ├── ChatConfiguration
-│   │   │               │   │   ├── ChatLockProperties
-│   │   │               │   │   ├── ChatProperties
-│   │   │               │   │   ├── ChatQuotaProperties
-│   │   │               │   │   └── ChatRecoveryProperties
-│   │   │               │   ├── controller/
-│   │   │               │   │   └── ChatController
-│   │   │               │   ├── dto/
-│   │   │               │   │   ├── ChatCapabilitiesResponse
-│   │   │               │   │   ├── ChatDetailsResponse
-│   │   │               │   │   ├── ChatErrorResponse
-│   │   │               │   │   ├── ChatPageRequest
-│   │   │               │   │   ├── ChatPageResponse
-│   │   │               │   │   ├── ChatResponse
-│   │   │               │   │   ├── ChatTurnStatusResponse
-│   │   │               │   │   ├── CreateChatRequest
-│   │   │               │   │   ├── MessagePageRequest
-│   │   │               │   │   ├── MessageResponse
-│   │   │               │   │   ├── SendMessageRequest
-│   │   │               │   │   └── SendMessageResponse
-│   │   │               │   ├── entity/
-│   │   │               │   │   ├── ChatMessageEntity
-│   │   │               │   │   ├── ChatMessageRole
-│   │   │               │   │   ├── ChatMessageStatus
-│   │   │               │   │   ├── ChatQuotaReservationState
-│   │   │               │   │   ├── ChatSessionEntity
-│   │   │               │   │   ├── ChatTurnEntity
-│   │   │               │   │   └── ChatTurnState
-│   │   │               │   ├── exception/
-│   │   │               │   │   ├── AiOutcomeAmbiguousException
-│   │   │               │   │   ├── ChatAccessRevokedException
-│   │   │               │   │   ├── ChatApiException
-│   │   │               │   │   ├── ChatApiExceptionHandler
-│   │   │               │   │   ├── ChatLeaseUnavailableException
-│   │   │               │   │   ├── ChatQuotaExceededException
-│   │   │               │   │   ├── ChatStaleProcessorException
-│   │   │               │   │   ├── ChatTurnFailedException
-│   │   │               │   │   ├── ChatTurnInProgressException
-│   │   │               │   │   └── IdempotencyKeyReusedException
-│   │   │               │   ├── observability/
-│   │   │               │   │   └── ChatMetrics
-│   │   │               │   ├── quota/
-│   │   │               │   │   ├── ChatQuotaConsumption
-│   │   │               │   │   └── ChatQuotaPolicy
-│   │   │               │   ├── repository/
-│   │   │               │   │   ├── ChatHistoryRepository
-│   │   │               │   │   ├── ChatHistoryTurn
-│   │   │               │   │   ├── ChatMessageRepository
-│   │   │               │   │   ├── ChatQuotaRepository
-│   │   │               │   │   ├── ChatSecurityStateRepository
-│   │   │               │   │   ├── ChatSessionRepository
-│   │   │               │   │   ├── ChatTurnMutexRepository
-│   │   │               │   │   ├── ChatTurnRecoveryRepository
-│   │   │               │   │   ├── ChatTurnRepository
-│   │   │               │   │   └── RecoveredChatTurn
-│   │   │               │   └── service/
-│   │   │               │       ├── AiHistoryBuilder
-│   │   │               │       ├── ChatContentNormalizer
-│   │   │               │       ├── ChatLockService
-│   │   │               │       ├── ChatMapper
-│   │   │               │       ├── ChatProcessingContext
-│   │   │               │       ├── ChatQuotaService
-│   │   │               │       ├── ChatSecurityStateService
-│   │   │               │       ├── ChatService
-│   │   │               │       ├── ChatTurnFinalizationService
-│   │   │               │       ├── ChatTurnLeaseService
-│   │   │               │       ├── ChatTurnRecoveryScheduler
-│   │   │               │       ├── ChatTurnRecoveryService
-│   │   │               │       └── ChatTurnReservationService
-│   │   │               │
 │   │   │               ├── common/
-│   │   │               │   ├── config/
-│   │   │               │   │   ├── SchedulingConfiguration
-│   │   │               │   │   └── TimeConfiguration
-│   │   │               │   ├── exception/
-│   │   │               │   │   ├── ApiErrorCode
-│   │   │               │   │   ├── ApiErrorResponse
-│   │   │               │   │   ├── ApiErrorResponseFactory
-│   │   │               │   │   ├── ApiErrorResponseWriter
-│   │   │               │   │   ├── ApiException
-│   │   │               │   │   ├── AuthServiceUnavailableException
-│   │   │               │   │   ├── BadRequestException
-│   │   │               │   │   ├── ChatBusyException
-│   │   │               │   │   ├── ChatLockUnavailableException
-│   │   │               │   │   ├── ConflictException
-│   │   │               │   │   ├── ExpiredRefreshTokenException
-│   │   │               │   │   ├── ForbiddenOperationException
-│   │   │               │   │   ├── GlobalExceptionHandler
-│   │   │               │   │   ├── InvalidRefreshTokenException
-│   │   │               │   │   ├── OrganizationVersionConflictException
-│   │   │               │   │   ├── RateLimitExceededException
-│   │   │               │   │   ├── RateLimitUnavailableException
-│   │   │               │   │   ├── README.md
-│   │   │               │   │   ├── RefreshTokenReuseDetectedException
-│   │   │               │   │   ├── ResourceNotFoundException
-│   │   │               │   │   └── UserVersionConflictException
-│   │   │               │   ├── persistence/
-│   │   │               │   │   └── DatabaseConstraintClassifier
-│   │   │               │   ├── platform/
-│   │   │               │   │   ├── PlatformProperties
-│   │   │               │   │   └── PlatformPropertiesConfiguration
-│   │   │               │   ├── security/
-│   │   │               │   │   ├── AccessTokenSubject
-│   │   │               │   │   ├── ClientIpProperties
-│   │   │               │   │   ├── ClientIpResolver
-│   │   │               │   │   ├── CorsProperties
-│   │   │               │   │   ├── JwtCodecConfiguration
-│   │   │               │   │   ├── JwtProperties
-│   │   │               │   │   ├── JwtService
-│   │   │               │   │   ├── package-info.java
-│   │   │               │   │   ├── PasswordEncodingConfiguration
-│   │   │               │   │   ├── ProductionSecurityInvariantValidator
-│   │   │               │   │   ├── RequestIdFilter
-│   │   │               │   │   ├── RestAccessDeniedHandler
-│   │   │               │   │   ├── RestAuthenticationEntryPoint
-│   │   │               │   │   ├── RoleAuthorityMapper
-│   │   │               │   │   ├── SafeAiJwtAuthenticationConverter
-│   │   │               │   │   ├── SafeAiUserPrincipal
-│   │   │               │   │   ├── SecurityIdentityValidator
-│   │   │               │   │   ├── SecurityPropertiesConfiguration
-│   │   │               │   │   └── SystemRole
-│   │   │               │   └── web/
-│   │   │               │       └── ApiFallbackController
-│   │   │               │
+│   │   │               ├── knowledge/
 │   │   │               ├── organization/
-│   │   │               │   ├── audit/
-│   │   │               │   │   └── OrganizationAuditSnapshotProvider
-│   │   │               │   ├── controller/
-│   │   │               │   │   └── OrganizationController
-│   │   │               │   ├── dto/
-│   │   │               │   │   ├── CreateOrganizationRequest
-│   │   │               │   │   ├── DisableOrganizationRequest
-│   │   │               │   │   ├── EnableOrganizationRequest
-│   │   │               │   │   ├── OrganizationDirectoryResponse
-│   │   │               │   │   ├── OrganizationDisableImpactResponse
-│   │   │               │   │   ├── OrganizationPageResponse
-│   │   │               │   │   ├── OrganizationResponse
-│   │   │               │   │   ├── OrganizationType
-│   │   │               │   │   ├── UpdateOrganizationEnabledRequest
-│   │   │               │   │   └── UpdateOrganizationRequest
-│   │   │               │   ├── entity/
-│   │   │               │   │   ├── OrganizationImpactQueryRepository
-│   │   │               │   │   └── OrganizationEntity
-│   │   │               │   ├── event/
-│   │   │               │   │   └── OrganizationSecurityStateChangedEvent
-│   │   │               │   ├── repository/
-│   │   │               │   │   └── OrganizationImpactQueryRepository
-│   │   │               │   │   └── OrganizationRepository
-│   │   │               │   └── service/
-│   │   │               │       ├── OrganizationNameNormalizer
-│   │   │               │       ├── OrganizationService
-│   │   │               │       ├── OrganizationStatusCacheInvalidationListener
-│   │   │               │       └── PlatformOrganizationInvariantVerifier
-│   │   │               │
 │   │   │               ├── ratelimit/
-│   │   │               │   ├── AiMessageRateLimitProperties
-│   │   │               │   ├── DualRateLimitResult
-│   │   │               │   ├── LoginRateLimitProperties
-│   │   │               │   ├── LoginRateLimitService
-│   │   │               │   ├── RateLimitDecision
-│   │   │               │   ├── RateLimitExceededEvent
-│   │   │               │   ├── RateLimitKeyFactory
-│   │   │               │   ├── RateLimitMetrics
-│   │   │               │   ├── RateLimitRedisKeyProperties
-│   │   │               │   ├── RedisFixedWindowRateLimiter
-│   │   │               │   └── RedisRateLimitService
-│   │   │               │
 │   │   │               ├── usage/
-│   │   │               │   ├── config/
-│   │   │               │   │   ├── UsageConfiguration
-│   │   │               │   │   ├── UsageJdbcClients
-│   │   │               │   │   └── UsageProperties
-│   │   │               │   ├── controller/
-│   │   │               │   │   └── UsageController
-│   │   │               │   ├── dto/
-│   │   │               │   │   ├── PagedResponse
-│   │   │               │   │   ├── UsageCostSummary
-│   │   │               │   │   ├── UsageDailySummaryResponse
-│   │   │               │   │   ├── UsageDataQualityResponse
-│   │   │               │   │   ├── UsageDateFilter
-│   │   │               │   │   ├── UsageDateModelFilter
-│   │   │               │   │   ├── UsageModelSummaryResponse
-│   │   │               │   │   ├── UsagePageRequest
-│   │   │               │   │   ├── UsageProblemModelResponse
-│   │   │               │   │   ├── UsageResponseSummary
-│   │   │               │   │   ├── UsageSummaryInvariants
-│   │   │               │   │   ├── UsageSummaryResponse
-│   │   │               │   │   ├── UsageTokenSummary
-│   │   │               │   │   └── UsageUserSummaryResponse
-│   │   │               │   ├── repository/
-│   │   │               │   │   ├── JdbcUsageQueryRepository
-│   │   │               │   │   ├── UsageDailySummaryProjection
-│   │   │               │   │   ├── UsageInstantRange
-│   │   │               │   │   ├── UsageQueryCriteria
-│   │   │               │   │   ├── UsageQueryPlan
-│   │   │               │   │   ├── UsageQueryRepository
-│   │   │               │   │   └── UsageRollupStateRepository
-│   │   │               │   └── service/
-│   │   │               │       ├── UsageQueryService
-│   │   │               │       ├── UsageReportExecutor
-│   │   │               │       ├── UsageRollupDayProcessor
-│   │   │               │       └── UsageRollupScheduler
-││   │   │               │
 │   │   │               ├── user/
-│   │   │               │   ├── controller/
-│   │   │               │   │   └── UserController
-│   │   │               │   ├── dto/
-│   │   │               │   │   ├── CreateUserRequest
-│   │   │               │   │   ├── PermanentDeleteUserRequest
-│   │   │               │   │   ├── ResetUserPasswordRequest
-│   │   │               │   │   ├── UpdateUserEnabledRequest
-│   │   │               │   │   ├── UpdateUserRequest
-│   │   │               │   │   ├── UpdateUserRolesRequest
-│   │   │               │   │   ├── UserDetailsResponse
-│   │   │               │   │   ├── UserResponse
-│   │   │               │   │   └── UserStatisticsResponse
-│   │   │               │   ├── entity/
-│   │   │               │   │   ├── RoleEntity
-│   │   │               │   │   └── UserEntity
-│   │   │               │   ├── event/
-│   │   │               │   │   └── UserSecurityStateChangedEvent
-│   │   │               │   ├── mapper/
-│   │   │               │   │   └── UserRoleMapper
-│   │   │               │   ├── repository/
-│   │   │               │   │   ├── RoleRepository
-│   │   │               │   │   └── UserRepository
-│   │   │               │   ├── service/
-│   │   │               │   │   ├── UserManagementProperties
-│   │   │               │   │   ├── UserSecurityStatus
-│   │   │               │   │   ├── UserService
-│   │   │               │   │   ├── UserStatusCacheInvalidationListener
-│   │   │               │   │   ├── UserStatusCacheProperties
-│   │   │               │   │   └── UserStatusCacheService
-│   │   │               │   └── validation/
-│   │   │               │       ├── BcryptUtf8Length
-│   │   │               │       ├── BcryptUtf8LengthValidator
-│   │   │               │       ├── PasswordPolicy
-│   │   │               │       ├── PasswordValidator
-│   │   │               │       └── ValidPassword
-│   │   │               │
 │   │   │               └── SafeaiBackendApplication
 │   │   │
 │   │   └── resources/
@@ -940,301 +529,993 @@ backend/
 │   │       │       ├── V35__chat_turn_composite_integrity.sql
 │   │       │       ├── V36__validate_chat_composite_integrity.sql
 │   │       │       ├── V37__audit_target_organization_snapshots.sql
+│   │       │       ├── V38__knowledge_base_core.sql
+│   │       │       ├── V39__knowledge_documents_and_versions.sql
+│   │       │       ├── V40__knowledge_ingestion_job_version_identity.sql
+│   │       │       ├── V41__durable_knowledge_ingestion_and_hybrid_retrieval.sql
+│   │       │       ├── V42__rag_answers_and_answer_passports.sql
+│   │       │       ├── V43__archive_chat_sessions.sql
+│   │       │       ├── V44__knowledge_production_integrity.sql
 │   │       │       └── README_DB.md
-│   │       ├── application.yaml
-│   │       ├── application-local.yaml
+│   │       ├── META-INF/
+│   │       ├── application.yml
+│   │       ├── application-local.yml
+│   │       ├── application-local-management-snippet.yml
 │   │       ├── application-local-nginx.yml
 │   │       ├── application-prod.yml
+│   │       ├── application-prod-knowledge.example.yml
+│   │       ├── application-prod-management-snippet.yml
 │   │       └── logback-spring.xml
 │   │
 │   └── test/
-│       ├── java/
-│       │   └── ru/
-│       │       └── safeai/
-│       │           └── gateway/
-│       │               ├── admin/
-│       │               │   └── controller/
-│       │               │
-│       │               ├── ai/
-│       │               │   ├── config/
-│       │               │   │   └── AiProductionConfigurationValidatorTest
-│       │               │   ├── provider/
-│       │               │   │   ├── anthropic/
-│       │               │   │   │   └── AnthropicProviderContractTest
-│       │               │   │   └── openai/
-│       │               │   │       └── OpenAiProviderContractTest
-│       │               │   ├── testsupport/
-│       │               │   │   ├── AiTestFixtures
-│       │               │   │   └── ProviderContractTestServer
-│       │               │   ├── AiChatResponseTest
-│       │               │   ├── AiContextWindowServiceTest
-│       │               │   ├── AiExceptionHandlerTest
-│       │               │   ├── AiMessageAndRequestTest
-│       │               │   ├── AiProviderPropertiesTest
-│       │               │   ├── AiProviderRetryExecutorTest
-│       │               │   ├── AiProviderSupportTest
-│       │               │   ├── AiRestClientFactoryTest
-│       │               │   ├── AiRetryPropertiesTest
-│       │               │   ├── AnthropicPropertiesTest
-│       │               │   ├── MockAiProviderTest
-│       │               │   ├── ModelPricingPropertiesTest
-│       │               │   ├── ModelPricingServiceTest
-│       │               │   ├── OpenAiPropertiesTest
-│       │               │   └── PricingResultTest
-│       │               │
-│       │               ├── audit/
-│       │               │   ├── config/
-│       │               │   │   └── AuditDetailsPropertiesTest
-│       │               │   ├── controller/
-│       │               │   │   └── AuditControllerSecurityTest
-│       │               │   ├── details/
-│       │               │   │   └── AuditDetailsRecordsTest
-│       │               │   ├── dto/
-│       │               │   │   └── AuditEventPageResponseTest
-│       │               │   ├── listener/
-│       │               │   │   └── RateLimitAuditListenerTest
-│       │               │   ├── repository/
-│       │               │   │   ├── AuditEmailPrefixIndexIntegrationTest
-│       │               │   │   ├── AuditMigrationIntegrityIntegrationTest
-│       │               │   │   └── AuditRepositoryContractTest
-│       │               │   ├── service/
-│       │               │   │   ├── AuditActorSnapshotIntegrationTest
-│       │               │   │   ├── AuditCursorCodecTest
-│       │               │   │   ├── AuditCursorPaginationIntegrationTest
-│       │               │   │   ├── AuditDetailsSanitizerTest
-│       │               │   │   ├── AuditEventQueryServiceTest
-│       │               │   │   ├── AuditEventServiceTest
-│       │               │   │   ├── AuditOutboxFailureServiceTest
-│       │               │   │   ├── AuditOutboxIntegrationTest
-│       │               │   │   ├── AuditOutboxProcessorTest
-│       │               │   │   ├── AuditOutboxWriterTest
-│       │               │   │   ├── AuditRetentionBatchServiceTest
-│       │               │   │   ├── AuditRetentionIntegrationTest
-│       │               │   │   ├── AuditRetentionLockIntegrationTest
-│       │               │   │   ├── AuditRetentionServiceTest
-│       │               │   │   ├── AuditTenantIsolationIntegrationTest
-│       │               │   │   ├── BestEffortAuditPolicyIntegrationTest
-│       │               │   │   ├── BestEffortStandaloneAuditServiceTest
-│       │               │   │   └── RequiredAuditPolicyIntegrationTest
-│       │               │   └── testsupport/
-│       │               │       └── AbstractAuditPostgresIntegrationTest
-       │               │
-│       │               ├── auth/
-│       │               │   ├── controller/
-│       │               │   │   ├── AuthControllerSecurityTest
-│       │               │   │   └── CsrfControllerTest
-│       │               │   ├── integration/
-│       │               │   │   ├── AuthPostgresConcurrencyIT
-│       │               │   │   └── UserSecurityMutationTestService
-│       │               │   ├── security/
-│       │               │   │   ├── CustomUserDetailsServiceTest
-│       │               │   │   ├── SecurityConfigIntegrationTest
-│       │               │   │   └── UserStatusFilterTest
-│       │               │   └── service/
-│       │               │       ├── AuthCookiePropertiesTest
-│       │               │       ├── AuthCookieServiceTest
-│       │               │       ├── AuthEventServiceTest
-│       │               │       ├── AuthServiceTest
-│       │               │       └── RefreshTokenServiceTest
-│       │               │
-│       │               ├── chat/
-│       │               │   ├── config/
-│       │               │   │   └── ChatConfigurationPropertiesTest
-│       │               │   ├── controller/
-│       │               │   │   ├── ChatControllerContractTest
-│       │               │   │   └── ChatControllerSecurityTest
-│       │               │   ├── dto/
-│       │               │   │   └── ChatDtoContractTest
-│       │               │   ├── entity/
-│       │               │   │   └── ChatEntityInvariantTest
-│       │               │   ├── integration/
-│       │               │   │   ├── AbstractChatPostgresIntegrationTest
-│       │               │   │   ├── ChatConcurrencyIntegrationTest
-│       │               │   │   ├── ChatDatabaseStateConstraintIntegrationTest
-│       │               │   │   ├── ChatExplainPlanIntegrationTest
-│       │               │   │   ├── ChatHistoryIntegrationTest
-│       │               │   │   ├── ChatIntegrationClockConfiguration
-│       │               │   │   ├── ChatLegacyUpgradeMigrationIntegrationTest
-│       │               │   │   ├── ChatMigrationIntegrityIntegrationTest
-│       │               │   │   ├── ChatTenantIsolationIntegrationTest
-│       │               │   │   ├── ChatTurnRecoveryIntegrationTest
-│       │               │   │   ├── ChatTurnRepositoryTransactionIntegrationTest
-│       │               │   │   ├── ChatTurnStateMachineIntegrationTest
-│       │               │   │   └── ChatUsageQualityIntegrationTest
-│       │               │   ├── observability/
-│       │               │   │   └── ChatMetricsTest
-│       │               │   ├── service/
-│       │               │   │   ├── AiHistoryBuilderTest
-│       │               │   │   ├── ChatContentNormalizerTest
-│       │               │   │   ├── ChatLockServiceTest
-│       │               │   │   ├── ChatQuotaServiceTest
-│       │               │   │   ├── ChatServiceTest
-│       │               │   │   ├── ChatTurnFinalizationServiceTest
-│       │               │   │   ├── ChatTurnLeaseServiceTest
-│       │               │   │   ├── ChatTurnRecoverySchedulerTest
-│       │               │   │   ├── ChatTurnRecoveryServiceTest
-│       │               │   │   └── ChatTurnReservationServiceTest
-│       │               │   └── testsupport/
-│       │               │       └── ChatTestFixtures
-│       │               │
-│       │               ├── common/
-│       │               │   ├── exception/
-│       │               │   │   ├── ApiErrorResponseFactoryTest
-│       │               │   │   ├── ApiErrorResponseTest
-│       │               │   │   ├── GlobalExceptionHandlerAccessDeniedTest
-│       │               │   │   ├── GlobalExceptionHandlerIntegrationTest
-│       │               │   │   ├── GlobalExceptionHandlerTest
-│       │               │   │   ├── OrganizationVersionConflictExceptionTest
-│       │               │   │   └── UserVersionConflictExceptionTest
-│       │               │   └── security/
-│       │               │       ├── AccessTokenSubjectTest
-│       │               │       ├── ClientIpPropertiesTest
-│       │               │       ├── ClientIpResolverTest
-│       │               │       ├── CorsPropertiesTest
-│       │               │       ├── JwtCodecConfigurationTest
-│       │               │       ├── JwtConfigurationBindingTest
-│       │               │       ├── JwtPropertiesTest
-│       │               │       ├── JwtServiceTest
-│       │               │       ├── PasswordEncodingConfigurationTest
-│       │               │       ├── ProductionSecurityInvariantValidatorTest
-│       │               │       ├── ProductionSecurityStartupContractTest
-│       │               │       ├── RequestIdFilterTest
-│       │               │       ├── RoleAuthorityMapperTest
-│       │               │       ├── SafeAiJwtAuthenticationConverterTest
-│       │               │       ├── SafeAiUserPrincipalTest
-│       │               │       └── SecurityErrorResponseIntegrationTest
-│       │               │
-│       │               │
-                        knowledge
-├── controller
-│   └── KnowledgeBaseController
-├── dto
-│   ├── CreateKnowledgeBaseRequest
-│   ├── UpdateKnowledgeBaseRequest
+│       └── java/
+
+ai/
+├── config/
+│   ├── AiConfiguration
+│   ├── AiProductionConfigurationValidator
+│   ├── AiRetryTimeoutBudgetValidator
+│   ├── AnthropicProviderConfiguration
+│   └── OpenAiProviderConfiguration
+├── dto/
+│   ├── AiChatRequest
+│   ├── AiChatResponse
+│   ├── AiMessage
+│   └── AiMessageRole
+├── exception/
+│   ├── AiContextLimitException
+│   ├── AiProviderBillingException
+│   ├── AiProviderErrorType
+│   ├── AiProviderException
+│   ├── AiProviderOverloadedException
+│   ├── AiProviderQuotaExceededException
+│   ├── AiProviderRateLimitedException
+│   ├── AiProviderResponseTooLargeException
+│   ├── AiProviderTimeoutException
+│   └── AiProviderUnavailableException
+├── metadata/
+│   ├── AiResponseStatus
+│   ├── AiTokenUsage
+│   ├── PricingStatus
+│   └── UsageStatus
+├── pricing/
+│   ├── ModelPricingProperties
+│   ├── ModelPricingService
+│   └── PricingResult
+├── provider/
+│   ├── anthropic/
+│   │   ├── AnthropicProperties
+│   │   └── AnthropicProvider
+│   ├── mock/
+│   │   └── MockAiProvider
+│   ├── openai/
+│   │   ├── OpenAiProperties
+│   │   └── OpenAiProvider
+│   ├── AiContextWindowProperties
+│   ├── AiContextWindowService
+│   ├── AiJsonNodeSupport
+│   ├── AiProvider
+│   ├── AiProviderAttemptContext
+│   ├── AiProviderExceptionFactory
+│   ├── AiProviderProperties
+│   ├── AiProviderRetryExecutor
+│   ├── AiProviderSupport
+│   ├── AiResponseMetadataService
+│   ├── AiResponseTooLargeIOException
+│   ├── AiRestClientFactory
+│   ├── AiRetryProperties
+│   └── ProviderPropertyValidator
+└── web/
+    └── AiExceptionHandler
+    
+    
+    
+    
+audit/
+├── config/
+│   ├── AuditDetailsProperties
+│   ├── AuditOutboxConfiguration
+│   ├── AuditOutboxProperties
+│   ├── AuditRetentionConfiguration
+│   └── AuditRetentionProperties
+├── controller/
+│   ├── AuditController
+│   └── AuditDirectoryController
+├── details/
+│   ├── AiResponseAuditDetails
+│   ├── AuditDetails
+│   ├── ChatTurnAuditDetails
+│   ├── RateLimitAuditDetails
+│   └── SecurityRefreshReuseAuditDetails
+├── dto/
+│   ├── AuditActorDirectoryResponse
+│   ├── AuditEventCursorResponse
+│   ├── AuditEventFilter
+│   ├── AuditEventPageResponse
+│   ├── AuditEventResponse
+│   └── AuditTargetOrganizationDirectoryResponse
+├── entity/
+│   ├── AuditEventEntity
+│   └── AuditOutboxEntity
+├── listener/
+│   └── RateLimitAuditListener
+├── model/
+│   └── AuditActor
+├── repository/
+│   ├── AuditDirectoryQueryRepository
+│   ├── AuditEventCriteria
+│   ├── AuditEventCursorRepository
+│   ├── AuditEventCursorRepositoryImpl
+│   ├── AuditEventRepository
+│   └── AuditOutboxRepository
+├── service/
+│   ├── AuditCommand
+│   ├── AuditCommandFactory
+│   ├── AuditCursorCodec
+│   ├── AuditDetailsSanitizer
+│   ├── AuditDirectoryService
+│   ├── AuditEventCursorService
+│   ├── AuditEventQueryPolicy
+│   ├── AuditEventQueryService
+│   ├── AuditEventService
+│   ├── AuditOutboxFailureService
+│   ├── AuditOutboxMetrics
+│   ├── AuditOutboxProcessor
+│   ├── AuditOutboxScheduler
+│   ├── AuditOutboxWriter
+│   ├── AuditRetentionBatchService
+│   ├── AuditRetentionLockService
+│   ├── AuditRetentionService
+│   └── BestEffortStandaloneAuditService
+├── spi/
+│   └── AuditTargetOrganizationSnapshotProvider
+└── AuditEventType
+
+
+auth/
+├── config/
+│   ├── ProductionAuthCookieInvariantValidator
+│   └── RefreshTokenCleanupConfiguration
+├── controller/
+│   ├── AuthController
+│   └── CsrfController
+├── dto/
+│   ├── CsrfTokenResponse
+│   ├── CurrentUserResponse
+│   └── LoginRequest
+├── entity/
+│   ├── RefreshTokenEntity
+│   └── RefreshTokenRevocationReason
+├── repository/
+│   └── RefreshTokenRepository
+├── security/
+│   ├── AccessCookieAuthenticationFilter
+│   ├── CsrfCookieFilter
+│   ├── CustomUserDetailsService
+│   ├── HstsProperties
+│   ├── package-info.java
+│   ├── SecurityConfig
+│   ├── SpaCsrfTokenRequestHandler
+│   └── UserStatusFilter
+├── service/
+│   ├── AuthCookieConfigurationValidator
+│   ├── AuthCookieProperties
+│   ├── AuthCookieService
+│   ├── AuthEventService
+│   ├── AuthService
+│   ├── LoginSessionResult
+│   ├── LoginSessionTransactionService
+│   ├── LogoutAuditSubject
+│   ├── RefreshTokenCleanupBatchService
+│   ├── RefreshTokenCleanupJob
+│   ├── RefreshTokenCleanupProperties
+│   ├── RefreshTokenService
+│   └── UserSessionRevocationService
+└── validation/
+    ├── Utf8ByteLength
+    └── Utf8ByteLengthValidator
+
+
+chat/
+├── config/
+│   ├── ChatConfiguration
+│   ├── ChatLockProperties
+│   ├── ChatProperties
+│   ├── ChatQuotaProperties
+│   └── ChatRecoveryProperties
+├── controller/
+│   └── ChatController
+├── dto/
+│   ├── ChatCapabilitiesResponse
+│   ├── ChatDetailsResponse
+│   ├── ChatErrorResponse
+│   ├── ChatPageRequest
+│   ├── ChatPageResponse
+│   ├── ChatResponse
+│   ├── ChatTurnStatusResponse
+│   ├── CreateChatRequest
+│   ├── MessagePageRequest
+│   ├── MessageResponse
+│   ├── SendMessageRequest
+│   └── SendMessageResponse
+├── entity/
+│   ├── ChatMessageEntity
+│   ├── ChatMessageRole
+│   ├── ChatMessageStatus
+│   ├── ChatQuotaReservationState
+│   ├── ChatSessionEntity
+│   ├── ChatTurnEntity
+│   └── ChatTurnState
+├── exception/
+│   ├── AiOutcomeAmbiguousException
+│   ├── ChatAccessRevokedException
+│   ├── ChatApiException
+│   ├── ChatApiExceptionHandler
+│   ├── ChatLeaseUnavailableException
+│   ├── ChatQuotaExceededException
+│   ├── ChatStaleProcessorException
+│   ├── ChatTurnFailedException
+│   ├── ChatTurnInProgressException
+│   └── IdempotencyKeyReusedException
+├── observability/
+│   └── ChatMetrics
+├── quota/
+│   ├── ChatQuotaConsumption
+│   └── ChatQuotaPolicy
+├── repository/
+│   ├── ChatHistoryRepository
+│   ├── ChatHistoryTurn
+│   ├── ChatMessageRepository
+│   ├── ChatQuotaRepository
+│   ├── ChatSecurityStateRepository
+│   ├── ChatSessionRepository
+│   ├── ChatTurnMutexRepository
+│   ├── ChatTurnRecoveryRepository
+│   ├── ChatTurnRepository
+│   └── RecoveredChatTurn
+└── service/
+    ├── AiHistoryBuilder
+    ├── ChatContentNormalizer
+    ├── ChatLockService
+    ├── ChatMapper
+    ├── ChatProcessingContext
+    ├── ChatQuotaService
+    ├── ChatSecurityStateService
+    ├── ChatService
+    ├── ChatTurnFinalizationService
+    ├── ChatTurnLeaseService
+    ├── ChatTurnRecoveryCoordinator
+    ├── ChatTurnRecoveryScheduler
+    ├── ChatTurnRecoveryService
+    └── ChatTurnReservationService
+    
+    
+    
+    
+    
+common/
+├── config/
+│   ├── SchedulingConfiguration
+│   └── TimeConfiguration
+├── exception/
+│   ├── ApiErrorCode
+│   ├── ApiErrorResponse
+│   ├── ApiErrorResponseFactory
+│   ├── ApiErrorResponseWriter
+│   ├── ApiException
+│   ├── AuthServiceUnavailableException
+│   ├── BadRequestException
+│   ├── ChatBusyException
+│   ├── ChatLockUnavailableException
+│   ├── ConflictException
+│   ├── ExpiredRefreshTokenException
+│   ├── ForbiddenOperationException
+│   ├── GlobalExceptionHandler
+│   ├── InvalidRefreshTokenException
+│   ├── OrganizationVersionConflictException
+│   ├── RateLimitExceededException
+│   ├── RateLimitUnavailableException
+│   ├── README.md
+│   ├── RefreshTokenReuseDetectedException
+│   ├── ResourceNotFoundException
+│   └── UserVersionConflictException
+├── pagination/
+│   └── StablePageableNormalizer
+├── persistence/
+│   ├── DatabaseConstraintClassifier
+│   └── PostgresAdvisoryLockExecutor
+├── platform/
+│   ├── PlatformProperties
+│   └── PlatformPropertiesConfiguration
+└── security/
+    ├── AccessTokenSubject
+    ├── BearerAuthenticationEntryPoint
+    ├── ClientIpProperties
+    ├── ClientIpResolver
+    ├── CorsProperties
+    ├── JwtCodecConfiguration
+    ├── JwtProperties
+    ├── JwtRsaKeyRing
+    ├── JwtService
+    ├── ManagementSecurityConfig
+    ├── package-info.java
+    ├── PasswordEncodingConfiguration
+    ├── ProductionSecurityInvariantValidator
+    ├── RequestIdFilter
+    ├── RestAccessDeniedHandler
+    ├── RestAuthenticationEntryPoint
+    ├── RoleAuthorityMapper
+    ├── SafeAiJwtAuthenticationConverter
+    ├── SafeAiUserPrincipal
+    ├── SecurityIdentityValidator
+    ├── SecurityPropertiesConfiguration
+    └── SystemRole
+    
+  
+  
+knowledge/
+├── chunking/
+│   ├── KnowledgeChunkCandidate
+│   └── KnowledgeChunker
+├── config/
+│   ├── KnowledgeEmbeddingProperties
+│   ├── KnowledgeIngestionProperties
+│   ├── KnowledgeOcrConfigurationInvariantVerifier
+│   ├── KnowledgeOcrProperties
+│   ├── KnowledgeProcessingConfiguration
+│   ├── KnowledgeRagProperties
+│   └── KnowledgeRetrievalProperties
+├── controller/
+│   ├── AnswerPassportController
+│   ├── KnowledgeBaseController
+│   ├── KnowledgeDocumentController
+│   ├── KnowledgeEvaluationController
+│   └── KnowledgeRetrievalController
+├── dto/
+│   ├── AnswerCitationResponse
+│   ├── AnswerPassportResponse
 │   ├── CreateKnowledgeBaseMemberRequest
-│   ├── UpdateKnowledgeBaseMemberRequest
-│   ├── KnowledgeBaseResponse
-│   ├── KnowledgeBasePageResponse
-│   ├── KnowledgeBaseMemberResponse
+│   ├── CreateKnowledgeBaseRequest
 │   ├── KnowledgeBaseMemberPageResponse
-│   └── KnowledgeMemberCandidateResponse
-├── entity
+│   ├── KnowledgeBaseMemberResponse
+│   ├── KnowledgeBasePageResponse
+│   ├── KnowledgeBaseResponse
+│   ├── KnowledgeDocumentPageResponse
+│   ├── KnowledgeDocumentResponse
+│   ├── KnowledgeDocumentVersionPageResponse
+│   ├── KnowledgeDocumentVersionResponse
+│   ├── KnowledgeEvaluationCaseRequest
+│   ├── KnowledgeEvaluationCaseResponse
+│   ├── KnowledgeEvaluationRequest
+│   ├── KnowledgeEvaluationResponse
+│   ├── KnowledgeHealthResponse
+│   ├── KnowledgeMemberCandidateResponse
+│   ├── KnowledgeReindexResponse
+│   ├── KnowledgeRetrievalHitResponse
+│   ├── KnowledgeRetrievalRequest
+│   ├── KnowledgeRetrievalResponse
+│   ├── UpdateKnowledgeBaseMemberRequest
+│   ├── UpdateKnowledgeBaseRequest
+│   └── UpdateKnowledgeDocumentRequest
+├── embedding/
+│   ├── HashingKnowledgeEmbeddingProvider
+│   ├── KnowledgeEmbeddingException
+│   ├── KnowledgeEmbeddingProductionInvariantVerifier
+│   ├── KnowledgeEmbeddingProvider
+│   ├── OpenAiKnowledgeEmbeddingProvider
+│   └── PgVectorSupport
+├── entity/
 │   ├── KnowledgeBaseEntity
-│   └── KnowledgeBaseMembershipEntity
-├── model
+│   ├── KnowledgeBaseMembershipEntity
+│   ├── KnowledgeDocumentEntity
+│   ├── KnowledgeDocumentVersionEntity
+│   └── KnowledgeIngestionJobEntity
+├── evaluation/
+│   └── KnowledgeRetrievalMetrics
+├── extraction/
+│   ├── CsvKnowledgeExtractor
+│   ├── DocxKnowledgeExtractor
+│   ├── ExtractedDocument
+│   ├── ExtractedSection
+│   ├── ExtractionTextSupport
+│   ├── HtmlKnowledgeExtractor
+│   ├── JsonKnowledgeExtractor
+│   ├── KnowledgeDocumentExtractor
+│   ├── KnowledgeExtractionService
+│   ├── MarkdownKnowledgeExtractor
+│   ├── OoxmlPackageSupport
+│   ├── PdfKnowledgeExtractor
+│   ├── PlainTextKnowledgeExtractor
+│   ├── PptxKnowledgeExtractor
+│   ├── XlsxKnowledgeExtractor
+│   └── XmlKnowledgeExtractor
+├── ingestion/
+│   ├── EmbeddedKnowledgeChunk
+│   ├── ExpiredKnowledgeIngestionJob
+│   ├── KnowledgeChunkPersistenceService
+│   ├── KnowledgeIngestionClaim
+│   ├── KnowledgeIngestionException
+│   ├── KnowledgeIngestionFailureService
+│   ├── KnowledgeIngestionMaintenanceService
+│   ├── KnowledgeIngestionProcessor
+│   ├── KnowledgeIngestionQueueRepository
+│   ├── KnowledgeIngestionScheduler
+│   └── StaleIngestionOwnershipException
+├── model/
+│   ├── KnowledgeBaseAccessLevel
 │   ├── KnowledgeBaseVisibility
-│   └── KnowledgeBaseAccessLevel
-├── repository
-│   ├── KnowledgeBaseRepository
+│   └── KnowledgeIngestionStatus
+├── ocr/
+│   ├── DisabledKnowledgeOcrProvider
+│   ├── HttpKnowledgeOcrProvider
+│   ├── KnowledgeOcrProvider
+│   ├── OcrDocument
+│   └── OcrPage
+├── rag/
+│   ├── AnswerPassportService
+│   ├── KnowledgeCitationValidator
+│   ├── KnowledgeContextAssembler
+│   ├── KnowledgeContextSource
+│   ├── KnowledgeHashing
+│   ├── KnowledgeMode
+│   ├── KnowledgeRagService
+│   ├── RagCitation
+│   ├── RagCompletion
+│   └── RagPreparation
+├── repository/
 │   ├── KnowledgeBaseMembershipRepository
+│   ├── KnowledgeBaseRepository
+│   ├── KnowledgeDocumentQueryRepository
+│   ├── KnowledgeDocumentRepository
+│   ├── KnowledgeDocumentVersionRepository
+│   ├── KnowledgeIngestionJobRepository
 │   └── KnowledgeMemberDirectoryRepository
-└── service
-    ├── KnowledgeBaseNameNormalizer
-    └── KnowledgeBaseService
-│       │               │   
-│       │               │   
-│       │               │    
-│       │               │
-│       │               ├── organization/
-│       │               │   ├── controller/
-│       │               │   │   └── OrganizationControllerSecurityTest
-│       │               │   ├── repository/
-│       │               │   │   └── OrganizationImpactQueryRepositoryTest
-│       │               │   └── service/
-│       │               │       ├── OrganizationNameNormalizerTest
-│       │               │       ├── OrganizationPostgresIntegrationTest
-│       │               │       ├── OrganizationSecurityEpochPostgresIntegrationTest
-│       │               │       ├── OrganizationServiceTest
-│       │               │       ├── OrganizationStatusCacheInvalidationListenerTest
-│       │               │       └── PlatformOrganizationInvariantVerifierTest
-│       │               │
-│       │               ├── ratelimit/
-│       │               │   ├── external/
-│       │               │   │   ├── RedisClusterRateLimitIT
-│       │               │   │   └── RedisSentinelFailoverIT
-│       │               │   ├── DualRateLimitResultTest
-│       │               │   ├── LoginRateLimitServiceTest
-│       │               │   ├── RateLimitExceededExceptionTest
-│       │               │   ├── RateLimitKeyFactoryTest
-│       │               │   ├── RateLimitPropertiesTest
-│       │               │   ├── RedisClusterSlotContractTest
-│       │               │   ├── RedisFixedWindowRateLimiterIntegrationTest
-│       │               │   └── RedisRateLimitServiceTest
-│       │               │
-│       │               ├── testsupport/
-│       │               │   └── AbstractPostgresIntegrationTest
-│       │               │
-│       │               ├── usage/
-│       │               │   ├── config/
-│       │               │   │   ├── UsageJdbcClientsTest
-│       │               │   │   └── UsagePropertiesTest
-│       │               │   ├── controller/
-│       │               │   │   ├── UsageControllerContractTest
-│       │               │   │   └── UsageControllerSecurityTest
-│       │               │   ├── dto/
-│       │               │   │   ├── UsagePagingContractTest
-│       │               │   │   └── UsageSummaryValueObjectsTest
-│       │               │   ├── repository/
-│       │               │   │   ├── UsageCoverageIntegrationTest
-│       │               │   │   ├── UsageEntityMappingContractTest
-│       │               │   │   ├── UsageExplainAnalyzePerformanceIntegrationTest
-│       │               │   │   ├── UsageExplainPlanIntegrationTest
-│       │               │   │   ├── UsageMigrationIntegrityIntegrationTest
-│       │               │   │   ├── UsagePaginationIntegrationTest
-│       │               │   │   ├── UsagePerformanceIntegrationTest
-│       │               │   │   ├── UsagePricingCorrectnessIntegrationTest
-│       │               │   │   ├── UsageQueryContractTest
-│       │               │   │   ├── UsageQueryRepositoryTest
-│       │               │   │   ├── UsageRollupAdvisoryLockIntegrationTest
-│       │               │   │   ├── UsageRollupReconciliationIntegrationTest
-│       │               │   │   ├── UsageTenantIsolationIntegrationTest
-│       │               │   │   └── UsageUtcAggregationIntegrationTest
-│       │               │   ├── service/
-│       │               │   │   ├── UsageQueryServiceTest
-│       │               │   │   ├── UsageReportExecutorTest
-│       │               │   │   ├── UsageRollupDayProcessorTest
-│       │               │   │   └── UsageRollupSchedulerTest
-│       │               │   └── testsupport/
-│       │               │       └── UsagePostgresIntegrationTestSupport
-│       │               │
-│       │               ├── user/
-│       │               │   ├── controller/
-│       │               │   │   └── UserControllerSecurityTest
-│       │               │   ├── dto/
-│       │               │   │   └── CreateUserRequestValidationTest
-│       │               │   ├── service/
-│       │               │   │   ├── UserManagementPostgresIntegrationTest
-│       │               │   │   ├── UserSecurityTransactionIntegrationTest
-│       │               │   │   ├── UserServiceTest
-│       │               │   │   ├── UserStatusCacheInvalidationIntegrationTest
-│       │               │   │   ├── UserStatusCachePropertiesTest
-│       │               │   │   └── UserStatusCacheServiceTest
-│       │               │   └── validation/
-│       │               │       └── PasswordValidatorTest
-│       │               │
-│       │               ├── PasswordHashGenerator
-│       │               └── SafeaiBackendApplicationTests
-│       │
-│       └── resources/
-│           ├── sql/
-│           │   └── post_v23_assertions.sql
-│           ├── application-auth-postgres-it.yml
-│           └── application-test.yml
-│
-├── target/
-├── .dockerignore
-├── .env.example
-├── .env.prod
-├── .gitattributes
-├── .gitignore
-├── commit-message.txt
-├── Dockerfile
-├── mvnw
-├── mvnw.cmd
-├── pom.xml
-└── docs/
-    ├── .local-run/
-    └── local/
+├── retrieval/
+│   ├── KnowledgeRetrievalExecution
+│   ├── KnowledgeRetrievalHit
+│   └── KnowledgeRetrievalRepository
+├── service/
+│   ├── KnowledgeAccessService
+│   ├── KnowledgeBaseNameNormalizer
+│   ├── KnowledgeBaseService
+│   ├── KnowledgeDocumentFileValidator
+│   ├── KnowledgeDocumentNameNormalizer
+│   ├── KnowledgeDocumentService
+│   ├── KnowledgeDocumentWriteService
+│   ├── KnowledgeEvaluationService
+│   ├── KnowledgeNameNormalizerSupport
+│   ├── KnowledgeOperationsService
+│   └── KnowledgeRetrievalService
+└── storage/
+    ├── KnowledgeStorageConfiguration
+    ├── KnowledgeStorageProductionInvariantVerifier
+    ├── KnowledgeStorageProperties
+    ├── KnowledgeStorageType
+    ├── LocalObjectStorage
+    ├── ObjectStorage
+    ├── S3ObjectStorage
+    └── StoredObject  
+    
+    
+organization/
+├── audit/
+│   └── OrganizationAuditSnapshotProvider
+├── controller/
+│   └── OrganizationController
+├── dto/
+│   ├── CreateOrganizationRequest
+│   ├── DisableOrganizationRequest
+│   ├── EnableOrganizationRequest
+│   ├── OrganizationDirectoryResponse
+│   ├── OrganizationDisableImpactResponse
+│   ├── OrganizationPageResponse
+│   ├── OrganizationResponse
+│   ├── OrganizationType
+│   ├── UpdateOrganizationEnabledRequest
+│   └── UpdateOrganizationRequest
+├── entity/
+│   └── OrganizationEntity
+├── event/
+│   └── OrganizationSecurityStateChangedEvent
+├── repository/
+│   ├── OrganizationImpactQueryRepository
+│   └── OrganizationRepository
+└── service/
+    ├── OrganizationNameNormalizer
+    ├── OrganizationService
+    ├── OrganizationStatusCacheInvalidationListener
+    └── PlatformOrganizationInvariantVerifier
+
+
+
+ratelimit/
+├── AiMessageRateLimitProperties
+├── DualRateLimitResult
+├── LoginRateLimitProperties
+├── LoginRateLimitService
+├── RateLimitDecision
+├── RateLimitExceededEvent
+├── RateLimitKeyFactory
+├── RateLimitMetrics
+├── RateLimitProductionConfigurationValidator
+├── RateLimitProductionProperties
+├── RateLimitRedisKeyProperties
+├── RateLimitResult
+├── RedisFixedWindowRateLimiter
+├── RedisRateLimitService
+├── RefreshRateLimitProperties
+└── RefreshRateLimitService
+
+
+usage/
+├── config/
+│   ├── UsageConfiguration
+│   ├── UsageJdbcClients
+│   └── UsageProperties
+├── controller/
+│   └── UsageController
+├── dto/
+│   ├── PagedResponse
+│   ├── UsageCostSummary
+│   ├── UsageDailySummaryResponse
+│   ├── UsageDataQualityResponse
+│   ├── UsageDateFilter
+│   ├── UsageDateModelFilter
+│   ├── UsageModelSummaryResponse
+│   ├── UsagePageRequest
+│   ├── UsageProblemModelResponse
+│   ├── UsageResponseSummary
+│   ├── UsageSummaryInvariants
+│   ├── UsageSummaryResponse
+│   ├── UsageTokenSummary
+│   └── UsageUserSummaryResponse
+├── repository/
+│   ├── JdbcUsageQueryRepository
+│   ├── UsageInstantRange
+│   ├── UsageQueryCriteria
+│   ├── UsageQueryPlan
+│   ├── UsageQueryRepository
+│   └── UsageRollupStateRepository
+└── service/
+    ├── UsageQueryService
+    ├── UsageReportExecutor
+    ├── UsageRollupDayProcessor
+    └── UsageRollupScheduler
+    
+    
+user/
+├── controller/
+│   └── UserController
+├── dto/
+│   ├── CreateUserRequest
+│   ├── PermanentDeleteUserRequest
+│   ├── ResetUserPasswordRequest
+│   ├── UpdateUserEnabledRequest
+│   ├── UpdateUserRequest
+│   ├── UpdateUserRolesRequest
+│   ├── UserDetailsResponse
+│   ├── UserResponse
+│   └── UserStatisticsResponse
+├── entity/
+│   ├── RoleEntity
+│   └── UserEntity
+├── event/
+│   └── UserSecurityStateChangedEvent
+├── mapper/
+│   └── UserRoleMapper
+├── repository/
+│   ├── RoleRepository
+│   └── UserRepository
+├── service/
+│   ├── UserManagementProperties
+│   ├── UserSecurityStatus
+│   ├── UserService
+│   ├── UserStatusCacheInvalidationListener
+│   ├── UserStatusCacheProductionInvariantVerifier
+│   ├── UserStatusCacheProperties
+│   └── UserStatusCacheService
+└── validation/
+    ├── BcryptUtf8Length
+    ├── BcryptUtf8LengthValidator
+    ├── PasswordPolicy
+    ├── PasswordValidator
+    ├── UserEmailNormalizer
+    └── ValidPassword
+    
+    
+    
+
+
+
+backend/
+└── src/
+    └── test/
+        ├── java/
+        │   └── ru/
+        │       └── safeai/
+        │           └── gateway/
+        │
+        │               ├── ai/
+        │               │   ├── config/
+        │               │   │   └── AiProductionConfigurationValidatorTest
+        │               │   │
+        │               │   ├── provider/
+        │               │   │   ├── anthropic/
+        │               │   │   │   └── [папка свернута на текущем скриншоте]
+        │               │   │   ├── openai/
+        │               │   │   │   └── [папка свернута на текущем скриншоте]
+        │               │   │   └── AiResponseMetadataServiceTest
+        │               │   │
+        │               │   ├── testsupport/
+        │               │   │   ├── AiTestFixtures
+        │               │   │   └── ProviderContractTestServer
+        │               │   │
+        │               │   ├── AiChatResponseTest
+        │               │   ├── AiContextWindowServiceTest
+        │               │   ├── AiExceptionHandlerTest
+        │               │   ├── AiMessageAndRequestTest
+        │               │   ├── AiProviderPropertiesTest
+        │               │   ├── AiProviderRetryExecutorTest
+        │               │   ├── AiProviderSupportTest
+        │               │   ├── AiRestClientFactoryTest
+        │               │   ├── AiRetryPropertiesTest
+        │               │   ├── AnthropicPropertiesTest
+        │               │   ├── MockAiProviderTest
+        │               │   ├── ModelPricingPropertiesTest
+        │               │   ├── ModelPricingServiceTest
+        │               │   ├── OpenAiPropertiesTest
+        │               │   └── PricingResultTest
+        │               │
+        │               ├── audit/
+        │               │   ├── config/
+        │               │   │   └── AuditDetailsPropertiesTest
+        │               │   │
+        │               │   ├── controller/
+        │               │   │   └── AuditControllerSecurityTest
+        │               │   │
+        │               │   ├── details/
+        │               │   │   └── AuditDetailsRecordsTest
+        │               │   │
+        │               │   ├── dto/
+        │               │   │   └── AuditEventPageResponseTest
+        │               │   │
+        │               │   ├── listener/
+        │               │   │   └── RateLimitAuditListenerTest
+        │               │   │
+        │               │   ├── repository/
+        │               │   │   ├── AuditEmailPrefixIndexIntegrationTest
+        │               │   │   ├── AuditMigrationIntegrityIntegrationTest
+        │               │   │   └── AuditRepositoryContractTest
+        │               │   │
+        │               │   ├── service/
+        │               │   │   ├── AuditActorSnapshotIntegrationTest
+        │               │   │   ├── AuditCursorCodecTest
+        │               │   │   ├── AuditCursorPaginationIntegrationTest
+        │               │   │   ├── AuditDetailsSanitizerTest
+        │               │   │   ├── AuditDirectoryServiceTest
+        │               │   │   ├── AuditEventQueryServiceTest
+        │               │   │   ├── AuditEventServiceTest
+        │               │   │   ├── AuditOutboxFailureServiceTest
+        │               │   │   ├── AuditOutboxIntegrationTest
+        │               │   │   ├── AuditOutboxProcessorTest
+        │               │   │   ├── AuditOutboxWriterTest
+        │               │   │   ├── AuditRetentionBatchServiceTest
+        │               │   │   ├── AuditRetentionIntegrationTest
+        │               │   │   ├── AuditRetentionLockIntegrationTest
+        │               │   │   ├── AuditRetentionLockServiceTest
+        │               │   │   ├── AuditRetentionServiceTest
+        │               │   │   ├── AuditServiceAuthorizationBoundaryTest
+        │               │   │   ├── AuditTenantIsolationIntegrationTest
+        │               │   │   ├── BestEffortAuditPolicyIntegrationTest
+        │               │   │   ├── BestEffortStandaloneAuditServiceTest
+        │               │   │   └── RequiredAuditPolicyIntegrationTest
+        │               │   │
+        │               │   └── testsupport/
+        │               │       └── AbstractAuditPostgresIntegrationTest
+        │               │
+        │               ├── auth/
+        │               │   ├── controller/
+        │               │   │   ├── AuthControllerSecurityTest
+        │               │   │   └── CsrfControllerTest
+        │               │   │
+        │               │   ├── integration/
+        │               │   │   ├── AuthPostgresConcurrencyIT
+        │               │   │   └── UserSecurityMutationTestService
+        │               │   │
+        │               │   ├── security/
+        │               │   │   ├── CustomUserDetailsServiceTest
+        │               │   │   ├── SecurityConfigIntegrationTest
+        │               │   │   └── UserStatusFilterTest
+        │               │   │
+        │               │   └── service/
+        │               │       ├── AuthCookiePropertiesTest
+        │               │       ├── AuthCookieServiceTest
+        │               │       ├── AuthEventServiceTest
+        │               │       ├── AuthServiceExpiredRefreshTokenTest
+        │               │       ├── AuthServiceTest
+        │               │       ├── RefreshTokenCleanupBatchServiceTest
+        │               │       ├── RefreshTokenCleanupJobTest
+        │               │       └── RefreshTokenServiceTest
+        │               │
+        │               ├── chat/
+        │               │   ├── config/
+        │               │   │   └── ChatConfigurationPropertiesTest
+        │               │   │
+        │               │   ├── controller/
+        │               │   │   ├── ChatControllerContractTest
+        │               │   │   └── ChatControllerSecurityTest
+        │               │   │
+        │               │   ├── dto/
+        │               │   │   └── ChatDtoContractTest
+        │               │   │
+        │               │   ├── entity/
+        │               │   │   └── ChatEntityInvariantTest
+        │               │   │
+        │               │   ├── integration/
+        │               │   │   ├── AbstractChatPostgresIntegrationTest
+        │               │   │   ├── ChatConcurrencyIntegrationTest
+        │               │   │   ├── ChatDatabaseStateConstraintIntegrationTest
+        │               │   │   ├── ChatExplainPlanIntegrationTest
+        │               │   │   ├── ChatHistoryIntegrationTest
+        │               │   │   ├── ChatIntegrationClockConfiguration
+        │               │   │   ├── ChatLegacyUpgradeMigrationIntegrationTest
+        │               │   │   ├── ChatMigrationIntegrityIntegrationTest
+        │               │   │   ├── ChatTenantIsolationIntegrationTest
+        │               │   │   ├── ChatTurnRecoveryIntegrationTest
+        │               │   │   ├── ChatTurnRepositoryTransactionIntegrationTest
+        │               │   │   ├── ChatTurnStateMachineIntegrationTest
+        │               │   │   └── ChatUsageQualityIntegrationTest
+        │               │   │
+        │               │   ├── observability/
+        │               │   │   └── ChatMetricsTest
+        │               │   │
+        │               │   ├── service/
+        │               │   │   ├── AiHistoryBuilderTest
+        │               │   │   ├── ChatContentNormalizerTest
+        │               │   │   ├── ChatLockServiceTest
+        │               │   │   ├── ChatQuotaServiceTest
+        │               │   │   ├── ChatServiceTest
+        │               │   │   ├── ChatTurnFinalizationServiceTest
+        │               │   │   ├── ChatTurnLeaseServiceTest
+        │               │   │   ├── ChatTurnRecoverySchedulerTest
+        │               │   │   ├── ChatTurnRecoveryServiceTest
+        │               │   │   └── ChatTurnReservationServiceTest
+        │               │   │
+        │               │   └── testsupport/
+        │               │       └── ChatTestFixtures
+        │               │
+        │               ├── common/
+        │               │   ├── exception/
+        │               │   │   ├── ApiErrorResponseFactoryTest
+        │               │   │   ├── ApiErrorResponseTest
+        │               │   │   ├── GlobalExceptionHandlerAccessDeniedTest
+        │               │   │   ├── GlobalExceptionHandlerIntegrationTest
+        │               │   │   ├── GlobalExceptionHandlerTest
+        │               │   │   ├── OrganizationVersionConflictExceptionTest
+        │               │   │   └── UserVersionConflictExceptionTest
+        │               │   │
+        │               │   └── security/
+        │               │       ├── AccessTokenSubjectTest
+        │               │       ├── ClientIpPropertiesTest
+        │               │       ├── ClientIpResolverTest
+        │               │       ├── CorsPropertiesTest
+        │               │       ├── JwtBearerSecurityIntegrationTest
+        │               │       ├── JwtCodecConfigurationTest
+        │               │       ├── JwtConfigurationBindingTest
+        │               │       ├── JwtPropertiesTest
+        │               │       ├── JwtServiceTest
+        │               │       ├── PasswordEncodingConfigurationTest
+        │               │       ├── ProductionSecurityInvariantValidatorTest
+        │               │       ├── ProductionSecurityStartupContractTest
+        │               │       ├── RequestIdFilterTest
+        │               │       ├── RoleAuthorityMapperTest
+        │               │       ├── SafeAiJwtAuthenticationConverterHardeningTest
+        │               │       ├── SafeAiJwtAuthenticationConverterTest
+        │               │       ├── SafeAiUserPrincipalTest
+        │               │       └── SecurityErrorResponseIntegrationTest
+        │               │
+        │               ├── knowledge/
+        │               │   ├── chunking/
+        │               │   │   └── KnowledgeChunkerTest
+        │               │   │
+        │               │   ├── controller/
+        │               │   │   ├── KnowledgeControllerSecurityTest
+        │               │   │   ├── KnowledgeDocumentControllerTest
+        │               │   │   └── KnowledgeDtoValidationTest
+        │               │   │
+        │               │   ├── embedding/
+        │               │   │   └── OpenAiKnowledgeEmbeddingProviderTest
+        │               │   │
+        │               │   ├── evaluation/
+        │               │   │   └── KnowledgeRetrievalMetricsTest
+        │               │   │
+        │               │   ├── extraction/
+        │               │   │   ├── KnowledgeDocumentExtractorContractTest
+        │               │   │   └── PdfKnowledgeExtractorOcrTest
+        │               │   │
+        │               │   ├── ingestion/
+        │               │   │   └── KnowledgeIngestionQueueIntegrationTest
+        │               │   │
+        │               │   ├── integration/
+        │               │   │   ├── KnowledgeAccessControlIntegrationTest
+        │               │   │   ├── KnowledgeBaseConcurrencyIntegrationTest
+        │               │   │   ├── KnowledgeDocumentVersionConcurrencyIntegrationTest
+        │               │   │   ├── KnowledgeMigrationIntegrityIntegrationTest
+        │               │   │   ├── KnowledgePersistenceIntegrationTest
+        │               │   │   └── KnowledgeS3EndToEndIntegrationTest
+        │               │   │
+        │               │   ├── rag/
+        │               │   │   ├── KnowledgeCitationValidatorTest
+        │               │   │   └── KnowledgeContextAssemblerTest
+        │               │   │
+        │               │   ├── retrieval/
+        │               │   │   └── KnowledgeRetrievalRepositoryIntegrationTest
+        │               │   │
+        │               │   ├── service/
+        │               │   │   ├── KnowledgeBaseNameNormalizerTest
+        │               │   │   ├── KnowledgeBaseServiceTest
+        │               │   │   ├── KnowledgeDocumentFileValidatorTest
+        │               │   │   ├── KnowledgeDocumentNameNormalizerTest
+        │               │   │   ├── KnowledgeDocumentServiceTest
+        │               │   │   └── KnowledgeRealFixtureContractTest
+        │               │   │
+        │               │   ├── storage/
+        │               │   │   ├── KnowledgeStorageConfigurationBindingTest
+        │               │   │   ├── KnowledgeStoragePropertiesTest
+        │               │   │   ├── LocalObjectStorageTest
+        │               │   │   └── S3ObjectStorageIntegrationTest
+        │               │   │
+        │               │   └── README.md
+        │               │
+        │               ├── organization/
+        │               │   ├── controller/
+        │               │   │   └── OrganizationControllerSecurityTest
+        │               │   │
+        │               │   ├── dto/
+        │               │   │   └── OrganizationRequestValidationTest
+        │               │   │
+        │               │   ├── repository/
+        │               │   │   └── OrganizationImpactQueryRepositoryTest
+        │               │   │
+        │               │   └── service/
+        │               │       ├── OrganizationNameNormalizerTest
+        │               │       ├── OrganizationPostgresIntegrationTest
+        │               │       ├── OrganizationSecurityEpochPostgresIntegrationTest
+        │               │       ├── OrganizationServiceAuthorizationBoundaryTest
+        │               │       ├── OrganizationServiceTest
+        │               │       ├── OrganizationStatusCacheInvalidationListenerTest
+        │               │       └── PlatformOrganizationInvariantVerifierTest
+        │               │
+        │               ├── ratelimit/
+        │               │   ├── external/
+        │               │   │   ├── RedisClusterRateLimitIT
+        │               │   │   └── RedisSentinelFailoverIT
+        │               │   │
+        │               │   ├── DualRateLimitResultTest
+        │               │   ├── LoginRateLimitServiceTest
+        │               │   ├── RateLimitExceededExceptionTest
+        │               │   ├── RateLimitKeyFactoryTest
+        │               │   ├── RateLimitProductionConfigurationValidatorTest
+        │               │   ├── RateLimitPropertiesTest
+        │               │   ├── RedisClusterSlotContractTest
+        │               │   ├── RedisFixedWindowRateLimiterIntegrationTest
+        │               │   ├── RedisFixedWindowRateLimiterSingleKeyIntegrationTest
+        │               │   ├── RedisRateLimitServiceTest
+        │               │   └── RefreshRateLimitServiceTest
+        │               │
+        │               ├── testsupport/
+        │               │   └── AbstractPostgresIntegrationTest
+        │               │
+        │               ├── usage/
+        │               │   ├── config/
+        │               │   │   ├── UsageJdbcClientsTest
+        │               │   │   └── UsagePropertiesTest
+        │               │   │
+        │               │   ├── controller/
+        │               │   │   ├── UsageControllerContractTest
+        │               │   │   └── UsageControllerSecurityTest
+        │               │   │
+        │               │   ├── dto/
+        │               │   │   ├── UsagePagingContractTest
+        │               │   │   └── UsageSummaryValueObjectsTest
+        │               │   │
+        │               │   ├── repository/
+        │               │   │   ├── UsageCoverageIntegrationTest
+        │               │   │   ├── UsageEntityMappingContractTest
+        │               │   │   ├── UsageExplainAnalyzePerformanceIntegrationTest
+        │               │   │   ├── UsageExplainPlanIntegrationTest
+        │               │   │   ├── UsageMigrationIntegrityIntegrationTest
+        │               │   │   ├── UsagePaginationIntegrationTest
+        │               │   │   ├── UsagePerformanceIntegrationTest
+        │               │   │   ├── UsagePricingCorrectnessIntegrationTest
+        │               │   │   ├── UsageQueryContractTest
+        │               │   │   ├── UsageQueryRepositoryTest
+        │               │   │   ├── UsageRollupAdvisoryLockIntegrationTest
+        │               │   │   ├── UsageRollupReconciliationIntegrationTest
+        │               │   │   ├── UsageTenantIsolationIntegrationTest
+        │               │   │   └── UsageUtcAggregationIntegrationTest
+        │               │   │
+        │               │   ├── service/
+        │               │   │   ├── UsageQueryServiceTest
+        │               │   │   ├── UsageReportExecutorTest
+        │               │   │   ├── UsageRollupDayProcessorTest
+        │               │   │   └── UsageRollupSchedulerTest
+        │               │   │
+        │               │   └── testsupport/
+        │               │       └── UsagePostgresIntegrationTestSupport
+        │               │
+        │               ├── user/
+        │               │   ├── controller/
+        │               │   │   └── UserControllerSecurityTest
+        │               │   │
+        │               │   ├── dto/
+        │               │   │   ├── CreateUserRequestValidationTest
+        │               │   │   └── UserMutationRequestValidationTest
+        │               │   │
+        │               │   ├── mapper/
+        │               │   │   └── UserRoleMapperTest
+        │               │   │
+        │               │   ├── service/
+        │               │   │   ├── UserManagementPostgresIntegrationTest
+        │               │   │   ├── UserManagementPropertiesTest
+        │               │   │   ├── UserSecurityStatusTest
+        │               │   │   ├── UserSecurityTransactionIntegrationTest
+        │               │   │   ├── UserServiceAuthorizationBoundaryTest
+        │               │   │   ├── UserServiceReadTest
+        │               │   │   ├── UserServiceTest
+        │               │   │   ├── UserStatusCacheInvalidationIntegrationTest
+        │               │   │   ├── UserStatusCacheProductionInvariantVerifierTest
+        │               │   │   ├── UserStatusCachePropertiesTest
+        │               │   │   └── UserStatusCacheServiceTest
+        │               │   │
+        │               │   └── validation/
+        │               │       ├── PasswordPolicyTest
+        │               │       ├── PasswordValidatorTest
+        │               │       └── UserEmailNormalizerTest
+        │               │
+        │               ├── PasswordHashGenerator
+        │               └── SafeaiBackendApplicationTests
+        │
+        └── resources/
+            ├── knowledge-evaluation/
+            │   └── baseline.example.json
+            │
+            ├── knowledge-fixtures/
+            │   ├── negative/
+            │   │   ├── 00_ВАЖНО_прочитать.txt
+            │   │   ├── 01_ПУСТОЙ_ФАЙЛ.txt
+            │   │   ├── 02_НЕПОДДЕРЖИВАЕМЫЙ_БИНАРНЫЙ_ФАЙЛ.bin
+            │   │   ├── 03_ПОВРЕЖДЕННЫЙ_ОБРЕЗАННЫЙ_PDF.pdf
+            │   │   ├── 04_ТЕКСТ_ПОД_ВИДОМ_PDF.pdf
+            │   │   ├── 05_НЕПОДДЕРЖИВАЕМЫЙ_JSON.json
+            │   │   ├── 06_ЛОЖНЫЙ_DOCX_НЕВЕРНЫЙ_CONTENT_TYPE.docx
+            │   │   ├── 07_СЛИШКОМ_БОЛЬШОЙ_25MiB_ПЛЮС_1.txt
+            │   │   ├── 08_НЕКОРРЕКТНЫЙ_UTF8.txt
+            │   │   ├── fake.docx
+            │   │   ├── invalid-utf8.txt
+            │   │   ├── text-disguised.pdf
+            │   │   └── truncated.pdf
+            │   │
+            │   └── positive/
+            │       ├── 01_Архитектура_и_эксплуатация_SafeAI.txt
+            │       ├── 02_Политика_безопасности_SafeAI.html
+            │       ├── 03_Руководство_оператора_SafeAI.docx
+            │       ├── 04_Техническая_архитектура_SafeAI.pdf
+            │       ├── 05_Юникод_и_CRLF.txt
+            │       ├── 06_HTML_с_UTF8_BOM.html
+            │       ├── architecture.pdf
+            │       ├── architecture.txt
+            │       ├── bom.html
+            │       ├── operator.docx
+            │       └── security.html
+            │
+            ├── sql/
+            │   └── post_v23_assertions.sql
+            │
+            ├── application-auth-postgres-it.yml
+            └── application-test.yml
+            
+            
 │
 ├── frontend/
 │   ├── src/
@@ -1551,8 +1832,7 @@ common/
 
 ### `config`
 
-`TimeConfiguration` даёт UTC `Clock`, что делает timestamps тестируемыми. `SchedulingConfiguration` включает scheduler; 
-multi-instance jobs обязаны иметь собственную DB/distributed coordination.
+`TimeConfiguration` даёт UTC `Clock`, что делает timestamps тестируемыми. `SchedulingConfiguration` включает scheduler; multi-instance jobs обязаны иметь собственную DB/distributed coordination.
 
 ### `exception`
 
@@ -1590,8 +1870,7 @@ INTERNAL_SERVER_ERROR
 
 ### `persistence`
 
-`DatabaseConstraintClassifier` классифицирует PostgreSQL unique/FK failures по SQLSTATE/constraint name, чтобы ожидаемый 
-concurrency conflict не маскировался как случайный 500.
+`DatabaseConstraintClassifier` классифицирует PostgreSQL unique/FK failures по SQLSTATE/constraint name, чтобы ожидаемый concurrency conflict не маскировался как случайный 500.
 
 ### `platform`
 
@@ -1603,8 +1882,7 @@ Platform organization default UUID:
 
 ### `security`
 
-Общие contracts: JWT, role mapping, principal, identity validation, password encoding, CORS, trusted IP, request correlation, 
-production fail-fast invariants.
+Общие contracts: JWT, role mapping, principal, identity validation, password encoding, CORS, trusted IP, request correlation, production fail-fast invariants.
 
 `SafeAiUserPrincipal` не должен раскрывать password/token в `toString`; access-token principal не несёт password credentials.
 
@@ -1726,8 +2004,7 @@ OpenAiProvider
 AnthropicProvider
 ```
 
-Есть provider error taxonomy: timeout, rate-limit, overload, quota/billing, context limit, response-too-large, unavailable 
-и generic provider error.
+Есть provider error taxonomy: timeout, rate-limit, overload, quota/billing, context limit, response-too-large, unavailable и generic provider error.
 
 ## Usage / pricing status
 
@@ -1883,8 +2160,7 @@ Mutations используют `expectedVersion` для optimistic concurrency.
 
 Wire `roles` остаётся массивом для compatibility, но требует ровно одну role.
 
-Permanent deletion — restricted flow с eligibility/retention, confirmation email, version check, dependencies и audit; 
-historical data не должно случайно исчезать каскадом.
+Permanent deletion — restricted flow с eligibility/retention, confirmation email, version check, dependencies и audit; historical data не должно случайно исчезать каскадом.
 
 ---
 
@@ -2041,8 +2317,12 @@ GET /api/admin/usage/summary
 GET /api/admin/usage/users
 GET /api/admin/usage/models
 GET /api/admin/usage/daily
-GET /api/admin/usage/users/{userId}
-GET /api/admin/usage/organizations/{organizationId}
+GET /api/admin/usage/by-user/{userId}
+GET /api/admin/usage/by-organization/{organizationId}
+GET /api/admin/usage/by-organization/{organizationId}/users
+GET /api/admin/usage/by-organization/{organizationId}/models
+GET /api/admin/usage/by-organization/{organizationId}/daily
+GET /api/admin/usage/data-quality
 ```
 
 ---
@@ -2071,7 +2351,7 @@ critical invariants in PostgreSQL where practical
 local seed is not production reference data
 ```
 
-Текущая история — до `V37`.
+Текущая история — до `V44`.
 
 | Milestone | Содержание |
 |---|---|
@@ -2085,6 +2365,9 @@ local seed is not production reference data
 | `V32` | durable ChatTurn state machine |
 | `V33–V36` | turn indexes, ambiguity quality, composite integrity |
 | `V37` | target organization snapshots |
+| `V38–V42` | Knowledge Base, versioned documents, durable ingestion, hybrid retrieval, RAG Answer Passport |
+| `V43` | archive chat sessions |
+| `V44` | Knowledge production integrity hardening |
 
 Future migration numbers в roadmap — tentative: перед merge проверить реально свободный version.
 
@@ -2151,8 +2434,7 @@ Postgres: localhost:5432
 Redis:    localhost:6379
 ```
 
-`R__seed_local_demo_data.sql` содержит deterministic local identities и проверки перед privileged role assignment. 
-Demo credentials не использовать в production.
+`R__seed_local_demo_data.sql` содержит deterministic local identities и проверки перед privileged role assignment. Demo credentials не использовать в production.
 
 ---
 
@@ -2194,8 +2476,7 @@ npm run ci
 npm run audit:prod
 ```
 
-Текущие backend tests включают security, auth, PostgreSQL concurrency, tenant isolation, migrations, audit outbox/retention, 
-ChatTurn state machine/recovery, usage reconciliation/performance и provider contracts.
+Текущие backend tests включают security, auth, PostgreSQL concurrency, tenant isolation, migrations, audit outbox/retention, ChatTurn state machine/recovery, usage reconciliation/performance и provider contracts.
 
 ## Flyway
 
@@ -2276,20 +2557,23 @@ future document chunks
 
 # Текущие границы
 
-V42 содержит работающий Knowledge/RAG vertical slice: object storage,
-immutable versions, durable ingestion, multi-format extraction, OCR adapter,
-pgvector/FTS hybrid retrieval, ACL, context assembly, LLM generation,
-validated inline citations, knowledge-only mode, evaluation baseline и Answer
-Passport. Production deployment обязан явно выбрать embedding/OCR providers.
+На август 2026 core ещё не содержит полноценный commercial Knowledge/RAG layer.
 
-До следующих product targets нужны:
+До 1.0/1.1 нужны:
 
-- streaming с сохранением durable/fenced semantics;
-- полноценный model policy/router и private model adapters;
-- OIDC/connectors/ACL sync;
-- автоматизированные evaluation gates и knowledge drift alerts;
-- production observability/SLO и backup/restore drills;
-- controlled tools/MCP, human approvals и durable agents.
+- streaming;
+- object storage;
+- Knowledge Bases;
+- document versioning/ingestion;
+- embeddings/pgvector;
+- hybrid retrieval;
+- citations;
+- Answer Passport;
+- model policy control plane;
+- OIDC;
+- production observability/SLO;
+- backup/restore drills;
+- controlled tools/MCP.
 
 Не заявлять текущую версию как:
 
@@ -2307,20 +2591,17 @@ autonomous agent platform
 
 Для собеседования:
 
-> **SafeAI Desk — modular-monolith корпоративного AI Gateway с multi-tenancy, one-role RBAC, cookie JWT + CSRF, refresh 
-> rotation/reuse detection, user/org security epochs, durable idempotent ChatTurn, provider ambiguity protection, 
-> transactional audit outbox и usage/pricing quality analytics.**
+> **SafeAI Desk — modular-monolith корпоративного AI Gateway с multi-tenancy, one-role RBAC, cookie JWT + CSRF, refresh rotation/reuse detection, user/org security epochs, durable idempotent ChatTurn, provider ambiguity protection, transactional audit outbox и usage/pricing quality analytics.**
 
 Для будущего продукта:
 
-> **Управляемая корпоративная AI-платформа, где известно кто, к каким данным и через какую модель получил доступ, 
-> какой контекст был использован, какие действия были разрешены и сколько это стоило.**
+> **Управляемая корпоративная AI-платформа, где известно кто, к каким данным и через какую модель получил доступ, какой контекст был использован, какие действия были разрешены и сколько это стоило.**
 
 ---
 
-# Реализованный Knowledge/RAG path
+# Следующий этап
 
-Knowledge/RAG сохраняет текущую короткую `reserveOrReplay()` transaction.
+Приоритет — Knowledge/RAG, сохраняя текущую короткую `reserveOrReplay()` transaction.
 
 ```text
 reserveOrReplay()
@@ -2356,42 +2637,3 @@ provider_call_started_at != null
 ```
 
 Полная последовательность развития — в [`ROADMAP.md`](ROADMAP.md).
-
-
-```text
-SafeAI-Desk/
-├── backend/
-│   ├── .env                    ← LOCAL настоящий, Git ❌
-│   ├── .env.example            ← LOCAL шаблон, Git ✅
-│   ├── .env.prod               ← PROD настоящий, Git ❌
-│   ├── .env.prod.example       ← PROD шаблон, Git ✅
-│   └── .local-secrets/         ← LOCAL RSA keys, Git ❌
-│
-├── infra/
-│   ├── docker-compose.local.yml
-│   ├── docker-compose.yml
-│   └── secrets/
-│       └── jwt-keys.yml.example ← шаблон RS256, Git ✅
-│
-└── ...
-```
-
-
-
-На production-сервере отдельно от проекта:
-```text
-/etc/safeai/
-├── config/
-│   └── pricing.yml
-└── secrets/
-    ├── postgres_bootstrap_password
-    ├── db_migrator_password
-    ├── db_app_password
-    ├── redis_password
-    ├── rate_limit_hmac_secret
-    ├── openai_api_key
-    ├── anthropic_api_key
-    ├── knowledge_storage_access_key
-    ├── knowledge_storage_secret_key
-    └── jwt-keys.yml
-```

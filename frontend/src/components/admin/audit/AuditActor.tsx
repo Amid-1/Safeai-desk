@@ -52,8 +52,7 @@ function AuditActor({
         email
         ?? displayName
         ?? (
-            'Инициатор без '
-            + 'пользовательского snapshot'
+            'Исторический инициатор'
         )
 
     const secondaryText =
@@ -90,9 +89,9 @@ function AuditActor({
                             + 'audit-monospace'
                         }
                     >
-                        Пользователь:
+                        Пользователь ID:
                         {' '}
-                        {event.actorUserId}
+                        {shortAuditIdentifier(event.actorUserId)}
                     </span>
                 )}
 
@@ -105,15 +104,21 @@ function AuditActor({
                             + 'audit-monospace'
                         }
                     >
-                        Организация инициатора:
+                        Организация инициатора ID:
                         {' '}
                         {
-                            event.actorOrganizationId
+                            shortAuditIdentifier(event.actorOrganizationId)
                         }
                     </span>
                 )}
         </div>
     )
+}
+
+function shortAuditIdentifier(value: string): string {
+    return value.length > 16
+        ? `${value.slice(0, 8)}…${value.slice(-4)}`
+        : value
 }
 
 export default AuditActor

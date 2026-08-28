@@ -85,7 +85,7 @@ describe('AuditActor', () => {
 
         expect(
             screen.getByText(
-                /Инициатор без/,
+                /Исторический инициатор/,
             ),
         ).toBeInTheDocument()
     })

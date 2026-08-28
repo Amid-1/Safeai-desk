@@ -414,7 +414,7 @@ export async function getUsageByUser(
     options: RequestOptions = {},
 ): Promise<PageResponse<UsageSummary>> {
     return getUsagePage(
-        `/api/admin/usage/users/${uuidPathSegment(
+        `/api/admin/usage/by-user/${uuidPathSegment(
             userId,
         )}${usagePagedQuery(
             page,
@@ -434,7 +434,7 @@ export async function getUsageByOrganization(
     options: RequestOptions = {},
 ): Promise<PageResponse<UsageSummary>> {
     return getUsagePage(
-        `/api/admin/usage/organizations/${uuidPathSegment(
+        `/api/admin/usage/by-organization/${uuidPathSegment(
             organizationId,
         )}${usagePagedQuery(
             page,

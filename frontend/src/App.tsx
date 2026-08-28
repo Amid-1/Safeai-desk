@@ -38,6 +38,9 @@ const AdminAuditPage = lazy(
 const AdminUsagePage = lazy(
     () => import('./pages/AdminUsagePage'),
 )
+const AdminModelsPage = lazy(
+    () => import('./pages/AdminModelsPage'),
+)
 
 type ProtectedRouteProps = {
     roles?: readonly UserRole[]
@@ -284,6 +287,7 @@ function AppLayout() {
             '/admin/users',
             '/admin/audit',
             '/admin/usage',
+            '/admin/models',
         ].includes(location.pathname)
     const appClassName = [
         'app',
@@ -378,6 +382,13 @@ function AppLayout() {
                                     className={getNavLinkClass}
                                 >
                                     Использование
+                                </NavLink>
+
+                                <NavLink
+                                    to="/admin/models"
+                                    className={getNavLinkClass}
+                                >
+                                    Модели
                                 </NavLink>
                             </>
                         )}
@@ -507,6 +518,20 @@ function AppLayout() {
                                     ]}
                                 >
                                     <AdminUsagePage />
+                                </ProtectedRoute>
+                            }
+                        />
+
+                        <Route
+                            path="/admin/models"
+                            element={
+                                <ProtectedRoute
+                                    roles={[
+                                        'ADMIN',
+                                        'SUPER_ADMIN',
+                                    ]}
+                                >
+                                    <AdminModelsPage />
                                 </ProtectedRoute>
                             }
                         />

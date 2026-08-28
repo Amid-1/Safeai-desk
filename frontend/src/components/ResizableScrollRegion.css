@@ -1,0 +1,227 @@
+/* ============================================================
+   frontend/src/components/ResizableScrollRegion.css
+
+   TRUE VERTICAL SPLIT
+
+   [ upper page                  ]
+   [ -------- drag ------------ ]
+   [ scrollable viewport         ]
+   [ fixed footer                ]
+
+   Значения custom properties ниже являются безопасными
+   CSS defaults. ResizableScrollRegion.tsx может переопределять
+   их через inline style.
+   ============================================================ */
+
+.resizable-scroll-region {
+    --resizable-scroll-height: 430px;
+    --resizable-upper-min-height: 150px;
+
+    display: flex;
+    width: 100%;
+    height: 100%;
+
+    min-width: 0;
+    min-height: 0;
+
+    flex-direction: column;
+
+    overflow: hidden;
+}
+
+
+/* ============================================================
+   UPPER
+   Верхняя, обычная часть страницы.
+   Она занимает всё пространство, оставшееся над split.
+   ============================================================ */
+
+.resizable-scroll-region__upper {
+    min-width: 0;
+    min-height: var(--resizable-upper-min-height);
+
+    flex: 1 1 0;
+
+    overflow: auto;
+
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+
+/* ============================================================
+   LOWER
+   Нижняя область.
+
+   Её нижний край остаётся на месте.
+   При resize двигается именно ВЕРХНЯЯ граница.
+
+   В высоту lower входят:
+   - drag handle;
+   - scroll viewport;
+   - fixed footer.
+   ============================================================ */
+
+.resizable-scroll-region__lower {
+    display: flex;
+
+    width: 100%;
+    height: var(--resizable-scroll-height);
+
+    min-width: 0;
+    min-height: 0;
+
+    flex: 0 0 var(--resizable-scroll-height);
+
+    flex-direction: column;
+
+    overflow: hidden;
+}
+
+
+/* ============================================================
+   HANDLE
+   Физическая граница между верхней и нижней частью.
+
+   Пользователь хватает именно эту линию.
+   ============================================================ */
+
+.resizable-scroll-region__handle {
+    position: relative;
+
+    display: grid;
+
+    width: 100%;
+    height: 15px;
+    min-height: 15px;
+
+    flex: 0 0 15px;
+
+    place-items: center;
+
+    cursor: row-resize;
+
+    touch-action: none;
+    user-select: none;
+
+    outline: none;
+}
+
+
+/* Горизонтальная линия разделителя */
+
+.resizable-scroll-region__handle::before {
+    position: absolute;
+
+    top: 50%;
+    right: 0;
+    left: 0;
+
+    height: 1px;
+
+    background: #dbe4ef;
+
+    content: "";
+
+    transform: translateY(-50%);
+
+    transition:
+        background-color 140ms ease,
+        height 140ms ease;
+}
+
+
+/* Центральный визуальный grip */
+
+.resizable-scroll-region__handle span {
+    position: absolute;
+
+    top: 50%;
+    left: 50%;
+
+    width: 44px;
+    height: 4px;
+
+    border-radius: 999px;
+
+    background: #cbd5e1;
+
+    transform: translate(-50%, -50%);
+
+    transition:
+        width 140ms ease,
+        background-color 140ms ease;
+}
+
+
+.resizable-scroll-region__handle:hover::before,
+.resizable-scroll-region__handle:focus-visible::before {
+    height: 2px;
+    background: #2563eb;
+}
+
+
+.resizable-scroll-region__handle:hover span,
+.resizable-scroll-region__handle:focus-visible span {
+    width: 56px;
+    background: #2563eb;
+}
+
+
+.resizable-scroll-region__handle:focus-visible {
+    outline: 2px solid rgb(37 99 235 / 30%);
+    outline-offset: -2px;
+}
+
+
+/* ============================================================
+   VIEWPORT
+   Только эта часть lower прокручивается.
+   ============================================================ */
+
+.resizable-scroll-region__viewport {
+    min-width: 0;
+    min-height: 0;
+
+    flex: 1 1 0;
+
+    overflow: auto;
+
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+
+/* ============================================================
+   FOOTER
+   Не входит в scroll viewport.
+
+   Поэтому pagination / totals всегда видны снизу.
+   ============================================================ */
+
+.resizable-scroll-region__footer {
+    min-width: 0;
+
+    flex: 0 0 auto;
+
+    background: inherit;
+}
+
+
+.resizable-scroll-region__footer .pagination {
+    margin-top: 0;
+}
+
+
+/* ============================================================
+   MOBILE
+   ============================================================ */
+
+@media (max-width: 700px) {
+    .resizable-scroll-region__handle {
+        height: 22px;
+        min-height: 22px;
+
+        flex-basis: 22px;
+    }
+}

@@ -1,12 +1,15 @@
 // ============================================================
 // frontend/src/components/admin/audit/AuditPagination.tsx
 // ============================================================
+
 type AuditPaginationProps = {
     page: number
     totalPages: number
     totalElements: number
     loading: boolean
-    onPageChange: (page: number) => void
+
+    onPageChange:
+        (page: number) => void
 }
 
 function AuditPagination({
@@ -16,18 +19,25 @@ function AuditPagination({
     loading,
     onPageChange,
 }: AuditPaginationProps) {
+    const safeTotalPages =
+        Math.max(
+            totalPages,
+            1,
+        )
+
     return (
-        <nav
+        <div
             className="pagination"
             aria-label={
-                'Пагинация событий аудита'
+                'Пагинация аудита'
             }
         >
             <button
                 type="button"
                 className="secondary-button"
                 disabled={
-                    page === 0 || loading
+                    loading
+                    || page <= 0
                 }
                 onClick={() =>
                     onPageChange(
@@ -41,20 +51,27 @@ function AuditPagination({
                 Назад
             </button>
 
-            <span>
-                Страница
-                {' '}
-                {page + 1}
-                {' '}
-                из
-                {' '}
-                {Math.max(totalPages, 1)}
-                .
-                {' '}
-                Всего событий:
-                {' '}
-                {totalElements}
-            </span>
+            <div
+                className={
+                    'pagination__summary'
+                }
+            >
+                <strong>
+                    Страница
+                    {' '}
+                    {page + 1}
+                    {' '}
+                    из
+                    {' '}
+                    {safeTotalPages}
+                </strong>
+
+                <span>
+                    Всего событий:
+                    {' '}
+                    {totalElements}
+                </span>
+            </div>
 
             <button
                 type="button"
@@ -63,15 +80,17 @@ function AuditPagination({
                     loading
                     || totalPages === 0
                     || page + 1
-                        >= totalPages
+                    >= totalPages
                 }
                 onClick={() =>
-                    onPageChange(page + 1)
+                    onPageChange(
+                        page + 1,
+                    )
                 }
             >
                 Вперёд
             </button>
-        </nav>
+        </div>
     )
 }
 

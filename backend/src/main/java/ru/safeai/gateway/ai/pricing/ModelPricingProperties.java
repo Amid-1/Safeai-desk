@@ -57,6 +57,14 @@ public final class ModelPricingProperties {
     }
 
     /**
+     * Immutable pricing snapshot for Control Plane read models. The caller
+     * must never treat a missing item as a zero-price model.
+     */
+    public List<ModelPrice> models() {
+        return List.copyOf(modelsByNormalizedName.values());
+    }
+
+    /**
      * Flat ordinary input/output pricing snapshot.
      *
      * <p>Эта schema намеренно не утверждает поддержку cached input,

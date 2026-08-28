@@ -10,21 +10,12 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * Низкоуровневый executor для session-level PostgreSQL advisory locks.
+ * Executes a callback while holding a session-level PostgreSQL advisory lock.
  *
- * <p>Получение lock, выполнение action и освобождение lock обязательно
- * выполняются на одном JDBC connection, то есть в рамках одной PostgreSQL
- * session.</p>
- *
- * <p>Если {@code pg_advisory_unlock()} завершается ошибкой либо сообщает,
- * что lock не был освобождён, connection аварийно закрывается через
- * {@link Connection#abort(java.util.concurrent.Executor)} best-effort.
- * Это предотвращает возврат в pool PostgreSQL session, которая потенциально
- * продолжает владеть session-level advisory lock.</p>
- *
- * <p>Если одновременно завершились ошибкой action и unlock, исходная
- * ошибка action остаётся основной, а ошибка unlock добавляется к ней
- * как suppressed.</p>
+ * <p>The caller owns the connection lifecycle, but this class guarantees that
+ * the lock is acquired and released on that very same connection. A connection
+ * for which {@code pg_advisory_unlock} cannot be confirmed is aborted before it
+ * may return to a pool: otherwise a later request could inherit the lock.</p>
  */
 public final class PostgresAdvisoryLockExecutor {
 
@@ -42,150 +33,148 @@ public final class PostgresAdvisoryLockExecutor {
             long lockKey,
             String lockDescription,
             Supplier<T> action
-    ) throws SQLException {
-        Objects.requireNonNull(
+    ) {
+        Objects.requireNonNull(connection, "connection не должен быть null");
+        Objects.requireNonNull(lockDescription, "lockDescription не должен быть null");
+        Objects.requireNonNull(action, "action не должен быть null");
+
+        boolean acquired = tryAcquire(
                 connection,
-                "connection не должен быть null"
+                lockKey,
+                lockDescription
         );
 
-        Objects.requireNonNull(
-                lockDescription,
-                "lockDescription не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                action,
-                "action не должен быть null"
-        );
-
-        if (lockDescription.isBlank()) {
-            throw new IllegalArgumentException(
-                    "lockDescription не должен быть пустым"
-            );
-        }
-
-        if (!tryLock(
-                connection,
-                lockKey
-        )) {
+        if (!acquired) {
             return LockExecution.notAcquired();
         }
 
-        Throwable actionFailure = null;
+        final T result;
 
         try {
-            return LockExecution.acquired(
-                    action.get()
+            result = action.get();
+        } catch (RuntimeException | Error actionFailure) {
+            releaseAfterActionFailure(
+                    connection,
+                    lockKey,
+                    lockDescription,
+                    actionFailure
             );
-        } catch (RuntimeException | Error exception) {
-            actionFailure = exception;
-            throw exception;
-        } finally {
-            try {
-                unlock(
-                        connection,
-                        lockKey,
-                        lockDescription
-                );
-            } catch (SQLException exception) {
-                DataAccessResourceFailureException unlockFailure =
-                        new DataAccessResourceFailureException(
-                                "Не удалось освободить PostgreSQL "
-                                        + "advisory lock "
-                                        + lockDescription,
-                                exception
-                        );
 
-                abortConnectionAfterUnlockFailure(
-                        connection,
-                        unlockFailure
-                );
+            throw actionFailure;
+        }
 
-                if (actionFailure != null) {
-                    actionFailure.addSuppressed(
-                            unlockFailure
+        releaseOrAbort(
+                connection,
+                lockKey,
+                lockDescription
+        );
+
+        return LockExecution.acquired(result);
+    }
+
+    private static boolean tryAcquire(
+            Connection connection,
+            long lockKey,
+            String lockDescription
+    ) {
+        try (PreparedStatement statement =
+                     connection.prepareStatement(TRY_LOCK_SQL)) {
+            statement.setLong(1, lockKey);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw dataAccessFailure(
+                            "PostgreSQL не вернул результат при захвате "
+                                    + lockDescription,
+                            null
                     );
-                } else {
-                    throw unlockFailure;
                 }
+
+                return resultSet.getBoolean(1);
             }
+        } catch (SQLException exception) {
+            throw dataAccessFailure(
+                    "Не удалось захватить PostgreSQL advisory lock: "
+                            + lockDescription,
+                    exception
+            );
         }
     }
 
-    private static boolean tryLock(
+    private static void releaseAfterActionFailure(
+            Connection connection,
+            long lockKey,
+            String lockDescription,
+            Throwable actionFailure
+    ) {
+        try {
+            release(connection, lockKey);
+        } catch (SQLException unlockFailure) {
+            abortConnection(connection, unlockFailure);
+            actionFailure.addSuppressed(
+                    dataAccessFailure(
+                            "Не удалось освободить PostgreSQL advisory lock: "
+                                    + lockDescription,
+                            unlockFailure
+                    )
+            );
+        }
+    }
+
+    private static void releaseOrAbort(
+            Connection connection,
+            long lockKey,
+            String lockDescription
+    ) {
+        try {
+            release(connection, lockKey);
+        } catch (SQLException unlockFailure) {
+            abortConnection(connection, unlockFailure);
+
+            throw dataAccessFailure(
+                    "Не удалось освободить PostgreSQL advisory lock: "
+                            + lockDescription,
+                    unlockFailure
+            );
+        }
+    }
+
+    private static void release(
             Connection connection,
             long lockKey
     ) throws SQLException {
         try (PreparedStatement statement =
-                     connection.prepareStatement(
-                             TRY_LOCK_SQL
-                     )) {
+                     connection.prepareStatement(UNLOCK_SQL)) {
+            statement.setLong(1, lockKey);
 
-            statement.setLong(
-                    1,
-                    lockKey
-            );
-
-            try (ResultSet resultSet =
-                         statement.executeQuery()) {
-
-                if (!resultSet.next()) {
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next() || !resultSet.getBoolean(1)) {
                     throw new SQLException(
-                            "pg_try_advisory_lock не вернул строку"
-                    );
-                }
-
-                return resultSet.getBoolean(
-                        1
-                );
-            }
-        }
-    }
-
-    private static void unlock(
-            Connection connection,
-            long lockKey,
-            String lockDescription
-    ) throws SQLException {
-        try (PreparedStatement statement =
-                     connection.prepareStatement(
-                             UNLOCK_SQL
-                     )) {
-
-            statement.setLong(
-                    1,
-                    lockKey
-            );
-
-            try (ResultSet resultSet =
-                         statement.executeQuery()) {
-
-                if (!resultSet.next()
-                        || !resultSet.getBoolean(1)) {
-
-                    throw new SQLException(
-                            "PostgreSQL advisory lock "
-                                    + lockDescription
-                                    + " не был освобождён"
+                            "PostgreSQL не подтвердил advisory unlock"
                     );
                 }
             }
         }
     }
 
-    private static void abortConnectionAfterUnlockFailure(
+    private static void abortConnection(
             Connection connection,
-            DataAccessResourceFailureException unlockFailure
+            Throwable rootFailure
     ) {
         try {
-            connection.abort(
-                    Runnable::run
-            );
-        } catch (SQLException | RuntimeException abortException) {
-            unlockFailure.addSuppressed(
-                    abortException
-            );
+            connection.abort(Runnable::run);
+        } catch (SQLException abortFailure) {
+            rootFailure.addSuppressed(abortFailure);
         }
+    }
+
+    private static DataAccessResourceFailureException dataAccessFailure(
+            String message,
+            Throwable cause
+    ) {
+        return cause == null
+                ? new DataAccessResourceFailureException(message)
+                : new DataAccessResourceFailureException(message, cause);
     }
 
     public record LockExecution<T>(
@@ -193,20 +182,12 @@ public final class PostgresAdvisoryLockExecutor {
             T result
     ) {
 
-        public static <T> LockExecution<T> notAcquired() {
-            return new LockExecution<>(
-                    false,
-                    null
-            );
+        private static <T> LockExecution<T> notAcquired() {
+            return new LockExecution<>(false, null);
         }
 
-        public static <T> LockExecution<T> acquired(
-                T result
-        ) {
-            return new LockExecution<>(
-                    true,
-                    result
-            );
+        private static <T> LockExecution<T> acquired(T result) {
+            return new LockExecution<>(true, result);
         }
     }
 }

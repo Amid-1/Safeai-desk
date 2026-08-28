@@ -2,7 +2,9 @@
 
 **SafeAI Desk** — production-oriented full-stack MVP корпоративного AI Gateway для организаций.
 
-Проект демонстрирует не просто AI-чат, а полноценную платформенную архитектуру вокруг безопасного корпоративного доступа к AI: multi-tenancy, RBAC, cookie-based JWT authentication, CSRF, refresh-token rotation, audit logging, usage analytics, Redis rate limiting, управление организациями и пользователями, а также подключаемые AI-провайдеры.
+Проект демонстрирует не просто AI-чат, а полноценную платформенную архитектуру вокруг безопасного корпоративного 
+доступа к AI: multi-tenancy, RBAC, cookie-based JWT authentication, CSRF, refresh-token rotation, audit logging, usage 
+analytics, Redis rate limiting, управление организациями и пользователями, а также подключаемые AI-провайдеры.
 
 Проект можно использовать как портфолио/собеседовательный пример backend/frontend-системы уровня enterprise MVP.
 

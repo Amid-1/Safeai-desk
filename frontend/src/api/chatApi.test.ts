@@ -10,6 +10,7 @@ import {
 } from 'vitest'
 import {
     archiveChat,
+    getAnswerPassport,
     getChatTurnStatus,
     getChats,
     parseChatMessage,
@@ -215,6 +216,33 @@ describe('chatApi production contract', () => {
             expect.objectContaining({
                 method: 'GET',
             }),
+        )
+    })
+
+    it('gets an answer passport by durable chat-turn identity', async () => {
+        requestMock.mockResolvedValue({
+            id: '66666666-6666-4666-8666-666666666666',
+            chatTurnId: TURN_ID,
+            retrievalRunId: '77777777-7777-4777-8777-777777777777',
+            knowledgeBaseId: '88888888-8888-4888-8888-888888888888',
+            knowledgeMode: 'KNOWLEDGE_ASSISTED',
+            provider: 'mock',
+            requestedModel: 'mock-safeai',
+            resolvedModel: 'mock-safeai',
+            embeddingModel: 'mock-embedding',
+            contextSha256: 'a'.repeat(64),
+            answerSha256: 'b'.repeat(64),
+            evidenceSufficient: true,
+            citationsValid: true,
+            createdAt: '2026-08-11T10:00:01Z',
+            citations: [],
+        })
+
+        await getAnswerPassport(CHAT_ID, TURN_ID)
+
+        expect(requestMock).toHaveBeenCalledWith(
+            `/api/chats/${CHAT_ID}/turns/${TURN_ID}/answer-passport`,
+            expect.objectContaining({ method: 'GET' }),
         )
     })
 

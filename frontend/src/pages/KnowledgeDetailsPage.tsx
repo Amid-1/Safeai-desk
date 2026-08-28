@@ -16,7 +16,9 @@ import type {
 } from '../api/knowledgeApi'
 import {
     fetchKnowledgeDocumentBlob,
+    fetchKnowledgeDocumentVersionBlob,
     getKnowledgeDocuments,
+    getKnowledgeDocumentVersions,
     getKnowledgeHealth,
     reindexKnowledgeDocument,
     uploadKnowledgeDocument,
@@ -24,6 +26,7 @@ import {
 } from '../api/knowledgeDocumentApi'
 import type {
     KnowledgeDocument,
+    KnowledgeDocumentVersion,
     KnowledgeHealth,
     KnowledgeIngestionStatus,
 } from '../api/knowledgeDocumentApi'
@@ -40,6 +43,8 @@ import {
     LoadingState,
 } from '../components/StateBlock'
 import Modal from '../components/Modal'
+import ResizableScrollRegion
+    from '../components/ResizableScrollRegion'
 import KnowledgePagination
     from '../components/knowledge/KnowledgePagination'
 import type {
@@ -141,7 +146,14 @@ function KnowledgeDetailsPage() {
     const [reindexingDocumentId, setReindexingDocumentId] = useState('')
     const [openingDocumentId, setOpeningDocumentId] = useState('')
     const [downloadingDocumentId, setDownloadingDocumentId] = useState('')
+    const [versionDocument, setVersionDocument] = useState<KnowledgeDocument | null>(null)
+    const [versionsPage, setVersionsPage] = useState<PageResponse<KnowledgeDocumentVersion> | null>(null)
+    const [versionsLoading, setVersionsLoading] = useState(false)
+    const [versionsError, setVersionsError] = useState('')
+    const [openingVersionId, setOpeningVersionId] = useState('')
+    const [downloadingVersionId, setDownloadingVersionId] = useState('')
     const documentsSectionRef = useRef<HTMLElement | null>(null)
+    const versionLoadControllerRef = useRef<AbortController | null>(null)
 
     const [
         loading,
@@ -380,6 +392,10 @@ function KnowledgeDetailsPage() {
         documentPage,
         loadDocuments,
     ])
+
+    useEffect(() => () => {
+        versionLoadControllerRef.current?.abort()
+    }, [])
 
     function openUpload(
         target:
@@ -739,6 +755,109 @@ function KnowledgeDetailsPage() {
         }
     }
 
+    async function openVersionHistory(document: KnowledgeDocument) {
+        versionLoadControllerRef.current?.abort()
+        const controller = new AbortController()
+        versionLoadControllerRef.current = controller
+        setVersionsPage(null)
+        setVersionsError('')
+        setVersionsLoading(true)
+        setVersionDocument(document)
+
+        try {
+            const response = await getKnowledgeDocumentVersions(
+                knowledgeBaseId,
+                document.id,
+                0,
+                DOCUMENT_PAGE_SIZE,
+                controller.signal,
+            )
+            if (!controller.signal.aborted) {
+                setVersionsPage(response)
+            }
+        } catch (loadError) {
+            if (!controller.signal.aborted) {
+                setVersionsError(getApiErrorMessage(
+                    loadError,
+                    'Не удалось загрузить историю версий.',
+                ))
+            }
+        } finally {
+            if (!controller.signal.aborted) {
+                setVersionsLoading(false)
+            }
+        }
+    }
+
+    async function openDocumentVersionPreview(
+        document: KnowledgeDocument,
+        version: KnowledgeDocumentVersion,
+    ) {
+        if (openingVersionId || downloadingVersionId) {
+            return
+        }
+
+        const previewWindow = window.open('about:blank', '_blank')
+
+        if (!previewWindow) {
+            setError('Браузер заблокировал новую вкладку. Разрешите всплывающие окна для SafeAI Desk и повторите попытку.')
+            return
+        }
+
+        setOpeningVersionId(version.id)
+        setError('')
+
+        try {
+            previewWindow.opener = null
+            const blob = await fetchKnowledgeDocumentVersionBlob(
+                knowledgeBaseId,
+                document.id,
+                version.id,
+            )
+            const objectUrl = URL.createObjectURL(blob)
+            previewWindow.location.replace(objectUrl)
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 60 * 1000)
+        } catch (previewFailure) {
+            previewWindow.close()
+            setError(getApiErrorMessage(previewFailure, 'Не удалось открыть версию документа.'))
+        } finally {
+            setOpeningVersionId('')
+        }
+    }
+
+    async function downloadDocumentVersion(
+        document: KnowledgeDocument,
+        version: KnowledgeDocumentVersion,
+    ) {
+        if (openingVersionId || downloadingVersionId) {
+            return
+        }
+
+        setDownloadingVersionId(version.id)
+        setError('')
+
+        try {
+            const blob = await fetchKnowledgeDocumentVersionBlob(
+                knowledgeBaseId,
+                document.id,
+                version.id,
+            )
+            const objectUrl = URL.createObjectURL(blob)
+            const link = window.document.createElement('a')
+            link.href = objectUrl
+            link.download = version.originalFilename
+            link.rel = 'noopener'
+            window.document.body.appendChild(link)
+            link.click()
+            link.remove()
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000)
+        } catch (downloadFailure) {
+            setError(getApiErrorMessage(downloadFailure, 'Не удалось скачать версию документа.'))
+        } finally {
+            setDownloadingVersionId('')
+        }
+    }
+
     if (loading) {
         return (
             <LoadingState
@@ -768,444 +887,470 @@ function KnowledgeDetailsPage() {
             && !uploadName.trim()
         )
 
+
     return (
-        <div className="page knowledge-details">
-            <Link
-                to="/knowledge"
-                className="knowledge-details__back"
-            >
-                <span aria-hidden="true">
-                    ←
-                </span>
-                {' '}
-                Базы знаний
-            </Link>
-
-            <header className="knowledge-details__header">
-                <div className="knowledge-details__heading">
-                    <span className="knowledge-details__eyebrow">
-                        База знаний
-                    </span>
-
-                    <h1>{base.name}</h1>
-
-                    <p className="muted">
-                        {
-                            base.description
-                            ?? 'Корпоративные документы и инструкции.'
-                        }
-                    </p>
-
-                    <div className="knowledge-details__summary">
-                        <button
-                            type="button"
-                            className="knowledge-details__documents-link"
-                            onClick={() =>
-                                documentsSectionRef.current?.scrollIntoView({
-                                    behavior: 'smooth',
-                                    block: 'start',
-                                })
-                            }
+        <div className="page knowledge-details knowledge-details-page">
+            <ResizableScrollRegion
+                storageKey="safeai:knowledge-documents-height"
+                label="список документов"
+                upper={
+                    <div className="knowledge-details__upper">
+                        <Link
+                            to="/knowledge"
+                            className="knowledge-details__back"
                         >
-                            Документы
-                            <strong>{documentsPage.totalElements}</strong>
-                        </button>
+                            <span aria-hidden="true">
+                                ←
+                            </span>
+                            {' '}
+                            Базы знаний
+                        </Link>
 
-                        <span
-                            className={
-                                base.enabled
-                                    ? 'knowledge-details__base-state knowledge-details__base-state--enabled'
-                                    : 'knowledge-details__base-state knowledge-details__base-state--disabled'
-                            }
-                        >
-                            {
-                                base.enabled
-                                    ? 'База активна'
-                                    : 'База отключена'
-                            }
-                        </span>
-                    </div>
-                </div>
+                        <header className="knowledge-details__header">
+                            <div className="knowledge-details__heading">
+                                <span className="knowledge-details__eyebrow">
+                                    База знаний
+                                </span>
 
-                <button
-                    type="button"
-                    className="knowledge-details__upload-button"
-                    disabled={
-                        !base.enabled
-                    }
-                    onClick={() =>
-                        openUpload(
-                            'new',
-                        )
-                    }
-                >
-                    Загрузить документ
-                </button>
-            </header>
+                                <h1>{base.name}</h1>
 
-            {!base.enabled && (
-                <div className="knowledge-disabled-note">
-                    <strong>
-                        База знаний отключена.
-                    </strong>
-                    <span>
-                        Обычные пользователи не видят её и не могут читать документы.
-                    </span>
-                </div>
-            )}
+                                <p className="muted">
+                                    {
+                                        base.description
+                                        ?? 'Корпоративные документы и инструкции.'
+                                    }
+                                </p>
 
-            {health && (
-                <section
-                    className={`knowledge-health knowledge-health--${health.state.toLowerCase()}`}
-                    aria-label="Готовность базы знаний к ответам AI"
-                >
-                    <div>
-                        <span className="knowledge-health__eyebrow">Готовность базы к поиску</span>
-                        <strong>{healthStateLabel(health.state)}</strong>
-                        <small>
-                            {embeddingModelLabel(health.activeEmbeddingModel)}
-                            {' · '}
-                            <code>{health.activeEmbeddingModel}</code>
-                        </small>
-                        <p>
-                            Документы подготовлены для полнотекстового и смыслового
-                            поиска, который подбирает источники для ответа AI.
-                        </p>
-                    </div>
-                    <dl>
-                        <HealthMetric label="Готовы к поиску" value={`${health.searchableDocuments} из ${health.enabledDocuments}`} hint="документов" />
-                        <HealthMetric label="Фрагменты для AI" value={health.activeChunks} hint="частей документов" />
-                        <HealthMetric label="Обрабатываются" value={health.pendingDocuments + health.processingDocuments} hint="документов" />
-                        <HealthMetric label="Ошибки обработки" value={health.failedDocuments + health.staleEmbeddingDocuments} hint="нужна проверка" />
-                    </dl>
-                </section>
-            )}
-
-            {error && (
-                <div className="knowledge-details__notice">
-                    <ErrorState
-                        variant="inline"
-                        message={error}
-                        action={
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setError('')
-                                    void Promise.all([
-                                        loadOverview(),
-                                        loadDocuments(documentPage),
-                                    ]).catch((loadError) => {
-                                        setError(
-                                            getApiErrorMessage(
-                                                loadError,
-                                                'Не удалось обновить данные базы знаний.',
-                                            ),
-                                        )
-                                    })
-                                }}
-                            >
-                                Повторить
-                            </button>
-                        }
-                    />
-                </div>
-            )}
-
-            <section
-                ref={documentsSectionRef}
-                id="knowledge-documents"
-                className="knowledge-documents-section"
-                aria-labelledby="knowledge-documents-title"
-            >
-                    <div className="knowledge-documents-section__header">
-                        <div>
-                            <span>Содержимое базы</span>
-                            <h2 id="knowledge-documents-title">Загруженные документы</h2>
-                            <p>
-                                Здесь видны текущие версии, готовность к поиску и
-                                доступные действия с файлами.
-                            </p>
-                        </div>
-                        <strong aria-label={`${documentsPage.totalElements} документов`}>
-                            {documentsPage.totalElements}
-                        </strong>
-                    </div>
-
-                    {documentsLoading && (
-                        <div className="knowledge-documents-state">
-                            <LoadingState
-                                variant="inline"
-                                message="Загрузка документов..."
-                            />
-                        </div>
-                    )}
-
-                    {!documentsLoading && documentsError && (
-                        <div className="knowledge-documents-state">
-                            <ErrorState
-                                variant="inline"
-                                message={documentsError}
-                                action={
+                                <div className="knowledge-details__summary">
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            setDocumentsError('')
-                                            setDocumentsLoading(true)
-                                            void loadDocuments(documentPage)
-                                                .catch((loadError) => {
-                                                    setDocumentsError(
+                                        className="knowledge-details__documents-link"
+                                        onClick={() =>
+                                            documentsSectionRef.current?.scrollIntoView({
+                                                behavior: 'smooth',
+                                                block: 'start',
+                                            })
+                                        }
+                                    >
+                                        Документы
+                                        <strong>{documentsPage.totalElements}</strong>
+                                    </button>
+
+                                    <span
+                                        className={
+                                            base.enabled
+                                                ? 'knowledge-details__base-state knowledge-details__base-state--enabled'
+                                                : 'knowledge-details__base-state knowledge-details__base-state--disabled'
+                                        }
+                                    >
+                                        {
+                                            base.enabled
+                                                ? 'База активна'
+                                                : 'База отключена'
+                                        }
+                                    </span>
+                                </div>
+                            </div>
+
+                            <button
+                                type="button"
+                                className="knowledge-details__upload-button"
+                                disabled={
+                                    !base.enabled
+                                }
+                                onClick={() =>
+                                    openUpload(
+                                        'new',
+                                    )
+                                }
+                            >
+                                Загрузить документ
+                            </button>
+                        </header>
+
+                        {!base.enabled && (
+                            <div className="knowledge-disabled-note">
+                                <strong>
+                                    База знаний отключена.
+                                </strong>
+                                <span>
+                                    Обычные пользователи не видят её и не могут читать документы.
+                                </span>
+                            </div>
+                        )}
+
+                        {health && (
+                            <section
+                                className={`knowledge-health knowledge-health--${health.state.toLowerCase()}`}
+                                aria-label="Готовность базы знаний к ответам AI"
+                            >
+                                <div>
+                                    <span className="knowledge-health__eyebrow">Готовность базы к поиску</span>
+                                    <strong>{healthStateLabel(health.state)}</strong>
+                                    <small>
+                                        {embeddingModelLabel(health.activeEmbeddingModel)}
+                                        {' · '}
+                                        <code>{health.activeEmbeddingModel}</code>
+                                    </small>
+                                    <p>
+                                        Документы подготовлены для полнотекстового и смыслового
+                                        поиска, который подбирает источники для ответа AI.
+                                    </p>
+                                </div>
+                                <dl>
+                                    <HealthMetric label="Готовы к поиску" value={`${health.searchableDocuments} из ${health.enabledDocuments}`} hint="документов" />
+                                    <HealthMetric label="Фрагменты для AI" value={health.activeChunks} hint="частей документов" />
+                                    <HealthMetric label="Обрабатываются" value={health.pendingDocuments + health.processingDocuments} hint="документов" />
+                                    <HealthMetric label="Ошибки обработки" value={health.failedDocuments + health.staleEmbeddingDocuments} hint="нужна проверка" />
+                                </dl>
+                            </section>
+                        )}
+
+                        {error && (
+                            <div className="knowledge-details__notice">
+                                <ErrorState
+                                    variant="inline"
+                                    message={error}
+                                    action={
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setError('')
+                                                void Promise.all([
+                                                    loadOverview(),
+                                                    loadDocuments(documentPage),
+                                                ]).catch((loadError) => {
+                                                    setError(
                                                         getApiErrorMessage(
                                                             loadError,
-                                                            'Не удалось загрузить документы базы знаний.',
+                                                            'Не удалось обновить данные базы знаний.',
                                                         ),
                                                     )
                                                 })
-                                                .finally(() => {
-                                                    setDocumentsLoading(false)
-                                                })
-                                        }}
-                                    >
-                                        Повторить
-                                    </button>
-                                }
-                            />
-                        </div>
-                    )}
-
-                    {!documentsLoading
-                        && !documentsError
-                        && documentsPage.totalElements === 0
-                        && (
-                            <div className="knowledge-documents-state">
-                                <EmptyState
-                                    variant="inline"
-                                    title="Документов пока нет"
-                                    message="Загрузите первый корпоративный документ. Поддерживаются PDF, DOCX, TXT, HTML, MD, CSV, XLSX, PPTX, JSON и XML до 25 МБ."
+                                            }}
+                                        >
+                                            Повторить
+                                        </button>
+                                    }
                                 />
                             </div>
                         )}
 
-                    {!documentsLoading
-                        && !documentsError
-                        && documents.length > 0
-                        && (
-                            <div className="knowledge-documents-card">
-                                <div className="table-wrapper knowledge-documents-scroll">
-                                    <table className="knowledge-documents">
-                        <thead>
-                            <tr>
-                                <th>
-                                    Название
-                                </th>
-                                <th>
-                                    Версия файла
-                                </th>
-                                <th>
-                                    Статус
-                                </th>
-                                <th>
-                                    Размер
-                                </th>
-                                <th>
-                                    Обновлён
-                                </th>
-                                <th>
-                                    Действия
-                                </th>
-                            </tr>
-                        </thead>
+                        <section
+                            ref={documentsSectionRef}
+                            id="knowledge-documents"
+                            className="knowledge-documents-section"
+                            aria-labelledby="knowledge-documents-title"
+                        >
+                                <div className="knowledge-documents-section__header">
+                                    <div>
+                                        <span>Содержимое базы</span>
+                                        <h2 id="knowledge-documents-title">Загруженные документы</h2>
+                                        <p>
+                                            Здесь видны текущие версии, готовность к поиску и
+                                            доступные действия с файлами.
+                                        </p>
+                                    </div>
+                                    <strong aria-label={`${documentsPage.totalElements} документов`}>
+                                        {documentsPage.totalElements}
+                                    </strong>
+                                </div>
+                        </section>
+                    </div>
+                }
+                footer={
+                    !documentsLoading
+                    && !documentsError
+                    && documents.length > 0
+                        ? (
+                            <KnowledgePagination
+                                page={documentsPage.page}
+                                totalPages={documentsPage.totalPages}
+                                totalElements={documentsPage.totalElements}
+                                disabled={documentsLoading || busy}
+                                ariaLabel="Пагинация документов базы знаний"
+                                singlePageMessage="Все документы показаны"
+                                onPageChange={setDocumentPage}
+                            />
+                        )
+                        : null
+                }
+                lowerClassName="knowledge-documents-card"
+                viewportClassName="table-wrapper knowledge-documents-scroll"
+                defaultHeight={440}
+                minHeight={250}
+                maxHeight={760}
+                minUpperHeight={150}
+            >
+                {documentsLoading && (
+                    <div className="knowledge-documents-state">
+                        <LoadingState
+                            variant="inline"
+                            message="Загрузка документов..."
+                        />
+                    </div>
+                )}
 
-                        <tbody>
-                            {
-                                documents.map(
-                                    (document) => {
-                                        const status =
-                                            document.status
-                                            ?? 'PENDING'
+                {!documentsLoading && documentsError && (
+                    <div className="knowledge-documents-state">
+                        <ErrorState
+                            variant="inline"
+                            message={documentsError}
+                            action={
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setDocumentsError('')
+                                        setDocumentsLoading(true)
+                                        void loadDocuments(documentPage)
+                                            .catch((loadError) => {
+                                                setDocumentsError(
+                                                    getApiErrorMessage(
+                                                        loadError,
+                                                        'Не удалось загрузить документы базы знаний.',
+                                                    ),
+                                                )
+                                            })
+                                            .finally(() => {
+                                                setDocumentsLoading(false)
+                                            })
+                                    }}
+                                >
+                                    Повторить
+                                </button>
+                            }
+                        />
+                    </div>
+                )}
 
-                                        const fileType =
-                                            documentTypeLabel(
-                                                document,
-                                            )
+                {!documentsLoading
+                    && !documentsError
+                    && documentsPage.totalElements === 0
+                    && (
+                        <div className="knowledge-documents-state">
+                            <EmptyState
+                                variant="inline"
+                                title="Документов пока нет"
+                                message="Загрузите первый корпоративный документ. Поддерживаются PDF, DOCX, TXT, HTML, MD, CSV, XLSX, PPTX, JSON и XML до 25 МБ."
+                            />
+                        </div>
+                    )}
 
-                                        return (
-                                            <tr
-                                                key={
-                                                    document.id
-                                                }
-                                            >
-                                                <td>
-                                                    <div className="knowledge-document-name">
-                                                        <div className="knowledge-document-name__title">
-                                                            <strong>
-                                                                {
-                                                                    document.name
-                                                                }
-                                                            </strong>
+                {!documentsLoading
+                    && !documentsError
+                    && documents.length > 0
+                    && (
+                        <table className="knowledge-documents">
+                                                <thead>
+                                                    <tr>
+                                                        <th>
+                        Название
+                                                        </th>
+                                                        <th>
+                        Версия файла
+                                                        </th>
+                                                        <th>
+                        Статус
+                                                        </th>
+                                                        <th>
+                        Размер
+                                                        </th>
+                                                        <th>
+                        Обновлён
+                                                        </th>
+                                                        <th>
+                        Действия
+                                                        </th>
+                                                    </tr>
+                                                </thead>
 
-                                                            {fileType && (
-                                                                <span className={`knowledge-document-type knowledge-document-type--${fileType.toLowerCase()}`}>
-                                                                    {fileType}
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                                <tbody>
+                                                    {
+                                                        documents.map(
+                        (document) => {
+                            const status =
+                                document.status
+                                ?? 'PENDING'
 
-                                                        {
-                                                            document.originalFilename
-                                                                ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        className="knowledge-document-file-link"
-                                                                        disabled={
-                                                                            openingDocumentId === document.id
-                                                                            || downloadingDocumentId === document.id
-                                                                        }
-                                                                        aria-label={`Открыть файл ${document.originalFilename} в новой вкладке`}
-                                                                        title="Открыть текущую версию в новой вкладке"
-                                                                        onClick={() =>
-                                                                            void openDocumentPreview(
-                                                                                document,
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        {
-                                                                            openingDocumentId === document.id
-                                                                                ? 'Открываем…'
-                                                                                : document.originalFilename
-                                                                        }
-                                                                    </button>
-                                                                )
-                                                                : (
-                                                                    <span className="knowledge-document-file-missing">
-                                                                        Имя файла недоступно
-                                                                    </span>
-                                                                )
-                                                        }
-                                                    </div>
-                                                </td>
+                            const fileType =
+                                documentTypeLabel(
+                                    document,
+                                )
 
-                                                <td>
-                                                    <span className="knowledge-document-version">
-                                                        {
-                                                            document.versionNumber
-                                                            ?? '—'
-                                                        }
+                            return (
+                                <tr
+                                    key={
+                                        document.id
+                                    }
+                                >
+                                    <td>
+                                        <div className="knowledge-document-name">
+                                            <div className="knowledge-document-name__title">
+                                                <strong>
+                                                    {
+                                                        document.name
+                                                    }
+                                                </strong>
+
+                                                {fileType && (
+                                                    <span className={`knowledge-document-type knowledge-document-type--${fileType.toLowerCase()}`}>
+                                                        {fileType}
                                                     </span>
-                                                </td>
+                                                )}
+                                            </div>
 
-                                                <td>
-                                                    <span
-                                                        className={`document-status document-status--${status.toLowerCase()}`}
-                                                        title={
-                                                            STATUS_HINT[
-                                                                status
-                                                            ]
-                                                        }
-                                                    >
-                                                        {
-                                                            STATUS_LABEL[
-                                                                status
-                                                            ]
-                                                        }
-                                                    </span>
-                                                </td>
-
-                                                <td>
-                                                    <span className="knowledge-document-size">
-                                                        {
-                                                            formatBytes(
-                                                                document.sizeBytes,
-                                                            )
-                                                        }
-                                                    </span>
-                                                </td>
-
-                                                <td>
-                                                    <span className="knowledge-document-date">
-                                                        {
-                                                            formatDateTime(
-                                                                document.updatedAt,
-                                                            )
-                                                        }
-                                                    </span>
-                                                </td>
-
-                                                <td>
-                                                    <div className="document-actions">
+                                            {
+                                                document.originalFilename
+                                                    ? (
                                                         <button
                                                             type="button"
-                                                            className="secondary-button document-download-button"
+                                                            className="knowledge-document-file-link"
                                                             disabled={
-                                                                downloadingDocumentId === document.id
-                                                                || openingDocumentId === document.id
+                                                                openingDocumentId === document.id
+                                                                || downloadingDocumentId === document.id
                                                             }
-                                                            aria-label={`Скачать ${document.originalFilename ?? document.name}`}
+                                                            aria-label={`Открыть файл ${document.originalFilename} в новой вкладке`}
+                                                            title="Открыть текущую версию в новой вкладке"
                                                             onClick={() =>
-                                                                void downloadDocumentFile(
+                                                                void openDocumentPreview(
                                                                     document,
                                                                 )
                                                             }
                                                         >
                                                             {
-                                                                downloadingDocumentId === document.id
-                                                                    ? 'Скачиваем…'
-                                                                    : 'Скачать'
+                                                                openingDocumentId === document.id
+                                                                    ? 'Открываем…'
+                                                                    : document.originalFilename
                                                             }
                                                         </button>
+                                                    )
+                                                    : (
+                                                        <span className="knowledge-document-file-missing">
+                                                            Имя файла недоступно
+                                                        </span>
+                                                    )
+                                            }
+                                        </div>
+                                    </td>
 
-                                                        <button
-                                                            type="button"
-                                                            className="secondary-button"
-                                                            disabled={
-                                                                busy
-                                                                || !base.enabled
-                                                            }
-                                                            onClick={() =>
-                                                                openUpload(
-                                                                    document,
-                                                                )
-                                                            }
-                                                        >
-                                                            Новая версия
-                                                        </button>
+                                    <td>
+                                        <span className="knowledge-document-version">
+                                            {
+                                                document.versionNumber
+                                                ?? '—'
+                                            }
+                                        </span>
+                                    </td>
 
-                                                        <button
-                                                            type="button"
-                                                            className="secondary-button document-reindex-button"
-                                                            disabled={
-                                                                busy
-                                                                || !base.enabled
-                                                                || reindexingDocumentId === document.id
-                                                                || !document.currentVersionId
-                                                            }
-                                                            title="Повторно извлечь текст, создать chunks и embeddings для текущей версии"
-                                                            onClick={() => void requestReindex(document)}
-                                                        >
-                                                            {reindexingDocumentId === document.id ? 'Запускаем…' : 'Переиндексировать'}
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        )
-                                    },
-                                )
-                            }
-                                    </tbody>
-                                    </table>
-                                </div>
+                                    <td>
+                                        <span
+                                            className={`document-status document-status--${status.toLowerCase()}`}
+                                            title={
+                                                STATUS_HINT[
+                                                    status
+                                                ]
+                                            }
+                                        >
+                                            {
+                                                STATUS_LABEL[
+                                                    status
+                                                ]
+                                            }
+                                        </span>
+                                    </td>
 
-                                <KnowledgePagination
-                                    page={documentsPage.page}
-                                    totalPages={documentsPage.totalPages}
-                                    totalElements={documentsPage.totalElements}
-                                    disabled={documentsLoading || busy}
-                                    ariaLabel="Пагинация документов базы знаний"
-                                    singlePageMessage="Все документы показаны"
-                                    onPageChange={setDocumentPage}
-                                />
-                            </div>
-                        )}
-            </section>
+                                    <td>
+                                        <span className="knowledge-document-size">
+                                            {
+                                                formatBytes(
+                                                    document.sizeBytes,
+                                                )
+                                            }
+                                        </span>
+                                    </td>
+
+                                    <td>
+                                        <span className="knowledge-document-date">
+                                            {
+                                                formatDateTime(
+                                                    document.updatedAt,
+                                                )
+                                            }
+                                        </span>
+                                    </td>
+
+                                    <td>
+                                        <div className="document-actions">
+                                            <button
+                                                type="button"
+                                                className="secondary-button document-download-button"
+                                                disabled={
+                                                    downloadingDocumentId === document.id
+                                                    || openingDocumentId === document.id
+                                                }
+                                                aria-label={`Скачать ${document.originalFilename ?? document.name}`}
+                                                onClick={() =>
+                                                    void downloadDocumentFile(
+                                                        document,
+                                                    )
+                                                }
+                                            >
+                                                {
+                                                    downloadingDocumentId === document.id
+                                                        ? 'Скачиваем…'
+                                                        : 'Скачать'
+                                                }
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                className="secondary-button"
+                                                disabled={
+                                                    busy
+                                                    || !base.enabled
+                                                }
+                                                onClick={() =>
+                                                    openUpload(
+                                                        document,
+                                                    )
+                                                }
+                                            >
+                                                Новая версия
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                className="secondary-button"
+                                                onClick={() => void openVersionHistory(document)}
+                                            >
+                                                Версии
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                className="secondary-button document-reindex-button"
+                                                disabled={
+                                                    busy
+                                                    || !base.enabled
+                                                    || reindexingDocumentId === document.id
+                                                    || !document.currentVersionId
+                                                }
+                                                title="Повторно извлечь текст, создать chunks и embeddings для текущей версии"
+                                                onClick={() => void requestReindex(document)}
+                                            >
+                                                {reindexingDocumentId === document.id ? 'Запускаем…' : 'Переиндексировать'}
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )
+                        },
+                                                        )
+                                                    }
+                        </tbody>
+                        </table>
+                    )}
+            </ResizableScrollRegion>
 
             {uploadTarget && (
                 <Modal
@@ -1372,6 +1517,88 @@ function KnowledgeDetailsPage() {
                                 }
                             </button>
                         </div>
+                    </div>
+                </Modal>
+            )}
+
+            {versionDocument && (
+                <Modal
+                    title={`Версии: ${versionDocument.name}`}
+                    size="lg"
+                    onClose={() => {
+                        versionLoadControllerRef.current?.abort()
+                        setVersionDocument(null)
+                        setVersionsPage(null)
+                        setVersionsError('')
+                    }}
+                >
+                    <div className="knowledge-upload-form">
+                        <p className="knowledge-upload-hint">
+                            Версии неизменяемы. Откройте или скачайте именно ту версию,
+                            которая указана в citation или Answer Passport.
+                        </p>
+
+                        {versionsLoading && (
+                            <LoadingState message="Загрузка истории версий..." />
+                        )}
+
+                        {!versionsLoading && versionsError && (
+                            <ErrorState message={versionsError} />
+                        )}
+
+                        {!versionsLoading && !versionsError && versionsPage && (
+                            <div className="table-wrapper knowledge-documents-scroll">
+                                <table className="knowledge-documents">
+                                    <thead>
+                                        <tr>
+                                            <th>Версия</th>
+                                            <th>Файл</th>
+                                            <th>Создана</th>
+                                            <th>Действия</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {versionsPage.content.map((version) => (
+                                            <tr key={version.id}>
+                                                <td>
+                                                    <strong>v{version.versionNumber}</strong>
+                                                    {version.id === versionDocument.currentVersionId && (
+                                                        <span className="knowledge-document-version">Текущая</span>
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    <div className="knowledge-document-name">
+                                                        <strong>{version.originalFilename}</strong>
+                                                        <small>{formatBytes(version.sizeBytes)} · SHA-256: {version.sha256}</small>
+                                                    </div>
+                                                </td>
+                                                <td>{formatDateTime(version.createdAt)}</td>
+                                                <td>
+                                                    <div className="document-actions">
+                                                        <button
+                                                            type="button"
+                                                            className="secondary-button"
+                                                            disabled={openingVersionId === version.id || downloadingVersionId === version.id}
+                                                            onClick={() => void openDocumentVersionPreview(versionDocument, version)}
+                                                        >
+                                                            {openingVersionId === version.id ? 'Открываем…' : 'Открыть'}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="secondary-button"
+                                                            disabled={openingVersionId === version.id || downloadingVersionId === version.id}
+                                                            onClick={() => void downloadDocumentVersion(versionDocument, version)}
+                                                        >
+                                                            {downloadingVersionId === version.id ? 'Скачиваем…' : 'Скачать'}
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 </Modal>
             )}

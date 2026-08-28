@@ -180,6 +180,79 @@ public class UsageQueryService {
         );
     }
 
+    /**
+     * Tenant-scoped variants are deliberately separate from the global
+     * SUPER_ADMIN reports.  In particular, a selected organization in the UI
+     * must never silently fall back to a platform-wide aggregation.
+     */
+    @Transactional(readOnly = true)
+    public Slice<UsageUserSummaryResponse> getUsageByUsersForOrganization(
+            UUID organizationId,
+            Instant dateFrom,
+            Instant dateTo,
+            Pageable pageable,
+            SafeAiUserPrincipal currentUser
+    ) {
+        requireOrganizationAccess(organizationId, currentUser);
+        requirePageable(pageable);
+
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryPlan plan = buildPlan(range);
+
+        return reportExecutor.execute(
+                "organization-users",
+                () -> usageQueryRepository.findUsers(
+                        organizationCriteria(range, organizationId),
+                        plan,
+                        pageable
+                )
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<UsageModelSummaryResponse>
+    getUsageByModelsForOrganization(
+            UUID organizationId,
+            Instant dateFrom,
+            Instant dateTo,
+            SafeAiUserPrincipal currentUser
+    ) {
+        requireOrganizationAccess(organizationId, currentUser);
+
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryPlan plan = buildPlan(range);
+
+        return reportExecutor.execute(
+                "organization-models",
+                () -> usageQueryRepository.findModels(
+                        organizationCriteria(range, organizationId),
+                        plan
+                )
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<UsageDailySummaryResponse>
+    getUsageDailyForOrganization(
+            UUID organizationId,
+            Instant dateFrom,
+            Instant dateTo,
+            SafeAiUserPrincipal currentUser
+    ) {
+        requireOrganizationAccess(organizationId, currentUser);
+
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryPlan plan = buildPlan(range);
+
+        return reportExecutor.execute(
+                "organization-daily",
+                () -> usageQueryRepository.findDaily(
+                        organizationCriteria(range, organizationId),
+                        plan
+                )
+        );
+    }
+
     @Transactional(readOnly = true)
     public Slice<UsageSummaryResponse> getUsageByUserId(
             UUID userId,
@@ -234,14 +307,7 @@ public class UsageQueryService {
         requireCurrentUser(currentUser);
         requirePageable(pageable);
 
-        if (!isSuperAdmin(currentUser)
-                && !currentUser
-                .getOrganizationId()
-                .equals(organizationId)) {
-            throw new ForbiddenOperationException(
-                    "Нельзя смотреть usage другой организации"
-            );
-        }
+        requireOrganizationAccess(organizationId, currentUser);
 
         UsageDateRange range = normalizeRange(dateFrom, dateTo);
         UsageQueryCriteria criteria = new UsageQueryCriteria(
@@ -320,6 +386,39 @@ public class UsageQueryService {
         }
 
         return new UsageDateRange(from, to);
+    }
+
+    private UsageQueryCriteria organizationCriteria(
+            UsageDateRange range,
+            UUID organizationId
+    ) {
+        return new UsageQueryCriteria(
+                range.from(),
+                range.to(),
+                organizationId,
+                null,
+                null
+        );
+    }
+
+    private void requireOrganizationAccess(
+            UUID organizationId,
+            SafeAiUserPrincipal currentUser
+    ) {
+        Objects.requireNonNull(
+                organizationId,
+                "organizationId не должен быть null"
+        );
+        requireCurrentUser(currentUser);
+
+        if (!isSuperAdmin(currentUser)
+                && !currentUser
+                .getOrganizationId()
+                .equals(organizationId)) {
+            throw new ForbiddenOperationException(
+                    "Нельзя смотреть usage другой организации"
+            );
+        }
     }
 
     private UsageQueryPlan buildPlan(

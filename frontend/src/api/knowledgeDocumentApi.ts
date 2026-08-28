@@ -39,6 +39,18 @@ export type KnowledgeDocumentMutationResult =
         'createdAt' | 'updatedAt'
     >
 
+export type KnowledgeDocumentVersion = {
+    id: string
+    documentId: string
+    versionNumber: number
+    originalFilename: string
+    mediaType: string
+    sizeBytes: number
+    sha256: string
+    createdByUserId: string
+    createdAt: string
+}
+
 export type KnowledgeHealth = {
     knowledgeBaseId: string
     state: KnowledgeHealthState
@@ -134,8 +146,34 @@ export async function uploadKnowledgeDocumentVersion(
     )
 }
 
+export async function getKnowledgeDocumentVersions(
+    kb: string,
+    documentId: string,
+    page = 0,
+    size = 50,
+    signal?: AbortSignal,
+): Promise<PageResponse<KnowledgeDocumentVersion>> {
+    const value = await apiRequest<unknown>(
+        `${path(kb)}/${uuidPathSegment(documentId)}/versions`
+        + buildQueryString({
+            page: normalizePage(page),
+            size: normalizePageSize(size, 50, 100),
+        }),
+        {method: 'GET', signal, timeoutMs: API_TIMEOUTS.default},
+    )
+    return parsePageResponse(value, parseKnowledgeDocumentVersion)
+}
+
 export function knowledgeDocumentDownloadUrl(kb: string, documentId: string): string {
     return `${path(kb)}/${uuidPathSegment(documentId)}/download`
+}
+
+export function knowledgeDocumentVersionDownloadUrl(
+    kb: string,
+    documentId: string,
+    versionId: string,
+): string {
+    return `${path(kb)}/${uuidPathSegment(documentId)}/versions/${uuidPathSegment(versionId)}/download`
 }
 
 export async function fetchKnowledgeDocumentBlob(
@@ -148,6 +186,23 @@ export async function fetchKnowledgeDocumentBlob(
             kb,
             documentId,
         ),
+        {
+            method: 'GET',
+            signal,
+            timeoutMs: API_TIMEOUTS.download,
+            responseType: 'blob',
+        },
+    )
+}
+
+export async function fetchKnowledgeDocumentVersionBlob(
+    kb: string,
+    documentId: string,
+    versionId: string,
+    signal?: AbortSignal,
+): Promise<Blob> {
+    return apiRequest<Blob>(
+        knowledgeDocumentVersionDownloadUrl(kb, documentId, versionId),
         {
             method: 'GET',
             signal,
@@ -393,5 +448,31 @@ export function parseKnowledgeDocument(
             record.updatedAt,
             `${field}.updatedAt`,
         ),
+    }
+}
+
+export function parseKnowledgeDocumentVersion(
+    value: unknown,
+    field = 'documentVersion',
+): KnowledgeDocumentVersion {
+    const record = expectRecord(value, field)
+
+    return {
+        id: expectUuid(record.id, `${field}.id`),
+        documentId: expectUuid(record.documentId, `${field}.documentId`),
+        versionNumber: expectNonNegativeInteger(
+            record.versionNumber,
+            `${field}.versionNumber`,
+        ),
+        originalFilename: expectString(
+            record.originalFilename,
+            `${field}.originalFilename`,
+            {maxLength: 255},
+        ),
+        mediaType: expectString(record.mediaType, `${field}.mediaType`, {maxLength: 127}),
+        sizeBytes: expectNonNegativeInteger(record.sizeBytes, `${field}.sizeBytes`),
+        sha256: expectString(record.sha256, `${field}.sha256`, {maxLength: 128}),
+        createdByUserId: expectUuid(record.createdByUserId, `${field}.createdByUserId`),
+        createdAt: expectInstant(record.createdAt, `${field}.createdAt`),
     }
 }

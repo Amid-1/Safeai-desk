@@ -190,7 +190,7 @@ describe('adminApi usage contracts', () => {
         expect(requestMock)
             .toHaveBeenCalledWith(
                 expect.stringContaining(
-                    '/api/admin/usage/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa?',
+                    '/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa?',
                 ),
                 expect.any(Object),
             )
@@ -210,7 +210,7 @@ describe('adminApi usage contracts', () => {
         expect(requestMock)
             .toHaveBeenCalledWith(
                 expect.stringContaining(
-                    `/api/admin/usage/users/${SUMMARY_ROW.userId}?`,
+                    `/api/admin/usage/by-user/${SUMMARY_ROW.userId}?`,
                 ),
                 expect.any(Object),
             )

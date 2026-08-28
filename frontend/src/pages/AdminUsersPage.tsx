@@ -49,6 +49,8 @@ import {
     useAutoClearMessage,
 } from '../hooks/useAutoClearMessage'
 import Modal from '../components/Modal'
+import ResizableScrollRegion
+    from '../components/ResizableScrollRegion'
 import ConfirmDialog from '../components/ConfirmDialog'
 import UserActionsMenu from '../components/admin/UserActionsMenu'
 import UserIdentityCell from '../components/admin/UserIdentityCell'
@@ -1231,354 +1233,371 @@ function AdminUsersPageContent({
 
     return (
         <div className="page users-page">
-            <div className="users-page-header">
-                <div>
-                    <h1>Пользователи</h1>
-                    <p className="users-page-subtitle">
-                        Управление пользователями системы
-                    </p>
-                </div>
+            <ResizableScrollRegion
+                storageKey="safeai:users-table-height"
+                label="список пользователей"
+                upper={
+                    <div className="users-page__upper">
+                        <div className="users-page-header">
+                            <div>
+                                <h1>Пользователи</h1>
+                                <p className="users-page-subtitle">
+                                    Управление пользователями системы
+                                </p>
+                            </div>
 
-                <button
-                    type="button"
-                    className="users-create-button"
-                    onClick={openCreateModal}
-                    disabled={
-                        creating
-                        || hasPendingMutation
-                    }
-                >
-                    <span aria-hidden="true">
-                        ＋
-                    </span>
-                    Создать пользователя
-                </button>
-            </div>
-
-            {mutationError && (
-                <div
-                    className="error"
-                    role="alert"
-                    aria-live="assertive"
-                >
-                    {mutationError}
-                </div>
-            )}
-
-            {success && (
-                <div
-                    className="success"
-                    role="status"
-                    aria-live="polite"
-                >
-                    {success}
-                </div>
-            )}
-
-            <div
-                className="users-filter-bar"
-                aria-label={
-                    'Фильтр пользователей по роли'
-                }
-            >
-                <FilterButton
-                    active={filter === 'ALL'}
-                    label="Все"
-                    count={statistics.total}
-                    disabled={hasPendingMutation}
-                    onClick={() => {
-                        setFilter('ALL')
-                        setPage(0)
-                    }}
-                />
-                <FilterButton
-                    active={filter === 'ADMIN'}
-                    label="Администраторы"
-                    count={
-                        statistics.administrators
-                    }
-                    disabled={hasPendingMutation}
-                    onClick={() => {
-                        setFilter('ADMIN')
-                        setPage(0)
-                    }}
-                />
-                <FilterButton
-                    active={filter === 'USER'}
-                    label="Пользователи"
-                    count={statistics.users}
-                    disabled={hasPendingMutation}
-                    onClick={() => {
-                        setFilter('USER')
-                        setPage(0)
-                    }}
-                />
-            </div>
-
-            {loading && (
-                <LoadingState
-                    message="Загрузка пользователей..."
-                />
-            )}
-
-            {!loading && loadError && (
-                <ErrorState
-                    title="Ошибка загрузки пользователей"
-                    message={loadError}
-                    action={
-                        <button
-                            type="button"
-                            onClick={() =>
-                                setReloadToken(
-                                    (value) =>
-                                        value + 1,
-                                )
-                            }
-                        >
-                            Повторить
-                        </button>
-                    }
-                />
-            )}
-
-            {!loading
-                && !loadError
-                && users.length === 0
-                && (
-                    <EmptyState
-                        message={
-                            'Пользователи не найдены.'
-                        }
-                    />
-                )}
-
-            {!loading
-                && !loadError
-                && users.length > 0
-                && (
-                    <div className="users-table-card">
-                        <div className="users-table-scroll">
-                            <table className="users-table">
-                                <thead>
-                                    <tr>
-                                        <th>
-                                            Пользователь
-                                        </th>
-                                        {currentUserIsSuperAdmin
-                                            && (
-                                                <th>
-                                                    Организация
-                                                </th>
-                                            )}
-                                        <th>Роли</th>
-                                        <th>Статус</th>
-                                        <th>
-                                            Дата создания
-                                        </th>
-                                        <th>Действия</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {users.map(
-                                        (user) => {
-                                            const manageable =
-                                                canManageUser(
-                                                    user,
-                                                )
-
-                                            return (
-                                                <tr
-                                                    key={
-                                                        user.id
-                                                    }
-                                                    className={
-                                                        user.enabled
-                                                            ? undefined
-                                                            : 'users-table__row--disabled'
-                                                    }
-                                                >
-                                                    <td>
-                                                        <button
-                                                            type="button"
-                                                            className={
-                                                                'user-identity-link'
-                                                            }
-                                                            disabled={
-                                                                detailsLoadingUserId
-                                                                    === user.id
-                                                            }
-                                                            onClick={() =>
-                                                                void openDetailsModal(
-                                                                    user,
-                                                                )
-                                                            }
-                                                        >
-                                                            <UserIdentityCell
-                                                                fullName={
-                                                                    user.fullName
-                                                                }
-                                                                email={
-                                                                    user.email
-                                                                }
-                                                                roles={
-                                                                    user.roles
-                                                                }
-                                                            />
-                                                        </button>
-                                                    </td>
-
-                                                    {currentUserIsSuperAdmin
-                                                        && (
-                                                            <td>
-                                                                {
-                                                                    getOrganizationName(
-                                                                        user.organizationId,
-                                                                        organizations,
-                                                                    )
-                                                                }
-                                                            </td>
-                                                        )}
-
-                                                    <td>
-                                                        <div className="role-list">
-                                                            {user.roles.map(
-                                                                (role) => (
-                                                                    <UserRoleBadge
-                                                                        key={
-                                                                            role
-                                                                        }
-                                                                        role={
-                                                                            role
-                                                                        }
-                                                                    />
-                                                                ),
-                                                            )}
-                                                        </div>
-                                                    </td>
-
-                                                    <td>
-                                                        <UserStatusBadge
-                                                            enabled={
-                                                                user.enabled
-                                                            }
-                                                        />
-                                                    </td>
-
-                                                    <td>
-                                                        {formatDateTime(
-                                                            user.createdAt,
-                                                        )}
-                                                    </td>
-
-                                                    <td className="actions-cell">
-                                                        <UserActionsMenu
-                                                            disabled={
-                                                                hasPendingMutation
-                                                            }
-                                                            canManage={
-                                                                manageable
-                                                            }
-                                                            canChangeRole={
-                                                                currentUserIsSuperAdmin
-                                                                && manageable
-                                                            }
-                                                            canDelete={
-                                                                canPermanentlyDelete(
-                                                                    user,
-                                                                )
-                                                            }
-                                                            enabled={
-                                                                user.enabled
-                                                            }
-                                                            onDetails={() =>
-                                                                void openDetailsModal(
-                                                                    user,
-                                                                )
-                                                            }
-                                                            onEdit={() =>
-                                                                openEditModal(
-                                                                    user,
-                                                                )
-                                                            }
-                                                            onRoles={() =>
-                                                                openRolesModal(
-                                                                    user,
-                                                                )
-                                                            }
-                                                            onResetPassword={() =>
-                                                                openResetPasswordModal(
-                                                                    user,
-                                                                )
-                                                            }
-                                                            onToggleEnabled={() =>
-                                                                setConfirmState({
-                                                                    user,
-                                                                    nextEnabled:
-                                                                        !user.enabled,
-                                                                })
-                                                            }
-                                                            onDelete={() =>
-                                                                openDeleteModal(
-                                                                    user,
-                                                                )
-                                                            }
-                                                        />
-
-                                                        {!manageable && (
-                                                            <span className="muted">
-                                                                {
-                                                                    getUnmanageableReason(
-                                                                        user,
-                                                                        currentUser,
-                                                                    )
-                                                                }
-                                                            </span>
-                                                        )}
-
-                                                        {user.version
-                                                            === null
-                                                            && manageable
-                                                            && (
-                                                                <span className="muted">
-                                                                    Backend version отсутствует
-                                                                </span>
-                                                            )}
-                                                    </td>
-                                                </tr>
-                                            )
-                                        },
-                                    )}
-                                </tbody>
-                            </table>
+                            <button
+                                type="button"
+                                className="users-create-button"
+                                onClick={openCreateModal}
+                                disabled={
+                                    creating
+                                    || hasPendingMutation
+                                }
+                            >
+                                <span aria-hidden="true">
+                                    ＋
+                                </span>
+                                Создать пользователя
+                            </button>
                         </div>
 
-                        <Pagination
-                            page={page}
-                            totalPages={
-                                totalPages
+                        {mutationError && (
+                            <div
+                                className="error"
+                                role="alert"
+                                aria-live="assertive"
+                            >
+                                {mutationError}
+                            </div>
+                        )}
+
+                        {success && (
+                            <div
+                                className="success"
+                                role="status"
+                                aria-live="polite"
+                            >
+                                {success}
+                            </div>
+                        )}
+
+                        <div
+                            className="users-filter-bar"
+                            aria-label={
+                                'Фильтр пользователей по роли'
                             }
-                            disabled={
-                                loading
-                                || hasPendingMutation
-                            }
-                            onPrevious={() =>
-                                setPage(
-                                    (value) =>
-                                        Math.max(
-                                            0,
-                                            value - 1,
-                                        ),
-                                )
-                            }
-                            onNext={() =>
-                                setPage(
-                                    (value) =>
-                                        value + 1,
-                                )
-                            }
-                        />
+                        >
+                            <FilterButton
+                                active={filter === 'ALL'}
+                                label="Все"
+                                count={statistics.total}
+                                disabled={hasPendingMutation}
+                                onClick={() => {
+                                    setFilter('ALL')
+                                    setPage(0)
+                                }}
+                            />
+
+                            <FilterButton
+                                active={filter === 'ADMIN'}
+                                label="Администраторы"
+                                count={
+                                    statistics.administrators
+                                }
+                                disabled={hasPendingMutation}
+                                onClick={() => {
+                                    setFilter('ADMIN')
+                                    setPage(0)
+                                }}
+                            />
+
+                            <FilterButton
+                                active={filter === 'USER'}
+                                label="Пользователи"
+                                count={statistics.users}
+                                disabled={hasPendingMutation}
+                                onClick={() => {
+                                    setFilter('USER')
+                                    setPage(0)
+                                }}
+                            />
+                        </div>
+
+                        {loading && (
+                            <LoadingState
+                                message="Загрузка пользователей..."
+                            />
+                        )}
+
+                        {!loading && loadError && (
+                            <ErrorState
+                                title="Ошибка загрузки пользователей"
+                                message={loadError}
+                                action={
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setReloadToken(
+                                                (value) =>
+                                                    value + 1,
+                                            )
+                                        }
+                                    >
+                                        Повторить
+                                    </button>
+                                }
+                            />
+                        )}
+
+                        {!loading
+                            && !loadError
+                            && users.length === 0
+                            && (
+                                <EmptyState
+                                    message={
+                                        'Пользователи не найдены.'
+                                    }
+                                />
+                            )}
                     </div>
-                )}
+                }
+                footer={
+                    !loading
+                    && !loadError
+                    && users.length > 0
+                        ? (
+                            <Pagination
+                                page={page}
+                                totalPages={totalPages}
+                                disabled={
+                                    loading
+                                    || hasPendingMutation
+                                }
+                                onPrevious={() =>
+                                    setPage(
+                                        (value) =>
+                                            Math.max(
+                                                0,
+                                                value - 1,
+                                            ),
+                                    )
+                                }
+                                onNext={() =>
+                                    setPage(
+                                        (value) =>
+                                            value + 1,
+                                    )
+                                }
+                            />
+                        )
+                        : null
+                }
+                lowerClassName="users-table-card"
+                viewportClassName="users-table-scroll"
+                defaultHeight={500}
+                minHeight={250}
+                maxHeight={760}
+                minUpperHeight={130}
+            >
+                {!loading
+                    && !loadError
+                    && users.length > 0
+                    && (
+                    <table className="users-table">
+                        <thead>
+                            <tr>
+                                <th>
+                                    Пользователь
+                                </th>
+                                {currentUserIsSuperAdmin
+                                    && (
+                                        <th>
+                                            Организация
+                                        </th>
+                                    )}
+                                <th>Роли</th>
+                                <th>Статус</th>
+                                <th>
+                                    Дата создания
+                                </th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {users.map(
+                                (user) => {
+                                    const manageable =
+                                        canManageUser(
+                                            user,
+                                        )
+
+                                    return (
+                                        <tr
+                                            key={
+                                                user.id
+                                            }
+                                            className={
+                                                user.enabled
+                                                    ? undefined
+                                                    : 'users-table__row--disabled'
+                                            }
+                                        >
+                                            <td>
+                                                <button
+                                                    type="button"
+                                                    className={
+                                                        'user-identity-link'
+                                                    }
+                                                    disabled={
+                                                        detailsLoadingUserId
+                                                            === user.id
+                                                    }
+                                                    onClick={() =>
+                                                        void openDetailsModal(
+                                                            user,
+                                                        )
+                                                    }
+                                                >
+                                                    <UserIdentityCell
+                                                        fullName={
+                                                            user.fullName
+                                                        }
+                                                        email={
+                                                            user.email
+                                                        }
+                                                        roles={
+                                                            user.roles
+                                                        }
+                                                    />
+                                                </button>
+                                            </td>
+
+                                            {currentUserIsSuperAdmin
+                                                && (
+                                                    <td>
+                                                        {
+                                                            getOrganizationName(
+                                                                user.organizationId,
+                                                                organizations,
+                                                            )
+                                                        }
+                                                    </td>
+                                                )}
+
+                                            <td>
+                                                <div className="role-list">
+                                                    {user.roles.map(
+                                                        (role) => (
+                                                            <UserRoleBadge
+                                                                key={
+                                                                    role
+                                                                }
+                                                                role={
+                                                                    role
+                                                                }
+                                                            />
+                                                        ),
+                                                    )}
+                                                </div>
+                                            </td>
+
+                                            <td>
+                                                <UserStatusBadge
+                                                    enabled={
+                                                        user.enabled
+                                                    }
+                                                />
+                                            </td>
+
+                                            <td>
+                                                {formatDateTime(
+                                                    user.createdAt,
+                                                )}
+                                            </td>
+
+                                            <td className="actions-cell">
+                                                <UserActionsMenu
+                                                    disabled={
+                                                        hasPendingMutation
+                                                    }
+                                                    canManage={
+                                                        manageable
+                                                    }
+                                                    canChangeRole={
+                                                        currentUserIsSuperAdmin
+                                                        && manageable
+                                                    }
+                                                    canDelete={
+                                                        canPermanentlyDelete(
+                                                            user,
+                                                        )
+                                                    }
+                                                    enabled={
+                                                        user.enabled
+                                                    }
+                                                    onDetails={() =>
+                                                        void openDetailsModal(
+                                                            user,
+                                                        )
+                                                    }
+                                                    onEdit={() =>
+                                                        openEditModal(
+                                                            user,
+                                                        )
+                                                    }
+                                                    onRoles={() =>
+                                                        openRolesModal(
+                                                            user,
+                                                        )
+                                                    }
+                                                    onResetPassword={() =>
+                                                        openResetPasswordModal(
+                                                            user,
+                                                        )
+                                                    }
+                                                    onToggleEnabled={() =>
+                                                        setConfirmState({
+                                                            user,
+                                                            nextEnabled:
+                                                                !user.enabled,
+                                                        })
+                                                    }
+                                                    onDelete={() =>
+                                                        openDeleteModal(
+                                                            user,
+                                                        )
+                                                    }
+                                                />
+
+                                                {!manageable && (
+                                                    <span className="muted">
+                                                        {
+                                                            getUnmanageableReason(
+                                                                user,
+                                                                currentUser,
+                                                            )
+                                                        }
+                                                    </span>
+                                                )}
+
+                                                {user.version
+                                                    === null
+                                                    && manageable
+                                                    && (
+                                                        <span className="muted">
+                                                            Backend version отсутствует
+                                                        </span>
+                                                    )}
+                                            </td>
+                                        </tr>
+                                    )
+                                },
+                            )}
+                        </tbody>
+                    </table>
+                    )}
+            </ResizableScrollRegion>
 
             {createModalOpen && (
                 <Modal

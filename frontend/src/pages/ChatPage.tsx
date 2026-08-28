@@ -11,6 +11,7 @@ import type { KeyboardEvent } from 'react'
 import {
     archiveChat,
     createChat,
+    getAnswerPassport,
     getChatById,
     getChatCapabilities,
     getChatMessages,
@@ -318,6 +319,103 @@ function ChatPageContent() {
         capabilities.maxChatPageSize,
     )
 
+    /*
+     * SendMessageResponse carries a passport for a live turn, but a browser
+     * reload only has persisted messages.  Reconcile completed turns by their
+     * immutable clientRequestId and restore their immutable evidence record.
+     * A 404 is normal for GENERAL mode, so an individual failure must not make
+     * chat history unavailable.
+     */
+    const restoreAnswerPassports = useCallback(
+        async (
+            chatId: string,
+            messages: ChatMessage[],
+            signal: AbortSignal,
+            expectedOpenSequence?: number,
+        ) => {
+            const clientRequestIds = [
+                ...new Set(
+                    messages
+                        .filter((message) =>
+                            message.role === 'USER'
+                            && message.clientRequestId,
+                        )
+                        .map((message) => message.clientRequestId!),
+                ),
+            ]
+
+            if (!clientRequestIds.length) {
+                return
+            }
+
+            const turns = await Promise.allSettled(
+                clientRequestIds.map((clientRequestId) =>
+                    getChatTurnStatus(chatId, clientRequestId, { signal }),
+                ),
+            )
+
+            if (
+                signal.aborted
+                || (
+                    expectedOpenSequence !== undefined
+                    && expectedOpenSequence !== openRequestSequenceRef.current
+                )
+            ) {
+                return
+            }
+
+            const succeededTurns = turns.flatMap((result) =>
+                result.status === 'fulfilled'
+                && result.value.state === 'SUCCEEDED'
+                && result.value.assistantMessage
+                    ? [result.value]
+                    : [],
+            )
+
+            const passports = await Promise.allSettled(
+                succeededTurns.map(async (turn) => ({
+                    assistantMessageId: turn.assistantMessage!.id,
+                    passport: await getAnswerPassport(
+                        chatId,
+                        turn.turnId,
+                        { signal },
+                    ),
+                })),
+            )
+
+            if (
+                signal.aborted
+                || (
+                    expectedOpenSequence !== undefined
+                    && expectedOpenSequence !== openRequestSequenceRef.current
+                )
+            ) {
+                return
+            }
+
+            const restored = passports.flatMap((result) =>
+                result.status === 'fulfilled'
+                    ? [result.value]
+                    : [],
+            )
+
+            if (!restored.length) {
+                return
+            }
+
+            setAnswerPassports((current) => ({
+                ...current,
+                ...Object.fromEntries(
+                    restored.map((item) => [
+                        item.assistantMessageId,
+                        item.passport,
+                    ]),
+                ),
+            }))
+        },
+        [],
+    )
+
     const openChat = useCallback(
         async (chatId: string) => {
             const sequence =
@@ -386,6 +484,13 @@ function ChatPageContent() {
                 setHistoryHasNext(
                     firstMessageSlice.hasNext,
                 )
+
+                void restoreAnswerPassports(
+                    chatId,
+                    firstMessageSlice.content,
+                    controller.signal,
+                    sequence,
+                )
             } catch (error) {
                 if (
                     sequence
@@ -408,7 +513,7 @@ function ChatPageContent() {
                 }
             }
         },
-        [messagePageSize],
+        [messagePageSize, restoreAnswerPassports],
     )
 
     useEffect(() => {
@@ -1416,6 +1521,12 @@ function ChatPageContent() {
                     ),
                 }
             })
+
+            void restoreAnswerPassports(
+                chatId,
+                response.content,
+                controller.signal,
+            )
         } catch (error) {
             if (
                 sequence

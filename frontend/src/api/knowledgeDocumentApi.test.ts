@@ -5,6 +5,7 @@ import {
 } from 'vitest'
 import {
     parseKnowledgeDocument,
+    parseKnowledgeDocumentVersion,
 } from './knowledgeDocumentApi'
 
 const DOCUMENT = {
@@ -28,5 +29,19 @@ describe('knowledgeDocumentApi contract', () => {
         expect(
             parseKnowledgeDocument(DOCUMENT).status,
         ).toBe('CHUNKING')
+    })
+
+    it('принимает immutable evidence исторической версии', () => {
+        expect(parseKnowledgeDocumentVersion({
+            id: DOCUMENT.currentVersionId,
+            documentId: DOCUMENT.id,
+            versionNumber: 1,
+            originalFilename: 'runbook.txt',
+            mediaType: 'text/plain',
+            sizeBytes: 128,
+            sha256: 'not-a-real-hash',
+            createdByUserId: '3ca0cd4f-e6eb-40a5-aefc-2803773a0b5c',
+            createdAt: DOCUMENT.createdAt,
+        }).sha256).toBe('not-a-real-hash')
     })
 })

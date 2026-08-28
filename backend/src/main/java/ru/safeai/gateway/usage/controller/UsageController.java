@@ -81,6 +81,38 @@ public class UsageController {
         );
     }
 
+    @GetMapping("/by-organization/{organizationId}/users")
+    public PagedResponse<UsageUserSummaryResponse> usersByOrganization(
+            @PathVariable UUID organizationId,
+            @Valid @ModelAttribute UsageDateFilter filter,
+            @Valid @ModelAttribute UsagePageRequest pageRequest,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return PagedResponse.from(
+                usageQueryService.getUsageByUsersForOrganization(
+                        organizationId,
+                        filter.dateFrom(),
+                        filter.dateTo(),
+                        pageRequest.toPageable(),
+                        currentUser
+                )
+        );
+    }
+
+    @GetMapping("/by-organization/{organizationId}/models")
+    public List<UsageModelSummaryResponse> modelsByOrganization(
+            @PathVariable UUID organizationId,
+            @Valid @ModelAttribute UsageDateFilter filter,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return usageQueryService.getUsageByModelsForOrganization(
+                organizationId,
+                filter.dateFrom(),
+                filter.dateTo(),
+                currentUser
+        );
+    }
+
     /** Daily usage is grouped by UTC calendar date. */
     @GetMapping("/daily")
     public List<UsageDailySummaryResponse> daily(
@@ -88,6 +120,20 @@ public class UsageController {
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return usageQueryService.getUsageDaily(
+                filter.dateFrom(),
+                filter.dateTo(),
+                currentUser
+        );
+    }
+
+    @GetMapping("/by-organization/{organizationId}/daily")
+    public List<UsageDailySummaryResponse> dailyByOrganization(
+            @PathVariable UUID organizationId,
+            @Valid @ModelAttribute UsageDateFilter filter,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        return usageQueryService.getUsageDailyForOrganization(
+                organizationId,
                 filter.dateFrom(),
                 filter.dateTo(),
                 currentUser

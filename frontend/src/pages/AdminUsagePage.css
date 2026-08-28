@@ -1,10 +1,25 @@
 .usage-page {
-    display: grid;
-    gap: 24px;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.usage-page__upper {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 12px;
+    overflow: auto;
+    padding-bottom: 8px;
 }
 
 .usage-page__header {
     display: flex;
+    flex: 0 0 auto;
     align-items: flex-end;
     justify-content: space-between;
     gap: 24px;
@@ -27,13 +42,14 @@
 
 .usage-scope {
     display: grid;
-    gap: 3px;
     min-width: 210px;
+    flex: 0 0 auto;
+    gap: 3px;
     padding: 14px 18px;
     border: 1px solid #dbe3ef;
     border-radius: 14px;
-    background: #fff;
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+    background: #ffffff;
+    box-shadow: 0 10px 28px #e9edf3;
 }
 
 .usage-scope__label {
@@ -45,6 +61,7 @@
 }
 
 .usage-filters {
+    flex: 0 0 auto;
     padding: 24px;
 }
 
@@ -54,32 +71,40 @@
 
 .usage-filter-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(180px, 1fr)) minmax(240px, 1.4fr);
-    gap: 16px;
+    grid-template-columns: 1fr 1fr 1.4fr;
     align-items: start;
+    gap: 16px;
 }
 
 .usage-filter-grid label {
     display: grid;
-    gap: 7px;
     min-width: 0;
+    gap: 7px;
     font-weight: 700;
 }
 
 .usage-filter-grid input {
     width: 100%;
+    min-width: 0;
+}
+
+.usage-filter-grid small {
+    line-height: 1.35;
 }
 
 .usage-filter-actions {
     display: flex;
-    justify-content: flex-end;
     flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 10px;
     margin-top: 20px;
 }
 
 .usage-report {
-    display: grid;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
     gap: 16px;
 }
 
@@ -98,20 +123,116 @@
     gap: 2px;
 }
 
-.usage-report .table-card {
-    margin: 0;
-}
-
 .usage-report .state-block--empty {
-    min-height: 190px;
     display: flex;
+    min-height: 190px;
     flex-direction: column;
     justify-content: center;
 }
 
+.usage-page__upper > .state-block,
+.usage-report > .state-block {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.usage-page .usage-report-card {
+    display: flex;
+    box-sizing: border-box;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    margin: 0;
+    overflow: hidden;
+}
+
+.usage-page .resizable-scroll-region__viewport.usage-table-scroll {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+}
+
+.usage-table {
+    min-width: 980px;
+}
+
+.usage-table thead th {
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    background: #ffffff;
+    box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.usage-table th,
+.usage-table td {
+    vertical-align: top;
+}
+
+.usage-table tbody tr {
+    transition: background-color 150ms ease;
+}
+
+.usage-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.usage-coverage {
+    display: flex;
+    min-width: 180px;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.usage-coverage__indicator {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    margin-top: 5px;
+    border-radius: 50%;
+    background: #94a3b8;
+}
+
+.usage-coverage > div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.usage-coverage small {
+    line-height: 1.35;
+}
+
+.usage-coverage--complete .usage-coverage__indicator {
+    background: #16a34a;
+}
+
+.usage-coverage--partial .usage-coverage__indicator {
+    background: #d97706;
+}
+
+.usage-coverage--unknown .usage-coverage__indicator {
+    background: #64748b;
+}
+
+.usage-page .resizable-scroll-region__footer {
+    flex: 0 0 auto;
+    padding: 0 14px 12px;
+    border-top: 1px solid #e2e8f0;
+    background: #ffffff;
+}
+
+.usage-page .resizable-scroll-region__footer .pagination {
+    width: auto;
+    margin: 0;
+    border-radius: 0;
+    background: #ffffff;
+    box-shadow: none;
+}
+
 @media (max-width: 900px) {
     .usage-filter-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr 1fr;
     }
 
     .usage-filter-grid label:last-child {
@@ -129,6 +250,10 @@
         min-width: 0;
     }
 
+    .usage-filters {
+        padding: 16px;
+    }
+
     .usage-filter-grid {
         grid-template-columns: 1fr;
     }
@@ -137,52 +262,51 @@
         grid-column: auto;
     }
 
-    .usage-filter-actions,
+    .usage-filter-actions {
+        width: 100%;
+    }
+
     .usage-filter-actions button {
         width: 100%;
     }
 
     .usage-tabs {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr 1fr;
     }
 
     .usage-tabs button {
         width: 100%;
     }
-}
-.usage-page {
-    display: flex;
-    height: 100%;
-    min-height: 0;
-    flex-direction: column;
-    overflow: hidden;
-    gap: clamp(10px, 1.2vh, 18px);
+
+    .usage-page .resizable-scroll-region__footer .pagination {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
 }
 
-.usage-page__header,
-.usage-filters {
-    flex: 0 0 auto;
-}
+@media (max-height: 760px) and (min-width: 641px) {
+    .usage-page__upper {
+        gap: 8px;
+    }
 
-.usage-report {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-}
+    .usage-filters {
+        padding: 16px 20px;
+    }
 
-.usage-report .table-card {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
+    .usage-section-heading {
+        margin-bottom: 10px;
+    }
 
-.usage-table-scroll {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;
-    scrollbar-gutter: stable;
+    .usage-filter-grid {
+        gap: 10px 12px;
+    }
+
+    .usage-filter-actions {
+        margin-top: 12px;
+    }
+
+    .usage-report {
+        gap: 10px;
+    }
 }

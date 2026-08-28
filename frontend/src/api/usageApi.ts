@@ -134,7 +134,7 @@ export function getUsageByOrganization(
     options: RequestOptions = {},
 ): Promise<PageResponse<UsageSummary>> {
     return getUsagePage(
-        `/api/admin/usage/organizations/${uuidPathSegment(organizationId)}`,
+        `/api/admin/usage/by-organization/${uuidPathSegment(organizationId)}`,
         page,
         size,
         filter,
@@ -151,7 +151,7 @@ export function getOrganizationUsageUsers(
     options: RequestOptions = {},
 ): Promise<PageResponse<UsageUserSummary>> {
     return getUsagePage(
-        `/api/admin/usage/organizations/${uuidPathSegment(organizationId)}/users`,
+        `/api/admin/usage/by-organization/${uuidPathSegment(organizationId)}/users`,
         page,
         size,
         filter,
@@ -178,7 +178,7 @@ export function getOrganizationUsageModels(
     options: RequestOptions = {},
 ): Promise<UsageModelSummary[]> {
     return getUsageArray(
-        `/api/admin/usage/organizations/${uuidPathSegment(organizationId)}/models`,
+        `/api/admin/usage/by-organization/${uuidPathSegment(organizationId)}/models`,
         filter,
         parseUsageModelSummary,
         options,
@@ -203,7 +203,7 @@ export function getOrganizationUsageDaily(
     options: RequestOptions = {},
 ): Promise<UsageDailySummary[]> {
     return getUsageArray(
-        `/api/admin/usage/organizations/${uuidPathSegment(organizationId)}/daily`,
+        `/api/admin/usage/by-organization/${uuidPathSegment(organizationId)}/daily`,
         filter,
         parseUsageDailySummary,
         options,
