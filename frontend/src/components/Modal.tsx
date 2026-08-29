@@ -4,11 +4,13 @@
 import {
     useId,
     useLayoutEffect,
+    useMemo,
     useRef,
     useState,
     useSyncExternalStore,
 } from 'react'
 import type {
+    CSSProperties,
     PointerEvent as ReactPointerEvent,
     ReactNode,
     RefObject,
@@ -17,6 +19,16 @@ import {
     createPortal,
 } from 'react-dom'
 
+export type ModalResizeOptions = {
+    initialWidth: number
+    initialHeight: number
+    minWidth: number
+    minHeight: number
+    maxWidth?: number
+    maxHeight?: number
+    scaleContent?: boolean
+}
+
 type ModalProps = {
     title: string
     children: ReactNode
@@ -24,11 +36,47 @@ type ModalProps = {
 
     closeDisabled?: boolean
     size?: 'sm' | 'md' | 'lg'
+    className?: string
+    resize?: ModalResizeOptions
 
     descriptionId?: string
     initialFocusRef?:
         RefObject<HTMLElement | null>
 }
+
+type ModalBounds = {
+    left: number
+    top: number
+    width: number
+    height: number
+}
+
+type ResizeDirection =
+    | 'n'
+    | 'ne'
+    | 'e'
+    | 'se'
+    | 's'
+    | 'sw'
+    | 'w'
+    | 'nw'
+
+type ResizeSession = {
+    pointerId: number
+    direction: ResizeDirection
+    startX: number
+    startY: number
+    startBounds: ModalBounds
+}
+
+type ResolvedModalResize =
+    | {
+        enabled: false
+    }
+    | {
+        enabled: true
+        options: ModalResizeOptions
+    }
 
 type ModalEntry = {
     id: symbol
@@ -44,6 +92,19 @@ const FOCUSABLE_SELECTOR = [
     '[contenteditable="true"]',
     '[tabindex]:not([tabindex="-1"])',
 ].join(',')
+
+const RESIZE_DIRECTIONS: readonly ResizeDirection[] = [
+    'n',
+    'ne',
+    'e',
+    'se',
+    's',
+    'sw',
+    'w',
+    'nw',
+]
+
+const RESIZE_VIEWPORT_MARGIN = 12
 
 let modalEntries: ModalEntry[] = []
 let modalStackVersion = 0
@@ -63,9 +124,76 @@ function Modal({
     onClose,
     closeDisabled = false,
     size = 'md',
+    className = '',
+    resize,
     descriptionId,
     initialFocusRef,
 }: ModalProps) {
+    const resizeInitialWidth =
+        resize?.initialWidth
+    const resizeInitialHeight =
+        resize?.initialHeight
+    const resizeMinWidth =
+        resize?.minWidth
+    const resizeMinHeight =
+        resize?.minHeight
+    const resizeMaxWidth =
+        resize?.maxWidth
+    const resizeMaxHeight =
+        resize?.maxHeight
+    const resizeScaleContent =
+        resize?.scaleContent
+
+    const resizeState = useMemo<
+        ResolvedModalResize
+    >(
+        () => {
+            if (
+                resizeInitialWidth
+                    == null
+                || resizeInitialHeight
+                    == null
+                || resizeMinWidth
+                    == null
+                || resizeMinHeight
+                    == null
+            ) {
+                return {
+                    enabled: false,
+                }
+            }
+
+            return {
+                enabled: true,
+                options: {
+                    initialWidth:
+                        resizeInitialWidth,
+                    initialHeight:
+                        resizeInitialHeight,
+                    minWidth:
+                        resizeMinWidth,
+                    minHeight:
+                        resizeMinHeight,
+                    maxWidth:
+                        resizeMaxWidth,
+                    maxHeight:
+                        resizeMaxHeight,
+                    scaleContent:
+                        resizeScaleContent,
+                },
+            }
+        },
+        [
+            resizeInitialWidth,
+            resizeInitialHeight,
+            resizeMinWidth,
+            resizeMinHeight,
+            resizeMaxWidth,
+            resizeMaxHeight,
+            resizeScaleContent,
+        ],
+    )
+
     const titleId = useId()
 
     const cardRef =
@@ -81,6 +209,20 @@ function Modal({
     const previousActiveElementRef =
         useRef<HTMLElement | null>(
             null,
+        )
+
+    const resizeSessionRef =
+        useRef<ResizeSession | null>(
+            null,
+        )
+
+    const [resizeBounds, setResizeBounds] =
+        useState<ModalBounds | null>(
+            () => resizeState.enabled
+                ? createInitialModalBounds(
+                    resizeState.options,
+                )
+                : null,
         )
 
     const [modalId] = useState(
@@ -295,6 +437,211 @@ function Modal({
         }
     }, [modalId])
 
+    useLayoutEffect(() => {
+        if (!resizeState.enabled) {
+            setResizeBounds(null)
+            return
+        }
+
+        const options =
+            resizeState.options
+
+        const fitBounds = (
+            current: ModalBounds | null,
+        ): ModalBounds => (
+            current
+                ? fitModalBoundsToViewport(
+                    current,
+                    options,
+                )
+                : createInitialModalBounds(
+                    options,
+                )
+        )
+
+        setResizeBounds(fitBounds)
+
+        function handleWindowResize() {
+            setResizeBounds(fitBounds)
+        }
+
+        window.addEventListener(
+            'resize',
+            handleWindowResize,
+        )
+
+        return () => {
+            window.removeEventListener(
+                'resize',
+                handleWindowResize,
+            )
+        }
+    }, [resizeState])
+
+    useLayoutEffect(() => (
+        () => {
+            resizeSessionRef.current = null
+            document.body.classList.remove(
+                'modal-resizing',
+            )
+        }
+    ), [])
+
+    const resizeScale =
+        resizeState.enabled
+        && resizeState.options.scaleContent
+        && resizeBounds
+            ? calculateResizeScale(
+                resizeBounds,
+                resizeState.options,
+            )
+            : 1
+
+    const cardStyle =
+        resizeBounds
+            ? {
+                position: 'fixed',
+                left: resizeBounds.left,
+                top: resizeBounds.top,
+                width: resizeBounds.width,
+                height: resizeBounds.height,
+                maxWidth: 'none',
+                maxHeight: 'none',
+                '--modal-resize-scale':
+                    String(resizeScale),
+                '--modal-resize-font-size':
+                    `${13 * resizeScale}px`,
+                '--modal-resize-hint-font-size':
+                    `${12 * resizeScale}px`,
+                '--modal-resize-title-font-size':
+                    `${22 * resizeScale}px`,
+                '--modal-resize-control-font-size':
+                    `${12 * resizeScale}px`,
+                '--modal-resize-control-height':
+                    `${38 * resizeScale}px`,
+                '--modal-resize-textarea-height':
+                    `${76 * resizeScale}px`,
+                '--modal-resize-gap':
+                    `${10 * resizeScale}px`,
+                '--modal-resize-padding-x':
+                    `${20 * resizeScale}px`,
+                '--modal-resize-header-padding-y':
+                    `${14 * resizeScale}px`,
+                '--modal-resize-body-padding-y':
+                    `${13 * resizeScale}px`,
+                '--modal-resize-checkbox-size':
+                    `${14 * resizeScale}px`,
+            } as CSSProperties
+            : undefined
+
+    function handleResizePointerDown(
+        direction: ResizeDirection,
+        event:
+            ReactPointerEvent<HTMLDivElement>,
+    ) {
+        if (
+            !resizeState.enabled
+            || !resizeBounds
+            || !topmost
+        ) {
+            return
+        }
+
+        event.preventDefault()
+        event.stopPropagation()
+
+        const handle =
+            event.currentTarget
+
+        if (
+            typeof handle.setPointerCapture
+                === 'function'
+        ) {
+            handle.setPointerCapture(
+                event.pointerId,
+            )
+        }
+
+        resizeSessionRef.current = {
+            pointerId: event.pointerId,
+            direction,
+            startX: event.clientX,
+            startY: event.clientY,
+            startBounds: resizeBounds,
+        }
+
+        document.body.classList.add(
+            'modal-resizing',
+        )
+    }
+
+    function handleResizePointerMove(
+        event:
+            ReactPointerEvent<HTMLDivElement>,
+    ) {
+        const session =
+            resizeSessionRef.current
+
+        if (
+            !resizeState.enabled
+            || !session
+            || session.pointerId
+                !== event.pointerId
+        ) {
+            return
+        }
+
+        event.preventDefault()
+
+        setResizeBounds(
+            resizeModalBounds(
+                session,
+                event.clientX,
+                event.clientY,
+                resizeState.options,
+            ),
+        )
+    }
+
+    function handleResizePointerEnd(
+        event:
+            ReactPointerEvent<HTMLDivElement>,
+    ) {
+        const session =
+            resizeSessionRef.current
+
+        if (
+            !session
+            || session.pointerId
+                !== event.pointerId
+        ) {
+            return
+        }
+
+        const handle =
+            event.currentTarget
+
+        if (
+            typeof handle.hasPointerCapture
+                === 'function'
+            && handle.hasPointerCapture(
+                event.pointerId,
+            )
+            && typeof handle.releasePointerCapture
+                === 'function'
+        ) {
+            handle.releasePointerCapture(
+                event.pointerId,
+            )
+        }
+
+        resizeSessionRef.current = null
+
+        document.body.classList.remove(
+            'modal-resizing',
+        )
+    }
+
     function handleBackdropPointerDown(
         event:
             ReactPointerEvent<HTMLDivElement>,
@@ -319,9 +666,16 @@ function Modal({
         >
             <div
                 ref={cardRef}
-                className={
-                    `modal-card modal-card--${size}`
-                }
+                className={[
+                    'modal-card',
+                    `modal-card--${size}`,
+                    resizeState.enabled
+                        ? 'modal-card--resizable'
+                        : '',
+                    className,
+                ]
+                    .filter(Boolean)
+                    .join(' ')}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={titleId}
@@ -332,6 +686,7 @@ function Modal({
                     closeDisabled
                 }
                 tabIndex={-1}
+                style={cardStyle}
             >
                 <div className="modal-header">
                     <h2 id={titleId}>
@@ -371,9 +726,319 @@ function Modal({
                 <div className="modal-body">
                     {children}
                 </div>
+
+                {resizeState.enabled && resizeBounds && (
+                    <div
+                        className="modal-resize-layer"
+                        aria-hidden="true"
+                    >
+                        {RESIZE_DIRECTIONS.map(
+                            (direction) => (
+                                <div
+                                    key={direction}
+                                    className={[
+                                        'modal-resize-handle',
+                                        `modal-resize-handle--${direction}`,
+                                    ].join(' ')}
+                                    data-modal-resize-handle={
+                                        direction
+                                    }
+                                    onPointerDown={(event) => {
+                                        handleResizePointerDown(
+                                            direction,
+                                            event,
+                                        )
+                                    }}
+                                    onPointerMove={
+                                        handleResizePointerMove
+                                    }
+                                    onPointerUp={
+                                        handleResizePointerEnd
+                                    }
+                                    onPointerCancel={
+                                        handleResizePointerEnd
+                                    }
+                                />
+                            ),
+                        )}
+                    </div>
+                )}
             </div>
         </div>,
         portalRoot,
+    )
+}
+
+function clamp(
+    value: number,
+    minimum: number,
+    maximum: number,
+): number {
+    return Math.min(
+        Math.max(value, minimum),
+        maximum,
+    )
+}
+
+function getResizeLimits(
+    resize: ModalResizeOptions,
+) {
+    const viewportWidth =
+        Math.max(
+            320,
+            window.innerWidth,
+        )
+    const viewportHeight =
+        Math.max(
+            320,
+            window.innerHeight,
+        )
+
+    const availableWidth =
+        Math.max(
+            240,
+            viewportWidth
+                - RESIZE_VIEWPORT_MARGIN * 2,
+        )
+    const availableHeight =
+        Math.max(
+            240,
+            viewportHeight
+                - RESIZE_VIEWPORT_MARGIN * 2,
+        )
+
+    const minWidth =
+        Math.min(
+            resize.minWidth,
+            availableWidth,
+        )
+    const minHeight =
+        Math.min(
+            resize.minHeight,
+            availableHeight,
+        )
+
+    const maxWidth =
+        Math.max(
+            minWidth,
+            Math.min(
+                resize.maxWidth
+                    ?? availableWidth,
+                availableWidth,
+            ),
+        )
+    const maxHeight =
+        Math.max(
+            minHeight,
+            Math.min(
+                resize.maxHeight
+                    ?? availableHeight,
+                availableHeight,
+            ),
+        )
+
+    return {
+        viewportWidth,
+        viewportHeight,
+        minWidth,
+        minHeight,
+        maxWidth,
+        maxHeight,
+    }
+}
+
+function createInitialModalBounds(
+    resize: ModalResizeOptions,
+): ModalBounds {
+    const limits =
+        getResizeLimits(resize)
+
+    const width = clamp(
+        resize.initialWidth,
+        limits.minWidth,
+        limits.maxWidth,
+    )
+    const height = clamp(
+        resize.initialHeight,
+        limits.minHeight,
+        limits.maxHeight,
+    )
+
+    return {
+        left:
+            (limits.viewportWidth - width)
+            / 2,
+        top:
+            (limits.viewportHeight - height)
+            / 2,
+        width,
+        height,
+    }
+}
+
+function fitModalBoundsToViewport(
+    bounds: ModalBounds,
+    resize: ModalResizeOptions,
+): ModalBounds {
+    const limits =
+        getResizeLimits(resize)
+
+    const width = clamp(
+        bounds.width,
+        limits.minWidth,
+        limits.maxWidth,
+    )
+    const height = clamp(
+        bounds.height,
+        limits.minHeight,
+        limits.maxHeight,
+    )
+
+    const maxLeft =
+        Math.max(
+            RESIZE_VIEWPORT_MARGIN,
+            limits.viewportWidth
+                - RESIZE_VIEWPORT_MARGIN
+                - width,
+        )
+    const maxTop =
+        Math.max(
+            RESIZE_VIEWPORT_MARGIN,
+            limits.viewportHeight
+                - RESIZE_VIEWPORT_MARGIN
+                - height,
+        )
+
+    return {
+        left: clamp(
+            bounds.left,
+            RESIZE_VIEWPORT_MARGIN,
+            maxLeft,
+        ),
+        top: clamp(
+            bounds.top,
+            RESIZE_VIEWPORT_MARGIN,
+            maxTop,
+        ),
+        width,
+        height,
+    }
+}
+
+function resizeModalBounds(
+    session: ResizeSession,
+    clientX: number,
+    clientY: number,
+    resize: ModalResizeOptions,
+): ModalBounds {
+    const {
+        direction,
+        startX,
+        startY,
+        startBounds,
+    } = session
+
+    const limits =
+        getResizeLimits(resize)
+
+    const deltaX =
+        clientX - startX
+    const deltaY =
+        clientY - startY
+
+    const startLeft =
+        startBounds.left
+    const startTop =
+        startBounds.top
+    const startRight =
+        startBounds.left
+        + startBounds.width
+    const startBottom =
+        startBounds.top
+        + startBounds.height
+
+    let left = startLeft
+    let right = startRight
+    let top = startTop
+    let bottom = startBottom
+
+    if (direction.includes('e')) {
+        right = clamp(
+            startRight + deltaX,
+            startLeft + limits.minWidth,
+            Math.min(
+                limits.viewportWidth
+                    - RESIZE_VIEWPORT_MARGIN,
+                startLeft
+                    + limits.maxWidth,
+            ),
+        )
+    }
+
+    if (direction.includes('w')) {
+        left = clamp(
+            startLeft + deltaX,
+            Math.max(
+                RESIZE_VIEWPORT_MARGIN,
+                startRight
+                    - limits.maxWidth,
+            ),
+            startRight
+                - limits.minWidth,
+        )
+    }
+
+    if (direction.includes('s')) {
+        bottom = clamp(
+            startBottom + deltaY,
+            startTop + limits.minHeight,
+            Math.min(
+                limits.viewportHeight
+                    - RESIZE_VIEWPORT_MARGIN,
+                startTop
+                    + limits.maxHeight,
+            ),
+        )
+    }
+
+    if (direction.includes('n')) {
+        top = clamp(
+            startTop + deltaY,
+            Math.max(
+                RESIZE_VIEWPORT_MARGIN,
+                startBottom
+                    - limits.maxHeight,
+            ),
+            startBottom
+                - limits.minHeight,
+        )
+    }
+
+    return {
+        left,
+        top,
+        width: right - left,
+        height: bottom - top,
+    }
+}
+
+function calculateResizeScale(
+    bounds: ModalBounds,
+    resize: ModalResizeOptions,
+): number {
+    const widthRatio =
+        bounds.width
+        / resize.initialWidth
+    const heightRatio =
+        bounds.height
+        / resize.initialHeight
+
+    return clamp(
+        Math.sqrt(
+            widthRatio * heightRatio,
+        ),
+        0.88,
+        1.22,
     )
 }
 

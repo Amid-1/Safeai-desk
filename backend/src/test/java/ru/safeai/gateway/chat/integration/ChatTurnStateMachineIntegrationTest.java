@@ -96,13 +96,13 @@ class ChatTurnStateMachineIntegrationTest
         assertThat(turn.getProviderCallStartedAt())
                 .isNull();
 
-        assertThat(count("chat_turns"))
+        assertThat(countChatTurns())
                 .isEqualTo(1);
 
-        assertThat(count("chat_messages"))
+        assertThat(countChatMessages())
                 .isEqualTo(1);
 
-        assertThat(count("chat_quota_reservations"))
+        assertThat(countChatQuotaReservations())
                 .isEqualTo(1);
     }
 
@@ -144,13 +144,13 @@ class ChatTurnStateMachineIntegrationTest
         assertThat(replay.aiRequest())
                 .isNull();
 
-        assertThat(count("chat_turns"))
+        assertThat(countChatTurns())
                 .isEqualTo(1);
 
-        assertThat(count("chat_messages"))
+        assertThat(countChatMessages())
                 .isEqualTo(2);
 
-        assertThat(count("chat_quota_reservations"))
+        assertThat(countChatQuotaReservations())
                 .isEqualTo(1);
     }
 
@@ -179,10 +179,10 @@ class ChatTurnStateMachineIntegrationTest
                 .extracting("code")
                 .isEqualTo("IDEMPOTENCY_KEY_REUSED");
 
-        assertThat(count("chat_turns"))
+        assertThat(countChatTurns())
                 .isEqualTo(1);
 
-        assertThat(count("chat_messages"))
+        assertThat(countChatMessages())
                 .isEqualTo(1);
     }
 
@@ -195,6 +195,9 @@ class ChatTurnStateMachineIntegrationTest
                 clientRequestId
         );
 
+        RouteIdentity routeIdentity =
+                loadRouteIdentity(context);
+
         finalizationService.markProviderCallStarted(
                 context
         );
@@ -203,6 +206,11 @@ class ChatTurnStateMachineIntegrationTest
                 context,
                 unambiguousProviderFailure(),
                 principal()
+        );
+
+        assertRouteIdentityUnchanged(
+                context,
+                routeIdentity
         );
 
         assertThatThrownBy(() ->
@@ -244,6 +252,9 @@ class ChatTurnStateMachineIntegrationTest
                 clientRequestId
         );
 
+        RouteIdentity routeIdentity =
+                loadRouteIdentity(context);
+
         finalizationService.markProviderCallStarted(
                 context
         );
@@ -256,6 +267,11 @@ class ChatTurnStateMachineIntegrationTest
                 AiProviderErrorType.TIMEOUT.name(),
                 "AI_PROVIDER_OUTCOME_AMBIGUOUS",
                 principal()
+        );
+
+        assertRouteIdentityUnchanged(
+                context,
+                routeIdentity
         );
 
         assertThatThrownBy(() ->
@@ -381,7 +397,7 @@ class ChatTurnStateMachineIntegrationTest
         assertThat(turnState(context.turnId()))
                 .isEqualTo("PROCESSING");
 
-        assertThat(count("chat_messages"))
+        assertThat(countChatMessages())
                 .isEqualTo(1);
     }
 
@@ -459,11 +475,29 @@ class ChatTurnStateMachineIntegrationTest
     }
 
     @Test
-    void providerRequestIdIsStoredOnTurnAndAssistantMessage() {
+    void providerMetadataIsStoredWithoutMutatingV45RouteIdentity() {
         ChatProcessingContext context = reserve(
                 "Question",
                 UUID.randomUUID()
         );
+
+        RouteIdentity routeIdentity =
+                loadRouteIdentity(context);
+
+        RouteIdentity decisionIdentity =
+                loadDecisionRouteIdentity(
+                        routeIdentity.modelRouteDecisionId()
+                );
+
+        assertThat(routeIdentity.provider())
+                .isEqualTo(
+                        decisionIdentity.provider()
+                );
+
+        assertThat(routeIdentity.requestedModel())
+                .isEqualTo(
+                        decisionIdentity.requestedModel()
+                );
 
         finalizationService.markProviderCallStarted(
                 context
@@ -478,16 +512,9 @@ class ChatTurnStateMachineIntegrationTest
                 principal()
         );
 
-        String turnProviderRequestId =
-                jdbcTemplate.queryForObject(
-                        """
-                        select provider_request_id
-                        from chat_turns
-                        where id = ?
-                        """,
-                        String.class,
-                        context.turnId()
-                );
+        var finalizedTurn = turnRepository
+                .findById(context.turnId())
+                .orElseThrow();
 
         String messageProviderRequestId =
                 jdbcTemplate.queryForObject(
@@ -500,11 +527,19 @@ class ChatTurnStateMachineIntegrationTest
                         context.userMessageId()
                 );
 
-        assertThat(turnProviderRequestId)
+        assertThat(finalizedTurn.getProviderRequestId())
                 .isEqualTo("provider-request-id");
 
         assertThat(messageProviderRequestId)
                 .isEqualTo("provider-request-id");
+
+        assertRouteIdentityUnchanged(
+                context,
+                routeIdentity
+        );
+
+        assertThat(finalizedTurn.getResolvedModel())
+                .isEqualTo("resolved-model");
     }
 
     private ChatProcessingContext reserve(
@@ -618,17 +653,118 @@ class ChatTurnStateMachineIntegrationTest
                 .isTrue();
     }
 
-    private long count(
+    private long countChatTurns() {
+        return requireCount(
+                jdbcTemplate.queryForObject(
+                        "select count(*) from chat_turns",
+                        Long.class
+                ),
+                "chat_turns"
+        );
+    }
+
+    private long countChatMessages() {
+        return requireCount(
+                jdbcTemplate.queryForObject(
+                        "select count(*) from chat_messages",
+                        Long.class
+                ),
+                "chat_messages"
+        );
+    }
+
+    private long countChatQuotaReservations() {
+        return requireCount(
+                jdbcTemplate.queryForObject(
+                        "select count(*) from chat_quota_reservations",
+                        Long.class
+                ),
+                "chat_quota_reservations"
+        );
+    }
+
+    private static long requireCount(
+            Long value,
             String table
     ) {
-        Long result = jdbcTemplate.queryForObject(
-                "select count(*) from " + table,
-                Long.class
+        return Objects.requireNonNull(
+                value,
+                "COUNT(*) вернул null для " + table
         );
+    }
 
-        return result == null
-                ? 0L
-                : result;
+    private RouteIdentity loadRouteIdentity(
+            ChatProcessingContext context
+    ) {
+        var turn = turnRepository
+                .findById(context.turnId())
+                .orElseThrow();
+
+        UUID routeDecisionId =
+                Objects.requireNonNull(
+                        turn.getModelRouteDecisionId(),
+                        "V45 turn должен содержать modelRouteDecisionId"
+                );
+
+        return new RouteIdentity(
+                routeDecisionId,
+                turn.getProvider(),
+                turn.getRequestedModel()
+        );
+    }
+
+    private RouteIdentity loadDecisionRouteIdentity(
+            UUID routeDecisionId
+    ) {
+        RouteIdentity identity =
+                jdbcTemplate.queryForObject(
+                        """
+                        select
+                            id,
+                            selected_provider,
+                            selected_provider_model_id
+                        from model_route_decisions
+                        where id = ?
+                        """,
+                        (resultSet, ignoredRowNumber) ->
+                                new RouteIdentity(
+                                        resultSet.getObject(
+                                                "id",
+                                                UUID.class
+                                        ),
+                                        resultSet.getString(
+                                                "selected_provider"
+                                        ),
+                                        resultSet.getString(
+                                                "selected_provider_model_id"
+                                        )
+                                ),
+                        routeDecisionId
+                );
+
+        return Objects.requireNonNull(
+                identity,
+                "Route decision должен существовать: "
+                        + routeDecisionId
+        );
+    }
+
+    private void assertRouteIdentityUnchanged(
+            ChatProcessingContext context,
+            RouteIdentity expected
+    ) {
+        RouteIdentity actual =
+                loadRouteIdentity(context);
+
+        assertThat(actual)
+                .isEqualTo(expected);
+
+        assertThat(
+                loadDecisionRouteIdentity(
+                        actual.modelRouteDecisionId()
+                )
+        )
+                .isEqualTo(expected);
     }
 
     private String turnState(
@@ -744,4 +880,12 @@ class ChatTurnStateMachineIntegrationTest
                 NOW
         );
     }
+
+    private record RouteIdentity(
+            UUID modelRouteDecisionId,
+            String provider,
+            String requestedModel
+    ) {
+    }
+
 }

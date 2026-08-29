@@ -6,7 +6,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.audit.AuditEventType;
-import ru.safeai.gateway.audit.details.ChatTurnAuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.ChatTurnStatusResponse;
 import ru.safeai.gateway.chat.dto.MessageResponse;
@@ -32,6 +31,13 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * Owns fenced terminal transitions for a durable chat turn.
+ *
+ * <p>The service keeps Spring transaction boundaries explicit. Read/replay DTO
+ * reconstruction and audit-payload construction are delegated to package-local
+ * collaborators so the transactional state machine remains easy to review.</p>
+ */
 @Service
 public class ChatTurnFinalizationService {
 
@@ -44,7 +50,9 @@ public class ChatTurnFinalizationService {
     private final ChatMetrics metrics;
     private final Clock clock;
     private final AnswerPassportService answerPassportService;
+    private final ChatTurnReadSupport readSupport;
 
+    /** Constructor signature intentionally remains unchanged for Spring/tests. */
     public ChatTurnFinalizationService(
             ChatTurnRepository turnRepository,
             ChatMessageRepository messageRepository,
@@ -76,21 +84,18 @@ public class ChatTurnFinalizationService {
                 auditEventService,
                 "auditEventService не должен быть null"
         );
-        this.mapper = Objects.requireNonNull(
-                mapper,
-                "mapper не должен быть null"
-        );
-        this.metrics = Objects.requireNonNull(
-                metrics,
-                "metrics не должен быть null"
-        );
-        this.clock = Objects.requireNonNull(
-                clock,
-                "clock не должен быть null"
-        );
+        this.mapper = Objects.requireNonNull(mapper, "mapper не должен быть null");
+        this.metrics = Objects.requireNonNull(metrics, "metrics не должен быть null");
+        this.clock = Objects.requireNonNull(clock, "clock не должен быть null");
         this.answerPassportService = Objects.requireNonNull(
                 answerPassportService,
                 "answerPassportService не должен быть null"
+        );
+        this.readSupport = new ChatTurnReadSupport(
+                turnRepository,
+                messageRepository,
+                mapper,
+                answerPassportService
         );
     }
 
@@ -98,11 +103,7 @@ public class ChatTurnFinalizationService {
     public void markProviderCallStarted(
             ChatProcessingContext context
     ) {
-        Objects.requireNonNull(
-                context,
-                "context не должен быть null"
-        );
-
+        Objects.requireNonNull(context, "context не должен быть null");
         Instant now = clock.instant();
 
         int updated = turnRepository.markProviderCallStarted(
@@ -123,17 +124,10 @@ public class ChatTurnFinalizationService {
             String failureCode,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                context,
-                "context не должен быть null"
-        );
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        Objects.requireNonNull(context, "context не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
         Instant now = clock.instant();
-
         int updated = turnRepository.markFailedBeforeProviderCall(
                 context.turnId(),
                 context.processingToken(),
@@ -146,16 +140,12 @@ public class ChatTurnFinalizationService {
             throw stale(context);
         }
 
-        quotaService.releaseFailure(
-                context.turnId(),
-                now
-        );
-
+        quotaService.releaseFailure(context.turnId(), now);
         auditEventService.record(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.AI_RESPONSE_FAILED,
-                failureAudit(
+                ChatTurnAuditDetailsFactory.failure(
                         context,
                         null,
                         null,
@@ -165,10 +155,7 @@ public class ChatTurnFinalizationService {
                         false
                 )
         );
-
-        metrics.recordTerminalAfterCommit(
-                ChatTurnState.FAILED
-        );
+        metrics.recordTerminalAfterCommit(ChatTurnState.FAILED);
     }
 
     @Transactional
@@ -177,6 +164,9 @@ public class ChatTurnFinalizationService {
             AiChatResponse response,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(context, "context не должен быть null");
+        Objects.requireNonNull(response, "response не должен быть null");
+
         return succeedRag(
                 context,
                 RagCompletion.general(
@@ -193,47 +183,35 @@ public class ChatTurnFinalizationService {
             RagCompletion completion,
             SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(context, "context не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
         AiChatResponse response = Objects.requireNonNull(
-                completion,
-                "completion не должен быть null"
-        ).response();
-        Objects.requireNonNull(
-                context,
-                "context не должен быть null"
-        );
-        Objects.requireNonNull(
-                response,
+                Objects.requireNonNull(
+                        completion,
+                        "completion не должен быть null"
+                ).response(),
                 "response не должен быть null"
-        );
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
         );
 
         Instant now = clock.instant();
         UUID assistantMessageId = UUID.randomUUID();
 
-        ChatTurnEntity current = ownedTurn(
-                context,
-                currentUser
-        );
-
+        ChatTurnEntity current = readSupport.ownedTurn(context, currentUser);
         if (current.getState() != ChatTurnState.PROCESSING) {
             throw stale(context);
         }
 
         /*
-         * Native @Modifying-запрос очищает persistence context.
-         * Поэтому до его выполнения сохраняются только простые значения,
-         * которые понадобятся после fenced update.
+         * markSucceeded is a native modifying query that clears the persistence
+         * context. Preserve only scalar values needed after the fenced update.
          */
         String provider = current.getProvider();
         Instant turnCreatedAt = current.getCreatedAt();
 
         /*
-         * assistant_message_id использует отложенный внешний ключ.
-         * Сначала выполняется fenced update turn, затем вставляется
-         * assistant-сообщение в той же транзакции.
+         * assistant_message_id uses a deferred FK. The turn is fenced first,
+         * then the assistant row is inserted in the same transaction.
          */
         int updated = turnRepository.markSucceeded(
                 context.turnId(),
@@ -249,54 +227,35 @@ public class ChatTurnFinalizationService {
             throw stale(context);
         }
 
-        /*
-         * После clearAutomatically получаем новую managed-ссылку
-         * на ChatSessionEntity, а не используем detached proxy
-         * из загруженного ранее ChatTurnEntity.
-         */
-        ChatSessionEntity session =
-                sessionRepository.getReferenceById(
-                        context.chatId()
-                );
-
-        ChatMessageEntity assistant =
-                ChatMessageEntity.completedAssistant(
-                        assistantMessageId,
-                        session,
-                        context.userMessageId(),
-                        response,
-                        now
-                );
-
-        messageRepository.saveAndFlush(assistant);
-
-        AnswerPassportResponse answerPassport =
-                answerPassportService.persist(
-                        context,
-                        assistantMessageId,
-                        provider,
-                        completion,
-                        currentUser,
-                        now
-                );
-
-        quotaService.settleSuccess(
-                context.turnId(),
+        ChatSessionEntity session = sessionRepository.getReferenceById(
+                context.chatId()
+        );
+        ChatMessageEntity assistant = ChatMessageEntity.completedAssistant(
+                assistantMessageId,
+                session,
+                context.userMessageId(),
                 response,
                 now
         );
+        messageRepository.saveAndFlush(assistant);
 
-        touchChat(
+        AnswerPassportResponse answerPassport = answerPassportService.persist(
                 context,
+                assistantMessageId,
+                provider,
+                completion,
                 currentUser,
                 now
         );
+
+        quotaService.settleSuccess(context.turnId(), response, now);
+        touchChat(context, currentUser, now);
 
         auditEventService.record(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.AI_RESPONSE_RECEIVED,
-                successAudit(
+                ChatTurnAuditDetailsFactory.success(
                         context,
                         assistantMessageId,
                         response,
@@ -310,17 +269,14 @@ public class ChatTurnFinalizationService {
                 now
         );
 
-        MessageResponse userMessage =
-                mapper.toMessageResponse(
-                        ownedMessage(
-                                context.userMessageId(),
-                                context.chatId(),
-                                currentUser.getOrganizationId()
-                        )
-                );
-
-        MessageResponse assistantMessage =
-                mapper.toMessageResponse(assistant);
+        MessageResponse userMessage = mapper.toMessageResponse(
+                readSupport.ownedMessage(
+                        context.userMessageId(),
+                        context.chatId(),
+                        currentUser.getOrganizationId()
+                )
+        );
+        MessageResponse assistantMessage = mapper.toMessageResponse(assistant);
 
         return new SendMessageResponse(
                 context.chatId(),
@@ -344,24 +300,12 @@ public class ChatTurnFinalizationService {
             AiProviderException exception,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                context,
-                "context не должен быть null"
-        );
-        Objects.requireNonNull(
-                exception,
-                "exception не должен быть null"
-        );
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        Objects.requireNonNull(context, "context не должен быть null");
+        Objects.requireNonNull(exception, "exception не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
         Instant now = clock.instant();
-
-        String failureCode =
-                "AI_PROVIDER_"
-                        + exception.getErrorType().name();
+        String failureCode = "AI_PROVIDER_" + exception.getErrorType().name();
 
         int updated = turnRepository.markFailed(
                 context.turnId(),
@@ -378,16 +322,12 @@ public class ChatTurnFinalizationService {
             throw stale(context);
         }
 
-        quotaService.releaseFailure(
-                context.turnId(),
-                now
-        );
-
+        quotaService.releaseFailure(context.turnId(), now);
         auditEventService.record(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.AI_RESPONSE_FAILED,
-                failureAudit(
+                ChatTurnAuditDetailsFactory.failure(
                         context,
                         exception.getProvider(),
                         exception.getModel(),
@@ -397,10 +337,7 @@ public class ChatTurnFinalizationService {
                         false
                 )
         );
-
-        metrics.recordTerminalAfterCommit(
-                ChatTurnState.FAILED
-        );
+        metrics.recordTerminalAfterCommit(ChatTurnState.FAILED);
     }
 
     @Transactional
@@ -413,17 +350,10 @@ public class ChatTurnFinalizationService {
             String failureCode,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                context,
-                "context не должен быть null"
-        );
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        Objects.requireNonNull(context, "context не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
         Instant now = clock.instant();
-
         int updated = turnRepository.markAmbiguous(
                 context.turnId(),
                 context.processingToken(),
@@ -439,16 +369,12 @@ public class ChatTurnFinalizationService {
             throw stale(context);
         }
 
-        quotaService.markAmbiguous(
-                context.turnId(),
-                now
-        );
-
+        quotaService.markAmbiguous(context.turnId(), now);
         auditEventService.record(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.AI_RESPONSE_FAILED,
-                failureAudit(
+                ChatTurnAuditDetailsFactory.failure(
                         context,
                         provider,
                         requestedModel,
@@ -458,15 +384,12 @@ public class ChatTurnFinalizationService {
                         true
                 )
         );
-
-        metrics.recordTerminalAfterCommit(
-                ChatTurnState.AMBIGUOUS
-        );
+        metrics.recordTerminalAfterCommit(ChatTurnState.AMBIGUOUS);
     }
 
     /**
-     * Вызывается после отката транзакции сохранения успешного
-     * ответа AI-провайдера.
+     * Persists AMBIGUOUS after the transaction that attempted to persist the
+     * successful provider response has rolled back.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markAmbiguousAfterPersistenceFailure(
@@ -474,10 +397,7 @@ public class ChatTurnFinalizationService {
             AiChatResponse response,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                response,
-                "response не должен быть null"
-        );
+        Objects.requireNonNull(response, "response не должен быть null");
 
         markAmbiguous(
                 context,
@@ -495,68 +415,7 @@ public class ChatTurnFinalizationService {
             ChatProcessingContext context,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                context,
-                "context не должен быть null"
-        );
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
-
-        ChatTurnEntity turn = ownedTurn(
-                context,
-                currentUser
-        );
-
-        if (turn.getState() != ChatTurnState.SUCCEEDED
-                || turn.getAssistantMessageId() == null
-                || turn.getCompletedAt() == null) {
-            throw new IllegalStateException(
-                    "Replay вызван для неуспешного turn: "
-                            + turn.getId()
-            );
-        }
-
-        MessageResponse user =
-                mapper.toMessageResponse(
-                        ownedMessage(
-                                turn.getUserMessageId(),
-                                context.chatId(),
-                                currentUser.getOrganizationId()
-                        )
-                );
-
-        MessageResponse assistant =
-                mapper.toMessageResponse(
-                        ownedMessage(
-                                turn.getAssistantMessageId(),
-                                context.chatId(),
-                                currentUser.getOrganizationId()
-                        )
-                );
-
-        AnswerPassportResponse answerPassport =
-                answerPassportService.findByTurn(
-                        turn.getId(),
-                        currentUser.getOrganizationId(),
-                        currentUser.getId()
-                );
-
-        return new SendMessageResponse(
-                context.chatId(),
-                turn.getId(),
-                turn.getClientRequestId(),
-                turn.getProviderOperationId(),
-                turn.getState().name(),
-                true,
-                user,
-                assistant,
-                turn.getUpdatedAt(),
-                turn.getCreatedAt(),
-                turn.getCompletedAt(),
-                answerPassport
-        );
+        return readSupport.replaySucceeded(context, currentUser);
     }
 
     @Transactional(readOnly = true)
@@ -565,96 +424,7 @@ public class ChatTurnFinalizationService {
             UUID clientRequestId,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                chatId,
-                "chatId не должен быть null"
-        );
-        Objects.requireNonNull(
-                clientRequestId,
-                "clientRequestId не должен быть null"
-        );
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
-
-        ChatTurnEntity turn =
-                turnRepository
-                        .findBySession_IdAndClientRequestIdAndUser_IdAndOrganization_Id(
-                                chatId,
-                                clientRequestId,
-                                currentUser.getId(),
-                                currentUser.getOrganizationId()
-                        )
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Chat turn не найден"
-                                )
-                        );
-
-        MessageResponse user =
-                mapper.toMessageResponse(
-                        ownedMessage(
-                                turn.getUserMessageId(),
-                                chatId,
-                                currentUser.getOrganizationId()
-                        )
-                );
-
-        MessageResponse assistant =
-                turn.getAssistantMessageId() == null
-                        ? null
-                        : mapper.toMessageResponse(
-                                ownedMessage(
-                                        turn.getAssistantMessageId(),
-                                        chatId,
-                                        currentUser.getOrganizationId()
-                                )
-                        );
-
-        return mapper.toTurnStatusResponse(
-                turn,
-                user,
-                assistant
-        );
-    }
-
-    private ChatTurnEntity ownedTurn(
-            ChatProcessingContext context,
-            SafeAiUserPrincipal currentUser
-    ) {
-        return turnRepository
-                .findByIdAndSession_IdAndUser_IdAndOrganization_Id(
-                        context.turnId(),
-                        context.chatId(),
-                        currentUser.getId(),
-                        currentUser.getOrganizationId()
-                )
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Chat turn не найден: "
-                                        + context.turnId()
-                        )
-                );
-    }
-
-    private ChatMessageEntity ownedMessage(
-            UUID messageId,
-            UUID chatId,
-            UUID organizationId
-    ) {
-        return messageRepository
-                .findOwnedMessage(
-                        messageId,
-                        chatId,
-                        organizationId
-                )
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Сообщение не найдено: "
-                                        + messageId
-                        )
-                );
+        return readSupport.status(chatId, clientRequestId, currentUser);
     }
 
     private void touchChat(
@@ -670,85 +440,17 @@ public class ChatTurnFinalizationService {
         );
 
         if (updated != 1) {
-            throw new ResourceNotFoundException(
-                    "Чат не найден: "
-                            + context.chatId()
-            );
+            throw new ResourceNotFoundException("Чат не найден: " + context.chatId());
         }
     }
 
-    private ChatStaleProcessorException stale(
+    private static ChatStaleProcessorException stale(
             ChatProcessingContext context
     ) {
         return new ChatStaleProcessorException(
                 context.chatId(),
                 context.turnId(),
                 context.clientRequestId()
-        );
-    }
-
-    private ChatTurnAuditDetails successAudit(
-            ChatProcessingContext context,
-            UUID assistantMessageId,
-            AiChatResponse response,
-            String provider
-    ) {
-        return new ChatTurnAuditDetails(
-                context.chatId(),
-                context.turnId(),
-                context.userMessageId(),
-                assistantMessageId,
-                context.clientRequestId(),
-                context.providerOperationId(),
-                ChatTurnState.SUCCEEDED.name(),
-                provider,
-                response.requestedModel(),
-                response.model(),
-                response.providerRequestId(),
-                null,
-                null,
-                false,
-                response.inputTokens(),
-                response.outputTokens(),
-                response.costUsd(),
-                response.usageStatus().name(),
-                response.pricingStatus().name(),
-                response.currency()
-        );
-    }
-
-    private ChatTurnAuditDetails failureAudit(
-            ChatProcessingContext context,
-            String provider,
-            String requestedModel,
-            String providerRequestId,
-            String providerErrorType,
-            String failureCode,
-            boolean ambiguous
-    ) {
-        return new ChatTurnAuditDetails(
-                context.chatId(),
-                context.turnId(),
-                context.userMessageId(),
-                null,
-                context.clientRequestId(),
-                context.providerOperationId(),
-                ambiguous
-                        ? ChatTurnState.AMBIGUOUS.name()
-                        : ChatTurnState.FAILED.name(),
-                provider,
-                requestedModel,
-                null,
-                providerRequestId,
-                providerErrorType,
-                failureCode,
-                ambiguous,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
         );
     }
 }

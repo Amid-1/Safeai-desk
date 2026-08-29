@@ -646,9 +646,9 @@ function AdminAuditPageContent() {
                 lowerClassName="card table-card audit-table-card"
                 viewportClassName="admin-table-wrapper"
                 defaultHeight={430}
-                minHeight={240}
+                minHeight={72}
                 maxHeight={760}
-                minUpperHeight={150}
+                minUpperHeight={112}
             >
                 {showTable
                     && (

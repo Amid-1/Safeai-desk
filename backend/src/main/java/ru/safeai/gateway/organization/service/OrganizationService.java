@@ -1,175 +1,79 @@
 package ru.safeai.gateway.organization.service;
 
 import jakarta.persistence.EntityManager;
-import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 import ru.safeai.gateway.auth.service.UserSessionRevocationService;
-import ru.safeai.gateway.common.exception.BadRequestException;
-import ru.safeai.gateway.common.exception.ConflictException;
-import ru.safeai.gateway.common.exception.ForbiddenOperationException;
-import ru.safeai.gateway.common.exception.OrganizationVersionConflictException;
-import ru.safeai.gateway.common.exception.ResourceNotFoundException;
-import ru.safeai.gateway.common.persistence.DatabaseConstraintClassifier;
-import ru.safeai.gateway.common.pagination.StablePageableNormalizer;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.common.security.SystemRole;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.DisableOrganizationRequest;
 import ru.safeai.gateway.organization.dto.EnableOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationDirectoryResponse;
 import ru.safeai.gateway.organization.dto.OrganizationDisableImpactResponse;
 import ru.safeai.gateway.organization.dto.OrganizationResponse;
-import ru.safeai.gateway.organization.dto.OrganizationType;
 import ru.safeai.gateway.organization.dto.UpdateOrganizationRequest;
-import ru.safeai.gateway.organization.entity.OrganizationEntity;
-import ru.safeai.gateway.organization.event.OrganizationSecurityStateChangedEvent;
 import ru.safeai.gateway.organization.repository.OrganizationImpactQueryRepository;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
 
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 @EnableConfigurationProperties(PlatformProperties.class)
 public class OrganizationService {
 
-    private static final int MAX_PAGE_SIZE = 100;
+    private final OrganizationCommandOperations commands;
+    private final OrganizationQueryOperations queries;
 
-    private static final Sort DEFAULT_PAGE_SORT =
-            Sort.by(
-                    Sort.Order.desc(
-                            "createdAt"
-                    )
-            );
-    private static final int MAX_DIRECTORY_LIMIT = 50;
+    /**
+     * Keep the original dependency-facing constructor so Spring wiring and
+     * existing unit tests do not need a compatibility adapter.
+     */
+    public OrganizationService(
+            OrganizationRepository organizationRepository,
+            OrganizationImpactQueryRepository impactQueryRepository,
+            AuditEventService auditEventService,
+            ApplicationEventPublisher eventPublisher,
+            PlatformProperties platformProperties,
+            UserSessionRevocationService userSessionRevocationService,
+            EntityManager entityManager
+    ) {
+        OrganizationAccessPolicy accessPolicy =
+                new OrganizationAccessPolicy(platformProperties);
 
-    private static final Set<String>
-            ALLOWED_SORT_PROPERTIES =
-            Set.of(
-                    "createdAt",
-                    "name",
-                    "enabled",
-                    "updatedAt"
-            );
+        OrganizationResponseMapper responseMapper =
+                new OrganizationResponseMapper(accessPolicy);
 
-    private static final Set<String>
-            ORGANIZATION_NAME_UNIQUE_CONSTRAINTS =
-            Set.of(
-                    "ux_organizations_name_normalized",
-                    "ux_organizations_normalized_name",
-                    "uq_organizations_name_normalized",
-                    "uq_organizations_normalized_name"
-            );
+        this.commands = new OrganizationCommandOperations(
+                organizationRepository,
+                auditEventService,
+                eventPublisher,
+                userSessionRevocationService,
+                entityManager,
+                accessPolicy,
+                responseMapper
+        );
 
-    private final OrganizationRepository
-            organizationRepository;
-
-    private final OrganizationImpactQueryRepository
-            impactQueryRepository;
-
-    private final AuditEventService
-            auditEventService;
-
-    private final ApplicationEventPublisher
-            eventPublisher;
-
-    private final PlatformProperties
-            platformProperties;
-
-    private final UserSessionRevocationService
-            userSessionRevocationService;
-
-    private final EntityManager
-            entityManager;
+        this.queries = new OrganizationQueryOperations(
+                organizationRepository,
+                impactQueryRepository,
+                accessPolicy,
+                responseMapper
+        );
+    }
 
     @Transactional
     public OrganizationResponse create(
             CreateOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
-        requireSuperAdmin(currentUser);
-
-        String canonicalName =
-                OrganizationNameNormalizer.canonicalize(
-                        request.name()
-                );
-
-        /*
-         * PostgreSQL canonicalization + UNIQUE indexes are the
-         * correctness boundary for organization-name identity.
-         *
-         * Do not preflight normalized-name uniqueness here: Java and
-         * PostgreSQL whitespace classes are not guaranteed to be
-         * byte-for-byte equivalent for exotic Unicode whitespace.
-         * saveAndFlush() below makes the DB decision observable inside
-         * this try/catch and maps the real concurrent race to 409.
-         */
-        OrganizationEntity entity =
-                new OrganizationEntity();
-
-        entity.setName(canonicalName);
-        entity.setEnabled(true);
-        entity.setAuthVersion(0L);
-
-        OrganizationEntity saved;
-
-        try {
-            saved = saveAndRefresh(entity);
-        } catch (
-                DataIntegrityViolationException exception
-        ) {
-            if (
-                    isOrganizationNameUniqueViolation(
-                            exception
-                    )
-            ) {
-                throw duplicateOrganizationName(
-                        canonicalName
-                );
-            }
-
-            throw exception;
-        }
-
-        auditEventService.record(
-                currentUser,
-                saved.getId(),
-                AuditEventType.ORGANIZATION_CREATED,
-                Map.of(
-                        "organizationId",
-                        saved.getId().toString(),
-                        "organizationName",
-                        saved.getName(),
-                        "authVersion",
-                        saved.getAuthVersion(),
-                        "version",
-                        saved.getVersion()
-                )
-        );
-
-        return toResponse(saved);
+        return commands.create(request, currentUser);
     }
 
     @Transactional(readOnly = true)
@@ -177,141 +81,23 @@ public class OrganizationService {
             SafeAiUserPrincipal currentUser,
             Pageable pageable
     ) {
-        requireOrganizationReader(currentUser);
-
-        Objects.requireNonNull(
-                pageable,
-                "pageable не должен быть null"
-        );
-
-        Pageable stablePageable =
-                normalizePageable(pageable);
-
-        if (isSuperAdmin(currentUser)) {
-            return organizationRepository
-                    .findAllStable(stablePageable)
-                    .map(this::toResponse);
-        }
-
-        if (stablePageable.getOffset() > 0L) {
-            return new PageImpl<>(
-                    List.of(),
-                    stablePageable,
-                    1L
-            );
-        }
-
-        OrganizationEntity organization =
-                organizationRepository
-                        .findById(
-                                currentUser
-                                        .getOrganizationId()
-                        )
-                        .orElseThrow(() ->
-                                organizationNotFound(
-                                        currentUser
-                                                .getOrganizationId()
-                                )
-                        );
-
-        return new PageImpl<>(
-                List.of(
-                        toResponse(organization)
-                ),
-                stablePageable,
-                1L
-        );
+        return queries.findAll(currentUser, pageable);
     }
 
     @Transactional(readOnly = true)
-    public List<OrganizationDirectoryResponse>
-    findDirectory(
+    public List<OrganizationDirectoryResponse> findDirectory(
             String query,
             int limit,
             SafeAiUserPrincipal currentUser
     ) {
-        requireSuperAdmin(currentUser);
-
-        String normalizedQuery =
-                query == null
-                        ? ""
-                        : query.trim();
-
-        if (normalizedQuery.length() > 255) {
-            throw new BadRequestException(
-                    "Поисковый запрос не должен превышать "
-                            + "255 символов"
-            );
-        }
-
-        int safeLimit = Math.clamp(
-                limit,
-                1,
-                MAX_DIRECTORY_LIMIT
-        );
-
-        Pageable pageable = PageRequest.of(
-                0,
-                safeLimit,
-                Sort.by(
-                        Sort.Order.asc("name"),
-                        Sort.Order.asc("id")
-                )
-        );
-
-        UUID exactId =
-                parseUuidOrNull(
-                        normalizedQuery
-                );
-
-        if (exactId != null) {
-            return organizationRepository
-                    .findById(exactId)
-                    .map(
-                            this::toDirectoryResponse
-                    )
-                    .map(List::of)
-                    .orElseGet(List::of);
-        }
-
-        Page<OrganizationEntity> page =
-                normalizedQuery.isEmpty()
-                        ? organizationRepository
-                        .findAll(pageable)
-                        : organizationRepository
-                        .searchDirectoryByName(
-                                escapeDirectoryLikeLiteral(
-                                        normalizedQuery
-                                ),
-                                pageable
-                        );
-
-        return page.getContent()
-                .stream()
-                .map(
-                        this::toDirectoryResponse
-                )
-                .toList();
+        return queries.findDirectory(query, limit, currentUser);
     }
 
     @Transactional(readOnly = true)
-    public OrganizationResponse
-    findCurrentOrganization(
+    public OrganizationResponse findCurrentOrganization(
             SafeAiUserPrincipal currentUser
     ) {
-        requireOrganizationReader(currentUser);
-
-        UUID organizationId =
-                currentUser.getOrganizationId();
-
-        return organizationRepository
-                .findById(organizationId)
-                .map(this::toResponse)
-                .orElseThrow(() ->
-                        organizationNotFound(
-                                organizationId
-                        )
-                );
+        return queries.findCurrentOrganization(currentUser);
     }
 
     @Transactional(readOnly = true)
@@ -319,57 +105,15 @@ public class OrganizationService {
             UUID id,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                id,
-                "id не должен быть null"
-        );
-        requireOrganizationReader(currentUser);
-
-        if (
-                !isSuperAdmin(currentUser)
-                        && !currentUser
-                        .getOrganizationId()
-                        .equals(id)
-        ) {
-            /*
-             * 404 вместо 403 не раскрывает существование
-             * чужой tenant organization.
-             */
-            throw organizationNotFound(id);
-        }
-
-        return organizationRepository
-                .findById(id)
-                .map(this::toResponse)
-                .orElseThrow(() ->
-                        organizationNotFound(id)
-                );
+        return queries.findById(id, currentUser);
     }
 
     @Transactional(readOnly = true)
-    public OrganizationDisableImpactResponse
-    getDisableImpact(
+    public OrganizationDisableImpactResponse getDisableImpact(
             UUID id,
             SafeAiUserPrincipal currentUser
     ) {
-        OrganizationEntity entity =
-                findMutableOrganizationSnapshot(
-                        id,
-                        currentUser
-                );
-
-        OrganizationImpactQueryRepository
-                .ImpactSnapshot impact =
-                impactQueryRepository.load(id);
-
-        return new OrganizationDisableImpactResponse(
-                entity.getId(),
-                entity.getVersion(),
-                impact.enabledUsers(),
-                impact.administrators(),
-                impact.activeRefreshSessions(),
-                impact.activeChatOperations()
-        );
+        return queries.getDisableImpact(id, currentUser);
     }
 
     @Transactional
@@ -378,81 +122,7 @@ public class OrganizationService {
             UpdateOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
-
-        OrganizationEntity entity =
-                findMutableOrganizationForUpdate(
-                        id,
-                        currentUser
-                );
-
-        requireExpectedVersion(
-                entity,
-                request.expectedVersion()
-        );
-
-        String canonicalName =
-                OrganizationNameNormalizer.canonicalize(
-                        request.name()
-                );
-
-        if (
-                entity.getName()
-                        .equals(canonicalName)
-        ) {
-            return toResponse(entity);
-        }
-
-        /*
-         * Same rule as create(): normalized-name uniqueness belongs to
-         * PostgreSQL. This avoids Java/DB Unicode whitespace drift and
-         * keeps concurrent rename races fail-closed through UNIQUE.
-         */
-        String oldName =
-                entity.getName();
-
-        entity.setName(canonicalName);
-
-        OrganizationEntity saved;
-
-        try {
-            saved = saveAndRefresh(entity);
-        } catch (
-                DataIntegrityViolationException exception
-        ) {
-            if (
-                    isOrganizationNameUniqueViolation(
-                            exception
-                    )
-            ) {
-                throw duplicateOrganizationName(
-                        canonicalName
-                );
-            }
-
-            throw exception;
-        }
-
-        auditEventService.record(
-                currentUser,
-                saved.getId(),
-                AuditEventType.ORGANIZATION_NAME_CHANGED,
-                Map.of(
-                        "organizationId",
-                        saved.getId().toString(),
-                        "oldName",
-                        oldName,
-                        "newName",
-                        saved.getName(),
-                        "version",
-                        saved.getVersion()
-                )
-        );
-
-        return toResponse(saved);
+        return commands.updateName(id, request, currentUser);
     }
 
     @Transactional
@@ -461,50 +131,7 @@ public class OrganizationService {
             DisableOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
-
-        OrganizationEntity entity =
-                findMutableOrganizationForUpdate(
-                        id,
-                        currentUser
-                );
-
-        requireExpectedVersion(
-                entity,
-                request.expectedVersion()
-        );
-
-        String expectedConfirmation =
-                OrganizationNameNormalizer
-                        .normalizeForConfirmation(
-                                entity.getName()
-                        );
-
-        String actualConfirmation =
-                OrganizationNameNormalizer
-                        .normalizeForConfirmation(
-                                request.confirmationName()
-                        );
-
-        if (
-                !expectedConfirmation.equals(
-                        actualConfirmation
-                )
-        ) {
-            throw new BadRequestException(
-                    "Название организации для подтверждения "
-                            + "не совпадает"
-            );
-        }
-
-        return changeEnabled(
-                entity,
-                false,
-                currentUser
-        );
+        return commands.disable(id, request, currentUser);
     }
 
     @Transactional
@@ -513,410 +140,6 @@ public class OrganizationService {
             EnableOrganizationRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
-
-        OrganizationEntity entity =
-                findMutableOrganizationForUpdate(
-                        id,
-                        currentUser
-                );
-
-        requireExpectedVersion(
-                entity,
-                request.expectedVersion()
-        );
-
-        return changeEnabled(
-                entity,
-                true,
-                currentUser
-        );
-    }
-
-    private OrganizationResponse changeEnabled(
-            OrganizationEntity entity,
-            boolean newEnabled,
-            SafeAiUserPrincipal currentUser
-    ) {
-        boolean oldEnabled =
-                entity.isEnabled();
-
-        if (oldEnabled == newEnabled) {
-            return toResponse(entity);
-        }
-
-        long oldAuthVersion =
-                entity.getAuthVersion();
-
-        entity.setEnabled(newEnabled);
-
-        if (!newEnabled) {
-            entity.setAuthVersion(
-                    Math.addExact(
-                            oldAuthVersion,
-                            1L
-                    )
-            );
-        }
-
-        OrganizationEntity saved =
-                saveAndRefresh(entity);
-
-        boolean sessionsRevoked = false;
-
-        /*
-         * Product contract: disable fences NEW authenticated work after
-         * transaction commit through organization enabled/authVersion state.
-         * Already-started PROCESSING chat turns are intentionally not
-         * cancelled here; immediate in-flight cancellation would require
-         * a separate ChatTurn fencing/cancellation protocol.
-         */
-        if (!newEnabled) {
-            userSessionRevocationService
-                    .revokeAllForOrganization(
-                            saved.getId(),
-                            RefreshTokenRevocationReason
-                                    .ORGANIZATION_DISABLED
-                    );
-
-            sessionsRevoked = true;
-        }
-
-        eventPublisher.publishEvent(
-                new OrganizationSecurityStateChangedEvent(
-                        saved.getId(),
-                        saved.getAuthVersion()
-                )
-        );
-
-        auditEventService.record(
-                currentUser,
-                saved.getId(),
-                AuditEventType
-                        .ORGANIZATION_ENABLED_CHANGED,
-                Map.of(
-                        "organizationId",
-                        saved.getId().toString(),
-                        "organizationName",
-                        saved.getName(),
-                        "oldEnabled",
-                        oldEnabled,
-                        "newEnabled",
-                        saved.isEnabled(),
-                        "oldAuthVersion",
-                        oldAuthVersion,
-                        "newAuthVersion",
-                        saved.getAuthVersion(),
-                        "sessionsRevoked",
-                        sessionsRevoked,
-                        "requiresRelogin",
-                        !newEnabled,
-                        "version",
-                        saved.getVersion()
-                )
-        );
-
-        return toResponse(saved);
-    }
-
-    private OrganizationEntity
-    findMutableOrganizationSnapshot(
-            UUID id,
-            SafeAiUserPrincipal currentUser
-    ) {
-        requireMutableOrganizationRequest(
-                id,
-                currentUser
-        );
-
-        return organizationRepository
-                .findById(id)
-                .orElseThrow(() ->
-                        organizationNotFound(id)
-                );
-    }
-
-    private OrganizationEntity
-    findMutableOrganizationForUpdate(
-            UUID id,
-            SafeAiUserPrincipal currentUser
-    ) {
-        requireMutableOrganizationRequest(
-                id,
-                currentUser
-        );
-
-        return organizationRepository
-                .findByIdForSecurityUpdate(id)
-                .orElseThrow(() ->
-                        organizationNotFound(id)
-                );
-    }
-
-    private void requireMutableOrganizationRequest(
-            UUID id,
-            SafeAiUserPrincipal currentUser
-    ) {
-        Objects.requireNonNull(
-                id,
-                "id не должен быть null"
-        );
-
-        requireSuperAdmin(currentUser);
-        rejectPlatformOrganizationMutation(id);
-    }
-
-    private OrganizationEntity saveAndRefresh(
-            OrganizationEntity organization
-    ) {
-        OrganizationEntity saved =
-                organizationRepository
-                        .saveAndFlush(
-                                organization
-                        );
-
-        entityManager.refresh(saved);
-
-        return saved;
-    }
-
-    private Pageable normalizePageable(
-            Pageable pageable
-    ) {
-        return StablePageableNormalizer.normalize(
-                pageable,
-                MAX_PAGE_SIZE,
-                ALLOWED_SORT_PROPERTIES,
-                DEFAULT_PAGE_SORT,
-                "id",
-                StablePageableNormalizer
-                        .TieBreakerDirectionPolicy
-                        .FOLLOW_LAST_SORT_DIRECTION
-        );
-    }
-
-    private String escapeDirectoryLikeLiteral(
-            String value
-    ) {
-        return value
-                .replace("!", "!!")
-                .replace("%", "!%")
-                .replace("_", "!_");
-    }
-
-    private OrganizationResponse toResponse(
-            OrganizationEntity organization
-    ) {
-        boolean protectedOrganization =
-                isPlatformOrganization(
-                        organization.getId()
-                );
-
-        return new OrganizationResponse(
-                organization.getId(),
-                organization.getName(),
-                organization.isEnabled(),
-                protectedOrganization
-                        ? OrganizationType.PLATFORM
-                        : OrganizationType.TENANT,
-                protectedOrganization,
-                organization.getVersion(),
-                organization.getCreatedAt(),
-                organization.getUpdatedAt()
-        );
-    }
-
-    private OrganizationDirectoryResponse
-    toDirectoryResponse(
-            OrganizationEntity organization
-    ) {
-        boolean protectedOrganization =
-                isPlatformOrganization(
-                        organization.getId()
-                );
-
-        return new OrganizationDirectoryResponse(
-                organization.getId(),
-                organization.getName(),
-                organization.isEnabled(),
-                protectedOrganization
-                        ? OrganizationType.PLATFORM
-                        : OrganizationType.TENANT,
-                protectedOrganization,
-                organization.getVersion()
-        );
-    }
-
-    private void requireExpectedVersion(
-            OrganizationEntity organization,
-            Long expectedVersion
-    ) {
-        if (
-                expectedVersion == null
-                        || expectedVersion < 0L
-        ) {
-            throw new BadRequestException(
-                    "expectedVersion должен быть "
-                            + "неотрицательным числом"
-            );
-        }
-
-        if (
-                organization.getVersion()
-                        != expectedVersion
-        ) {
-            throw new OrganizationVersionConflictException(
-                    organization.getId(),
-                    expectedVersion,
-                    organization.getVersion()
-            );
-        }
-    }
-
-    private boolean isPlatformOrganization(
-            UUID organizationId
-    ) {
-        return platformProperties
-                .organizationId()
-                .equals(organizationId);
-    }
-
-    private UUID parseUuidOrNull(
-            String value
-    ) {
-        if (
-                value == null
-                        || value.isBlank()
-        ) {
-            return null;
-        }
-
-        try {
-            return UUID.fromString(value);
-        } catch (
-                IllegalArgumentException exception
-        ) {
-            return null;
-        }
-    }
-
-    private void requireOrganizationReader(
-            SafeAiUserPrincipal currentUser
-    ) {
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
-
-        if (!isAdmin(currentUser)
-                && !isSuperAdmin(currentUser)) {
-            throw new ForbiddenOperationException(
-                    "Только ADMIN или SUPER_ADMIN "
-                            + "может просматривать организации"
-            );
-        }
-    }
-
-    private boolean isAdmin(
-            SafeAiUserPrincipal currentUser
-    ) {
-        return hasAuthority(
-                currentUser,
-                SystemRole.ADMIN
-        );
-    }
-
-    private boolean isSuperAdmin(
-            SafeAiUserPrincipal currentUser
-    ) {
-        return hasAuthority(
-                currentUser,
-                SystemRole.SUPER_ADMIN
-        );
-    }
-
-    private boolean hasAuthority(
-            SafeAiUserPrincipal currentUser,
-            SystemRole role
-    ) {
-        return currentUser
-                .getAuthorities()
-                .stream()
-                .map(
-                        GrantedAuthority::getAuthority
-                )
-                .anyMatch(
-                        role.authority()::equals
-                );
-    }
-
-    private void requireSuperAdmin(
-            SafeAiUserPrincipal currentUser
-    ) {
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
-
-        if (!isSuperAdmin(currentUser)) {
-            throw new ForbiddenOperationException(
-                    "Только SUPER_ADMIN может "
-                            + "управлять организациями"
-            );
-        }
-    }
-
-    private void rejectPlatformOrganizationMutation(
-            UUID organizationId
-    ) {
-        if (
-                isPlatformOrganization(
-                        organizationId
-                )
-        ) {
-            throw new ForbiddenOperationException(
-                    "Платформенную организацию нельзя "
-                            + "изменять через обычный "
-                            + "organization-management endpoint"
-            );
-        }
-    }
-
-    private boolean
-    isOrganizationNameUniqueViolation(
-            Throwable exception
-    ) {
-        return DatabaseConstraintClassifier
-                .isUniqueViolation(
-                        exception,
-                        ORGANIZATION_NAME_UNIQUE_CONSTRAINTS
-                                .toArray(
-                                        String[]::new
-                                )
-                );
-    }
-
-    private ConflictException
-    duplicateOrganizationName(
-            String name
-    ) {
-        return new ConflictException(
-                "Организация с таким названием "
-                        + "уже существует: "
-                        + name
-        );
-    }
-
-    private ResourceNotFoundException
-    organizationNotFound(
-            UUID id
-    ) {
-        return new ResourceNotFoundException(
-                "Организация не найдена: "
-                        + id
-        );
+        return commands.enable(id, request, currentUser);
     }
 }

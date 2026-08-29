@@ -167,30 +167,6 @@
     border-bottom: 0;
 }
 
-.users-table__user-column {
-    width: 31%;
-}
-
-.users-table__organization-column {
-    width: 17%;
-}
-
-.users-table__roles-column {
-    width: 15%;
-}
-
-.users-table__status-column {
-    width: 11%;
-}
-
-.users-table__date-column {
-    width: 12%;
-}
-
-.users-table__actions-column {
-    width: 260px;
-}
-
 /* Сбрасывает глобальный чёрный стиль button из index.css */
 .user-identity-link {
     display: block;
@@ -488,25 +464,6 @@ body.modal-open {
     line-height: 1.2;
 }
 
-.modal-close {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    min-width: 42px;
-    padding: 0;
-    place-items: center;
-    border: 1px solid var(--users-border);
-    border-radius: 11px;
-    background: #f0f2f6;
-    color: #263248;
-    font-size: 25px;
-    font-weight: 700;
-}
-
-.modal-close:hover:not(:disabled) {
-    background: #e7ebf1;
-}
-
 .modal-body {
     padding: 22px 24px 24px;
 }
@@ -547,7 +504,7 @@ body.modal-open {
     margin-top: 22px;
 }
 
-.modal-actions > button, .button {
+.modal-actions > button {
     min-height: 42px;
     padding: 0 16px;
     border: 1px solid transparent;
@@ -556,22 +513,22 @@ body.modal-open {
     font-weight: 750;
 }
 
-.modal-actions > button:not(.secondary-button):not(.danger-button), .button--primary {
+.modal-actions > button:not(.secondary-button):not(.danger-button) {
     background: var(--users-primary);
     color: #fff;
 }
 
-.modal-actions > button:not(.secondary-button):not(.danger-button):hover:not(:disabled), .button--primary:hover:not(:disabled) {
+.modal-actions > button:not(.secondary-button):not(.danger-button):hover:not(:disabled) {
     background: var(--users-primary-hover);
 }
 
-.modal-actions .secondary-button, .button--secondary {
+.modal-actions .secondary-button {
     border-color: var(--users-border);
     background: #eef1f5;
     color: #263248;
 }
 
-.modal-actions .danger-button, .button--danger {
+.modal-actions .danger-button {
     background: var(--users-danger);
     color: #fff;
 }

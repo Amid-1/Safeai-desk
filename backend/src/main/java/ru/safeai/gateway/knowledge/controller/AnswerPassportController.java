@@ -28,13 +28,14 @@ public class AnswerPassportController {
             @PathVariable UUID chatId,
             @PathVariable UUID turnId,
             @AuthenticationPrincipal(errorOnInvalidType = true)
-            SafeAiUserPrincipal user
+            SafeAiUserPrincipal currentUser
     ) {
+        // Tenant/user identity is derived inside the service from the principal.
+        // Raw organizationId/userId are no longer part of the public service API.
         return service.requireByTurn(
                 chatId,
                 turnId,
-                user.getOrganizationId(),
-                user.getId()
+                currentUser
         );
     }
 }

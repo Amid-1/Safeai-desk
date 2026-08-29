@@ -4,15 +4,11 @@ import jakarta.persistence.OptimisticLockException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
-import jakarta.validation.ElementKind;
-import jakarta.validation.Path;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.core.Ordered;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -26,7 +22,6 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.BindException;
-import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
 import org.springframework.validation.method.ParameterErrors;
@@ -43,28 +38,14 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
-import ru.safeai.gateway.common.security.RequestIdFilter;
 
-import java.util.Objects;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 
 @Slf4j
 @RestControllerAdvice
-@RequiredArgsConstructor
-public class GlobalExceptionHandler
-        implements Ordered {
-
-    private static final String VALIDATION_MESSAGE =
-            "Ошибка валидации запроса";
-
-    private static final String INTERNAL_ERROR_MESSAGE =
-            "Внутренняя ошибка сервера";
+public class GlobalExceptionHandler implements Ordered {
 
     private static final String OPTIMISTIC_LOCK_MESSAGE =
             "Данные были изменены другим пользователем. "
@@ -79,17 +60,19 @@ public class GlobalExceptionHandler
     private static final String INVALID_REFRESH_TOKEN_MESSAGE =
             "Недействительный refresh token";
 
-    private static final long RATE_LIMIT_LOG_INTERVAL_NANOS =
-            TimeUnit.MINUTES.toNanos(1);
+    private final ApiExceptionResponseSupport responses;
+    private final ValidationErrorExtractor validationErrors =
+            new ValidationErrorExtractor();
+    private final RateLimitUnavailableLogger rateLimitLogger =
+            new RateLimitUnavailableLogger();
 
-    private final ApiErrorResponseFactory
-            errorResponseFactory;
-
-    private final AtomicLong nextRateLimitLogNanos =
-            new AtomicLong();
-
-    private final LongAdder suppressedRateLimitLogs =
-            new LongAdder();
+    public GlobalExceptionHandler(
+            ApiErrorResponseFactory errorResponseFactory
+    ) {
+        this.responses = new ApiExceptionResponseSupport(
+                errorResponseFactory
+        );
+    }
 
     @Override
     public int getOrder() {
@@ -102,10 +85,10 @@ public class GlobalExceptionHandler
             ChatBusyException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.CONFLICT,
                 ApiErrorCode.CHAT_BUSY,
-                safeMessage(
+                responses.safeMessage(
                         exception.getMessage(),
                         "В этот чат уже отправляется сообщение"
                 ),
@@ -123,12 +106,12 @@ public class GlobalExceptionHandler
     ) {
         log.error(
                 "Chat lock service unavailable: requestId={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 request.getRequestURI(),
                 exception
         );
 
-        return build(
+        return responses.build(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 ApiErrorCode.CHAT_LOCK_UNAVAILABLE,
                 CHAT_LOCK_UNAVAILABLE_MESSAGE,
@@ -144,12 +127,14 @@ public class GlobalExceptionHandler
             RateLimitUnavailableException exception,
             HttpServletRequest request
     ) {
-        logRateLimitUnavailable(
+        rateLimitLogger.log(
+                log,
                 exception,
-                request
+                request,
+                responses.requestId(request)
         );
 
-        return build(
+        return responses.build(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 ApiErrorCode.RATE_LIMIT_UNAVAILABLE,
                 RATE_LIMIT_UNAVAILABLE_MESSAGE,
@@ -167,12 +152,12 @@ public class GlobalExceptionHandler
     ) {
         log.error(
                 "Authentication service unavailable: requestId={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 request.getRequestURI(),
                 exception
         );
 
-        return build(
+        return responses.build(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
                 exception.getPublicMessage(),
@@ -188,10 +173,10 @@ public class GlobalExceptionHandler
             BadRequestException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.BAD_REQUEST,
                 ApiErrorCode.BAD_REQUEST,
-                safeMessage(
+                responses.safeMessage(
                         exception.getMessage(),
                         "Некорректный запрос"
                 ),
@@ -207,10 +192,10 @@ public class GlobalExceptionHandler
             ResourceNotFoundException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.NOT_FOUND,
                 ApiErrorCode.NOT_FOUND,
-                safeMessage(
+                responses.safeMessage(
                         exception.getMessage(),
                         "Ресурс не найден"
                 ),
@@ -229,14 +214,14 @@ public class GlobalExceptionHandler
         log.info(
                 "User optimistic version conflict: requestId={}, "
                         + "userId={}, expectedVersion={}, actualVersion={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 exception.getUserId(),
                 exception.getExpectedVersion(),
                 exception.getActualVersion(),
                 request.getRequestURI()
         );
 
-        return build(
+        return responses.build(
                 exception.getStatus(),
                 exception.getErrorCode(),
                 exception.getPublicMessage(),
@@ -255,14 +240,14 @@ public class GlobalExceptionHandler
         log.info(
                 "Organization optimistic version conflict: requestId={}, "
                         + "organizationId={}, expectedVersion={}, actualVersion={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 exception.getOrganizationId(),
                 exception.getExpectedVersion(),
                 exception.getActualVersion(),
                 request.getRequestURI()
         );
 
-        return build(
+        return responses.build(
                 exception.getStatus(),
                 exception.getErrorCode(),
                 exception.getPublicMessage(),
@@ -278,10 +263,10 @@ public class GlobalExceptionHandler
             ConflictException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 exception.getStatus(),
                 exception.getErrorCode(),
-                safeMessage(
+                responses.safeMessage(
                         exception.getPublicMessage(),
                         "Конфликт данных"
                 ),
@@ -297,10 +282,10 @@ public class GlobalExceptionHandler
             ForbiddenOperationException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 exception.getStatus(),
                 exception.getErrorCode(),
-                safeMessage(
+                responses.safeMessage(
                         exception.getPublicMessage(),
                         "Операция запрещена"
                 ),
@@ -318,12 +303,12 @@ public class GlobalExceptionHandler
     ) {
         log.debug(
                 "Access denied: requestId={}, path={}, type={}",
-                requestId(request),
+                responses.requestId(request),
                 request.getRequestURI(),
                 exception.getClass().getSimpleName()
         );
 
-        return build(
+        return responses.build(
                 HttpStatus.FORBIDDEN,
                 ApiErrorCode.FORBIDDEN,
                 "Доступ запрещён",
@@ -341,12 +326,12 @@ public class GlobalExceptionHandler
     ) {
         log.debug(
                 "Expired refresh token: requestId={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 request.getRequestURI(),
                 exception
         );
 
-        return build(
+        return responses.build(
                 HttpStatus.UNAUTHORIZED,
                 ApiErrorCode.EXPIRED_REFRESH_TOKEN,
                 "Refresh token истёк",
@@ -365,14 +350,14 @@ public class GlobalExceptionHandler
         log.warn(
                 "Refresh token reuse detected: requestId={}, "
                         + "userId={}, organizationId={}, tokenFamilyId={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 exception.getUserId(),
                 exception.getOrganizationId(),
                 exception.getTokenFamilyId(),
                 request.getRequestURI()
         );
 
-        return build(
+        return responses.build(
                 HttpStatus.UNAUTHORIZED,
                 ApiErrorCode.INVALID_REFRESH_TOKEN,
                 INVALID_REFRESH_TOKEN_MESSAGE,
@@ -390,12 +375,12 @@ public class GlobalExceptionHandler
     ) {
         log.debug(
                 "Invalid refresh token: requestId={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 request.getRequestURI(),
                 exception
         );
 
-        return build(
+        return responses.build(
                 HttpStatus.UNAUTHORIZED,
                 ApiErrorCode.INVALID_REFRESH_TOKEN,
                 INVALID_REFRESH_TOKEN_MESSAGE,
@@ -423,10 +408,10 @@ public class GlobalExceptionHandler
             );
         }
 
-        return build(
+        return responses.build(
                 HttpStatus.TOO_MANY_REQUESTS,
                 ApiErrorCode.RATE_LIMIT_EXCEEDED,
-                safeMessage(
+                responses.safeMessage(
                         exception.getPublicMessage(),
                         "Превышен лимит запросов"
                 ),
@@ -442,7 +427,7 @@ public class GlobalExceptionHandler
             ApiException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 exception.getStatus(),
                 exception.getErrorCode(),
                 exception.getPublicMessage(),
@@ -463,12 +448,12 @@ public class GlobalExceptionHandler
     ) {
         log.info(
                 "Optimistic lock conflict: requestId={}, path={}, type={}",
-                requestId(request),
+                responses.requestId(request),
                 request.getRequestURI(),
                 exception.getClass().getSimpleName()
         );
 
-        return build(
+        return responses.build(
                 HttpStatus.CONFLICT,
                 ApiErrorCode.CONFLICT,
                 OPTIMISTIC_LOCK_MESSAGE,
@@ -484,9 +469,9 @@ public class GlobalExceptionHandler
             MethodArgumentNotValidException exception,
             HttpServletRequest request
     ) {
-        return validationResponse(
+        return responses.validationResponse(
                 request,
-                bindingErrors(
+                validationErrors.bindingErrors(
                         exception.getBindingResult()
                 )
         );
@@ -498,9 +483,9 @@ public class GlobalExceptionHandler
             BindException exception,
             HttpServletRequest request
     ) {
-        return validationResponse(
+        return responses.validationResponse(
                 request,
-                bindingErrors(
+                validationErrors.bindingErrors(
                         exception.getBindingResult()
                 )
         );
@@ -516,12 +501,12 @@ public class GlobalExceptionHandler
             log.error(
                     "Controller return value validation failed: "
                             + "requestId={}, path={}",
-                    requestId(request),
+                    responses.requestId(request),
                     request.getRequestURI(),
                     exception
             );
 
-            return internalServerError(
+            return responses.internalServerError(
                     request
             );
         }
@@ -534,19 +519,19 @@ public class GlobalExceptionHandler
             if (result instanceof ParameterErrors parameterErrors) {
                 for (FieldError error
                         : parameterErrors.getFieldErrors()) {
-                    addError(
+                    validationErrors.addError(
                             fieldErrors,
                             error.getField(),
-                            defaultMessage(error)
+                            validationErrors.defaultMessage(error)
                     );
                 }
 
                 for (ObjectError error
                         : parameterErrors.getGlobalErrors()) {
-                    addError(
+                    validationErrors.addError(
                             fieldErrors,
-                            parameterName(result),
-                            defaultMessage(error)
+                            validationErrors.parameterName(result),
+                            validationErrors.defaultMessage(error)
                     );
                 }
 
@@ -554,28 +539,28 @@ public class GlobalExceptionHandler
             }
 
             String field =
-                    parameterName(result);
+                    validationErrors.parameterName(result);
 
             for (MessageSourceResolvable error
                     : result.getResolvableErrors()) {
-                addError(
+                validationErrors.addError(
                         fieldErrors,
                         field,
-                        defaultMessage(error)
+                        validationErrors.defaultMessage(error)
                 );
             }
         }
 
         for (MessageSourceResolvable error
                 : exception.getCrossParameterValidationResults()) {
-            addError(
+            validationErrors.addError(
                     fieldErrors,
                     "_global",
-                    defaultMessage(error)
+                    validationErrors.defaultMessage(error)
             );
         }
 
-        return validationResponse(
+        return responses.validationResponse(
                 request,
                 fieldErrors
         );
@@ -592,16 +577,16 @@ public class GlobalExceptionHandler
 
         for (ConstraintViolation<?> violation
                 : exception.getConstraintViolations()) {
-            addError(
+            validationErrors.addError(
                     fieldErrors,
-                    normalizeConstraintPath(
+                    validationErrors.normalizeConstraintPath(
                             violation.getPropertyPath()
                     ),
                     violation.getMessage()
             );
         }
 
-        return validationResponse(
+        return responses.validationResponse(
                 request,
                 fieldErrors
         );
@@ -612,7 +597,7 @@ public class GlobalExceptionHandler
     handleUnreadableBody(
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.BAD_REQUEST,
                 ApiErrorCode.BAD_REQUEST,
                 "Некорректное тело запроса. "
@@ -629,7 +614,7 @@ public class GlobalExceptionHandler
             MissingServletRequestParameterException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.BAD_REQUEST,
                 ApiErrorCode.BAD_REQUEST,
                 "Обязательный параметр отсутствует: "
@@ -646,7 +631,7 @@ public class GlobalExceptionHandler
             MissingRequestHeaderException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.BAD_REQUEST,
                 ApiErrorCode.BAD_REQUEST,
                 "Обязательный заголовок отсутствует: "
@@ -663,7 +648,7 @@ public class GlobalExceptionHandler
             MethodArgumentTypeMismatchException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.BAD_REQUEST,
                 ApiErrorCode.BAD_REQUEST,
                 "Некорректное значение параметра: "
@@ -680,7 +665,7 @@ public class GlobalExceptionHandler
             HttpRequestMethodNotSupportedException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.METHOD_NOT_ALLOWED,
                 ApiErrorCode.METHOD_NOT_ALLOWED,
                 "HTTP-метод не поддерживается для этого ресурса",
@@ -696,7 +681,7 @@ public class GlobalExceptionHandler
             HttpMediaTypeNotSupportedException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.UNSUPPORTED_MEDIA_TYPE,
                 ApiErrorCode.UNSUPPORTED_MEDIA_TYPE,
                 "Тип содержимого запроса не поддерживается",
@@ -712,7 +697,7 @@ public class GlobalExceptionHandler
             HttpMediaTypeNotAcceptableException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.NOT_ACCEPTABLE,
                 ApiErrorCode.NOT_ACCEPTABLE,
                 "Запрошенный формат ответа не поддерживается",
@@ -728,7 +713,7 @@ public class GlobalExceptionHandler
             NoResourceFoundException exception,
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.NOT_FOUND,
                 ApiErrorCode.NOT_FOUND,
                 "Ресурс не найден",
@@ -751,7 +736,7 @@ public class GlobalExceptionHandler
             log.error(
                     "ResponseStatusException with server status: "
                             + "requestId={}, path={}, status={}",
-                    requestId(request),
+                    responses.requestId(request),
                     request.getRequestURI(),
                     status.value(),
                     exception
@@ -760,15 +745,15 @@ public class GlobalExceptionHandler
 
         String message =
                 status.is5xxServerError()
-                        ? INTERNAL_ERROR_MESSAGE
-                        : safeMessage(
+                        ? ApiExceptionResponseSupport.INTERNAL_ERROR_MESSAGE
+                        : responses.safeMessage(
                         exception.getReason(),
-                        messageForStatus(status)
+                        responses.messageForStatus(status)
                 );
 
-        return build(
+        return responses.build(
                 status,
-                codeForStatus(status),
+                responses.codeForStatus(status),
                 message,
                 request,
                 null,
@@ -787,7 +772,7 @@ public class GlobalExceptionHandler
     handleExpectedAuthenticationFailure(
             HttpServletRequest request
     ) {
-        return build(
+        return responses.build(
                 HttpStatus.UNAUTHORIZED,
                 ApiErrorCode.UNAUTHORIZED,
                 "Неверные учётные данные",
@@ -806,12 +791,12 @@ public class GlobalExceptionHandler
         log.error(
                 "Authentication infrastructure failure: "
                         + "requestId={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 request.getRequestURI(),
                 exception
         );
 
-        return build(
+        return responses.build(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
                 "Сервис авторизации временно недоступен",
@@ -829,12 +814,12 @@ public class GlobalExceptionHandler
     ) {
         log.error(
                 "Unexpected authentication failure: requestId={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 request.getRequestURI(),
                 exception
         );
 
-        return internalServerError(
+        return responses.internalServerError(
                 request
         );
     }
@@ -847,12 +832,12 @@ public class GlobalExceptionHandler
     ) {
         log.error(
                 "Unexpected data integrity violation: requestId={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 request.getRequestURI(),
                 exception
         );
 
-        return internalServerError(
+        return responses.internalServerError(
                 request
         );
     }
@@ -865,377 +850,14 @@ public class GlobalExceptionHandler
     ) {
         log.error(
                 "Unhandled exception: requestId={}, path={}",
-                requestId(request),
+                responses.requestId(request),
                 request.getRequestURI(),
                 exception
         );
 
-        return internalServerError(
+        return responses.internalServerError(
                 request
         );
     }
 
-    private void logRateLimitUnavailable(
-            RateLimitUnavailableException exception,
-            HttpServletRequest request
-    ) {
-        long now =
-                System.nanoTime();
-
-        while (true) {
-            long next =
-                    nextRateLimitLogNanos.get();
-
-            if (now - next < 0L) {
-                suppressedRateLimitLogs.increment();
-                return;
-            }
-
-            long candidate =
-                    now
-                            + RATE_LIMIT_LOG_INTERVAL_NANOS;
-
-            if (!nextRateLimitLogNanos
-                    .compareAndSet(
-                            next,
-                            candidate
-                    )) {
-                now = System.nanoTime();
-                continue;
-            }
-
-            long suppressed =
-                    suppressedRateLimitLogs
-                            .sumThenReset();
-
-            log.error(
-                    "Rate limit service unavailable: requestId={}, "
-                            + "path={}, suppressedSinceLastLog={}",
-                    requestId(request),
-                    request.getRequestURI(),
-                    suppressed,
-                    exception
-            );
-
-            return;
-        }
-    }
-
-    private org.springframework.http.ResponseEntity<ApiErrorResponse>
-    validationResponse(
-            HttpServletRequest request,
-            Map<String, List<String>> fieldErrors
-    ) {
-        Map<String, List<String>> normalized =
-                fieldErrors == null
-                        || fieldErrors.isEmpty()
-                        ? Map.of(
-                        "request",
-                        List.of(
-                                "Некорректное значение"
-                        )
-                )
-                        : fieldErrors;
-
-        return build(
-                HttpStatus.BAD_REQUEST,
-                ApiErrorCode.VALIDATION_ERROR,
-                VALIDATION_MESSAGE,
-                request,
-                normalized,
-                null
-        );
-    }
-
-    private org.springframework.http.ResponseEntity<ApiErrorResponse>
-    internalServerError(
-            HttpServletRequest request
-    ) {
-        return build(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                ApiErrorCode.INTERNAL_SERVER_ERROR,
-                INTERNAL_ERROR_MESSAGE,
-                request,
-                null,
-                null
-        );
-    }
-
-    private org.springframework.http.ResponseEntity<ApiErrorResponse>
-    build(
-            HttpStatusCode status,
-            ApiErrorCode error,
-            String message,
-            HttpServletRequest request,
-            Map<String, List<String>> fieldErrors,
-            HttpHeaders headers
-    ) {
-        org.springframework.http.ResponseEntity.BodyBuilder builder =
-                org.springframework.http.ResponseEntity
-                        .status(status);
-
-        if (headers != null
-                && !headers.isEmpty()) {
-            builder.headers(headers);
-        }
-
-        builder.cacheControl(
-                CacheControl.noStore()
-        );
-
-        return builder.body(
-                errorResponseFactory.create(
-                        status,
-                        error,
-                        message,
-                        request,
-                        fieldErrors
-                )
-        );
-    }
-
-    private Map<String, List<String>>
-    bindingErrors(
-            BindingResult bindingResult
-    ) {
-        Map<String, List<String>> errors =
-                new LinkedHashMap<>();
-
-        for (FieldError error
-                : bindingResult.getFieldErrors()) {
-            addError(
-                    errors,
-                    error.getField(),
-                    defaultMessage(error)
-            );
-        }
-
-        for (ObjectError error
-                : bindingResult.getGlobalErrors()) {
-            addError(
-                    errors,
-                    "_global",
-                    defaultMessage(error)
-            );
-        }
-
-        return errors;
-    }
-
-    private void addError(
-            Map<String, List<String>> errors,
-            String field,
-            String message
-    ) {
-        String normalizedField =
-                field == null
-                        || field.isBlank()
-                        ? "_global"
-                        : field.trim();
-
-        String normalizedMessage =
-                message == null
-                        || message.isBlank()
-                        ? "Некорректное значение"
-                        : message.trim();
-
-        List<String> messages =
-                errors.computeIfAbsent(
-                        normalizedField,
-                        ignored ->
-                                new ArrayList<>()
-                );
-
-        if (!messages.contains(
-                normalizedMessage
-        )) {
-            messages.add(
-                    normalizedMessage
-            );
-        }
-    }
-
-    private String parameterName(
-            ParameterValidationResult result
-    ) {
-        String parameterName =
-                result.getMethodParameter()
-                        .getParameterName();
-
-        String base =
-                parameterName == null
-                        || parameterName.isBlank()
-                        ? "parameter"
-                        : parameterName;
-
-        if (result.getContainerIndex() != null) {
-            return base
-                    + "["
-                    + result.getContainerIndex()
-                    + "]";
-        }
-
-        if (result.getContainerKey() != null) {
-            return base
-                    + "["
-                    + result.getContainerKey()
-                    + "]";
-        }
-
-        return base;
-    }
-
-    /**
-     * Не полагается на Path#toString() и поэтому устойчив к изменению
-     * textual representation Bean Validation implementation.
-     */
-    private String normalizeConstraintPath(
-            Path path
-    ) {
-        if (path == null) {
-            return "_global";
-        }
-
-        List<String> properties =
-                new ArrayList<>();
-
-        String parameterFallback = null;
-
-        for (Path.Node node : path) {
-            ElementKind kind =
-                    node.getKind();
-
-            String name =
-                    node.getName();
-
-            if (kind == ElementKind.PARAMETER
-                    && name != null
-                    && !name.isBlank()) {
-
-                parameterFallback =
-                        name.trim();
-
-                continue;
-            }
-
-            if ((kind == ElementKind.PROPERTY
-                    || kind == ElementKind.CONTAINER_ELEMENT)
-                    && name != null
-                    && !name.isBlank()
-                    && !name.startsWith("<")) {
-
-                properties.add(
-                        name.trim()
-                );
-            }
-        }
-
-        if (!properties.isEmpty()) {
-            return String.join(
-                    ".",
-                    properties
-            );
-        }
-
-        return Objects.requireNonNullElse(
-                parameterFallback,
-                "_global"
-        );
-    }
-
-    private String defaultMessage(
-            MessageSourceResolvable error
-    ) {
-        String message =
-                error.getDefaultMessage();
-
-        return message == null
-                || message.isBlank()
-                ? "Некорректное значение"
-                : message;
-    }
-
-    private ApiErrorCode codeForStatus(
-            HttpStatusCode status
-    ) {
-        return switch (status.value()) {
-            case 400 ->
-                    ApiErrorCode.BAD_REQUEST;
-            case 401 ->
-                    ApiErrorCode.UNAUTHORIZED;
-            case 403 ->
-                    ApiErrorCode.FORBIDDEN;
-            case 404 ->
-                    ApiErrorCode.NOT_FOUND;
-            case 405 ->
-                    ApiErrorCode.METHOD_NOT_ALLOWED;
-            case 406 ->
-                    ApiErrorCode.NOT_ACCEPTABLE;
-            case 409 ->
-                    ApiErrorCode.CONFLICT;
-            case 415 ->
-                    ApiErrorCode.UNSUPPORTED_MEDIA_TYPE;
-            case 429 ->
-                    ApiErrorCode.RATE_LIMIT_EXCEEDED;
-            default ->
-                    status.is5xxServerError()
-                            ? ApiErrorCode.INTERNAL_SERVER_ERROR
-                            : ApiErrorCode.BAD_REQUEST;
-        };
-    }
-
-    private String messageForStatus(
-            HttpStatusCode status
-    ) {
-        return switch (status.value()) {
-            case 400 ->
-                    "Некорректный запрос";
-            case 401 ->
-                    "Требуется авторизация";
-            case 403 ->
-                    "Доступ запрещён";
-            case 404 ->
-                    "Ресурс не найден";
-            case 405 ->
-                    "HTTP-метод не поддерживается для этого ресурса";
-            case 406 ->
-                    "Запрошенный формат ответа не поддерживается";
-            case 409 ->
-                    "Конфликт данных";
-            case 415 ->
-                    "Тип содержимого запроса не поддерживается";
-            case 429 ->
-                    "Превышен лимит запросов";
-            default ->
-                    status.is5xxServerError()
-                            ? INTERNAL_ERROR_MESSAGE
-                            : "Ошибка запроса";
-        };
-    }
-
-    private String safeMessage(
-            String message,
-            String fallback
-    ) {
-        return message == null
-                || message.isBlank()
-                ? fallback
-                : message.trim();
-    }
-
-    private String requestId(
-            HttpServletRequest request
-    ) {
-        Object value =
-                request.getAttribute(
-                        RequestIdFilter
-                                .REQUEST_ID_ATTRIBUTE
-                );
-
-        return value
-                instanceof String requestId
-                && !requestId.isBlank()
-                ? requestId
-                : "missing";
-    }
 }

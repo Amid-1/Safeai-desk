@@ -91,6 +91,11 @@ public class AnswerPassportService {
                 completion
         );
 
+        UUID modelRouteDecisionId = Objects.requireNonNull(
+                context.modelRouteDecisionId(),
+                "V45 knowledge answer требует modelRouteDecisionId"
+        );
+
         UUID passportId =
                 UUID.randomUUID();
 
@@ -103,6 +108,7 @@ public class AnswerPassportService {
                     user_id,
                     chat_id,
                     chat_turn_id,
+                    model_route_decision_id,
                     retrieval_run_id,
                     assistant_message_id,
                     knowledge_mode,
@@ -117,7 +123,7 @@ public class AnswerPassportService {
                     citation_count,
                     created_at
                 ) values (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 passportId,
@@ -126,6 +132,7 @@ public class AnswerPassportService {
                 user.getId(),
                 context.chatId(),
                 context.turnId(),
+                modelRouteDecisionId,
                 preparation.retrievalRunId(),
                 assistantMessageId,
                 preparation.mode().name(),
@@ -230,6 +237,8 @@ public class AnswerPassportService {
                 Map.of(
                         "chatTurnId",
                         context.turnId().toString(),
+                        "modelRouteDecisionId",
+                        modelRouteDecisionId.toString(),
                         "retrievalRunId",
                         preparation.retrievalRunId().toString(),
                         "answerPassportId",
@@ -248,6 +257,7 @@ public class AnswerPassportService {
         return toResponse(
                 passportId,
                 context.turnId(),
+                modelRouteDecisionId,
                 preparation,
                 normalizeProvider(provider),
                 response,
@@ -260,15 +270,20 @@ public class AnswerPassportService {
     @Transactional(readOnly = true)
     public AnswerPassportResponse findByTurn(
             UUID turnId,
-            UUID organizationId,
-            UUID userId
+            SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(turnId, "turnId не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        UUID organizationId = currentUser.getOrganizationId();
+        UUID userId = currentUser.getId();
         List<PassportRow> rows =
                 jdbc.query(
                         """
                         select
                             id,
                             chat_turn_id,
+                            model_route_decision_id,
                             retrieval_run_id,
                             knowledge_base_id,
                             knowledge_mode,
@@ -317,15 +332,21 @@ public class AnswerPassportService {
     public AnswerPassportResponse requireByTurn(
             UUID chatId,
             UUID turnId,
-            UUID organizationId,
-            UUID userId
+            SafeAiUserPrincipal currentUser
     ) {
+        Objects.requireNonNull(chatId, "chatId не должен быть null");
+        Objects.requireNonNull(turnId, "turnId не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+
+        UUID organizationId = currentUser.getOrganizationId();
+        UUID userId = currentUser.getId();
         List<PassportRow> rows =
                 jdbc.query(
                         """
                         select
                             id,
                             chat_turn_id,
+                            model_route_decision_id,
                             retrieval_run_id,
                             knowledge_base_id,
                             knowledge_mode,
@@ -522,6 +543,7 @@ public class AnswerPassportService {
     private AnswerPassportResponse toResponse(
             UUID passportId,
             UUID turnId,
+            UUID modelRouteDecisionId,
             RagPreparation preparation,
             String provider,
             AiChatResponse response,
@@ -559,6 +581,7 @@ public class AnswerPassportService {
                 turnId,
                 preparation.retrievalRunId(),
                 preparation.knowledgeBaseId(),
+                modelRouteDecisionId,
                 preparation.mode(),
                 provider,
                 response.requestedModel(),
@@ -584,6 +607,7 @@ public class AnswerPassportService {
                 row.chatTurnId(),
                 row.retrievalRunId(),
                 row.knowledgeBaseId(),
+                row.modelRouteDecisionId(),
                 row.mode(),
                 row.provider(),
                 row.requestedModel(),
@@ -609,6 +633,10 @@ public class AnswerPassportService {
                 ),
                 resultSet.getObject(
                         "chat_turn_id",
+                        UUID.class
+                ),
+                resultSet.getObject(
+                        "model_route_decision_id",
                         UUID.class
                 ),
                 resultSet.getObject(
@@ -721,6 +749,7 @@ public class AnswerPassportService {
     private record PassportRow(
             UUID id,
             UUID chatTurnId,
+            UUID modelRouteDecisionId,
             UUID retrievalRunId,
             UUID knowledgeBaseId,
             KnowledgeMode mode,

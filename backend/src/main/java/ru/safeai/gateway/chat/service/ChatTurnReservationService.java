@@ -4,7 +4,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiMessage;
-import ru.safeai.gateway.ai.provider.AiProviderProperties;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.config.ChatProperties;
@@ -27,6 +26,10 @@ import ru.safeai.gateway.common.exception.ChatBusyException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.ratelimit.RedisRateLimitService;
+import ru.safeai.gateway.model.domain.ModelRouteRequest;
+import ru.safeai.gateway.model.domain.ModelRouteResult;
+import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
+import ru.safeai.gateway.model.service.ModelRoutingService;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -34,6 +37,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -50,7 +54,7 @@ public class ChatTurnReservationService {
     private final ChatQuotaService quotaService;
     private final ChatTurnRecoveryCoordinator recoveryCoordinator;
     private final AuditEventService auditEventService;
-    private final AiProviderProperties providerProperties;
+    private final ModelRoutingService modelRoutingService;
     private final ChatProperties chatProperties;
     private final ChatMetrics metrics;
     private final Clock clock;
@@ -67,7 +71,7 @@ public class ChatTurnReservationService {
             ChatQuotaService quotaService,
             ChatTurnRecoveryCoordinator recoveryCoordinator,
             AuditEventService auditEventService,
-            AiProviderProperties providerProperties,
+            ModelRoutingService modelRoutingService,
             ChatProperties chatProperties,
             ChatMetrics metrics,
             Clock clock
@@ -83,7 +87,7 @@ public class ChatTurnReservationService {
         this.quotaService = quotaService;
         this.recoveryCoordinator = recoveryCoordinator;
         this.auditEventService = auditEventService;
-        this.providerProperties = providerProperties;
+        this.modelRoutingService = modelRoutingService;
         this.chatProperties = chatProperties;
         this.metrics = metrics;
         this.clock = clock;
@@ -102,7 +106,8 @@ public class ChatTurnReservationService {
     @Transactional(
             noRollbackFor = {
                     ChatTurnFailedException.class,
-                    AiOutcomeAmbiguousException.class
+                    AiOutcomeAmbiguousException.class,
+                    ModelRouteDeniedException.class
             }
     )
     public ChatProcessingContext reserveOrReplay(
@@ -197,6 +202,31 @@ public class ChatTurnReservationService {
         UUID turnId =
                 UUID.randomUUID();
 
+        /*
+         * V45 Model Control Plane decision is persisted after ChatTurn
+         * idempotency lookup but before USER/PROCESSING/quota/rate-limit
+         * reservation. The selected route must exactly match the physical
+         * single runtime adapter; true provider/model multiplexing remains
+         * a later data-plane milestone.
+         */
+        ModelRouteResult route =
+                modelRoutingService.decide(
+                        new ModelRouteRequest(
+                                currentUser.getOrganizationId(),
+                                currentUser.getId(),
+                                chatId,
+                                turnId,
+                                clientRequestId,
+                                contentHash,
+                                null,
+                                content,
+                                history,
+                                Set.of()
+                        ),
+                        currentUser,
+                        now
+                );
+
         UUID userMessageId =
                 UUID.randomUUID();
 
@@ -242,7 +272,9 @@ public class ChatTurnReservationService {
                         processingToken,
                         now,
                         leaseUntil,
-                        providerProperties.provider(),
+                        route.provider(),
+                        route.providerModelId(),
+                        route.decisionId(),
                         request.knowledgeBaseId(),
                         request.knowledgeMode()
                 );
@@ -271,6 +303,10 @@ public class ChatTurnReservationService {
                         "messageId", userMessageId,
                         "clientRequestId", clientRequestId,
                         "providerOperationId", providerOperationId,
+                        "modelRouteDecisionId", route.decisionId(),
+                        "modelKey", route.modelKey(),
+                        "provider", route.provider(),
+                        "requestedModel", route.providerModelId(),
                         "messageLength", content.length()
                 )
         );
@@ -306,6 +342,7 @@ public class ChatTurnReservationService {
                 providerOperationId,
                 processingToken,
                 leaseUntil,
+                route.decisionId(),
                 aiRequest,
                 request.knowledgeBaseId(),
                 request.knowledgeMode(),
@@ -340,6 +377,7 @@ public class ChatTurnReservationService {
                             turn.getProviderOperationId(),
                             null,
                             null,
+                            turn.getModelRouteDecisionId(),
                             null,
                             turn.getKnowledgeBaseId(),
                             turn.getKnowledgeMode(),

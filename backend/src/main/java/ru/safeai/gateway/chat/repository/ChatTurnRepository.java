@@ -102,7 +102,11 @@ public interface ChatTurnRepository
             update chat_turns
                set state = 'SUCCEEDED',
                    assistant_message_id = :assistantMessageId,
-                   requested_model = :requestedModel,
+                   requested_model = case
+                       when model_route_decision_id is null
+                           then :requestedModel
+                       else requested_model
+                   end,
                    resolved_model = :resolvedModel,
                    provider_request_id = :providerRequestId,
                    processing_token = null,
@@ -131,8 +135,16 @@ public interface ChatTurnRepository
     @Query(value = """
             update chat_turns
                set state = 'FAILED',
-                   provider = coalesce(:provider, provider),
-                   requested_model = coalesce(:requestedModel, requested_model),
+                   provider = case
+                       when model_route_decision_id is null
+                           then coalesce(:provider, provider)
+                       else provider
+                   end,
+                   requested_model = case
+                       when model_route_decision_id is null
+                           then coalesce(:requestedModel, requested_model)
+                       else requested_model
+                   end,
                    provider_request_id = :providerRequestId,
                    provider_error_type = :providerErrorType,
                    failure_code = :failureCode,
@@ -163,8 +175,16 @@ public interface ChatTurnRepository
     @Query(value = """
             update chat_turns
                set state = 'AMBIGUOUS',
-                   provider = coalesce(:provider, provider),
-                   requested_model = coalesce(:requestedModel, requested_model),
+                   provider = case
+                       when model_route_decision_id is null
+                           then coalesce(:provider, provider)
+                       else provider
+                   end,
+                   requested_model = case
+                       when model_route_decision_id is null
+                           then coalesce(:requestedModel, requested_model)
+                       else requested_model
+                   end,
                    provider_request_id = :providerRequestId,
                    provider_error_type = :providerErrorType,
                    failure_code = :failureCode,

@@ -3,7 +3,7 @@ package ru.safeai.gateway.model.dto;
 import java.math.BigDecimal;
 
 /**
- * Read-only truth about the one adapter that this V44 runtime can actually
+ * Read-only truth about the one adapter that the current runtime can actually
  * route to. It deliberately does not imply a successful live provider probe.
  */
 public record RuntimeModelStatusResponse(

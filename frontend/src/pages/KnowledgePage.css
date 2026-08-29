@@ -2,12 +2,19 @@
     --knowledge-accent: #2563eb;
     --knowledge-accent-dark: #1d4ed8;
     --knowledge-border: #dbe4ef;
+
+    display: flex;
+    height: 100%;
     min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .knowledge-page__header {
     position: relative;
     display: flex;
+    flex: 0 0 auto;
     align-items: flex-start;
     justify-content: space-between;
     gap: 20px;
@@ -95,12 +102,17 @@
 
 .knowledge-grid {
     display: grid;
+    min-height: 0;
+    flex: 1 1 auto;
     grid-template-columns:
         repeat(
             auto-fill,
             minmax(300px, 1fr)
         );
+    align-content: start;
     gap: 18px;
+    overflow: auto;
+    scrollbar-gutter: stable;
 }
 
 .knowledge-card {
@@ -339,7 +351,7 @@
     border-radius: 14px;
     color: #24324a;
     text-align: left;
-    box-shadow: 0 8px 20px rgb(15 23 42 / 6%);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
     transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
 }
 
@@ -355,7 +367,7 @@
 .knowledge-card__management-action:focus-visible {
     transform: translateY(-1px);
     border-color: #7c8cf8;
-    box-shadow: 0 11px 24px rgb(79 70 229 / 14%);
+    box-shadow: 0 11px 24px rgba(79, 70, 229, 0.14);
 }
 
 .knowledge-card__management-copy {
@@ -383,27 +395,7 @@
     background: #fff;
     color: #3458e8;
     font-size: 15px;
-    box-shadow: 0 4px 12px rgb(37 99 235 / 12%);
-}
-
-.knowledge-page {
-    display: flex;
-    height: 100%;
-    min-height: 0;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-.knowledge-page__header {
-    flex: 0 0 auto;
-}
-
-.knowledge-grid {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;
-    align-content: start;
-    scrollbar-gutter: stable;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
 }
 
 .knowledge-page > .pagination {

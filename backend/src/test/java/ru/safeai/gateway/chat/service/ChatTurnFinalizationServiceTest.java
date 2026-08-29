@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.safeai.gateway.ai.exception.AiProviderException;
@@ -21,8 +22,8 @@ import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.knowledge.rag.AnswerPassportService;
+import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 
-import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -71,7 +73,6 @@ class ChatTurnFinalizationServiceTest {
         assertThat(session)
                 .as("ChatTestFixtures.session() не должен возвращать null")
                 .isNotNull();
-
         assertThat(session.getOrganization())
                 .as("У тестовой chat session должна быть organization")
                 .isNotNull();
@@ -130,9 +131,8 @@ class ChatTurnFinalizationServiceTest {
                 ChatTestFixtures.CHAT_ID,
                 ChatTestFixtures.ORGANIZATION_ID
         )).thenReturn(Optional.of(userMessage));
-        when(sessionRepository.getReferenceById(
-                ChatTestFixtures.CHAT_ID
-        )).thenReturn(session);
+        when(sessionRepository.getReferenceById(ChatTestFixtures.CHAT_ID))
+                .thenReturn(session);
         when(sessionRepository.touchOwned(
                 ChatTestFixtures.CHAT_ID,
                 ChatTestFixtures.USER_ID,
@@ -148,21 +148,40 @@ class ChatTurnFinalizationServiceTest {
 
         ArgumentCaptor<ChatMessageEntity> assistantCaptor =
                 ArgumentCaptor.forClass(ChatMessageEntity.class);
-        verify(sessionRepository).getReferenceById(
-                ChatTestFixtures.CHAT_ID
+
+        InOrder persistenceOrder = inOrder(turnRepository, messageRepository);
+        persistenceOrder.verify(turnRepository).markSucceeded(
+                eq(ChatTestFixtures.TURN_ID),
+                eq(ChatTestFixtures.PROCESSING_TOKEN),
+                any(UUID.class),
+                eq("requested-model"),
+                eq("resolved-model"),
+                eq("provider-request-id"),
+                eq(ChatTestFixtures.NOW)
         );
+        persistenceOrder.verify(messageRepository).saveAndFlush(any());
+
+        verify(sessionRepository).getReferenceById(ChatTestFixtures.CHAT_ID);
         verify(messageRepository).saveAndFlush(assistantCaptor.capture());
         ChatMessageEntity assistant = assistantCaptor.getValue();
+
         assertThat(assistant.getReplyToMessageId())
                 .isEqualTo(ChatTestFixtures.USER_MESSAGE_ID);
         assertThat(assistant.getRequestedModel()).isEqualTo("requested-model");
         assertThat(assistant.getModel()).isEqualTo("resolved-model");
-        assertThat(assistant.getProviderRequestId())
-                .isEqualTo("provider-request-id");
+        assertThat(assistant.getProviderRequestId()).isEqualTo("provider-request-id");
         assertThat(result.state()).isEqualTo("SUCCEEDED");
         assertThat(result.replay()).isFalse();
-        assertThat(result.assistantMessage().aiResponseStatus())
-                .isEqualTo("COMPLETED");
+        assertThat(result.assistantMessage().aiResponseStatus()).isEqualTo("COMPLETED");
+
+        verify(answerPassportService).persist(
+                eq(context),
+                eq(assistant.getId()),
+                eq("openai"),
+                any(),
+                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class),
+                eq(ChatTestFixtures.NOW)
+        );
         verify(quotaService).settleSuccess(
                 ChatTestFixtures.TURN_ID,
                 ChatTestFixtures.pricedResponse(),
@@ -189,13 +208,15 @@ class ChatTurnFinalizationServiceTest {
         )).isInstanceOf(ChatStaleProcessorException.class);
 
         verify(messageRepository, never()).saveAndFlush(any());
+        verify(answerPassportService, never()).persist(
+                any(), any(), any(), any(), any(), any()
+        );
         verify(quotaService, never()).settleSuccess(any(), any(), any());
     }
 
     @Test
     void connectFailureBecomesStableFailedAndReleasesQuota() {
-        AiProviderException exception =
-                unambiguousConnectionFailure();
+        AiProviderException exception = unambiguousConnectionFailure();
 
         when(turnRepository.markFailed(
                 ChatTestFixtures.TURN_ID,
@@ -224,15 +245,11 @@ class ChatTurnFinalizationServiceTest {
                 "AI_PROVIDER_CONNECT_FAILURE",
                 ChatTestFixtures.NOW
         );
-
         verify(quotaService).releaseFailure(
                 ChatTestFixtures.TURN_ID,
                 ChatTestFixtures.NOW
         );
-
-        verify(metrics).recordTerminalAfterCommit(
-                ChatTurnState.FAILED
-        );
+        verify(metrics).recordTerminalAfterCommit(ChatTurnState.FAILED);
     }
 
     @Test
@@ -296,20 +313,18 @@ class ChatTurnFinalizationServiceTest {
         succeeded.setState(ChatTurnState.SUCCEEDED);
         succeeded.setProcessingToken(null);
         succeeded.setLeaseUntil(null);
-        succeeded.setProviderCallStartedAt(
-                ChatTestFixtures.NOW.minusSeconds(5)
-        );
-        succeeded.setAssistantMessageId(
-                ChatTestFixtures.ASSISTANT_MESSAGE_ID
-        );
+        succeeded.setProviderCallStartedAt(ChatTestFixtures.NOW.minusSeconds(5));
+        succeeded.setAssistantMessageId(ChatTestFixtures.ASSISTANT_MESSAGE_ID);
         succeeded.setCompletedAt(ChatTestFixtures.NOW);
         succeeded.setUpdatedAt(ChatTestFixtures.NOW);
+
         when(turnRepository.findByIdAndSession_IdAndUser_IdAndOrganization_Id(
                 ChatTestFixtures.TURN_ID,
                 ChatTestFixtures.CHAT_ID,
                 ChatTestFixtures.USER_ID,
                 ChatTestFixtures.ORGANIZATION_ID
         )).thenReturn(Optional.of(succeeded));
+
         ChatMessageEntity assistant = ChatMessageEntity.completedAssistant(
                 ChatTestFixtures.ASSISTANT_MESSAGE_ID,
                 ChatTestFixtures.session(),
@@ -338,22 +353,18 @@ class ChatTurnFinalizationServiceTest {
                 .isEqualTo(ChatTestFixtures.CLIENT_REQUEST_ID);
         assertThat(response.assistantMessage().replyToMessageId())
                 .isEqualTo(ChatTestFixtures.USER_MESSAGE_ID);
+        verify(answerPassportService).findByTurn(
+                eq(ChatTestFixtures.TURN_ID),
+                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+        );
     }
 
     private void stubOwnedTurn() {
         processingTurn = mock(ChatTurnEntity.class);
-
-        when(processingTurn.getState())
-                .thenReturn(ChatTurnState.PROCESSING);
-
-        when(processingTurn.getProvider())
-                .thenReturn("openai");
-
+        when(processingTurn.getState()).thenReturn(ChatTurnState.PROCESSING);
+        when(processingTurn.getProvider()).thenReturn("openai");
         when(processingTurn.getCreatedAt())
-                .thenReturn(
-                        ChatTestFixtures.NOW.minusSeconds(10)
-                );
-
+                .thenReturn(ChatTestFixtures.NOW.minusSeconds(10));
         when(turnRepository.findByIdAndSession_IdAndUser_IdAndOrganization_Id(
                 ChatTestFixtures.TURN_ID,
                 ChatTestFixtures.CHAT_ID,
@@ -363,14 +374,7 @@ class ChatTurnFinalizationServiceTest {
     }
 
     private static ChatProcessingContext context() {
-        return new ChatProcessingContext(
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.TURN_ID,
-                ChatTestFixtures.USER_MESSAGE_ID,
-                ChatTestFixtures.CLIENT_REQUEST_ID,
-                ChatTestFixtures.PROVIDER_OPERATION_ID,
-                ChatTestFixtures.PROCESSING_TOKEN,
-                ChatTestFixtures.NOW.plus(Duration.ofMinutes(3)),
+        return ChatProcessingContextTestFixtures.processing(
                 new ru.safeai.gateway.ai.dto.AiChatRequest(
                         ChatTestFixtures.USER_ID,
                         ChatTestFixtures.ORGANIZATION_ID,
@@ -380,23 +384,12 @@ class ChatTurnFinalizationServiceTest {
                         null,
                         "Question",
                         java.util.List.of()
-                ),
-                false
+                )
         );
     }
 
     private static ChatProcessingContext replayContext() {
-        return new ChatProcessingContext(
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.TURN_ID,
-                ChatTestFixtures.USER_MESSAGE_ID,
-                ChatTestFixtures.CLIENT_REQUEST_ID,
-                ChatTestFixtures.PROVIDER_OPERATION_ID,
-                null,
-                null,
-                null,
-                true
-        );
+        return ChatProcessingContextTestFixtures.replay();
     }
 
     private static ChatTurnEntity processingTurn() {
@@ -410,12 +403,15 @@ class ChatTurnFinalizationServiceTest {
                 ChatTestFixtures.PROCESSING_TOKEN,
                 ChatTestFixtures.NOW.minusSeconds(10),
                 ChatTestFixtures.NOW.plusSeconds(60),
-                "openai"
+                "openai",
+                "requested-model",
+                ChatProcessingContextTestFixtures.MODEL_ROUTE_DECISION_ID,
+                null,
+                KnowledgeMode.GENERAL
         );
     }
 
-    private static AiProviderException
-    unambiguousConnectionFailure() {
+    private static AiProviderException unambiguousConnectionFailure() {
         return new AiProviderUnavailableException(
                 "openai",
                 "requested-model",

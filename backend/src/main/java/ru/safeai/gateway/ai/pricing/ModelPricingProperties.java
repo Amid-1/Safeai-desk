@@ -66,7 +66,6 @@ public final class ModelPricingProperties {
 
     /**
      * Flat ordinary input/output pricing snapshot.
-     *
      * <p>Эта schema намеренно не утверждает поддержку cached input,
      * cache-write или tiered/long-context pricing. Если provider сообщает
      * фактически использованные specialized billing dimensions,
@@ -80,7 +79,7 @@ public final class ModelPricingProperties {
             String version
     ) {
         private static final int MAX_PRICE_SCALE = 12;
-        private static final int MAX_PRICE_PRECISION = 24;
+        private static final int MAX_PRICE_INTEGER_DIGITS = 18;
 
         public ModelPrice {
             if (model == null || model.isBlank()) {
@@ -156,19 +155,34 @@ public final class ModelPricingProperties {
                         propertyName + " не задан"
                 );
             }
+
             if (value.signum() < 0) {
                 throw new IllegalStateException(
                         propertyName + " должен быть неотрицательным"
                 );
             }
-            if (value.scale() > MAX_PRICE_SCALE) {
+
+            BigDecimal normalized = value.stripTrailingZeros();
+            int scale = Math.max(
+                    normalized.scale(),
+                    0
+            );
+            int integerDigits = Math.max(
+                    normalized.precision() - normalized.scale(),
+                    0
+            );
+
+            if (scale > MAX_PRICE_SCALE) {
                 throw new IllegalStateException(
-                        propertyName + " имеет чрезмерную точность"
+                        propertyName
+                                + " должен иметь не более 12 знаков после запятой"
                 );
             }
-            if (value.precision() > MAX_PRICE_PRECISION) {
+
+            if (integerDigits > MAX_PRICE_INTEGER_DIGITS) {
                 throw new IllegalStateException(
-                        propertyName + " имеет чрезмерную precision"
+                        propertyName
+                                + " должен помещаться в PostgreSQL numeric(30,12)"
                 );
             }
 

@@ -31,6 +31,10 @@ export const AUDIT_EVENT_TYPES = [
     'KNOWLEDGE_RETRIEVAL_COMPLETED',
     'KNOWLEDGE_ANSWER_GENERATED',
     'KNOWLEDGE_REINDEX_REQUESTED',
+    'MODEL_CATALOG_VERSION_CREATED',
+    'MODEL_POLICY_VERSION_CREATED',
+    'MODEL_ROUTE_DECIDED',
+    'MODEL_ROUTE_DENIED',
 ] as const
 
 export type AuditEventType =
@@ -133,6 +137,18 @@ const AUDIT_EVENT_TYPE_LABELS:
 
     KNOWLEDGE_REINDEX_REQUESTED:
         'Запущена повторная индексация',
+
+    MODEL_CATALOG_VERSION_CREATED:
+        'Создана версия каталога модели',
+
+    MODEL_POLICY_VERSION_CREATED:
+        'Создана версия model policy',
+
+    MODEL_ROUTE_DECIDED:
+        'Маршрут модели разрешён',
+
+    MODEL_ROUTE_DENIED:
+        'Маршрут модели отклонён',
 }
 
 export function getAuditEventTypeLabel(

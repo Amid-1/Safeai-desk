@@ -159,6 +159,7 @@ export type AnswerPassport = {
     chatTurnId: string
     retrievalRunId: string
     knowledgeBaseId: string
+    modelRouteDecisionId: string | null
     knowledgeMode: Exclude<KnowledgeMode, 'GENERAL'>
     provider: string
     requestedModel: string
@@ -687,6 +688,10 @@ export function parseAnswerPassport(
         knowledgeBaseId: expectUuid(
             record.knowledgeBaseId,
             `${field}.knowledgeBaseId`,
+        ),
+        modelRouteDecisionId: expectNullableUuid(
+            record.modelRouteDecisionId ?? null,
+            `${field}.modelRouteDecisionId`,
         ),
         knowledgeMode: mode,
         provider: expectString(record.provider, `${field}.provider`),

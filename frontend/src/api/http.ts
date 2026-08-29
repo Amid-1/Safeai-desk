@@ -1,55 +1,39 @@
+import { ApiError } from './httpErrors'
+import { parseSuccessBlob, parseSuccessBody, createApiErrorFromResponse } from './httpResponseSupport'
 import {
-    AuthCoordinationError,
+    awaitWithDeadline,
+    createAbortedApiError,
+    createDeadline,
+    createRequestSignal,
+    createTimeoutApiError,
+    normalizeTimeout,
+    toCoordinationApiError,
+    toNetworkApiError,
+} from './httpRequestSupport'
+
+export {
+    ApiError,
+    getApiErrorMessage,
+    getApiErrorPresentation,
+    parseRetryAfter,
+} from './httpErrors'
+export type { ApiErrorBody, ApiErrorPresentation } from './httpErrors'
+
+import {
     publishAuthEvent,
     runWithAuthRefreshLock,
 } from './authCoordinator'
+
 
 import {
     createSecureUuid,
 } from '../utils/secureUuid'
 
-export type ApiErrorBody = {
-    timestamp?: string
-    status?: number
-    /** Standard application error code used by the common API envelope. */
-    error?: string
-    /** Domain error code used by ChatErrorResponse and newer endpoints. */
-    code?: string
-    message?: string
-    path?: string
-    requestId?: string
-    fieldErrors?: Record<string, string[]> | null
-    retryAfterSeconds?: number
-}
-
-export class ApiError extends Error {
-    readonly status: number
-    readonly errorCode?: string
-    readonly path?: string
-    readonly requestId?: string
-    readonly fieldErrors?: Record<string, string[]> | null
-    readonly retryAfterSeconds?: number
-
-    constructor(
-        message: string,
-        body: ApiErrorBody,
-        status: number,
-    ) {
-        super(message)
-
-        this.name = 'ApiError'
-        this.status = status
-        this.errorCode = body.code ?? body.error
-        this.path = body.path
-        this.requestId = body.requestId
-        this.fieldErrors = body.fieldErrors
-        this.retryAfterSeconds = body.retryAfterSeconds
-    }
-}
 
 export type ApiResponseType =
     | 'json'
     | 'blob'
+
 
 export type ApiRequestOptions = Omit<
     RequestInit,
@@ -62,21 +46,17 @@ export type ApiRequestOptions = Omit<
     responseType?: ApiResponseType
 }
 
+
 export type UnauthorizedReason =
     | 'access-token-refresh-rejected'
     | 'request-unauthorized'
+
 
 type RefreshResult =
     | { kind: 'success' }
     | { kind: 'unauthorized'; error: ApiError }
     | { kind: 'temporary-failure'; error: ApiError }
 
-type RequestSignalContext = {
-    signal?: AbortSignal
-    timedOut: () => boolean
-    externallyAborted: () => boolean
-    cleanup: () => void
-}
 
 type ApiRequestContext = {
     deadline: number | null
@@ -84,6 +64,7 @@ type ApiRequestContext = {
     allowRefresh: boolean
     allowCsrfRetry: boolean
 }
+
 
 export const API_TIMEOUTS = {
     default: 30_000,
@@ -97,17 +78,24 @@ export const API_TIMEOUTS = {
     download: 120_000,
 } as const
 
+
 const RAW_API_BASE_PATH =
     import.meta.env.VITE_API_BASE_URL ?? ''
+
 
 const API_BASE_PATH = validateApiBasePath(
     RAW_API_BASE_PATH,
 )
 
+
 const CSRF_COOKIE_NAME = 'XSRF-TOKEN'
+
 const CSRF_HEADER_NAME = 'X-XSRF-TOKEN'
+
 const REQUEST_ID_HEADER_NAME = 'X-Request-Id'
+
 const UNAUTHORIZED_EVENT_NAME = 'safeai:unauthorized'
+
 
 const SAFE_METHODS = new Set([
     'GET',
@@ -115,37 +103,15 @@ const SAFE_METHODS = new Set([
     'OPTIONS',
 ])
 
+
 const CSRF_RETRYABLE_ERROR_CODES = new Set([
     'CSRF_TOKEN_INVALID',
     'CSRF_TOKEN_EXPIRED',
 ])
 
-const PUBLIC_MESSAGE_ERROR_CODES = new Set([
-    'VALIDATION_ERROR',
-    'CONSTRAINT_VIOLATION',
-    'BAD_REQUEST',
-    'RATE_LIMIT_EXCEEDED',
-    'TOO_MANY_REQUESTS',
-    'QUOTA_EXCEEDED',
-    'CHAT_QUOTA_EXCEEDED',
-    'AI_QUOTA_EXCEEDED',
-    'CHAT_BUSY',
-    'CHAT_TURN_IN_PROGRESS',
-    'IDEMPOTENCY_KEY_REUSED',
-    'AI_OUTCOME_AMBIGUOUS',
-    'CHAT_ACCESS_REVOKED_DURING_PROCESSING',
-    'CHAT_LEASE_UNAVAILABLE',
-    'CHAT_PROCESSOR_FENCED',
-    'RESOURCE_CONFLICT',
-    'CONFLICT',
-])
-
-const MAX_ERROR_BODY_BYTES = 64 * 1024
-const MAX_SUCCESS_BODY_BYTES = 4 * 1024 * 1024
-const MAX_BINARY_RESPONSE_BYTES =
-    100 * 1024 * 1024
 
 let refreshPromise: Promise<RefreshResult> | null = null
+
 
 export function subscribeUnauthorized(
     handler: (reason: UnauthorizedReason) => void,
@@ -175,86 +141,6 @@ export function subscribeUnauthorized(
     }
 }
 
-export type ApiErrorPresentation = {
-    message: string
-    requestId?: string
-}
-
-export function getApiErrorPresentation(
-    error: unknown,
-    fallback: string,
-): ApiErrorPresentation {
-    if (!(error instanceof ApiError)) {
-        return {
-            message: fallback,
-        }
-    }
-
-    const fieldErrorText = formatFieldErrors(
-        error.fieldErrors,
-    )
-
-    const publicMessage = error.errorCode
-        && PUBLIC_MESSAGE_ERROR_CODES.has(error.errorCode)
-        ? error.message
-        : ''
-
-    const requestId =
-        shouldShowRequestId(error)
-            ? error.requestId
-            : undefined
-
-    return {
-        message:
-            fieldErrorText
-            || publicMessage
-            || fallback,
-        requestId,
-    }
-}
-
-export function getApiErrorMessage(
-    error: unknown,
-    fallback: string,
-): string {
-    const presentation =
-        getApiErrorPresentation(
-            error,
-            fallback,
-        )
-
-    const requestIdPart =
-        presentation.requestId
-            ? ` Request ID: ${presentation.requestId}`
-            : ''
-
-    return `${
-        presentation.message
-    }${requestIdPart}`
-}
-
-function shouldShowRequestId(
-    error: ApiError,
-): boolean {
-    if (!error.requestId) {
-        return false
-    }
-
-    /*
-     * Ожидаемые клиентские ошибки (400/409/413/429 и другие 4xx)
-     * пользователь может исправить сам, поэтому технический идентификатор
-     * запроса в UI только создаёт шум.
-     *
-     * Для 5xx Request ID полезен службе поддержки для поиска конкретного
-     * запроса в backend/proxy logs.
-     *
-     * status === 0 используется клиентом для сетевых/transport ошибок:
-     * запрос мог успеть уйти на сервер, поэтому ID также полезен
-     * для диагностики.
-     */
-    return error.status === 0
-        || error.status >= 500
-}
 
 export function validateApiBasePath(
     value: string,
@@ -284,6 +170,7 @@ export function validateApiBasePath(
 
     return resolved.pathname.replace(/\/+$/, '')
 }
+
 
 export function buildApiUrl(path: string): string {
     if (path !== path.trim()) {
@@ -324,30 +211,6 @@ export function buildApiUrl(path: string): string {
     return `${resolved.pathname}${resolved.search}`
 }
 
-export function parseRetryAfter(
-    value: string | null,
-): number | undefined {
-    if (!value) {
-        return undefined
-    }
-
-    const seconds = Number(value)
-
-    if (Number.isFinite(seconds) && seconds >= 0) {
-        return Math.max(1, Math.ceil(seconds))
-    }
-
-    const timestamp = Date.parse(value)
-
-    if (!Number.isFinite(timestamp)) {
-        return undefined
-    }
-
-    return Math.max(
-        1,
-        Math.ceil((timestamp - Date.now()) / 1000),
-    )
-}
 
 export async function ensureCsrfToken(): Promise<string> {
     const existingToken = getCookie(CSRF_COOKIE_NAME)
@@ -362,6 +225,7 @@ export async function ensureCsrfToken(): Promise<string> {
     )
 }
 
+
 export async function rotateCsrfToken(
     previousToken?: string | null,
 ): Promise<string> {
@@ -371,6 +235,7 @@ export async function rotateCsrfToken(
         previousToken,
     )
 }
+
 
 export async function apiRequest<T>(
     path: string,
@@ -395,6 +260,7 @@ export async function apiRequest<T>(
         context,
     )
 }
+
 
 async function apiRequestInternal<T>(
     path: string,
@@ -561,6 +427,7 @@ async function apiRequestInternal<T>(
     return parseSuccessBody<T>(response)
 }
 
+
 async function requireCsrfToken(
     deadline: number | null,
 ): Promise<string> {
@@ -572,6 +439,7 @@ async function requireCsrfToken(
 
     return fetchCsrfToken(deadline, false)
 }
+
 
 async function fetchCsrfToken(
     deadline: number | null,
@@ -641,6 +509,7 @@ async function fetchCsrfToken(
     return token
 }
 
+
 async function refreshAccessToken(
     deadline: number | null,
 ): Promise<RefreshResult> {
@@ -691,6 +560,7 @@ async function refreshAccessToken(
         deadline,
     )
 }
+
 
 async function probeAccessToken(
     deadline: number | null,
@@ -746,6 +616,7 @@ async function probeAccessToken(
         ),
     }
 }
+
 
 async function doRefreshAccessToken(
     deadline: number | null,
@@ -863,6 +734,7 @@ async function doRefreshAccessToken(
     }
 }
 
+
 async function fetchWithApiError(
     path: string,
     init: RequestInit,
@@ -904,396 +776,6 @@ async function fetchWithApiError(
     }
 }
 
-function createRequestSignal(
-    externalSignal: AbortSignal | null | undefined,
-    deadline: number | null,
-): RequestSignalContext {
-    if (!externalSignal && deadline === null) {
-        return {
-            signal: undefined,
-            timedOut: () => false,
-            externallyAborted: () => false,
-            cleanup: () => undefined,
-        }
-    }
-
-    const controller = new AbortController()
-    let timeoutId: number | undefined
-    let didTimeout = false
-    let didAbortExternally = false
-
-    const abortFromExternal = () => {
-        didAbortExternally = true
-        controller.abort(externalSignal?.reason)
-    }
-
-    if (externalSignal) {
-        if (externalSignal.aborted) {
-            abortFromExternal()
-        } else {
-            externalSignal.addEventListener(
-                'abort',
-                abortFromExternal,
-                {
-                    once: true,
-                },
-            )
-        }
-    }
-
-    if (deadline !== null) {
-        const remaining = deadline - Date.now()
-
-        if (remaining <= 0) {
-            didTimeout = true
-            controller.abort(
-                new DOMException(
-                    'Request timed out',
-                    'TimeoutError',
-                ),
-            )
-        } else {
-            timeoutId = window.setTimeout(() => {
-                didTimeout = true
-                controller.abort(
-                    new DOMException(
-                        'Request timed out',
-                        'TimeoutError',
-                    ),
-                )
-            }, remaining)
-        }
-    }
-
-    return {
-        signal: controller.signal,
-        timedOut: () => didTimeout,
-        externallyAborted: () => didAbortExternally,
-        cleanup: () => {
-            if (timeoutId !== undefined) {
-                window.clearTimeout(timeoutId)
-            }
-
-            externalSignal?.removeEventListener(
-                'abort',
-                abortFromExternal,
-            )
-        },
-    }
-}
-
-function normalizeTimeout(
-    timeoutMs: number | undefined,
-): number | null {
-    if (timeoutMs === 0) {
-        return null
-    }
-
-    if (timeoutMs === undefined) {
-        return API_TIMEOUTS.default
-    }
-
-    if (
-        !Number.isFinite(timeoutMs)
-        || timeoutMs < 0
-    ) {
-        throw new Error(
-            'timeoutMs должен быть неотрицательным числом',
-        )
-    }
-
-    return Math.max(1, Math.trunc(timeoutMs))
-}
-
-function createDeadline(
-    timeoutMs: number,
-): number {
-    return Date.now() + timeoutMs
-}
-
-async function awaitWithDeadline<T>(
-    promise: Promise<T>,
-    deadline: number | null,
-): Promise<T> {
-    if (deadline === null) {
-        return promise
-    }
-
-    const remaining = deadline - Date.now()
-
-    if (remaining <= 0) {
-        throw createTimeoutApiError()
-    }
-
-    let timeoutId: number | undefined
-
-    try {
-        return await Promise.race([
-            promise,
-            new Promise<never>((_resolve, reject) => {
-                timeoutId = window.setTimeout(() => {
-                    reject(createTimeoutApiError())
-                }, remaining)
-            }),
-        ])
-    } finally {
-        if (timeoutId !== undefined) {
-            window.clearTimeout(timeoutId)
-        }
-    }
-}
-
-async function parseErrorBody(
-    response: Response,
-): Promise<ApiErrorBody> {
-    const responseRequestId =
-        response.headers.get(
-            REQUEST_ID_HEADER_NAME,
-        ) ?? undefined
-
-    const retryAfterFromHeader = parseRetryAfter(
-        response.headers.get('Retry-After'),
-    )
-
-    try {
-        const text = await readResponseText(
-            response,
-            MAX_ERROR_BODY_BYTES,
-        )
-
-        if (!text) {
-            return {
-                status: response.status,
-                error: 'HTTP_ERROR',
-                message:
-                    `Запрос завершился с кодом ${response.status}`,
-                requestId: responseRequestId,
-                retryAfterSeconds: retryAfterFromHeader,
-            }
-        }
-
-        const parsed: unknown = JSON.parse(text)
-
-        if (!isRecord(parsed)) {
-            return invalidErrorBody(
-                response,
-                responseRequestId,
-                retryAfterFromHeader,
-            )
-        }
-
-        const code = asOptionalString(parsed.code)
-        const error = asOptionalString(parsed.error)
-        const retryAfterFromBody =
-            asOptionalNonNegativeNumber(
-                parsed.retryAfterSeconds,
-            )
-
-        return {
-            timestamp: asOptionalString(
-                parsed.timestamp,
-            ),
-            status:
-                asOptionalNumber(parsed.status)
-                ?? response.status,
-            code,
-            error: error ?? code,
-            message: asOptionalString(
-                parsed.message,
-            ),
-            path: asOptionalString(parsed.path),
-            requestId:
-                asOptionalString(parsed.requestId)
-                ?? responseRequestId,
-            fieldErrors: parseFieldErrors(
-                parsed.fieldErrors,
-            ),
-            retryAfterSeconds:
-                retryAfterFromHeader
-                ?? retryAfterFromBody,
-        }
-    } catch {
-        return invalidErrorBody(
-            response,
-            responseRequestId,
-            retryAfterFromHeader,
-        )
-    }
-}
-
-async function parseSuccessBlob(
-    response: Response,
-): Promise<Blob> {
-    if (
-        response.status === 204
-        || response.status === 205
-    ) {
-        return new Blob()
-    }
-
-    const contentLength = Number(
-        response.headers.get(
-            'Content-Length',
-        ),
-    )
-
-    if (
-        Number.isFinite(contentLength)
-        && contentLength
-            > MAX_BINARY_RESPONSE_BYTES
-    ) {
-        throw new ApiError(
-            'Файл превышает допустимый размер ответа',
-            {
-                status: response.status,
-                error: 'RESPONSE_TOO_LARGE',
-                message:
-                    'Файл превышает допустимый размер ответа',
-                requestId:
-                    response.headers.get(
-                        REQUEST_ID_HEADER_NAME,
-                    ) ?? undefined,
-            },
-            response.status,
-        )
-    }
-
-    const blob = await response.blob()
-
-    if (
-        blob.size
-        > MAX_BINARY_RESPONSE_BYTES
-    ) {
-        throw new ApiError(
-            'Файл превышает допустимый размер ответа',
-            {
-                status: response.status,
-                error: 'RESPONSE_TOO_LARGE',
-                message:
-                    'Файл превышает допустимый размер ответа',
-                requestId:
-                    response.headers.get(
-                        REQUEST_ID_HEADER_NAME,
-                    ) ?? undefined,
-            },
-            response.status,
-        )
-    }
-
-    return blob
-}
-
-async function parseSuccessBody<T>(
-    response: Response,
-): Promise<T> {
-    if (
-        response.status === 204
-        || response.status === 205
-    ) {
-        return undefined as T
-    }
-
-    const text = await readResponseText(
-        response,
-        MAX_SUCCESS_BODY_BYTES,
-    )
-
-    if (!text) {
-        return undefined as T
-    }
-
-    try {
-        return JSON.parse(text) as T
-    } catch {
-        throw new ApiError(
-            'Сервер вернул некорректный JSON-ответ',
-            {
-                status: response.status,
-                error: 'INVALID_RESPONSE',
-                message:
-                    'Сервер вернул некорректный JSON-ответ',
-                requestId:
-                    response.headers.get(
-                        REQUEST_ID_HEADER_NAME,
-                    ) ?? undefined,
-            },
-            response.status,
-        )
-    }
-}
-
-async function readResponseText(
-    response: Response,
-    maxBytes: number,
-): Promise<string> {
-    const contentLength = Number(
-        response.headers.get('Content-Length'),
-    )
-
-    if (
-        Number.isFinite(contentLength)
-        && contentLength > maxBytes
-    ) {
-        throw new ApiError(
-            'Ответ сервера превышает допустимый размер',
-            {
-                status: response.status,
-                error: 'RESPONSE_TOO_LARGE',
-                message:
-                    'Ответ сервера превышает допустимый размер',
-            },
-            response.status,
-        )
-    }
-
-    const text = await response.text()
-    const byteLength = new TextEncoder()
-        .encode(text)
-        .byteLength
-
-    if (byteLength > maxBytes) {
-        throw new ApiError(
-            'Ответ сервера превышает допустимый размер',
-            {
-                status: response.status,
-                error: 'RESPONSE_TOO_LARGE',
-                message:
-                    'Ответ сервера превышает допустимый размер',
-            },
-            response.status,
-        )
-    }
-
-    return text
-}
-
-async function createApiErrorFromResponse(
-    response: Response,
-    fallbackMessage: string,
-): Promise<ApiError> {
-    const body = await parseErrorBody(response)
-
-    return new ApiError(
-        body.message || fallbackMessage,
-        body,
-        response.status,
-    )
-}
-
-function invalidErrorBody(
-    response: Response,
-    requestId: string | undefined,
-    retryAfterSeconds: number | undefined,
-): ApiErrorBody {
-    return {
-        status: response.status,
-        error: 'INVALID_ERROR_RESPONSE',
-        message:
-            `Сервер вернул некорректный ответ с кодом ${response.status}`,
-        requestId,
-        retryAfterSeconds,
-    }
-}
 
 function notifyUnauthorized(
     reason: UnauthorizedReason,
@@ -1310,21 +792,6 @@ function notifyUnauthorized(
     publishAuthEvent('SESSION_REJECTED')
 }
 
-function formatFieldErrors(
-    fieldErrors?: Record<string, string[]> | null,
-): string {
-    if (!fieldErrors) {
-        return ''
-    }
-
-    return Object.entries(fieldErrors)
-        .flatMap(([field, messages]) =>
-            messages.map(
-                (message) => `${field}: ${message}`,
-            ),
-        )
-        .join('; ')
-}
 
 function getCookie(name: string): string | null {
     const prefix = `${name}=`
@@ -1349,11 +816,13 @@ function getCookie(name: string): string | null {
     }
 }
 
+
 function isUnsafeMethod(method: string): boolean {
     return !SAFE_METHODS.has(
         method.toUpperCase(),
     )
 }
+
 
 function isAuthEndpoint(path: string): boolean {
     const requestPath = path.split(/[?#]/, 1)[0]
@@ -1364,173 +833,7 @@ function isAuthEndpoint(path: string): boolean {
         || requestPath === '/api/auth/csrf'
 }
 
+
 function createRequestId(): string {
     return createSecureUuid()
-}
-
-function createAbortedApiError(
-    requestId?: string,
-): ApiError {
-    return new ApiError(
-        'Запрос был отменён',
-        {
-            status: 0,
-            error: 'REQUEST_ABORTED',
-            message: 'Запрос был отменён',
-            requestId,
-        },
-        0,
-    )
-}
-
-function createTimeoutApiError(
-    requestId?: string,
-): ApiError {
-    return new ApiError(
-        'Превышено время ожидания ответа сервера',
-        {
-            status: 0,
-            error: 'REQUEST_TIMEOUT',
-            message:
-                'Превышено время ожидания ответа сервера',
-            requestId,
-        },
-        0,
-    )
-}
-
-function toNetworkApiError(
-    error: unknown,
-    fallbackMessage: string,
-    requestId?: string,
-): ApiError {
-    if (error instanceof ApiError) {
-        return error
-    }
-
-    if (
-        error instanceof DOMException
-        && error.name === 'AbortError'
-    ) {
-        return new ApiError(
-            'Запрос был отменён',
-            {
-                status: 0,
-                error: 'REQUEST_ABORTED',
-                message: 'Запрос был отменён',
-                requestId,
-            },
-            0,
-        )
-    }
-
-    return new ApiError(
-        fallbackMessage,
-        {
-            status: 0,
-            error: 'NETWORK_ERROR',
-            message: fallbackMessage,
-            requestId,
-        },
-        0,
-    )
-}
-
-function toCoordinationApiError(
-    error: unknown,
-): ApiError {
-    if (error instanceof ApiError) {
-        return error
-    }
-
-    if (error instanceof AuthCoordinationError) {
-        return new ApiError(
-            error.message,
-            {
-                status: 0,
-                error: error.code,
-                message: error.message,
-            },
-            0,
-        )
-    }
-
-    return toNetworkApiError(
-        error,
-        'Не удалось согласовать обновление сессии между вкладками',
-    )
-}
-
-function isRecord(
-    value: unknown,
-): value is Record<string, unknown> {
-    return typeof value === 'object'
-        && value !== null
-        && !Array.isArray(value)
-}
-
-function asOptionalString(
-    value: unknown,
-): string | undefined {
-    return typeof value === 'string'
-        ? value
-        : undefined
-}
-
-function asOptionalNumber(
-    value: unknown,
-): number | undefined {
-    return (
-        typeof value === 'number'
-        && Number.isFinite(value)
-    )
-        ? value
-        : undefined
-}
-
-function asOptionalNonNegativeNumber(
-    value: unknown,
-): number | undefined {
-    const parsed = asOptionalNumber(value)
-
-    return parsed !== undefined && parsed >= 0
-        ? parsed
-        : undefined
-}
-
-function parseFieldErrors(
-    value: unknown,
-): Record<string, string[]> | null | undefined {
-    if (value === null) {
-        return null
-    }
-
-    if (!isRecord(value)) {
-        return undefined
-    }
-
-    const result: Record<string, string[]> = {}
-
-    Object.entries(value).forEach(
-        ([field, messages]) => {
-            if (!Array.isArray(messages)) {
-                return
-            }
-
-            const normalizedMessages =
-                messages.filter(
-                    (
-                        message,
-                    ): message is string =>
-                        typeof message === 'string',
-                )
-
-            if (normalizedMessages.length > 0) {
-                result[field] =
-                    normalizedMessages
-            }
-        },
-    )
-
-    return result
 }

@@ -3,13 +3,21 @@ SafeAI Desk — Roadmap развития с августа 2026
 Актуальность: 28 августа 2026
 Горизонт: осень 2026 → конец 2027
 Проект: SafeAI Desk
-Позиционирование: production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного использования внешних и локальных AI-моделей внутри организаций.
+Позиционирование: production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного использования 
+внешних и локальных AI-моделей внутри организаций.
+
+Этот roadmap синхронизирован с фактическим baseline до Flyway V45 включительно.
+Knowledge/RAG и первый Model Control Plane уже реализованы; они больше не указаны как полностью будущие эпики.
+Будущие номера Flyway-миграций намеренно не резервируются заранее: перед merge всегда использовать реально свободный 
+version.
 
 1. Текущее состояние проекта
 
-SafeAI Desk уже выходит за рамки обычного интерфейса над LLM API.
+SafeAI Desk уже выходит за рамки интерфейса над LLM API.
 
-На текущем этапе фундамент проекта включает:
+На текущем этапе реализован фундамент:
+
+Identity / Security
 
 organization-based multi-tenancy;
 
@@ -17,9 +25,9 @@ RBAC SUPER_ADMIN / ADMIN / USER;
 
 HttpOnly cookie JWT authentication;
 
-CSRF-защиту;
+CSRF-защита;
 
-строгую JWT validation;
+строгая JWT validation;
 
 user tokenVersion и organization authVersion;
 
@@ -27,15 +35,15 @@ refresh-token rotation;
 
 refresh-token reuse detection;
 
-tenant-safe управление пользователями и организациями;
+tenant-safe user/organization management;
 
-Redis rate limiting;
+production security invariant validators;
 
-transactional audit outbox;
+trusted-proxy/client-IP handling;
 
-usage analytics;
+canonical server request IDs.
 
-pricing/data-quality semantics без подмены неизвестных значений нулём;
+Durable AI execution
 
 OpenAI / Anthropic / mock provider abstraction;
 
@@ -43,11 +51,39 @@ durable ChatTurn state machine;
 
 idempotency;
 
-lease и fencing;
+lease + fencing;
 
-защиту от повторного provider call при неопределённом исходе;
+provider-call boundary;
+
+recovery;
+
+AMBIGUOUS outcome protection;
+
+Redis rate limiting;
+
+quota reservation semantics.
+
+Audit / Usage
+
+transactional audit outbox;
+
+immutable actor snapshots;
+
+immutable target organization snapshots;
+
+audit retention/retry/dead-letter;
+
+usage analytics;
+
+pricing/data-quality semantics без подмены unknown нулём;
+
+UTC rollups/reconciliation.
+
+Knowledge / RAG — реализован baseline
 
 tenant/ACL-aware Knowledge Bases;
+
+KB memberships/visibility;
 
 immutable document versions;
 
@@ -55,7 +91,9 @@ durable ingestion;
 
 S3-compatible object storage;
 
-document extraction;
+bounded document extraction;
+
+optional OCR boundary;
 
 embeddings;
 
@@ -65,21 +103,78 @@ RAG context assembly;
 
 inline citations;
 
-knowledge-only fail-closed mode;
+KNOWLEDGE_ONLY controlled abstention;
 
 retrieval provenance;
 
 Answer Passport;
 
+Knowledge health/reindex/evaluation backend;
+
+frontend для KB/documents/memberships/ingestion/citations/passport baseline.
+
+Model Control Plane — реализован V45 baseline
+
+append-only versioned Model Catalog;
+
+lifecycle/capabilities/modalities;
+
+retention/training metadata;
+
+pricing semantics;
+
+scheduled effectiveFrom;
+
+separate latest-created и effective-at-route snapshots;
+
+organization model policies;
+
+allow/deny/default model rules;
+
+token limits;
+
+max-request-cost preflight;
+
+monthly budget preflight SOFT/HARD;
+
+requireCompletePricing / no-training / ZDR requirements;
+
+immutable model-route decisions;
+
+decision digest;
+
+exact binding route decision → ChatTurn;
+
+Answer Passport → exact model-route evidence;
+
+frontend Model Control Plane page.
+
+Infrastructure
+
 PostgreSQL/Flyway integrity constraints;
 
-React frontend с runtime validation API contracts и production error handling.
+Redis;
 
-Следующий этап проекта должен быть не «добавить ещё один чат» или «подключить ещё одну модель», а развить SafeAI Desk в полноценный корпоративный AI Control Plane.
+S3-compatible storage;
+
+Docker/Docker Compose;
+
+Nginx;
+
+Prometheus rules;
+
+production validation/deploy scripts;
+
+PostgreSQL backup/restore scripts;
+
+systemd backup timer/service;
+
+production secret bootstrap examples.
+
+Текущий фокус должен быть не «добавить ещё один чат», а стабилизировать текущий control plane, измерить качество RAG и 
+затем отделить governance plane от полноценного multi-provider data plane.
 
 2. Целевое направление
-
-Целевая архитектура:
 
                         SafeAI Desk
                              │
@@ -98,149 +193,148 @@ React frontend с runtime validation API contracts и production error handling.
        Confluence / Drive / SharePoint / Jira /
        DB / CRM / Git / Slack / internal APIs
 
-Эволюция продукта:
+Эволюция:
 
 2026
 Безопасно пользоваться AI
-
         ↓
+Безопасно использовать корпоративные знания
+        ↓
+Контролировать разрешённые модели и evidence
 
 2027
-Безопасно давать AI доступ к корпоративным данным
-
+Безопасно давать AI доступ к enterprise data sources
         ↓
+Управлять DLP / policy / budgets / identity
+        ↓
+Безопасно позволять AI выполнять действия
 
-2027+
-Безопасно позволять AI выполнять действия внутри компании
-
-3. Этап 1 — завершить Knowledge/RAG vertical slice
+3. Этап 0 — V45 production stabilization
 
 Приоритет: максимальный
+Период: сейчас / перед следующим крупным epic
+
+V45 уже реализован, поэтому ближайшая задача — не проектировать Model Registry заново, а доказать корректность текущего 
+baseline.
+
+Обязательные проверки
+
+fresh migrations V1 → V45;
+
+representative populated upgrade V44 → V45;
+
+Flyway checksum consistency;
+
+backend clean test;
+
+frontend ci/check;
+
+container build/start;
+
+prod-like startup invariants;
+
+tenant isolation;
+
+model catalog authorization;
+
+policy authorization;
+
+route decision authorization;
+
+deferred ChatTurn/route-decision integrity;
+
+Answer Passport/route-decision integrity;
+
+backup/restore drill.
+
+V45 semantic regression cases
+
+Future-scheduled catalog version не становится executable до effectiveFrom.
+
+Latest-created view показывает future snapshot отдельно от effective snapshot.
+
+Route time берётся с server-controlled Clock.
+
+После смены provider/model в новой effective версии старая версия того же modelKey не может пройти runtime matching.
+
+UNPRICED/FREE/CONFIGURED/INCOMPLETE соответствуют DB constraints.
+
+Money fields соответствуют numeric(30,12).
+
+Invalid policy/cost input возвращает controlled 4xx, а не случайный database 500.
+
+HARD budget fail-closed при unverifiable monthly cost.
+
+ALLOWED route commit невозможен без exact planned ChatTurn.
+
+Denied route evidence сохраняется без создания provider operation.
+
+Документация
+
+README/ROADMAP должны описывать V45 как current baseline, а не future work.
+
+4. Этап 1 — Knowledge UX + RAG Evaluations
+
 Период: сентябрь–октябрь 2026
 
-Нужно закончить полный пользовательский сценарий Knowledge.
+Knowledge backend/frontend baseline уже существует. Следующая задача — закрыть продуктовый vertical slice и сделать 
+качество измеримым.
 
-ADMIN
+Knowledge UX hardening
+
+ADMIN:
 
 создаёт Knowledge Base
-→ задаёт visibility
-→ назначает memberships
-→ загружает документы
-→ видит ingestion status
-→ видит READY / FAILED
-→ понимает причину ошибки
-→ запускает reindex
-→ управляет версиями и доступом
+→ visibility / memberships
+→ upload document
+→ immutable version
+→ ingestion status
+→ READY / FAILED + reason
+→ retry/reindex
+→ health
 
-USER
+USER:
 
-открывает AI Chat
-→ выбирает Knowledge Base
-→ задаёт вопрос
-→ получает grounded answer
-→ видит citations
-→ открывает источник
-→ видит документ / версию / страницу
-→ открывает Answer Passport
-
-Реализовать
-
-Knowledge UI
-
-список Knowledge Bases;
-
-создание;
-
-редактирование;
-
-ORGANIZATION / MEMBERS;
-
-memberships;
-
-enabled / disabled;
-
-документы;
-
-immutable versions;
-
-upload;
-
-ingestion state;
-
-ingestion errors;
-
-retry/reindex;
-
-Knowledge health.
+Chat
+→ Knowledge mode / KB scope
+→ question
+→ grounded answer
+→ citations
+→ source drawer
+→ exact document version/page
+→ Answer Passport
 
 Source Drawer
 
-Пример:
+Показывать:
 
-Источники
-
-[1] Политика информационной безопасности.pdf
-    Version 4
-    Pages 12–13
-    Knowledge Base: Security Policies
-
-    "Передача конфиденциальных..."
+citation number
+Knowledge Base
+document
+document version
+page/section
+bounded evidence excerpt
+retrieval score/provenance where appropriate
 
 Answer Passport UI
 
 Показывать:
 
-provider;
-
-requested model;
-
-resolved model;
-
-embedding model;
-
-Knowledge Bases;
-
-retrieval run;
-
-retrieved chunks;
-
-source document;
-
-document version;
-
-page;
-
-citations;
-
-evidence status;
-
-token usage;
-
-cost;
-
-request ID;
-
-timestamps;
-
-prompt/config version в будущем.
-
-Knowledge modes
-
-GENERAL
-KNOWLEDGE_ASSISTED
-KNOWLEDGE_ONLY
-
-Для KNOWLEDGE_ONLY:
-
-нет достаточного evidence
-→ модель не должна придумывать ответ
-→ возвращается controlled abstention
-
-4. Этап 2 — Retrieval / RAG Evaluations
-
-Период: октябрь–ноябрь 2026
-
-До agents и сложной автоматизации необходимо создать Evaluation Framework.
+provider
+requested/resolved model
+model catalog snapshot
+model route decision
+policy snapshot
+embedding model
+Knowledge Bases
+retrieval run
+retrieved chunks
+source documents/versions/pages
+citations/evidence status
+token usage
+pricing/cost quality
+request ID
+timestamps
 
 Evaluation Dataset
 
@@ -274,135 +368,142 @@ latency;
 
 token usage;
 
-cost;
+cost/data-quality;
 
-provider/model comparison.
+model/provider comparison.
 
-Regression evaluations
+Regression gates
 
 При изменении:
 
-system prompt;
+system prompt
+embedding model
+chunking
+retrieval parameters
+RRF
+model/provider
+Knowledge ingestion
+model routing policy
 
-embedding model;
+запускать regression suite и уметь блокировать release при значимой деградации.
 
-chunking;
+5. Этап 2 — Multi-provider / multi-model data plane
 
-retrieval parameters;
+Период: октябрь–ноябрь 2026
 
-RRF;
+V45 Model Control Plane уже принимает governance decision, но deployment пока устанавливает один физический 
+provider/model adapter.
 
-model;
+Следующий архитектурный шаг — не новый catalog, а исполняемый provider/model multiplexer.
 
-provider;
+Требования
 
-Knowledge ingestion;
+ModelRouteDecision
+        ↓
+exact provider/model selection
+        ↓
+provider registry / adapter registry
+        ↓
+execution
 
-SafeAI Desk должен запускать regression suite.
+Нужно обеспечить:
 
-Пример:
+immutable selected provider/model;
 
-Old configuration:
-87.2%
+exact provider configuration snapshot/version;
 
-New configuration:
-82.4%
+capability-aware execution;
 
-Result:
-BLOCK RELEASE
+timeout/retry budget per provider;
 
-5. Этап 3 — Model Registry
+no blind retry after ambiguous external I/O;
 
-Период: ноябрь 2026
+provider-specific idempotency support where available;
 
-Создать централизованный Model Registry.
+deterministic failure taxonomy;
 
-Model
+controlled fallback policy;
 
-Хранить:
+audit/provenance;
 
-provider;
+usage/pricing mapping to exact resolved model.
 
-provider model ID;
+Не делать
 
-display name;
+Не превращать routing в набор if provider == ... внутри ChatService.
 
-capabilities;
+Control Plane принимает policy decision; Data Plane исполняет уже разрешённый route.
 
-context window;
+6. Этап 3 — Model Registry expansion
 
-input price;
+Статус: базовый Model Catalog уже реализован в V45.
+Период расширения: ноябрь 2026
 
-cached input price;
+Развивать текущую сущность, а не создавать параллельный registry.
 
-cache-write price;
+Дополнительно понадобятся:
 
-output price;
+provider configuration identity/version;
 
-multimodal support;
+richer capabilities;
 
-vision;
+reasoning modes;
 
-tool calling;
+structured output schemas/capabilities;
 
-structured output;
-
-reasoning;
+multimodal limits;
 
 data residency;
 
-retention policy;
+provider region;
 
-enabled;
+cache-read/cache-write billing dimensions;
 
-deprecated;
+batch pricing;
 
-production approved.
+deprecation dates;
 
-Frontend не должен хардкодить список моделей.
+production approval workflow;
 
-6. Этап 4 — Organization Model Policies
+health/circuit state как runtime signal, не immutable catalog fact.
 
-Период: ноябрь–декабрь 2026
+Frontend не должен хардкодить доступные модели.
 
-Организация должна управлять тем, какие модели доступны её пользователям.
+7. Этап 4 — Organization Model Policies expansion
 
-Пример:
+Статус: baseline уже реализован в V45.
+Период расширения: ноябрь–декабрь 2026
 
-Organization A
+Текущий policy покрывает organization-level allow/deny/default, token/cost/budget и некоторые provider-data requirements.
 
-Allowed:
-✓ premium OpenAI model
-✓ Anthropic model
-✓ Local Qwen
-
-Blocked:
-✕ experimental model
-✕ provider without approved retention policy
-
-Поддержать политики по:
-
-organization;
+Расширить scope до:
 
 role;
 
 group/department;
 
-use case;
+assistant/use case;
 
 data classification;
 
-budget;
+provider region/residency;
 
-provider;
+model capabilities;
 
-model capability.
+fallback permissions;
 
-7. Этап 5 — AI FinOps / Budgets
+approved reasoning modes;
+
+provider-specific restrictions.
+
+Не размазывать новые правила по ChatService/frontend conditions.
+
+8. Этап 5 — AI FinOps / Budgets
 
 Период: декабрь 2026
 
-Usage необходимо превратить из отчётности в control plane.
+V45 monthly budget — conservative governance preflight. Следующий этап должен превратить usage + route estimates в 
+полноценный FinOps control plane.
 
 Budget hierarchy
 
@@ -429,45 +530,43 @@ request quota;
 
 daily limit;
 
-hard/soft budget.
+hard/soft budget;
+
+reservation/reconciliation;
+
+provider invoice reconciliation;
+
+currency/versioned pricing semantics.
 
 Реакции
 
-80% → warning
-100% → downgrade / restrict premium models
-110% → block premium traffic
+80%  → warning
+100% → restrict/downgrade according to policy
+>100% → controlled block where HARD policy requires it
 
 Dashboard
 
-cost by organization;
-
-cost by user;
-
-cost by department;
-
-cost by model;
-
-cost by use case;
-
-cost by assistant;
-
-cost by agent;
+cost by organization/user/department/model/use case/assistant/agent;
 
 cached-token savings;
 
-RAG cost;
+RAG/embedding cost;
 
 forecast;
 
-budget utilization.
+budget utilization;
 
-8. Этап 6 — Data Classification + DLP
+unknown/unpriced/pricing-failed quality.
+
+Unknown cost нельзя считать нулём.
+
+9. Этап 6 — Data Classification + DLP
 
 Период: конец 2026 → начало 2027
 
-Перед отправкой prompt внешнему provider:
+До внешнего provider:
 
-User input
+User input / retrieved context
     ↓
 Data Classification
     ↓
@@ -475,9 +574,11 @@ DLP / PII / secrets
     ↓
 Policy Engine
     ↓
+Model Routing
+    ↓
 Provider
 
-Классы данных
+Классы
 
 PUBLIC
 INTERNAL
@@ -486,19 +587,13 @@ RESTRICTED
 
 Detection
 
-email;
+email/phone;
 
-phone;
+passport/ID;
 
-passport / ID;
+card/payment data;
 
-credit card;
-
-API keys;
-
-tokens;
-
-passwords;
+API keys/tokens/passwords;
 
 private keys;
 
@@ -517,45 +612,9 @@ BLOCK
 REQUIRE_APPROVAL
 ROUTE_TO_LOCAL_MODEL
 
-9. Этап 7 — Policy Engine
+DLP decision должен иметь provenance/audit и не должен зависеть от prompt instructions.
 
-Период: начало 2027
-
-Не размазывать enterprise policy по if внутри сервисов.
-
-Создать централизованный Policy Engine.
-
-Пример:
-
-WHEN
-    organization = ACME
-    AND department = FINANCE
-    AND classification >= CONFIDENTIAL
-
-THEN
-    deny external providers
-    allow local models
-    audit = HIGH
-
-Другой пример:
-
-WHEN
-    model = PREMIUM
-    AND monthlyBudget > 90%
-
-THEN
-    route = STANDARD_MODEL
-
-PolicyDecision
-
-ALLOW
-DENY
-WARN
-REDACT
-REQUIRE_APPROVAL
-ROUTE
-
-10. Этап 8 — Groups / Departments
+10. Этап 7 — Groups / Departments
 
 Период: начало 2027
 
@@ -570,21 +629,7 @@ Organization
 → Groups / Departments
 → Users
 
-Примеры:
-
-Finance;
-
-Legal;
-
-HR;
-
-Engineering;
-
-Sales;
-
-Support.
-
-На группы назначаются:
+На group назначаются:
 
 Knowledge access;
 
@@ -600,25 +645,55 @@ tool access;
 
 data classification rules.
 
-11. Этап 9 — Enterprise Knowledge Connectors
+11. Этап 8 — General Policy Engine
+
+Период: начало 2027
+
+OrganizationModelPolicy остаётся model-governance policy. Более широкий enterprise policy не должен превращать этот 
+record в универсальный mega-object.
+
+Создать централизованный policy evaluation layer.
+
+Пример:
+
+WHEN
+  organization = ACME
+  AND department = FINANCE
+  AND classification >= CONFIDENTIAL
+THEN
+  deny external providers
+  allow approved local models
+  audit = HIGH
+
+Decision space:
+
+ALLOW
+DENY
+WARN
+REDACT
+REQUIRE_APPROVAL
+ROUTE
+
+Policy decision должен быть versioned/auditable и привязан к execution provenance.
+
+12. Этап 9 — Enterprise Knowledge Connectors
 
 Период: Q1 2027
 
-Ручной upload оставить, но добавить источники:
+Manual upload оставить, добавить источники:
 
-Knowledge Source
-├── File upload
-├── Confluence
-├── SharePoint
-├── OneDrive
-├── Google Drive
-├── Notion
-├── Jira
-├── Git
-├── Web site
-└── Internal API
+File upload
+Confluence
+SharePoint
+OneDrive
+Google Drive
+Notion
+Jira
+Git
+Web site
+Internal API
 
-Connector model
+Connector pipeline:
 
 Source
 → sync cursor
@@ -629,33 +704,31 @@ Source
 → embeddings
 → index
 
-Обязательно
+Обязательно:
 
 ACL mirroring;
 
 source deletion handling;
 
-health;
+sync health;
 
 retry;
 
-sync status;
-
-last sync;
-
-next sync;
+last/next sync;
 
 partial failure;
 
-credential rotation.
+credential rotation;
 
-12. Этап 10 — SSO / SCIM
+connector-specific rate limits;
+
+source provenance.
+
+13. Этап 10 — SSO / SCIM
 
 Период: Q1 2027
 
-Для enterprise deployment добавить:
-
-Authentication
+Authentication:
 
 OIDC;
 
@@ -665,94 +738,57 @@ Okta;
 
 Google Workspace;
 
-SAML при необходимости.
+SAML при реальной customer requirement.
 
-Provisioning
+Provisioning:
 
 SCIM;
 
-automatic user create;
-
-automatic disable;
+automatic user create/disable;
 
 group sync;
 
 department sync.
 
-Сценарий:
-
-Employee leaves company
-→ IdP disables user
-→ SafeAI revokes active sessions
+Employee disabled in IdP
+→ SafeAI user disabled
+→ security epoch/session revocation
 → AI access disappears
 
-13. Этап 11 — AI Governance
+14. Этап 11 — AI Governance / Use Case Registry
 
 Период: Q1–Q2 2027
 
-Добавить AI Use Case Registry.
+Добавить AI Use Case Registry:
 
-Пример:
+Use case
+Owner
+Purpose
+Models
+Data classes
+Human oversight
+Risk
+Approval state
 
-Use case:
-HR CV Assistant
+Risk profile:
 
-Owner:
-HR
-
-Purpose:
-Candidate screening support
-
-Models:
-...
-
-Data:
-Personal data
-
-Human oversight:
-Required
-
-Risk:
-...
-
-Approved:
-YES
-
-Risk profile
-
-personal data;
-
-confidential data;
+personal/confidential data;
 
 autonomous actions;
 
 external provider;
 
-employment decisions;
-
-financial impact;
-
-customer-facing usage;
-
-legal impact;
+employment/financial/legal/customer impact;
 
 human oversight.
 
-SafeAI Desk должен обеспечивать технический governance workflow, а не выступать юридическим консультантом.
+SafeAI Desk обеспечивает технический governance workflow, а не юридическое заключение.
 
-14. Этап 12 — AI Literacy / Acceptable Use
+15. Этап 12 — AI Literacy / Acceptable Use
 
 Период: Q1–Q2 2027
 
-При первом входе пользователь принимает корпоративную AI policy.
-
-Пример:
-
-Do not:
-- send passwords;
-- upload prohibited confidential documents;
-- treat generated output as final legal advice;
-- bypass company security policies.
+При первом входе пользователь принимает organization AI policy.
 
 Хранить:
 
@@ -761,15 +797,13 @@ userId
 organizationId
 acceptedAt
 
-При обновлении policy:
+При новой policy version можно требовать re-acceptance.
 
-requiresReacceptance = true
-
-15. Этап 13 — Prompt / Configuration Registry
+16. Этап 13 — Prompt / Configuration Registry
 
 Период: Q2 2027
 
-System prompts и AI configuration не должны существовать только в исходном коде.
+System prompts и execution configuration не должны существовать только в Git/source code.
 
 Создать:
 
@@ -777,23 +811,9 @@ PromptTemplate
 PromptVersion
 ConfigurationVersion
 
-Пример:
+ChatTurn/Answer Passport должны уметь сохранять exact configuration provenance.
 
-Corporate Assistant
-v17
-
-Created by: ADMIN
-Approved by: SECURITY
-Deployed: 2027-04-04
-
-ChatTurn сохраняет:
-
-promptVersionId
-configurationVersionId
-
-Answer Passport показывает точную конфигурацию.
-
-16. Этап 14 — AI Observability
+17. Этап 14 — AI Observability
 
 Период: Q2 2027
 
@@ -803,178 +823,98 @@ HTTP request
   ↓
 ChatTurn
   ↓
+Policy / Model Route
+  ↓
 Retrieval
   ↓
 Embedding
   ↓
-Provider call
+Provider
   ↓
 Tool calls
 
-Пример:
+Использовать OpenTelemetry и актуальные GenAI semantic conventions после проверки их текущего стандарта на момент 
+реализации.
 
-traceId abc
+Не логировать raw secrets/prompts по умолчанию ради observability.
 
-ChatTurn                8.1s
-├─ Retrieval            120ms
-│  ├─ embedding          73ms
-│  └─ pgvector           29ms
-│
-└─ Provider              7.7s
-
-Использовать OpenTelemetry и GenAI semantic conventions.
-
-17. Этап 15 — Enterprise Assistants
+18. Этап 15 — Enterprise Assistants
 
 Период: Q2 2027
 
-Добавить сущность Assistant.
+ADMIN создаёт Assistant:
 
-ADMIN создаёт:
+Name
+Prompt/config version
+Knowledge scope
+Allowed models/policy
+Tools
+Available groups
+Budget
 
-Name:
-Legal Assistant
+Пользователь выбирает управляемый Assistant, а не вручную собирает model/KB/prompt policy.
 
-Prompt:
-...
-
-Knowledge:
-Legal KB
-
-Models:
-approved legal models
-
-Tools:
-none / selected
-
-Available to:
-Legal Department
-
-Другие примеры:
-
-HR Assistant;
-
-IT Support Assistant;
-
-DevOps Assistant;
-
-Sales Assistant;
-
-Finance Assistant.
-
-Пользователь выбирает assistant, а не вручную настраивает model/KB/prompt.
-
-18. Этап 16 — MCP Gateway
+19. Этап 16 — MCP Gateway
 
 Период: Q2–Q3 2027
 
-SafeAI Desk не должен отдавать модели прямой доступ к произвольным MCP servers.
+Модель не получает прямой доступ к произвольным MCP servers.
 
-Архитектура:
-
-AI Agent
-   │
+AI runtime
    ↓
 SafeAI Tool Gateway
-   │
-   ├── authentication
-   ├── authorization
-   ├── tenant isolation
-   ├── policy
-   ├── approval
-   ├── audit
-   ├── secrets
-   ├── DLP
-   └── rate limits
-   │
+   ├─ authentication
+   ├─ authorization
+   ├─ tenant isolation
+   ├─ policy
+   ├─ approval
+   ├─ audit
+   ├─ secrets
+   ├─ DLP
+   └─ rate limits
    ↓
-MCP Servers
+MCP Servers / internal tools
 
-19. Этап 17 — Tool Registry
+20. Этап 17 — Tool Registry
 
 Период: Q2–Q3 2027
 
-Подключаемые tools:
-
-Jira;
-
-GitHub;
-
-CRM;
-
-SQL read-only;
-
-Confluence;
-
-ServiceNow;
-
-Slack;
-
-internal APIs.
-
-Для каждого tool:
+Tool metadata:
 
 name
 capabilities
 riskLevel
-organization
-groups
+organization/groups
 read/write
-credential
+credential binding
 requiredRole
 approvalPolicy
 
-Пример:
+Примеры:
 
-Jira.search
-risk = LOW
-approval = false
+Jira.search        LOW       approval=false
+Jira.createTicket  MEDIUM    approval=policy
+ProdDB.execute     CRITICAL  approval=required
 
-Jira.createTicket
-risk = MEDIUM
-approval = optional
-
-ProductionDB.execute
-risk = CRITICAL
-approval = required
-
-20. Этап 18 — Human-in-the-loop approvals
+21. Этап 18 — Human-in-the-loop approvals
 
 Период: Q3 2027
 
-Перед опасным действием:
-
-AI wants to:
-
-Create Jira issue
-Project: PROD
-Title: Database latency incident
-
-[Approve]
-[Deny]
-
-Для более опасных действий:
-
-AI wants to send email to 427 customers.
-
-Requires:
-✓ user approval
-✓ manager approval
-
-Audit chain:
+Перед side effect:
 
 agent proposed
-→ user approved
-→ tool invoked
-→ result stored
+→ approval requested
+→ authorized approver approves/denies
+→ tool invoked exactly once
+→ result/provenance stored
 
-21. Этап 19 — Durable Agent Runtime
+Для high-risk actions поддержать multi-party approval.
+
+22. Этап 19 — Durable Agent Runtime
 
 Период: Q3 2027
 
 Перенести принципы ChatTurn на agents.
-
-Создать:
 
 AgentRun
 AgentStep
@@ -992,7 +932,7 @@ FAILED
 AMBIGUOUS
 CANCELLED
 
-Каждый external side effect должен поддерживать:
+Каждый external side effect:
 
 idempotency;
 
@@ -1008,19 +948,13 @@ audit;
 
 provenance.
 
-Не использовать простой бесконечный:
+Не использовать бесконечный volatile цикл LLM → tool → LLM → tool без durable semantics.
 
-LLM → tool → LLM → tool
-
-без durable execution semantics.
-
-22. Этап 20 — Agent Security
+23. Этап 20 — Agent Security
 
 Период: одновременно с Agent Runtime
 
-Agent не получает «все инструменты».
-
-Использовать capability-based access:
+Capability-based access:
 
 Agent
 → exact tools
@@ -1032,22 +966,13 @@ Agent
 
 prompt content != authorization
 
-Документ из RAG или внешний сайт не может получить permission просто потому, что содержит инструкцию вызвать tool.
+Retrieved document или внешний сайт не может расширить permissions агента инструкцией в тексте.
 
-23. Этап 21 — Sandboxed Code Interpreter
+24. Этап 21 — Sandboxed Code Interpreter
 
 Период: Q3–Q4 2027
 
-Для анализа файлов:
-
-CSV
-Excel
-PDF
-data analysis
-charts
-Python
-
-использовать ephemeral sandbox:
+Для CSV/Excel/PDF/data analysis/charts/Python использовать ephemeral sandbox:
 
 CPU limit
 RAM limit
@@ -1058,125 +983,60 @@ ephemeral filesystem
 
 Не исполнять пользовательский Python внутри backend JVM.
 
-24. Этап 22 — Service Accounts
+25. Этап 22 — Service Accounts
 
 Период: Q3–Q4 2027
 
-Добавить machine identity:
+Machine identity:
 
 ServiceAccount
+organization
+scopes
+allowed models
+budget
+rate limit
+credential/expiry
+audit actor
+allowed tools
 
-Use cases:
+Use cases: CI/CD reviewer, CRM summarizer, ticket classifier, scheduled analysis.
 
-CI/CD reviewer;
-
-CRM summarizer;
-
-ticket classifier;
-
-nightly document analyzer;
-
-internal automation.
-
-ServiceAccount имеет:
-
-organization;
-
-scopes;
-
-allowed models;
-
-budget;
-
-rate limit;
-
-credentials;
-
-expiry;
-
-audit actor;
-
-allowed tools.
-
-25. Этап 23 — Enterprise API
+26. Этап 23 — Enterprise API
 
 Период: Q4 2027
 
-SafeAI Desk становится инфраструктурой не только для собственного UI.
+SafeAI становится infrastructure layer не только для собственного UI.
 
-Пример API:
+Пример будущего API:
 
 POST /api/v1/ai/responses
 POST /api/v1/retrieval/search
 POST /api/v1/assistants/{id}/runs
 POST /api/v1/agents/{id}/runs
 
-К нему могут подключаться:
+На все вызовы продолжают применяться routing/budget/DLP/policy/audit/usage/governance.
 
-CRM;
-
-internal portal;
-
-support system;
-
-mobile app;
-
-automation;
-
-CI/CD.
-
-При этом SafeAI продолжает применять:
-
-routing;
-
-budget;
-
-DLP;
-
-policy;
-
-audit;
-
-usage;
-
-governance.
-
-26. Этап 24 — A2A / Agent interoperability
+27. Этап 24 — A2A / Agent interoperability
 
 Период: конец 2027
 
-После MCP/tool layer можно добавлять Agent-to-Agent взаимодействие.
+Только после identity/tool/policy layer:
 
 SafeAI Agent
     ↓
-A2A
+controlled A2A gateway
     ↓
 External enterprise agent
 
-Но только через gateway:
+Identity/trust/policy/tenant isolation/audit/budget обязательны.
 
-identity
-trust
-policy
-tenant isolation
-audit
-budget
-
-27. Этап 25 — Data Retention / Legal Hold / Privacy
+28. Этап 25 — Data Retention / Legal Hold / Privacy
 
 Период: 2027
 
-Пример policy:
+Добавить policy-driven:
 
-Chat history        30 days
-Prompt content       7 days
-Audit              365 days
-Usage              3 years
-Answer Passports   365 days
-
-Добавить:
-
-retention policies;
+retention;
 
 deletion jobs;
 
@@ -1188,26 +1048,24 @@ pseudonymization;
 
 personal-data deletion workflow.
 
-28. Этап 26 — AI Security Center
+Не смешивать retention periods для chat, audit, usage, Knowledge source и Answer Passport без явной policy.
+
+29. Этап 26 — AI Security Center
 
 Период: 2027
 
-Отдельный dashboard:
+Отдельная сущность SecurityEvent, а не только AuditEvent.
 
-Prompt injection attempts     34
-DLP blocks                    12
-Secret detections              7
-Blocked tool calls             3
-Policy violations             19
-Suspicious agents              1
+Dashboard:
 
-Создать отдельную сущность:
+Prompt injection attempts
+DLP blocks
+Secret detections
+Blocked tool calls
+Policy violations
+Suspicious agent activity
 
-SecurityEvent
-
-а не смешивать всё только с AuditEvent.
-
-29. Этап 27 — Continuous Red Team / Security Evals
+30. Этап 27 — Continuous Red Team / Security Evals
 
 Период: конец 2027
 
@@ -1229,64 +1087,69 @@ unsafe tool usage;
 
 privilege escalation;
 
-malicious MCP server behavior;
+malicious MCP server;
 
 malicious retrieved documents.
 
-После изменения:
+После изменения model/prompt/knowledge/tool/agent/policy запускать security evaluation suite.
 
-model
-prompt
-knowledge
-tool
-agent
-policy
+31. Версии продукта — обновлённый ориентир
 
-автоматически запускать security evaluation suite.
+Версии ниже — product planning, а не утверждение о release tag.
 
-30. Версии продукта
+Pre-1.0 baseline — текущее состояние, август 2026
 
-SafeAI Desk 0.8 — сентябрь–октябрь 2026
+Уже есть:
 
-Knowledge frontend
-Ingestion UI
-Citations
-Source Drawer
-Answer Passport UI
-Knowledge-only mode
-Knowledge health
-Reindex
-Integration tests
+Security / multi-tenancy
+Durable ChatTurn
+Audit / usage quality
+Knowledge/RAG backend + frontend baseline
+Answer Passport
+V45 Model Control Plane
+Production-oriented infra baseline
 
-SafeAI Desk 0.9 — ноябрь–декабрь 2026
+SafeAI Desk 0.8 candidate — осень 2026
 
-Evaluation Framework
-Model Registry
-Organization Model Policies
-Correct pricing
-AI budgets
-Provider routing
+Цель:
+
+V45 release-candidate verification
+Knowledge UX polish
+Source Drawer / Passport UX completion
+RAG evaluation framework
+Regression gates
+Multi-provider data-plane design/prototype
+
+SafeAI Desk 0.9 candidate — конец 2026
+
+Цель:
+
+Multi-provider/model execution
+Model Registry expansion
+Organization Model Policies expansion
+FinOps/budget reconciliation
 DLP v1
-Groups / Departments
-Knowledge connectors v1
+Groups/Departments baseline
+Connector v1
 
-SafeAI Desk 1.0 — начало 2027
+SafeAI Desk 1.0 candidate — 2027
 
-SSO / OIDC
-SCIM
-Model Control Plane
+Цель:
+
+OIDC / SCIM
+Production model control plane
 Knowledge connectors
 DLP
 Policy Engine
-AI Use Case Registry
+Use Case Registry
 Prompt Registry
 Evaluations
-OpenTelemetry AI traces
-Production deployment
+OpenTelemetry traces
+Production deployment drills
 Backup / restore
-HA
+HA/SLO evidence
 
-SafeAI Desk 1.5 — середина 2027
+SafeAI Desk 1.5 candidate — середина 2027
 
 Enterprise Assistants
 MCP Gateway
@@ -1296,7 +1159,7 @@ Service Accounts
 Enterprise API
 Sandboxed Code Interpreter
 
-SafeAI Desk 2.0 — конец 2027
+SafeAI Desk 2.0 candidate — конец 2027
 
 Durable Agents
 Agent workflows
@@ -1304,28 +1167,23 @@ A2A
 Multi-agent collaboration
 Agent Security Center
 Continuous AI red teaming
-Advanced policy engine
-Governance automation
+Advanced policy/governance automation
 
-31. Практический порядок разработки с текущего момента
+32. Практический порядок разработки с текущего момента
 
-Не начинать сразу с agents.
-
-Рекомендуемый путь:
-
-1. Knowledge frontend
+1. V45 production stabilization
         ↓
-2. Citations + Source Drawer
+2. Fresh/upgrade migrations + full RC verification
         ↓
-3. Answer Passport UI
+3. Knowledge UX + citations/passport polish
         ↓
-4. Retrieval/RAG evaluations
+4. Retrieval/RAG evaluations + release gates
         ↓
-5. Model Registry
+5. Multi-provider/model data plane
         ↓
-6. Organization Model Policies
+6. Model Registry / policy expansion
         ↓
-7. Correct pricing + budgets
+7. FinOps / budget reconciliation
         ↓
 8. Data Classification / DLP
         ↓
@@ -1333,9 +1191,9 @@ Governance automation
         ↓
 10. Enterprise Knowledge Connectors
         ↓
-11. SSO / SCIM
+11. OIDC / SCIM
         ↓
-12. Policy Engine / Governance
+12. General Policy Engine / Governance
         ↓
 13. Enterprise Assistants
         ↓
@@ -1347,25 +1205,28 @@ Governance automation
         ↓
 17. A2A
 
-32. Главные продуктовые приоритеты
+Не начинать agents, пока tool authorization/approval/idempotency/durable execution не сформированы как отдельные 
+invariants.
 
-Если выбирать только три крупных эпика после завершения текущего Knowledge вертикального среза:
+33. Главные продуктовые приоритеты
 
-1. Knowledge UX + Evaluations
+Если выбирать три крупных направления после V45 stabilization:
 
-Даёт контролируемые ответы по корпоративным данным и позволяет измерять качество.
+1. Knowledge quality + Evaluations
 
-2. Model Control Plane + AI FinOps + DLP
+Не просто «RAG работает», а качество измеряется и regression можно доказать.
 
-Превращает SafeAI Desk из чата в настоящий корпоративный AI Gateway.
+2. Executable Model Control Plane + FinOps + DLP
+
+V45 governance должен получить полноценный multi-provider data plane и финансово/security-контролируемое исполнение.
 
 3. Enterprise Assistants + MCP Gateway
 
-Даёт управляемую автоматизацию и подготавливает платформу к agents.
+Только после policy/data controls давать управляемую автоматизацию и готовить платформу к agents.
 
-33. Конечная идея SafeAI Desk
+34. Конечная идея SafeAI Desk
 
-SafeAI Desk должен стать системой, через которую организация контролирует:
+SafeAI Desk должен контролировать:
 
 WHO
 кто использует AI
@@ -1374,10 +1235,10 @@ WHAT
 какие данные и знания доступны
 
 WHICH MODEL
-какие модели можно использовать
+какая model/policy/version реально применена
 
 HOW MUCH
-сколько можно потратить
+сколько разрешено и сколько реально потрачено
 
 WHY
 для какого use case используется AI
@@ -1392,10 +1253,21 @@ WHAT ACTION
 какое действие хочет выполнить AI
 
 WHO APPROVED
-кто разрешил это действие
+кто разрешил side effect
 
-Конечная архитектура SafeAI Desk — это не просто чат и не просто RAG.
-
-Это:
+Конечная архитектура:
 
 AI Gateway + Knowledge Platform + Model Control Plane + Governance + FinOps + Secure Agent Runtime.
+
+При этом фундаментальные invariants текущего проекта должны сохраняться:
+
+tenant isolation
+security fail-closed
+append-only governance snapshots
+idempotency
+lease/fencing
+ambiguous external-I/O safety
+audit/provenance
+database-enforced integrity
+unknown != zero
+prompt content != authorization

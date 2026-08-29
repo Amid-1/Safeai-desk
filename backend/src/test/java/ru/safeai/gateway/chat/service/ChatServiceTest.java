@@ -9,11 +9,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.SliceImpl;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.provider.AiProvider;
-import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.config.ChatProperties;
 import ru.safeai.gateway.chat.dto.CreateChatRequest;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
@@ -28,16 +29,16 @@ import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.common.exception.ChatLockUnavailableException;
-import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.rag.KnowledgeRagService;
 import ru.safeai.gateway.knowledge.rag.RagCompletion;
 import ru.safeai.gateway.knowledge.rag.RagPreparation;
+import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -116,16 +117,42 @@ class ChatServiceTest {
                 new AtomicBoolean(false)
         );
         processing = processingContext();
-        org.mockito.Mockito.lenient().when(ragService.prepare(any(), any()))
-                .thenAnswer(invocation -> RagPreparation.general(
-                        invocation.<ChatProcessingContext>getArgument(0)
-                                .aiRequest()
-                ));
-        org.mockito.Mockito.lenient().when(ragService.complete(any(), any()))
-                .thenAnswer(invocation -> RagCompletion.general(
-                        invocation.getArgument(0),
-                        invocation.getArgument(1)
-                ));
+        org.mockito.Mockito.lenient()
+                .doAnswer(invocation -> {
+                    ChatProcessingContext context = invocation.getArgument(
+                            0,
+                            ChatProcessingContext.class
+                    );
+                    return RagPreparation.general(
+                            context.aiRequest()
+                    );
+                })
+                .when(ragService)
+                .prepare(
+                        any(ChatProcessingContext.class),
+                        any(SafeAiUserPrincipal.class)
+                );
+
+        org.mockito.Mockito.lenient()
+                .doAnswer(invocation -> {
+                    RagPreparation preparation = invocation.getArgument(
+                            0,
+                            RagPreparation.class
+                    );
+                    AiChatResponse response = invocation.getArgument(
+                            1,
+                            AiChatResponse.class
+                    );
+                    return RagCompletion.general(
+                            preparation,
+                            response
+                    );
+                })
+                .when(ragService)
+                .complete(
+                        any(RagPreparation.class),
+                        any(AiChatResponse.class)
+                );
     }
 
     @Test
@@ -137,7 +164,7 @@ class ChatServiceTest {
         when(finalizationService.succeedRag(
                 eq(processing),
                 any(RagCompletion.class),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         )).thenReturn(expected);
 
         SendMessageResponse result = service.sendMessage(
@@ -154,25 +181,21 @@ class ChatServiceTest {
                 leaseService,
                 aiProvider
         );
-        order.verify(finalizationService)
-                .markProviderCallStarted(processing);
-        order.verify(lockService)
-                .ensureValid(redisLock);
-        order.verify(leaseService)
-                .ensureValid(leaseWatch);
-        order.verify(aiProvider)
-                .sendMessage(processing.aiRequest());
-        order.verify(lockService)
-                .ensureValid(redisLock);
-        order.verify(leaseService)
-                .ensureValid(leaseWatch);
+        order.verify(finalizationService).markProviderCallStarted(processing);
+        order.verify(lockService).ensureValid(redisLock);
+        order.verify(leaseService).ensureValid(leaseWatch);
+        order.verify(aiProvider).sendMessage(processing.aiRequest());
+        order.verify(lockService).ensureValid(redisLock);
+        order.verify(leaseService).ensureValid(leaseWatch);
 
         verify(securityStateService).assertStillActive(
                 eq(ChatTestFixtures.CHAT_ID),
                 eq(ChatTestFixtures.TURN_ID),
                 eq(ChatTestFixtures.CLIENT_REQUEST_ID),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
+        verify(leaseService).close(leaseWatch);
+        verify(lockService).unlockQuietly(redisLock);
     }
 
     @Test
@@ -182,11 +205,11 @@ class ChatServiceTest {
         when(reservationService.reserveOrReplay(
                 eq(ChatTestFixtures.CHAT_ID),
                 eq(request()),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         )).thenReturn(replay);
         when(finalizationService.replaySucceeded(
                 eq(replay),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         )).thenReturn(successResponse(true));
 
         SendMessageResponse result = service.sendMessage(
@@ -219,11 +242,46 @@ class ChatServiceTest {
         verify(finalizationService).failUnambiguous(
                 eq(processing),
                 eq(providerException),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
         verify(finalizationService, never()).markAmbiguous(
                 any(), any(), any(), any(), any(), any(), any()
         );
+        verify(leaseService).close(leaseWatch);
+        verify(lockService).unlockQuietly(redisLock);
+    }
+
+    @Test
+    void ragPreparationFailureBecomesStableFailedBeforeProviderIo() {
+        stubOwnedChatAndProcessing();
+        RuntimeException preparationFailure = new IllegalStateException(
+                "rag preparation failed"
+        );
+        doThrow(preparationFailure)
+                .when(ragService)
+                .prepare(
+                        eq(processing),
+                        any(SafeAiUserPrincipal.class)
+                );
+
+        assertThatThrownBy(() -> service.sendMessage(
+                ChatTestFixtures.CHAT_ID,
+                request(),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(ChatTurnFailedException.class)
+                .extracting("code")
+                .isEqualTo("KNOWLEDGE_RAG_PREPARATION_FAILED");
+
+        verify(finalizationService).failBeforeProviderCall(
+                eq(processing),
+                eq("RAG_PREPARATION_FAILED"),
+                eq("KNOWLEDGE_RAG_PREPARATION_FAILED"),
+                any(SafeAiUserPrincipal.class)
+        );
+        verify(finalizationService, never()).markProviderCallStarted(any());
+        verify(aiProvider, never()).sendMessage(any());
+        verify(leaseService).close(leaseWatch);
+        verify(lockService).unlockQuietly(redisLock);
     }
 
     @Test
@@ -247,7 +305,7 @@ class ChatServiceTest {
                 eq("provider-request-id"),
                 eq(AiProviderErrorType.TIMEOUT.name()),
                 eq("AI_PROVIDER_OUTCOME_AMBIGUOUS"),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
         verify(finalizationService, never()).failUnambiguous(any(), any(), any());
     }
@@ -272,53 +330,60 @@ class ChatServiceTest {
                 org.mockito.ArgumentMatchers.isNull(),
                 eq("RuntimeException"),
                 eq("AI_PROVIDER_UNCLASSIFIED_OUTCOME"),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
+    }
+
+    @Test
+    void nullProviderResponseIsClassifiedAmbiguousAndNeverFinalizedAsSuccess() {
+        stubOwnedChatAndProcessing();
+        when(aiProvider.sendMessage(processing.aiRequest()))
+                .thenReturn(null);
+
+        assertThatThrownBy(() -> service.sendMessage(
+                ChatTestFixtures.CHAT_ID,
+                request(),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(AiOutcomeAmbiguousException.class);
+
+        verify(finalizationService).markAmbiguous(
+                eq(processing),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(),
+                eq("NULL_PROVIDER_RESPONSE"),
+                eq("AI_PROVIDER_UNCLASSIFIED_OUTCOME"),
+                any(SafeAiUserPrincipal.class)
+        );
+        verify(finalizationService, never()).succeedRag(any(), any(), any());
     }
 
     @Test
     void ragCompletionFailureAfterProviderResponseIsMarkedAmbiguous() {
         stubOwnedChatAndProcessing();
+        var providerResponse = ChatTestFixtures.freeResponse();
+        when(aiProvider.sendMessage(processing.aiRequest()))
+                .thenReturn(providerResponse);
 
-        var providerResponse =
-                ChatTestFixtures.freeResponse();
-
-        when(aiProvider.sendMessage(
-                processing.aiRequest()
-        )).thenReturn(
-                providerResponse
+        RuntimeException completionFailure = new IllegalStateException(
+                "rag completion failed"
         );
-
-        RuntimeException completionFailure =
-                new IllegalStateException(
-                        "rag completion failed"
+        doThrow(completionFailure)
+                .when(ragService)
+                .complete(
+                        any(RagPreparation.class),
+                        eq(providerResponse)
                 );
 
-        when(ragService.complete(
-                any(),
-                eq(providerResponse)
-        )).thenThrow(
-                completionFailure
-        );
+        assertThatThrownBy(() -> service.sendMessage(
+                ChatTestFixtures.CHAT_ID,
+                request(),
+                ChatTestFixtures.principal()
+        ))
+                .isInstanceOf(AiOutcomeAmbiguousException.class)
+                .hasCause(completionFailure);
 
-        assertThatThrownBy(() ->
-                service.sendMessage(
-                        ChatTestFixtures.CHAT_ID,
-                        request(),
-                        ChatTestFixtures.principal()
-                )
-        )
-                .isInstanceOf(
-                        AiOutcomeAmbiguousException.class
-                )
-                .hasCause(
-                        completionFailure
-                );
-
-        verify(aiProvider).sendMessage(
-                processing.aiRequest()
-        );
-
+        verify(aiProvider).sendMessage(processing.aiRequest());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
                 org.mockito.ArgumentMatchers.isNull(),
@@ -326,15 +391,9 @@ class ChatServiceTest {
                 eq(providerResponse.providerRequestId()),
                 eq("IllegalStateException"),
                 eq("RAG_COMPLETION_FAILED_AFTER_PROVIDER_RESPONSE"),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
-
-        verify(finalizationService, never())
-                .succeedRag(
-                        any(),
-                        any(),
-                        any()
-                );
+        verify(finalizationService, never()).succeedRag(any(), any(), any());
     }
 
     @Test
@@ -344,12 +403,7 @@ class ChatServiceTest {
                 .thenReturn(ChatTestFixtures.freeResponse());
 
         doNothing()
-                .doThrow(
-                        new ChatLockUnavailableException(
-                                "lost",
-                                null
-                        )
-                )
+                .doThrow(new ChatLockUnavailableException("lost", null))
                 .when(lockService)
                 .ensureValid(redisLock);
 
@@ -359,10 +413,8 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(aiProvider)
-                .sendMessage(processing.aiRequest());
-        verify(finalizationService, never())
-                .succeedRag(any(), any(), any());
+        verify(aiProvider).sendMessage(processing.aiRequest());
+        verify(finalizationService, never()).succeedRag(any(), any(), any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
                 org.mockito.ArgumentMatchers.isNull(),
@@ -370,7 +422,7 @@ class ChatServiceTest {
                 eq("provider-request-id"),
                 eq("PROCESSING_OWNERSHIP_LOST"),
                 eq("CHAT_PROCESSING_OWNERSHIP_LOST"),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
     }
 
@@ -381,13 +433,11 @@ class ChatServiceTest {
                 .thenReturn(ChatTestFixtures.freeResponse());
 
         doNothing()
-                .doThrow(
-                        new ChatStaleProcessorException(
-                                ChatTestFixtures.CHAT_ID,
-                                ChatTestFixtures.TURN_ID,
-                                ChatTestFixtures.CLIENT_REQUEST_ID
-                        )
-                )
+                .doThrow(new ChatStaleProcessorException(
+                        ChatTestFixtures.CHAT_ID,
+                        ChatTestFixtures.TURN_ID,
+                        ChatTestFixtures.CLIENT_REQUEST_ID
+                ))
                 .when(leaseService)
                 .ensureValid(leaseWatch);
 
@@ -397,10 +447,8 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(aiProvider)
-                .sendMessage(processing.aiRequest());
-        verify(finalizationService, never())
-                .succeedRag(any(), any(), any());
+        verify(aiProvider).sendMessage(processing.aiRequest());
+        verify(finalizationService, never()).succeedRag(any(), any(), any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
                 org.mockito.ArgumentMatchers.isNull(),
@@ -408,20 +456,14 @@ class ChatServiceTest {
                 eq("provider-request-id"),
                 eq("PROCESSING_OWNERSHIP_LOST"),
                 eq("CHAT_PROCESSING_OWNERSHIP_LOST"),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
     }
 
     @Test
     void lostRedisOwnershipBeforeProviderCallSkipsProviderIo() {
         stubOwnedChatAndProcessing();
-
-        doThrow(
-                new ChatLockUnavailableException(
-                        "lost",
-                        null
-                )
-        )
+        doThrow(new ChatLockUnavailableException("lost", null))
                 .when(lockService)
                 .ensureValid(redisLock);
 
@@ -431,9 +473,7 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(aiProvider, never())
-                .sendMessage(any());
-
+        verify(aiProvider, never()).sendMessage(any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
                 org.mockito.ArgumentMatchers.isNull(),
@@ -441,24 +481,19 @@ class ChatServiceTest {
                 org.mockito.ArgumentMatchers.isNull(),
                 eq("PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
                 eq("CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
-
-        verify(finalizationService, never())
-                .succeedRag(any(), any(), any());
+        verify(finalizationService, never()).succeedRag(any(), any(), any());
     }
 
     @Test
     void staleDbLeaseBeforeProviderCallSkipsProviderIo() {
         stubOwnedChatAndProcessing();
-
-        doThrow(
-                new ChatStaleProcessorException(
-                        ChatTestFixtures.CHAT_ID,
-                        ChatTestFixtures.TURN_ID,
-                        ChatTestFixtures.CLIENT_REQUEST_ID
-                )
-        )
+        doThrow(new ChatStaleProcessorException(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.TURN_ID,
+                ChatTestFixtures.CLIENT_REQUEST_ID
+        ))
                 .when(leaseService)
                 .ensureValid(leaseWatch);
 
@@ -468,9 +503,7 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(aiProvider, never())
-                .sendMessage(any());
-
+        verify(aiProvider, never()).sendMessage(any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
                 org.mockito.ArgumentMatchers.isNull(),
@@ -478,11 +511,9 @@ class ChatServiceTest {
                 org.mockito.ArgumentMatchers.isNull(),
                 eq("PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
                 eq("CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
-
-        verify(finalizationService, never())
-                .succeedRag(any(), any(), any());
+        verify(finalizationService, never()).succeedRag(any(), any(), any());
     }
 
     @Test
@@ -494,7 +525,7 @@ class ChatServiceTest {
         when(finalizationService.succeedRag(
                 eq(processing),
                 any(RagCompletion.class),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         )).thenThrow(dbFailure);
 
         assertThatThrownBy(() -> service.sendMessage(
@@ -506,7 +537,7 @@ class ChatServiceTest {
         verify(finalizationService).markAmbiguousAfterPersistenceFailure(
                 eq(processing),
                 eq(ChatTestFixtures.freeResponse()),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
     }
 
@@ -516,7 +547,7 @@ class ChatServiceTest {
         when(reservationService.reserveOrReplay(
                 eq(ChatTestFixtures.CHAT_ID),
                 eq(request()),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         )).thenReturn(processing);
         var exception = new ru.safeai.gateway.chat.exception.ChatLeaseUnavailableException(
                 ChatTestFixtures.CHAT_ID,
@@ -538,7 +569,7 @@ class ChatServiceTest {
                 eq(processing),
                 eq("LEASE_WATCHDOG_UNAVAILABLE"),
                 eq("CHAT_LEASE_WATCHDOG_UNAVAILABLE"),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
         verify(aiProvider, never()).sendMessage(any());
     }
@@ -551,15 +582,13 @@ class ChatServiceTest {
         when(finalizationService.succeedRag(
                 eq(processing),
                 any(RagCompletion.class),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         )).thenReturn(successResponse(false));
         doThrow(new ChatAccessRevokedException(
                 ChatTestFixtures.CHAT_ID,
                 ChatTestFixtures.TURN_ID,
                 ChatTestFixtures.CLIENT_REQUEST_ID
-        )).when(securityStateService).assertStillActive(
-                any(), any(), any(), any()
-        );
+        )).when(securityStateService).assertStillActive(any(), any(), any(), any());
 
         assertThatThrownBy(() -> service.sendMessage(
                 ChatTestFixtures.CHAT_ID,
@@ -570,7 +599,7 @@ class ChatServiceTest {
         verify(finalizationService).succeedRag(
                 eq(processing),
                 any(RagCompletion.class),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
     }
 
@@ -596,12 +625,11 @@ class ChatServiceTest {
     @Test
     void archiveHidesChatWithoutDeletingItsAuditHistory() {
         ChatSessionEntity session = ChatTestFixtures.session();
-        when(sessionRepository
-                .findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
-                        ChatTestFixtures.CHAT_ID,
-                        ChatTestFixtures.USER_ID,
-                        ChatTestFixtures.ORGANIZATION_ID
-                )).thenReturn(Optional.of(session));
+        when(sessionRepository.findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
+                ChatTestFixtures.CHAT_ID,
+                ChatTestFixtures.USER_ID,
+                ChatTestFixtures.ORGANIZATION_ID
+        )).thenReturn(Optional.of(session));
         when(sessionRepository.saveAndFlush(session)).thenReturn(session);
 
         service.archive(
@@ -610,18 +638,15 @@ class ChatServiceTest {
         );
 
         assertThat(session.getArchivedAt()).isEqualTo(ChatTestFixtures.NOW);
-        assertThat(session.getArchivedByUserId())
-                .isEqualTo(ChatTestFixtures.USER_ID);
+        assertThat(session.getArchivedByUserId()).isEqualTo(ChatTestFixtures.USER_ID);
         verify(sessionRepository).saveAndFlush(session);
         verify(auditEventService).record(
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class),
+                any(SafeAiUserPrincipal.class),
                 eq(ChatTestFixtures.ORGANIZATION_ID),
                 eq(AuditEventType.CHAT_ARCHIVED),
                 argThat((Map<String, Object> details) ->
                         ChatTestFixtures.CHAT_ID.equals(details.get("chatId"))
-                                && "AUDIT_PRESERVED".equals(
-                                details.get("retentionMode")
-                        )
+                                && "AUDIT_PRESERVED".equals(details.get("retentionMode"))
                 )
         );
     }
@@ -656,8 +681,7 @@ class ChatServiceTest {
                 ChatTestFixtures.USER_ID,
                 ChatTestFixtures.ORGANIZATION_ID
         )).thenReturn(true);
-        when(lockService.lock(ChatTestFixtures.CHAT_ID))
-                .thenReturn(redisLock);
+        when(lockService.lock(ChatTestFixtures.CHAT_ID)).thenReturn(redisLock);
     }
 
     private void stubOwnedChatAndProcessing() {
@@ -665,7 +689,7 @@ class ChatServiceTest {
         when(reservationService.reserveOrReplay(
                 eq(ChatTestFixtures.CHAT_ID),
                 eq(request()),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         )).thenReturn(processing);
         when(leaseService.watch(
                 ChatTestFixtures.CHAT_ID,
@@ -693,31 +717,11 @@ class ChatServiceTest {
                 "Question",
                 List.of()
         );
-        return new ChatProcessingContext(
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.TURN_ID,
-                ChatTestFixtures.USER_MESSAGE_ID,
-                ChatTestFixtures.CLIENT_REQUEST_ID,
-                ChatTestFixtures.PROVIDER_OPERATION_ID,
-                ChatTestFixtures.PROCESSING_TOKEN,
-                ChatTestFixtures.NOW.plusSeconds(180),
-                aiRequest,
-                false
-        );
+        return ChatProcessingContextTestFixtures.processing(aiRequest);
     }
 
     private static ChatProcessingContext replayContext() {
-        return new ChatProcessingContext(
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.TURN_ID,
-                ChatTestFixtures.USER_MESSAGE_ID,
-                ChatTestFixtures.CLIENT_REQUEST_ID,
-                ChatTestFixtures.PROVIDER_OPERATION_ID,
-                null,
-                null,
-                null,
-                true
-        );
+        return ChatProcessingContextTestFixtures.replay();
     }
 
     private static SendMessageResponse successResponse(boolean replay) {
