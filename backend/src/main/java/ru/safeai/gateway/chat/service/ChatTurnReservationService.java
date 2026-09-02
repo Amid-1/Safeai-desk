@@ -26,9 +26,11 @@ import ru.safeai.gateway.common.exception.ChatBusyException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.ratelimit.RedisRateLimitService;
+import ru.safeai.gateway.model.domain.ModelCapability;
 import ru.safeai.gateway.model.domain.ModelRouteRequest;
 import ru.safeai.gateway.model.domain.ModelRouteResult;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
+import ru.safeai.gateway.model.service.ModelRoutingEnvelopeService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
 
 import java.time.Clock;
@@ -55,9 +57,11 @@ public class ChatTurnReservationService {
     private final ChatTurnRecoveryCoordinator recoveryCoordinator;
     private final AuditEventService auditEventService;
     private final ModelRoutingService modelRoutingService;
+    private final ModelRoutingEnvelopeService routingEnvelopeService;
     private final ChatProperties chatProperties;
     private final ChatMetrics metrics;
     private final Clock clock;
+
 
     public ChatTurnReservationService(
             ChatSessionRepository sessionRepository,
@@ -72,36 +76,90 @@ public class ChatTurnReservationService {
             ChatTurnRecoveryCoordinator recoveryCoordinator,
             AuditEventService auditEventService,
             ModelRoutingService modelRoutingService,
+            ModelRoutingEnvelopeService routingEnvelopeService,
             ChatProperties chatProperties,
             ChatMetrics metrics,
             Clock clock
     ) {
-        this.sessionRepository = sessionRepository;
-        this.messageRepository = messageRepository;
-        this.turnRepository = turnRepository;
-        this.mutexRepository = mutexRepository;
-        this.historyRepository = historyRepository;
-        this.historyBuilder = historyBuilder;
-        this.contentNormalizer = contentNormalizer;
-        this.rateLimitService = rateLimitService;
-        this.quotaService = quotaService;
-        this.recoveryCoordinator = recoveryCoordinator;
-        this.auditEventService = auditEventService;
-        this.modelRoutingService = modelRoutingService;
-        this.chatProperties = chatProperties;
-        this.metrics = metrics;
-        this.clock = clock;
+        this.sessionRepository = Objects.requireNonNull(
+                sessionRepository,
+                "sessionRepository не должен быть null"
+        );
+        this.messageRepository = Objects.requireNonNull(
+                messageRepository,
+                "messageRepository не должен быть null"
+        );
+        this.turnRepository = Objects.requireNonNull(
+                turnRepository,
+                "turnRepository не должен быть null"
+        );
+        this.mutexRepository = Objects.requireNonNull(
+                mutexRepository,
+                "mutexRepository не должен быть null"
+        );
+        this.historyRepository = Objects.requireNonNull(
+                historyRepository,
+                "historyRepository не должен быть null"
+        );
+        this.historyBuilder = Objects.requireNonNull(
+                historyBuilder,
+                "historyBuilder не должен быть null"
+        );
+        this.contentNormalizer = Objects.requireNonNull(
+                contentNormalizer,
+                "contentNormalizer не должен быть null"
+        );
+        this.rateLimitService = Objects.requireNonNull(
+                rateLimitService,
+                "rateLimitService не должен быть null"
+        );
+        this.quotaService = Objects.requireNonNull(
+                quotaService,
+                "quotaService не должен быть null"
+        );
+        this.recoveryCoordinator = Objects.requireNonNull(
+                recoveryCoordinator,
+                "recoveryCoordinator не должен быть null"
+        );
+        this.auditEventService = Objects.requireNonNull(
+                auditEventService,
+                "auditEventService не должен быть null"
+        );
+        this.modelRoutingService = Objects.requireNonNull(
+                modelRoutingService,
+                "modelRoutingService не должен быть null"
+        );
+        this.routingEnvelopeService = Objects.requireNonNull(
+                routingEnvelopeService,
+                "routingEnvelopeService не должен быть null"
+        );
+        this.chatProperties = Objects.requireNonNull(
+                chatProperties,
+                "chatProperties не должен быть null"
+        );
+        this.metrics = Objects.requireNonNull(
+                metrics,
+                "metrics не должен быть null"
+        );
+        this.clock = Objects.requireNonNull(
+                clock,
+                "clock не должен быть null"
+        );
     }
 
     /**
      * One short transaction: idempotency lookup, complete-turn history
-     * validation, USER/PROCESSING persistence, durable quota/audit intent and
-     * finally the external rate-limit reservation. Provider I/O starts only
-     * after this method commits.
-
-     * ChatTurnFailedException and AiOutcomeAmbiguousException may be thrown
-     * after a stale PROCESSING turn has been moved to a terminal state.
-     * Those expected state transitions must be committed, not rolled back.
+     * validation, model governance, USER/PROCESSING persistence, durable
+     * quota/audit intent and finally the external Redis rate-limit reservation.
+     * Provider I/O starts only after this method commits.
+     *
+     * <p>The V45 deferred ALLOWED-decision -> exact ChatTurn trigger is forced
+     * to IMMEDIATE before Redis is called. Therefore a DB-linkage failure
+     * cannot consume a rate-limit slot.</p>
+     *
+     * <p>ChatTurnFailedException, AiOutcomeAmbiguousException and deterministic
+     * ModelRouteDeniedException intentionally do not roll back their durable
+     * state transitions/evidence.</p>
      */
     @Transactional(
             noRollbackFor = {
@@ -202,12 +260,18 @@ public class ChatTurnReservationService {
         UUID turnId =
                 UUID.randomUUID();
 
+        Set<ModelCapability> requiredCapabilities =
+                Set.of();
+
+        long additionalInputTokenUpperBound =
+                routingEnvelopeService.additionalInputTokenUpperBound(
+                        request.knowledgeMode(),
+                        requiredCapabilities
+                );
+
         /*
-         * V45 Model Control Plane decision is persisted after ChatTurn
-         * idempotency lookup but before USER/PROCESSING/quota/rate-limit
-         * reservation. The selected route must exactly match the physical
-         * single runtime adapter; true provider/model multiplexing remains
-         * a later data-plane milestone.
+         * ModelRoutingService owns route-time via its injected server Clock.
+         * Caller cannot activate a future catalog snapshot by supplying now.
          */
         ModelRouteResult route =
                 modelRoutingService.decide(
@@ -221,10 +285,10 @@ public class ChatTurnReservationService {
                                 null,
                                 content,
                                 history,
-                                Set.of()
+                                requiredCapabilities,
+                                additionalInputTokenUpperBound
                         ),
-                        currentUser,
-                        now
+                        currentUser
                 );
 
         UUID userMessageId =
@@ -241,12 +305,6 @@ public class ChatTurnReservationService {
                         chatProperties.processingLease()
                 );
 
-        /*
-         * Persist the idempotency identity before external rate-limit I/O.
-         * The transaction-scoped advisory lock plus unique constraints make
-         * this the durable source of truth. All database validation, quota and
-         * audit-outbox work is completed before consuming the Redis rate slot.
-         */
         ChatMessageEntity userMessage =
                 ChatMessageEntity.user(
                         session,
@@ -312,9 +370,16 @@ public class ChatTurnReservationService {
         );
 
         /*
-         * Redis rate limiting is the only non-transactional reservation in
-         * this method, so it runs last. Rejection rolls back USER/turn/quota/
-         * audit rows; earlier database failures do not consume a rate slot.
+         * Force deferred exact-link validation NOW, while everything is still
+         * DB-only. This closes the commit-time-error -> consumed Redis slot gap.
+         */
+        modelRoutingService
+                .validateAllowedTurnLinkBeforeExternalSideEffects();
+
+        /*
+         * Redis remains the only non-transactional reservation and still runs
+         * last. Rejection rolls back USER/turn/quota/audit rows, preserving the
+         * original rate-limit semantics and existing constructor wiring.
          */
         rateLimitService.checkAiMessageAllowed(
                 currentUser
@@ -331,7 +396,11 @@ public class ChatTurnReservationService {
                         null,
                         null,
                         content,
-                        history
+                        history,
+                        route.estimatedInputTokens(),
+                        Math.toIntExact(
+                                route.estimatedOutputTokens()
+                        )
                 );
 
         return new ChatProcessingContext(

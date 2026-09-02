@@ -22,9 +22,7 @@ final class ModelRoutingSelectionPolicy {
 
     private final ModelCatalogRepository catalogRepository;
 
-    ModelRoutingSelectionPolicy(
-            ModelCatalogRepository catalogRepository
-    ) {
+    ModelRoutingSelectionPolicy(ModelCatalogRepository catalogRepository) {
         this.catalogRepository = Objects.requireNonNull(
                 catalogRepository,
                 "catalogRepository не должен быть null"
@@ -38,110 +36,66 @@ final class ModelRoutingSelectionPolicy {
             boolean policyEnabled,
             Instant now
     ) {
-        String requested = normalizeNullableKey(
-                request.requestedModelKey()
-        );
-        String policyDefault = policyEnabled
-                ? policy.defaultModelKey()
-                : null;
-        String explicit = requested != null
-                ? requested
-                : policyDefault;
+        String requested = normalizeNullableKey(request.requestedModelKey());
+        String policyDefault = policyEnabled ? policy.defaultModelKey() : null;
+        String explicit = requested != null ? requested : policyDefault;
 
         if (explicit != null) {
-            ModelCatalogEntry entry = catalogRepository
-                    .findEffective(explicit, now)
-                    .orElse(null);
-            return entry == null
-                    ? new Selection(
-                    null,
-                    explicit,
-                    null,
-                    ModelRouteReason.MODEL_NOT_FOUND
-            )
-                    : new Selection(
+            ModelCatalogEntry entry = catalogRepository.findEffective(explicit, now).orElse(null);
+            if (entry == null) {
+                return Selection.modelNotFound(
+                        explicit
+                );
+            }
+
+            return Selection.resolved(
                     entry,
                     explicit,
-                    ModelRouteReason.POLICY_DEFAULT,
-                    null
+                    requested != null
+                            ? ModelRouteReason.REQUESTED_MODEL
+                            : ModelRouteReason.POLICY_DEFAULT
             );
         }
 
         List<ModelCatalogEntry> runtimeCandidates = catalogRepository
-                .findEffectiveByRuntime(
-                        runtime.provider(),
-                        runtime.model(),
-                        now
-                )
+                .findEffectiveByRuntime(runtime.provider(), runtime.model(), now)
                 .stream()
-                .sorted(Comparator.comparing(
-                        ModelCatalogEntry::modelKey
-                ))
+                .sorted(Comparator.comparing(ModelCatalogEntry::modelKey))
                 .toList();
 
-        Optional<ModelCatalogEntry> executable = runtimeCandidates
-                .stream()
-                .filter(entry -> isAllowedByLists(
-                        entry.modelKey(),
-                        policy,
-                        policyEnabled
-                ))
-                .filter(entry ->
-                        entry.lifecycle() == ModelLifecycle.ACTIVE
-                                || entry.lifecycle()
-                                == ModelLifecycle.DEPRECATED
-                )
+        Optional<ModelCatalogEntry> executable = runtimeCandidates.stream()
+                .filter(entry -> isAllowedByLists(entry.modelKey(), policy, policyEnabled))
+                .filter(entry -> entry.lifecycle() == ModelLifecycle.ACTIVE
+                        || entry.lifecycle() == ModelLifecycle.DEPRECATED)
                 .findFirst();
 
         if (executable.isPresent()) {
             ModelCatalogEntry selected = executable.get();
-            return new Selection(
+            return Selection.resolved(
                     selected,
                     selected.modelKey(),
-                    ModelRouteReason.RUNTIME_ONLY_MATCH,
-                    null
+                    ModelRouteReason.RUNTIME_ONLY_MATCH
             );
         }
 
-        /*
-         * A current runtime candidate exists, but lifecycle or tenant policy
-         * makes it non-executable. Keep the exact snapshot so validation emits
-         * MODEL_DISABLED / MODEL_DENIED / MODEL_NOT_ALLOWED instead of silently
-         * falling back to legacy execution.
-         */
         if (!runtimeCandidates.isEmpty()) {
-            Optional<ModelCatalogEntry> policyVisible = runtimeCandidates
-                    .stream()
-                    .filter(entry -> isAllowedByLists(
-                            entry.modelKey(),
-                            policy,
-                            policyEnabled
-                    ))
+            Optional<ModelCatalogEntry> policyVisible = runtimeCandidates.stream()
+                    .filter(entry -> isAllowedByLists(entry.modelKey(), policy, policyEnabled))
                     .findFirst();
-            ModelCatalogEntry selected = policyVisible
-                    .orElse(runtimeCandidates.getFirst());
-            return new Selection(
+            ModelCatalogEntry selected = policyVisible.orElse(runtimeCandidates.getFirst());
+            return Selection.resolved(
                     selected,
                     selected.modelKey(),
-                    ModelRouteReason.RUNTIME_ONLY_MATCH,
-                    null
+                    ModelRouteReason.RUNTIME_ONLY_MATCH
             );
         }
 
         if (policyEnabled) {
-            return new Selection(
-                    null,
-                    null,
-                    null,
-                    ModelRouteReason.MODEL_NOT_FOUND
+            return Selection.modelNotFound(
+                    null
             );
         }
 
-        /*
-         * Bootstrap fallback is valid only until this physical runtime identity
-         * has had an already-effective catalog version. Future scheduled rows
-         * intentionally do not disable bootstrap before activation.
-         */
         if (catalogRepository.hasEffectiveHistoryByRuntime(
                 runtime.provider(),
                 runtime.model(),
@@ -150,6 +104,8 @@ final class ModelRoutingSelectionPolicy {
             return new Selection(
                     null,
                     runtimeKey(runtime),
+                    runtime.provider(),
+                    runtime.model(),
                     null,
                     ModelRouteReason.RUNTIME_MISMATCH
             );
@@ -158,6 +114,8 @@ final class ModelRoutingSelectionPolicy {
         return new Selection(
                 null,
                 runtimeKey(runtime),
+                runtime.provider(),
+                runtime.model(),
                 ModelRouteReason.LEGACY_RUNTIME_FALLBACK,
                 null
         );
@@ -182,8 +140,7 @@ final class ModelRoutingSelectionPolicy {
         }
 
         if (!isAllowedByLists(modelKey, policy, policyEnabled)) {
-            if (policy != null
-                    && policy.denyModelKeys().contains(modelKey)) {
+            if (policy != null && policy.denyModelKeys().contains(modelKey)) {
                 return ModelRouteReason.MODEL_DENIED;
             }
             return ModelRouteReason.MODEL_NOT_ALLOWED;
@@ -195,8 +152,7 @@ final class ModelRoutingSelectionPolicy {
         }
 
         if (policyEnabled && policy.requireNoTraining()) {
-            if (entry.trainingUseStatus()
-                    != ModelTrainingUseStatus.NOT_USED
+            if (entry.trainingUseStatus() != ModelTrainingUseStatus.NOT_USED
                     && entry.trainingUseStatus()
                     != ModelTrainingUseStatus.CONTRACTUAL_NO_TRAINING) {
                 return ModelRouteReason.TRAINING_POLICY_UNSATISFIED;
@@ -205,8 +161,7 @@ final class ModelRoutingSelectionPolicy {
 
         if (policyEnabled
                 && policy.requireZeroDataRetention()
-                && entry.retentionStatus()
-                != ModelRetentionStatus.ZERO_DATA_RETENTION) {
+                && entry.retentionStatus() != ModelRetentionStatus.ZERO_DATA_RETENTION) {
             return ModelRouteReason.RETENTION_POLICY_UNSATISFIED;
         }
 
@@ -236,8 +191,7 @@ final class ModelRoutingSelectionPolicy {
             boolean supported = switch (capability) {
                 case TOOLS -> runtime.toolsSupported();
                 case VISION -> runtime.visionSupported();
-                case STRUCTURED_OUTPUT ->
-                        runtime.structuredOutputSupported();
+                case STRUCTURED_OUTPUT -> runtime.structuredOutputSupported();
             };
             if (!supported) {
                 return true;
@@ -246,25 +200,50 @@ final class ModelRoutingSelectionPolicy {
         return false;
     }
 
-    static String normalizeNullableKey(
-            String value
-    ) {
+    static String normalizeNullableKey(String value) {
         return value == null || value.isBlank()
                 ? null
                 : ModelCatalogService.normalizeModelKey(value);
     }
 
-    private static String runtimeKey(
-            RuntimeModelStatusResponse runtime
-    ) {
+    private static String runtimeKey(RuntimeModelStatusResponse runtime) {
         return "runtime:" + runtime.provider() + ":" + runtime.model();
     }
 
     record Selection(
             ModelCatalogEntry entry,
             String modelKey,
+            String selectedProvider,
+            String selectedProviderModelId,
             ModelRouteReason allowedReason,
             ModelRouteReason denialReason
     ) {
+        static Selection resolved(
+                ModelCatalogEntry entry,
+                String modelKey,
+                ModelRouteReason allowedReason
+        ) {
+            return new Selection(
+                    Objects.requireNonNull(entry),
+                    modelKey,
+                    entry.provider(),
+                    entry.providerModelId(),
+                    allowedReason,
+                    null
+            );
+        }
+
+        static Selection modelNotFound(
+                String modelKey
+        ) {
+            return new Selection(
+                    null,
+                    modelKey,
+                    null,
+                    null,
+                    null,
+                    ModelRouteReason.MODEL_NOT_FOUND
+            );
+        }
     }
 }

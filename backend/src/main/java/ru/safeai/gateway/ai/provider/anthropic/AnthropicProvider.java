@@ -134,16 +134,16 @@ public final class AnthropicProvider implements AiProvider {
     public AiChatResponse sendMessage(
             AiChatRequest request
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        int outputLimit =
+                request.effectiveMaxOutputTokens(
+                        properties.maxTokens()
+                );
 
         AiChatRequest preparedRequest =
                 contextWindowService.prepare(
                         request,
                         properties.maxInputTokens(),
-                        properties.maxTokens()
+                        outputLimit
                 );
 
         return retryExecutor.execute(

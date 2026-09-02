@@ -36,6 +36,10 @@ class ModelRouteDecisionFactoryTest {
 
         assertThat(decision.decisionSha256())
                 .matches("[0-9a-f]{64}");
+
+        assertThat(decision.decisionIntegrityVersion())
+                .isEqualTo((short) 2);
+
         assertThatCode(() ->
                 ModelRouteDecisionIntegrity.requireValid(decision)
         ).doesNotThrowAnyException();
@@ -43,7 +47,7 @@ class ModelRouteDecisionFactoryTest {
 
     @Test
     void canonicalHashRemainsCompatibleWithOriginalV45FieldOrder() {
-        ModelRouteDecision decision = fixedDecision();
+        ModelRouteDecision decision = fixedV1Decision();
 
         assertThat(
                 ModelRouteDecisionIntegrity.calculateSha256(decision)
@@ -97,7 +101,7 @@ class ModelRouteDecisionFactoryTest {
         Instant originalCreatedAt =
                 Instant.parse("2026-08-28T12:00:00.123456789Z");
         ModelRouteDecision original = copyWithCreatedAt(
-                fixedDecision(),
+                fixedV1Decision(),
                 originalCreatedAt,
                 ""
         );
@@ -118,7 +122,7 @@ class ModelRouteDecisionFactoryTest {
     @Test
     void earlyV45FreeZeroHashRemainsVerifiableAfterPostgresScaleCoercion() {
         ModelRouteDecision originalShape = copyWithEstimatedCost(
-                fixedDecision(),
+                fixedV1Decision(),
                 BigDecimal.ZERO,
                 ""
         );
@@ -139,8 +143,11 @@ class ModelRouteDecisionFactoryTest {
     @Test
     void tamperedEvidenceFailsIntegrityVerification() {
         ModelRouteDecision sealed =
-                ModelRouteDecisionIntegrity.seal(
-                        fixedDecision()
+                buildAllowedDecision(
+                        ModelTestFixtures.routeRequest(
+                                null,
+                                Set.of()
+                        )
                 );
 
         ModelRouteDecision tampered =
@@ -174,7 +181,8 @@ class ModelRouteDecisionFactoryTest {
                 "openai:other-model",
                 original.userMessage(),
                 original.history(),
-                original.requiredCapabilities()
+                original.requiredCapabilities(),
+                original.additionalInputTokenUpperBound()
         );
 
         assertThatThrownBy(() ->
@@ -204,7 +212,8 @@ class ModelRouteDecisionFactoryTest {
                 original.requestedModelKey(),
                 original.userMessage(),
                 original.history(),
-                Set.of(ModelCapability.VISION)
+                Set.of(ModelCapability.VISION),
+                original.additionalInputTokenUpperBound()
         );
 
         assertThatThrownBy(() ->
@@ -234,7 +243,8 @@ class ModelRouteDecisionFactoryTest {
                 original.requestedModelKey(),
                 original.userMessage(),
                 original.history(),
-                original.requiredCapabilities()
+                original.requiredCapabilities(),
+                original.additionalInputTokenUpperBound()
         );
 
         assertThatThrownBy(() ->
@@ -286,11 +296,17 @@ class ModelRouteDecisionFactoryTest {
 
     @Test
     void toResultRejectsDeniedDecisionInsteadOfFailingWithIncidentalNull() {
-        ModelRouteDecision denied = ModelRouteDecisionIntegrity.seal(
-                asDeniedModelDisabled(
-                        fixedDecision()
-                )
-        );
+        ModelRouteDecision denied =
+                ModelRouteDecisionIntegrity.seal(
+                        asDeniedModelDisabled(
+                                buildAllowedDecision(
+                                        ModelTestFixtures.routeRequest(
+                                                null,
+                                                Set.of()
+                                        )
+                                )
+                        )
+                );
 
         assertThatThrownBy(() -> factory.toResult(denied))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -321,7 +337,7 @@ class ModelRouteDecisionFactoryTest {
         );
     }
 
-    private static ModelRouteDecision fixedDecision() {
+    private static ModelRouteDecision fixedV1Decision() {
         return new ModelRouteDecision(
                 UUID.fromString("88888888-8888-4888-8888-888888888888"),
                 ModelTestFixtures.ORGANIZATION_ID,
@@ -354,6 +370,7 @@ class ModelRouteDecisionFactoryTest {
                 true,
                 ModelRouteOutcome.ALLOWED,
                 ModelRouteReason.POLICY_DEFAULT,
+                (short) 1,
                 "",
                 Instant.parse("2026-08-28T12:00:00Z")
         );
@@ -391,6 +408,7 @@ class ModelRouteDecisionFactoryTest {
                 source.pricingComplete(),
                 source.outcome(),
                 source.reason(),
+                source.decisionIntegrityVersion(),
                 source.decisionSha256(),
                 source.createdAt()
         );
@@ -430,6 +448,7 @@ class ModelRouteDecisionFactoryTest {
                 source.pricingComplete(),
                 source.outcome(),
                 source.reason(),
+                source.decisionIntegrityVersion(),
                 hash,
                 source.createdAt()
         );
@@ -469,6 +488,7 @@ class ModelRouteDecisionFactoryTest {
                 source.pricingComplete(),
                 source.outcome(),
                 source.reason(),
+                source.decisionIntegrityVersion(),
                 hash,
                 createdAt
         );
@@ -506,6 +526,7 @@ class ModelRouteDecisionFactoryTest {
                 source.pricingComplete(),
                 ModelRouteOutcome.DENIED,
                 ModelRouteReason.MODEL_DISABLED,
+                source.decisionIntegrityVersion(),
                 source.decisionSha256(),
                 source.createdAt()
         );

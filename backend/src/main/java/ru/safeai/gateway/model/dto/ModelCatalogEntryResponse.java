@@ -14,6 +14,12 @@ import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Public model-catalog wire DTO.
+ *
+ * <p>All financial decimals are strings so JavaScript never receives them
+ * through IEEE-754 JSON numbers.</p>
+ */
 public record ModelCatalogEntryResponse(
         UUID id,
         String modelKey,
@@ -32,10 +38,10 @@ public record ModelCatalogEntryResponse(
         ModelTrainingUseStatus trainingUseStatus,
         ModelPricingStatus pricingStatus,
         boolean pricingComplete,
-        BigDecimal inputUsdPer1mTokens,
-        BigDecimal cachedInputUsdPer1mTokens,
-        BigDecimal cacheWriteInputUsdPer1mTokens,
-        BigDecimal outputUsdPer1mTokens,
+        String inputUsdPer1mTokens,
+        String cachedInputUsdPer1mTokens,
+        String cacheWriteInputUsdPer1mTokens,
+        String outputUsdPer1mTokens,
         String extraPricingJson,
         String pricingVersion,
         Instant effectiveFrom,
@@ -43,17 +49,45 @@ public record ModelCatalogEntryResponse(
         UUID createdByUserId,
         Instant createdAt
 ) {
-    public static ModelCatalogEntryResponse from(ModelCatalogEntry entry) {
+    public static ModelCatalogEntryResponse from(
+            ModelCatalogEntry entry
+    ) {
         return new ModelCatalogEntryResponse(
-                entry.id(), entry.modelKey(), entry.version(), entry.provider(),
-                entry.providerModelId(), entry.displayName(), entry.lifecycle(),
-                entry.maxInputTokens(), entry.maxOutputTokens(), entry.capabilities(),
-                entry.inputModalities(), entry.outputModalities(), entry.retentionStatus(),
-                entry.retentionDays(), entry.trainingUseStatus(), entry.pricingStatus(),
-                entry.pricingComplete(), entry.inputUsdPer1mTokens(),
-                entry.cachedInputUsdPer1mTokens(), entry.cacheWriteInputUsdPer1mTokens(),
-                entry.outputUsdPer1mTokens(), entry.extraPricingJson(), entry.pricingVersion(),
-                entry.effectiveFrom(), entry.source(), entry.createdByUserId(), entry.createdAt()
+                entry.id(),
+                entry.modelKey(),
+                entry.version(),
+                entry.provider(),
+                entry.providerModelId(),
+                entry.displayName(),
+                entry.lifecycle(),
+                entry.maxInputTokens(),
+                entry.maxOutputTokens(),
+                entry.capabilities(),
+                entry.inputModalities(),
+                entry.outputModalities(),
+                entry.retentionStatus(),
+                entry.retentionDays(),
+                entry.trainingUseStatus(),
+                entry.pricingStatus(),
+                entry.pricingComplete(),
+                decimal(entry.inputUsdPer1mTokens()),
+                decimal(entry.cachedInputUsdPer1mTokens()),
+                decimal(entry.cacheWriteInputUsdPer1mTokens()),
+                decimal(entry.outputUsdPer1mTokens()),
+                entry.extraPricingJson(),
+                entry.pricingVersion(),
+                entry.effectiveFrom(),
+                entry.source(),
+                entry.createdByUserId(),
+                entry.createdAt()
         );
+    }
+
+    private static String decimal(
+            BigDecimal value
+    ) {
+        return value == null
+                ? null
+                : value.toPlainString();
     }
 }

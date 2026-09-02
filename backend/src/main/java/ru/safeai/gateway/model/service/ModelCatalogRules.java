@@ -15,7 +15,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Pure normalization and semantic validation for versioned model catalog input. */
 final class ModelCatalogRules {
 
     private static final Pattern MODEL_KEY = Pattern.compile(
@@ -26,15 +25,9 @@ final class ModelCatalogRules {
     private ModelCatalogRules() {
     }
 
-    static BigDecimal normalizeMoney(
-            BigDecimal value,
-            String field
-    ) {
+    static BigDecimal normalizeMoney(BigDecimal value, String field) {
         return ModelControlPlaneNumericValidation
-                .normalizeNonNegativeNumeric30Scale12(
-                        value,
-                        field
-                );
+                .normalizeNonNegativeNumeric30Scale12(value, field);
     }
 
     static void validateCatalogSemantics(
@@ -55,22 +48,10 @@ final class ModelCatalogRules {
             String pricingVersion,
             String extraPricingJson
     ) {
-        Objects.requireNonNull(
-                lifecycle,
-                "lifecycle не должен быть null"
-        );
-        Objects.requireNonNull(
-                retentionStatus,
-                "retentionStatus не должен быть null"
-        );
-        Objects.requireNonNull(
-                trainingUseStatus,
-                "trainingUseStatus не должен быть null"
-        );
-        Objects.requireNonNull(
-                pricingStatus,
-                "pricingStatus не должен быть null"
-        );
+        Objects.requireNonNull(lifecycle, "lifecycle не должен быть null");
+        Objects.requireNonNull(retentionStatus, "retentionStatus не должен быть null");
+        Objects.requireNonNull(trainingUseStatus, "trainingUseStatus не должен быть null");
+        Objects.requireNonNull(pricingStatus, "pricingStatus не должен быть null");
 
         if (maxInputTokens <= 0 || maxOutputTokens <= 0) {
             throw new BadRequestException(
@@ -84,7 +65,7 @@ final class ModelCatalogRules {
         }
         if (outputModalities.contains(ModelModality.IMAGE)) {
             throw new BadRequestException(
-                    "V45 model catalog не поддерживает IMAGE output modality"
+                    "Model catalog не поддерживает IMAGE output modality"
             );
         }
         if (retentionDays != null && retentionDays < 0) {
@@ -101,26 +82,19 @@ final class ModelCatalogRules {
         }
 
         ModelControlPlaneNumericValidation.requireNonNegativeNumeric30Scale12(
-                input,
-                "inputUsdPer1mTokens"
+                input, "inputUsdPer1mTokens"
         );
         ModelControlPlaneNumericValidation.requireNonNegativeNumeric30Scale12(
-                cachedInput,
-                "cachedInputUsdPer1mTokens"
+                cachedInput, "cachedInputUsdPer1mTokens"
         );
         ModelControlPlaneNumericValidation.requireNonNegativeNumeric30Scale12(
-                cacheWrite,
-                "cacheWriteInputUsdPer1mTokens"
+                cacheWrite, "cacheWriteInputUsdPer1mTokens"
         );
         ModelControlPlaneNumericValidation.requireNonNegativeNumeric30Scale12(
-                output,
-                "outputUsdPer1mTokens"
+                output, "outputUsdPer1mTokens"
         );
         ModelControlPlaneNumericValidation.requireWorstCaseCostFitsNumeric30Scale12(
-                input,
-                maxInputTokens,
-                output,
-                maxOutputTokens
+                input, maxInputTokens, output, maxOutputTokens
         );
 
         boolean emptyExtraPricing = "{}".equals(extraPricingJson);
@@ -167,14 +141,12 @@ final class ModelCatalogRules {
                 }
                 if (cachedInput != null && cachedInput.compareTo(input) > 0) {
                     throw new BadRequestException(
-                            "cachedInputUsdPer1mTokens не может превышать "
-                                    + "inputUsdPer1mTokens"
+                            "cachedInputUsdPer1mTokens не может превышать inputUsdPer1mTokens"
                     );
                 }
                 if (cacheWrite != null && cacheWrite.compareTo(input) > 0) {
                     throw new BadRequestException(
-                            "cacheWriteInputUsdPer1mTokens не может превышать "
-                                    + "inputUsdPer1mTokens"
+                            "cacheWriteInputUsdPer1mTokens не может превышать inputUsdPer1mTokens"
                     );
                 }
             }
@@ -188,9 +160,7 @@ final class ModelCatalogRules {
         }
     }
 
-    static String validateExtraPricingJson(
-            String value
-    ) {
+    static String validateExtraPricingJson(String value) {
         String json = value == null || value.isBlank()
                 ? "{}"
                 : value.trim();
@@ -212,13 +182,9 @@ final class ModelCatalogRules {
         }
     }
 
-    static String normalizeModelKey(
-            String value
-    ) {
+    static String normalizeModelKey(String value) {
         if (value == null || value.isBlank()) {
-            throw new BadRequestException(
-                    "modelKey не должен быть пустым"
-            );
+            throw new BadRequestException("modelKey не должен быть пустым");
         }
 
         String normalized = value.trim().toLowerCase(Locale.ROOT);
@@ -230,17 +196,42 @@ final class ModelCatalogRules {
         return normalized;
     }
 
-    static String normalizeProvider(
-            String value
-    ) {
-        return normalizeRequired(
+    static String normalizeProvider(String value) {
+        String normalized = normalizeText(
                 value,
                 32,
                 "provider"
-        ).toLowerCase(Locale.ROOT);
+        );
+
+        rejectControlCharacters(
+                normalized,
+                "provider"
+        );
+
+        return normalized.toLowerCase(
+                Locale.ROOT
+        );
     }
 
     static String normalizeRequired(
+            String value,
+            int max,
+            String field
+    ) {
+        String normalized = normalizeText(value, max, field);
+
+        if ("providerModelId".equals(field)
+                || "runtime.model".equals(field)) {
+            rejectControlCharacters(
+                    normalized,
+                    field
+            );
+        }
+
+        return normalized;
+    }
+
+    private static String normalizeText(
             String value,
             int max,
             String field
@@ -260,9 +251,22 @@ final class ModelCatalogRules {
         return normalized;
     }
 
-    static String normalizePricingVersion(
-            String value
+    private static void rejectControlCharacters(
+            String value,
+            String field
     ) {
+        for (int index = 0; index < value.length(); index++) {
+            if (Character.isISOControl(
+                    value.charAt(index)
+            )) {
+                throw new BadRequestException(
+                        field + " не должен содержать control characters"
+                );
+            }
+        }
+    }
+
+    static String normalizePricingVersion(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }

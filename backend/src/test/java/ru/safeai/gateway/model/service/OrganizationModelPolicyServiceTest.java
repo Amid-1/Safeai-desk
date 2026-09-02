@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -329,27 +330,36 @@ class OrganizationModelPolicyServiceTest {
         CreateOrganizationModelPolicyVersionRequest request =
                 largeAllowListRequest();
 
+        var principal =
+                ModelTestFixtures.adminPrincipal();
+
         service.createVersion(
                 ModelTestFixtures.ORGANIZATION_ID,
                 request,
-                ModelTestFixtures.adminPrincipal()
+                principal
         );
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> captor =
                 ArgumentCaptor.forClass(Map.class);
+
         verify(audit).record(
-                eq(ModelTestFixtures.adminPrincipal()),
+                same(principal),
                 eq(ModelTestFixtures.ORGANIZATION_ID),
                 eq(AuditEventType.MODEL_POLICY_VERSION_CREATED),
                 captor.capture()
         );
 
         assertThat(captor.getValue())
+                .containsEntry("organizationId", ModelTestFixtures.ORGANIZATION_ID)
+                .containsEntry("version", 1)
+                .containsEntry("enabled", true)
+                .containsEntry("budgetEnforcement", BudgetEnforcement.SOFT)
                 .containsEntry("allowModelKeyCount", 200)
                 .containsEntry("denyModelKeyCount", 0)
                 .containsEntry("modelKeyListsIncluded", false)
                 .containsKeys(
+                        "policyId",
                         "allowModelKeysSha256",
                         "denyModelKeysSha256"
                 )
@@ -359,6 +369,10 @@ class OrganizationModelPolicyServiceTest {
                 );
 
         assertThat(captor.getValue().get("allowModelKeysSha256"))
+                .asString()
+                .matches("[0-9a-f]{64}");
+
+        assertThat(captor.getValue().get("denyModelKeysSha256"))
                 .asString()
                 .matches("[0-9a-f]{64}");
     }
@@ -392,10 +406,13 @@ class OrganizationModelPolicyServiceTest {
     void policyAuditContainsEffectiveGovernanceLimits() {
         stubReadyForFirstVersion();
 
+        var principal =
+                ModelTestFixtures.adminPrincipal();
+
         service.createVersion(
                 ModelTestFixtures.ORGANIZATION_ID,
                 validRequest(),
-                ModelTestFixtures.adminPrincipal()
+                principal
         );
 
         @SuppressWarnings("unchecked")
@@ -403,13 +420,21 @@ class OrganizationModelPolicyServiceTest {
                 ArgumentCaptor.forClass(Map.class);
 
         verify(audit).record(
-                eq(ModelTestFixtures.adminPrincipal()),
+                same(principal),
                 eq(ModelTestFixtures.ORGANIZATION_ID),
                 eq(AuditEventType.MODEL_POLICY_VERSION_CREATED),
                 captor.capture()
         );
 
         assertThat(captor.getValue())
+                .containsEntry("organizationId", ModelTestFixtures.ORGANIZATION_ID)
+                .containsEntry("version", 1)
+                .containsEntry("enabled", true)
+                .containsEntry("defaultModelKey", "openai:gpt-test")
+                .containsEntry("budgetEnforcement", BudgetEnforcement.HARD)
+                .containsEntry("requireCompletePricing", true)
+                .containsEntry("requireNoTraining", true)
+                .containsEntry("requireZeroDataRetention", true)
                 .containsEntry("maxInputTokens", 8_000)
                 .containsEntry("maxOutputTokens", 1_000)
                 .containsEntry(
@@ -419,6 +444,16 @@ class OrganizationModelPolicyServiceTest {
                 .containsEntry(
                         "monthlyBudgetUsd",
                         new BigDecimal("50.000000000000")
+                )
+                .containsEntry("allowModelKeyCount", 1)
+                .containsEntry("denyModelKeyCount", 0)
+                .containsEntry("modelKeyListsIncluded", true)
+                .containsKeys(
+                        "policyId",
+                        "allowModelKeysSha256",
+                        "denyModelKeysSha256",
+                        "allowModelKeys",
+                        "denyModelKeys"
                 );
     }
 

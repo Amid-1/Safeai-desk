@@ -45,6 +45,7 @@ import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -96,20 +97,6 @@ class ModelControlPlanePostgresIntegrationTest {
                         POSTGRES.getPassword()
                 );
 
-        /*
-         * This test creates Flyway manually, outside Spring Boot.
-         * Spring's PostgreSQL transactional-lock setting is therefore not
-         * propagated to this Flyway instance automatically.
-         *
-         * V21 and other production migrations intentionally use PostgreSQL
-         * CREATE/DROP INDEX CONCURRENTLY. Those statements are
-         * non-transactional and require Flyway's PostgreSQL transactional
-         * advisory lock to be disabled.
-         *
-         * Use Flyway's public PostgreSQL configuration extension so a future
-         * dependency/API change fails at compilation time rather than
-         * silently changing migration semantics.
-         */
         var configuration = Flyway.configure()
                 .dataSource(dataSource)
                 .locations("classpath:db/migration");
@@ -118,6 +105,7 @@ class ModelControlPlanePostgresIntegrationTest {
                 configuration.getConfigurationExtension(
                         PostgreSQLConfigurationExtension.class
                 );
+
         postgresql.setTransactionalLock(false);
 
         configuration
@@ -125,9 +113,13 @@ class ModelControlPlanePostgresIntegrationTest {
                 .migrate();
 
         jdbc = new JdbcTemplate(dataSource);
-        transaction = new TransactionTemplate(
-                new DataSourceTransactionManager(dataSource)
-        );
+
+        transaction =
+                new TransactionTemplate(
+                        new DataSourceTransactionManager(
+                                dataSource
+                        )
+                );
     }
 
     @BeforeEach
@@ -137,7 +129,10 @@ class ModelControlPlanePostgresIntegrationTest {
         chatId = UUID.randomUUID();
 
         transaction.executeWithoutResult(status -> {
-            Instant now = ModelTestFixtures.NOW.minusSeconds(3_600);
+            Instant now =
+                    ModelTestFixtures.NOW.minusSeconds(
+                            3_600
+                    );
 
             String organizationName =
                     "Model Test " + organizationId;
@@ -201,273 +196,447 @@ class ModelControlPlanePostgresIntegrationTest {
             );
         });
 
-        catalogRepository = new ModelCatalogRepository(jdbc);
-        policyRepository = new OrganizationModelPolicyRepository(jdbc);
-        decisionRepository = new ModelRouteDecisionRepository(jdbc);
+        catalogRepository =
+                new ModelCatalogRepository(
+                        jdbc
+                );
+
+        policyRepository =
+                new OrganizationModelPolicyRepository(
+                        jdbc
+                );
+
+        decisionRepository =
+                new ModelRouteDecisionRepository(
+                        jdbc
+                );
     }
 
     @Test
     void catalogEffectiveSnapshotIsChosenBeforeRuntimeIdentityFiltering() {
-        String modelKey = uniqueModelKey("snapshot");
-        ModelCatalogEntry version1 = catalogEntry(
-                modelKey,
-                1,
-                "openai",
-                "gpt-test",
-                ModelTestFixtures.NOW.minusSeconds(120)
+        String modelKey =
+                uniqueModelKey(
+                        "snapshot"
+                );
+
+        ModelCatalogEntry version1 =
+                catalogEntry(
+                        modelKey,
+                        1,
+                        "openai",
+                        "gpt-test",
+                        ModelTestFixtures.NOW.minusSeconds(
+                                120
+                        )
+                );
+
+        ModelCatalogEntry version2 =
+                catalogEntry(
+                        modelKey,
+                        2,
+                        "openai",
+                        "gpt-remapped",
+                        ModelTestFixtures.NOW.minusSeconds(
+                                60
+                        )
+                );
+
+        catalogRepository.insert(
+                version1
         );
-        ModelCatalogEntry version2 = catalogEntry(
-                modelKey,
-                2,
-                "openai",
-                "gpt-remapped",
-                ModelTestFixtures.NOW.minusSeconds(60)
+
+        catalogRepository.insert(
+                version2
         );
 
-        catalogRepository.insert(version1);
-        catalogRepository.insert(version2);
+        assertThat(
+                catalogRepository.findEffective(
+                        modelKey,
+                        ModelTestFixtures.NOW
+                )
+        ).contains(
+                version2
+        );
 
-        assertThat(catalogRepository.findEffective(
-                modelKey,
-                ModelTestFixtures.NOW
-        )).contains(version2);
-
-        assertThat(catalogRepository.findEffectiveByRuntime(
-                "openai",
-                "gpt-test",
-                ModelTestFixtures.NOW
-        )).noneMatch(entry -> entry.modelKey().equals(modelKey));
+        assertThat(
+                catalogRepository.findEffectiveByRuntime(
+                        "openai",
+                        "gpt-test",
+                        ModelTestFixtures.NOW
+                )
+        ).noneMatch(
+                entry ->
+                        entry.modelKey()
+                                .equals(modelKey)
+        );
     }
 
     @Test
     void futureCatalogVersionIsLatestButNotEffectiveEarly() {
-        String modelKey = uniqueModelKey("future");
-        ModelCatalogEntry active = catalogEntry(
-                modelKey,
-                1,
-                "openai",
-                "gpt-test",
-                ModelTestFixtures.NOW.minusSeconds(60)
-        );
-        ModelCatalogEntry future = catalogEntry(
-                modelKey,
-                2,
-                "openai",
-                "gpt-test",
-                ModelTestFixtures.NOW.plusSeconds(3_600)
+        String modelKey =
+                uniqueModelKey(
+                        "future"
+                );
+
+        ModelCatalogEntry active =
+                catalogEntry(
+                        modelKey,
+                        1,
+                        "openai",
+                        "gpt-test",
+                        ModelTestFixtures.NOW.minusSeconds(
+                                60
+                        )
+                );
+
+        ModelCatalogEntry future =
+                catalogEntry(
+                        modelKey,
+                        2,
+                        "openai",
+                        "gpt-test",
+                        ModelTestFixtures.NOW.plusSeconds(
+                                3_600
+                        )
+                );
+
+        catalogRepository.insert(
+                active
         );
 
-        catalogRepository.insert(active);
-        catalogRepository.insert(future);
+        catalogRepository.insert(
+                future
+        );
 
-        assertThat(catalogRepository.findLatest(modelKey))
-                .contains(future);
-        assertThat(catalogRepository.findEffective(
-                modelKey,
-                ModelTestFixtures.NOW
-        )).contains(active);
+        assertThat(
+                catalogRepository.findLatest(
+                        modelKey
+                )
+        ).contains(
+                future
+        );
+
+        assertThat(
+                catalogRepository.findEffective(
+                        modelKey,
+                        ModelTestFixtures.NOW
+                )
+        ).contains(
+                active
+        );
     }
 
     @Test
     void futureOnlyRuntimeHistoryDoesNotCountAsEffectiveHistory() {
-        String modelKey = uniqueModelKey("future-history");
-        catalogRepository.insert(catalogEntry(
-                modelKey,
-                1,
-                "openai",
-                "future-runtime",
-                ModelTestFixtures.NOW.plusSeconds(60)
-        ));
+        String modelKey =
+                uniqueModelKey(
+                        "future-history"
+                );
 
-        assertThat(catalogRepository.hasEffectiveHistoryByRuntime(
-                "openai",
-                "future-runtime",
-                ModelTestFixtures.NOW
-        )).isFalse();
+        catalogRepository.insert(
+                catalogEntry(
+                        modelKey,
+                        1,
+                        "openai",
+                        "future-runtime",
+                        ModelTestFixtures.NOW.plusSeconds(
+                                60
+                        )
+                )
+        );
 
-        assertThat(catalogRepository.hasEffectiveHistoryByRuntime(
-                "openai",
-                "future-runtime",
-                ModelTestFixtures.NOW.plusSeconds(120)
-        )).isTrue();
+        assertThat(
+                catalogRepository.hasEffectiveHistoryByRuntime(
+                        "openai",
+                        "future-runtime",
+                        ModelTestFixtures.NOW
+                )
+        ).isFalse();
+
+        assertThat(
+                catalogRepository.hasEffectiveHistoryByRuntime(
+                        "openai",
+                        "future-runtime",
+                        ModelTestFixtures.NOW.plusSeconds(
+                                120
+                        )
+                )
+        ).isTrue();
     }
 
     @Test
     void catalogRepositoryRoundTripsNonOpenAiProviderIdentity() {
-        String modelKey = uniqueModelKey("anthropic");
-        ModelCatalogEntry entry = catalogEntry(
-                modelKey,
-                1,
-                "anthropic",
-                "claude-test",
-                ModelTestFixtures.NOW
+        String modelKey =
+                uniqueModelKey(
+                        "anthropic"
+                );
+
+        ModelCatalogEntry entry =
+                catalogEntry(
+                        modelKey,
+                        1,
+                        "anthropic",
+                        "claude-test",
+                        ModelTestFixtures.NOW
+                );
+
+        catalogRepository.insert(
+                entry
         );
 
-        catalogRepository.insert(entry);
+        ModelCatalogEntry loaded =
+                catalogRepository
+                        .findLatest(modelKey)
+                        .orElseThrow();
 
-        ModelCatalogEntry loaded = catalogRepository
-                .findLatest(modelKey)
-                .orElseThrow();
+        assertThat(
+                loaded.provider()
+        ).isEqualTo(
+                "anthropic"
+        );
 
-        assertThat(loaded.provider())
-                .isEqualTo("anthropic");
-        assertThat(loaded.providerModelId())
-                .isEqualTo("claude-test");
+        assertThat(
+                loaded.providerModelId()
+        ).isEqualTo(
+                "claude-test"
+        );
     }
 
     @Test
     void controlPlaneRowsAreAppendOnlyAtDatabaseBoundary() {
-        ModelCatalogEntry catalog = catalogEntry(
-                uniqueModelKey("immutable"),
-                1,
-                "openai",
-                "gpt-test",
-                ModelTestFixtures.NOW
+        ModelCatalogEntry catalog =
+                catalogEntry(
+                        uniqueModelKey(
+                                "immutable"
+                        ),
+                        1,
+                        "openai",
+                        "gpt-test",
+                        ModelTestFixtures.NOW
+                );
+
+        catalogRepository.insert(
+                catalog
         );
-        catalogRepository.insert(catalog);
 
-        OrganizationModelPolicy policy = policy(
-                UUID.randomUUID()
+        OrganizationModelPolicy policy =
+                policy(
+                        UUID.randomUUID()
+                );
+
+        policyRepository.insert(
+                policy
         );
-        policyRepository.insert(policy);
 
-        assertThatThrownBy(() -> jdbc.update(
-                "update model_catalog_entries set display_name = ? where id = ?",
-                "Changed",
-                catalog.id()
-        )).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(
+                () ->
+                        jdbc.update(
+                                "update model_catalog_entries "
+                                        + "set display_name = ? where id = ?",
+                                "Changed",
+                                catalog.id()
+                        )
+        ).isInstanceOf(
+                DataIntegrityViolationException.class
+        );
 
-        assertThatThrownBy(() -> jdbc.update(
-                "update organization_model_policies set enabled = false where id = ?",
-                policy.id()
-        )).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(
+                () ->
+                        jdbc.update(
+                                "update organization_model_policies "
+                                        + "set enabled = false where id = ?",
+                                policy.id()
+                        )
+        ).isInstanceOf(
+                DataIntegrityViolationException.class
+        );
     }
 
     @Test
     void databaseRejectsPolicyListOverlapWhenRepositoryIsBypassed() {
-        assertThatThrownBy(() -> jdbc.update(
-                """
-                insert into organization_model_policies (
-                    id, organization_id, version, enabled,
-                    allow_model_keys, deny_model_keys, default_model_key,
-                    max_input_tokens, max_output_tokens,
-                    max_request_cost_usd, monthly_budget_usd,
-                    budget_enforcement, require_complete_pricing,
-                    require_no_training, require_zero_data_retention,
-                    created_by_user_id, created_at
-                ) values (
-                    ?, ?, 1, true,
-                    array['openai:gpt-test']::text[],
-                    array['openai:gpt-test']::text[],
-                    null, null, null, null, null,
-                    'SOFT', false, false, false, ?, ?
-                )
-                """,
-                UUID.randomUUID(),
-                organizationId,
-                userId,
-                Timestamp.from(ModelTestFixtures.NOW)
-        )).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(
+                () ->
+                        jdbc.update(
+                                """
+                                insert into organization_model_policies (
+                                    id, organization_id, version, enabled,
+                                    allow_model_keys, deny_model_keys, default_model_key,
+                                    max_input_tokens, max_output_tokens,
+                                    max_request_cost_usd, monthly_budget_usd,
+                                    budget_enforcement, require_complete_pricing,
+                                    require_no_training, require_zero_data_retention,
+                                    created_by_user_id, created_at
+                                ) values (
+                                    ?, ?, 1, true,
+                                    array['openai:gpt-test']::text[],
+                                    array['openai:gpt-test']::text[],
+                                    null, null, null, null, null,
+                                    'SOFT', false, false, false, ?, ?
+                                )
+                                """,
+                                UUID.randomUUID(),
+                                organizationId,
+                                userId,
+                                Timestamp.from(
+                                        ModelTestFixtures.NOW
+                                )
+                        )
+        ).isInstanceOf(
+                DataIntegrityViolationException.class
+        );
     }
 
     @Test
     void repositoryRoundTripsPolicyArraysDeterministically() {
-        OrganizationModelPolicy policy = new OrganizationModelPolicy(
-                UUID.randomUUID(),
-                organizationId,
-                1,
-                true,
-                Set.of("z:model", "a:model"),
-                Set.of("x:model"),
-                "a:model",
-                8_000,
-                1_000,
-                BigDecimal.ONE,
-                BigDecimal.TEN,
-                BudgetEnforcement.HARD,
-                true,
-                true,
-                true,
-                userId,
-                ModelTestFixtures.NOW
+        OrganizationModelPolicy policy =
+                new OrganizationModelPolicy(
+                        UUID.randomUUID(),
+                        organizationId,
+                        1,
+                        true,
+                        Set.of(
+                                "z:model",
+                                "a:model"
+                        ),
+                        Set.of(
+                                "x:model"
+                        ),
+                        "a:model",
+                        8_000,
+                        1_000,
+                        BigDecimal.ONE,
+                        BigDecimal.TEN,
+                        BudgetEnforcement.HARD,
+                        true,
+                        true,
+                        true,
+                        userId,
+                        ModelTestFixtures.NOW
+                );
+
+        policyRepository.insert(
+                policy
         );
 
-        policyRepository.insert(policy);
+        OrganizationModelPolicy loaded =
+                policyRepository
+                        .findLatest(
+                                organizationId
+                        )
+                        .orElseThrow();
 
-        OrganizationModelPolicy loaded = policyRepository
-                .findLatest(organizationId)
-                .orElseThrow();
+        assertThat(
+                loaded.allowModelKeys()
+        ).containsExactly(
+                "a:model",
+                "z:model"
+        );
 
-        assertThat(loaded.allowModelKeys())
-                .containsExactly("a:model", "z:model");
-        assertThat(loaded.denyModelKeys())
-                .containsExactly("x:model");
+        assertThat(
+                loaded.denyModelKeys()
+        ).containsExactly(
+                "x:model"
+        );
     }
 
     @Test
     void allowedRoutingDecisionAndExactChatTurnCommitAtomicallyUnderV45Fk() {
-        String modelKey = uniqueModelKey("route");
-        ModelCatalogEntry entry = catalogEntry(
-                modelKey,
-                1,
-                "openai",
-                "gpt-test",
-                ModelTestFixtures.NOW.minusSeconds(1)
+        String modelKey =
+                uniqueModelKey(
+                        "route"
+                );
+
+        ModelCatalogEntry entry =
+                catalogEntry(
+                        modelKey,
+                        1,
+                        "openai",
+                        "gpt-test",
+                        ModelTestFixtures.NOW.minusSeconds(
+                                1
+                        )
+                );
+
+        catalogRepository.insert(
+                entry
         );
-        catalogRepository.insert(entry);
 
         RuntimeModelStatusService runtimeStatus =
-                mock(RuntimeModelStatusService.class);
-        when(runtimeStatus.current()).thenReturn(runtime());
+                mock(
+                        RuntimeModelStatusService.class
+                );
 
-        ModelRoutingService routing = new ModelRoutingService(
-                catalogRepository,
-                policyRepository,
-                decisionRepository,
-                runtimeStatus,
-                mock(AuditEventService.class)
+        when(
+                runtimeStatus.current()
+        ).thenReturn(
+                runtime()
         );
 
-        UUID turnId = UUID.randomUUID();
-        UUID clientRequestId = UUID.randomUUID();
-        UUID userMessageId = UUID.randomUUID();
+        ModelRoutingService routing =
+                routingService(
+                        runtimeStatus,
+                        ModelTestFixtures.CLOCK
+                );
 
-        UUID decisionId = transaction.execute(status -> {
-            var result = routing.decide(
-                    new ModelRouteRequest(
-                            organizationId,
-                            userId,
-                            chatId,
-                            turnId,
-                            clientRequestId,
-                            ModelTestFixtures.REQUEST_HASH,
-                            modelKey,
-                            "hello",
-                            List.of(),
-                            Set.of()
-                    ),
-                    principal("ROLE_USER"),
-                    ModelTestFixtures.NOW
-            );
+        UUID turnId =
+                UUID.randomUUID();
 
-            insertUserMessage(
-                    userMessageId,
-                    clientRequestId
-            );
-            insertProcessingTurn(
-                    turnId,
-                    clientRequestId,
-                    userMessageId,
-                    result.decisionId(),
-                    result.provider(),
-                    result.providerModelId()
-            );
-            return result.decisionId();
-        });
+        UUID clientRequestId =
+                UUID.randomUUID();
 
-        assertThat(decisionId)
-                .isNotNull();
-        assertThat(decisionRepository.findById(decisionId))
+        UUID userMessageId =
+                UUID.randomUUID();
+
+        UUID decisionId =
+                transaction.execute(
+                        status -> {
+                            var result =
+                                    routing.decide(
+                                            new ModelRouteRequest(
+                                                    organizationId,
+                                                    userId,
+                                                    chatId,
+                                                    turnId,
+                                                    clientRequestId,
+                                                    ModelTestFixtures.REQUEST_HASH,
+                                                    modelKey,
+                                                    "hello",
+                                                    List.of(),
+                                                    Set.of(),
+                                                    0L
+                                            ),
+                                            principal(
+                                                    "ROLE_USER"
+                                            )
+                                    );
+
+                            insertUserMessage(
+                                    userMessageId,
+                                    clientRequestId
+                            );
+
+                            insertProcessingTurn(
+                                    turnId,
+                                    clientRequestId,
+                                    userMessageId,
+                                    result.decisionId(),
+                                    result.provider(),
+                                    result.providerModelId()
+                            );
+
+                            return result.decisionId();
+                        }
+                );
+
+        assertThat(
+                decisionId
+        ).isNotNull();
+
+        assertThat(
+                decisionRepository.findById(
+                        decisionId
+                )
+        )
                 .get()
                 .extracting(
                         ModelRouteDecision::chatTurnId,
@@ -483,208 +652,343 @@ class ModelControlPlanePostgresIntegrationTest {
         assertThat(
                 routing.findDecision(
                         decisionId,
-                        principal("ROLE_ADMIN")
+                        principal(
+                                "ROLE_ADMIN"
+                        )
                 ).decisionSha256()
-        ).matches("[0-9a-f]{64}");
+        ).matches(
+                "[0-9a-f]{64}"
+        );
     }
 
     @Test
     void deniedRouteDecisionIsAppendOnlyAndHashVerifiesAfterDatabaseRoundTrip() {
         RuntimeModelStatusService runtimeStatus =
-                mock(RuntimeModelStatusService.class);
-        when(runtimeStatus.current()).thenReturn(runtime());
+                mock(
+                        RuntimeModelStatusService.class
+                );
 
-        ModelRoutingService routing = new ModelRoutingService(
-                catalogRepository,
-                policyRepository,
-                decisionRepository,
-                runtimeStatus,
-                mock(AuditEventService.class)
+        when(
+                runtimeStatus.current()
+        ).thenReturn(
+                runtime()
         );
 
-        UUID clientRequestId = UUID.randomUUID();
-        UUID decisionId = transaction.execute(status -> {
-            try {
-                routing.decide(
-                        new ModelRouteRequest(
-                                organizationId,
-                                userId,
-                                chatId,
-                                UUID.randomUUID(),
-                                clientRequestId,
-                                ModelTestFixtures.REQUEST_HASH,
-                                uniqueModelKey("missing"),
-                                "hello",
-                                List.of(),
-                                Set.of()
-                        ),
-                        principal("ROLE_USER"),
-                        ModelTestFixtures.NOW
+        ModelRoutingService routing =
+                routingService(
+                        runtimeStatus,
+                        ModelTestFixtures.CLOCK
                 );
-                throw new AssertionError(
-                        "Missing catalog model должен быть отклонён"
-                );
-            } catch (ModelRouteDeniedException exception) {
-                return exception.getDecisionId();
-            }
-        });
 
-        assertThat(decisionId)
-                .isNotNull();
+        UUID clientRequestId =
+                UUID.randomUUID();
+
+        UUID decisionId =
+                transaction.execute(
+                        status -> {
+                            try {
+                                routing.decide(
+                                        new ModelRouteRequest(
+                                                organizationId,
+                                                userId,
+                                                chatId,
+                                                UUID.randomUUID(),
+                                                clientRequestId,
+                                                ModelTestFixtures.REQUEST_HASH,
+                                                uniqueModelKey(
+                                                        "missing"
+                                                ),
+                                                "hello",
+                                                List.of(),
+                                                Set.of(),
+                                                0L
+                                        ),
+                                        principal(
+                                                "ROLE_USER"
+                                        )
+                                );
+
+                                throw new AssertionError(
+                                        "Missing catalog model должен быть отклонён"
+                                );
+                            } catch (ModelRouteDeniedException exception) {
+                                return exception.getDecisionId();
+                            }
+                        }
+                );
+
+        assertThat(
+                decisionId
+        ).isNotNull();
+
         assertThat(
                 routing.findDecision(
                         decisionId,
-                        principal("ROLE_ADMIN")
+                        principal(
+                                "ROLE_ADMIN"
+                        )
                 ).outcome()
-        ).isEqualTo(ModelRouteOutcome.DENIED);
+        ).isEqualTo(
+                ModelRouteOutcome.DENIED
+        );
 
-        assertThatThrownBy(() -> jdbc.update(
-                "update model_route_decisions set reason = ? where id = ?",
-                ModelRouteReason.MODEL_DISABLED.name(),
-                decisionId
-        )).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(
+                () ->
+                        jdbc.update(
+                                "update model_route_decisions "
+                                        + "set reason = ? where id = ?",
+                                ModelRouteReason.MODEL_DISABLED.name(),
+                                decisionId
+                        )
+        ).isInstanceOf(
+                DataIntegrityViolationException.class
+        );
     }
 
     @Test
     void decisionHashSurvivesPostgresTimestampPrecisionRoundTrip() {
         RuntimeModelStatusService runtimeStatus =
-                mock(RuntimeModelStatusService.class);
-        when(runtimeStatus.current()).thenReturn(runtime());
+                mock(
+                        RuntimeModelStatusService.class
+                );
 
-        ModelRoutingService routing = new ModelRoutingService(
-                catalogRepository,
-                policyRepository,
-                decisionRepository,
-                runtimeStatus,
-                mock(AuditEventService.class)
+        when(
+                runtimeStatus.current()
+        ).thenReturn(
+                runtime()
         );
 
         Instant highPrecisionNow =
-                Instant.parse("2026-08-28T12:00:00.123456789Z");
-        UUID decisionId = transaction.execute(status -> {
-            try {
-                routing.decide(
-                        new ModelRouteRequest(
-                                organizationId,
-                                userId,
-                                chatId,
-                                UUID.randomUUID(),
-                                UUID.randomUUID(),
-                                ModelTestFixtures.REQUEST_HASH,
-                                uniqueModelKey("timestamp-missing"),
-                                "hello",
-                                List.of(),
-                                Set.of()
-                        ),
-                        principal("ROLE_USER"),
-                        highPrecisionNow
+                Instant.parse(
+                        "2026-08-28T12:00:00.123456789Z"
                 );
-                throw new AssertionError(
-                        "Missing model должен быть отклонён"
+
+        ModelRoutingService routing =
+                routingService(
+                        runtimeStatus,
+                        java.time.Clock.fixed(
+                                highPrecisionNow,
+                                ZoneOffset.UTC
+                        )
                 );
-            } catch (ModelRouteDeniedException exception) {
-                return exception.getDecisionId();
-            }
-        });
 
-        assertThat(decisionId)
-                .isNotNull();
+        UUID decisionId =
+                transaction.execute(
+                        status -> {
+                            try {
+                                routing.decide(
+                                        new ModelRouteRequest(
+                                                organizationId,
+                                                userId,
+                                                chatId,
+                                                UUID.randomUUID(),
+                                                UUID.randomUUID(),
+                                                ModelTestFixtures.REQUEST_HASH,
+                                                uniqueModelKey(
+                                                        "timestamp-missing"
+                                                ),
+                                                "hello",
+                                                List.of(),
+                                                Set.of(),
+                                                0L
+                                        ),
+                                        principal(
+                                                "ROLE_USER"
+                                        )
+                                );
 
-        var response = routing.findDecision(
-                decisionId,
-                principal("ROLE_ADMIN")
+                                throw new AssertionError(
+                                        "Missing model должен быть отклонён"
+                                );
+                            } catch (ModelRouteDeniedException exception) {
+                                return exception.getDecisionId();
+                            }
+                        }
+                );
+
+        assertThat(
+                decisionId
+        ).isNotNull();
+
+        var response =
+                routing.findDecision(
+                        decisionId,
+                        principal(
+                                "ROLE_ADMIN"
+                        )
+                );
+
+        assertThat(
+                response.decisionSha256()
+        ).matches(
+                "[0-9a-f]{64}"
         );
 
-        assertThat(response.decisionSha256())
-                .matches("[0-9a-f]{64}");
-        assertThat(response.createdAt().getNano() % 1_000)
-                .isZero();
+        assertThat(
+                response.createdAt()
+                        .getNano()
+                        % 1_000
+        ).isZero();
     }
 
     @Test
     void catalogServiceCreatesSecondVersionWhenExpectationMatches() {
-        ModelCatalogService service = new ModelCatalogService(
-                catalogRepository,
-                mock(RuntimeModelStatusService.class),
-                mock(AuditEventService.class),
-                ModelTestFixtures.CLOCK
+        ModelCatalogService service =
+                new ModelCatalogService(
+                        catalogRepository,
+                        mock(
+                                RuntimeModelStatusService.class
+                        ),
+                        mock(
+                                AuditEventService.class
+                        ),
+                        ModelTestFixtures.CLOCK
+                );
+
+        String modelKey =
+                uniqueModelKey(
+                        "sequential-version"
+                );
+
+        var first =
+                Objects.requireNonNull(
+                        transaction.execute(
+                                ignoredStatus ->
+                                        service.createVersion(
+                                                freeCatalogRequest(
+                                                        modelKey,
+                                                        0
+                                                ),
+                                                principal(
+                                                        "ROLE_SUPER_ADMIN"
+                                                )
+                                        )
+                        ),
+                        "First catalog version must be created"
+                );
+
+        var second =
+                Objects.requireNonNull(
+                        transaction.execute(
+                                ignoredStatus ->
+                                        service.createVersion(
+                                                freeCatalogRequest(
+                                                        modelKey,
+                                                        1
+                                                ),
+                                                principal(
+                                                        "ROLE_SUPER_ADMIN"
+                                                )
+                                        )
+                        ),
+                        "Second catalog version must be created"
+                );
+
+        assertThat(
+                first.version()
+        ).isEqualTo(
+                1
         );
-        String modelKey = uniqueModelKey("sequential-version");
 
-        var first = Objects.requireNonNull(
-                transaction.execute(ignoredStatus ->
-                        service.createVersion(
-                                freeCatalogRequest(
-                                        modelKey,
-                                        0
-                                ),
-                                principal("ROLE_SUPER_ADMIN")
-                        )
-                ),
-                "First catalog version must be created"
+        assertThat(
+                second.version()
+        ).isEqualTo(
+                2
         );
 
-        var second = Objects.requireNonNull(
-                transaction.execute(ignoredStatus ->
-                        service.createVersion(
-                                freeCatalogRequest(
-                                        modelKey,
-                                        1
-                                ),
-                                principal("ROLE_SUPER_ADMIN")
-                        )
-                ),
-                "Second catalog version must be created"
-        );
-
-        assertThat(first.version())
-                .isEqualTo(1);
-        assertThat(second.version())
-                .isEqualTo(2);
-
-        assertThat(catalogRepository.findLatest(modelKey))
+        assertThat(
+                catalogRepository.findLatest(
+                        modelKey
+                )
+        )
                 .get()
-                .extracting(ModelCatalogEntry::version)
-                .isEqualTo(2);
+                .extracting(
+                        ModelCatalogEntry::version
+                )
+                .isEqualTo(
+                        2
+                );
     }
 
     @Test
     void catalogVersionAllocationIsSerializedAcrossConcurrentTransactions()
             throws Exception {
-        AuditEventService audit = mock(AuditEventService.class);
-        ModelCatalogService service = new ModelCatalogService(
-                catalogRepository,
-                mock(RuntimeModelStatusService.class),
-                audit,
-                ModelTestFixtures.CLOCK
-        );
-        String modelKey = uniqueModelKey("concurrent");
+        AuditEventService audit =
+                mock(
+                        AuditEventService.class
+                );
+
+        ModelCatalogService service =
+                new ModelCatalogService(
+                        catalogRepository,
+                        mock(
+                                RuntimeModelStatusService.class
+                        ),
+                        audit,
+                        ModelTestFixtures.CLOCK
+                );
+
+        String modelKey =
+                uniqueModelKey(
+                        "concurrent"
+                );
+
         CreateModelCatalogVersionRequest request =
-                freeCatalogRequest(modelKey, 0);
+                freeCatalogRequest(
+                        modelKey,
+                        0
+                );
 
-        List<Object> outcomes = runTwoConcurrent(() ->
-                transaction.execute(status ->
-                        service.createVersion(
-                                request,
-                                principal("ROLE_SUPER_ADMIN")
-                        )
-                )
-        );
+        List<Object> outcomes =
+                runTwoConcurrent(
+                        () ->
+                                transaction.execute(
+                                        status ->
+                                                service.createVersion(
+                                                        request,
+                                                        principal(
+                                                                "ROLE_SUPER_ADMIN"
+                                                        )
+                                                )
+                                )
+                );
 
-        assertThat(outcomes)
-                .filteredOn(value ->
-                        value instanceof ru.safeai.gateway.model.dto.ModelCatalogEntryResponse
+        assertThat(
+                outcomes
+        )
+                .filteredOn(
+                        value ->
+                                value
+                                        instanceof ru.safeai.gateway.model.dto.ModelCatalogEntryResponse
                 )
-                .hasSize(1);
-        assertThat(outcomes)
-                .filteredOn(value ->
-                        value instanceof ru.safeai.gateway.common.exception.ConflictException
+                .hasSize(
+                        1
+                );
+
+        assertThat(
+                outcomes
+        )
+                .filteredOn(
+                        value ->
+                                value
+                                        instanceof ru.safeai.gateway.common.exception.ConflictException
                 )
-                .hasSize(1);
-        assertThat(catalogRepository.findLatest(modelKey))
+                .hasSize(
+                        1
+                );
+
+        assertThat(
+                catalogRepository.findLatest(
+                        modelKey
+                )
+        )
                 .get()
-                .extracting(ModelCatalogEntry::version)
-                .isEqualTo(1);
+                .extracting(
+                        ModelCatalogEntry::version
+                )
+                .isEqualTo(
+                        1
+                );
     }
 
     @Test
@@ -692,41 +996,70 @@ class ModelControlPlanePostgresIntegrationTest {
         OrganizationModelPolicyService service =
                 new OrganizationModelPolicyService(
                         policyRepository,
-                        mock(AuditEventService.class),
+                        mock(
+                                AuditEventService.class
+                        ),
                         ModelTestFixtures.CLOCK
                 );
 
-        var first = Objects.requireNonNull(
-                transaction.execute(ignoredStatus ->
-                        service.createVersion(
-                                organizationId,
-                                policyRequest(0),
-                                principal("ROLE_ADMIN")
-                        )
-                ),
-                "First policy version must be created"
+        var first =
+                Objects.requireNonNull(
+                        transaction.execute(
+                                ignoredStatus ->
+                                        service.createVersion(
+                                                organizationId,
+                                                policyRequest(
+                                                        0
+                                                ),
+                                                principal(
+                                                        "ROLE_ADMIN"
+                                                )
+                                        )
+                        ),
+                        "First policy version must be created"
+                );
+
+        var second =
+                Objects.requireNonNull(
+                        transaction.execute(
+                                ignoredStatus ->
+                                        service.createVersion(
+                                                organizationId,
+                                                policyRequest(
+                                                        1
+                                                ),
+                                                principal(
+                                                        "ROLE_ADMIN"
+                                                )
+                                        )
+                        ),
+                        "Second policy version must be created"
+                );
+
+        assertThat(
+                first.version()
+        ).isEqualTo(
+                1
         );
 
-        var second = Objects.requireNonNull(
-                transaction.execute(ignoredStatus ->
-                        service.createVersion(
-                                organizationId,
-                                policyRequest(1),
-                                principal("ROLE_ADMIN")
-                        )
-                ),
-                "Second policy version must be created"
+        assertThat(
+                second.version()
+        ).isEqualTo(
+                2
         );
 
-        assertThat(first.version())
-                .isEqualTo(1);
-        assertThat(second.version())
-                .isEqualTo(2);
-
-        assertThat(policyRepository.findLatest(organizationId))
+        assertThat(
+                policyRepository.findLatest(
+                        organizationId
+                )
+        )
                 .get()
-                .extracting(OrganizationModelPolicy::version)
-                .isEqualTo(2);
+                .extracting(
+                        OrganizationModelPolicy::version
+                )
+                .isEqualTo(
+                        2
+                );
     }
 
     @Test
@@ -735,57 +1068,125 @@ class ModelControlPlanePostgresIntegrationTest {
         OrganizationModelPolicyService service =
                 new OrganizationModelPolicyService(
                         policyRepository,
-                        mock(AuditEventService.class),
+                        mock(
+                                AuditEventService.class
+                        ),
                         ModelTestFixtures.CLOCK
                 );
+
         CreateOrganizationModelPolicyVersionRequest request =
-                policyRequest(0);
+                policyRequest(
+                        0
+                );
 
-        List<Object> outcomes = runTwoConcurrent(() ->
-                transaction.execute(status ->
-                        service.createVersion(
-                                organizationId,
-                                request,
-                                principal("ROLE_ADMIN")
-                        )
-                )
-        );
+        List<Object> outcomes =
+                runTwoConcurrent(
+                        () ->
+                                transaction.execute(
+                                        status ->
+                                                service.createVersion(
+                                                        organizationId,
+                                                        request,
+                                                        principal(
+                                                                "ROLE_ADMIN"
+                                                        )
+                                                )
+                                )
+                );
 
-        assertThat(outcomes)
-                .filteredOn(value ->
-                        value instanceof ru.safeai.gateway.model.dto.OrganizationModelPolicyResponse
+        assertThat(
+                outcomes
+        )
+                .filteredOn(
+                        value ->
+                                value
+                                        instanceof ru.safeai.gateway.model.dto.OrganizationModelPolicyResponse
                 )
-                .hasSize(1);
-        assertThat(outcomes)
-                .filteredOn(value ->
-                        value instanceof ru.safeai.gateway.common.exception.ConflictException
+                .hasSize(
+                        1
+                );
+
+        assertThat(
+                outcomes
+        )
+                .filteredOn(
+                        value ->
+                                value
+                                        instanceof ru.safeai.gateway.common.exception.ConflictException
                 )
-                .hasSize(1);
-        assertThat(policyRepository.findLatest(organizationId))
+                .hasSize(
+                        1
+                );
+
+        assertThat(
+                policyRepository.findLatest(
+                        organizationId
+                )
+        )
                 .get()
-                .extracting(OrganizationModelPolicy::version)
-                .isEqualTo(1);
+                .extracting(
+                        OrganizationModelPolicy::version
+                )
+                .isEqualTo(
+                        1
+                );
+    }
+
+    private ModelRoutingService routingService(
+            RuntimeModelStatusService runtimeStatus,
+            java.time.Clock routingClock
+    ) {
+        return new ModelRoutingService(
+                catalogRepository,
+                policyRepository,
+                decisionRepository,
+                runtimeStatus,
+                mock(
+                        AuditEventService.class
+                ),
+                routingClock
+        );
     }
 
     private List<Object> runTwoConcurrent(
             ThrowingSupplier supplier
     ) throws Exception {
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch ready =
+                new CountDownLatch(
+                        2
+                );
 
-        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            java.util.concurrent.Callable<Object> task = () -> {
-                ready.countDown();
-                start.await();
-                try {
-                    return supplier.get();
-                } catch (Throwable throwable) {
-                    return throwable;
-                }
-            };
+        CountDownLatch start =
+                new CountDownLatch(
+                        1
+                );
 
-            Future<Object> first = executor.submit(task);
-            Future<Object> second = executor.submit(task);
+        try (
+                ExecutorService executor =
+                        Executors.newVirtualThreadPerTaskExecutor()
+        ) {
+            java.util.concurrent.Callable<Object> task =
+                    () -> {
+                        ready.countDown();
+                        start.await();
+
+                        try {
+                            return supplier.get();
+                        } catch (Throwable throwable) {
+                            return throwable;
+                        }
+                    };
+
+            Future<Object> first =
+                    executor.submit(
+                            task
+                    );
+
+            Future<Object> second =
+                    executor.submit(
+                            task
+                    );
+
             ready.await();
             start.countDown();
 
@@ -816,7 +1217,9 @@ class ModelControlPlanePostgresIntegrationTest {
                 organizationId,
                 "hello",
                 clientRequestId,
-                Timestamp.from(ModelTestFixtures.NOW)
+                Timestamp.from(
+                        ModelTestFixtures.NOW
+                )
         );
     }
 
@@ -828,7 +1231,9 @@ class ModelControlPlanePostgresIntegrationTest {
             String provider,
             String requestedModel
     ) {
-        Instant now = ModelTestFixtures.NOW;
+        Instant now =
+                ModelTestFixtures.NOW;
+
         jdbc.update(
                 """
                 insert into chat_turns (
@@ -854,11 +1259,19 @@ class ModelControlPlanePostgresIntegrationTest {
                 UUID.randomUUID(),
                 userMessageId,
                 UUID.randomUUID(),
-                Timestamp.from(now.plusSeconds(180)),
+                Timestamp.from(
+                        now.plusSeconds(
+                                180
+                        )
+                ),
                 provider,
                 requestedModel,
-                Timestamp.from(now),
-                Timestamp.from(now),
+                Timestamp.from(
+                        now
+                ),
+                Timestamp.from(
+                        now
+                ),
                 decisionId
         );
     }
@@ -881,8 +1294,12 @@ class ModelControlPlanePostgresIntegrationTest {
                 32_000,
                 4_096,
                 Set.of(),
-                Set.of(ModelModality.TEXT),
-                Set.of(ModelModality.TEXT),
+                Set.of(
+                        ModelModality.TEXT
+                ),
+                Set.of(
+                        ModelModality.TEXT
+                ),
                 ModelRetentionStatus.NOT_DECLARED,
                 null,
                 ModelTrainingUseStatus.NOT_DECLARED,
@@ -974,8 +1391,12 @@ class ModelControlPlanePostgresIntegrationTest {
                 32_000,
                 4_096,
                 Set.of(),
-                Set.of(ModelModality.TEXT),
-                Set.of(ModelModality.TEXT),
+                Set.of(
+                        ModelModality.TEXT
+                ),
+                Set.of(
+                        ModelModality.TEXT
+                ),
                 ModelRetentionStatus.NOT_DECLARED,
                 null,
                 ModelTrainingUseStatus.NOT_DECLARED,
@@ -1015,7 +1436,10 @@ class ModelControlPlanePostgresIntegrationTest {
     private static String uniqueModelKey(
             String prefix
     ) {
-        return "test:" + prefix + ":" + UUID.randomUUID();
+        return "test:"
+                + prefix
+                + ":"
+                + UUID.randomUUID();
     }
 
     @FunctionalInterface

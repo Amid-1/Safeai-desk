@@ -481,6 +481,7 @@ backend/
 │   │   │               ├── chat/
 │   │   │               ├── common/
 │   │   │               ├── knowledge/
+│   │   │               ├── model/
 │   │   │               ├── organization/
 │   │   │               ├── ratelimit/
 │   │   │               ├── usage/
@@ -536,6 +537,7 @@ backend/
 │   │       │       ├── V42__rag_answers_and_answer_passports.sql
 │   │       │       ├── V43__archive_chat_sessions.sql
 │   │       │       ├── V44__knowledge_production_integrity.sql
+│   │       │       ├── V45__model_control_plane.sql
 │   │       │       └── README_DB.md
 │   │       ├── META-INF/
 │   │       ├── application.yml
@@ -995,6 +997,74 @@ knowledge/
     ├── ObjectStorage
     ├── S3ObjectStorage
     └── StoredObject  
+  
+  
+  
+model/
+├── /
+│   ├── 
+│   └── 
+├── controller/
+│   ├── ModelCatalogController
+│   ├── ModelRouteDecisionController
+│   ├── ModelRuntimeController
+│   └── OrganizationModelPolicyController
+├── domain/
+│   ├── BudgetEnforcement
+│   ├──
+│   ├──
+│   ├──
+│   ├──
+│   ├──
+│   ├──
+│   ├──
+│   ├──
+│   ├──
+│   ├──
+│   ├──
+│   ├──
+│   ├── 
+│   └── OrganizationModelPolicy
+├── dto/
+│   ├── CreateModelCatalogVersionRequest
+│   ├── CreateOrganizationModelPolicyVersionRequest
+│   ├── ModelCatalogEntryResponse
+│   ├── ModelRouteDecisionResponse
+│   ├── OrganizationModelPolicyResponse
+│   └── RuntimeModelStatusResponse
+├── exception/
+│   └── ModelRouteDeniedException
+├── repository/
+│   ├── ModelCatalogRepository
+│   ├── ModelRouteDecisionRepository
+│   ├── OrganizationModelPolicyRepository
+│   ├── 
+│   ├── 
+│   ├── 
+│   ├── 
+│   └── 
+├── service/
+│   ├── ModelCatalogAuditDetailsFactory
+│   ├── ModelCatalogRules
+│   ├── ModelCatalogService
+│   ├── ModelControlPlaneAccess
+│   ├── ModelControlPlaneNumericValidation
+│   ├── ModelRouteDecisionFactory
+│   ├── ModelRouteDecisionIntegrity
+│   ├── ModelRoutingCostPolicy
+│   ├── ModelRoutingSelectionPolicy
+│   ├── ModelRoutingService
+│   ├── OrganizationModelPolicyAuditDetailsFactory
+│   ├── OrganizationModelPolicyRules
+│   ├── OrganizationModelPolicyService
+│   └── RuntimeModelStatusService
+└── /
+    ├── 
+    └── 
+  
+  
+  
+  
     
     
 organization/

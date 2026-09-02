@@ -1,6 +1,3 @@
-// ============================================================
-// frontend/src/components/Modal.tsx
-// ============================================================
 import {
     useId,
     useLayoutEffect,
@@ -343,11 +340,13 @@ function Modal({
             }
 
             if (event.key === 'Escape') {
-                if (
-                    !closeDisabledRef.current
-                ) {
-                    event.preventDefault()
-                    event.stopPropagation()
+                // The topmost modal owns Escape even when closing is disabled.
+                // This prevents global/background Escape handlers from firing
+                // through an active modal.
+                event.preventDefault()
+                event.stopPropagation()
+
+                if (!closeDisabledRef.current) {
                     onCloseRef.current()
                 }
 

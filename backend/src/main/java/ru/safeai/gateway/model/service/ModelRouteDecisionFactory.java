@@ -17,6 +17,8 @@ import java.util.UUID;
 
 final class ModelRouteDecisionFactory {
 
+    private static final short CURRENT_INTEGRITY_VERSION = 2;
+
     ModelRouteDecision buildDecision(
             ModelRouteRequest request,
             OrganizationModelPolicy policy,
@@ -24,18 +26,9 @@ final class ModelRouteDecisionFactory {
             UUID chatTurnId,
             Instant now
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
-        Objects.requireNonNull(
-                draft,
-                "draft не должен быть null"
-        );
-        Objects.requireNonNull(
-                now,
-                "now не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(draft, "draft не должен быть null");
+        Objects.requireNonNull(now, "now не должен быть null");
 
         ModelRoutingCostPolicy.BudgetSnapshot budget =
                 Objects.requireNonNull(
@@ -59,8 +52,8 @@ final class ModelRouteDecisionFactory {
                 budget.monthlyProjectedUsd(),
                 "monthlyProjectedUsd"
         );
-        Instant createdAt = ModelRouteDecisionIntegrity
-                .normalizeDatabaseTimestamp(now);
+        Instant createdAt =
+                ModelRouteDecisionIntegrity.normalizeDatabaseTimestamp(now);
 
         ModelRouteDecision unsealed = new ModelRouteDecision(
                 UUID.randomUUID(),
@@ -93,6 +86,7 @@ final class ModelRouteDecisionFactory {
                 draft.pricingComplete(),
                 draft.outcome(),
                 draft.reason(),
+                CURRENT_INTEGRITY_VERSION,
                 "",
                 createdAt
         );
@@ -104,14 +98,8 @@ final class ModelRouteDecisionFactory {
             ModelRouteDecision decision,
             ModelRouteRequest request
     ) {
-        Objects.requireNonNull(
-                decision,
-                "decision не должен быть null"
-        );
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        Objects.requireNonNull(decision, "decision не должен быть null");
+        Objects.requireNonNull(request, "request не должен быть null");
         ModelRouteDecisionIntegrity.requireValid(decision);
 
         String normalizedRequestedModelKey =
@@ -120,33 +108,22 @@ final class ModelRouteDecisionFactory {
                 );
 
         boolean sameRequestIdentity =
-                decision.organizationId().equals(
-                        request.organizationId()
-                )
-                        && decision.userId().equals(
-                        request.userId()
-                )
-                        && decision.chatId().equals(
-                        request.chatId()
-                )
-                        && decision.clientRequestId().equals(
-                        request.clientRequestId()
-                )
-                        && decision.requestContentHash().equals(
-                        request.requestContentHash()
-                )
+                decision.organizationId().equals(request.organizationId())
+                        && decision.userId().equals(request.userId())
+                        && decision.chatId().equals(request.chatId())
+                        && decision.clientRequestId().equals(request.clientRequestId())
+                        && decision.requestContentHash().equals(request.requestContentHash())
                         && Objects.equals(
-                        decision.requestedModelKey(),
-                        normalizedRequestedModelKey
-                )
+                                decision.requestedModelKey(),
+                                normalizedRequestedModelKey
+                        )
                         && decision.requiredCapabilities().equals(
-                        request.requiredCapabilities()
-                );
+                                request.requiredCapabilities()
+                        );
 
         if (!sameRequestIdentity) {
             throw new ConflictException(
-                    "clientRequestId уже использован для другого "
-                            + "model route request"
+                    "clientRequestId уже использован для другого model route request"
             );
         }
 
@@ -154,20 +131,13 @@ final class ModelRouteDecisionFactory {
             throw new ModelRouteDeniedException(
                     decision.id(),
                     decision.reason(),
-                    publicDenialMessage(
-                            decision.reason(),
-                            decision.id()
-                    )
+                    publicDenialMessage(decision.reason(), decision.id())
             );
         }
 
-        if (!Objects.equals(
-                decision.chatTurnId(),
-                request.plannedTurnId()
-        )) {
+        if (!Objects.equals(decision.chatTurnId(), request.plannedTurnId())) {
             throw new IllegalStateException(
-                    "ALLOWED model route decision имеет другой "
-                            + "planned ChatTurn identity"
+                    "ALLOWED model route decision имеет другой planned ChatTurn identity"
             );
         }
 
@@ -177,10 +147,7 @@ final class ModelRouteDecisionFactory {
     ModelRouteResult toResult(
             ModelRouteDecision decision
     ) {
-        Objects.requireNonNull(
-                decision,
-                "decision не должен быть null"
-        );
+        Objects.requireNonNull(decision, "decision не должен быть null");
 
         if (decision.outcome() != ModelRouteOutcome.ALLOWED) {
             throw new IllegalArgumentException(
@@ -211,10 +178,7 @@ final class ModelRouteDecisionFactory {
             String field
     ) {
         return ModelControlPlaneNumericValidation
-                .normalizeNonNegativeNumeric30Scale12(
-                        value,
-                        field
-                );
+                .normalizeNonNegativeNumeric30Scale12(value, field);
     }
 
     static String publicDenialMessage(

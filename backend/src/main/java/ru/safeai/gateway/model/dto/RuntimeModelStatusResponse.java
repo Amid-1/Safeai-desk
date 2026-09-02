@@ -3,8 +3,8 @@ package ru.safeai.gateway.model.dto;
 import java.math.BigDecimal;
 
 /**
- * Read-only truth about the one adapter that the current runtime can actually
- * route to. It deliberately does not imply a successful live provider probe.
+ * Internal read model for the one adapter that the current runtime can
+ * physically execute. Financial values remain BigDecimal inside Java.
  */
 public record RuntimeModelStatusResponse(
         String provider,

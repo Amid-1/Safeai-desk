@@ -41,10 +41,10 @@ const CATALOG_ENTRY = {
     trainingUseStatus: 'CONTRACTUAL_NO_TRAINING',
     pricingStatus: 'CONFIGURED',
     pricingComplete: true,
-    inputUsdPer1mTokens: 2,
+    inputUsdPer1mTokens: '2',
     cachedInputUsdPer1mTokens: '0.5',
     cacheWriteInputUsdPer1mTokens: null,
-    outputUsdPer1mTokens: 8,
+    outputUsdPer1mTokens: '8',
     extraPricingJson: '{}',
     pricingVersion: 'openai-2026-08',
     effectiveFrom: '2026-08-28T12:00:00Z',
@@ -65,7 +65,7 @@ const POLICY = {
     maxInputTokens: 32000,
     maxOutputTokens: 4096,
     maxRequestCostUsd: '1.25',
-    monthlyBudgetUsd: 250,
+    monthlyBudgetUsd: '250',
     budgetEnforcement: 'HARD',
     requireCompletePricing: true,
     requireNoTraining: true,
@@ -75,7 +75,7 @@ const POLICY = {
 }
 
 describe('modelApi contract', () => {
-    it('parses Jackson numeric runtime pricing without losing the contract', async () => {
+    it('parses exact string runtime pricing without IEEE-754 loss', async () => {
         vi.mocked(apiRequest).mockResolvedValueOnce({
             provider: 'openai',
             model: 'gpt-safeai',
@@ -89,8 +89,8 @@ describe('modelApi contract', () => {
             dataRetentionStatus: 'NOT_DECLARED',
             healthStatus: 'NOT_PROBED',
             pricingStatus: 'CONFIGURED',
-            inputUsdPer1mTokens: 2,
-            outputUsdPer1mTokens: 8,
+            inputUsdPer1mTokens: '2',
+            outputUsdPer1mTokens: '8',
             pricingVersion: 'openai-2026-08',
         })
 
@@ -278,15 +278,17 @@ describe('modelApi contract', () => {
             estimatedInputTokens: 100,
             estimatedOutputTokens: 1000,
             estimatedMaxCostUsd: null,
-            monthlyBudgetUsd: 250,
-            monthlySpentUsd: 20,
+            monthlyBudgetUsd: '250',
+            monthlySpentUsd: '20',
             monthlyProjectedUsd: null,
             monthlyCostKnown: false,
+            monthlyCostState: 'UNKNOWN',
             budgetEnforcement: 'HARD',
             budgetExceeded: false,
             pricingComplete: false,
             outcome: 'DENIED',
             reason: 'MONTHLY_BUDGET_UNVERIFIABLE',
+            decisionIntegrityVersion: 2,
             decisionSha256: 'b'.repeat(64),
             createdAt: '2026-08-28T14:00:00Z',
         })
@@ -429,10 +431,12 @@ describe('modelApi contract', () => {
             requestContentHash: 'a'.repeat(64),
             requiredCapabilities: [],
             monthlyCostKnown: true,
+            monthlyCostState: 'NOT_EVALUATED',
             budgetExceeded: false,
             pricingComplete: false,
             outcome: 'DENIED',
             reason: 'MODEL_NOT_FOUND',
+            decisionIntegrityVersion: 2,
             decisionSha256: 'b'.repeat(64),
             createdAt: '2026-08-29T12:00:00Z',
         })
@@ -471,4 +475,60 @@ describe('modelApi contract', () => {
             'modelCatalog[0].lifecycle содержит неизвестное значение',
         )
     })
+
+    it('rejects JSON numbers for money because precision may already be lost', async () => {
+        vi.mocked(apiRequest).mockResolvedValueOnce({
+            provider: 'openai',
+            model: 'gpt-safeai',
+            enabled: true,
+            routingMode: 'SINGLE_PROVIDER_STATIC',
+            maxInputTokens: 64000,
+            maxOutputTokens: 2048,
+            toolsSupported: false,
+            visionSupported: false,
+            structuredOutputSupported: false,
+            dataRetentionStatus: 'NOT_DECLARED',
+            healthStatus: 'NOT_PROBED',
+            pricingStatus: 'CONFIGURED',
+            inputUsdPer1mTokens: 2,
+            outputUsdPer1mTokens: '8',
+            pricingVersion: 'openai-2026-08',
+        })
+
+        await expect(getRuntimeModelStatus()).rejects.toThrow(
+            'runtimeModel.inputUsdPer1mTokens должен быть decimal string',
+        )
+    })
+
+    it('fails closed on semantically malformed ALLOWED evidence', async () => {
+        vi.mocked(apiRequest).mockResolvedValueOnce({
+            id: '55555555-5555-4555-8555-555555555555',
+            organizationId: '44444444-4444-4444-8444-444444444444',
+            userId: '22222222-2222-4222-8222-222222222222',
+            chatId: '66666666-6666-4666-8666-666666666666',
+            chatTurnId: null,
+            clientRequestId: '77777777-7777-4777-8777-777777777777',
+            requestContentHash: 'a'.repeat(64),
+            selectedModelKey: 'openai:gpt-safeai',
+            selectedProvider: 'openai',
+            selectedProviderModelId: 'gpt-safeai',
+            requiredCapabilities: [],
+            estimatedInputTokens: 100,
+            estimatedOutputTokens: 1000,
+            monthlyCostKnown: false,
+            monthlyCostState: 'NOT_EVALUATED',
+            budgetExceeded: false,
+            pricingComplete: true,
+            outcome: 'ALLOWED',
+            reason: 'REQUESTED_MODEL',
+            decisionIntegrityVersion: 2,
+            decisionSha256: 'b'.repeat(64),
+            createdAt: '2026-08-28T14:00:00Z',
+        })
+
+        await expect(
+            getModelRouteDecision('55555555-5555-4555-8555-555555555555'),
+        ).rejects.toThrow('ALLOWED decision не содержит executable metadata')
+    })
+
 })

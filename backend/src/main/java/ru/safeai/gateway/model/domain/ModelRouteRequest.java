@@ -9,7 +9,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
-/** Immutable input to the deterministic V45 governance decision. */
+/** Immutable input to deterministic model governance. */
 public record ModelRouteRequest(
         UUID organizationId,
         UUID userId,
@@ -20,51 +20,60 @@ public record ModelRouteRequest(
         String requestedModelKey,
         String userMessage,
         List<AiMessage> history,
-        Set<ModelCapability> requiredCapabilities
+        Set<ModelCapability> requiredCapabilities,
+        long additionalInputTokenUpperBound
 ) {
     public ModelRouteRequest {
-        Objects.requireNonNull(
-                organizationId,
-                "organizationId не должен быть null"
-        );
-        Objects.requireNonNull(
-                userId,
-                "userId не должен быть null"
-        );
-        Objects.requireNonNull(
-                chatId,
-                "chatId не должен быть null"
-        );
-        Objects.requireNonNull(
-                plannedTurnId,
-                "plannedTurnId не должен быть null"
-        );
-        Objects.requireNonNull(
-                clientRequestId,
-                "clientRequestId не должен быть null"
-        );
-        Objects.requireNonNull(
-                requestContentHash,
-                "requestContentHash не должен быть null"
-        );
-        Objects.requireNonNull(
-                userMessage,
-                "userMessage не должен быть null"
-        );
+        Objects.requireNonNull(organizationId, "organizationId не должен быть null");
+        Objects.requireNonNull(userId, "userId не должен быть null");
+        Objects.requireNonNull(chatId, "chatId не должен быть null");
+        Objects.requireNonNull(plannedTurnId, "plannedTurnId не должен быть null");
+        Objects.requireNonNull(clientRequestId, "clientRequestId не должен быть null");
+        Objects.requireNonNull(requestContentHash, "requestContentHash не должен быть null");
+        Objects.requireNonNull(userMessage, "userMessage не должен быть null");
 
-        history = history == null
-                ? List.of()
-                : List.copyOf(history);
+        if (additionalInputTokenUpperBound < 0L) {
+            throw new IllegalArgumentException(
+                    "additionalInputTokenUpperBound не может быть отрицательным"
+            );
+        }
 
-        if (requiredCapabilities == null
-                || requiredCapabilities.isEmpty()) {
+        history = history == null ? List.of() : List.copyOf(history);
+
+        if (requiredCapabilities == null || requiredCapabilities.isEmpty()) {
             requiredCapabilities = Set.of();
         } else {
-            EnumSet<ModelCapability> copy =
-                    EnumSet.noneOf(ModelCapability.class);
+            EnumSet<ModelCapability> copy = EnumSet.noneOf(ModelCapability.class);
             copy.addAll(requiredCapabilities);
-            requiredCapabilities =
-                    Collections.unmodifiableSet(copy);
+            requiredCapabilities = Collections.unmodifiableSet(copy);
         }
+    }
+
+    /** Source-compatible constructor for non-RAG/general callers. */
+    public ModelRouteRequest(
+            UUID organizationId,
+            UUID userId,
+            UUID chatId,
+            UUID plannedTurnId,
+            UUID clientRequestId,
+            String requestContentHash,
+            String requestedModelKey,
+            String userMessage,
+            List<AiMessage> history,
+            Set<ModelCapability> requiredCapabilities
+    ) {
+        this(
+                organizationId,
+                userId,
+                chatId,
+                plannedTurnId,
+                clientRequestId,
+                requestContentHash,
+                requestedModelKey,
+                userMessage,
+                history,
+                requiredCapabilities,
+                0L
+        );
     }
 }

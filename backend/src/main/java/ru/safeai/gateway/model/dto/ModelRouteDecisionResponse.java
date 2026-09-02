@@ -6,7 +6,6 @@ import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
 import ru.safeai.gateway.model.domain.ModelRouteReason;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
@@ -30,16 +29,18 @@ public record ModelRouteDecisionResponse(
         Set<ModelCapability> requiredCapabilities,
         Long estimatedInputTokens,
         Long estimatedOutputTokens,
-        BigDecimal estimatedMaxCostUsd,
-        BigDecimal monthlyBudgetUsd,
-        BigDecimal monthlySpentUsd,
-        BigDecimal monthlyProjectedUsd,
+        String estimatedMaxCostUsd,
+        String monthlyBudgetUsd,
+        String monthlySpentUsd,
+        String monthlyProjectedUsd,
         boolean monthlyCostKnown,
+        ru.safeai.gateway.model.domain.MonthlyCostState monthlyCostState,
         BudgetEnforcement budgetEnforcement,
         boolean budgetExceeded,
         boolean pricingComplete,
         ModelRouteOutcome outcome,
         ModelRouteReason reason,
+        short decisionIntegrityVersion,
         String decisionSha256,
         Instant createdAt
 ) {
@@ -65,18 +66,24 @@ public record ModelRouteDecisionResponse(
                 decision.requiredCapabilities(),
                 decision.estimatedInputTokens(),
                 decision.estimatedOutputTokens(),
-                decision.estimatedMaxCostUsd(),
-                decision.monthlyBudgetUsd(),
-                decision.monthlySpentUsd(),
-                decision.monthlyProjectedUsd(),
+                decimal(decision.estimatedMaxCostUsd()),
+                decimal(decision.monthlyBudgetUsd()),
+                decimal(decision.monthlySpentUsd()),
+                decimal(decision.monthlyProjectedUsd()),
                 decision.monthlyCostKnown(),
+                decision.monthlyCostState(),
                 decision.budgetEnforcement(),
                 decision.budgetExceeded(),
                 decision.pricingComplete(),
                 decision.outcome(),
                 decision.reason(),
+                decision.decisionIntegrityVersion(),
                 decision.decisionSha256(),
                 decision.createdAt()
         );
+    }
+
+    private static String decimal(java.math.BigDecimal value) {
+        return value == null ? null : value.toPlainString();
     }
 }

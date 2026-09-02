@@ -39,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -70,7 +71,8 @@ class ModelRoutingServiceTest {
                 policyRepository,
                 decisionRepository,
                 runtimeStatusService,
-                audit
+                audit,
+                ModelTestFixtures.CLOCK
         );
     }
 
@@ -86,8 +88,7 @@ class ModelRoutingServiceTest {
 
         var result = service.decide(
                 request(null, Set.of()),
-                ModelTestFixtures.userPrincipal(),
-                ModelTestFixtures.NOW
+                ModelTestFixtures.userPrincipal()
         );
 
         assertThat(result.catalogEntryId())
@@ -117,8 +118,7 @@ class ModelRoutingServiceTest {
 
         service.decide(
                 request(" OpenAI:GPT-Test ", Set.of()),
-                ModelTestFixtures.userPrincipal(),
-                ModelTestFixtures.NOW
+                ModelTestFixtures.userPrincipal()
         );
 
         verify(catalogRepository).findEffective(
@@ -172,8 +172,7 @@ class ModelRoutingServiceTest {
 
         var result = service.decide(
                 request(null, Set.of()),
-                ModelTestFixtures.userPrincipal(),
-                ModelTestFixtures.NOW
+                ModelTestFixtures.userPrincipal()
         );
 
         assertThat(result.reason())
@@ -197,8 +196,7 @@ class ModelRoutingServiceTest {
 
         var result = service.decide(
                 request,
-                ModelTestFixtures.userPrincipal(),
-                ModelTestFixtures.NOW.plusSeconds(60)
+                ModelTestFixtures.userPrincipal()
         );
 
         assertThat(result.decisionId())
@@ -222,8 +220,7 @@ class ModelRoutingServiceTest {
 
         assertThatThrownBy(() -> service.decide(
                 request("openai:other", Set.of()),
-                ModelTestFixtures.userPrincipal(),
-                ModelTestFixtures.NOW
+                ModelTestFixtures.userPrincipal()
         )).isInstanceOf(ConflictException.class);
 
         verify(runtimeStatusService, never()).current();
@@ -239,8 +236,7 @@ class ModelRoutingServiceTest {
 
         assertThatThrownBy(() -> service.decide(
                 request(null, Set.of(ModelCapability.VISION)),
-                ModelTestFixtures.userPrincipal(),
-                ModelTestFixtures.NOW
+                ModelTestFixtures.userPrincipal()
         )).isInstanceOf(ConflictException.class);
     }
 
@@ -459,8 +455,7 @@ class ModelRoutingServiceTest {
 
         assertThatThrownBy(() -> service.decide(
                 request(null, Set.of()),
-                otherTenantPrincipal,
-                ModelTestFixtures.NOW
+                otherTenantPrincipal
         )).isInstanceOf(ForbiddenOperationException.class);
 
         verify(decisionRepository, never())
@@ -523,35 +518,81 @@ class ModelRoutingServiceTest {
     @Test
     void allowedDecisionWritesAuditEvidence() {
         stubNewDecisionNoPolicy();
-        when(catalogRepository.findEffectiveByRuntime(
-                "openai",
-                "gpt-test",
-                ModelTestFixtures.NOW
-        )).thenReturn(List.of(ModelTestFixtures.freeEntry()));
+
+        when(
+                catalogRepository.findEffectiveByRuntime(
+                        "openai",
+                        "gpt-test",
+                        ModelTestFixtures.NOW
+                )
+        ).thenReturn(
+                List.of(
+                        ModelTestFixtures.freeEntry()
+                )
+        );
+
+        SafeAiUserPrincipal principal =
+                ModelTestFixtures.userPrincipal();
 
         service.decide(
-                request(null, Set.of()),
-                ModelTestFixtures.userPrincipal(),
-                ModelTestFixtures.NOW
+                request(
+                        null,
+                        Set.of()
+                ),
+                principal
         );
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> detailsCaptor =
-                ArgumentCaptor.forClass(Map.class);
-        verify(audit).record(
-                eq(ModelTestFixtures.userPrincipal()),
-                eq(ModelTestFixtures.ORGANIZATION_ID),
-                eq(AuditEventType.MODEL_ROUTE_DECIDED),
+                ArgumentCaptor.forClass(
+                        Map.class
+                );
+
+        verify(
+                audit
+        ).record(
+                same(principal),
+                eq(
+                        ModelTestFixtures.ORGANIZATION_ID
+                ),
+                eq(
+                        AuditEventType.MODEL_ROUTE_DECIDED
+                ),
                 detailsCaptor.capture()
         );
-        assertThat(detailsCaptor.getValue())
-                .containsKeys(
-                        "decisionId",
-                        "chatTurnId",
-                        "decisionSha256",
-                        "outcome",
-                        "reason"
-                );
+
+        assertThat(
+                detailsCaptor.getValue()
+        ).containsKeys(
+                "decisionId",
+                "chatTurnId",
+                "decisionIntegrityVersion",
+                "decisionSha256",
+                "outcome",
+                "reason",
+                "modelKey",
+                "provider",
+                "providerModel",
+                "catalogVersion",
+                "estimatedMaxCostUsd",
+                "budgetExceeded",
+                "monthlyCostKnown",
+                "monthlyCostState"
+        );
+
+        assertThat(
+                detailsCaptor.getValue()
+                        .get("monthlyCostState")
+        ).isEqualTo(
+                ru.safeai.gateway.model.domain.MonthlyCostState.NOT_EVALUATED
+        );
+
+        assertThat(
+                detailsCaptor.getValue()
+                        .get("monthlyCostKnown")
+        ).isEqualTo(
+                false
+        );
     }
 
     private void stubNewDecisionNoPolicy() {
@@ -587,8 +628,7 @@ class ModelRoutingServiceTest {
                 ModelRouteDeniedException.class,
                 () -> service.decide(
                         routeRequest,
-                        ModelTestFixtures.userPrincipal(),
-                        ModelTestFixtures.NOW
+                        ModelTestFixtures.userPrincipal()
                 )
         );
     }
@@ -664,6 +704,7 @@ class ModelRoutingServiceTest {
                 base.pricingComplete(),
                 base.outcome(),
                 base.reason(),
+                base.decisionIntegrityVersion(),
                 "",
                 base.createdAt()
         );
@@ -703,6 +744,7 @@ class ModelRoutingServiceTest {
                 source.pricingComplete(),
                 source.outcome(),
                 source.reason(),
+                source.decisionIntegrityVersion(),
                 hash,
                 source.createdAt()
         );

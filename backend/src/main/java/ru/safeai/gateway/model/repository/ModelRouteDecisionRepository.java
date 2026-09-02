@@ -58,6 +58,7 @@ public class ModelRouteDecisionRepository {
             pricing_complete,
             outcome,
             reason,
+            decision_integrity_version,
             decision_sha256,
             created_at
             """;
@@ -65,36 +66,34 @@ public class ModelRouteDecisionRepository {
     private final JdbcTemplate jdbc;
 
     public ModelRouteDecisionRepository(JdbcTemplate jdbc) {
-        this.jdbc = Objects.requireNonNull(
-                jdbc,
-                "jdbc не должен быть null"
-        );
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc не должен быть null");
     }
 
-    /**
-     * Serializes HARD/SOFT monthly budget snapshots per tenant. The lock is
-     * transaction-scoped and therefore released automatically on commit or
-     * rollback.
-     */
     public void lockOrganizationBudget(UUID organizationId) {
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "select pg_advisory_xact_lock(hashtextextended(?, 0))"
             )) {
-                statement.setString(
-                        1,
-                        "safeai:model-budget:" + organizationId
-                );
+                statement.setString(1, "safeai:model-budget:" + organizationId);
                 statement.execute();
             }
             return null;
         });
     }
 
-    public Optional<ModelRouteDecision> findByRequest(
-            UUID chatId,
-            UUID clientRequestId
-    ) {
+    /**
+     * Forces the V45 deferred ALLOWED-decision -> exact ChatTurn constraint
+     * trigger to run while reservation is still DB-only. This must be called
+     * after the ChatTurn row is flushed and before any Redis/provider side
+     * effect.
+     */
+    public void validateAllowedTurnLinkBeforeExternalSideEffects() {
+        jdbc.execute(
+                "set constraints ctrg_model_route_decision_turn_v45 immediate"
+        );
+    }
+
+    public Optional<ModelRouteDecision> findByRequest(UUID chatId, UUID clientRequestId) {
         List<ModelRouteDecision> rows = jdbc.query(
                 "select " + SELECT_COLUMNS + " from model_route_decisions "
                         + "where chat_id = ? and client_request_id = ?",
@@ -107,8 +106,7 @@ public class ModelRouteDecisionRepository {
 
     public Optional<ModelRouteDecision> findById(UUID id) {
         List<ModelRouteDecision> rows = jdbc.query(
-                "select " + SELECT_COLUMNS
-                        + " from model_route_decisions where id = ?",
+                "select " + SELECT_COLUMNS + " from model_route_decisions where id = ?",
                 this::map,
                 id
         );
@@ -116,9 +114,14 @@ public class ModelRouteDecisionRepository {
     }
 
     /**
-     * Loads committed spend and unknown-cost count from one PostgreSQL statement
-     * so READ COMMITTED cannot observe two different ChatTurn snapshots while a
-     * turn is being finalized concurrently.
+     * Conservative committed-cost snapshot.
+     *
+     * <p>For SUCCEEDED turns an assistant cost is exact only when V17 pricing
+     * metadata proves PRICED/FREE with AVAILABLE usage. Otherwise we may use
+     * the route estimate. Incomplete estimates are retained as a lower-bound
+     * estimate but still increment unknownCommittedCostCount; HARD enforcement
+     * therefore fails closed. For PROCESSING/AMBIGUOUS, only a complete route
+     * estimate makes the cost fully knowable.</p>
      */
     public MonthlyCostSnapshot loadCommittedMonthlyCostSnapshot(
             UUID organizationId,
@@ -127,43 +130,56 @@ public class ModelRouteDecisionRepository {
     ) {
         MonthlyCostSnapshot snapshot = jdbc.queryForObject(
                 """
+                with committed as (
+                    select
+                        turn_row.state,
+                        decision.pricing_complete as decision_pricing_complete,
+                        decision.estimated_max_cost_usd,
+                        assistant.cost_usd as assistant_cost_usd,
+                        assistant.usage_status as assistant_usage_status,
+                        assistant.pricing_status as assistant_pricing_status,
+                        case
+                            when turn_row.state = 'SUCCEEDED'
+                                 and assistant.usage_status = 'AVAILABLE'
+                                 and assistant.pricing_status in ('PRICED', 'FREE')
+                                 and assistant.cost_usd is not null
+                                then true
+                            else false
+                        end as exact_success_cost_known,
+                        case
+                            when decision.pricing_complete = true
+                                 and decision.estimated_max_cost_usd is not null
+                                then true
+                            else false
+                        end as route_estimate_known
+                    from model_route_decisions decision
+                    join chat_turns turn_row
+                      on turn_row.model_route_decision_id = decision.id
+                    left join chat_messages assistant
+                      on assistant.id = turn_row.assistant_message_id
+                    where decision.organization_id = ?
+                      and decision.outcome = 'ALLOWED'
+                      and decision.created_at >= ?
+                      and decision.created_at < ?
+                      and turn_row.state in ('PROCESSING', 'AMBIGUOUS', 'SUCCEEDED')
+                )
                 select
                     coalesce(sum(
                         case
-                            when turn_row.state = 'SUCCEEDED'
-                                 and assistant.cost_usd is not null
-                                then assistant.cost_usd
-                            when turn_row.state in ('PROCESSING', 'AMBIGUOUS')
-                                then decision.estimated_max_cost_usd
-                            when turn_row.state = 'SUCCEEDED'
-                                then decision.estimated_max_cost_usd
+                            when state = 'SUCCEEDED' and exact_success_cost_known
+                                then assistant_cost_usd
+                            when estimated_max_cost_usd is not null
+                                then estimated_max_cost_usd
                             else 0
                         end
                     ), 0) as committed_cost_usd,
                     count(*) filter (
-                        where turn_row.state in (
-                            'PROCESSING',
-                            'AMBIGUOUS',
-                            'SUCCEEDED'
+                        where not (
+                            (state = 'SUCCEEDED' and exact_success_cost_known)
+                            or route_estimate_known
                         )
-                          and (
-                              (turn_row.state = 'SUCCEEDED'
-                               and assistant.cost_usd is null
-                               and decision.estimated_max_cost_usd is null)
-                              or
-                              (turn_row.state in ('PROCESSING', 'AMBIGUOUS')
-                               and decision.estimated_max_cost_usd is null)
-                          )
                     )::bigint as unknown_committed_cost_count
-                from model_route_decisions decision
-                join chat_turns turn_row
-                  on turn_row.model_route_decision_id = decision.id
-                left join chat_messages assistant
-                  on assistant.id = turn_row.assistant_message_id
-                where decision.organization_id = ?
-                  and decision.outcome = 'ALLOWED'
-                  and decision.created_at >= ?
-                  and decision.created_at < ?
+                from committed
                 """,
                 (rs, ignoredRowNumber) -> new MonthlyCostSnapshot(
                         rs.getBigDecimal("committed_cost_usd"),
@@ -181,14 +197,10 @@ public class ModelRouteDecisionRepository {
     }
 
     public ModelRouteDecision insert(ModelRouteDecision decision) {
-        int updated = jdbc.update(
-                connection -> prepareInsert(connection, decision)
-        );
+        int updated = jdbc.update(connection -> prepareInsert(connection, decision));
         if (updated != 1) {
             throw new IllegalStateException(
-                    "Model route decision insert affected "
-                            + updated
-                            + " rows"
+                    "Model route decision insert affected " + updated + " rows"
             );
         }
         return decision;
@@ -210,10 +222,11 @@ public class ModelRouteDecisionRepository {
                     estimated_max_cost_usd, monthly_budget_usd,
                     monthly_spent_usd, monthly_projected_usd,
                     monthly_cost_known, budget_enforcement, budget_exceeded,
-                    pricing_complete, outcome, reason, decision_sha256, created_at
+                    pricing_complete, outcome, reason,
+                    decision_integrity_version, decision_sha256, created_at
                 ) values (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """
         );
@@ -228,23 +241,13 @@ public class ModelRouteDecisionRepository {
         statement.setString(index++, decision.requestContentHash());
         statement.setString(index++, decision.requestedModelKey());
         statement.setObject(index++, decision.selectedCatalogEntryId());
-        setNullableInteger(
-                statement,
-                index++,
-                decision.selectedCatalogVersion()
-        );
+        setNullableInteger(statement, index++, decision.selectedCatalogVersion());
         statement.setString(index++, decision.selectedModelKey());
         statement.setString(index++, decision.selectedProvider());
         statement.setString(index++, decision.selectedProviderModelId());
         statement.setObject(index++, decision.policyId());
         setNullableInteger(statement, index++, decision.policyVersion());
-        statement.setArray(
-                index++,
-                capabilityArray(
-                        connection,
-                        decision.requiredCapabilities()
-                )
-        );
+        statement.setArray(index++, capabilityArray(connection, decision.requiredCapabilities()));
         setNullableLong(statement, index++, decision.estimatedInputTokens());
         setNullableLong(statement, index++, decision.estimatedOutputTokens());
         statement.setBigDecimal(index++, decision.estimatedMaxCostUsd());
@@ -259,23 +262,16 @@ public class ModelRouteDecisionRepository {
                         : decision.budgetEnforcement().name()
         );
         statement.setBoolean(index++, decision.budgetExceeded());
-
-        statement.setBoolean(
-                index++,
-                decision.pricingComplete()
-        );
-
+        statement.setBoolean(index++, decision.pricingComplete());
         statement.setString(index++, decision.outcome().name());
         statement.setString(index++, decision.reason().name());
+        statement.setShort(index++, decision.decisionIntegrityVersion());
         statement.setString(index++, decision.decisionSha256());
         statement.setTimestamp(index, Timestamp.from(decision.createdAt()));
         return statement;
     }
 
-    private ModelRouteDecision map(
-            ResultSet rs,
-            int ignoredRowNumber
-    ) throws SQLException {
+    private ModelRouteDecision map(ResultSet rs, int ignoredRowNumber) throws SQLException {
         return new ModelRouteDecision(
                 rs.getObject("id", UUID.class),
                 rs.getObject("organization_id", UUID.class),
@@ -305,18 +301,15 @@ public class ModelRouteDecisionRepository {
                 rs.getBoolean("pricing_complete"),
                 ModelRouteOutcome.valueOf(rs.getString("outcome")),
                 ModelRouteReason.valueOf(rs.getString("reason")),
+                rs.getShort("decision_integrity_version"),
                 rs.getString("decision_sha256"),
                 rs.getTimestamp("created_at").toInstant()
         );
     }
 
-    private static BudgetEnforcement readBudgetEnforcement(
-            ResultSet rs
-    ) throws SQLException {
+    private static BudgetEnforcement readBudgetEnforcement(ResultSet rs) throws SQLException {
         String value = rs.getString("budget_enforcement");
-        return value == null
-                ? null
-                : BudgetEnforcement.valueOf(value);
+        return value == null ? null : BudgetEnforcement.valueOf(value);
     }
 
     private static Array capabilityArray(
@@ -330,26 +323,17 @@ public class ModelRouteDecisionRepository {
         return connection.createArrayOf("text", values);
     }
 
-    private static Set<ModelCapability> capabilities(
-            Array array
-    ) throws SQLException {
+    private static Set<ModelCapability> capabilities(Array array) throws SQLException {
         if (array == null) {
             return Set.of();
         }
-
         try {
             Object raw = array.getArray();
             if (!(raw instanceof String[] strings)) {
-                throw new SQLException(
-                        "Expected PostgreSQL text[] for required_capabilities"
-                );
+                throw new SQLException("Expected PostgreSQL text[] for required_capabilities");
             }
-
-            EnumSet<ModelCapability> result =
-                    EnumSet.noneOf(ModelCapability.class);
-            Arrays.stream(strings)
-                    .map(ModelCapability::valueOf)
-                    .forEach(result::add);
+            EnumSet<ModelCapability> result = EnumSet.noneOf(ModelCapability.class);
+            Arrays.stream(strings).map(ModelCapability::valueOf).forEach(result::add);
             return Set.copyOf(result);
         } finally {
             array.free();
@@ -388,7 +372,6 @@ public class ModelRouteDecisionRepository {
             committedCostUsd = committedCostUsd == null
                     ? BigDecimal.ZERO
                     : committedCostUsd;
-
             if (unknownCommittedCostCount < 0L) {
                 throw new IllegalArgumentException(
                         "unknownCommittedCostCount не может быть отрицательным"
@@ -396,5 +379,4 @@ public class ModelRouteDecisionRepository {
             }
         }
     }
-
 }

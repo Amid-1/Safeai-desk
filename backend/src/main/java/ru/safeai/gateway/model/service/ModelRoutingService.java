@@ -15,14 +15,15 @@ import ru.safeai.gateway.model.domain.ModelRouteReason;
 import ru.safeai.gateway.model.domain.ModelRouteRequest;
 import ru.safeai.gateway.model.domain.ModelRouteResult;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
-import ru.safeai.gateway.model.dto.ModelRouteDecisionResponse;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
+import ru.safeai.gateway.model.dto.ModelRouteDecisionResponse;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -40,55 +41,33 @@ public class ModelRoutingService {
     private final ModelRoutingSelectionPolicy selectionPolicy;
     private final ModelRoutingCostPolicy costPolicy;
     private final ModelRouteDecisionFactory decisionFactory;
+    private final Clock clock;
 
-    /**
-     * Constructor signature is intentionally unchanged for Spring wiring and
-     * the existing Mockito tests.
-     */
     public ModelRoutingService(
             ModelCatalogRepository catalogRepository,
             OrganizationModelPolicyRepository policyRepository,
             ModelRouteDecisionRepository decisionRepository,
             RuntimeModelStatusService runtimeStatusService,
-            AuditEventService audit
+            AuditEventService audit,
+            Clock clock
     ) {
-        ModelCatalogRepository requiredCatalogRepository =
-                Objects.requireNonNull(
-                        catalogRepository,
-                        "catalogRepository не должен быть null"
-                );
-        this.policyRepository = Objects.requireNonNull(
-                policyRepository,
-                "policyRepository не должен быть null"
+        ModelCatalogRepository requiredCatalogRepository = Objects.requireNonNull(
+                catalogRepository,
+                "catalogRepository не должен быть null"
         );
-        this.decisionRepository = Objects.requireNonNull(
-                decisionRepository,
-                "decisionRepository не должен быть null"
-        );
-        this.runtimeStatusService = Objects.requireNonNull(
-                runtimeStatusService,
-                "runtimeStatusService не должен быть null"
-        );
-        this.audit = Objects.requireNonNull(
-                audit,
-                "audit не должен быть null"
-        );
-        this.selectionPolicy =
-                new ModelRoutingSelectionPolicy(
-                        requiredCatalogRepository
-                );
-        this.costPolicy =
-                new ModelRoutingCostPolicy(
-                        this.decisionRepository
-                );
+        this.policyRepository = Objects.requireNonNull(policyRepository, "policyRepository не должен быть null");
+        this.decisionRepository = Objects.requireNonNull(decisionRepository, "decisionRepository не должен быть null");
+        this.runtimeStatusService = Objects.requireNonNull(runtimeStatusService, "runtimeStatusService не должен быть null");
+        this.audit = Objects.requireNonNull(audit, "audit не должен быть null");
+        this.clock = Objects.requireNonNull(clock, "clock не должен быть null");
+        this.selectionPolicy = new ModelRoutingSelectionPolicy(requiredCatalogRepository);
+        this.costPolicy = new ModelRoutingCostPolicy(this.decisionRepository);
         this.decisionFactory = new ModelRouteDecisionFactory();
     }
 
     /**
-     * V45 governance boundary.
-     * <p>
-     * Must run inside ChatTurnReservationService after ChatTurn idempotency
-     * lookup and before USER/PROCESSING/quota/rate-limit reservation.
+     * Deterministic governance boundary. The effective-time instant is owned by
+     * this service and cannot be supplied by a caller.
      */
     @Transactional(
             propagation = Propagation.MANDATORY,
@@ -96,41 +75,35 @@ public class ModelRoutingService {
     )
     public ModelRouteResult decide(
             ModelRouteRequest request,
-            SafeAiUserPrincipal currentUser,
-            Instant now
+            SafeAiUserPrincipal currentUser
     ) {
-        validateIdentity(request, currentUser, now);
+        validateIdentity(request, currentUser);
+        Instant now = clock.instant();
 
-        Optional<ModelRouteDecision> replay =
-                decisionRepository.findByRequest(
-                        request.chatId(),
-                        request.clientRequestId()
-                );
+        Optional<ModelRouteDecision> replay = decisionRepository.findByRequest(
+                request.chatId(),
+                request.clientRequestId()
+        );
         if (replay.isPresent()) {
-            return decisionFactory.replayDecision(
-                    replay.get(),
-                    request
-            );
+            return decisionFactory.replayDecision(replay.get(), request);
         }
 
-        RuntimeModelStatusResponse runtime =
-                Objects.requireNonNull(
-                        runtimeStatusService.current(),
-                        "Runtime model status не должен быть null"
-                );
+        RuntimeModelStatusResponse runtime = Objects.requireNonNull(
+                runtimeStatusService.current(),
+                "Runtime model status не должен быть null"
+        );
         OrganizationModelPolicy policy = policyRepository
                 .findLatest(request.organizationId())
                 .orElse(null);
         boolean policyEnabled = policy != null && policy.enabled();
 
-        ModelRoutingSelectionPolicy.Selection selection =
-                selectionPolicy.selectCatalog(
-                        request,
-                        runtime,
-                        policy,
-                        policyEnabled,
-                        now
-                );
+        ModelRoutingSelectionPolicy.Selection selection = selectionPolicy.selectCatalog(
+                request,
+                runtime,
+                policy,
+                policyEnabled,
+                now
+        );
 
         if (selection.denialReason() != null) {
             throw persistDenied(
@@ -139,9 +112,9 @@ public class ModelRoutingService {
                     now,
                     runtime,
                     policy,
-                    selection.entry(),
-                    selection.modelKey(),
+                    selection,
                     selection.denialReason(),
+                    null,
                     null,
                     null,
                     null
@@ -149,18 +122,15 @@ public class ModelRoutingService {
         }
 
         ModelCatalogEntry entry = selection.entry();
-        String selectedModelKey = selection.modelKey();
-
         if (entry != null) {
-            ModelRouteReason catalogPolicyDenial =
-                    selectionPolicy.validateCatalogAndPolicy(
-                            entry,
-                            selectedModelKey,
-                            runtime,
-                            policy,
-                            policyEnabled,
-                            request.requiredCapabilities()
-                    );
+            ModelRouteReason catalogPolicyDenial = selectionPolicy.validateCatalogAndPolicy(
+                    entry,
+                    selection.modelKey(),
+                    runtime,
+                    policy,
+                    policyEnabled,
+                    request.requiredCapabilities()
+            );
             if (catalogPolicyDenial != null) {
                 throw persistDenied(
                         request,
@@ -168,9 +138,9 @@ public class ModelRoutingService {
                         now,
                         runtime,
                         policy,
-                        entry,
-                        selectedModelKey,
+                        selection,
                         catalogPolicyDenial,
+                        null,
                         null,
                         null,
                         null
@@ -178,22 +148,19 @@ public class ModelRoutingService {
             }
         }
 
-        long estimatedInputTokens =
-                costPolicy.estimateInputTokens(request);
-        long estimatedOutputTokens =
-                costPolicy.effectiveOutputLimit(
-                        entry,
-                        runtime,
-                        policy,
-                        policyEnabled
-                );
-        long effectiveInputLimit =
-                costPolicy.effectiveInputLimit(
-                        entry,
-                        runtime,
-                        policy,
-                        policyEnabled
-                );
+        long estimatedInputTokens = costPolicy.estimateInputTokens(request);
+        long estimatedOutputTokens = costPolicy.effectiveOutputLimit(
+                entry,
+                runtime,
+                policy,
+                policyEnabled
+        );
+        long effectiveInputLimit = costPolicy.effectiveInputLimit(
+                entry,
+                runtime,
+                policy,
+                policyEnabled
+        );
 
         if (estimatedInputTokens > effectiveInputLimit) {
             throw persistDenied(
@@ -202,22 +169,21 @@ public class ModelRoutingService {
                     now,
                     runtime,
                     policy,
-                    entry,
-                    selectedModelKey,
+                    selection,
                     ModelRouteReason.INPUT_LIMIT_EXCEEDED,
                     estimatedInputTokens,
                     estimatedOutputTokens,
+                    null,
                     null
             );
         }
 
-        ModelRoutingCostPolicy.PricingEstimate pricing =
-                costPolicy.estimateCost(
-                        entry,
-                        runtime,
-                        estimatedInputTokens,
-                        estimatedOutputTokens
-                );
+        ModelRoutingCostPolicy.PricingEstimate pricing = costPolicy.estimateCost(
+                entry,
+                runtime,
+                estimatedInputTokens,
+                estimatedOutputTokens
+        );
 
         if (policyEnabled) {
             enforceRequestPricingPolicy(
@@ -226,22 +192,20 @@ public class ModelRoutingService {
                     now,
                     runtime,
                     policy,
-                    entry,
-                    selectedModelKey,
+                    selection,
                     estimatedInputTokens,
                     estimatedOutputTokens,
                     pricing
             );
         }
 
-        ModelRoutingCostPolicy.BudgetSnapshot budget =
-                costPolicy.evaluateBudget(
-                        request.organizationId(),
-                        policy,
-                        policyEnabled,
-                        pricing.cost(),
-                        now
-                );
+        ModelRoutingCostPolicy.BudgetSnapshot budget = costPolicy.evaluateBudget(
+                request.organizationId(),
+                policy,
+                policyEnabled,
+                pricing,
+                now
+        );
 
         if (budget.denialReason() != null) {
             throw persistDenied(
@@ -250,14 +214,11 @@ public class ModelRoutingService {
                     now,
                     runtime,
                     policy,
-                    entry,
-                    selectedModelKey,
+                    selection,
                     budget.denialReason(),
                     estimatedInputTokens,
                     estimatedOutputTokens,
-                    pricing.cost(),
-                    budget.monthlyCostKnown(),
-                    budget.exceeded(),
+                    pricing,
                     budget
             );
         }
@@ -265,16 +226,19 @@ public class ModelRoutingService {
         ModelRouteDecisionFactory.DecisionDraft draft =
                 new ModelRouteDecisionFactory.DecisionDraft(
                         entry,
-                        selectedModelKey,
-                        runtime.provider(),
-                        runtime.model(),
+                        selection.modelKey(),
+                        selection.selectedProvider(),
+                        selection.selectedProviderModelId(),
                         estimatedInputTokens,
                         estimatedOutputTokens,
                         pricing.cost(),
                         pricing.complete(),
                         budget,
                         ModelRouteOutcome.ALLOWED,
-                        selection.allowedReason()
+                        Objects.requireNonNull(
+                                selection.allowedReason(),
+                                "ALLOWED selection должна иметь allowedReason"
+                        )
                 );
 
         ModelRouteDecision decision = decisionFactory.buildDecision(
@@ -285,13 +249,19 @@ public class ModelRoutingService {
                 now
         );
         decisionRepository.insert(decision);
-        recordDecisionAudit(
-                currentUser,
-                decision,
-                AuditEventType.MODEL_ROUTE_DECIDED
-        );
-
+        recordDecisionAudit(currentUser, decision, AuditEventType.MODEL_ROUTE_DECIDED);
         return decisionFactory.toResult(decision);
+    }
+
+    /**
+     * Evaluates the deferred V45 exact-turn invariant before reservation
+     * performs its only external side effect (Redis rate-limit reservation).
+     *
+     * <p>Must be invoked from the surrounding reservation transaction.</p>
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void validateAllowedTurnLinkBeforeExternalSideEffects() {
+        decisionRepository.validateAllowedTurnLinkBeforeExternalSideEffects();
     }
 
     @Transactional(readOnly = true)
@@ -299,30 +269,19 @@ public class ModelRoutingService {
             UUID decisionId,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                decisionId,
-                "decisionId не должен быть null"
-        );
+        Objects.requireNonNull(decisionId, "decisionId не должен быть null");
         ModelControlPlaneAccess.requireAdminOrSuperAdmin(
                 currentUser,
                 "Недостаточно прав для model route evidence"
         );
 
-        ModelRouteDecision decision = decisionRepository
-                .findById(decisionId)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Model route decision не найден"
-                        )
-                );
+        ModelRouteDecision decision = decisionRepository.findById(decisionId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Model route decision не найден"
+                ));
 
-        if (isCrossTenantDecision(
-                currentUser,
-                decision.organizationId()
-        )) {
-            throw new ResourceNotFoundException(
-                    "Model route decision не найден"
-            );
+        if (isCrossTenantDecision(currentUser, decision.organizationId())) {
+            throw new ResourceNotFoundException("Model route decision не найден");
         }
 
         ModelRouteDecisionIntegrity.requireValid(decision);
@@ -335,8 +294,7 @@ public class ModelRoutingService {
             Instant now,
             RuntimeModelStatusResponse runtime,
             OrganizationModelPolicy policy,
-            ModelCatalogEntry entry,
-            String selectedModelKey,
+            ModelRoutingSelectionPolicy.Selection selection,
             long estimatedInputTokens,
             long estimatedOutputTokens,
             ModelRoutingCostPolicy.PricingEstimate pricing
@@ -348,12 +306,12 @@ public class ModelRoutingService {
                     now,
                     runtime,
                     policy,
-                    entry,
-                    selectedModelKey,
+                    selection,
                     ModelRouteReason.PRICING_INCOMPLETE,
                     estimatedInputTokens,
                     estimatedOutputTokens,
-                    pricing.cost()
+                    pricing,
+                    null
             );
         }
 
@@ -361,18 +319,19 @@ public class ModelRoutingService {
             return;
         }
 
-        if (pricing.cost() == null) {
+        // A request cost cap is meaningful only against complete pricing.
+        if (!pricing.complete() || pricing.cost() == null) {
             throw persistDenied(
                     request,
                     currentUser,
                     now,
                     runtime,
                     policy,
-                    entry,
-                    selectedModelKey,
+                    selection,
                     ModelRouteReason.PRICING_INCOMPLETE,
                     estimatedInputTokens,
                     estimatedOutputTokens,
+                    pricing,
                     null
             );
         }
@@ -384,12 +343,12 @@ public class ModelRoutingService {
                     now,
                     runtime,
                     policy,
-                    entry,
-                    selectedModelKey,
+                    selection,
                     ModelRouteReason.REQUEST_COST_LIMIT_EXCEEDED,
                     estimatedInputTokens,
                     estimatedOutputTokens,
-                    pricing.cost()
+                    pricing,
+                    null
             );
         }
     }
@@ -400,69 +359,46 @@ public class ModelRoutingService {
             Instant now,
             RuntimeModelStatusResponse runtime,
             OrganizationModelPolicy policy,
-            ModelCatalogEntry entry,
-            String selectedModelKey,
+            ModelRoutingSelectionPolicy.Selection selection,
             ModelRouteReason reason,
             Long estimatedInputTokens,
             Long estimatedOutputTokens,
-            BigDecimal estimatedCost
+            ModelRoutingCostPolicy.PricingEstimate pricing,
+            ModelRoutingCostPolicy.BudgetSnapshot evaluatedBudget
     ) {
-        return persistDenied(
-                request,
-                currentUser,
-                now,
-                runtime,
-                policy,
-                entry,
-                selectedModelKey,
-                reason,
-                estimatedInputTokens,
-                estimatedOutputTokens,
-                estimatedCost,
-                true,
-                false,
-                ModelRoutingCostPolicy.BudgetSnapshot.none()
-        );
-    }
+        ModelRoutingCostPolicy.BudgetSnapshot budget = evaluatedBudget == null
+                ? ModelRoutingCostPolicy.BudgetSnapshot.none()
+                : evaluatedBudget;
 
-    private ModelRouteDeniedException persistDenied(
-            ModelRouteRequest request,
-            SafeAiUserPrincipal currentUser,
-            Instant now,
-            RuntimeModelStatusResponse runtime,
-            OrganizationModelPolicy policy,
-            ModelCatalogEntry entry,
-            String selectedModelKey,
-            ModelRouteReason reason,
-            Long estimatedInputTokens,
-            Long estimatedOutputTokens,
-            BigDecimal estimatedCost,
-            boolean monthlyCostKnown,
-            boolean budgetExceeded,
-            ModelRoutingCostPolicy.BudgetSnapshot budget
-    ) {
-        boolean pricingComplete = entry != null
-                ? entry.pricingComplete()
-                : "FREE".equals(runtime.pricingStatus());
+        boolean pricingComplete;
+        BigDecimal estimatedCost;
+        if (pricing != null) {
+            pricingComplete = pricing.complete();
+            estimatedCost = pricing.cost();
+        } else if (selection.entry() != null) {
+            pricingComplete = selection.entry().pricingComplete();
+            estimatedCost = null;
+        } else if (selection.selectedProvider() != null
+                && selection.selectedProviderModelId() != null
+                && "FREE".equals(runtime.pricingStatus())) {
+            pricingComplete = true;
+            estimatedCost = null;
+        } else {
+            pricingComplete = false;
+            estimatedCost = null;
+        }
 
         ModelRouteDecisionFactory.DecisionDraft draft =
                 new ModelRouteDecisionFactory.DecisionDraft(
-                        entry,
-                        selectedModelKey,
-                        entry == null
-                                ? runtime.provider()
-                                : entry.provider(),
-                        entry == null
-                                ? runtime.model()
-                                : entry.providerModelId(),
+                        selection.entry(),
+                        selection.modelKey(),
+                        selection.selectedProvider(),
+                        selection.selectedProviderModelId(),
                         estimatedInputTokens,
                         estimatedOutputTokens,
                         estimatedCost,
                         pricingComplete,
-                        budget.withFlags(
-                                monthlyCostKnown,
-                                budgetExceeded
-                        ),
+                        budget,
                         ModelRouteOutcome.DENIED,
                         reason
                 );
@@ -475,19 +411,12 @@ public class ModelRoutingService {
                 now
         );
         decisionRepository.insert(decision);
-        recordDecisionAudit(
-                currentUser,
-                decision,
-                AuditEventType.MODEL_ROUTE_DENIED
-        );
+        recordDecisionAudit(currentUser, decision, AuditEventType.MODEL_ROUTE_DENIED);
 
         return new ModelRouteDeniedException(
                 decision.id(),
                 reason,
-                ModelRouteDecisionFactory.publicDenialMessage(
-                        reason,
-                        decision.id()
-                )
+                ModelRouteDecisionFactory.publicDenialMessage(reason, decision.id())
         );
     }
 
@@ -502,6 +431,7 @@ public class ModelRoutingService {
         details.put("clientRequestId", decision.clientRequestId());
         details.put("outcome", decision.outcome());
         details.put("reason", decision.reason());
+        details.put("decisionIntegrityVersion", decision.decisionIntegrityVersion());
         details.put("decisionSha256", decision.decisionSha256());
 
         if (decision.chatTurnId() != null) {
@@ -514,29 +444,21 @@ public class ModelRoutingService {
             details.put("provider", decision.selectedProvider());
         }
         if (decision.selectedProviderModelId() != null) {
-            details.put(
-                    "providerModel",
-                    decision.selectedProviderModelId()
-            );
+            details.put("providerModel", decision.selectedProviderModelId());
         }
         if (decision.selectedCatalogVersion() != null) {
-            details.put(
-                    "catalogVersion",
-                    decision.selectedCatalogVersion()
-            );
+            details.put("catalogVersion", decision.selectedCatalogVersion());
         }
         if (decision.policyVersion() != null) {
             details.put("policyVersion", decision.policyVersion());
         }
         if (decision.estimatedMaxCostUsd() != null) {
-            details.put(
-                    "estimatedMaxCostUsd",
-                    decision.estimatedMaxCostUsd()
-            );
+            details.put("estimatedMaxCostUsd", decision.estimatedMaxCostUsd().toPlainString());
         }
 
         details.put("budgetExceeded", decision.budgetExceeded());
         details.put("monthlyCostKnown", decision.monthlyCostKnown());
+        details.put("monthlyCostState", decision.monthlyCostState());
 
         audit.record(
                 currentUser,
@@ -548,19 +470,13 @@ public class ModelRoutingService {
 
     private static void validateIdentity(
             ModelRouteRequest request,
-            SafeAiUserPrincipal currentUser,
-            Instant now
+            SafeAiUserPrincipal currentUser
     ) {
         Objects.requireNonNull(request, "request не должен быть null");
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
-        Objects.requireNonNull(now, "now не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
         if (!request.userId().equals(currentUser.getId())
-                || !request.organizationId()
-                .equals(currentUser.getOrganizationId())) {
+                || !request.organizationId().equals(currentUser.getOrganizationId())) {
             throw new ForbiddenOperationException(
                     "Model route principal identity mismatch"
             );
@@ -578,8 +494,6 @@ public class ModelRoutingService {
             UUID decisionOrganizationId
     ) {
         return ModelControlPlaneAccess.isTenantScopeRestricted(currentUser)
-                && !decisionOrganizationId.equals(
-                currentUser.getOrganizationId()
-        );
+                && !decisionOrganizationId.equals(currentUser.getOrganizationId());
     }
 }

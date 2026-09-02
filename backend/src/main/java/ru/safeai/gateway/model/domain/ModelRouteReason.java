@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.domain;
 
 public enum ModelRouteReason {
+    REQUESTED_MODEL,
     POLICY_DEFAULT,
     RUNTIME_ONLY_MATCH,
     LEGACY_RUNTIME_FALLBACK,

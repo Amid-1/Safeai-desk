@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -608,9 +609,12 @@ class ModelCatalogServiceTest {
         when(repository.findLatest("openai:gpt-test"))
                 .thenReturn(Optional.empty());
 
+        var principal =
+                ModelTestFixtures.superAdminPrincipal();
+
         service.createVersion(
                 validFreeRequest(),
-                ModelTestFixtures.superAdminPrincipal()
+                principal
         );
 
         @SuppressWarnings("unchecked")
@@ -618,7 +622,7 @@ class ModelCatalogServiceTest {
                 ArgumentCaptor.forClass(Map.class);
 
         verify(audit).record(
-                eq(ModelTestFixtures.superAdminPrincipal()),
+                same(principal),
                 eq(ModelTestFixtures.ORGANIZATION_ID),
                 eq(AuditEventType.MODEL_CATALOG_VERSION_CREATED),
                 detailsCaptor.capture()
@@ -631,10 +635,52 @@ class ModelCatalogServiceTest {
                         "version",
                         "provider",
                         "providerModelId",
+                        "lifecycle",
+                        "source",
+                        "pricingStatus",
                         "pricingComplete",
                         "maxInputTokens",
                         "maxOutputTokens",
+                        "inputModalities",
+                        "outputModalities",
+                        "capabilities",
+                        "retentionStatus",
+                        "trainingUseStatus",
                         "effectiveFrom"
+                );
+
+        assertThat(detailsCaptor.getValue())
+                .containsEntry(
+                        "modelKey",
+                        "openai:gpt-test"
+                )
+                .containsEntry(
+                        "provider",
+                        "openai"
+                )
+                .containsEntry(
+                        "providerModelId",
+                        "gpt-test"
+                )
+                .containsEntry(
+                        "version",
+                        1
+                )
+                .containsEntry(
+                        "pricingStatus",
+                        ModelPricingStatus.FREE
+                )
+                .containsEntry(
+                        "pricingComplete",
+                        true
+                )
+                .containsEntry(
+                        "maxInputTokens",
+                        32_000
+                )
+                .containsEntry(
+                        "maxOutputTokens",
+                        4_096
                 );
     }
 

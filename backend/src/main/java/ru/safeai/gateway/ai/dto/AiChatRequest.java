@@ -4,6 +4,17 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * Immutable AI provider request plus model-governance execution envelope.
+ *
+ * <p>Conversation history is canonical: it may be empty, otherwise it consists
+ * only of complete chronological USER/ASSISTANT turns. SYSTEM and DEVELOPER
+ * instructions are stored separately and must never be mixed into history.</p>
+ *
+ * <p>{@code reservedInputTokens} is the conservative input envelope approved by
+ * model routing. {@code maxOutputTokens} is the physical output cap that must
+ * reach the provider request.</p>
+ */
 public record AiChatRequest(
         UUID userId,
         UUID organizationId,
@@ -12,123 +23,323 @@ public record AiChatRequest(
         String systemInstructions,
         String developerInstructions,
         String userMessage,
-        List<AiMessage> history
+        List<AiMessage> history,
+        Long reservedInputTokens,
+        Integer maxOutputTokens
 ) {
-    private static final int ABSOLUTE_MAX_INSTRUCTION_CHARS = 100_000;
-    private static final int ABSOLUTE_MAX_USER_MESSAGE_CHARS = 100_000;
-    private static final int ABSOLUTE_MAX_HISTORY_MESSAGES = 1_000;
-    private static final long ABSOLUTE_MAX_TOTAL_CHARS = 1_000_000L;
+
+    private static final int ABSOLUTE_MAX_INSTRUCTION_CHARS =
+            100_000;
+
+    private static final int ABSOLUTE_MAX_USER_MESSAGE_CHARS =
+            100_000;
+
+    private static final int ABSOLUTE_MAX_HISTORY_MESSAGES =
+            1_000;
+
+    private static final long ABSOLUTE_MAX_TOTAL_CHARS =
+            1_000_000L;
 
     public AiChatRequest {
-        Objects.requireNonNull(userId, "userId не должен быть null");
+        Objects.requireNonNull(
+                userId,
+                "userId не должен быть null"
+        );
+
         Objects.requireNonNull(
                 organizationId,
                 "organizationId не должен быть null"
         );
-        Objects.requireNonNull(chatId, "chatId не должен быть null");
+
+        Objects.requireNonNull(
+                chatId,
+                "chatId не должен быть null"
+        );
+
         Objects.requireNonNull(
                 providerOperationId,
                 "providerOperationId не должен быть null"
         );
 
-        systemInstructions = normalizeInstructions(
-                systemInstructions,
-                "systemInstructions"
-        );
-        developerInstructions = normalizeInstructions(
-                developerInstructions,
-                "developerInstructions"
+        systemInstructions =
+                normalizeInstructions(
+                        systemInstructions,
+                        "systemInstructions"
+                );
+
+        developerInstructions =
+                normalizeInstructions(
+                        developerInstructions,
+                        "developerInstructions"
+                );
+
+        validateUserMessage(
+                userMessage
         );
 
-        if (userMessage == null || userMessage.isBlank()) {
+        history =
+                history == null
+                        ? List.of()
+                        : List.copyOf(history);
+
+        validateHistorySize(
+                history
+        );
+
+        validateGovernanceEnvelope(
+                reservedInputTokens,
+                maxOutputTokens
+        );
+
+        long baseChars =
+                userMessage.length()
+                        + length(systemInstructions)
+                        + length(developerInstructions);
+
+        validateCanonicalHistory(
+                history,
+                baseChars
+        );
+    }
+
+    /**
+     * Source compatibility for pre-V46 callers and tests.
+     *
+     * <p>Such requests do not carry model-route execution caps.</p>
+     */
+    public AiChatRequest(
+            UUID userId,
+            UUID organizationId,
+            UUID chatId,
+            UUID providerOperationId,
+            String systemInstructions,
+            String developerInstructions,
+            String userMessage,
+            List<AiMessage> history
+    ) {
+        this(
+                userId,
+                organizationId,
+                chatId,
+                providerOperationId,
+                systemInstructions,
+                developerInstructions,
+                userMessage,
+                history,
+                null,
+                null
+        );
+    }
+
+    /**
+     * Resolves the physical provider output limit without ever exceeding the
+     * runtime/model maximum.
+     */
+    public int effectiveMaxOutputTokens(
+            int runtimeMaximum
+    ) {
+        if (runtimeMaximum <= 0) {
+            throw new IllegalArgumentException(
+                    "runtimeMaximum должен быть положительным"
+            );
+        }
+
+        return maxOutputTokens == null
+                ? runtimeMaximum
+                : Math.min(
+                        runtimeMaximum,
+                        maxOutputTokens
+                );
+    }
+
+    private static void validateUserMessage(
+            String userMessage
+    ) {
+        if (userMessage == null
+                || userMessage.isBlank()) {
             throw new IllegalArgumentException(
                     "userMessage не должен быть пустым"
             );
         }
-        if (userMessage.length() > ABSOLUTE_MAX_USER_MESSAGE_CHARS) {
+
+        if (userMessage.length()
+                > ABSOLUTE_MAX_USER_MESSAGE_CHARS) {
             throw new IllegalArgumentException(
                     "userMessage превышает абсолютный лимит "
                             + ABSOLUTE_MAX_USER_MESSAGE_CHARS
                             + " символов"
             );
         }
+    }
 
-        history = history == null
-                ? List.of()
-                : List.copyOf(history);
-
-        if (history.size() > ABSOLUTE_MAX_HISTORY_MESSAGES) {
+    private static void validateHistorySize(
+            List<AiMessage> history
+    ) {
+        if (history.size()
+                > ABSOLUTE_MAX_HISTORY_MESSAGES) {
             throw new IllegalArgumentException(
                     "history превышает абсолютный лимит "
                             + ABSOLUTE_MAX_HISTORY_MESSAGES
                             + " сообщений"
             );
         }
+    }
 
-        long totalChars = userMessage.length()
-                + length(systemInstructions)
-                + length(developerInstructions);
-
-        AiMessageRole previousRole = null;
-
-        for (int index = 0; index < history.size(); index++) {
-            AiMessage message = Objects.requireNonNull(
-                    history.get(index),
-                    "history не должен содержать null"
+    private static void validateGovernanceEnvelope(
+            Long reservedInputTokens,
+            Integer maxOutputTokens
+    ) {
+        if (reservedInputTokens != null
+                && reservedInputTokens < 0L) {
+            throw new IllegalArgumentException(
+                    "reservedInputTokens не может быть отрицательным"
             );
-
-            if (message.role() != AiMessageRole.USER
-                    && message.role() != AiMessageRole.ASSISTANT) {
-                throw new IllegalArgumentException(
-                        "history должен содержать только USER/ASSISTANT. "
-                                + "SYSTEM и DEVELOPER передаются отдельно"
-                );
-            }
-
-            if (index == 0 && message.role() != AiMessageRole.USER) {
-                throw new IllegalArgumentException(
-                        "history должен начинаться с USER"
-                );
-            }
-
-            if (message.role() == previousRole) {
-                throw new IllegalArgumentException(
-                        "history должен чередовать USER и ASSISTANT"
-                );
-            }
-
-            previousRole = message.role();
-            totalChars += message.content().length();
-
-            if (totalChars > ABSOLUTE_MAX_TOTAL_CHARS) {
-                throw new IllegalArgumentException(
-                        "AI request превышает абсолютный лимит "
-                                + ABSOLUTE_MAX_TOTAL_CHARS
-                                + " символов"
-                );
-            }
         }
 
-        if (!history.isEmpty()
-                && history.getLast().role() != AiMessageRole.ASSISTANT) {
+        if (maxOutputTokens != null
+                && maxOutputTokens <= 0) {
             throw new IllegalArgumentException(
-                    "history перед новым userMessage должен завершаться ASSISTANT"
+                    "maxOutputTokens должен быть положительным"
+            );
+        }
+    }
+
+    private static void validateCanonicalHistory(
+            List<AiMessage> history,
+            long initialTotalChars
+    ) {
+        if (history.isEmpty()) {
+            return;
+        }
+
+        long totalChars =
+                initialTotalChars;
+
+        for (int index = 0;
+                index < history.size();
+                index++) {
+
+            AiMessage message =
+                    Objects.requireNonNull(
+                            history.get(index),
+                            "history не должен содержать null"
+                    );
+
+            validateHistoryMessage(
+                    message,
+                    index
+            );
+
+            totalChars +=
+                    message.content().length();
+
+            validateTotalChars(
+                    totalChars
+            );
+        }
+
+        /*
+         * Complete canonical history always contains USER/ASSISTANT pairs,
+         * therefore its number of messages must be even.
+         */
+        if ((history.size() & 1) != 0) {
+            throw new IllegalArgumentException(
+                    "history должен завершаться ASSISTANT"
+            );
+        }
+    }
+
+    private static void validateHistoryMessage(
+            AiMessage message,
+            int index
+    ) {
+        AiMessageRole actualRole =
+                Objects.requireNonNull(
+                        message.role(),
+                        "history message role не должен быть null"
+                );
+
+        validateHistoryRole(
+                actualRole,
+                index
+        );
+
+        if (message.content() == null
+                || message.content().isBlank()) {
+            throw new IllegalArgumentException(
+                    "history message content не должен быть пустым"
+            );
+        }
+    }
+
+    private static void validateHistoryRole(
+            AiMessageRole actualRole,
+            int index
+    ) {
+        if (actualRole != AiMessageRole.USER
+                && actualRole != AiMessageRole.ASSISTANT) {
+            throw new IllegalArgumentException(
+                    "history должен содержать только USER/ASSISTANT. "
+                            + "SYSTEM и DEVELOPER передаются отдельно"
+            );
+        }
+
+        AiMessageRole expectedRole =
+                expectedHistoryRole(
+                        index
+                );
+
+        if (actualRole == expectedRole) {
+            return;
+        }
+
+        if (index == 0) {
+            throw new IllegalArgumentException(
+                    "history должен начинаться с USER"
+            );
+        }
+
+        throw new IllegalArgumentException(
+                "history должен чередовать USER/ASSISTANT"
+        );
+    }
+
+    private static AiMessageRole expectedHistoryRole(
+            int index
+    ) {
+        return (index & 1) == 0
+                ? AiMessageRole.USER
+                : AiMessageRole.ASSISTANT;
+    }
+
+    private static void validateTotalChars(
+            long totalChars
+    ) {
+        if (totalChars
+                > ABSOLUTE_MAX_TOTAL_CHARS) {
+            throw new IllegalArgumentException(
+                    "AI request превышает абсолютный лимит общего текста"
             );
         }
     }
 
     private static String normalizeInstructions(
             String value,
-            String fieldName
+            String field
     ) {
-        if (value == null || value.isBlank()) {
+        if (value == null
+                || value.isBlank()) {
             return null;
         }
 
-        String normalized = value.trim();
-        if (normalized.length() > ABSOLUTE_MAX_INSTRUCTION_CHARS) {
+        String normalized =
+                value.trim();
+
+        if (normalized.length()
+                > ABSOLUTE_MAX_INSTRUCTION_CHARS) {
             throw new IllegalArgumentException(
-                    fieldName + " превышает абсолютный лимит "
+                    field
+                            + " превышает абсолютный лимит "
                             + ABSOLUTE_MAX_INSTRUCTION_CHARS
                             + " символов"
             );
@@ -137,7 +348,11 @@ public record AiChatRequest(
         return normalized;
     }
 
-    private static int length(String value) {
-        return value == null ? 0 : value.length();
+    private static int length(
+            String value
+    ) {
+        return value == null
+                ? 0
+                : value.length();
     }
 }

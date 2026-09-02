@@ -8,11 +8,10 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Immutable V45 model-routing evidence.
+ * Immutable model-routing governance evidence.
  *
- * <p>{@code pricingComplete} is primitive because the V45 database contract is
- * {@code NOT NULL}. Nullable pricing completeness would permit an in-memory
- * state that cannot be persisted and cannot exist when read back from V45.</p>
+ * <p>Integrity version {@code 1} is retained for persisted V45 evidence.
+ * New V46 decisions are created and sealed as integrity version {@code 2}.</p>
  */
 public record ModelRouteDecision(
         UUID id,
@@ -43,9 +42,11 @@ public record ModelRouteDecision(
         boolean pricingComplete,
         ModelRouteOutcome outcome,
         ModelRouteReason reason,
+        short decisionIntegrityVersion,
         String decisionSha256,
         Instant createdAt
 ) {
+
     public ModelRouteDecision {
         if (requiredCapabilities == null
                 || requiredCapabilities.isEmpty()) {
@@ -53,9 +54,35 @@ public record ModelRouteDecision(
         } else {
             EnumSet<ModelCapability> copy =
                     EnumSet.noneOf(ModelCapability.class);
+
             copy.addAll(requiredCapabilities);
+
             requiredCapabilities =
                     Collections.unmodifiableSet(copy);
         }
+
+        if (decisionIntegrityVersion != 1
+                && decisionIntegrityVersion != 2) {
+            throw new IllegalArgumentException(
+                    "decisionIntegrityVersion должен быть 1 или 2"
+            );
+        }
+    }
+
+    /**
+     * Monthly budget state exposed to audit/admin read models.
+     *
+     * <p>Budget enforcement mode can exist independently of an actual monthly
+     * budget. Therefore absence of {@code monthlyBudgetUsd} means that monthly
+     * budget evaluation was not applicable for this decision.</p>
+     */
+    public MonthlyCostState monthlyCostState() {
+        if (monthlyBudgetUsd == null) {
+            return MonthlyCostState.NOT_EVALUATED;
+        }
+
+        return monthlyCostKnown
+                ? MonthlyCostState.KNOWN
+                : MonthlyCostState.UNKNOWN;
     }
 }

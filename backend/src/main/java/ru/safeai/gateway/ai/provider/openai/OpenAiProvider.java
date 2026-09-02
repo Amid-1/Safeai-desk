@@ -108,19 +108,30 @@ public class OpenAiProvider implements AiProvider {
     }
 
     @Override
-    public AiChatResponse sendMessage(AiChatRequest request) {
-        AiChatRequest prepared = contextWindowService.prepare(
-                request,
-                properties.maxInputTokens(),
-                properties.maxOutputTokens()
-        );
+    public AiChatResponse sendMessage(
+            AiChatRequest request
+    ) {
+        int outputLimit =
+                request.effectiveMaxOutputTokens(
+                        properties.maxOutputTokens()
+                );
+
+        AiChatRequest prepared =
+                contextWindowService.prepare(
+                        request,
+                        properties.maxInputTokens(),
+                        outputLimit
+                );
 
         return retryExecutor.execute(
                 PROVIDER_NAME,
                 properties.model(),
                 prepared.providerOperationId(),
                 attemptTimeout(),
-                attempt -> doSendMessage(prepared, attempt)
+                attempt -> doSendMessage(
+                        prepared,
+                        attempt
+                )
         );
     }
 

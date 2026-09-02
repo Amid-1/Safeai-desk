@@ -31,12 +31,12 @@ import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.model.domain.ModelRouteReason;
 import ru.safeai.gateway.model.domain.ModelRouteRequest;
 import ru.safeai.gateway.model.domain.ModelRouteResult;
+import ru.safeai.gateway.model.service.ModelRoutingEnvelopeService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
 import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -63,6 +63,9 @@ class ChatTurnReservationServiceTest {
 
     private static final UUID MODEL_POLICY_ID =
             UUID.fromString("99999999-9999-4999-8999-999999999999");
+
+    private static final long ROUTING_ENVELOPE_TOKENS =
+            4_096L;
 
     @Mock
     ChatSessionRepository sessionRepository;
@@ -93,6 +96,9 @@ class ChatTurnReservationServiceTest {
 
     @Mock
     ModelRoutingService modelRoutingService;
+
+    @Mock
+    ModelRoutingEnvelopeService routingEnvelopeService;
 
     @Mock
     ChatMetrics metrics;
@@ -133,6 +139,7 @@ class ChatTurnReservationServiceTest {
                         recoveryCoordinator,
                         auditEventService,
                         modelRoutingService,
+                        routingEnvelopeService,
                         properties,
                         metrics,
                         ChatTestFixtures.CLOCK
@@ -175,6 +182,7 @@ class ChatTurnReservationServiceTest {
                 rateLimitService,
                 quotaService,
                 historyRepository,
+                routingEnvelopeService,
                 modelRoutingService
         );
 
@@ -226,6 +234,7 @@ class ChatTurnReservationServiceTest {
         verifyNoInteractions(
                 rateLimitService,
                 quotaService,
+                routingEnvelopeService,
                 modelRoutingService
         );
     }
@@ -272,6 +281,7 @@ class ChatTurnReservationServiceTest {
         verifyNoInteractions(
                 rateLimitService,
                 quotaService,
+                routingEnvelopeService,
                 modelRoutingService
         );
     }
@@ -328,6 +338,7 @@ class ChatTurnReservationServiceTest {
                 );
 
         verifyNoInteractions(
+                routingEnvelopeService,
                 modelRoutingService
         );
     }
@@ -387,6 +398,7 @@ class ChatTurnReservationServiceTest {
         verifyNoInteractions(
                 rateLimitService,
                 quotaService,
+                routingEnvelopeService,
                 modelRoutingService
         );
     }
@@ -443,6 +455,7 @@ class ChatTurnReservationServiceTest {
         verifyNoInteractions(
                 rateLimitService,
                 quotaService,
+                routingEnvelopeService,
                 modelRoutingService
         );
     }
@@ -506,6 +519,20 @@ class ChatTurnReservationServiceTest {
         );
 
         assertThat(
+                result.aiRequest()
+                        .reservedInputTokens()
+        ).isEqualTo(
+                64L
+        );
+
+        assertThat(
+                result.aiRequest()
+                        .maxOutputTokens()
+        ).isEqualTo(
+                256
+        );
+
+        assertThat(
                 persisted.getModelRouteDecisionId()
         ).isEqualTo(
                 MODEL_ROUTE_DECISION_ID
@@ -538,6 +565,7 @@ class ChatTurnReservationServiceTest {
         InOrder order =
                 inOrder(
                         mutexRepository,
+                        routingEnvelopeService,
                         modelRoutingService,
                         messageRepository,
                         turnRepository,
@@ -552,11 +580,17 @@ class ChatTurnReservationServiceTest {
         );
 
         order.verify(
+                routingEnvelopeService
+        ).additionalInputTokenUpperBound(
+                eq(KnowledgeMode.GENERAL),
+                any()
+        );
+
+        order.verify(
                 modelRoutingService
         ).decide(
                 any(ModelRouteRequest.class),
-                any(SafeAiUserPrincipal.class),
-                eq(ChatTestFixtures.NOW)
+                any(SafeAiUserPrincipal.class)
         );
 
         order.verify(
@@ -590,6 +624,10 @@ class ChatTurnReservationServiceTest {
                         ChatTestFixtures.USER_ID
                 )
         );
+
+        order.verify(
+                modelRoutingService
+        ).validateAllowedTurnLinkBeforeExternalSideEffects();
 
         order.verify(
                 rateLimitService
@@ -671,6 +709,7 @@ class ChatTurnReservationServiceTest {
         verifyNoInteractions(
                 rateLimitService,
                 quotaService,
+                routingEnvelopeService,
                 modelRoutingService
         );
     }
@@ -728,8 +767,7 @@ class ChatTurnReservationServiceTest {
                 modelRoutingService
         ).decide(
                 any(ModelRouteRequest.class),
-                any(SafeAiUserPrincipal.class),
-                eq(ChatTestFixtures.NOW)
+                any(SafeAiUserPrincipal.class)
         );
     }
 
@@ -785,6 +823,7 @@ class ChatTurnReservationServiceTest {
         verifyNoInteractions(
                 rateLimitService,
                 quotaService,
+                routingEnvelopeService,
                 modelRoutingService
         );
     }
@@ -850,15 +889,21 @@ class ChatTurnReservationServiceTest {
         );
 
         when(
+                routingEnvelopeService.additionalInputTokenUpperBound(
+                        any(),
+                        any()
+                )
+        ).thenReturn(
+                ROUTING_ENVELOPE_TOKENS
+        );
+
+        when(
                 modelRoutingService.decide(
                         any(
                                 ModelRouteRequest.class
                         ),
                         any(
                                 SafeAiUserPrincipal.class
-                        ),
-                        any(
-                                Instant.class
                         )
                 )
         ).thenReturn(

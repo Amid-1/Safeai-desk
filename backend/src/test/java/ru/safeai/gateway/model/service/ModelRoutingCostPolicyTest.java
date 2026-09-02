@@ -29,6 +29,9 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ModelRoutingCostPolicyTest {
 
+    private static final long NO_ADDITIONAL_INPUT_ENVELOPE =
+            0L;
+
     @Mock
     private ModelRouteDecisionRepository decisionRepository;
 
@@ -36,138 +39,183 @@ class ModelRoutingCostPolicyTest {
 
     @BeforeEach
     void setUp() {
-        policy = new ModelRoutingCostPolicy(
-                decisionRepository
-        );
+        policy =
+                new ModelRoutingCostPolicy(
+                        decisionRepository
+                );
     }
 
     @Test
     void inputEstimateUsesUtf8BytesAndPerMessageOverhead() {
-        ModelRouteRequest request = new ModelRouteRequest(
-                ModelTestFixtures.ORGANIZATION_ID,
-                ModelTestFixtures.USER_ID,
-                ModelTestFixtures.CHAT_ID,
-                ModelTestFixtures.TURN_ID,
-                ModelTestFixtures.CLIENT_REQUEST_ID,
-                ModelTestFixtures.REQUEST_HASH,
-                null,
-                "é",
-                List.of(
-                        new AiMessage(
-                                AiMessageRole.USER,
-                                "A"
-                        )
-                ),
-                Set.of()
-        );
+        ModelRouteRequest request =
+                new ModelRouteRequest(
+                        ModelTestFixtures.ORGANIZATION_ID,
+                        ModelTestFixtures.USER_ID,
+                        ModelTestFixtures.CHAT_ID,
+                        ModelTestFixtures.TURN_ID,
+                        ModelTestFixtures.CLIENT_REQUEST_ID,
+                        ModelTestFixtures.REQUEST_HASH,
+                        null,
+                        "é",
+                        List.of(
+                                new AiMessage(
+                                        AiMessageRole.USER,
+                                        "A"
+                                )
+                        ),
+                        Set.of(),
+                        NO_ADDITIONAL_INPUT_ENVELOPE
+                );
 
-        // "é" = 2 UTF-8 bytes, "A" = 1 byte, two messages * 8 overhead.
-        assertThat(policy.estimateInputTokens(request))
-                .isEqualTo(19L);
+        /*
+         * "é" = 2 UTF-8 bytes, "A" = 1 byte,
+         * two messages * 8 tokens conservative overhead.
+         */
+        assertThat(
+                policy.estimateInputTokens(
+                        request
+                )
+        ).isEqualTo(
+                19L
+        );
     }
 
     @Test
     void effectiveLimitsUseTheMostRestrictiveRuntimeCatalogAndPolicyValue() {
-        ModelCatalogEntry entry = ModelTestFixtures.freeEntry();
-        OrganizationModelPolicy tenantPolicy = ModelTestFixtures.policy(
-                true,
-                Set.of(),
-                Set.of(),
-                null,
-                2_000,
-                512,
-                null,
-                null,
-                BudgetEnforcement.SOFT,
-                false,
-                false,
-                false
+        ModelCatalogEntry entry =
+                ModelTestFixtures.freeEntry();
+
+        OrganizationModelPolicy tenantPolicy =
+                ModelTestFixtures.policy(
+                        true,
+                        Set.of(),
+                        Set.of(),
+                        null,
+                        2_000,
+                        512,
+                        null,
+                        null,
+                        BudgetEnforcement.SOFT,
+                        false,
+                        false,
+                        false
+                );
+
+        assertThat(
+                policy.effectiveInputLimit(
+                        entry,
+                        ModelTestFixtures.freeRuntime(),
+                        tenantPolicy,
+                        true
+                )
+        ).isEqualTo(
+                2_000L
         );
 
-        assertThat(policy.effectiveInputLimit(
-                entry,
-                ModelTestFixtures.freeRuntime(),
-                tenantPolicy,
-                true
-        )).isEqualTo(2_000L);
-
-        assertThat(policy.effectiveOutputLimit(
-                entry,
-                ModelTestFixtures.freeRuntime(),
-                tenantPolicy,
-                true
-        )).isEqualTo(512L);
+        assertThat(
+                policy.effectiveOutputLimit(
+                        entry,
+                        ModelTestFixtures.freeRuntime(),
+                        tenantPolicy,
+                        true
+                )
+        ).isEqualTo(
+                512L
+        );
     }
 
     @Test
     void freeCatalogEntryProducesKnownZeroCost() {
-        var estimate = policy.estimateCost(
-                ModelTestFixtures.freeEntry(),
-                ModelTestFixtures.freeRuntime(),
-                1_000,
-                500
+        ModelRoutingCostPolicy.PricingEstimate estimate =
+                policy.estimateCost(
+                        ModelTestFixtures.freeEntry(),
+                        ModelTestFixtures.freeRuntime(),
+                        1_000,
+                        500
+                );
+
+        assertThat(
+                estimate.cost()
+        ).isEqualByComparingTo(
+                BigDecimal.ZERO
         );
 
-        assertThat(estimate.cost())
-                .isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(estimate.complete())
-                .isTrue();
+        assertThat(
+                estimate.complete()
+        ).isTrue();
     }
 
     @Test
     void configuredCatalogEntryCalculatesWorstCaseCostAtScaleTwelve() {
-        var estimate = policy.estimateCost(
-                ModelTestFixtures.configuredEntry(),
-                ModelTestFixtures.configuredRuntime(),
-                1_000,
-                500
+        ModelRoutingCostPolicy.PricingEstimate estimate =
+                policy.estimateCost(
+                        ModelTestFixtures.configuredEntry(),
+                        ModelTestFixtures.configuredRuntime(),
+                        1_000,
+                        500
+                );
+
+        assertThat(
+                estimate.cost()
+        ).isEqualByComparingTo(
+                "0.003000000000"
         );
 
-        assertThat(estimate.cost())
-                .isEqualByComparingTo("0.003000000000");
-        assertThat(estimate.complete())
-                .isTrue();
+        assertThat(
+                estimate.complete()
+        ).isTrue();
     }
 
     @Test
     void incompleteEntryWithMissingOrdinaryPriceIsUnknown() {
-        ModelCatalogEntry entry = ModelTestFixtures.entry(
-                ru.safeai.gateway.model.domain.ModelLifecycle.ACTIVE,
-                ModelPricingStatus.INCOMPLETE,
-                false,
-                null,
-                null,
-                Set.of(),
-                ru.safeai.gateway.model.domain.ModelRetentionStatus.NOT_DECLARED,
-                ru.safeai.gateway.model.domain.ModelTrainingUseStatus.NOT_DECLARED
-        );
+        ModelCatalogEntry entry =
+                ModelTestFixtures.entry(
+                        ru.safeai.gateway.model.domain.ModelLifecycle.ACTIVE,
+                        ModelPricingStatus.INCOMPLETE,
+                        false,
+                        null,
+                        null,
+                        Set.of(),
+                        ru.safeai.gateway.model.domain.ModelRetentionStatus.NOT_DECLARED,
+                        ru.safeai.gateway.model.domain.ModelTrainingUseStatus.NOT_DECLARED
+                );
 
-        var estimate = policy.estimateCost(
-                entry,
-                ModelTestFixtures.configuredRuntime(),
-                10,
-                10
-        );
+        ModelRoutingCostPolicy.PricingEstimate estimate =
+                policy.estimateCost(
+                        entry,
+                        ModelTestFixtures.configuredRuntime(),
+                        10,
+                        10
+                );
 
-        assertThat(estimate.cost())
-                .isNull();
-        assertThat(estimate.complete())
-                .isFalse();
+        assertThat(
+                estimate.cost()
+        ).isNull();
+
+        assertThat(
+                estimate.complete()
+        ).isFalse();
     }
 
     @Test
     void legacyConfiguredRuntimeCanEstimateButNeverClaimsCompletePricing() {
-        var estimate = policy.estimateCost(
-                null,
-                ModelTestFixtures.configuredRuntime(),
-                1_000,
-                500
+        ModelRoutingCostPolicy.PricingEstimate estimate =
+                policy.estimateCost(
+                        null,
+                        ModelTestFixtures.configuredRuntime(),
+                        1_000,
+                        500
+                );
+
+        assertThat(
+                estimate.cost()
+        ).isEqualByComparingTo(
+                "0.003000000000"
         );
 
-        assertThat(estimate.cost())
-                .isEqualByComparingTo("0.003000000000");
-        assertThat(estimate.complete())
-                .isFalse();
+        assertThat(
+                estimate.complete()
+        ).isFalse();
     }
 
     @Test
@@ -175,124 +223,261 @@ class ModelRoutingCostPolicyTest {
         OrganizationModelPolicy tenantPolicy =
                 ModelTestFixtures.hardPolicy();
 
-        var snapshot = policy.evaluateBudget(
-                ModelTestFixtures.ORGANIZATION_ID,
-                tenantPolicy,
-                false,
-                BigDecimal.ONE,
-                ModelTestFixtures.NOW
-        );
-
-        assertThat(snapshot.monthlyBudgetUsd())
-                .isNull();
-        assertThat(snapshot.monthlyCostKnown())
-                .isTrue();
-        verify(decisionRepository, never())
-                .lockOrganizationBudget(
-                        ModelTestFixtures.ORGANIZATION_ID
+        ModelRoutingCostPolicy.BudgetSnapshot snapshot =
+                policy.evaluateBudget(
+                        ModelTestFixtures.ORGANIZATION_ID,
+                        tenantPolicy,
+                        false,
+                        completePricing(
+                                BigDecimal.ONE
+                        ),
+                        ModelTestFixtures.NOW
                 );
+
+        assertThat(
+                snapshot.monthlyBudgetUsd()
+        ).isNull();
+
+        assertThat(
+                snapshot.monthlySpentUsd()
+        ).isNull();
+
+        assertThat(
+                snapshot.monthlyProjectedUsd()
+        ).isNull();
+
+        /*
+         * No monthly budget evaluation took place. This is intentionally
+         * false: ModelRouteDecision.monthlyCostState() maps absence of a
+         * monthly budget to NOT_EVALUATED rather than KNOWN.
+         */
+        assertThat(
+                snapshot.monthlyCostKnown()
+        ).isFalse();
+
+        assertThat(
+                snapshot.exceeded()
+        ).isFalse();
+
+        assertThat(
+                snapshot.denialReason()
+        ).isNull();
+
+        verify(
+                decisionRepository,
+                never()
+        ).lockOrganizationBudget(
+                ModelTestFixtures.ORGANIZATION_ID
+        );
+    }
+
+    @Test
+    void enabledPolicyWithoutMonthlyBudgetIsNotEvaluatedAndDoesNotLockBudget() {
+        OrganizationModelPolicy tenantPolicy =
+                ModelTestFixtures.policy(
+                        true,
+                        Set.of(),
+                        Set.of(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        BudgetEnforcement.HARD,
+                        false,
+                        false,
+                        false
+                );
+
+        ModelRoutingCostPolicy.BudgetSnapshot snapshot =
+                policy.evaluateBudget(
+                        ModelTestFixtures.ORGANIZATION_ID,
+                        tenantPolicy,
+                        true,
+                        completePricing(
+                                BigDecimal.ONE
+                        ),
+                        ModelTestFixtures.NOW
+                );
+
+        assertThat(
+                snapshot.monthlyBudgetUsd()
+        ).isNull();
+
+        assertThat(
+                snapshot.monthlySpentUsd()
+        ).isNull();
+
+        assertThat(
+                snapshot.monthlyProjectedUsd()
+        ).isNull();
+
+        assertThat(
+                snapshot.monthlyCostKnown()
+        ).isFalse();
+
+        assertThat(
+                snapshot.exceeded()
+        ).isFalse();
+
+        assertThat(
+                snapshot.denialReason()
+        ).isNull();
+
+        verify(
+                decisionRepository,
+                never()
+        ).lockOrganizationBudget(
+                ModelTestFixtures.ORGANIZATION_ID
+        );
     }
 
     @Test
     void hardBudgetFailsClosedWhenCommittedCostIsUnknown() {
         OrganizationModelPolicy tenantPolicy =
                 ModelTestFixtures.hardPolicy();
+
         stubMonthlySnapshot(
-                new BigDecimal("20.000000000000"),
+                new BigDecimal(
+                        "20.000000000000"
+                ),
                 1L
         );
 
-        var snapshot = policy.evaluateBudget(
-                ModelTestFixtures.ORGANIZATION_ID,
-                tenantPolicy,
-                true,
-                BigDecimal.ONE,
-                ModelTestFixtures.NOW
-        );
-
-        assertThat(snapshot.monthlyCostKnown())
-                .isFalse();
-        assertThat(snapshot.denialReason())
-                .isEqualTo(
-                        ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE
+        ModelRoutingCostPolicy.BudgetSnapshot snapshot =
+                policy.evaluateBudget(
+                        ModelTestFixtures.ORGANIZATION_ID,
+                        tenantPolicy,
+                        true,
+                        completePricing(
+                                BigDecimal.ONE
+                        ),
+                        ModelTestFixtures.NOW
                 );
+
+        assertThat(
+                snapshot.monthlyCostKnown()
+        ).isFalse();
+
+        assertThat(
+                snapshot.denialReason()
+        ).isEqualTo(
+                ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE
+        );
     }
 
     @Test
     void hardBudgetRejectsProjectedSpendAboveLimit() {
         OrganizationModelPolicy tenantPolicy =
                 ModelTestFixtures.hardPolicy();
+
         stubMonthlySnapshot(
-                new BigDecimal("99.500000000000"),
+                new BigDecimal(
+                        "99.500000000000"
+                ),
                 0L
         );
 
-        var snapshot = policy.evaluateBudget(
-                ModelTestFixtures.ORGANIZATION_ID,
-                tenantPolicy,
-                true,
-                new BigDecimal("1.000000000000"),
-                ModelTestFixtures.NOW
+        ModelRoutingCostPolicy.BudgetSnapshot snapshot =
+                policy.evaluateBudget(
+                        ModelTestFixtures.ORGANIZATION_ID,
+                        tenantPolicy,
+                        true,
+                        completePricing(
+                                new BigDecimal(
+                                        "1.000000000000"
+                                )
+                        ),
+                        ModelTestFixtures.NOW
+                );
+
+        assertThat(
+                snapshot.monthlyProjectedUsd()
+        ).isEqualByComparingTo(
+                "100.500000000000"
         );
 
-        assertThat(snapshot.monthlyProjectedUsd())
-                .isEqualByComparingTo("100.500000000000");
-        assertThat(snapshot.exceeded())
-                .isTrue();
-        assertThat(snapshot.denialReason())
-                .isEqualTo(
-                        ModelRouteReason.MONTHLY_BUDGET_EXCEEDED
-                );
+        assertThat(
+                snapshot.exceeded()
+        ).isTrue();
+
+        assertThat(
+                snapshot.denialReason()
+        ).isEqualTo(
+                ModelRouteReason.MONTHLY_BUDGET_EXCEEDED
+        );
     }
 
     @Test
     void softBudgetRecordsExceededStateWithoutDenying() {
-        OrganizationModelPolicy tenantPolicy = ModelTestFixtures.policy(
-                true,
-                Set.of(),
-                Set.of(),
-                null,
-                null,
-                null,
-                null,
-                new BigDecimal("10.000000000000"),
-                BudgetEnforcement.SOFT,
-                false,
-                false,
-                false
-        );
+        OrganizationModelPolicy tenantPolicy =
+                ModelTestFixtures.policy(
+                        true,
+                        Set.of(),
+                        Set.of(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        new BigDecimal(
+                                "10.000000000000"
+                        ),
+                        BudgetEnforcement.SOFT,
+                        false,
+                        false,
+                        false
+                );
+
         stubMonthlySnapshot(
-                new BigDecimal("9.500000000000"),
+                new BigDecimal(
+                        "9.500000000000"
+                ),
                 0L
         );
 
-        var snapshot = policy.evaluateBudget(
-                ModelTestFixtures.ORGANIZATION_ID,
-                tenantPolicy,
-                true,
-                new BigDecimal("1.000000000000"),
-                ModelTestFixtures.NOW
-        );
+        ModelRoutingCostPolicy.BudgetSnapshot snapshot =
+                policy.evaluateBudget(
+                        ModelTestFixtures.ORGANIZATION_ID,
+                        tenantPolicy,
+                        true,
+                        completePricing(
+                                new BigDecimal(
+                                        "1.000000000000"
+                                )
+                        ),
+                        ModelTestFixtures.NOW
+                );
 
-        assertThat(snapshot.exceeded())
-                .isTrue();
-        assertThat(snapshot.denialReason())
-                .isNull();
+        assertThat(
+                snapshot.exceeded()
+        ).isTrue();
+
+        assertThat(
+                snapshot.denialReason()
+        ).isNull();
     }
 
     @Test
     void budgetWindowUsesUtcCalendarMonthBoundaries() {
         OrganizationModelPolicy tenantPolicy =
                 ModelTestFixtures.hardPolicy();
-        Instant instant = Instant.parse(
-                "2026-08-31T23:59:59Z"
-        );
 
-        when(decisionRepository.loadCommittedMonthlyCostSnapshot(
-                ModelTestFixtures.ORGANIZATION_ID,
-                Instant.parse("2026-08-01T00:00:00Z"),
-                Instant.parse("2026-09-01T00:00:00Z")
-        )).thenReturn(
+        Instant instant =
+                Instant.parse(
+                        "2026-08-31T23:59:59Z"
+                );
+
+        when(
+                decisionRepository.loadCommittedMonthlyCostSnapshot(
+                        ModelTestFixtures.ORGANIZATION_ID,
+                        Instant.parse(
+                                "2026-08-01T00:00:00Z"
+                        ),
+                        Instant.parse(
+                                "2026-09-01T00:00:00Z"
+                        )
+                )
+        ).thenReturn(
                 new ModelRouteDecisionRepository.MonthlyCostSnapshot(
                         BigDecimal.ZERO,
                         0L
@@ -303,27 +488,49 @@ class ModelRoutingCostPolicyTest {
                 ModelTestFixtures.ORGANIZATION_ID,
                 tenantPolicy,
                 true,
-                BigDecimal.ZERO,
+                completePricing(
+                        BigDecimal.ZERO
+                ),
                 instant
         );
 
-        verify(decisionRepository)
-                .loadCommittedMonthlyCostSnapshot(
-                        ModelTestFixtures.ORGANIZATION_ID,
-                        Instant.parse("2026-08-01T00:00:00Z"),
-                        Instant.parse("2026-09-01T00:00:00Z")
-                );
+        verify(
+                decisionRepository
+        ).loadCommittedMonthlyCostSnapshot(
+                ModelTestFixtures.ORGANIZATION_ID,
+                Instant.parse(
+                        "2026-08-01T00:00:00Z"
+                ),
+                Instant.parse(
+                        "2026-09-01T00:00:00Z"
+                )
+        );
+    }
+
+    private static ModelRoutingCostPolicy.PricingEstimate completePricing(
+            BigDecimal cost
+    ) {
+        return new ModelRoutingCostPolicy.PricingEstimate(
+                cost,
+                true
+        );
     }
 
     private void stubMonthlySnapshot(
             BigDecimal committed,
             long unknownCount
     ) {
-        when(decisionRepository.loadCommittedMonthlyCostSnapshot(
-                ModelTestFixtures.ORGANIZATION_ID,
-                Instant.parse("2026-08-01T00:00:00Z"),
-                Instant.parse("2026-09-01T00:00:00Z")
-        )).thenReturn(
+        when(
+                decisionRepository.loadCommittedMonthlyCostSnapshot(
+                        ModelTestFixtures.ORGANIZATION_ID,
+                        Instant.parse(
+                                "2026-08-01T00:00:00Z"
+                        ),
+                        Instant.parse(
+                                "2026-09-01T00:00:00Z"
+                        )
+                )
+        ).thenReturn(
                 new ModelRouteDecisionRepository.MonthlyCostSnapshot(
                         committed,
                         unknownCount

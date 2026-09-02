@@ -1,6 +1,7 @@
 package ru.safeai.gateway.chat.service;
 
 import lombok.extern.slf4j.Slf4j;
+import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.provider.AiProvider;
@@ -15,6 +16,8 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.rag.KnowledgeRagService;
 import ru.safeai.gateway.knowledge.rag.RagCompletion;
 import ru.safeai.gateway.knowledge.rag.RagPreparation;
+import ru.safeai.gateway.model.exception.ModelRouteEnvelopeExceededException;
+import ru.safeai.gateway.model.service.ModelRouteExecutionGuard;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -39,6 +42,10 @@ final class ChatTurnExecutionCoordinator {
     private final ChatTurnLeaseService leaseService;
     private final KnowledgeRagService ragService;
 
+    /**
+     * Constructor intentionally retains the pre-V46 signature so ChatService
+     * and existing tests/wiring do not lose functionality.
+     */
     ChatTurnExecutionCoordinator(
             AiProvider aiProvider,
             ChatTurnReservationService reservationService,
@@ -48,7 +55,10 @@ final class ChatTurnExecutionCoordinator {
             ChatTurnLeaseService leaseService,
             KnowledgeRagService ragService
     ) {
-        this.aiProvider = Objects.requireNonNull(aiProvider, "aiProvider не должен быть null");
+        this.aiProvider = Objects.requireNonNull(
+                aiProvider,
+                "aiProvider не должен быть null"
+        );
         this.reservationService = Objects.requireNonNull(
                 reservationService,
                 "reservationService не должен быть null"
@@ -61,9 +71,18 @@ final class ChatTurnExecutionCoordinator {
                 securityStateService,
                 "securityStateService не должен быть null"
         );
-        this.lockService = Objects.requireNonNull(lockService, "lockService не должен быть null");
-        this.leaseService = Objects.requireNonNull(leaseService, "leaseService не должен быть null");
-        this.ragService = Objects.requireNonNull(ragService, "ragService не должен быть null");
+        this.lockService = Objects.requireNonNull(
+                lockService,
+                "lockService не должен быть null"
+        );
+        this.leaseService = Objects.requireNonNull(
+                leaseService,
+                "leaseService не должен быть null"
+        );
+        this.ragService = Objects.requireNonNull(
+                ragService,
+                "ragService не должен быть null"
+        );
     }
 
     SendMessageResponse execute(
@@ -71,43 +90,97 @@ final class ChatTurnExecutionCoordinator {
             SendMessageRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        ChatLockService.ChatLock redisLock = lockService.lock(chatId);
-        ChatTurnLeaseService.LeaseWatch leaseWatch = null;
+        ChatLockService.ChatLock redisLock =
+                lockService.lock(chatId);
+
+        ChatTurnLeaseService.LeaseWatch leaseWatch =
+                null;
 
         try {
-            ChatProcessingContext context = reservationService.reserveOrReplay(
-                    chatId,
-                    request,
+            ChatProcessingContext context =
+                    reservationService.reserveOrReplay(
+                            chatId,
+                            request,
+                            currentUser
+                    );
+
+            if (context.replay()) {
+                return finalizationService.replaySucceeded(
+                        context,
+                        currentUser
+                );
+            }
+
+            leaseWatch =
+                    startLeaseWatch(
+                            context,
+                            currentUser
+                    );
+
+            AiChatRequest reservedAiRequest =
+                    Objects.requireNonNull(
+                            context.aiRequest(),
+                            "reserved aiRequest не должен быть null"
+                    );
+
+            RagPreparation ragPreparation =
+                    prepareRag(
+                            context,
+                            currentUser
+                    );
+
+            AiChatRequest preparedAiRequest =
+                    Objects.requireNonNull(
+                            ragPreparation.aiRequest(),
+                            "ragPreparation.aiRequest не должен быть null"
+                    );
+
+            enforceReservedRouteEnvelope(
+                    context,
+                    reservedAiRequest,
+                    preparedAiRequest,
                     currentUser
             );
 
-            if (context.replay()) {
-                return finalizationService.replaySucceeded(context, currentUser);
-            }
-
-            leaseWatch = startLeaseWatch(context, currentUser);
-
-            RagPreparation ragPreparation = prepareRag(context, currentUser);
-            context = context.withAiRequest(ragPreparation.aiRequest());
+            context =
+                    context.withAiRequest(
+                            preparedAiRequest
+                    );
 
             /*
              * Knowledge ACL contract: successful prepare(...) authorizes this
-             * turn and materializes the retrieval context. ACL changes after
-             * this point apply to future turns; strict in-flight revocation is
-             * intentionally not claimed by the current contract.
+             * turn and materializes retrieval context. ACL changes after this
+             * point apply to future turns; strict in-flight revocation is not
+             * claimed by the current contract.
              */
 
-            finalizationService.markProviderCallStarted(context);
-            ensureOwnershipBeforeProvider(context, redisLock, leaseWatch, currentUser);
+            finalizationService.markProviderCallStarted(
+                    context
+            );
 
-            AiChatResponse providerResponse = invokeProvider(context, currentUser);
-            RagCompletion ragCompletion = completeRag(
+            ensureOwnershipBeforeProvider(
                     context,
-                    ragPreparation,
-                    providerResponse,
+                    redisLock,
+                    leaseWatch,
                     currentUser
             );
-            AiChatResponse response = ragCompletion.response();
+
+            AiChatResponse providerResponse =
+                    invokeProvider(
+                            context,
+                            currentUser
+                    );
+
+            RagCompletion ragCompletion =
+                    completeRag(
+                            context,
+                            ragPreparation,
+                            providerResponse,
+                            currentUser
+                    );
+
+            AiChatResponse response =
+                    ragCompletion.response();
 
             ensureOwnershipAfterProvider(
                     context,
@@ -117,12 +190,13 @@ final class ChatTurnExecutionCoordinator {
                     currentUser
             );
 
-            SendMessageResponse result = persistSuccess(
-                    context,
-                    ragCompletion,
-                    response,
-                    currentUser
-            );
+            SendMessageResponse result =
+                    persistSuccess(
+                            context,
+                            ragCompletion,
+                            response,
+                            currentUser
+                    );
 
             securityStateService.assertStillActive(
                     context.chatId(),
@@ -133,8 +207,13 @@ final class ChatTurnExecutionCoordinator {
 
             return result;
         } finally {
-            leaseService.close(leaseWatch);
-            lockService.unlockQuietly(redisLock);
+            leaseService.close(
+                    leaseWatch
+            );
+
+            lockService.unlockQuietly(
+                    redisLock
+            );
         }
     }
 
@@ -167,7 +246,10 @@ final class ChatTurnExecutionCoordinator {
     ) {
         try {
             return Objects.requireNonNull(
-                    ragService.prepare(context, currentUser),
+                    ragService.prepare(
+                            context,
+                            currentUser
+                    ),
                     "ragPreparation не должен быть null"
             );
         } catch (RuntimeException exception) {
@@ -189,6 +271,91 @@ final class ChatTurnExecutionCoordinator {
         }
     }
 
+    private void enforceReservedRouteEnvelope(
+            ChatProcessingContext context,
+            AiChatRequest reservedRequest,
+            AiChatRequest preparedRequest,
+            SafeAiUserPrincipal currentUser
+    ) {
+        try {
+            UUID decisionId =
+                    context.modelRouteDecisionId();
+
+            if (decisionId == null) {
+                /*
+                 * Compatibility for legacy/direct coordinator tests. Real V46
+                 * reserved turns carry a persisted model-route decision id.
+                 */
+                ModelRouteExecutionGuard
+                        .assertWithinReservedInputEnvelope(
+                                reservedRequest,
+                                preparedRequest
+                        );
+            } else {
+                ModelRouteExecutionGuard
+                        .assertWithinReservedInputEnvelope(
+                                decisionId,
+                                reservedRequest,
+                                preparedRequest
+                        );
+            }
+        } catch (ModelRouteEnvelopeExceededException exception) {
+            log.warn(
+                    "Model route input envelope exceeded before provider call: "
+                            + "chatId={}, turnId={}, decisionId={}, "
+                            + "reservedInputTokens={}, actualEstimatedInputTokens={}",
+                    context.chatId(),
+                    context.turnId(),
+                    exception.decisionId(),
+                    exception.reservedInputTokens(),
+                    exception.actualEstimatedInputTokens()
+            );
+
+            failRouteEnvelope(
+                    context,
+                    currentUser,
+                    exception
+            );
+        } catch (IllegalStateException exception) {
+            log.warn(
+                    "Model route execution envelope integrity violation before provider call: "
+                            + "chatId={}, turnId={}, decisionId={}, error={}",
+                    context.chatId(),
+                    context.turnId(),
+                    context.modelRouteDecisionId(),
+                    exception.getMessage()
+            );
+
+            failRouteEnvelope(
+                    context,
+                    currentUser,
+                    exception
+            );
+        }
+    }
+
+    private void failRouteEnvelope(
+            ChatProcessingContext context,
+            SafeAiUserPrincipal currentUser,
+            RuntimeException exception
+    ) {
+        persistPreProviderFailureQuietly(
+                context,
+                "MODEL_ROUTE_ENVELOPE_EXCEEDED",
+                "MODEL_ROUTE_INPUT_ENVELOPE_EXCEEDED",
+                currentUser,
+                exception
+        );
+
+        throw new ChatTurnFailedException(
+                context.chatId(),
+                context.turnId(),
+                context.clientRequestId(),
+                "MODEL_ROUTE_INPUT_ENVELOPE_EXCEEDED",
+                exception
+        );
+    }
+
     private void persistPreProviderFailureQuietly(
             ChatProcessingContext context,
             String providerErrorType,
@@ -204,7 +371,9 @@ final class ChatTurnExecutionCoordinator {
                     currentUser
             );
         } catch (RuntimeException persistenceException) {
-            primary.addSuppressed(persistenceException);
+            primary.addSuppressed(
+                    persistenceException
+            );
         }
     }
 
@@ -215,9 +384,15 @@ final class ChatTurnExecutionCoordinator {
             SafeAiUserPrincipal currentUser
     ) {
         try {
-            lockService.ensureValid(redisLock);
-            leaseService.ensureValid(leaseWatch);
-        } catch (ChatLockUnavailableException | ChatStaleProcessorException exception) {
+            lockService.ensureValid(
+                    redisLock
+            );
+
+            leaseService.ensureValid(
+                    leaseWatch
+            );
+        } catch (ChatLockUnavailableException
+                 | ChatStaleProcessorException exception) {
             markAmbiguousQuietly(
                     context,
                     null,
@@ -228,7 +403,10 @@ final class ChatTurnExecutionCoordinator {
                     exception
             );
 
-            throw ambiguous(context, exception);
+            throw ambiguous(
+                    context,
+                    exception
+            );
         }
     }
 
@@ -240,9 +418,15 @@ final class ChatTurnExecutionCoordinator {
             SafeAiUserPrincipal currentUser
     ) {
         try {
-            lockService.ensureValid(redisLock);
-            leaseService.ensureValid(leaseWatch);
-        } catch (ChatLockUnavailableException | ChatStaleProcessorException exception) {
+            lockService.ensureValid(
+                    redisLock
+            );
+
+            leaseService.ensureValid(
+                    leaseWatch
+            );
+        } catch (ChatLockUnavailableException
+                 | ChatStaleProcessorException exception) {
             markAmbiguousQuietly(
                     context,
                     response.requestedModel(),
@@ -253,7 +437,10 @@ final class ChatTurnExecutionCoordinator {
                     exception
             );
 
-            throw ambiguous(context, exception);
+            throw ambiguous(
+                    context,
+                    exception
+            );
         }
     }
 
@@ -264,7 +451,10 @@ final class ChatTurnExecutionCoordinator {
         AiChatResponse response;
 
         try {
-            response = aiProvider.sendMessage(context.aiRequest());
+            response =
+                    aiProvider.sendMessage(
+                            context.aiRequest()
+                    );
         } catch (AiProviderException exception) {
             if (exception.isOutcomeAmbiguous()) {
                 markAmbiguousQuietly(
@@ -276,23 +466,40 @@ final class ChatTurnExecutionCoordinator {
                         currentUser,
                         exception
                 );
-                throw ambiguous(context, exception);
+
+                throw ambiguous(
+                        context,
+                        exception
+                );
             }
 
             try {
-                finalizationService.failUnambiguous(context, exception, currentUser);
+                finalizationService.failUnambiguous(
+                        context,
+                        exception,
+                        currentUser
+                );
             } catch (ChatStaleProcessorException staleProcessorException) {
-                exception.addSuppressed(staleProcessorException);
-                throw ambiguous(context, exception);
+                exception.addSuppressed(
+                        staleProcessorException
+                );
+
+                throw ambiguous(
+                        context,
+                        exception
+                );
             } catch (RuntimeException finalizationException) {
-                exception.addSuppressed(finalizationException);
+                exception.addSuppressed(
+                        finalizationException
+                );
             }
 
             throw new ChatTurnFailedException(
                     context.chatId(),
                     context.turnId(),
                     context.clientRequestId(),
-                    "AI_PROVIDER_" + exception.getErrorType().name(),
+                    "AI_PROVIDER_"
+                            + exception.getErrorType().name(),
                     exception
             );
         } catch (RuntimeException unexpectedProviderException) {
@@ -300,18 +507,26 @@ final class ChatTurnExecutionCoordinator {
                     context,
                     null,
                     null,
-                    unexpectedProviderException.getClass().getSimpleName(),
+                    unexpectedProviderException
+                            .getClass()
+                            .getSimpleName(),
                     "AI_PROVIDER_UNCLASSIFIED_OUTCOME",
                     currentUser,
                     unexpectedProviderException
             );
-            throw ambiguous(context, unexpectedProviderException);
+
+            throw ambiguous(
+                    context,
+                    unexpectedProviderException
+            );
         }
 
         if (response == null) {
-            IllegalStateException nullResponse = new IllegalStateException(
-                    "AI provider вернул null response"
-            );
+            IllegalStateException nullResponse =
+                    new IllegalStateException(
+                            "AI provider вернул null response"
+                    );
+
             markAmbiguousQuietly(
                     context,
                     null,
@@ -321,7 +536,11 @@ final class ChatTurnExecutionCoordinator {
                     currentUser,
                     nullResponse
             );
-            throw ambiguous(context, nullResponse);
+
+            throw ambiguous(
+                    context,
+                    nullResponse
+            );
         }
 
         return response;
@@ -334,14 +553,20 @@ final class ChatTurnExecutionCoordinator {
             SafeAiUserPrincipal currentUser
     ) {
         try {
-            RagCompletion completion = Objects.requireNonNull(
-                    ragService.complete(preparation, providerResponse),
-                    "ragCompletion не должен быть null"
-            );
+            RagCompletion completion =
+                    Objects.requireNonNull(
+                            ragService.complete(
+                                    preparation,
+                                    providerResponse
+                            ),
+                            "ragCompletion не должен быть null"
+                    );
+
             Objects.requireNonNull(
                     completion.response(),
                     "ragCompletion.response не должен быть null"
             );
+
             return completion;
         } catch (RuntimeException exception) {
             markAmbiguousQuietly(
@@ -353,7 +578,11 @@ final class ChatTurnExecutionCoordinator {
                     currentUser,
                     exception
             );
-            throw ambiguous(context, exception);
+
+            throw ambiguous(
+                    context,
+                    exception
+            );
         }
     }
 
@@ -364,21 +593,34 @@ final class ChatTurnExecutionCoordinator {
             SafeAiUserPrincipal currentUser
     ) {
         try {
-            return finalizationService.succeedRag(context, completion, currentUser);
+            return finalizationService.succeedRag(
+                    context,
+                    completion,
+                    currentUser
+            );
         } catch (ChatStaleProcessorException exception) {
-            throw ambiguous(context, exception);
+            throw ambiguous(
+                    context,
+                    exception
+            );
         } catch (RuntimeException persistenceException) {
             try {
-                finalizationService.markAmbiguousAfterPersistenceFailure(
-                        context,
-                        response,
-                        currentUser
-                );
+                finalizationService
+                        .markAmbiguousAfterPersistenceFailure(
+                                context,
+                                response,
+                                currentUser
+                        );
             } catch (RuntimeException ambiguityPersistenceException) {
-                persistenceException.addSuppressed(ambiguityPersistenceException);
+                persistenceException.addSuppressed(
+                        ambiguityPersistenceException
+                );
             }
 
-            throw ambiguous(context, persistenceException);
+            throw ambiguous(
+                    context,
+                    persistenceException
+            );
         }
     }
 
@@ -402,7 +644,10 @@ final class ChatTurnExecutionCoordinator {
                     currentUser
             );
         } catch (RuntimeException persistenceException) {
-            primary.addSuppressed(persistenceException);
+            primary.addSuppressed(
+                    persistenceException
+            );
+
             log.error(
                     "Failed to persist AMBIGUOUS chat turn: turnId={}",
                     context.turnId(),
