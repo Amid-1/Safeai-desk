@@ -418,7 +418,7 @@ function AdminModelsPage() {
                 await refreshCatalog()
 
                 setNotice(
-                    `Подключённая модель добавлена в каталог: ${imported.modelKey}, версия ${imported.version}.`,
+                    `Подключённая модель синхронизирована с каталогом: ${imported.modelKey}, версия ${imported.version}.`,
                 )
             } catch (failure) {
                 setError(

@@ -58,6 +58,12 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ChatServiceTest {
 
+    private static final long RESERVED_INPUT_TOKENS =
+            64L;
+
+    private static final int MAX_OUTPUT_TOKENS =
+            256;
+
     @Mock ChatSessionRepository sessionRepository;
     @Mock ChatMessageRepository messageRepository;
     @Mock UserRepository userRepository;
@@ -707,17 +713,23 @@ class ChatServiceTest {
     }
 
     private static ChatProcessingContext processingContext() {
-        AiChatRequest aiRequest = new AiChatRequest(
-                ChatTestFixtures.USER_ID,
-                ChatTestFixtures.ORGANIZATION_ID,
-                ChatTestFixtures.CHAT_ID,
-                ChatTestFixtures.PROVIDER_OPERATION_ID,
-                null,
-                null,
-                "Question",
-                List.of()
+        AiChatRequest aiRequest =
+                new AiChatRequest(
+                        ChatTestFixtures.USER_ID,
+                        ChatTestFixtures.ORGANIZATION_ID,
+                        ChatTestFixtures.CHAT_ID,
+                        ChatTestFixtures.PROVIDER_OPERATION_ID,
+                        null,
+                        null,
+                        "Question",
+                        List.of(),
+                        RESERVED_INPUT_TOKENS,
+                        MAX_OUTPUT_TOKENS
+                );
+
+        return ChatProcessingContextTestFixtures.processing(
+                aiRequest
         );
-        return ChatProcessingContextTestFixtures.processing(aiRequest);
     }
 
     private static ChatProcessingContext replayContext() {

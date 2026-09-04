@@ -67,24 +67,63 @@ final class ModelRoutingCostPolicy {
             return unverifiableBudget(policy);
         }
 
-        boolean currentCostKnown = currentPricing.complete()
-                && currentPricing.cost() != null;
-        boolean costKnown = commitment.unknownCommittedCostCount() == 0L
-                && currentCostKnown;
+        boolean currentCostKnown =
+                currentPricing.complete()
+                        && currentPricing.cost() != null;
 
-        BigDecimal projected = costKnown
-                ? spent.add(currentPricing.cost())
-                : null;
+        boolean costKnown =
+                commitment.unknownCommittedCostCount() == 0L
+                        && currentCostKnown;
 
-        if (projected != null
-                && ModelControlPlaneNumericValidation.violatesNonNegativeNumeric30Scale12(projected)) {
-            return unverifiableBudget(policy);
+        /*
+         * committedCostUsd is a known lower bound when historical rows with
+         * unknown cost exist. A complete current request cost can safely be
+         * added to that lower bound. This allows us to distinguish a budget
+         * that is already provably exceeded from one that is merely
+         * unverifiable.
+         */
+        BigDecimal knownLowerBound =
+                currentCostKnown
+                        ? spent.add(
+                                currentPricing.cost()
+                        )
+                        : spent;
+
+        if (ModelControlPlaneNumericValidation
+                .violatesNonNegativeNumeric30Scale12(
+                        knownLowerBound
+                )) {
+            return unverifiableBudget(
+                    policy
+            );
         }
 
-        boolean exceeded = projected != null
-                && projected.compareTo(policy.monthlyBudgetUsd()) > 0;
+        BigDecimal projected =
+                costKnown
+                        ? knownLowerBound
+                        : null;
 
-        if (policy.budgetEnforcement() == BudgetEnforcement.HARD && !costKnown) {
+        boolean provenExceeded =
+                knownLowerBound.compareTo(
+                        policy.monthlyBudgetUsd()
+                ) > 0;
+
+        if (policy.budgetEnforcement()
+                == BudgetEnforcement.HARD
+                && provenExceeded) {
+            return new BudgetSnapshot(
+                    policy.monthlyBudgetUsd(),
+                    spent,
+                    projected,
+                    costKnown,
+                    true,
+                    ModelRouteReason.MONTHLY_BUDGET_EXCEEDED
+            );
+        }
+
+        if (policy.budgetEnforcement()
+                == BudgetEnforcement.HARD
+                && !costKnown) {
             return new BudgetSnapshot(
                     policy.monthlyBudgetUsd(),
                     spent,
@@ -95,23 +134,12 @@ final class ModelRoutingCostPolicy {
             );
         }
 
-        if (policy.budgetEnforcement() == BudgetEnforcement.HARD && exceeded) {
-            return new BudgetSnapshot(
-                    policy.monthlyBudgetUsd(),
-                    spent,
-                    projected,
-                    true,
-                    true,
-                    ModelRouteReason.MONTHLY_BUDGET_EXCEEDED
-            );
-        }
-
         return new BudgetSnapshot(
                 policy.monthlyBudgetUsd(),
                 spent,
                 projected,
                 costKnown,
-                exceeded,
+                provenExceeded,
                 null
         );
     }

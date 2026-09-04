@@ -328,6 +328,8 @@ final class ChatTurnExecutionCoordinator {
 
             failRouteEnvelope(
                     context,
+                    "MODEL_ROUTE_ENVELOPE_INTEGRITY",
+                    "MODEL_ROUTE_INPUT_ENVELOPE_INVALID",
                     currentUser,
                     exception
             );
@@ -337,12 +339,28 @@ final class ChatTurnExecutionCoordinator {
     private void failRouteEnvelope(
             ChatProcessingContext context,
             SafeAiUserPrincipal currentUser,
+            ModelRouteEnvelopeExceededException exception
+    ) {
+        failRouteEnvelope(
+                context,
+                "MODEL_ROUTE_ENVELOPE_EXCEEDED",
+                "MODEL_ROUTE_INPUT_ENVELOPE_EXCEEDED",
+                currentUser,
+                exception
+        );
+    }
+
+    private void failRouteEnvelope(
+            ChatProcessingContext context,
+            String providerErrorType,
+            String failureCode,
+            SafeAiUserPrincipal currentUser,
             RuntimeException exception
     ) {
         persistPreProviderFailureQuietly(
                 context,
-                "MODEL_ROUTE_ENVELOPE_EXCEEDED",
-                "MODEL_ROUTE_INPUT_ENVELOPE_EXCEEDED",
+                providerErrorType,
+                failureCode,
                 currentUser,
                 exception
         );
@@ -351,7 +369,7 @@ final class ChatTurnExecutionCoordinator {
                 context.chatId(),
                 context.turnId(),
                 context.clientRequestId(),
-                "MODEL_ROUTE_INPUT_ENVELOPE_EXCEEDED",
+                failureCode,
                 exception
         );
     }

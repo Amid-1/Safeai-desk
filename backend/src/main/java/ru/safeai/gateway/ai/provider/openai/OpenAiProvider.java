@@ -30,6 +30,7 @@ import tools.jackson.databind.JsonNode;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static ru.safeai.gateway.ai.provider.AiJsonNodeSupport.textOrNull;
@@ -45,21 +46,29 @@ import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.unknownFa
 )
 public class OpenAiProvider implements AiProvider {
 
-    private static final String PROVIDER_NAME = "openai";
-    private static final String PROVIDER_DISPLAY_NAME = "OpenAI";
+    private static final String PROVIDER_NAME =
+            "openai";
 
-    private static final Set<String> QUOTA_CODES = Set.of(
-            "insufficient_quota",
-            "credit_balance_exhausted",
-            "organization_spend_limit_exceeded",
-            "project_spend_limit_exceeded",
-            "organization_usage_limit_exceeded"
-    );
+    private static final String PROVIDER_DISPLAY_NAME =
+            "OpenAI";
 
-    private static final Set<String> BILLING_CODES = Set.of(
-            "billing_error",
-            "billing_not_active"
-    );
+    private static final String RESPONSES_PATH =
+            "/responses";
+
+    private static final Set<String> QUOTA_CODES =
+            Set.of(
+                    "insufficient_quota",
+                    "credit_balance_exhausted",
+                    "organization_spend_limit_exceeded",
+                    "project_spend_limit_exceeded",
+                    "organization_usage_limit_exceeded"
+            );
+
+    private static final Set<String> BILLING_CODES =
+            Set.of(
+                    "billing_error",
+                    "billing_not_active"
+            );
 
     private final OpenAiProperties properties;
     private final RestClient client;
@@ -99,18 +108,65 @@ public class OpenAiProvider implements AiProvider {
             Clock clock,
             RestClient client
     ) {
-        this.properties = properties;
-        this.responseMetadataService = responseMetadataService;
-        this.retryExecutor = retryExecutor;
-        this.contextWindowService = contextWindowService;
-        this.clock = clock;
-        this.client = client;
+        this.properties =
+                Objects.requireNonNull(
+                        properties,
+                        "properties не должен быть null"
+                );
+
+        this.responseMetadataService =
+                Objects.requireNonNull(
+                        responseMetadataService,
+                        "responseMetadataService не должен быть null"
+                );
+
+        this.retryExecutor =
+                Objects.requireNonNull(
+                        retryExecutor,
+                        "retryExecutor не должен быть null"
+                );
+
+        this.contextWindowService =
+                Objects.requireNonNull(
+                        contextWindowService,
+                        "contextWindowService не должен быть null"
+                );
+
+        this.clock =
+                Objects.requireNonNull(
+                        clock,
+                        "clock не должен быть null"
+                );
+
+        this.client =
+                Objects.requireNonNull(
+                        client,
+                        "client не должен быть null"
+                );
     }
 
     @Override
     public AiChatResponse sendMessage(
             AiChatRequest request
     ) {
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
+
+        /*
+         * Critical Model Control Plane invariant.
+         *
+         * Resolve the physical output cap exactly once.
+         *
+         * The same value is used:
+         *
+         * 1. to reserve output space in the context window;
+         * 2. as OpenAI max_output_tokens in the actual provider request.
+         *
+         * Therefore a smaller route-bound maxOutputTokens can never be
+         * replaced by the larger runtime default later in the provider path.
+         */
         int outputLimit =
                 request.effectiveMaxOutputTokens(
                         properties.maxOutputTokens()
@@ -128,59 +184,96 @@ public class OpenAiProvider implements AiProvider {
                 properties.model(),
                 prepared.providerOperationId(),
                 attemptTimeout(),
-                attempt -> doSendMessage(
-                        prepared,
-                        attempt
-                )
+                attempt ->
+                        doSendMessage(
+                                prepared,
+                                outputLimit,
+                                attempt
+                        )
         );
     }
 
     private AiChatResponse doSendMessage(
             AiChatRequest request,
+            int outputLimit,
             AiProviderAttemptContext attempt
     ) {
-        Map<String, Object> payload = Map.of(
-                "model",
-                properties.model(),
-                "input",
-                AiProviderSupport.buildOpenAiInput(request),
-                "max_output_tokens",
-                properties.maxOutputTokens(),
-                "store",
-                properties.effectiveStore()
-        );
+        if (outputLimit <= 0) {
+            throw new IllegalArgumentException(
+                    "outputLimit должен быть положительным"
+            );
+        }
 
-        long startedAt = System.nanoTime();
+        Map<String, Object> payload =
+                Map.of(
+                        "model",
+                        properties.model(),
+
+                        "input",
+                        AiProviderSupport.buildOpenAiInput(
+                                request
+                        ),
+
+                        /*
+                         * Never use properties.maxOutputTokens() directly
+                         * here.
+                         *
+                         * outputLimit already represents:
+                         *
+                         * min(
+                         *     runtime/model maximum,
+                         *     route-bound maxOutputTokens
+                         * )
+                         */
+                        "max_output_tokens",
+                        outputLimit,
+
+                        "store",
+                        properties.effectiveStore()
+                );
+
+        long startedAtNanos =
+                System.nanoTime();
 
         try {
-            ResponseEntity<JsonNode> responseEntity = client.post()
-                    .uri("/responses")
-                    .header(
-                            HttpHeaders.AUTHORIZATION,
-                            "Bearer " + properties.apiKey()
-                    )
-                    .header(
-                            HttpHeaders.CONTENT_TYPE,
-                            "application/json"
-                    )
-                    .header(
-                            "X-Client-Request-Id",
-                            attempt.attemptId().toString()
-                    )
-                    .body(payload)
-                    .retrieve()
-                    .toEntity(JsonNode.class);
+            ResponseEntity<JsonNode> responseEntity =
+                    client.post()
+                            .uri(
+                                    RESPONSES_PATH
+                            )
+                            .header(
+                                    HttpHeaders.AUTHORIZATION,
+                                    "Bearer "
+                                            + properties.apiKey()
+                            )
+                            .header(
+                                    HttpHeaders.CONTENT_TYPE,
+                                    "application/json"
+                            )
+                            .header(
+                                    "X-Client-Request-Id",
+                                    attempt.attemptId()
+                                            .toString()
+                            )
+                            .body(
+                                    payload
+                            )
+                            .retrieve()
+                            .toEntity(
+                                    JsonNode.class
+                            );
 
             String providerRequestId =
-                    AiProviderSupport.extractProviderRequestId(
-                            responseEntity.getHeaders()
-                    );
+                    AiProviderSupport
+                            .extractProviderRequestId(
+                                    responseEntity.getHeaders()
+                            );
 
             return createResponse(
                     responseEntity.getBody(),
                     providerRequestId,
                     attempt,
-                    startedAt
+                    startedAtNanos
             );
         } catch (ResourceAccessException exception) {
             throw fromResourceAccess(
@@ -190,7 +283,9 @@ public class OpenAiProvider implements AiProvider {
                     exception
             );
         } catch (RestClientResponseException exception) {
-            throw mapHttpException(exception);
+            throw mapHttpException(
+                    exception
+            );
         } catch (AiProviderException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -207,9 +302,12 @@ public class OpenAiProvider implements AiProvider {
             JsonNode response,
             String providerRequestId,
             AiProviderAttemptContext attempt,
-            long startedAt
+            long startedAtNanos
     ) {
-        ParsedOpenAiResponse parsed = parseResponse(response);
+        ParsedOpenAiResponse parsed =
+                parseResponse(
+                        response
+                );
 
         AiResponseMetadataService.AiResponseMetadata metadata =
                 responseMetadataService.extract(
@@ -218,7 +316,10 @@ public class OpenAiProvider implements AiProvider {
                 );
 
         long durationMs =
-                (System.nanoTime() - startedAt) / 1_000_000;
+                Duration.ofNanos(
+                        System.nanoTime()
+                                - startedAtNanos
+                ).toMillis();
 
         log.debug(
                 "OpenAI response: requestedModel={}, actualModel={}, "
@@ -259,27 +360,39 @@ public class OpenAiProvider implements AiProvider {
     private AiProviderException mapHttpException(
             RestClientResponseException exception
     ) {
-        int status = exception.getStatusCode().value();
+        int status =
+                exception.getStatusCode()
+                        .value();
 
         String requestId =
-                AiProviderSupport.extractProviderRequestId(exception);
+                AiProviderSupport
+                        .extractProviderRequestId(
+                                exception
+                        );
 
         Duration retryAfter =
-                AiProviderSupport.extractRetryAfter(
-                        exception,
-                        clock
-                );
+                AiProviderSupport
+                        .extractRetryAfter(
+                                exception,
+                                clock
+                        );
 
         AiProviderSupport.ProviderErrorDetails error =
-                AiProviderSupport.extractProviderError(exception);
+                AiProviderSupport
+                        .extractProviderError(
+                                exception
+                        );
 
-        String errorCode = error.code() != null
-                ? error.code()
-                : error.type();
+        String errorCode =
+                error.code() != null
+                        ? error.code()
+                        : error.type();
 
         if (status == 429) {
             if (errorCode != null
-                    && QUOTA_CODES.contains(errorCode)) {
+                    && QUOTA_CODES.contains(
+                    errorCode
+            )) {
                 return new AiProviderQuotaExceededException(
                         PROVIDER_NAME,
                         properties.model(),
@@ -292,7 +405,9 @@ public class OpenAiProvider implements AiProvider {
             }
 
             if (errorCode != null
-                    && BILLING_CODES.contains(errorCode)) {
+                    && BILLING_CODES.contains(
+                    errorCode
+            )) {
                 return new AiProviderBillingException(
                         PROVIDER_NAME,
                         properties.model(),
@@ -329,20 +444,35 @@ public class OpenAiProvider implements AiProvider {
             );
         }
 
-        AiProviderErrorType type = switch (status) {
-            case 401 -> AiProviderErrorType.AUTHENTICATION;
+        AiProviderErrorType type =
+                switch (status) {
+                    case 401 ->
+                            AiProviderErrorType.AUTHENTICATION;
 
-            case 403 -> AiProviderErrorType.PERMISSION_DENIED;
+                    case 403 ->
+                            AiProviderErrorType.PERMISSION_DENIED;
 
-            case 400, 404, 409, 413, 422 -> AiProviderErrorType.INVALID_REQUEST;
+                    case 400,
+                         404,
+                         409,
+                         413,
+                         422 ->
+                            AiProviderErrorType.INVALID_REQUEST;
 
-            case 408, 504 -> AiProviderErrorType.TIMEOUT;
+                    case 408,
+                         504 ->
+                            AiProviderErrorType.TIMEOUT;
 
-            default -> status >= 500
-                    ? AiProviderErrorType.SERVER_ERROR
-                    : AiProviderErrorType.UNKNOWN;
-        };
+                    default ->
+                            status >= 500
+                                    ? AiProviderErrorType.SERVER_ERROR
+                                    : AiProviderErrorType.UNKNOWN;
+                };
 
+        /*
+         * Once a request may have reached OpenAI, timeout/server errors are
+         * conservatively classified as outcome-ambiguous.
+         */
         boolean ambiguous =
                 status == 408
                         || status >= 500;
@@ -357,30 +487,43 @@ public class OpenAiProvider implements AiProvider {
                 false,
                 ambiguous,
                 retryAfter,
-                "OpenAI API error: status=" + status,
+                "OpenAI API error: status="
+                        + status,
                 exception
         );
     }
 
-    private ParsedOpenAiResponse parseResponse(JsonNode response) {
-        if (response == null) {
+    private ParsedOpenAiResponse parseResponse(
+            JsonNode response
+    ) {
+        if (response == null
+                || !response.isObject()) {
             throw parsingFailure(
                     PROVIDER_NAME,
                     properties.model(),
-                    "OpenAI returned null response"
+                    "OpenAI returned null or non-object response"
             );
         }
 
         String providerMessageId =
-                textOrNull(response.get("id"));
+                textOrNull(
+                        response.get(
+                                "id"
+                        )
+                );
 
-        String actualModel = AiProviderSupport.resolvedModel(
-                response,
-                properties.model()
-        );
+        String actualModel =
+                AiProviderSupport.resolvedModel(
+                        response,
+                        properties.model()
+                );
 
         String statusValue =
-                textOrNull(response.get("status"));
+                textOrNull(
+                        response.get(
+                                "status"
+                        )
+                );
 
         if (statusValue == null) {
             throw parsingFailure(
@@ -391,58 +534,87 @@ public class OpenAiProvider implements AiProvider {
         }
 
         switch (statusValue) {
-            case "failed", "cancelled" -> throw parsingFailure(
-                    PROVIDER_NAME,
-                    actualModel,
-                    "OpenAI response status=" + statusValue
-            );
-            case "queued", "in_progress" -> throw parsingFailure(
-                    PROVIDER_NAME,
-                    actualModel,
-                    "Unexpected async OpenAI response status="
-                            + statusValue
-            );
-            case "completed", "incomplete" -> {
+            case "failed",
+                 "cancelled" ->
+                    throw parsingFailure(
+                            PROVIDER_NAME,
+                            actualModel,
+                            "OpenAI response status="
+                                    + statusValue
+                    );
+
+            case "queued",
+                 "in_progress" ->
+                    throw parsingFailure(
+                            PROVIDER_NAME,
+                            actualModel,
+                            "Unexpected async OpenAI response status="
+                                    + statusValue
+                    );
+
+            case "completed",
+                 "incomplete" -> {
                 // Разбор результата ниже.
             }
-            default -> throw parsingFailure(
-                    PROVIDER_NAME,
-                    actualModel,
-                    "Unknown OpenAI response status=" + statusValue
-            );
+
+            default ->
+                    throw parsingFailure(
+                            PROVIDER_NAME,
+                            actualModel,
+                            "Unknown OpenAI response status="
+                                    + statusValue
+                    );
         }
 
-        String normalText = extractOutputText(
-                response,
-                "output_text",
-                "text",
-                actualModel
-        );
+        String normalText =
+                extractOutputText(
+                        response,
+                        "output_text",
+                        "text",
+                        actualModel
+                );
 
-        String refusalText = extractOutputText(
-                response,
-                "refusal",
-                "refusal",
-                actualModel
-        );
+        String refusalText =
+                extractOutputText(
+                        response,
+                        "refusal",
+                        "refusal",
+                        actualModel
+                );
 
         AiResponseStatus status;
         String content;
         String finishReason;
 
         if (refusalText != null) {
-            content = refusalText;
-            status = AiResponseStatus.REFUSED;
-            finishReason = "refusal";
-        } else if (normalText != null) {
-            content = normalText;
+            content =
+                    refusalText;
 
-            if ("incomplete".equals(statusValue)) {
-                status = AiResponseStatus.INCOMPLETE;
-                finishReason = incompleteReason(response);
+            status =
+                    AiResponseStatus.REFUSED;
+
+            finishReason =
+                    "refusal";
+        } else if (normalText != null) {
+            content =
+                    normalText;
+
+            if ("incomplete".equals(
+                    statusValue
+            )) {
+                status =
+                        AiResponseStatus.INCOMPLETE;
+
+                finishReason =
+                        incompleteReason(
+                                response
+                        );
             } else {
-                status = AiResponseStatus.COMPLETED;
-                finishReason = "completed";
+                status =
+                        AiResponseStatus.COMPLETED;
+
+                finishReason =
+                        "completed";
             }
         } else {
             throw parsingFailure(
@@ -453,12 +625,13 @@ public class OpenAiProvider implements AiProvider {
         }
 
         String validContent =
-                AiProviderSupport.requireValidContent(
-                        PROVIDER_NAME,
-                        actualModel,
-                        content,
-                        properties.maxResponseChars()
-                );
+                AiProviderSupport
+                        .requireValidContent(
+                                PROVIDER_NAME,
+                                actualModel,
+                                content,
+                                properties.maxResponseChars()
+                        );
 
         return new ParsedOpenAiResponse(
                 validContent,
@@ -475,45 +648,81 @@ public class OpenAiProvider implements AiProvider {
             String fieldName,
             String actualModel
     ) {
-        if ("output_text".equals(acceptedType)) {
+        if ("output_text".equals(
+                acceptedType
+        )) {
             String direct =
-                    textOrNull(response.get("output_text"));
+                    textOrNull(
+                            response.get(
+                                    "output_text"
+                            )
+                    );
 
             if (direct != null) {
-                return AiProviderSupport.requireValidContent(
-                        PROVIDER_NAME,
-                        actualModel,
-                        direct,
-                        properties.maxResponseChars()
-                );
+                return AiProviderSupport
+                        .requireValidContent(
+                                PROVIDER_NAME,
+                                actualModel,
+                                direct,
+                                properties.maxResponseChars()
+                        );
             }
         }
 
-        JsonNode output = response.get("output");
+        JsonNode output =
+                response.get(
+                        "output"
+                );
 
-        if (output == null || !output.isArray()) {
+        if (output == null
+                || !output.isArray()) {
             return null;
         }
 
-        StringBuilder result = new StringBuilder();
+        StringBuilder result =
+                new StringBuilder();
 
         for (JsonNode outputItem : output) {
-            JsonNode content = outputItem.get("content");
+            if (outputItem == null
+                    || !outputItem.isObject()) {
+                continue;
+            }
 
-            if (content == null || !content.isArray()) {
+            JsonNode content =
+                    outputItem.get(
+                            "content"
+                    );
+
+            if (content == null
+                    || !content.isArray()) {
                 continue;
             }
 
             for (JsonNode contentItem : content) {
-                String type =
-                        textOrNull(contentItem.get("type"));
+                if (contentItem == null
+                        || !contentItem.isObject()) {
+                    continue;
+                }
 
-                if (!acceptedType.equals(type)) {
+                String type =
+                        textOrNull(
+                                contentItem.get(
+                                        "type"
+                                )
+                        );
+
+                if (!acceptedType.equals(
+                        type
+                )) {
                     continue;
                 }
 
                 String value =
-                        textOrNull(contentItem.get(fieldName));
+                        textOrNull(
+                                contentItem.get(
+                                        fieldName
+                                )
+                        );
 
                 AiProviderSupport.appendBoundedText(
                         result,
@@ -530,21 +739,37 @@ public class OpenAiProvider implements AiProvider {
                 : result.toString();
     }
 
-    private String incompleteReason(JsonNode response) {
-        JsonNode details = response.get("incomplete_details");
+    private String incompleteReason(
+            JsonNode response
+    ) {
+        JsonNode details =
+                response.get(
+                        "incomplete_details"
+                );
 
-        if (details == null || !details.isObject()) {
+        if (details == null
+                || !details.isObject()) {
             return "incomplete";
         }
 
-        String reason = textOrNull(details.get("reason"));
-        return reason == null ? "incomplete" : reason;
+        String reason =
+                textOrNull(
+                        details.get(
+                                "reason"
+                        )
+                );
+
+        return reason == null
+                ? "incomplete"
+                : reason;
     }
 
     private Duration attemptTimeout() {
         try {
             return properties.connectTimeout()
-                    .plus(properties.readTimeout());
+                    .plus(
+                            properties.readTimeout()
+                    );
         } catch (ArithmeticException exception) {
             return properties.readTimeout();
         }

@@ -14,6 +14,10 @@ import java.util.UUID;
  * <p>{@code reservedInputTokens} is the conservative input envelope approved by
  * model routing. {@code maxOutputTokens} is the physical output cap that must
  * reach the provider request.</p>
+ *
+ * <p>All immutable transformation methods must preserve identity and
+ * model-governance execution metadata unless their contract explicitly says
+ * otherwise.</p>
  */
 public record AiChatRequest(
         UUID userId,
@@ -80,7 +84,9 @@ public record AiChatRequest(
         history =
                 history == null
                         ? List.of()
-                        : List.copyOf(history);
+                        : List.copyOf(
+                                history
+                        );
 
         validateHistorySize(
                 history
@@ -92,9 +98,26 @@ public record AiChatRequest(
         );
 
         long baseChars =
-                userMessage.length()
-                        + length(systemInstructions)
-                        + length(developerInstructions);
+                Math.addExact(
+                        userMessage.length(),
+                        Math.addExact(
+                                length(
+                                        systemInstructions
+                                ),
+                                length(
+                                        developerInstructions
+                                )
+                        )
+                );
+
+        /*
+         * Important even when history is empty.
+         * Otherwise, a request containing only very large instructions/user
+         * message could bypass the aggregate text bound.
+         */
+        validateTotalChars(
+                baseChars
+        );
 
         validateCanonicalHistory(
                 history,
@@ -105,7 +128,9 @@ public record AiChatRequest(
     /**
      * Source compatibility for pre-V46 callers and tests.
      *
-     * <p>Such requests do not carry model-route execution caps.</p>
+     * <p>Such requests intentionally do not carry model-route execution caps.
+     * Governed production flows must use the canonical constructor with
+     * {@code reservedInputTokens} and {@code maxOutputTokens}.</p>
      */
     public AiChatRequest(
             UUID userId,
@@ -132,8 +157,76 @@ public record AiChatRequest(
     }
 
     /**
+     * Replaces only SYSTEM/DEVELOPER instructions while preserving:
+     *
+     * <ul>
+     *     <li>request identity,</li>
+     *     <li>provider operation identity,</li>
+     *     <li>user message,</li>
+     *     <li>canonical history,</li>
+     *     <li>reserved input envelope,</li>
+     *     <li>route-bound output cap.</li>
+     * </ul>
+     *
+     * <p>This method should be preferred by RAG/context materialization instead
+     * of manually reconstructing {@link AiChatRequest}.</p>
+     */
+    public AiChatRequest withInstructions(
+            String systemInstructions,
+            String developerInstructions
+    ) {
+        return new AiChatRequest(
+                userId,
+                organizationId,
+                chatId,
+                providerOperationId,
+                systemInstructions,
+                developerInstructions,
+                userMessage,
+                history,
+                reservedInputTokens,
+                maxOutputTokens
+        );
+    }
+
+    /**
+     * Replaces only canonical conversation history while preserving:
+     *
+     * <ul>
+     *     <li>request identity,</li>
+     *     <li>provider operation identity,</li>
+     *     <li>instructions,</li>
+     *     <li>user message,</li>
+     *     <li>reserved input envelope,</li>
+     *     <li>route-bound output cap.</li>
+     * </ul>
+     *
+     * <p>This method should be preferred by context-window truncation instead
+     * of manually reconstructing {@link AiChatRequest}.</p>
+     */
+    public AiChatRequest withHistory(
+            List<AiMessage> history
+    ) {
+        return new AiChatRequest(
+                userId,
+                organizationId,
+                chatId,
+                providerOperationId,
+                systemInstructions,
+                developerInstructions,
+                userMessage,
+                history,
+                reservedInputTokens,
+                maxOutputTokens
+        );
+    }
+
+    /**
      * Resolves the physical provider output limit without ever exceeding the
      * runtime/model maximum.
+     *
+     * <p>If the request is legacy/ungoverned and has no route-bound output
+     * limit, the runtime maximum is returned unchanged.</p>
      */
     public int effectiveMaxOutputTokens(
             int runtimeMaximum
@@ -215,10 +308,11 @@ public record AiChatRequest(
         long totalChars =
                 initialTotalChars;
 
-        for (int index = 0;
+        for (
+                int index = 0;
                 index < history.size();
-                index++) {
-
+                index++
+        ) {
             AiMessage message =
                     Objects.requireNonNull(
                             history.get(index),
@@ -230,8 +324,19 @@ public record AiChatRequest(
                     index
             );
 
-            totalChars +=
-                    message.content().length();
+            try {
+                totalChars =
+                        Math.addExact(
+                                totalChars,
+                                message.content()
+                                        .length()
+                        );
+            } catch (ArithmeticException exception) {
+                throw new IllegalArgumentException(
+                        "AI request превышает абсолютный лимит общего текста",
+                        exception
+                );
+            }
 
             validateTotalChars(
                     totalChars
@@ -239,8 +344,16 @@ public record AiChatRequest(
         }
 
         /*
-         * Complete canonical history always contains USER/ASSISTANT pairs,
-         * therefore its number of messages must be even.
+         * Canonical complete history is:
+         *
+         * USER
+         * ASSISTANT
+         * USER
+         * ASSISTANT
+         * ...
+         *
+         * Therefore a non-empty complete history always contains an even
+         * number of messages and ends with ASSISTANT.
          */
         if ((history.size() & 1) != 0) {
             throw new IllegalArgumentException(

@@ -12,7 +12,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.audit.service.BestEffortStandaloneAuditService;
-import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
@@ -22,6 +21,7 @@ import ru.safeai.gateway.knowledge.entity.KnowledgeBaseEntity;
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentEntity;
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentVersionEntity;
 import ru.safeai.gateway.knowledge.entity.KnowledgeIngestionJobEntity;
+import ru.safeai.gateway.knowledge.exception.KnowledgeStorageUnavailableException;
 import ru.safeai.gateway.knowledge.model.KnowledgeBaseVisibility;
 import ru.safeai.gateway.knowledge.model.KnowledgeIngestionStatus;
 import ru.safeai.gateway.knowledge.repository.KnowledgeBaseMembershipRepository;
@@ -362,7 +362,9 @@ class KnowledgeDocumentServiceTest {
                 audit
         ).record(
                 any(SafeAiUserPrincipal.class),
-                eq(ORGANIZATION_ID),
+                eq(
+                        ORGANIZATION_ID
+                ),
                 eq(
                         AuditEventType.KNOWLEDGE_DOCUMENT_CREATED
                 ),
@@ -373,7 +375,9 @@ class KnowledgeDocumentServiceTest {
                 audit
         ).record(
                 any(SafeAiUserPrincipal.class),
-                eq(ORGANIZATION_ID),
+                eq(
+                        ORGANIZATION_ID
+                ),
                 eq(
                         AuditEventType.KNOWLEDGE_DOCUMENT_VERSION_UPLOADED
                 ),
@@ -403,12 +407,13 @@ class KnowledgeDocumentServiceTest {
         );
 
         assertThatThrownBy(
-                () -> service.uploadNew(
-                        KNOWLEDGE_BASE_ID,
-                        null,
-                        file,
-                        admin()
-                )
+                () ->
+                        service.uploadNew(
+                                KNOWLEDGE_BASE_ID,
+                                null,
+                                file,
+                                admin()
+                        )
         ).isInstanceOf(
                 ConflictException.class
         );
@@ -467,21 +472,39 @@ class KnowledgeDocumentServiceTest {
                         any()
                 );
 
+        /*
+         * Object-storage failure is a server-side infrastructure failure,
+         * not malformed client input.
+         *
+         * Production contract:
+         *
+         * IOException from storage PUT
+         * -> KnowledgeStorageUnavailableException
+         * -> HTTP 503 at the API boundary.
+         */
         assertThatThrownBy(
-                () -> service.uploadNew(
-                        KNOWLEDGE_BASE_ID,
-                        null,
-                        file,
-                        admin()
-                )
+                () ->
+                        service.uploadNew(
+                                KNOWLEDGE_BASE_ID,
+                                null,
+                                file,
+                                admin()
+                        )
         )
                 .isInstanceOf(
-                        BadRequestException.class
+                        KnowledgeStorageUnavailableException.class
                 )
                 .hasMessageContaining(
-                        "Не удалось сохранить файл"
+                        "Knowledge object storage PUT failed"
+                )
+                .hasCauseInstanceOf(
+                        IOException.class
                 );
 
+        /*
+         * Storage failed before DB metadata publication, therefore no version
+         * or ingestion job may be persisted.
+         */
         verify(
                 versions,
                 never()
@@ -619,12 +642,13 @@ class KnowledgeDocumentServiceTest {
         );
 
         assertThatThrownBy(
-                () -> service.uploadNew(
-                        KNOWLEDGE_BASE_ID,
-                        null,
-                        file,
-                        user()
-                )
+                () ->
+                        service.uploadNew(
+                                KNOWLEDGE_BASE_ID,
+                                null,
+                                file,
+                                user()
+                        )
         )
                 .isInstanceOf(
                         ForbiddenOperationException.class
@@ -665,12 +689,13 @@ class KnowledgeDocumentServiceTest {
         );
 
         assertThatThrownBy(
-                () -> service.list(
-                        KNOWLEDGE_BASE_ID,
-                        user(),
-                        0,
-                        50
-                )
+                () ->
+                        service.list(
+                                KNOWLEDGE_BASE_ID,
+                                user(),
+                                0,
+                                50
+                        )
         )
                 .isInstanceOf(
                         ResourceNotFoundException.class
@@ -849,7 +874,9 @@ class KnowledgeDocumentServiceTest {
                 downloadAudit
         ).tryRecord(
                 any(),
-                eq(ORGANIZATION_ID),
+                eq(
+                        ORGANIZATION_ID
+                ),
                 eq(
                         AuditEventType.KNOWLEDGE_DOCUMENT_DOWNLOADED
                 ),

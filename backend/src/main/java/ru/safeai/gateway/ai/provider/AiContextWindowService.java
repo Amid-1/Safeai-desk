@@ -7,7 +7,9 @@ import ru.safeai.gateway.ai.dto.AiMessage;
 import ru.safeai.gateway.ai.exception.AiContextLimitException;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -18,13 +20,11 @@ public class AiContextWindowService {
     public AiContextWindowService(
             AiContextWindowProperties properties
     ) {
-        this.properties = properties;
-    }
-
-    public static AiContextWindowService defaults() {
-        return new AiContextWindowService(
-                AiContextWindowProperties.defaults()
-        );
+        this.properties =
+                Objects.requireNonNull(
+                        properties,
+                        "properties не должен быть null"
+                );
     }
 
     public AiChatRequest prepare(
@@ -32,35 +32,38 @@ public class AiContextWindowService {
             int maxInputTokens,
             int reservedOutputTokens
     ) {
-        if (maxInputTokens < 1) {
-            throw new IllegalArgumentException(
-                    "maxInputTokens должен быть положительным"
-            );
-        }
-        if (reservedOutputTokens < 0) {
-            throw new IllegalArgumentException(
-                    "reservedOutputTokens не может быть отрицательным"
-            );
-        }
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
 
-        validateMandatoryFields(request);
-        validateHistoryMessages(request.history());
+        validateMandatoryFields(
+                request
+        );
 
-        int tokenBudget = maxInputTokens
-                - reservedOutputTokens
-                - properties.safetyMarginTokens();
+        validateHistoryMessages(
+                request.history()
+        );
 
-        if (tokenBudget < 1) {
-            throw new AiContextLimitException(
-                    "AI context budget исчерпан зарезервированным output"
-            );
-        }
+        int tokenBudget =
+                calculateTokenBudget(
+                        maxInputTokens,
+                        reservedOutputTokens
+                );
 
-        int mandatoryTokens = estimateMandatoryTokens(request);
-        int mandatoryChars = mandatoryChars(request);
+        int mandatoryTokens =
+                estimateMandatoryTokens(
+                        request
+                );
+
+        int mandatoryChars =
+                mandatoryChars(
+                        request
+                );
 
         if (mandatoryTokens > tokenBudget
-                || mandatoryChars > properties.maxTotalInputChars()) {
+                || mandatoryChars
+                > properties.maxTotalInputChars()) {
             throw new AiContextLimitException(
                     "Обязательные system/developer instructions "
                             + "и текущее сообщение не помещаются "
@@ -68,55 +71,101 @@ public class AiContextWindowService {
             );
         }
 
-        int remainingTokens = tokenBudget - mandatoryTokens;
+        int remainingTokens =
+                tokenBudget
+                        - mandatoryTokens;
+
         int remainingChars =
-                properties.maxTotalInputChars() - mandatoryChars;
+                properties.maxTotalInputChars()
+                        - mandatoryChars;
 
-        List<AiMessage> retainedReversed = new ArrayList<>();
-        List<AiMessage> history = request.history();
+        List<AiMessage> history =
+                request.history();
 
-        for (int index = history.size() - 1;
+        List<AiMessage> retainedReversed =
+                new ArrayList<>(
+                        Math.min(
+                                history.size(),
+                                properties.maxHistoryMessages()
+                        )
+                );
+
+        /*
+         * Берём максимально свежую историю с конца.
+         *
+         * AiChatRequest гарантирует canonical history:
+         *
+         * USER
+         * ASSISTANT
+         * USER
+         * ASSISTANT
+         * ...
+         *
+         * Непустая история заканчивается ASSISTANT.
+         */
+        for (
+                int index = history.size() - 1;
                 index >= 0
                         && retainedReversed.size()
                         < properties.maxHistoryMessages();
-                index--) {
-            AiMessage message = history.get(index);
-            int chars = message.content().length();
-            int tokens = estimateMessageTokens(message);
+                index--
+        ) {
+            AiMessage message =
+                    history.get(
+                            index
+                    );
 
-            if (chars > remainingChars || tokens > remainingTokens) {
+            int chars =
+                    message.content()
+                            .length();
+
+            int tokens =
+                    estimateMessageTokens(
+                            message
+                    );
+
+            if (chars > remainingChars
+                    || tokens > remainingTokens) {
                 break;
             }
 
-            retainedReversed.add(message);
-            remainingChars -= chars;
-            remainingTokens -= tokens;
+            retainedReversed.add(
+                    message
+            );
+
+            remainingChars -=
+                    chars;
+
+            remainingTokens -=
+                    tokens;
         }
 
         /*
-         * Исходная история валидна как USER/ASSISTANT пары и заканчивается
-         * ASSISTANT. При усечении сохраняем только целые пары, чтобы новый
-         * provider request не начинался с orphan ASSISTANT.
+         * Обход выполняется с конца, поэтому первым сохранённым сообщением
+         * является ASSISTANT.
+         *
+         * Нечётное количество означает orphan ASSISTANT без USER.
+         * Оставляем только полные USER/ASSISTANT пары.
          */
         if ((retainedReversed.size() & 1) != 0) {
             retainedReversed.removeLast();
         }
 
-        List<AiMessage> retained = new ArrayList<>(
-                retainedReversed.size()
+        Collections.reverse(
+                retainedReversed
         );
 
-        for (int index = retainedReversed.size() - 1;
-                index >= 0;
-                index--) {
-            retained.add(retainedReversed.get(index));
-        }
+        List<AiMessage> retained =
+                List.copyOf(
+                        retainedReversed
+                );
 
-        if (retained.size() != history.size()) {
+        if (retained.size()
+                != history.size()) {
             log.debug(
-                    "AI history truncated: operationId={}, originalMessages={}, "
-                            + "retainedMessages={}, maxInputTokens={}, "
-                            + "reservedOutputTokens={}",
+                    "AI history truncated: operationId={}, "
+                            + "originalMessages={}, retainedMessages={}, "
+                            + "maxInputTokens={}, reservedOutputTokens={}",
                     request.providerOperationId(),
                     history.size(),
                     retained.size(),
@@ -125,29 +174,74 @@ public class AiContextWindowService {
             );
         }
 
-        return new AiChatRequest(
-                request.userId(),
-                request.organizationId(),
-                request.chatId(),
-                request.providerOperationId(),
-                request.systemInstructions(),
-                request.developerInstructions(),
-                request.userMessage(),
+        /*
+         * Критический model-governance invariant.
+         *
+         * Нельзя реконструировать AiChatRequest через legacy constructor:
+         * должны сохраниться:
+         *
+         * - providerOperationId
+         * - reservedInputTokens
+         * - maxOutputTokens
+         *
+         * Меняем только history.
+         */
+        return request.withHistory(
                 retained
         );
     }
 
-    private void validateMandatoryFields(AiChatRequest request) {
+    private int calculateTokenBudget(
+            int maxInputTokens,
+            int reservedOutputTokens
+    ) {
+        if (maxInputTokens < 1) {
+            throw new IllegalArgumentException(
+                    "maxInputTokens должен быть положительным"
+            );
+        }
+
+        if (reservedOutputTokens < 0) {
+            throw new IllegalArgumentException(
+                    "reservedOutputTokens не может быть отрицательным"
+            );
+        }
+
+        long tokenBudget =
+                (long) maxInputTokens
+                        - reservedOutputTokens
+                        - properties.safetyMarginTokens();
+
+        if (tokenBudget < 1L) {
+            throw new AiContextLimitException(
+                    "AI context budget исчерпан зарезервированным output"
+            );
+        }
+
+        /*
+         * tokenBudget не может превышать maxInputTokens, поэтому после
+         * проверки положительности безопасно конвертируется в int.
+         */
+        return Math.toIntExact(
+                tokenBudget
+        );
+    }
+
+    private void validateMandatoryFields(
+            AiChatRequest request
+    ) {
         requireMaxLength(
                 request.userMessage(),
                 properties.maxUserMessageChars(),
                 "userMessage"
         );
+
         requireMaxLength(
                 request.systemInstructions(),
                 properties.maxInstructionChars(),
                 "systemInstructions"
         );
+
         requireMaxLength(
                 request.developerInstructions(),
                 properties.maxInstructionChars(),
@@ -167,59 +261,143 @@ public class AiContextWindowService {
         }
     }
 
-    private void requireMaxLength(
+    private static void requireMaxLength(
             String value,
             int maxLength,
             String fieldName
     ) {
-        if (value != null && value.length() > maxLength) {
+        if (value != null
+                && value.length() > maxLength) {
             throw new AiContextLimitException(
-                    fieldName + " превышает " + maxLength + " символов"
+                    fieldName
+                            + " превышает "
+                            + maxLength
+                            + " символов"
             );
         }
     }
 
-    private int mandatoryChars(AiChatRequest request) {
-        return request.userMessage().length()
-                + length(request.systemInstructions())
-                + length(request.developerInstructions());
-    }
+    private int mandatoryChars(
+            AiChatRequest request
+    ) {
+        long total =
+                (long) request.userMessage()
+                        .length()
+                        + length(
+                                request.systemInstructions()
+                        )
+                        + length(
+                                request.developerInstructions()
+                        );
 
-    private int estimateMandatoryTokens(AiChatRequest request) {
-        int result = estimateTextTokens(request.userMessage())
-                + properties.messageOverheadTokens();
-
-        if (request.systemInstructions() != null) {
-            result += estimateTextTokens(request.systemInstructions())
-                    + properties.messageOverheadTokens();
+        if (total > Integer.MAX_VALUE) {
+            throw new AiContextLimitException(
+                    "Обязательный AI context превышает допустимый размер"
+            );
         }
 
-        if (request.developerInstructions() != null) {
-            result += estimateTextTokens(request.developerInstructions())
-                    + properties.messageOverheadTokens();
+        return (int) total;
+    }
+
+    private int estimateMandatoryTokens(
+            AiChatRequest request
+    ) {
+        int result =
+                estimateTextMessageTokens(
+                        request.userMessage()
+                );
+
+        if (request.systemInstructions()
+                != null) {
+            result =
+                    addTokens(
+                            result,
+                            estimateTextMessageTokens(
+                                    request.systemInstructions()
+                            )
+                    );
+        }
+
+        if (request.developerInstructions()
+                != null) {
+            result =
+                    addTokens(
+                            result,
+                            estimateTextMessageTokens(
+                                    request.developerInstructions()
+                            )
+                    );
         }
 
         return result;
     }
 
-    private int estimateMessageTokens(AiMessage message) {
-        return estimateTextTokens(message.content())
-                + properties.messageOverheadTokens();
-    }
-
-    private int estimateTextTokens(String text) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-
-        int charsPerToken = properties.charsPerEstimatedToken();
-        return Math.max(
-                1,
-                (text.length() + charsPerToken - 1) / charsPerToken
+    private int estimateMessageTokens(
+            AiMessage message
+    ) {
+        return estimateTextMessageTokens(
+                message.content()
         );
     }
 
-    private int length(String value) {
-        return value == null ? 0 : value.length();
+    private int estimateTextMessageTokens(
+            String text
+    ) {
+        return addTokens(
+                estimateTextTokens(
+                        text
+                ),
+                properties.messageOverheadTokens()
+        );
+    }
+
+    private int estimateTextTokens(
+            String text
+    ) {
+        if (text == null
+                || text.isEmpty()) {
+            return 0;
+        }
+
+        int charsPerToken =
+                properties.charsPerEstimatedToken();
+
+        if (charsPerToken <= 0) {
+            throw new IllegalStateException(
+                    "charsPerEstimatedToken должен быть положительным"
+            );
+        }
+
+        return Math.max(
+                1,
+                Math.ceilDiv(
+                        text.length(),
+                        charsPerToken
+                )
+        );
+    }
+
+    private static int addTokens(
+            int left,
+            int right
+    ) {
+        try {
+            return Math.addExact(
+                    left,
+                    right
+            );
+        } catch (ArithmeticException exception) {
+            throw new AiContextLimitException(
+                    "Расчёт AI context превысил допустимый диапазон"
+            );
+        }
+    }
+
+    private static int length(
+            String value
+    ) {
+        return value == null
+                ? 0
+                : value.length();
     }
 }

@@ -49,7 +49,8 @@ class ModelRoutingSelectionPolicyTest {
         var selection = policy.selectCatalog(
                 ModelTestFixtures.routeRequest(
                         " OpenAI:GPT-Test ",
-                        Set.of()
+                        Set.of(),
+                        0L
                 ),
                 ModelTestFixtures.freeRuntime(),
                 null,
@@ -92,7 +93,8 @@ class ModelRoutingSelectionPolicyTest {
         var selection = policy.selectCatalog(
                 ModelTestFixtures.routeRequest(
                         null,
-                        Set.of()
+                        Set.of(),
+                        0L
                 ),
                 ModelTestFixtures.freeRuntime(),
                 tenantPolicy,
@@ -131,7 +133,8 @@ class ModelRoutingSelectionPolicyTest {
         var selection = policy.selectCatalog(
                 ModelTestFixtures.routeRequest(
                         null,
-                        Set.of()
+                        Set.of(),
+                        0L
                 ),
                 ModelTestFixtures.freeRuntime(),
                 null,
@@ -165,7 +168,7 @@ class ModelRoutingSelectionPolicyTest {
         )).thenReturn(List.of(disabled));
 
         var selection = policy.selectCatalog(
-                ModelTestFixtures.routeRequest(null, Set.of()),
+                ModelTestFixtures.routeRequest(null, Set.of(), 0L),
                 ModelTestFixtures.freeRuntime(),
                 null,
                 false,
@@ -198,7 +201,7 @@ class ModelRoutingSelectionPolicyTest {
         )).thenReturn(true);
 
         var selection = policy.selectCatalog(
-                ModelTestFixtures.routeRequest(null, Set.of()),
+                ModelTestFixtures.routeRequest(null, Set.of(), 0L),
                 ModelTestFixtures.freeRuntime(),
                 null,
                 false,
@@ -229,7 +232,7 @@ class ModelRoutingSelectionPolicyTest {
         )).thenReturn(false);
 
         var selection = policy.selectCatalog(
-                ModelTestFixtures.routeRequest(null, Set.of()),
+                ModelTestFixtures.routeRequest(null, Set.of(), 0L),
                 ModelTestFixtures.freeRuntime(),
                 null,
                 false,
@@ -269,7 +272,7 @@ class ModelRoutingSelectionPolicyTest {
         )).thenReturn(List.of());
 
         var selection = policy.selectCatalog(
-                ModelTestFixtures.routeRequest(null, Set.of()),
+                ModelTestFixtures.routeRequest(null, Set.of(), 0L),
                 ModelTestFixtures.freeRuntime(),
                 tenantPolicy,
                 true,

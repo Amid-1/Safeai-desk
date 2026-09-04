@@ -61,12 +61,14 @@ final class OrganizationModelPolicyAuditDetailsFactory {
             details.put(
                     "maxRequestCostUsd",
                     policy.maxRequestCostUsd()
+                            .toPlainString()
             );
         }
         if (policy.monthlyBudgetUsd() != null) {
             details.put(
                     "monthlyBudgetUsd",
                     policy.monthlyBudgetUsd()
+                            .toPlainString()
             );
         }
 

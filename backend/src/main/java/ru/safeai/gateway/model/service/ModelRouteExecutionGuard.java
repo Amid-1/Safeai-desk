@@ -64,6 +64,13 @@ public final class ModelRouteExecutionGuard {
                 reservedRequest.reservedInputTokens();
 
         if (reserved == null) {
+            if (decisionId != null) {
+                throw new IllegalStateException(
+                        "Governed AI request has no reservedInputTokens: "
+                                + decisionId
+                );
+            }
+
             return;
         }
 

@@ -10,6 +10,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,7 +26,11 @@ public class KnowledgeIngestionQueueRepository {
     public KnowledgeIngestionQueueRepository(
             JdbcTemplate jdbcTemplate
     ) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.jdbcTemplate =
+                Objects.requireNonNull(
+                        jdbcTemplate,
+                        "jdbcTemplate не должен быть null"
+                );
     }
 
     @Transactional
@@ -34,6 +39,28 @@ public class KnowledgeIngestionQueueRepository {
             Instant leaseUntil,
             int maxAttempts
     ) {
+        Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                leaseUntil,
+                "leaseUntil не должен быть null"
+        );
+
+        if (maxAttempts <= 0) {
+            throw new IllegalArgumentException(
+                    "maxAttempts должен быть положительным"
+            );
+        }
+
+        if (!leaseUntil.isAfter(now)) {
+            throw new IllegalArgumentException(
+                    "leaseUntil должен быть позже now"
+            );
+        }
+
         UUID processingToken =
                 UUID.randomUUID();
 
@@ -58,15 +85,36 @@ public class KnowledgeIngestionQueueRepository {
                                       and job.lease_until < ?
                                   )
                               )
+
+                            /*
+                             * Recovery priority:
+                             *
+                             * expired active jobs are reclaimed before normal
+                             * due PENDING jobs.
+                             *
+                             * Without this ordering a continuously growing
+                             * PENDING backlog could starve abandoned jobs.
+                             */
                             order by
                                 case
-                                    when job.status = 'PENDING'
-                                        then 0
+                                    when job.status in (
+                                        'VALIDATING',
+                                        'EXTRACTING',
+                                        'CHUNKING'
+                                    ) then 0
                                     else 1
                                 end,
-                                job.next_attempt_at,
+                                case
+                                    when job.status in (
+                                        'VALIDATING',
+                                        'EXTRACTING',
+                                        'CHUNKING'
+                                    ) then job.lease_until
+                                    else job.next_attempt_at
+                                end,
                                 job.created_at,
                                 job.id
+
                             for update skip locked
                             limit 1
                         )
@@ -103,14 +151,28 @@ public class KnowledgeIngestionQueueRepository {
                                         resultSet
                                 ),
                         maxAttempts,
-                        Timestamp.from(now),
-                        Timestamp.from(now),
+                        Timestamp.from(
+                                now
+                        ),
+                        Timestamp.from(
+                                now
+                        ),
                         processingToken,
-                        Timestamp.from(now),
-                        Timestamp.from(leaseUntil),
-                        Timestamp.from(now),
-                        Timestamp.from(now),
-                        Timestamp.from(now)
+                        Timestamp.from(
+                                now
+                        ),
+                        Timestamp.from(
+                                leaseUntil
+                        ),
+                        Timestamp.from(
+                                now
+                        ),
+                        Timestamp.from(
+                                now
+                        ),
+                        Timestamp.from(
+                                now
+                        )
                 );
 
         return claimed.stream()
@@ -125,6 +187,39 @@ public class KnowledgeIngestionQueueRepository {
             Instant now,
             Instant newLeaseUntil
     ) {
+        Objects.requireNonNull(
+                claim,
+                "claim не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                expected,
+                "expected не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                target,
+                "target не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                newLeaseUntil,
+                "newLeaseUntil не должен быть null"
+        );
+
+        if (!newLeaseUntil.isAfter(
+                now
+        )) {
+            throw new IllegalArgumentException(
+                    "newLeaseUntil должен быть позже now"
+            );
+        }
+
         int updated =
                 jdbcTemplate.update(
                         """
@@ -139,12 +234,18 @@ public class KnowledgeIngestionQueueRepository {
                           and lease_until >= ?
                         """,
                         target.name(),
-                        Timestamp.from(newLeaseUntil),
-                        Timestamp.from(now),
+                        Timestamp.from(
+                                newLeaseUntil
+                        ),
+                        Timestamp.from(
+                                now
+                        ),
                         claim.jobId(),
                         expected.name(),
                         claim.processingToken(),
-                        Timestamp.from(now)
+                        Timestamp.from(
+                                now
+                        )
                 );
 
         requireOwnership(
@@ -159,6 +260,34 @@ public class KnowledgeIngestionQueueRepository {
             Instant now,
             Instant newLeaseUntil
     ) {
+        Objects.requireNonNull(
+                claim,
+                "claim не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                expected,
+                "expected не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                newLeaseUntil,
+                "newLeaseUntil не должен быть null"
+        );
+
+        if (!newLeaseUntil.isAfter(
+                now
+        )) {
+            throw new IllegalArgumentException(
+                    "newLeaseUntil должен быть позже now"
+            );
+        }
+
         int updated =
                 jdbcTemplate.update(
                         """
@@ -171,12 +300,18 @@ public class KnowledgeIngestionQueueRepository {
                           and processing_token = ?
                           and lease_until >= ?
                         """,
-                        Timestamp.from(newLeaseUntil),
-                        Timestamp.from(now),
+                        Timestamp.from(
+                                newLeaseUntil
+                        ),
+                        Timestamp.from(
+                                now
+                        ),
                         claim.jobId(),
                         expected.name(),
                         claim.processingToken(),
-                        Timestamp.from(now)
+                        Timestamp.from(
+                                now
+                        )
                 );
 
         requireOwnership(
@@ -194,6 +329,27 @@ public class KnowledgeIngestionQueueRepository {
             Instant now,
             Instant nextAttemptAt
     ) {
+        Objects.requireNonNull(
+                claim,
+                "claim не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                nextAttemptAt,
+                "nextAttemptAt не должен быть null"
+        );
+
+        if (maxAttempts <= 0) {
+            throw new IllegalArgumentException(
+                    "maxAttempts должен быть положительным"
+            );
+        }
+
         String message =
                 truncateErrorMessage(
                         errorMessage
@@ -204,20 +360,21 @@ public class KnowledgeIngestionQueueRepository {
                         && claim.attempt()
                         < maxAttempts;
 
-        int updated = retry
-                ? scheduleRetry(
-                        claim,
-                        errorCode,
-                        message,
-                        now,
-                        nextAttemptAt
-                )
-                : markFailed(
-                        claim,
-                        errorCode,
-                        message,
-                        now
-                );
+        int updated =
+                retry
+                        ? scheduleRetry(
+                                claim,
+                                errorCode,
+                                message,
+                                now,
+                                nextAttemptAt
+                        )
+                        : markFailed(
+                                claim,
+                                errorCode,
+                                message,
+                                now
+                        );
 
         requireOwnership(
                 updated
@@ -230,6 +387,17 @@ public class KnowledgeIngestionQueueRepository {
             Instant now,
             int maxAttempts
     ) {
+        Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
+
+        if (maxAttempts <= 0) {
+            throw new IllegalArgumentException(
+                    "maxAttempts должен быть положительным"
+            );
+        }
+
         return jdbcTemplate.query(
                 """
                 update knowledge_ingestion_jobs
@@ -262,9 +430,15 @@ public class KnowledgeIngestionQueueRepository {
                         mapExpired(
                                 resultSet
                         ),
-                Timestamp.from(now),
-                Timestamp.from(now),
-                Timestamp.from(now),
+                Timestamp.from(
+                        now
+                ),
+                Timestamp.from(
+                        now
+                ),
+                Timestamp.from(
+                        now
+                ),
                 maxAttempts
         );
     }
@@ -297,13 +471,19 @@ public class KnowledgeIngestionQueueRepository {
                   and processing_token = ?
                   and lease_until >= ?
                 """,
-                Timestamp.from(nextAttemptAt),
+                Timestamp.from(
+                        nextAttemptAt
+                ),
                 errorCode,
                 message,
-                Timestamp.from(now),
+                Timestamp.from(
+                        now
+                ),
                 claim.jobId(),
                 claim.processingToken(),
-                Timestamp.from(now)
+                Timestamp.from(
+                        now
+                )
         );
     }
 
@@ -336,17 +516,34 @@ public class KnowledgeIngestionQueueRepository {
                 """,
                 errorCode,
                 message,
-                Timestamp.from(now),
-                Timestamp.from(now),
+                Timestamp.from(
+                        now
+                ),
+                Timestamp.from(
+                        now
+                ),
                 claim.jobId(),
                 claim.processingToken(),
-                Timestamp.from(now)
+                Timestamp.from(
+                        now
+                )
         );
     }
 
     private static KnowledgeIngestionClaim mapClaim(
             ResultSet resultSet
     ) throws SQLException {
+        Timestamp leaseUntil =
+                resultSet.getTimestamp(
+                        "lease_until"
+                );
+
+        if (leaseUntil == null) {
+            throw new SQLException(
+                    "Claimed ingestion job has null lease_until"
+            );
+        }
+
         return new KnowledgeIngestionClaim(
                 resultSet.getObject(
                         "id",
@@ -375,9 +572,7 @@ public class KnowledgeIngestionQueueRepository {
                 resultSet.getInt(
                         "attempt"
                 ),
-                resultSet.getTimestamp(
-                        "lease_until"
-                ).toInstant()
+                leaseUntil.toInstant()
         );
     }
 

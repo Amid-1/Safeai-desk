@@ -103,6 +103,11 @@ export const MONTHLY_COST_STATES = [
     'UNKNOWN',
 ] as const
 
+export const MODEL_ROUTE_DECISION_INTEGRITY_VERSIONS = [
+    1,
+    2,
+] as const
+
 export const MODEL_ROUTE_REASONS = [
     'REQUESTED_MODEL',
     'POLICY_DEFAULT',
@@ -171,6 +176,9 @@ export type ModelRouteOutcome =
 
 export type MonthlyCostState =
     typeof MONTHLY_COST_STATES[number]
+
+export type ModelRouteDecisionIntegrityVersion =
+    typeof MODEL_ROUTE_DECISION_INTEGRITY_VERSIONS[number]
 
 export type ModelRouteReason =
     typeof MODEL_ROUTE_REASONS[number]
@@ -297,7 +305,7 @@ export type ModelRouteDecision = {
     pricingComplete: boolean
     outcome: ModelRouteOutcome
     reason: ModelRouteReason
-    decisionIntegrityVersion: number
+    decisionIntegrityVersion: ModelRouteDecisionIntegrityVersion
     decisionSha256: string
     createdAt: string
 }
@@ -590,7 +598,10 @@ export function parseModelRouteDecision(
         pricingComplete: expectBoolean(record.pricingComplete, `${field}.pricingComplete`),
         outcome: expectEnum(record.outcome, `${field}.outcome`, MODEL_ROUTE_OUTCOMES),
         reason: expectEnum(record.reason, `${field}.reason`, MODEL_ROUTE_REASONS),
-        decisionIntegrityVersion: expectNonNegativeInteger(record.decisionIntegrityVersion, `${field}.decisionIntegrityVersion`),
+        decisionIntegrityVersion: parseDecisionIntegrityVersion(
+            record.decisionIntegrityVersion,
+            `${field}.decisionIntegrityVersion`,
+        ),
         decisionSha256: expectSha256(record.decisionSha256, `${field}.decisionSha256`),
         createdAt: expectInstant(record.createdAt, `${field}.createdAt`),
     }
@@ -698,8 +709,13 @@ function validateRouteDecisionSemantics(value: ModelRouteDecision, field: string
         `${field}: catalog id/version должны быть парой`)
 
     if (value.monthlyBudgetUsd === null) {
-        requireContract(value.monthlyCostState === 'NOT_EVALUATED',
-            `${field}: без monthlyBudgetUsd state должен быть NOT_EVALUATED`)
+        requireContract(
+            value.monthlyCostState === 'NOT_EVALUATED'
+                && !value.monthlyCostKnown
+                && value.monthlySpentUsd === null
+                && value.monthlyProjectedUsd === null,
+            `${field}: без monthlyBudgetUsd monthly cost должен быть NOT_EVALUATED без spent/projected evidence`,
+        )
     } else if (value.monthlyCostKnown) {
         requireContract(value.monthlyCostState === 'KNOWN',
             `${field}: monthlyCostKnown=true требует state=KNOWN`)
@@ -729,6 +745,28 @@ function validateRouteDecisionSemantics(value: ModelRouteDecision, field: string
             && value.selectedProviderModelId === null,
         `${field}: MODEL_NOT_FOUND не может содержать physical selection`)
     }
+}
+
+function parseDecisionIntegrityVersion(
+    value: unknown,
+    field: string,
+): ModelRouteDecisionIntegrityVersion {
+    const parsed =
+        expectNonNegativeInteger(
+            value,
+            field,
+        )
+
+    if (
+        parsed !== 1
+        && parsed !== 2
+    ) {
+        throw contractError(
+            `${field} должен быть 1 или 2`,
+        )
+    }
+
+    return parsed
 }
 
 function parseMoneyString(value: unknown, field: string): string | null {

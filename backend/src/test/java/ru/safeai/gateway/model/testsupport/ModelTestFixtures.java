@@ -93,7 +93,9 @@ public final class ModelTestFixtures {
                 0L,
                 0L,
                 List.of(
-                        new SimpleGrantedAuthority(authority)
+                        new SimpleGrantedAuthority(
+                                authority
+                        )
                 )
         );
     }
@@ -110,8 +112,12 @@ public final class ModelTestFixtures {
     public static RuntimeModelStatusResponse configuredRuntime() {
         return runtime(
                 "CONFIGURED",
-                new BigDecimal("1.000000000000"),
-                new BigDecimal("4.000000000000"),
+                new BigDecimal(
+                        "1.000000000000"
+                ),
+                new BigDecimal(
+                        "4.000000000000"
+                ),
                 "pricing-2026-08"
         );
     }
@@ -159,8 +165,12 @@ public final class ModelTestFixtures {
                 ModelLifecycle.ACTIVE,
                 ModelPricingStatus.CONFIGURED,
                 true,
-                new BigDecimal("1.000000000000"),
-                new BigDecimal("4.000000000000"),
+                new BigDecimal(
+                        "1.000000000000"
+                ),
+                new BigDecimal(
+                        "4.000000000000"
+                ),
                 Set.of(),
                 ModelRetentionStatus.NOT_DECLARED,
                 ModelTrainingUseStatus.NOT_DECLARED
@@ -188,10 +198,15 @@ public final class ModelTestFixtures {
                 32_000,
                 4_096,
                 capabilities,
-                Set.of(ModelModality.TEXT),
-                Set.of(ModelModality.TEXT),
+                Set.of(
+                        ModelModality.TEXT
+                ),
+                Set.of(
+                        ModelModality.TEXT
+                ),
                 retentionStatus,
-                retentionStatus == ModelRetentionStatus.ZERO_DATA_RETENTION
+                retentionStatus
+                        == ModelRetentionStatus.ZERO_DATA_RETENTION
                         ? 0
                         : null,
                 trainingUseStatus,
@@ -202,13 +217,18 @@ public final class ModelTestFixtures {
                 null,
                 outputPrice,
                 "{}",
-                pricingStatus == ModelPricingStatus.CONFIGURED
+                pricingStatus
+                        == ModelPricingStatus.CONFIGURED
                         ? "pricing-2026-08"
                         : null,
-                NOW.minusSeconds(60),
+                NOW.minusSeconds(
+                        60
+                ),
                 ModelCatalogSource.MANUAL,
                 USER_ID,
-                NOW.minusSeconds(120)
+                NOW.minusSeconds(
+                        120
+                )
         );
     }
 
@@ -220,8 +240,12 @@ public final class ModelTestFixtures {
                 null,
                 32_000,
                 4_096,
-                new BigDecimal("10.000000000000"),
-                new BigDecimal("100.000000000000"),
+                new BigDecimal(
+                        "10.000000000000"
+                ),
+                new BigDecimal(
+                        "100.000000000000"
+                ),
                 BudgetEnforcement.HARD,
                 true,
                 false,
@@ -260,13 +284,16 @@ public final class ModelTestFixtures {
                 requireNoTraining,
                 requireZeroDataRetention,
                 USER_ID,
-                NOW.minusSeconds(300)
+                NOW.minusSeconds(
+                        300
+                )
         );
     }
 
     public static ModelRouteRequest routeRequest(
             String requestedModelKey,
-            Set<ModelCapability> capabilities
+            Set<ModelCapability> capabilities,
+            long additionalInputTokenUpperBound
     ) {
         return new ModelRouteRequest(
                 ORGANIZATION_ID,
@@ -278,7 +305,8 @@ public final class ModelTestFixtures {
                 requestedModelKey,
                 "hello",
                 List.of(),
-                capabilities
+                capabilities,
+                additionalInputTokenUpperBound
         );
     }
 }

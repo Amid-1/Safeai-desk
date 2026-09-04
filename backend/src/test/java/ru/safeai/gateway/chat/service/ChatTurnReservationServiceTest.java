@@ -44,6 +44,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -582,7 +583,7 @@ class ChatTurnReservationServiceTest {
         order.verify(
                 routingEnvelopeService
         ).additionalInputTokenUpperBound(
-                eq(KnowledgeMode.GENERAL),
+                eq(false),
                 any()
         );
 
@@ -890,7 +891,7 @@ class ChatTurnReservationServiceTest {
 
         when(
                 routingEnvelopeService.additionalInputTokenUpperBound(
-                        any(),
+                        anyBoolean(),
                         any()
                 )
         ).thenReturn(

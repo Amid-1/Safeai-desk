@@ -12,6 +12,9 @@ import java.util.regex.Pattern;
  *
  * <p>Secrets must come from environment variables or an external secret
  * manager. Do not keep real credentials in application*.yml committed to Git.</p>
+ *
+ * <p>This record contains storage credentials. Its {@link #toString()} is
+ * therefore explicitly overridden and must never expose secret values.</p>
  */
 @ConfigurationProperties(
         prefix = "safeai.knowledge.storage"
@@ -115,6 +118,29 @@ public record KnowledgeStorageProperties(
         }
     }
 
+    /**
+     * Never expose object-storage credentials through the record-generated
+     * toString().
+     *
+     * <p>The return value is always non-null. NullableProblems suppression is
+     * intentionally local so this module does not acquire a compile-time
+     * dependency on an IDE-specific nullability annotation merely to satisfy
+     * an external annotation attached to Object.toString().</p>
+     */
+    @Override
+    @SuppressWarnings("NullableProblems")
+    public String toString() {
+        return "KnowledgeStorageProperties["
+                + "type=" + type
+                + ", localRoot=" + localRoot
+                + ", maxUploadBytes=" + maxUploadBytes
+                + ", endpoint=" + endpoint
+                + ", accessKey=<redacted>"
+                + ", secretKey=<redacted>"
+                + ", bucket=" + bucket
+                + "]";
+    }
+
     private static long resolveMaxUploadBytes(
             Long value
     ) {
@@ -175,15 +201,19 @@ public record KnowledgeStorageProperties(
                 uri.getScheme() == null
                         ? ""
                         : uri.getScheme()
-                        .toLowerCase(
-                                Locale.ROOT
-                        );
+                                .toLowerCase(
+                                        Locale.ROOT
+                                );
 
-        if (!scheme.equals(
-                "http"
+        /*
+         * HTTP остаётся допустимым для локального/dev S3-compatible storage.
+         * Production invariant должен отдельно требовать HTTPS.
+         */
+        if (!"http".equals(
+                scheme
         )
-                && !scheme.equals(
-                "https"
+                && !"https".equals(
+                scheme
         )) {
             throw invalid(
                     "endpoint"
@@ -193,8 +223,8 @@ public record KnowledgeStorageProperties(
         if (uri.getHost() == null
                 || uri.getHost().isBlank()
                 || uri.getUserInfo() != null
-                || uri.getFragment() != null
-                || uri.getQuery() != null) {
+                || uri.getQuery() != null
+                || uri.getFragment() != null) {
             throw invalid(
                     "endpoint"
             );
@@ -206,12 +236,14 @@ public record KnowledgeStorageProperties(
     ) {
         if (value.length() < 3
                 || value.length() > 63
-                || !BUCKET_NAME.matcher(
-                value
-        ).matches()
+                || !BUCKET_NAME
+                .matcher(
+                        value
+                )
+                .matches()
                 || value.contains(
-                ".."
-        )) {
+                        ".."
+                )) {
             throw invalid(
                     "bucket"
             );
@@ -222,7 +254,8 @@ public record KnowledgeStorageProperties(
             String property
     ) {
         return new IllegalStateException(
-                "Некорректное значение safeai.knowledge.storage."
+                "Некорректное значение "
+                        + "safeai.knowledge.storage."
                         + property
         );
     }
@@ -231,7 +264,8 @@ public record KnowledgeStorageProperties(
             Throwable cause
     ) {
         return new IllegalStateException(
-                "Некорректное значение safeai.knowledge.storage.endpoint",
+                "Некорректное значение "
+                        + "safeai.knowledge.storage.endpoint",
                 cause
         );
     }

@@ -30,7 +30,8 @@ class ModelRouteDecisionFactoryTest {
         ModelRouteDecision decision = buildAllowedDecision(
                 ModelTestFixtures.routeRequest(
                         "openai:gpt-test",
-                        Set.of(ModelCapability.TOOLS)
+                        Set.of(ModelCapability.TOOLS),
+                        0L
                 )
         );
 
@@ -62,7 +63,8 @@ class ModelRouteDecisionFactoryTest {
                 Instant.parse("2026-08-28T12:00:00.123456789Z");
         ModelRouteRequest request = ModelTestFixtures.routeRequest(
                 null,
-                Set.of()
+                Set.of(),
+                0L
         );
 
         ModelRouteDecision decision = factory.buildDecision(
@@ -146,7 +148,8 @@ class ModelRouteDecisionFactoryTest {
                 buildAllowedDecision(
                         ModelTestFixtures.routeRequest(
                                 null,
-                                Set.of()
+                                Set.of(),
+                                0L
                         )
                 );
 
@@ -166,7 +169,8 @@ class ModelRouteDecisionFactoryTest {
     void replayRequiresSameRequestedModelKey() {
         ModelRouteRequest original = ModelTestFixtures.routeRequest(
                 "openai:gpt-test",
-                Set.of()
+                Set.of(),
+                0L
         );
         ModelRouteDecision decision = buildAllowedDecision(
                 original
@@ -197,7 +201,8 @@ class ModelRouteDecisionFactoryTest {
     void replayRequiresSameCapabilitiesEvenWhenContentHashMatches() {
         ModelRouteRequest original = ModelTestFixtures.routeRequest(
                 null,
-                Set.of()
+                Set.of(),
+                0L
         );
         ModelRouteDecision decision = buildAllowedDecision(
                 original
@@ -228,7 +233,8 @@ class ModelRouteDecisionFactoryTest {
     void replayRequiresSamePlannedTurnForAllowedDecision() {
         ModelRouteRequest original = ModelTestFixtures.routeRequest(
                 null,
-                Set.of()
+                Set.of(),
+                0L
         );
         ModelRouteDecision decision = buildAllowedDecision(
                 original
@@ -261,7 +267,8 @@ class ModelRouteDecisionFactoryTest {
     void deniedReplayReturnsStableGovernanceDenial() {
         ModelRouteRequest request = ModelTestFixtures.routeRequest(
                 "openai:gpt-test",
-                Set.of()
+                Set.of(),
+                0L
         );
         ModelRouteDecision denied = factory.buildDecision(
                 request,
@@ -302,7 +309,8 @@ class ModelRouteDecisionFactoryTest {
                                 buildAllowedDecision(
                                         ModelTestFixtures.routeRequest(
                                                 null,
-                                                Set.of()
+                                                Set.of(),
+                                                0L
                                         )
                                 )
                         )

@@ -639,7 +639,8 @@ class ModelRoutingServiceTest {
     ) {
         return ModelTestFixtures.routeRequest(
                 requestedModelKey,
-                capabilities
+                capabilities,
+                0L
         );
     }
 

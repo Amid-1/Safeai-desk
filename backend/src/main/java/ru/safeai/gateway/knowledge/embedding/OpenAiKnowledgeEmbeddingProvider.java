@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Component
 @ConditionalOnProperty(
@@ -27,6 +28,25 @@ public class OpenAiKnowledgeEmbeddingProvider
 
     private static final long MAX_RESPONSE_BYTES =
             8L * 1024L * 1024L;
+
+    /**
+     * Hard aggregate request-body guard.
+     *
+     * <p>This is intentionally independent from batchSize. A batch containing
+     * a small number of very large strings must not be allowed to create an
+     * unexpectedly large HTTP request.</p>
+     */
+    private static final long MAX_BATCH_PAYLOAD_BYTES =
+            4L * 1024L * 1024L;
+
+    /**
+     * Conservative fixed allowance for JSON field names, dimensions,
+     * encoding_format, punctuation and serializer overhead.
+     *
+     * <p>The variable model and input strings are estimated separately.</p>
+     */
+    private static final long JSON_BATCH_FIXED_OVERHEAD_BYTES =
+            512L;
 
     private final KnowledgeEmbeddingProperties properties;
     private final RestClient client;
@@ -50,8 +70,17 @@ public class OpenAiKnowledgeEmbeddingProvider
             KnowledgeEmbeddingProperties properties,
             RestClient client
     ) {
-        this.properties = properties;
-        this.client = client;
+        this.properties =
+                Objects.requireNonNull(
+                        properties,
+                        "properties не должен быть null"
+                );
+
+        this.client =
+                Objects.requireNonNull(
+                        client,
+                        "client не должен быть null"
+                );
     }
 
     @Override
@@ -76,8 +105,20 @@ public class OpenAiKnowledgeEmbeddingProvider
     public float[] embed(
             String text
     ) {
+        /*
+         * Validate before List.of(...), because List.of(null) would otherwise
+         * leak an unrelated NullPointerException instead of the module's
+         * controlled EMBEDDING_INVALID_INPUT error.
+         */
+        String validated =
+                validateInput(
+                        text
+                );
+
         return embedAll(
-                List.of(text)
+                List.of(
+                        validated
+                )
         ).getFirst();
     }
 
@@ -102,23 +143,96 @@ public class OpenAiKnowledgeEmbeddingProvider
                         texts.size()
                 );
 
-        for (
-                int start = 0;
-                start < texts.size();
-                start += properties.batchSize()
-        ) {
-            int end =
-                    Math.min(
-                            texts.size(),
-                            start
-                                    + properties.batchSize()
+        List<String> batch =
+                new ArrayList<>(
+                        properties.batchSize()
+                );
+
+        long basePayloadBytes =
+                calculateBasePayloadBytes();
+
+        long batchBytes =
+                basePayloadBytes;
+
+        for (String raw : texts) {
+            String value =
+                    validateInput(
+                            raw
                     );
 
+            /*
+             * +1 is a conservative allowance for the comma separating JSON
+             * array entries. For the first element this deliberately
+             * overestimates by one byte.
+             */
+            long valueBytes =
+                    safeAdd(
+                            estimateJsonStringUpperBoundBytes(
+                                    value
+                            ),
+                            1L
+                    );
+
+            /*
+             * A single valid input must itself fit inside an otherwise empty
+             * provider batch.
+             */
+            if (safeAdd(
+                    basePayloadBytes,
+                    valueBytes
+            ) > MAX_BATCH_PAYLOAD_BYTES) {
+                throw new KnowledgeEmbeddingException(
+                        "EMBEDDING_INVALID_INPUT",
+                        "Один embedding input превышает максимальный "
+                                + "размер provider batch payload",
+                        false
+                );
+            }
+
+            boolean countFull =
+                    batch.size()
+                            >= properties.batchSize();
+
+            boolean bytesFull =
+                    !batch.isEmpty()
+                            && safeAdd(
+                            batchBytes,
+                            valueBytes
+                    ) > MAX_BATCH_PAYLOAD_BYTES;
+
+            if (countFull
+                    || bytesFull) {
+
+                result.addAll(
+                        requestBatch(
+                                List.copyOf(
+                                        batch
+                                )
+                        )
+                );
+
+                batch.clear();
+
+                batchBytes =
+                        basePayloadBytes;
+            }
+
+            batch.add(
+                    value
+            );
+
+            batchBytes =
+                    safeAdd(
+                            batchBytes,
+                            valueBytes
+                    );
+        }
+
+        if (!batch.isEmpty()) {
             result.addAll(
                     requestBatch(
-                            texts.subList(
-                                    start,
-                                    end
+                            List.copyOf(
+                                    batch
                             )
                     )
             );
@@ -132,10 +246,32 @@ public class OpenAiKnowledgeEmbeddingProvider
     private List<float[]> requestBatch(
             List<String> input
     ) {
+        if (input == null
+                || input.isEmpty()
+                || input.size()
+                > properties.batchSize()) {
+            throw new KnowledgeEmbeddingException(
+                    "EMBEDDING_INVALID_INPUT",
+                    "Некорректный embedding batch",
+                    false
+            );
+        }
+
+        /*
+         * Revalidate at the outbound provider boundary even though embedAll()
+         * already validates input. This protects the invariant if requestBatch
+         * is refactored or reused later.
+         */
         List<String> normalized =
                 input.stream()
-                        .map(this::validateInput)
+                        .map(
+                                this::validateInput
+                        )
                         .toList();
+
+        validateBatchPayloadUpperBound(
+                normalized
+        );
 
         Map<String, Object> payload =
                 new HashMap<>();
@@ -144,14 +280,17 @@ public class OpenAiKnowledgeEmbeddingProvider
                 "model",
                 properties.model()
         );
+
         payload.put(
                 "input",
                 normalized
         );
+
         payload.put(
                 "dimensions",
                 dimensions()
         );
+
         payload.put(
                 "encoding_format",
                 "float"
@@ -160,7 +299,9 @@ public class OpenAiKnowledgeEmbeddingProvider
         try {
             JsonNode body =
                     client.post()
-                            .uri("/embeddings")
+                            .uri(
+                                    "/embeddings"
+                            )
                             .header(
                                     HttpHeaders.AUTHORIZATION,
                                     "Bearer "
@@ -169,7 +310,9 @@ public class OpenAiKnowledgeEmbeddingProvider
                             .contentType(
                                     MediaType.APPLICATION_JSON
                             )
-                            .body(payload)
+                            .body(
+                                    payload
+                            )
                             .retrieve()
                             .body(
                                     JsonNode.class
@@ -179,6 +322,7 @@ public class OpenAiKnowledgeEmbeddingProvider
                     body,
                     normalized.size()
             );
+
         } catch (RestClientResponseException exception) {
             int status =
                     exception.getStatusCode()
@@ -197,6 +341,7 @@ public class OpenAiKnowledgeEmbeddingProvider
                     retryable,
                     exception
             );
+
         } catch (RestClientException exception) {
             throw new KnowledgeEmbeddingException(
                     "EMBEDDING_PROVIDER_UNAVAILABLE",
@@ -207,14 +352,61 @@ public class OpenAiKnowledgeEmbeddingProvider
         }
     }
 
+    private void validateBatchPayloadUpperBound(
+            List<String> input
+    ) {
+        long bytes =
+                calculateBasePayloadBytes();
+
+        for (String value : input) {
+            bytes =
+                    safeAdd(
+                            bytes,
+                            safeAdd(
+                                    estimateJsonStringUpperBoundBytes(
+                                            value
+                                    ),
+                                    1L
+                            )
+                    );
+
+            if (bytes > MAX_BATCH_PAYLOAD_BYTES) {
+                throw new KnowledgeEmbeddingException(
+                        "EMBEDDING_INVALID_INPUT",
+                        "Embedding batch превышает максимальный "
+                                + "provider payload",
+                        false
+                );
+            }
+        }
+    }
+
+    private long calculateBasePayloadBytes() {
+        /*
+         * Account explicitly for the variable model value instead of assuming
+         * that it always fits into the fixed JSON overhead allowance.
+         */
+        return safeAdd(
+                JSON_BATCH_FIXED_OVERHEAD_BYTES,
+                estimateJsonStringUpperBoundBytes(
+                        properties.model()
+                )
+        );
+    }
+
     private List<float[]> parse(
             JsonNode body,
             int expected
     ) {
         if (body == null
-                || !body.path("data").isArray()
-                || body.path("data").size()
+                || !body.path(
+                        "data"
+                ).isArray()
+                || body.path(
+                        "data"
+                ).size()
                 != expected) {
+
             throw invalidResponse(
                     "Embedding provider вернул некорректный batch"
             );
@@ -223,19 +415,36 @@ public class OpenAiKnowledgeEmbeddingProvider
         Map<Integer, float[]> indexed =
                 new HashMap<>();
 
-        for (JsonNode item : body.path("data")) {
+        for (JsonNode item :
+                body.path(
+                        "data"
+                )) {
+
+            if (item == null
+                    || !item.isObject()) {
+                throw invalidResponse(
+                        "Embedding provider вернул некорректный элемент batch"
+                );
+            }
+
             int index =
-                    item.path("index")
-                            .asInt(-1);
+                    item.path(
+                            "index"
+                    ).asInt(
+                            -1
+                    );
 
             JsonNode values =
-                    item.path("embedding");
+                    item.path(
+                            "embedding"
+                    );
 
             if (index < 0
                     || index >= expected
                     || !values.isArray()
                     || values.size()
                     != dimensions()) {
+
                 throw invalidResponse(
                         "Embedding provider вернул неверную размерность"
                 );
@@ -246,20 +455,35 @@ public class OpenAiKnowledgeEmbeddingProvider
                             dimensions()
                             ];
 
-            double squareSum = 0.0;
+            double squareSum =
+                    0.0;
 
             for (
                     int position = 0;
                     position < vector.length;
                     position++
             ) {
-                double raw =
-                        values.get(position)
-                                .asDouble();
+                JsonNode valueNode =
+                        values.get(
+                                position
+                        );
 
-                if (!Double.isFinite(raw)
+                if (valueNode == null
+                        || !valueNode.isNumber()) {
+                    throw invalidResponse(
+                            "Embedding содержит нечисловое значение"
+                    );
+                }
+
+                double raw =
+                        valueNode.asDouble();
+
+                if (!Double.isFinite(
+                        raw
+                )
                         || raw > Float.MAX_VALUE
                         || raw < -Float.MAX_VALUE) {
+
                     throw invalidResponse(
                             "Embedding содержит нечисловое значение"
                     );
@@ -270,12 +494,19 @@ public class OpenAiKnowledgeEmbeddingProvider
 
                 squareSum +=
                         raw * raw;
+
+                if (!Double.isFinite(
+                        squareSum
+                )) {
+                    throw invalidResponse(
+                            "Embedding provider вернул некорректный vector"
+                    );
+                }
             }
 
-            if (squareSum == 0.0
-                    || !Double.isFinite(squareSum)) {
+            if (squareSum == 0.0) {
                 throw invalidResponse(
-                        "Embedding provider вернул нулевой или некорректный vector"
+                        "Embedding provider вернул нулевой vector"
                 );
             }
 
@@ -300,7 +531,9 @@ public class OpenAiKnowledgeEmbeddingProvider
                 index++
         ) {
             float[] vector =
-                    indexed.get(index);
+                    indexed.get(
+                            index
+                    );
 
             if (vector == null) {
                 throw invalidResponse(
@@ -308,12 +541,108 @@ public class OpenAiKnowledgeEmbeddingProvider
                 );
             }
 
-            ordered.add(vector);
+            ordered.add(
+                    vector
+            );
         }
 
         return List.copyOf(
                 ordered
         );
+    }
+
+    /**
+     * Conservative upper bound for the UTF-8 byte size of one JSON string.
+     *
+     * <p>This intentionally assumes that non-ASCII Unicode code points may be
+     * emitted using six-byte JSON Unicode escape notation. Supplementary code
+     * points may require a UTF-16 surrogate pair and therefore up to twelve
+     * ASCII bytes. This is more conservative than Jackson's normal UTF-8
+     * output, but makes the request-size safety bound independent from
+     * serializer escaping configuration.</p>
+     */
+    private static long estimateJsonStringUpperBoundBytes(
+            String value
+    ) {
+        if (value == null) {
+            return 4L; // JSON null
+        }
+
+        long bytes =
+                2L; // opening and closing quotes
+
+        for (
+                int offset = 0;
+                offset < value.length();
+        ) {
+            int codePoint =
+                    value.codePointAt(
+                            offset
+                    );
+
+            if (codePoint == '"'
+                    || codePoint == '\\') {
+
+                bytes =
+                        safeAdd(
+                                bytes,
+                                2L
+                        );
+
+            } else if (codePoint <= 0x1F) {
+
+                /*
+                 * Worst-case JSON control-character escape occupies
+                 * six ASCII bytes.
+                 */
+                bytes =
+                        safeAdd(
+                                bytes,
+                                6L
+                        );
+
+            } else if (codePoint <= 0x7F) {
+
+                bytes =
+                        safeAdd(
+                                bytes,
+                                1L
+                        );
+
+            } else if (codePoint <= 0xFFFF) {
+
+                /*
+                 * Conservative serializer-independent upper bound:
+                 * one escaped UTF-16 code unit occupies six ASCII bytes.
+                 */
+                bytes =
+                        safeAdd(
+                                bytes,
+                                6L
+                        );
+
+            } else {
+
+                /*
+                 * A supplementary Unicode code point may be represented
+                 * as two escaped UTF-16 surrogate code units.
+                 *
+                 * Two escaped code units occupy up to twelve ASCII bytes.
+                 */
+                bytes =
+                        safeAdd(
+                                bytes,
+                                12L
+                        );
+            }
+
+            offset +=
+                    Character.charCount(
+                            codePoint
+                    );
+        }
+
+        return bytes;
     }
 
     private String validateInput(
@@ -323,6 +652,7 @@ public class OpenAiKnowledgeEmbeddingProvider
                 || value.isBlank()
                 || value.length()
                 > properties.maxInputChars()) {
+
             throw new KnowledgeEmbeddingException(
                     "EMBEDDING_INVALID_INPUT",
                     "Некорректный текст для embedding",
@@ -331,6 +661,25 @@ public class OpenAiKnowledgeEmbeddingProvider
         }
 
         return value;
+    }
+
+    private static long safeAdd(
+            long left,
+            long right
+    ) {
+        try {
+            return Math.addExact(
+                    left,
+                    right
+            );
+        } catch (ArithmeticException exception) {
+            throw new KnowledgeEmbeddingException(
+                    "EMBEDDING_INVALID_INPUT",
+                    "Размер embedding payload превысил допустимый диапазон",
+                    false,
+                    exception
+            );
+        }
     }
 
     private static KnowledgeEmbeddingException invalidResponse(

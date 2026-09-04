@@ -265,7 +265,8 @@ public class ChatTurnReservationService {
 
         long additionalInputTokenUpperBound =
                 routingEnvelopeService.additionalInputTokenUpperBound(
-                        request.knowledgeMode(),
+                        request.knowledgeMode()
+                                .usesKnowledge(),
                         requiredCapabilities
                 );
 

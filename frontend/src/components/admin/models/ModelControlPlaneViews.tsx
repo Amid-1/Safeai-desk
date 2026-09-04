@@ -103,6 +103,15 @@ const BUDGET_ENFORCEMENT_LABELS: Record<
     HARD: 'Жёсткий контроль',
 }
 
+const MONTHLY_COST_STATE_LABELS: Record<
+    string,
+    string
+> = {
+    NOT_EVALUATED: 'Не рассчитывалось',
+    KNOWN: 'Полные данные',
+    UNKNOWN: 'Есть неизвестная стоимость',
+}
+
 const CAPABILITY_LABELS: Record<
     string,
     string
@@ -126,6 +135,8 @@ const ROUTE_REASON_LABELS: Record<
     string,
     string
 > = {
+    REQUESTED_MODEL:
+        'Выбрана явно запрошенная модель',
     POLICY_DEFAULT:
         'Выбрана модель по умолчанию',
     RUNTIME_ONLY_MATCH:
@@ -256,6 +267,15 @@ function formatBudgetEnforcement(
 
     return (
         BUDGET_ENFORCEMENT_LABELS[value]
+        ?? formatEnumFallback(value)
+    )
+}
+
+function formatMonthlyCostState(
+    value: string,
+) {
+    return (
+        MONTHLY_COST_STATE_LABELS[value]
         ?? formatEnumFallback(value)
     )
 }
@@ -1027,10 +1047,10 @@ export function RouteDecisionEvidence({
                             )
                             : '—'}
                         {' · '}
-                        Данные:{' '}
-                        {decision.monthlyCostKnown
-                            ? 'полные'
-                            : 'неполные'}
+                        Состояние:{' '}
+                        {formatMonthlyCostState(
+                            decision.monthlyCostState,
+                        )}
                     </small>
                 </div>
 
@@ -1044,6 +1064,9 @@ export function RouteDecisionEvidence({
             </dl>
 
             <code className="models-route-evidence__hash">
+                Версия контроля целостности: v
+                {decision.decisionIntegrityVersion}
+                {' · '}
                 Контрольная сумма:{' '}
                 {decision.decisionSha256}
             </code>

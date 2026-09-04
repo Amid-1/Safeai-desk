@@ -439,11 +439,11 @@ class OrganizationModelPolicyServiceTest {
                 .containsEntry("maxOutputTokens", 1_000)
                 .containsEntry(
                         "maxRequestCostUsd",
-                        new BigDecimal("5.000000000000")
+                        "5.000000000000"
                 )
                 .containsEntry(
                         "monthlyBudgetUsd",
-                        new BigDecimal("50.000000000000")
+                        "50.000000000000"
                 )
                 .containsEntry("allowModelKeyCount", 1)
                 .containsEntry("denyModelKeyCount", 0)

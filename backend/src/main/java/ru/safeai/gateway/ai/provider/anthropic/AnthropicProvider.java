@@ -104,36 +104,57 @@ public final class AnthropicProvider implements AiProvider {
                 "properties не должен быть null"
         );
 
-        this.responseMetadataService = Objects.requireNonNull(
-                responseMetadataService,
-                "responseMetadataService не должен быть null"
-        );
+        this.responseMetadataService =
+                Objects.requireNonNull(
+                        responseMetadataService,
+                        "responseMetadataService не должен быть null"
+                );
 
-        this.retryExecutor = Objects.requireNonNull(
-                retryExecutor,
-                "retryExecutor не должен быть null"
-        );
+        this.retryExecutor =
+                Objects.requireNonNull(
+                        retryExecutor,
+                        "retryExecutor не должен быть null"
+                );
 
-        this.contextWindowService = Objects.requireNonNull(
-                contextWindowService,
-                "contextWindowService не должен быть null"
-        );
+        this.contextWindowService =
+                Objects.requireNonNull(
+                        contextWindowService,
+                        "contextWindowService не должен быть null"
+                );
 
-        this.clock = Objects.requireNonNull(
-                clock,
-                "clock не должен быть null"
-        );
+        this.clock =
+                Objects.requireNonNull(
+                        clock,
+                        "clock не должен быть null"
+                );
 
-        this.client = Objects.requireNonNull(
-                client,
-                "client не должен быть null"
-        );
+        this.client =
+                Objects.requireNonNull(
+                        client,
+                        "client не должен быть null"
+                );
     }
 
     @Override
     public AiChatResponse sendMessage(
             AiChatRequest request
     ) {
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
+
+        /*
+         * Route-bound output cap is resolved exactly once.
+         *
+         * This same value is used:
+         *
+         * 1. to reserve output space in the context window;
+         * 2. as the physical Anthropic max_tokens limit.
+         *
+         * Therefore provider execution cannot silently exceed a smaller
+         * Model Control Plane output cap.
+         */
         int outputLimit =
                 request.effectiveMaxOutputTokens(
                         properties.maxTokens()
@@ -151,19 +172,25 @@ public final class AnthropicProvider implements AiProvider {
                 properties.model(),
                 preparedRequest.providerOperationId(),
                 calculateAttemptTimeout(),
-                attempt -> sendAttempt(
-                        preparedRequest,
-                        attempt
-                )
+                attempt ->
+                        sendAttempt(
+                                preparedRequest,
+                                outputLimit,
+                                attempt
+                        )
         );
     }
 
     private AiChatResponse sendAttempt(
             AiChatRequest request,
+            int outputLimit,
             AiProviderAttemptContext attempt
     ) {
         Map<String, Object> payload =
-                createPayload(request);
+                createPayload(
+                        request,
+                        outputLimit
+                );
 
         long startedAtNanos =
                 System.nanoTime();
@@ -171,7 +198,9 @@ public final class AnthropicProvider implements AiProvider {
         try {
             ResponseEntity<JsonNode> responseEntity =
                     client.post()
-                            .uri(MESSAGES_PATH)
+                            .uri(
+                                    MESSAGES_PATH
+                            )
                             .header(
                                     API_KEY_HEADER,
                                     properties.apiKey()
@@ -186,14 +215,19 @@ public final class AnthropicProvider implements AiProvider {
                             .accept(
                                     MediaType.APPLICATION_JSON
                             )
-                            .body(payload)
+                            .body(
+                                    payload
+                            )
                             .retrieve()
-                            .toEntity(JsonNode.class);
+                            .toEntity(
+                                    JsonNode.class
+                            );
 
             String providerRequestId =
-                    AiProviderSupport.extractProviderRequestId(
-                            responseEntity.getHeaders()
-                    );
+                    AiProviderSupport
+                            .extractProviderRequestId(
+                                    responseEntity.getHeaders()
+                            );
 
             return createResponse(
                     responseEntity.getBody(),
@@ -209,7 +243,9 @@ public final class AnthropicProvider implements AiProvider {
                     exception
             );
         } catch (RestClientResponseException exception) {
-            throw mapHttpException(exception);
+            throw mapHttpException(
+                    exception
+            );
         } catch (AiProviderException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -223,8 +259,15 @@ public final class AnthropicProvider implements AiProvider {
     }
 
     private Map<String, Object> createPayload(
-            AiChatRequest request
+            AiChatRequest request,
+            int outputLimit
     ) {
+        if (outputLimit <= 0) {
+            throw new IllegalArgumentException(
+                    "outputLimit должен быть положительным"
+            );
+        }
+
         Map<String, Object> payload =
                 new LinkedHashMap<>();
 
@@ -233,22 +276,33 @@ public final class AnthropicProvider implements AiProvider {
                 properties.model()
         );
 
+        /*
+         * Critical Model Control Plane invariant:
+         *
+         * never use properties.maxTokens() directly here.
+         *
+         * outputLimit already includes:
+         *
+         * min(runtime/model maximum, route-bound maxOutputTokens)
+         */
         payload.put(
                 "max_tokens",
-                properties.maxTokens()
+                outputLimit
         );
 
         payload.put(
                 "messages",
-                AiProviderSupport.buildAnthropicMessages(
-                        request
-                )
+                AiProviderSupport
+                        .buildAnthropicMessages(
+                                request
+                        )
         );
 
         List<Map<String, String>> systemBlocks =
-                AiProviderSupport.buildAnthropicSystem(
-                        request
-                );
+                AiProviderSupport
+                        .buildAnthropicSystem(
+                                request
+                        );
 
         if (!systemBlocks.isEmpty()) {
             payload.put(
@@ -257,7 +311,9 @@ public final class AnthropicProvider implements AiProvider {
             );
         }
 
-        return Map.copyOf(payload);
+        return Map.copyOf(
+                payload
+        );
     }
 
     private AiChatResponse createResponse(
@@ -267,7 +323,9 @@ public final class AnthropicProvider implements AiProvider {
             long startedAtNanos
     ) {
         ParsedAnthropicResponse parsed =
-                parseResponse(response);
+                parseResponse(
+                        response
+                );
 
         AiResponseMetadataService.AiResponseMetadata metadata =
                 responseMetadataService.extract(
@@ -277,7 +335,8 @@ public final class AnthropicProvider implements AiProvider {
 
         long durationMs =
                 Duration.ofNanos(
-                        System.nanoTime() - startedAtNanos
+                        System.nanoTime()
+                                - startedAtNanos
                 ).toMillis();
 
         log.debug(
@@ -321,7 +380,8 @@ public final class AnthropicProvider implements AiProvider {
     private ParsedAnthropicResponse parseResponse(
             JsonNode response
     ) {
-        if (response == null || !response.isObject()) {
+        if (response == null
+                || !response.isObject()) {
             throw parsingFailure(
                     PROVIDER_NAME,
                     properties.model(),
@@ -342,12 +402,16 @@ public final class AnthropicProvider implements AiProvider {
 
         String messageId =
                 textOrNull(
-                        response.get("id")
+                        response.get(
+                                "id"
+                        )
                 );
 
         String stopReason =
                 textOrNull(
-                        response.get("stop_reason")
+                        response.get(
+                                "stop_reason"
+                        )
                 );
 
         AiResponseStatus status =
@@ -357,9 +421,12 @@ public final class AnthropicProvider implements AiProvider {
                 );
 
         JsonNode content =
-                response.get("content");
+                response.get(
+                        "content"
+                );
 
-        if (content == null || !content.isArray()) {
+        if (content == null
+                || !content.isArray()) {
             throw parsingFailure(
                     PROVIDER_NAME,
                     actualModel,
@@ -374,12 +441,13 @@ public final class AnthropicProvider implements AiProvider {
                 );
 
         String validContent =
-                AiProviderSupport.requireValidContent(
-                        PROVIDER_NAME,
-                        actualModel,
-                        textContent,
-                        properties.maxResponseChars()
-                );
+                AiProviderSupport
+                        .requireValidContent(
+                                PROVIDER_NAME,
+                                actualModel,
+                                textContent,
+                                properties.maxResponseChars()
+                        );
 
         return new ParsedAnthropicResponse(
                 validContent,
@@ -396,11 +464,15 @@ public final class AnthropicProvider implements AiProvider {
     ) {
         String responseType =
                 textOrNull(
-                        response.get("type")
+                        response.get(
+                                "type"
+                        )
                 );
 
         if (responseType != null
-                && !RESPONSE_TYPE_MESSAGE.equals(responseType)) {
+                && !RESPONSE_TYPE_MESSAGE.equals(
+                responseType
+        )) {
             throw parsingFailure(
                     PROVIDER_NAME,
                     actualModel,
@@ -411,11 +483,15 @@ public final class AnthropicProvider implements AiProvider {
 
         String responseRole =
                 textOrNull(
-                        response.get("role")
+                        response.get(
+                                "role"
+                        )
                 );
 
         if (responseRole != null
-                && !RESPONSE_ROLE_ASSISTANT.equals(responseRole)) {
+                && !RESPONSE_ROLE_ASSISTANT.equals(
+                responseRole
+        )) {
             throw parsingFailure(
                     PROVIDER_NAME,
                     actualModel,
@@ -433,7 +509,8 @@ public final class AnthropicProvider implements AiProvider {
                 new StringBuilder();
 
         for (JsonNode block : content) {
-            if (block == null || !block.isObject()) {
+            if (block == null
+                    || !block.isObject()) {
                 throw parsingFailure(
                         PROVIDER_NAME,
                         actualModel,
@@ -443,16 +520,24 @@ public final class AnthropicProvider implements AiProvider {
 
             String blockType =
                     textOrNull(
-                            block.get("type")
+                            block.get(
+                                    "type"
+                            )
                     );
 
-            if (!CONTENT_TYPE_TEXT.equals(blockType)) {
+            if (!CONTENT_TYPE_TEXT.equals(
+                    blockType
+            )) {
                 continue;
             }
 
             AiProviderSupport.appendBoundedText(
                     text,
-                    textOrNull(block.get("text")),
+                    textOrNull(
+                            block.get(
+                                    "text"
+                            )
+                    ),
                     properties.maxResponseChars(),
                     PROVIDER_NAME,
                     actualModel
@@ -476,27 +561,32 @@ public final class AnthropicProvider implements AiProvider {
 
         return switch (stopReason) {
             case STOP_END_TURN,
-                 STOP_SEQUENCE -> AiResponseStatus.COMPLETED;
+                 STOP_SEQUENCE ->
+                    AiResponseStatus.COMPLETED;
 
             case STOP_MAX_TOKENS,
                  STOP_CONTEXT_EXCEEDED,
-                 STOP_PAUSE_TURN -> AiResponseStatus.INCOMPLETE;
+                 STOP_PAUSE_TURN ->
+                    AiResponseStatus.INCOMPLETE;
 
-            case STOP_REFUSAL -> AiResponseStatus.REFUSED;
+            case STOP_REFUSAL ->
+                    AiResponseStatus.REFUSED;
 
-            case STOP_TOOL_USE -> throw parsingFailure(
-                    PROVIDER_NAME,
-                    actualModel,
-                    "Unexpected Anthropic tool_use response: "
-                            + "tools are not enabled for this flow"
-            );
+            case STOP_TOOL_USE ->
+                    throw parsingFailure(
+                            PROVIDER_NAME,
+                            actualModel,
+                            "Unexpected Anthropic tool_use response: "
+                                    + "tools are not enabled for this flow"
+                    );
 
-            default -> throw parsingFailure(
-                    PROVIDER_NAME,
-                    actualModel,
-                    "Unknown Anthropic stop_reason: "
-                            + stopReason
-            );
+            default ->
+                    throw parsingFailure(
+                            PROVIDER_NAME,
+                            actualModel,
+                            "Unknown Anthropic stop_reason: "
+                                    + stopReason
+                    );
         };
     }
 
@@ -504,23 +594,27 @@ public final class AnthropicProvider implements AiProvider {
             RestClientResponseException exception
     ) {
         int status =
-                exception.getStatusCode().value();
+                exception.getStatusCode()
+                        .value();
 
         String providerRequestId =
-                AiProviderSupport.extractProviderRequestId(
-                        exception
-                );
+                AiProviderSupport
+                        .extractProviderRequestId(
+                                exception
+                        );
 
         Duration retryAfter =
-                AiProviderSupport.extractRetryAfter(
-                        exception,
-                        clock
-                );
+                AiProviderSupport
+                        .extractRetryAfter(
+                                exception,
+                                clock
+                        );
 
         AiProviderSupport.ProviderErrorDetails error =
-                AiProviderSupport.extractProviderError(
-                        exception
-                );
+                AiProviderSupport
+                        .extractProviderError(
+                                exception
+                        );
 
         String errorCode =
                 firstNonBlank(
@@ -614,7 +708,8 @@ public final class AnthropicProvider implements AiProvider {
                 false,
                 outcomeAmbiguous,
                 retryAfter,
-                "Anthropic API error: status=" + status,
+                "Anthropic API error: status="
+                        + status,
                 exception
         );
     }
@@ -677,7 +772,9 @@ public final class AnthropicProvider implements AiProvider {
     private Duration calculateAttemptTimeout() {
         try {
             return properties.connectTimeout()
-                    .plus(properties.readTimeout());
+                    .plus(
+                            properties.readTimeout()
+                    );
         } catch (ArithmeticException exception) {
             return properties.readTimeout();
         }
@@ -687,18 +784,22 @@ public final class AnthropicProvider implements AiProvider {
             String actual,
             String expected
     ) {
-        return expected.equals(actual);
+        return expected.equals(
+                actual
+        );
     }
 
     private static String firstNonBlank(
             String first,
             String second
     ) {
-        if (first != null && !first.isBlank()) {
+        if (first != null
+                && !first.isBlank()) {
             return first;
         }
 
-        if (second != null && !second.isBlank()) {
+        if (second != null
+                && !second.isBlank()) {
             return second;
         }
 

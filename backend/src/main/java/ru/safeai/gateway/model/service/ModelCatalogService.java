@@ -281,7 +281,6 @@ public class ModelCatalogService {
                 entry
         );
     }
-
     /**
      * Bootstraps the catalog from the physical runtime without overstating
      * retention/training/specialized pricing metadata.
@@ -446,7 +445,6 @@ public class ModelCatalogService {
         repository.lockModelKey(
                 modelKey
         );
-
         ModelCatalogEntry latest =
                 repository.findLatest(
                                 modelKey
@@ -455,7 +453,19 @@ public class ModelCatalogService {
 
         if (latest != null
                 && latest.source()
-                == ModelCatalogSource.RUNTIME_IMPORT
+                != ModelCatalogSource.RUNTIME_IMPORT) {
+            throw new ConflictException(
+                    "Модель уже управляется явной версией каталога "
+                            + "(source="
+                            + latest.source()
+                            + ", version="
+                            + latest.version()
+                            + "). Создайте новую версию явно: "
+                            + "import-runtime не переопределяет ручное или мигрированное governance-состояние."
+            );
+        }
+
+        if (latest != null
                 && sameRuntimeSnapshot(
                         latest,
                         runtimeProvider,

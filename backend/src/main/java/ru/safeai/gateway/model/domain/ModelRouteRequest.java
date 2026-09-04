@@ -23,14 +23,42 @@ public record ModelRouteRequest(
         Set<ModelCapability> requiredCapabilities,
         long additionalInputTokenUpperBound
 ) {
+
     public ModelRouteRequest {
-        Objects.requireNonNull(organizationId, "organizationId не должен быть null");
-        Objects.requireNonNull(userId, "userId не должен быть null");
-        Objects.requireNonNull(chatId, "chatId не должен быть null");
-        Objects.requireNonNull(plannedTurnId, "plannedTurnId не должен быть null");
-        Objects.requireNonNull(clientRequestId, "clientRequestId не должен быть null");
-        Objects.requireNonNull(requestContentHash, "requestContentHash не должен быть null");
-        Objects.requireNonNull(userMessage, "userMessage не должен быть null");
+        Objects.requireNonNull(
+                organizationId,
+                "organizationId не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                userId,
+                "userId не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                chatId,
+                "chatId не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                plannedTurnId,
+                "plannedTurnId не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                clientRequestId,
+                "clientRequestId не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                requestContentHash,
+                "requestContentHash не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                userMessage,
+                "userMessage не должен быть null"
+        );
 
         if (additionalInputTokenUpperBound < 0L) {
             throw new IllegalArgumentException(
@@ -38,42 +66,29 @@ public record ModelRouteRequest(
             );
         }
 
-        history = history == null ? List.of() : List.copyOf(history);
+        history =
+                history == null
+                        ? List.of()
+                        : List.copyOf(history);
 
-        if (requiredCapabilities == null || requiredCapabilities.isEmpty()) {
-            requiredCapabilities = Set.of();
+        if (requiredCapabilities == null
+                || requiredCapabilities.isEmpty()) {
+            requiredCapabilities =
+                    Set.of();
         } else {
-            EnumSet<ModelCapability> copy = EnumSet.noneOf(ModelCapability.class);
-            copy.addAll(requiredCapabilities);
-            requiredCapabilities = Collections.unmodifiableSet(copy);
-        }
-    }
+            EnumSet<ModelCapability> copy =
+                    EnumSet.noneOf(
+                            ModelCapability.class
+                    );
 
-    /** Source-compatible constructor for non-RAG/general callers. */
-    public ModelRouteRequest(
-            UUID organizationId,
-            UUID userId,
-            UUID chatId,
-            UUID plannedTurnId,
-            UUID clientRequestId,
-            String requestContentHash,
-            String requestedModelKey,
-            String userMessage,
-            List<AiMessage> history,
-            Set<ModelCapability> requiredCapabilities
-    ) {
-        this(
-                organizationId,
-                userId,
-                chatId,
-                plannedTurnId,
-                clientRequestId,
-                requestContentHash,
-                requestedModelKey,
-                userMessage,
-                history,
-                requiredCapabilities,
-                0L
-        );
+            copy.addAll(
+                    requiredCapabilities
+            );
+
+            requiredCapabilities =
+                    Collections.unmodifiableSet(
+                            copy
+                    );
+        }
     }
 }

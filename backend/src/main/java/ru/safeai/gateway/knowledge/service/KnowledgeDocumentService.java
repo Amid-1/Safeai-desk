@@ -18,6 +18,7 @@ import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentVersionResponse;
 import ru.safeai.gateway.knowledge.dto.UpdateKnowledgeDocumentRequest;
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentEntity;
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentVersionEntity;
+import ru.safeai.gateway.knowledge.exception.KnowledgeStorageUnavailableException;
 import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentQueryRepository;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentRepository;
@@ -29,12 +30,14 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.NoSuchFileException;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
 public class KnowledgeDocumentService {
 
-    private static final int MAX_PAGE_SIZE = 100;
+    private static final int MAX_PAGE_SIZE =
+            100;
 
     private final KnowledgeAccessService accessService;
     private final KnowledgeDocumentRepository documents;
@@ -55,14 +58,53 @@ public class KnowledgeDocumentService {
             KnowledgeDocumentFileValidator fileValidator,
             BestEffortStandaloneAuditService audit
     ) {
-        this.accessService = accessService;
-        this.documents = documents;
-        this.versions = versions;
-        this.queryRepository = queryRepository;
-        this.writeService = writeService;
-        this.storage = storage;
-        this.fileValidator = fileValidator;
-        this.audit = audit;
+        this.accessService =
+                Objects.requireNonNull(
+                        accessService,
+                        "accessService не должен быть null"
+                );
+
+        this.documents =
+                Objects.requireNonNull(
+                        documents,
+                        "documents не должен быть null"
+                );
+
+        this.versions =
+                Objects.requireNonNull(
+                        versions,
+                        "versions не должен быть null"
+                );
+
+        this.queryRepository =
+                Objects.requireNonNull(
+                        queryRepository,
+                        "queryRepository не должен быть null"
+                );
+
+        this.writeService =
+                Objects.requireNonNull(
+                        writeService,
+                        "writeService не должен быть null"
+                );
+
+        this.storage =
+                Objects.requireNonNull(
+                        storage,
+                        "storage не должен быть null"
+                );
+
+        this.fileValidator =
+                Objects.requireNonNull(
+                        fileValidator,
+                        "fileValidator не должен быть null"
+                );
+
+        this.audit =
+                Objects.requireNonNull(
+                        audit,
+                        "audit не должен быть null"
+                );
     }
 
     public KnowledgeDocumentPageResponse list(
@@ -91,8 +133,8 @@ public class KnowledgeDocumentService {
         boolean includeDisabled =
                 access.administrator()
                         || access.atLeast(
-                        KnowledgeBaseAccessLevel.EDITOR
-                );
+                                KnowledgeBaseAccessLevel.EDITOR
+                        );
 
         return queryRepository.list(
                 user.getOrganizationId(),
@@ -152,7 +194,6 @@ public class KnowledgeDocumentService {
         );
     }
 
-
     public KnowledgeDocumentResponse update(
             UUID knowledgeBaseId,
             UUID documentId,
@@ -174,8 +215,11 @@ public class KnowledgeDocumentService {
             SafeAiUserPrincipal user
     ) {
         /*
-         * Быстрая initial auth до file I/O. После storage.put writeService
-         * ОБЯЗАТЕЛЬНО повторяет authorization уже внутри финальной DB TX.
+         * Initial authorization intentionally happens before file I/O.
+         *
+         * KnowledgeDocumentWriteService repeats authorization inside the final
+         * DB transaction after storage.put(), closing the authorization TOCTOU
+         * window before metadata publication.
          */
         accessService.requireAccess(
                 knowledgeBaseId,
@@ -207,6 +251,7 @@ public class KnowledgeDocumentService {
 
         UUID documentId =
                 UUID.randomUUID();
+
         UUID versionId =
                 UUID.randomUUID();
 
@@ -234,10 +279,18 @@ public class KnowledgeDocumentService {
                     user
             );
         } catch (RuntimeException exception) {
+            /*
+             * Best-effort compensation for DB/auth failure after a successful
+             * object PUT.
+             *
+             * This does not replace durable orphan reconciliation for
+             * SIGKILL/OOM/node-crash windows.
+             */
             deleteObjectQuietly(
                     storageKey,
                     exception
             );
+
             throw exception;
         }
     }
@@ -295,6 +348,7 @@ public class KnowledgeDocumentService {
                     storageKey,
                     exception
             );
+
             throw exception;
         }
     }
@@ -327,8 +381,8 @@ public class KnowledgeDocumentService {
         if (!document.isEnabled()
                 && !access.administrator()
                 && !access.atLeast(
-                KnowledgeBaseAccessLevel.EDITOR
-        )) {
+                        KnowledgeBaseAccessLevel.EDITOR
+                )) {
             throw documentNotFound();
         }
 
@@ -356,22 +410,32 @@ public class KnowledgeDocumentService {
         final StoredObject object;
 
         try {
-            object = storage.get(
-                    version.getStorageKey()
-            );
+            object =
+                    storage.get(
+                            version.getStorageKey()
+                    );
         } catch (NoSuchFileException exception) {
+            /*
+             * Exact object is genuinely absent: retain 404 semantics.
+             */
             throw new ResourceNotFoundException(
                     "Файл документа отсутствует в объектном хранилище."
             );
         } catch (IOException exception) {
-            throw new IllegalStateException(
-                    "Объектное хранилище временно недоступно.",
+            /*
+             * S3/network/storage failure is infrastructure unavailability,
+             * not a client-side request error.
+             */
+            throw new KnowledgeStorageUnavailableException(
+                    "Knowledge object storage GET failed",
                     exception
             );
         }
 
         audit.tryRecord(
-                AuditActor.fromPrincipal(user),
+                AuditActor.fromPrincipal(
+                        user
+                ),
                 user.getOrganizationId(),
                 AuditEventType.KNOWLEDGE_DOCUMENT_DOWNLOADED,
                 Map.of(
@@ -424,8 +488,12 @@ public class KnowledgeDocumentService {
                     )
             );
         } catch (IOException exception) {
-            throw new BadRequestException(
-                    "Не удалось сохранить файл в объектном хранилище.",
+            /*
+             * Storage outage is retryable/server-side infrastructure failure.
+             * Never expose it as 400 Bad Request.
+             */
+            throw new KnowledgeStorageUnavailableException(
+                    "Knowledge object storage PUT failed",
                     exception
             );
         }
@@ -440,6 +508,10 @@ public class KnowledgeDocumentService {
                     storageKey
             );
         } catch (IOException cleanupFailure) {
+            /*
+             * Preserve the original durable failure as primary exception.
+             * Cleanup failure remains observable through suppressed causes.
+             */
             original.addSuppressed(
                     cleanupFailure
             );
@@ -471,7 +543,8 @@ public class KnowledgeDocumentService {
             );
         }
 
-        if (size < 1 || size > MAX_PAGE_SIZE) {
+        if (size < 1
+                || size > MAX_PAGE_SIZE) {
             throw new BadRequestException(
                     "size должен быть в диапазоне 1.."
                             + MAX_PAGE_SIZE
@@ -502,5 +575,22 @@ public class KnowledgeDocumentService {
             String filename,
             String mediaType
     ) {
+
+        public Download {
+            Objects.requireNonNull(
+                    object,
+                    "object не должен быть null"
+            );
+
+            Objects.requireNonNull(
+                    filename,
+                    "filename не должен быть null"
+            );
+
+            Objects.requireNonNull(
+                    mediaType,
+                    "mediaType не должен быть null"
+            );
+        }
     }
 }
