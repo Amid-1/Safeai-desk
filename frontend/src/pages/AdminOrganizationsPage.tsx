@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/pages/AdminOrganizationsPage.tsx
+// ============================================================
 import PageErrorBoundary
     from '../components/PageErrorBoundary'
 import {

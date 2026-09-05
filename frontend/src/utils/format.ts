@@ -1,7 +1,9 @@
-const DATE_ONLY_PATTERN =
-    /^(\d{4})-(\d{2})-(\d{2})$/
+// ============================================================
+// frontend/src/utils/format.ts
+// ============================================================
+const INTEGER_PATTERN =
+    /^\d+$/
 
-const INTEGER_PATTERN = /^\d+$/
 const DECIMAL_PATTERN =
     /^\d+(?:\.\d+)?$/
 
@@ -34,46 +36,19 @@ export function formatDateTime(
         return '—'
     }
 
-    const date = new Date(value)
+    const date =
+        new Date(value)
 
     if (
-        Number.isNaN(date.getTime())
+        Number.isNaN(
+            date.getTime(),
+        )
     ) {
         return 'Некорректная дата'
     }
 
     return DATE_TIME_FORMATTER.format(
         date,
-    )
-}
-
-export function formatDate(
-    value: string | null | undefined,
-): string {
-    if (!value) {
-        return '—'
-    }
-
-    const dateOnlyMatch =
-        DATE_ONLY_PATTERN.exec(value)
-
-    if (dateOnlyMatch) {
-        const [, year, month, day] =
-            dateOnlyMatch
-
-        return `${day}.${month}.${year}`
-    }
-
-    const date = new Date(value)
-
-    if (
-        Number.isNaN(date.getTime())
-    ) {
-        return 'Некорректная дата'
-    }
-
-    return date.toLocaleDateString(
-        'ru-RU',
     )
 }
 
@@ -96,7 +71,7 @@ export function formatIntegerValue(
                     ? String(value)
                     : ''
             )
-            : value
+            : value.trim()
 
     if (
         !normalized
@@ -128,7 +103,9 @@ export function formatUsd(
     }
 
     const normalized =
-        normalizeDecimal(value)
+        normalizeDecimal(
+            value,
+        )
 
     if (!normalized) {
         return 'Некорректное значение'
@@ -149,7 +126,9 @@ export function formatUsd(
         )
 
     const isZero =
-        /^0+$/.test(integerPart)
+        /^0+$/.test(
+            integerPart,
+        )
         && fractionWithoutTrailingZeroes
             .length === 0
 
@@ -158,11 +137,19 @@ export function formatUsd(
     }
 
     const lessThanMicroDollar =
-        /^0+$/.test(integerPart)
+        /^0+$/.test(
+            integerPart,
+        )
         && (
             fractionWithoutTrailingZeroes
-                .slice(0, 6)
-                .replace(/0/g, '')
+                .slice(
+                    0,
+                    6,
+                )
+                .replace(
+                    /0/g,
+                    '',
+                )
                 .length === 0
         )
 
@@ -180,12 +167,16 @@ export function formatUsd(
 
     const displayedFraction =
         fractionWithoutTrailingZeroes
-            .slice(0, 12)
-            .padEnd(4, '0')
+            .slice(
+                0,
+                12,
+            )
+            .padEnd(
+                4,
+                '0',
+            )
 
-    return displayedFraction
-        ? `$${groupedInteger}.${displayedFraction}`
-        : `$${groupedInteger}.0000`
+    return `$${groupedInteger}.${displayedFraction}`
 }
 
 function normalizeDecimal(
@@ -193,7 +184,9 @@ function normalizeDecimal(
 ): string | null {
     let normalized: string
 
-    if (typeof value === 'number') {
+    if (
+        typeof value === 'number'
+    ) {
         if (
             !Number.isFinite(value)
             || value < 0
@@ -201,28 +194,28 @@ function normalizeDecimal(
             return null
         }
 
-        normalized = value
-            .toFixed(12)
-            .replace(/0+$/, '')
-            .replace(/\.$/, '')
-
-        if (
-            !DECIMAL_PATTERN.test(
-                normalized,
-            )
-        ) {
-            return null
-        }
+        normalized =
+            value
+                .toFixed(12)
+                .replace(
+                    /0+$/,
+                    '',
+                )
+                .replace(
+                    /\.$/,
+                    '',
+                )
     } else {
-        normalized = value.trim()
+        normalized =
+            value.trim()
+    }
 
-        if (
-            !DECIMAL_PATTERN.test(
-                normalized,
-            )
-        ) {
-            return null
-        }
+    if (
+        !DECIMAL_PATTERN.test(
+            normalized,
+        )
+    ) {
+        return null
     }
 
     const [

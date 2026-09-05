@@ -1,58 +1,39 @@
+// ============================================================
+// frontend/src/api/modelApi.ts
+// ============================================================
 import {
     apiRequest,
 } from './http'
 
 export type ModelCapability =
-    'TOOLS'
-    | 'VISION'
-    | 'STRUCTURED_OUTPUT'
+    typeof MODEL_CAPABILITIES[number]
 
 export type ModelModality =
-    'TEXT'
-    | 'IMAGE'
-    | 'AUDIO'
+    typeof MODEL_MODALITIES[number]
 
 export type ModelLifecycle =
-    'ACTIVE'
-    | 'DEPRECATED'
-    | 'DISABLED'
-    | 'RETIRED'
+    typeof MODEL_LIFECYCLES[number]
 
 export type ModelRetentionStatus =
-    'NOT_DECLARED'
-    | 'STANDARD'
-    | 'ZERO_DATA_RETENTION'
-    | 'CUSTOM'
+    typeof MODEL_RETENTION_STATUSES[number]
 
 export type ModelTrainingUseStatus =
-    'NOT_DECLARED'
-    | 'NOT_USED'
-    | 'MAY_BE_USED'
-    | 'CONTRACTUAL_NO_TRAINING'
+    typeof MODEL_TRAINING_USE_STATUSES[number]
 
 export type ModelPricingStatus =
-    'UNPRICED'
-    | 'FREE'
-    | 'CONFIGURED'
-    | 'INCOMPLETE'
+    typeof MODEL_PRICING_STATUSES[number]
 
 export type ModelCatalogSource =
-    'MANUAL'
-    | 'RUNTIME_IMPORT'
-    | 'MIGRATED'
+    typeof MODEL_CATALOG_SOURCES[number]
 
 export type BudgetEnforcement =
-    'SOFT'
-    | 'HARD'
+    typeof BUDGET_ENFORCEMENTS[number]
 
 export type ModelRouteOutcome =
-    'ALLOWED'
-    | 'DENIED'
+    typeof MODEL_ROUTE_OUTCOMES[number]
 
 export type MonthlyCostState =
-    'NOT_EVALUATED'
-    | 'KNOWN'
-    | 'UNKNOWN'
+    typeof MONTHLY_COST_STATES[number]
 
 export type ModelRouteReason =
     'REQUESTED_MODEL'
@@ -222,61 +203,66 @@ export type CreateOrganizationModelPolicyVersionRequest = {
     requireZeroDataRetention: boolean
 }
 
-const CAPABILITIES = [
+export const MODEL_CAPABILITIES = [
     'TOOLS',
     'VISION',
     'STRUCTURED_OUTPUT',
 ] as const
 
-const MODALITIES = [
+export const MODEL_MODALITIES = [
     'TEXT',
     'IMAGE',
     'AUDIO',
 ] as const
 
-const LIFECYCLES = [
+export const MODEL_LIFECYCLES = [
     'ACTIVE',
     'DEPRECATED',
     'DISABLED',
     'RETIRED',
 ] as const
 
-const RETENTION_STATUSES = [
+export const MODEL_RETENTION_STATUSES = [
     'NOT_DECLARED',
     'STANDARD',
     'ZERO_DATA_RETENTION',
     'CUSTOM',
 ] as const
 
-const TRAINING_STATUSES = [
+export const MODEL_TRAINING_USE_STATUSES = [
     'NOT_DECLARED',
     'NOT_USED',
     'MAY_BE_USED',
     'CONTRACTUAL_NO_TRAINING',
 ] as const
 
-const PRICING_STATUSES = [
+export const MODEL_PRICING_STATUSES = [
     'UNPRICED',
     'FREE',
     'CONFIGURED',
     'INCOMPLETE',
 ] as const
 
-const CATALOG_SOURCES = [
+export const MODEL_CATALOG_SOURCES = [
     'MANUAL',
     'RUNTIME_IMPORT',
     'MIGRATED',
 ] as const
 
-const BUDGET_ENFORCEMENTS = [
+export const BUDGET_ENFORCEMENTS = [
     'SOFT',
     'HARD',
 ] as const
 
-const MONTHLY_COST_STATES = [
+export const MONTHLY_COST_STATES = [
     'NOT_EVALUATED',
     'KNOWN',
     'UNKNOWN',
+] as const
+
+export const MODEL_ROUTE_OUTCOMES = [
+    'ALLOWED',
+    'DENIED',
 ] as const
 
 const ALLOWED_REASONS = [
@@ -303,7 +289,7 @@ const DENIED_REASONS = [
     'MONTHLY_BUDGET_UNVERIFIABLE',
 ] as const
 
-const ROUTE_REASONS = [
+export const MODEL_ROUTE_REASONS = [
     ...ALLOWED_REASONS,
     ...DENIED_REASONS,
 ] as const
@@ -311,21 +297,33 @@ const ROUTE_REASONS = [
 const DECIMAL_PATTERN =
     /^\d+(?:\.\d+)?$/
 
-export async function getRuntimeModelStatus():
-Promise<RuntimeModelStatus> {
+type ModelApiRequestOptions = {
+    signal?: AbortSignal
+}
+
+export async function getRuntimeModelStatus(
+    signal?: AbortSignal,
+): Promise<RuntimeModelStatus> {
     const raw = await apiRequest<unknown>(
         '/api/admin/models/runtime',
-        {method: 'GET'},
+        {
+            method: 'GET',
+            signal,
+        },
     )
 
     return parseRuntimeModelStatus(raw)
 }
 
-export async function getModelCatalog():
-Promise<ModelCatalogEntry[]> {
+export async function getModelCatalog(
+    options: ModelApiRequestOptions = {},
+): Promise<ModelCatalogEntry[]> {
     const raw = await apiRequest<unknown>(
         '/api/admin/models/catalog',
-        {method: 'GET'},
+        {
+            method: 'GET',
+            signal: options.signal,
+        },
     )
 
     return requireArray(raw, 'modelCatalog')
@@ -337,11 +335,15 @@ Promise<ModelCatalogEntry[]> {
         )
 }
 
-export async function getEffectiveModelCatalog():
-Promise<ModelCatalogEntry[]> {
+export async function getEffectiveModelCatalog(
+    options: ModelApiRequestOptions = {},
+): Promise<ModelCatalogEntry[]> {
     const raw = await apiRequest<unknown>(
         '/api/admin/models/catalog/effective',
-        {method: 'GET'},
+        {
+            method: 'GET',
+            signal: options.signal,
+        },
     )
 
     return requireArray(
@@ -357,12 +359,14 @@ Promise<ModelCatalogEntry[]> {
 
 export async function createModelCatalogVersion(
     request: CreateModelCatalogVersionRequest,
+    options: ModelApiRequestOptions = {},
 ): Promise<ModelCatalogEntry> {
     const raw = await apiRequest<unknown>(
         '/api/admin/models/catalog',
         {
             method: 'POST',
             json: request,
+            signal: options.signal,
         },
     )
 
@@ -372,11 +376,15 @@ export async function createModelCatalogVersion(
     )
 }
 
-export async function importRuntimeModelCatalog():
-Promise<ModelCatalogEntry> {
+export async function importRuntimeModelCatalog(
+    options: ModelApiRequestOptions = {},
+): Promise<ModelCatalogEntry> {
     const raw = await apiRequest<unknown>(
         '/api/admin/models/catalog/import-runtime',
-        {method: 'POST'},
+        {
+            method: 'POST',
+            signal: options.signal,
+        },
     )
 
     return parseModelCatalogEntry(
@@ -387,12 +395,16 @@ Promise<ModelCatalogEntry> {
 
 export async function getOrganizationModelPolicy(
     organizationId: string,
+    options: ModelApiRequestOptions = {},
 ): Promise<OrganizationModelPolicy> {
     const raw = await apiRequest<unknown>(
         `/api/admin/models/policies/${
             encodeURIComponent(organizationId)
         }`,
-        {method: 'GET'},
+        {
+            method: 'GET',
+            signal: options.signal,
+        },
     )
 
     return parseOrganizationModelPolicy(
@@ -404,6 +416,7 @@ export async function getOrganizationModelPolicy(
 export async function createOrganizationModelPolicyVersion(
     organizationId: string,
     request: CreateOrganizationModelPolicyVersionRequest,
+    options: ModelApiRequestOptions = {},
 ): Promise<OrganizationModelPolicy> {
     const raw = await apiRequest<unknown>(
         `/api/admin/models/policies/${
@@ -412,6 +425,7 @@ export async function createOrganizationModelPolicyVersion(
         {
             method: 'POST',
             json: request,
+            signal: options.signal,
         },
     )
 
@@ -423,12 +437,16 @@ export async function createOrganizationModelPolicyVersion(
 
 export async function getModelRouteDecision(
     decisionId: string,
+    options: ModelApiRequestOptions = {},
 ): Promise<ModelRouteDecision> {
     const raw = await apiRequest<unknown>(
         `/api/admin/models/route-decisions/${
             encodeURIComponent(decisionId)
         }`,
-        {method: 'GET'},
+        {
+            method: 'GET',
+            signal: options.signal,
+        },
     )
 
     return parseModelRouteDecision(
@@ -540,7 +558,7 @@ export function parseModelCatalogEntry(
         ),
         lifecycle: requireEnum(
             raw.lifecycle,
-            LIFECYCLES,
+            MODEL_LIFECYCLES,
             `${path}.lifecycle`,
         ),
         maxInputTokens: requireInteger(
@@ -553,22 +571,22 @@ export function parseModelCatalogEntry(
         ),
         capabilities: requireEnumArray(
             raw.capabilities,
-            CAPABILITIES,
+            MODEL_CAPABILITIES,
             `${path}.capabilities`,
         ),
         inputModalities: requireEnumArray(
             raw.inputModalities,
-            MODALITIES,
+            MODEL_MODALITIES,
             `${path}.inputModalities`,
         ),
         outputModalities: requireEnumArray(
             raw.outputModalities,
-            MODALITIES,
+            MODEL_MODALITIES,
             `${path}.outputModalities`,
         ),
         retentionStatus: requireEnum(
             raw.retentionStatus,
-            RETENTION_STATUSES,
+            MODEL_RETENTION_STATUSES,
             `${path}.retentionStatus`,
         ),
         retentionDays: optionalInteger(
@@ -577,12 +595,12 @@ export function parseModelCatalogEntry(
         ),
         trainingUseStatus: requireEnum(
             raw.trainingUseStatus,
-            TRAINING_STATUSES,
+            MODEL_TRAINING_USE_STATUSES,
             `${path}.trainingUseStatus`,
         ),
         pricingStatus: requireEnum(
             raw.pricingStatus,
-            PRICING_STATUSES,
+            MODEL_PRICING_STATUSES,
             `${path}.pricingStatus`,
         ),
         pricingComplete: requireBoolean(
@@ -623,7 +641,7 @@ export function parseModelCatalogEntry(
         ),
         source: requireEnum(
             raw.source,
-            CATALOG_SOURCES,
+            MODEL_CATALOG_SOURCES,
             `${path}.source`,
         ),
         createdByUserId: requireString(
@@ -730,13 +748,13 @@ export function parseModelRouteDecision(
 
     const outcome = requireEnum(
         raw.outcome,
-        ['ALLOWED', 'DENIED'] as const,
+        MODEL_ROUTE_OUTCOMES,
         `${path}.outcome`,
     )
 
     const reason = requireEnum(
         raw.reason,
-        ROUTE_REASONS,
+        MODEL_ROUTE_REASONS,
         `${path}.reason`,
     )
 
@@ -814,7 +832,7 @@ export function parseModelRouteDecision(
         ),
         requiredCapabilities: requireEnumArray(
             raw.requiredCapabilities,
-            CAPABILITIES,
+            MODEL_CAPABILITIES,
             `${path}.requiredCapabilities`,
         ),
         inputAccountingVersion: optionalString(

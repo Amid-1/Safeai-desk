@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/pages/AdminModelsPage.test.tsx
+// ============================================================
 import {
     fireEvent,
     render,
@@ -178,6 +181,7 @@ function stubLoadedState() {
 describe('AdminModelsPage', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        authMock.currentUser = null
         stubLoadedState()
     })
 
@@ -214,6 +218,39 @@ describe('AdminModelsPage', () => {
         ).not.toBeInTheDocument()
     })
 
+    it('передаёт AbortSignal во все первоначальные GET-запросы', async () => {
+        authMock.currentUser =
+            currentUser('ADMIN')
+
+        render(<AdminModelsPage />)
+
+        await screen.findByText(
+            'Модели и маршрутизация',
+        )
+
+        expect(runtimeMock)
+            .toHaveBeenCalledWith(
+                expect.any(AbortSignal),
+            )
+
+        expect(catalogMock)
+            .toHaveBeenCalledWith({
+                signal: expect.any(AbortSignal),
+            })
+
+        expect(effectiveCatalogMock)
+            .toHaveBeenCalledWith({
+                signal: expect.any(AbortSignal),
+            })
+
+        expect(policyMock)
+            .toHaveBeenCalledWith(
+                ORGANIZATION_ID,
+                {
+                    signal: expect.any(AbortSignal),
+                },
+            )
+    })
 
     it('показывает рабочую страницу при пустом каталоге и ненастроенных правилах', async () => {
         authMock.currentUser =
@@ -356,4 +393,6 @@ describe('AdminModelsPage', () => {
         ).not.toHaveBeenCalled()
     })
 })
+
+
 

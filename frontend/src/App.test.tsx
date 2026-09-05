@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/App.test.tsx
+// ============================================================
 import {
     render,
     screen,
@@ -114,6 +117,14 @@ vi.mock('./pages/AdminUsagePage', () => ({
     default: () => (
         <div data-testid="admin-usage-page">
             Admin usage page
+        </div>
+    ),
+}))
+
+vi.mock('./pages/AdminModelsPage', () => ({
+    default: () => (
+        <div data-testid="admin-models-page">
+            Admin models page
         </div>
     ),
 }))
@@ -385,6 +396,10 @@ describe(
             [
                 '/admin/usage',
                 'admin-usage-page',
+            ],
+            [
+                '/admin/models',
+                'admin-models-page',
             ],
         ] as const)(
             'разрешает SUPER_ADMIN открыть %s',

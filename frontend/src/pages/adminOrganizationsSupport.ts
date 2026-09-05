@@ -1,3 +1,6 @@
+// ============================================================
+// frontend/src/pages/adminOrganizationsSupport.ts
+// ============================================================
 import {
     isProtectedOrganization,
 } from '../api/organizationApi'
