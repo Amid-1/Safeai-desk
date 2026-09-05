@@ -1,3 +1,7 @@
+// ============================================================
+// frontend/src/components/Modal.tsx
+// ============================================================
+
 import {
     useId,
     useLayoutEffect,
@@ -23,15 +27,26 @@ export type ModalResizeOptions = {
     minHeight: number
     maxWidth?: number
     maxHeight?: number
+
+    /**
+     * Масштабировать typography/controls вместе с modal.
+     */
     scaleContent?: boolean
+
+    minScale?: number
+    maxScale?: number
 }
 
 type ModalProps = {
     title: string
     children: ReactNode
+    footer?: ReactNode
     onClose: () => void
 
     closeDisabled?: boolean
+    closeOnBackdrop?: boolean
+    closeOnEscape?: boolean
+
     size?: 'sm' | 'md' | 'lg'
     className?: string
     resize?: ModalResizeOptions
@@ -90,18 +105,21 @@ const FOCUSABLE_SELECTOR = [
     '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
-const RESIZE_DIRECTIONS: readonly ResizeDirection[] = [
-    'n',
-    'ne',
-    'e',
-    'se',
-    's',
-    'sw',
-    'w',
-    'nw',
-]
+const RESIZE_DIRECTIONS:
+    readonly ResizeDirection[] = [
+        'n',
+        'ne',
+        'e',
+        'se',
+        's',
+        'sw',
+        'w',
+        'nw',
+    ]
 
 const RESIZE_VIEWPORT_MARGIN = 12
+const DEFAULT_MIN_SCALE = 0.78
+const DEFAULT_MAX_SCALE = 1.20
 
 let modalEntries: ModalEntry[] = []
 let modalStackVersion = 0
@@ -118,8 +136,13 @@ let bodyPreviouslyLocked = false
 function Modal({
     title,
     children,
+    footer,
     onClose,
+
     closeDisabled = false,
+    closeOnBackdrop = true,
+    closeOnEscape = true,
+
     size = 'md',
     className = '',
     resize,
@@ -140,58 +163,64 @@ function Modal({
         resize?.maxHeight
     const resizeScaleContent =
         resize?.scaleContent
+    const resizeMinScale =
+        resize?.minScale
+    const resizeMaxScale =
+        resize?.maxScale
 
-    const resizeState = useMemo<
-        ResolvedModalResize
-    >(
-        () => {
-            if (
-                resizeInitialWidth
-                    == null
-                || resizeInitialHeight
-                    == null
-                || resizeMinWidth
-                    == null
-                || resizeMinHeight
-                    == null
-            ) {
-                return {
-                    enabled: false,
+    const resizeState =
+        useMemo<ResolvedModalResize>(
+            () => {
+                if (
+                    resizeInitialWidth == null
+                    || resizeInitialHeight == null
+                    || resizeMinWidth == null
+                    || resizeMinHeight == null
+                ) {
+                    return {
+                        enabled: false,
+                    }
                 }
-            }
 
-            return {
-                enabled: true,
-                options: {
-                    initialWidth:
-                        resizeInitialWidth,
-                    initialHeight:
-                        resizeInitialHeight,
-                    minWidth:
-                        resizeMinWidth,
-                    minHeight:
-                        resizeMinHeight,
-                    maxWidth:
-                        resizeMaxWidth,
-                    maxHeight:
-                        resizeMaxHeight,
-                    scaleContent:
-                        resizeScaleContent,
-                },
-            }
-        },
-        [
-            resizeInitialWidth,
-            resizeInitialHeight,
-            resizeMinWidth,
-            resizeMinHeight,
-            resizeMaxWidth,
-            resizeMaxHeight,
-            resizeScaleContent,
-        ],
-    )
+                return {
+                    enabled: true,
+                    options: {
+                        initialWidth:
+                            resizeInitialWidth,
+                        initialHeight:
+                            resizeInitialHeight,
+                        minWidth:
+                            resizeMinWidth,
+                        minHeight:
+                            resizeMinHeight,
+                        maxWidth:
+                            resizeMaxWidth,
+                        maxHeight:
+                            resizeMaxHeight,
+                        scaleContent:
+                            resizeScaleContent,
+                        minScale:
+                            resizeMinScale,
+                        maxScale:
+                            resizeMaxScale,
+                    },
+                }
+            },
+            [
+                resizeInitialWidth,
+                resizeInitialHeight,
+                resizeMinWidth,
+                resizeMinHeight,
+                resizeMaxWidth,
+                resizeMaxHeight,
+                resizeScaleContent,
+                resizeMinScale,
+                resizeMaxScale,
+            ],
+        )
 
-    const titleId = useId()
+    const titleId =
+        useId()
 
     const cardRef =
         useRef<HTMLDivElement | null>(
@@ -215,32 +244,57 @@ function Modal({
 
     const [resizeBounds, setResizeBounds] =
         useState<ModalBounds | null>(
-            () => resizeState.enabled
-                ? createInitialModalBounds(
-                    resizeState.options,
-                )
-                : null,
+            () =>
+                resizeState.enabled
+                    ? createInitialModalBounds(
+                        resizeState.options,
+                    )
+                    : null,
         )
 
-    const [modalId] = useState(
-        () => Symbol('safeai-modal'),
-    )
+    const [modalId] =
+        useState(
+            () =>
+                Symbol(
+                    'safeai-modal',
+                ),
+        )
 
-    const onCloseRef = useRef(onClose)
+    const onCloseRef =
+        useRef(onClose)
+
     const closeDisabledRef =
         useRef(closeDisabled)
+
+    const closeOnBackdropRef =
+        useRef(closeOnBackdrop)
+
+    const closeOnEscapeRef =
+        useRef(closeOnEscape)
+
     const initialFocusRefRef =
         useRef(initialFocusRef)
 
     useLayoutEffect(() => {
-        onCloseRef.current = onClose
+        onCloseRef.current =
+            onClose
+
         closeDisabledRef.current =
             closeDisabled
+
+        closeOnBackdropRef.current =
+            closeOnBackdrop
+
+        closeOnEscapeRef.current =
+            closeOnEscape
+
         initialFocusRefRef.current =
             initialFocusRef
     }, [
         onClose,
         closeDisabled,
+        closeOnBackdrop,
+        closeOnEscape,
         initialFocusRef,
     ])
 
@@ -256,11 +310,15 @@ function Modal({
     )
 
     const registered =
-        isRegisteredModal(modalId)
+        isRegisteredModal(
+            modalId,
+        )
 
     const topmost =
         !registered
-        || isTopmostModal(modalId)
+        || isTopmostModal(
+            modalId,
+        )
 
     useLayoutEffect(() => {
         const backdrop =
@@ -274,6 +332,7 @@ function Modal({
             backdrop.removeAttribute(
                 'inert',
             )
+
             backdrop.removeAttribute(
                 'aria-hidden',
             )
@@ -282,15 +341,19 @@ function Modal({
                 'inert',
                 '',
             )
+
             backdrop.setAttribute(
                 'aria-hidden',
                 'true',
             )
         }
-    }, [topmost])
+    }, [
+        topmost,
+    ])
 
     useLayoutEffect(() => {
-        const card = cardRef.current
+        const card =
+            cardRef.current
 
         if (!card) {
             return
@@ -302,17 +365,10 @@ function Modal({
                 ? document.activeElement
                 : null
 
-        const focusTarget =
-            resolveInitialFocus(
-                card,
-                initialFocusRefRef.current,
-            )
-
-        // Сначала переводим focus в portal,
-        // затем делаем #root inert/aria-hidden.
-        // Это исключает browser warning о попытке
-        // скрыть ancestor текущего focused trigger.
-        focusTarget.focus({
+        resolveInitialFocus(
+            card,
+            initialFocusRefRef.current,
+        ).focus({
             preventScroll: true,
         })
 
@@ -339,21 +395,27 @@ function Modal({
                 return
             }
 
-            if (event.key === 'Escape') {
-                // The topmost modal owns Escape even when closing is disabled.
-                // This prevents global/background Escape handlers from firing
-                // through an active modal.
+            if (
+                event.key
+                    === 'Escape'
+            ) {
                 event.preventDefault()
                 event.stopPropagation()
 
-                if (!closeDisabledRef.current) {
+                if (
+                    closeOnEscapeRef.current
+                    && !closeDisabledRef.current
+                ) {
                     onCloseRef.current()
                 }
 
                 return
             }
 
-            if (event.key !== 'Tab') {
+            if (
+                event.key
+                    !== 'Tab'
+            ) {
                 return
             }
 
@@ -362,21 +424,31 @@ function Modal({
                     currentCard,
                 )
 
-            if (focusable.length === 0) {
+            if (
+                focusable.length
+                    === 0
+            ) {
                 event.preventDefault()
+
                 currentCard.focus({
                     preventScroll: true,
                 })
+
                 return
             }
 
-            const first = focusable[0]
+            const first =
+                focusable[0]
+
             const last =
                 focusable[
                     focusable.length - 1
                 ]
 
-            if (!first || !last) {
+            if (
+                !first
+                || !last
+            ) {
                 return
             }
 
@@ -384,12 +456,16 @@ function Modal({
                 document.activeElement
 
             if (
-                !currentCard.contains(active)
+                !currentCard.contains(
+                    active,
+                )
             ) {
                 event.preventDefault()
+
                 first.focus({
                     preventScroll: true,
                 })
+
                 return
             }
 
@@ -398,9 +474,11 @@ function Modal({
                 && active === first
             ) {
                 event.preventDefault()
+
                 last.focus({
                     preventScroll: true,
                 })
+
                 return
             }
 
@@ -409,6 +487,7 @@ function Modal({
                 && active === last
             ) {
                 event.preventDefault()
+
                 first.focus({
                     preventScroll: true,
                 })
@@ -428,17 +507,26 @@ function Modal({
                 true,
             )
 
-            unregisterModal(modalId)
+            unregisterModal(
+                modalId,
+            )
 
             restoreFocusAfterModalClose(
                 previousActiveElementRef.current,
             )
         }
-    }, [modalId])
+    }, [
+        modalId,
+    ])
 
     useLayoutEffect(() => {
-        if (!resizeState.enabled) {
-            setResizeBounds(null)
+        if (
+            !resizeState.enabled
+        ) {
+            setResizeBounds(
+                null,
+            )
+
             return
         }
 
@@ -446,7 +534,8 @@ function Modal({
             resizeState.options
 
         const fitBounds = (
-            current: ModalBounds | null,
+            current:
+                ModalBounds | null,
         ): ModalBounds => (
             current
                 ? fitModalBoundsToViewport(
@@ -458,10 +547,14 @@ function Modal({
                 )
         )
 
-        setResizeBounds(fitBounds)
+        setResizeBounds(
+            fitBounds,
+        )
 
         function handleWindowResize() {
-            setResizeBounds(fitBounds)
+            setResizeBounds(
+                fitBounds,
+            )
         }
 
         window.addEventListener(
@@ -475,20 +568,28 @@ function Modal({
                 handleWindowResize,
             )
         }
-    }, [resizeState])
+    }, [
+        resizeState,
+    ])
 
-    useLayoutEffect(() => (
-        () => {
-            resizeSessionRef.current = null
-            document.body.classList.remove(
-                'modal-resizing',
-            )
-        }
-    ), [])
+    useLayoutEffect(
+        () => (
+            () => {
+                resizeSessionRef.current =
+                    null
+
+                document.body.classList.remove(
+                    'modal-resizing',
+                )
+            }
+        ),
+        [],
+    )
 
     const resizeScale =
         resizeState.enabled
-        && resizeState.options.scaleContent
+        && resizeState.options
+            .scaleContent
         && resizeBounds
             ? calculateResizeScale(
                 resizeBounds,
@@ -499,42 +600,79 @@ function Modal({
     const cardStyle =
         resizeBounds
             ? {
-                position: 'fixed',
-                left: resizeBounds.left,
-                top: resizeBounds.top,
-                width: resizeBounds.width,
-                height: resizeBounds.height,
-                maxWidth: 'none',
-                maxHeight: 'none',
+                position:
+                    'fixed',
+
+                left:
+                    resizeBounds.left,
+
+                top:
+                    resizeBounds.top,
+
+                width:
+                    resizeBounds.width,
+
+                height:
+                    resizeBounds.height,
+
+                maxWidth:
+                    'none',
+
+                maxHeight:
+                    'none',
+
                 '--modal-resize-scale':
-                    String(resizeScale),
+                    String(
+                        resizeScale,
+                    ),
+
                 '--modal-resize-font-size':
                     `${13 * resizeScale}px`,
+
                 '--modal-resize-hint-font-size':
                     `${12 * resizeScale}px`,
+
+                '--modal-resize-small-font-size':
+                    `${11 * resizeScale}px`,
+
                 '--modal-resize-title-font-size':
                     `${22 * resizeScale}px`,
+
+                '--modal-resize-strong-font-size':
+                    `${15 * resizeScale}px`,
+
                 '--modal-resize-control-font-size':
                     `${12 * resizeScale}px`,
+
                 '--modal-resize-control-height':
                     `${38 * resizeScale}px`,
+
                 '--modal-resize-textarea-height':
                     `${76 * resizeScale}px`,
+
                 '--modal-resize-gap':
                     `${10 * resizeScale}px`,
+
                 '--modal-resize-padding-x':
                     `${20 * resizeScale}px`,
+
                 '--modal-resize-header-padding-y':
                     `${14 * resizeScale}px`,
+
                 '--modal-resize-body-padding-y':
                     `${13 * resizeScale}px`,
+
                 '--modal-resize-checkbox-size':
                     `${14 * resizeScale}px`,
+
+                '--modal-resize-footer-padding-y':
+                    `${10 * resizeScale}px`,
             } as CSSProperties
             : undefined
 
     function handleResizePointerDown(
-        direction: ResizeDirection,
+        direction:
+            ResizeDirection,
         event:
             ReactPointerEvent<HTMLDivElement>,
     ) {
@@ -553,20 +691,33 @@ function Modal({
             event.currentTarget
 
         if (
-            typeof handle.setPointerCapture
+            typeof handle
+                .setPointerCapture
                 === 'function'
         ) {
-            handle.setPointerCapture(
-                event.pointerId,
-            )
+            try {
+                handle.setPointerCapture(
+                    event.pointerId,
+                )
+            } catch {
+                // Pointer capture optional.
+            }
         }
 
         resizeSessionRef.current = {
-            pointerId: event.pointerId,
+            pointerId:
+                event.pointerId,
+
             direction,
-            startX: event.clientX,
-            startY: event.clientY,
-            startBounds: resizeBounds,
+
+            startX:
+                event.clientX,
+
+            startY:
+                event.clientY,
+
+            startBounds:
+                resizeBounds,
         }
 
         document.body.classList.add(
@@ -621,20 +772,27 @@ function Modal({
             event.currentTarget
 
         if (
-            typeof handle.hasPointerCapture
+            typeof handle
+                .hasPointerCapture
                 === 'function'
             && handle.hasPointerCapture(
                 event.pointerId,
             )
-            && typeof handle.releasePointerCapture
+            && typeof handle
+                .releasePointerCapture
                 === 'function'
         ) {
-            handle.releasePointerCapture(
-                event.pointerId,
-            )
+            try {
+                handle.releasePointerCapture(
+                    event.pointerId,
+                )
+            } catch {
+                // Browser could release it first.
+            }
         }
 
-        resizeSessionRef.current = null
+        resizeSessionRef.current =
+            null
 
         document.body.classList.remove(
             'modal-resizing',
@@ -647,12 +805,17 @@ function Modal({
     ) {
         if (
             event.target
-                === event.currentTarget
-            && isTopmostModal(modalId)
-            && !closeDisabledRef.current
+                !== event.currentTarget
+            || !isTopmostModal(
+                modalId,
+            )
+            || !closeOnBackdropRef.current
+            || closeDisabledRef.current
         ) {
-            onCloseRef.current()
+            return
         }
+
+        onCloseRef.current()
     }
 
     return createPortal(
@@ -677,7 +840,9 @@ function Modal({
                     .join(' ')}
                 role="dialog"
                 aria-modal="true"
-                aria-labelledby={titleId}
+                aria-labelledby={
+                    titleId
+                }
                 aria-describedby={
                     descriptionId
                 }
@@ -685,10 +850,14 @@ function Modal({
                     closeDisabled
                 }
                 tabIndex={-1}
-                style={cardStyle}
+                style={
+                    cardStyle
+                }
             >
                 <div className="modal-header">
-                    <h2 id={titleId}>
+                    <h2
+                        id={titleId}
+                    >
                         {title}
                     </h2>
 
@@ -726,42 +895,60 @@ function Modal({
                     {children}
                 </div>
 
-                {resizeState.enabled && resizeBounds && (
-                    <div
-                        className="modal-resize-layer"
-                        aria-hidden="true"
-                    >
-                        {RESIZE_DIRECTIONS.map(
-                            (direction) => (
-                                <div
-                                    key={direction}
-                                    className={[
-                                        'modal-resize-handle',
-                                        `modal-resize-handle--${direction}`,
-                                    ].join(' ')}
-                                    data-modal-resize-handle={
-                                        direction
-                                    }
-                                    onPointerDown={(event) => {
-                                        handleResizePointerDown(
-                                            direction,
+                {footer !== undefined
+                    && footer !== null
+                    && (
+                        <div className="modal-footer">
+                            {footer}
+                        </div>
+                    )}
+
+                {resizeState.enabled
+                    && resizeBounds
+                    && (
+                        <div
+                            className={
+                                'modal-resize-layer'
+                            }
+                            aria-hidden="true"
+                        >
+                            {RESIZE_DIRECTIONS.map(
+                                (
+                                    direction,
+                                ) => (
+                                    <div
+                                        key={
+                                            direction
+                                        }
+                                        className={[
+                                            'modal-resize-handle',
+                                            `modal-resize-handle--${direction}`,
+                                        ].join(' ')}
+                                        data-modal-resize-handle={
+                                            direction
+                                        }
+                                        onPointerDown={(
                                             event,
-                                        )
-                                    }}
-                                    onPointerMove={
-                                        handleResizePointerMove
-                                    }
-                                    onPointerUp={
-                                        handleResizePointerEnd
-                                    }
-                                    onPointerCancel={
-                                        handleResizePointerEnd
-                                    }
-                                />
-                            ),
-                        )}
-                    </div>
-                )}
+                                        ) => {
+                                            handleResizePointerDown(
+                                                direction,
+                                                event,
+                                            )
+                                        }}
+                                        onPointerMove={
+                                            handleResizePointerMove
+                                        }
+                                        onPointerUp={
+                                            handleResizePointerEnd
+                                        }
+                                        onPointerCancel={
+                                            handleResizePointerEnd
+                                        }
+                                    />
+                                ),
+                            )}
+                        </div>
+                    )}
             </div>
         </div>,
         portalRoot,
@@ -774,19 +961,24 @@ function clamp(
     maximum: number,
 ): number {
     return Math.min(
-        Math.max(value, minimum),
+        Math.max(
+            value,
+            minimum,
+        ),
         maximum,
     )
 }
 
 function getResizeLimits(
-    resize: ModalResizeOptions,
+    resize:
+        ModalResizeOptions,
 ) {
     const viewportWidth =
         Math.max(
             320,
             window.innerWidth,
         )
+
     const viewportHeight =
         Math.max(
             320,
@@ -797,13 +989,16 @@ function getResizeLimits(
         Math.max(
             240,
             viewportWidth
-                - RESIZE_VIEWPORT_MARGIN * 2,
+            - RESIZE_VIEWPORT_MARGIN
+            * 2,
         )
+
     const availableHeight =
         Math.max(
             240,
             viewportHeight
-                - RESIZE_VIEWPORT_MARGIN * 2,
+            - RESIZE_VIEWPORT_MARGIN
+            * 2,
         )
 
     const minWidth =
@@ -811,6 +1006,7 @@ function getResizeLimits(
             resize.minWidth,
             availableWidth,
         )
+
     const minHeight =
         Math.min(
             resize.minHeight,
@@ -822,16 +1018,17 @@ function getResizeLimits(
             minWidth,
             Math.min(
                 resize.maxWidth
-                    ?? availableWidth,
+                ?? availableWidth,
                 availableWidth,
             ),
         )
+
     const maxHeight =
         Math.max(
             minHeight,
             Math.min(
                 resize.maxHeight
-                    ?? availableHeight,
+                ?? availableHeight,
                 availableHeight,
             ),
         )
@@ -847,202 +1044,332 @@ function getResizeLimits(
 }
 
 function createInitialModalBounds(
-    resize: ModalResizeOptions,
+    resize:
+        ModalResizeOptions,
 ): ModalBounds {
     const limits =
-        getResizeLimits(resize)
+        getResizeLimits(
+            resize,
+        )
 
-    const width = clamp(
-        resize.initialWidth,
-        limits.minWidth,
-        limits.maxWidth,
-    )
-    const height = clamp(
-        resize.initialHeight,
-        limits.minHeight,
-        limits.maxHeight,
-    )
+    const width =
+        clamp(
+            resize.initialWidth,
+            limits.minWidth,
+            limits.maxWidth,
+        )
+
+    const height =
+        clamp(
+            resize.initialHeight,
+            limits.minHeight,
+            limits.maxHeight,
+        )
 
     return {
         left:
-            (limits.viewportWidth - width)
+            (
+                limits.viewportWidth
+                - width
+            )
             / 2,
+
         top:
-            (limits.viewportHeight - height)
+            (
+                limits.viewportHeight
+                - height
+            )
             / 2,
+
         width,
         height,
     }
 }
 
 function fitModalBoundsToViewport(
-    bounds: ModalBounds,
-    resize: ModalResizeOptions,
+    bounds:
+        ModalBounds,
+    resize:
+        ModalResizeOptions,
 ): ModalBounds {
     const limits =
-        getResizeLimits(resize)
+        getResizeLimits(
+            resize,
+        )
 
-    const width = clamp(
-        bounds.width,
-        limits.minWidth,
-        limits.maxWidth,
-    )
-    const height = clamp(
-        bounds.height,
-        limits.minHeight,
-        limits.maxHeight,
-    )
+    const width =
+        clamp(
+            bounds.width,
+            limits.minWidth,
+            limits.maxWidth,
+        )
+
+    const height =
+        clamp(
+            bounds.height,
+            limits.minHeight,
+            limits.maxHeight,
+        )
 
     const maxLeft =
         Math.max(
             RESIZE_VIEWPORT_MARGIN,
             limits.viewportWidth
-                - RESIZE_VIEWPORT_MARGIN
-                - width,
+            - RESIZE_VIEWPORT_MARGIN
+            - width,
         )
+
     const maxTop =
         Math.max(
             RESIZE_VIEWPORT_MARGIN,
             limits.viewportHeight
-                - RESIZE_VIEWPORT_MARGIN
-                - height,
+            - RESIZE_VIEWPORT_MARGIN
+            - height,
         )
 
     return {
-        left: clamp(
-            bounds.left,
-            RESIZE_VIEWPORT_MARGIN,
-            maxLeft,
-        ),
-        top: clamp(
-            bounds.top,
-            RESIZE_VIEWPORT_MARGIN,
-            maxTop,
-        ),
+        left:
+            clamp(
+                bounds.left,
+                RESIZE_VIEWPORT_MARGIN,
+                maxLeft,
+            ),
+
+        top:
+            clamp(
+                bounds.top,
+                RESIZE_VIEWPORT_MARGIN,
+                maxTop,
+            ),
+
         width,
         height,
     }
 }
 
 function resizeModalBounds(
-    session: ResizeSession,
-    clientX: number,
-    clientY: number,
-    resize: ModalResizeOptions,
+    session:
+        ResizeSession,
+    clientX:
+        number,
+    clientY:
+        number,
+    resize:
+        ModalResizeOptions,
 ): ModalBounds {
     const {
         direction,
         startX,
         startY,
         startBounds,
-    } = session
+    } =
+        session
 
     const limits =
-        getResizeLimits(resize)
+        getResizeLimits(
+            resize,
+        )
 
     const deltaX =
-        clientX - startX
+        clientX
+        - startX
+
     const deltaY =
-        clientY - startY
+        clientY
+        - startY
 
     const startLeft =
         startBounds.left
+
     const startTop =
         startBounds.top
+
     const startRight =
         startBounds.left
         + startBounds.width
+
     const startBottom =
         startBounds.top
         + startBounds.height
 
-    let left = startLeft
-    let right = startRight
-    let top = startTop
-    let bottom = startBottom
+    let left =
+        startLeft
 
-    if (direction.includes('e')) {
-        right = clamp(
-            startRight + deltaX,
-            startLeft + limits.minWidth,
-            Math.min(
-                limits.viewportWidth
-                    - RESIZE_VIEWPORT_MARGIN,
-                startLeft
-                    + limits.maxWidth,
-            ),
+    let right =
+        startRight
+
+    let top =
+        startTop
+
+    let bottom =
+        startBottom
+
+    if (
+        direction.includes(
+            'e',
         )
-    }
-
-    if (direction.includes('w')) {
-        left = clamp(
-            startLeft + deltaX,
-            Math.max(
-                RESIZE_VIEWPORT_MARGIN,
+    ) {
+        right =
+            clamp(
                 startRight
-                    - limits.maxWidth,
-            ),
-            startRight
-                - limits.minWidth,
-        )
-    }
+                + deltaX,
 
-    if (direction.includes('s')) {
-        bottom = clamp(
-            startBottom + deltaY,
-            startTop + limits.minHeight,
-            Math.min(
-                limits.viewportHeight
+                startLeft
+                + limits.minWidth,
+
+                Math.min(
+                    limits.viewportWidth
                     - RESIZE_VIEWPORT_MARGIN,
-                startTop
-                    + limits.maxHeight,
-            ),
-        )
+
+                    startLeft
+                    + limits.maxWidth,
+                ),
+            )
     }
 
-    if (direction.includes('n')) {
-        top = clamp(
-            startTop + deltaY,
-            Math.max(
-                RESIZE_VIEWPORT_MARGIN,
-                startBottom
-                    - limits.maxHeight,
-            ),
-            startBottom
-                - limits.minHeight,
+    if (
+        direction.includes(
+            'w',
         )
+    ) {
+        left =
+            clamp(
+                startLeft
+                + deltaX,
+
+                Math.max(
+                    RESIZE_VIEWPORT_MARGIN,
+
+                    startRight
+                    - limits.maxWidth,
+                ),
+
+                startRight
+                - limits.minWidth,
+            )
+    }
+
+    if (
+        direction.includes(
+            's',
+        )
+    ) {
+        bottom =
+            clamp(
+                startBottom
+                + deltaY,
+
+                startTop
+                + limits.minHeight,
+
+                Math.min(
+                    limits.viewportHeight
+                    - RESIZE_VIEWPORT_MARGIN,
+
+                    startTop
+                    + limits.maxHeight,
+                ),
+            )
+    }
+
+    if (
+        direction.includes(
+            'n',
+        )
+    ) {
+        top =
+            clamp(
+                startTop
+                + deltaY,
+
+                Math.max(
+                    RESIZE_VIEWPORT_MARGIN,
+
+                    startBottom
+                    - limits.maxHeight,
+                ),
+
+                startBottom
+                - limits.minHeight,
+            )
     }
 
     return {
         left,
         top,
-        width: right - left,
-        height: bottom - top,
+        width:
+            right
+            - left,
+        height:
+            bottom
+            - top,
     }
 }
 
+/**
+ * Масштаб учитывает обе оси, но вертикальная ёмкость является
+ * жёстким потолком.
+ *
+ * Поэтому:
+ * - расширение только по горизонтали НЕ увеличивает font/control height;
+ * - уменьшение width/height по-прежнему уменьшает содержимое;
+ * - увеличение высоты позволяет содержимому расти;
+ * - footer и нижние поля не вытесняются горизонтальным resize.
+ */
 function calculateResizeScale(
-    bounds: ModalBounds,
-    resize: ModalResizeOptions,
+    bounds:
+        ModalBounds,
+    resize:
+        ModalResizeOptions,
 ): number {
     const widthRatio =
         bounds.width
         / resize.initialWidth
+
     const heightRatio =
         bounds.height
         / resize.initialHeight
 
-    return clamp(
+    const areaScale =
         Math.sqrt(
-            widthRatio * heightRatio,
-        ),
-        0.88,
-        1.22,
+            widthRatio
+            * heightRatio,
+        )
+
+    const capacityAwareScale =
+        Math.min(
+            areaScale,
+            heightRatio,
+        )
+
+    const minimumScale =
+        Math.min(
+            resize.minScale
+                ?? DEFAULT_MIN_SCALE,
+
+            resize.maxScale
+                ?? DEFAULT_MAX_SCALE,
+        )
+
+    const maximumScale =
+        Math.max(
+            resize.minScale
+                ?? DEFAULT_MIN_SCALE,
+
+            resize.maxScale
+                ?? DEFAULT_MAX_SCALE,
+        )
+
+    return clamp(
+        capacityAwareScale,
+        minimumScale,
+        maximumScale,
     )
 }
 
 function resolveInitialFocus(
-    card: HTMLElement,
+    card:
+        HTMLElement,
     initialFocusRef:
         RefObject<HTMLElement | null>
         | undefined,
@@ -1052,18 +1379,26 @@ function resolveInitialFocus(
 
     if (
         requested
-        && card.contains(requested)
-        && isFocusable(requested)
+        && card.contains(
+            requested,
+        )
+        && isFocusable(
+            requested,
+        )
     ) {
         return requested
     }
 
     const focusable =
-        getFocusableElements(card)
+        getFocusableElements(
+            card,
+        )
 
     const nonCloseControl =
         focusable.find(
-            (element) =>
+            (
+                element,
+            ) =>
                 !element.hasAttribute(
                     'data-modal-close',
                 ),
@@ -1075,30 +1410,37 @@ function resolveInitialFocus(
 }
 
 function getFocusableElements(
-    container: HTMLElement,
+    container:
+        HTMLElement,
 ): HTMLElement[] {
     return Array.from(
-        container
-            .querySelectorAll<HTMLElement>(
-                FOCUSABLE_SELECTOR,
-            ),
-    ).filter(isFocusable)
+        container.querySelectorAll<HTMLElement>(
+            FOCUSABLE_SELECTOR,
+        ),
+    ).filter(
+        isFocusable,
+    )
 }
 
 function isFocusable(
-    element: HTMLElement,
+    element:
+        HTMLElement,
 ): boolean {
     if (
         element.hidden
         || element.getAttribute(
             'aria-hidden',
         ) === 'true'
-        || element.closest('[inert]')
+        || element.closest(
+            '[inert]',
+        )
         || (
-            'disabled' in element
+            'disabled'
+                in element
             && Boolean(
-                (element as HTMLButtonElement)
-                    .disabled,
+                (
+                    element as HTMLButtonElement
+                ).disabled,
             )
         )
     ) {
@@ -1106,22 +1448,33 @@ function isFocusable(
     }
 
     const style =
-        window.getComputedStyle(element)
+        window.getComputedStyle(
+            element,
+        )
 
-    return style.display !== 'none'
-        && style.visibility !== 'hidden'
+    return style.display
+        !== 'none'
+        && style.visibility
+        !== 'hidden'
 }
 
 function registerModal(
-    id: symbol,
-    card: HTMLElement,
+    id:
+        symbol,
+    card:
+        HTMLElement,
 ) {
     const wasEmpty =
-        modalEntries.length === 0
+        modalEntries.length
+        === 0
 
     modalEntries = [
         ...modalEntries.filter(
-            (entry) => entry.id !== id,
+            (
+                entry,
+            ) =>
+                entry.id
+                !== id,
         ),
         {
             id,
@@ -1129,7 +1482,9 @@ function registerModal(
         },
     ]
 
-    if (wasEmpty) {
+    if (
+        wasEmpty
+    ) {
         lockApplicationBackground()
     }
 
@@ -1137,14 +1492,22 @@ function registerModal(
 }
 
 function unregisterModal(
-    id: symbol,
+    id:
+        symbol,
 ) {
     modalEntries =
         modalEntries.filter(
-            (entry) => entry.id !== id,
+            (
+                entry,
+            ) =>
+                entry.id
+                !== id,
         )
 
-    if (modalEntries.length === 0) {
+    if (
+        modalEntries.length
+        === 0
+    ) {
         unlockApplicationBackground()
     }
 
@@ -1152,32 +1515,44 @@ function unregisterModal(
 }
 
 function isRegisteredModal(
-    id: symbol,
+    id:
+        symbol,
 ): boolean {
     return modalEntries.some(
-        (entry) => entry.id === id,
+        (
+            entry,
+        ) =>
+            entry.id
+            === id,
     )
 }
 
 function isTopmostModal(
-    id: symbol,
+    id:
+        symbol,
 ): boolean {
     return modalEntries[
-        modalEntries.length - 1
-    ]?.id === id
+        modalEntries.length
+        - 1
+    ]?.id
+        === id
 }
 
 function getTopmostModal():
     ModalEntry | null {
     return modalEntries[
-        modalEntries.length - 1
+        modalEntries.length
+        - 1
     ] ?? null
 }
 
 function subscribeModalStack(
-    listener: () => void,
+    listener:
+        () => void,
 ): () => void {
-    modalStackListeners.add(listener)
+    modalStackListeners.add(
+        listener,
+    )
 
     return () => {
         modalStackListeners.delete(
@@ -1192,18 +1567,26 @@ function getModalStackSnapshot():
 }
 
 function publishModalStackChange() {
-    modalStackVersion += 1
+    modalStackVersion +=
+        1
 
     modalStackListeners.forEach(
-        (listener) => listener(),
+        (
+            listener,
+        ) =>
+            listener(),
     )
 }
 
 function lockApplicationBackground() {
     const applicationRoot =
-        document.getElementById('root')
+        document.getElementById(
+            'root',
+        )
 
-    if (applicationRoot) {
+    if (
+        applicationRoot
+    ) {
         rootPreviouslyInert =
             applicationRoot.hasAttribute(
                 'inert',
@@ -1218,6 +1601,7 @@ function lockApplicationBackground() {
             'inert',
             '',
         )
+
         applicationRoot.setAttribute(
             'aria-hidden',
             'true',
@@ -1236,10 +1620,16 @@ function lockApplicationBackground() {
 
 function unlockApplicationBackground() {
     const applicationRoot =
-        document.getElementById('root')
+        document.getElementById(
+            'root',
+        )
 
-    if (applicationRoot) {
-        if (!rootPreviouslyInert) {
+    if (
+        applicationRoot
+    ) {
+        if (
+            !rootPreviouslyInert
+        ) {
             applicationRoot.removeAttribute(
                 'inert',
             )
@@ -1260,7 +1650,9 @@ function unlockApplicationBackground() {
         }
     }
 
-    if (!bodyPreviouslyLocked) {
+    if (
+        !bodyPreviouslyLocked
+    ) {
         document.body.classList.remove(
             'modal-open',
         )
@@ -1268,40 +1660,49 @@ function unlockApplicationBackground() {
 }
 
 function restoreFocusAfterModalClose(
-    previous: HTMLElement | null,
+    previous:
+        HTMLElement | null,
 ) {
-    window.requestAnimationFrame(() => {
-        const topmost =
-            getTopmostModal()
+    window.requestAnimationFrame(
+        () => {
+            const topmost =
+                getTopmostModal()
 
-        if (topmost) {
+            if (
+                topmost
+            ) {
+                if (
+                    previous?.isConnected
+                    && topmost.card.contains(
+                        previous,
+                    )
+                ) {
+                    previous.focus({
+                        preventScroll: true,
+                    })
+
+                    return
+                }
+
+                resolveInitialFocus(
+                    topmost.card,
+                    undefined,
+                ).focus({
+                    preventScroll: true,
+                })
+
+                return
+            }
+
             if (
                 previous?.isConnected
-                && topmost.card.contains(
-                    previous,
-                )
             ) {
                 previous.focus({
                     preventScroll: true,
                 })
-                return
             }
-
-            resolveInitialFocus(
-                topmost.card,
-                undefined,
-            ).focus({
-                preventScroll: true,
-            })
-            return
-        }
-
-        if (previous?.isConnected) {
-            previous.focus({
-                preventScroll: true,
-            })
-        }
-    })
+        },
+    )
 }
 
 function getOrCreateModalRoot():
@@ -1311,15 +1712,23 @@ function getOrCreateModalRoot():
             'modal-root',
         )
 
-    if (existing) {
+    if (
+        existing
+    ) {
         return existing
     }
 
     const created =
-        document.createElement('div')
+        document.createElement(
+            'div',
+        )
 
-    created.id = 'modal-root'
-    document.body.append(created)
+    created.id =
+        'modal-root'
+
+    document.body.append(
+        created,
+    )
 
     return created
 }

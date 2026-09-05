@@ -18,23 +18,23 @@ import type {
 import './ResizableScrollRegion.css'
 
 type ResizableScrollRegionProps = {
-    /*
-     * Обычная верхняя часть страницы:
-     * header, cards, filters, tabs, descriptions.
+    /**
+     * Верхняя часть workspace:
+     * header, filters, cards, tabs, descriptions.
      */
     upper: ReactNode
 
-    /*
+    /**
      * Прокручиваемое содержимое нижней области.
-     * Обычно это table.
+     * Обычно table / list.
      */
     children: ReactNode
 
-    /*
+    /**
      * Неподвижная нижняя строка:
      * pagination / summary.
      *
-     * Footer НЕ входит в scroll viewport.
+     * Footer не входит в scroll viewport.
      */
     footer?: ReactNode
 
@@ -47,19 +47,39 @@ type ResizableScrollRegionProps = {
     viewportClassName?: string
     footerClassName?: string
 
-    /*
-     * Высота нижней области:
+    /**
+     * Желаемая высота всей нижней области:
      * separator + viewport + footer.
      */
     defaultHeight?: number
     minHeight?: number
     maxHeight?: number
 
-    /*
-     * Сколько минимум нужно оставить
-     * верхней части страницы.
+    /**
+     * Минимальный резерв для верхней области.
+     * Используется всегда как абсолютный fallback.
      */
     minUpperHeight?: number
+
+    /**
+     * Если true, component ищет внутри upper маркер:
+     *
+     * data-resizable-upper-boundary
+     *
+     * и не позволяет нижней области подняться выше нижней
+     * границы этого маркера.
+     *
+     * Важно: измеряется именно semantic boundary, а НЕ scrollHeight
+     * всего upper. Поэтому свободное место внутри flex-layout не
+     * блокирует движение separator.
+     */
+    preserveUpperContent?: boolean
+
+    /**
+     * Небольшой визуальный зазор между защищённой границей upper
+     * и separator.
+     */
+    upperBoundaryPadding?: number
 }
 
 type DragState = {
@@ -68,6 +88,11 @@ type DragState = {
     startHeight: number
     previousBodyCursor: string
     previousBodyUserSelect: string
+}
+
+type LayoutMetrics = {
+    containerHeight: number
+    protectedUpperHeight: number
 }
 
 const KEYBOARD_STEP = 32
@@ -92,10 +117,7 @@ function readSavedHeight(
     minimum: number,
     maximum: number,
 ): number {
-    if (
-        typeof window
-        === 'undefined'
-    ) {
+    if (typeof window === 'undefined') {
         return clamp(
             fallback,
             minimum,
@@ -117,7 +139,8 @@ function readSavedHeight(
             )
         }
 
-        const value = Number(raw)
+        const value =
+            Number(raw)
 
         return Number.isFinite(value)
             ? clamp(
@@ -156,7 +179,10 @@ function ResizableScrollRegion({
     defaultHeight = 420,
     minHeight = 220,
     maxHeight = 760,
+
     minUpperHeight = 100,
+    preserveUpperContent = false,
+    upperBoundaryPadding = 8,
 }: ResizableScrollRegionProps) {
     const normalizedMinHeight =
         Math.min(
@@ -175,41 +201,261 @@ function ResizableScrollRegion({
             null,
         )
 
+    const upperRef =
+        useRef<HTMLDivElement | null>(
+            null,
+        )
+
     const dragRef =
         useRef<DragState | null>(
             null,
         )
 
     const [
-        containerHeight,
-        setContainerHeight,
-    ] = useState(0)
+        layoutMetrics,
+        setLayoutMetrics,
+    ] =
+        useState<LayoutMetrics>({
+            containerHeight: 0,
+            protectedUpperHeight:
+                Math.max(
+                    0,
+                    minUpperHeight,
+                ),
+        })
 
-    const [
-        height,
-        setHeight,
-    ] = useState(() =>
-        readSavedHeight(
-            storageKey,
-            defaultHeight,
-            normalizedMinHeight,
-            normalizedMaxHeight,
-        ),
-    )
-
-    const heightRef =
-        useRef(height)
-
-    /*
-     * Нижняя область не должна уничтожить
-     * верхнюю часть страницы.
+    /**
+     * requestedHeight — пользовательское предпочтение.
+     *
+     * Оно специально отделено от фактической высоты.
+     * Если окно временно уменьшилось, layout может показать lower
+     * меньше requestedHeight, но сохранённое пользовательское значение
+     * не затирается и восстановится при увеличении viewport.
      */
+    const [
+        requestedHeight,
+        setRequestedHeight,
+    ] =
+        useState(() =>
+            readSavedHeight(
+                storageKey,
+                defaultHeight,
+                normalizedMinHeight,
+                normalizedMaxHeight,
+            ),
+        )
+
+    const renderedHeightRef =
+        useRef(
+            requestedHeight,
+        )
+
+    const measureLayout =
+        useCallback(() => {
+            const root =
+                rootRef.current
+
+            const upperElement =
+                upperRef.current
+
+            if (
+                !root
+                || !upperElement
+            ) {
+                return
+            }
+
+            const rootRect =
+                root.getBoundingClientRect()
+
+            const nextContainerHeight =
+                Math.max(
+                    0,
+                    Math.round(
+                        rootRect.height,
+                    ),
+                )
+
+            let nextProtectedUpperHeight =
+                Math.max(
+                    0,
+                    minUpperHeight,
+                )
+
+            if (preserveUpperContent) {
+                const boundary =
+                    upperElement.querySelector<HTMLElement>(
+                        '[data-resizable-upper-boundary]',
+                    )
+
+                if (boundary) {
+                    const upperRect =
+                        upperElement.getBoundingClientRect()
+
+                    const boundaryRect =
+                        boundary.getBoundingClientRect()
+
+                    /**
+                     * Координата boundary в системе самого upper.
+                     * upper.scrollTop добавляется, чтобы измерение
+                     * не зависело от текущего положения внутреннего scroll.
+                     */
+                    const boundaryBottomWithinUpper =
+                        boundaryRect.bottom
+                        - upperRect.top
+                        + upperElement.scrollTop
+
+                    nextProtectedUpperHeight =
+                        Math.max(
+                            nextProtectedUpperHeight,
+                            Math.ceil(
+                                boundaryBottomWithinUpper
+                                + Math.max(
+                                    0,
+                                    upperBoundaryPadding,
+                                ),
+                            ),
+                        )
+                }
+            }
+
+            setLayoutMetrics(
+                (current) => {
+                    if (
+                        current.containerHeight
+                            === nextContainerHeight
+                        && current.protectedUpperHeight
+                            === nextProtectedUpperHeight
+                    ) {
+                        return current
+                    }
+
+                    return {
+                        containerHeight:
+                            nextContainerHeight,
+                        protectedUpperHeight:
+                            nextProtectedUpperHeight,
+                    }
+                },
+            )
+        }, [
+            minUpperHeight,
+            preserveUpperContent,
+            upperBoundaryPadding,
+        ])
+
+    /**
+     * После каждого React render перепроверяем semantic boundary.
+     * State меняется только при реальном изменении размеров.
+     */
+    useLayoutEffect(() => {
+        measureLayout()
+    })
+
+    useLayoutEffect(() => {
+        const root =
+            rootRef.current
+
+        const upperElement =
+            upperRef.current
+
+        if (
+            !root
+            || !upperElement
+        ) {
+            return
+        }
+
+        if (
+            typeof ResizeObserver
+                === 'undefined'
+        ) {
+            window.addEventListener(
+                'resize',
+                measureLayout,
+            )
+
+            return () => {
+                window.removeEventListener(
+                    'resize',
+                    measureLayout,
+                )
+            }
+        }
+
+        const observer =
+            new ResizeObserver(() => {
+                measureLayout()
+            })
+
+        observer.observe(root)
+        observer.observe(upperElement)
+
+        const boundary =
+            upperElement.querySelector<HTMLElement>(
+                '[data-resizable-upper-boundary]',
+            )
+
+        if (boundary) {
+            observer.observe(boundary)
+        }
+
+        const mutationObserver =
+            typeof MutationObserver
+                === 'undefined'
+                ? null
+                : new MutationObserver(() => {
+                    const nextBoundary =
+                        upperElement.querySelector<HTMLElement>(
+                            '[data-resizable-upper-boundary]',
+                        )
+
+                    if (nextBoundary) {
+                        observer.observe(
+                            nextBoundary,
+                        )
+                    }
+
+                    measureLayout()
+                })
+
+        mutationObserver?.observe(
+            upperElement,
+            {
+                childList: true,
+                subtree: true,
+                characterData: true,
+            },
+        )
+
+        return () => {
+            mutationObserver?.disconnect()
+            observer.disconnect()
+        }
+    }, [
+        measureLayout,
+    ])
+
+    const {
+        containerHeight,
+        protectedUpperHeight,
+    } =
+        layoutMetrics
+
+    const effectiveProtectedUpperHeight =
+        containerHeight > 0
+            ? Math.min(
+                protectedUpperHeight,
+                containerHeight,
+            )
+            : protectedUpperHeight
+
     const maximumAllowedByContainer =
         containerHeight > 0
             ? Math.max(
                 0,
                 containerHeight
-                - minUpperHeight,
+                    - effectiveProtectedUpperHeight,
             )
             : normalizedMaxHeight
 
@@ -219,10 +465,10 @@ function ResizableScrollRegion({
             maximumAllowedByContainer,
         )
 
-    /*
-     * На очень маленьком viewport допустимо
-     * стать меньше обычного minHeight,
-     * чтобы layout не переполнился.
+    /**
+     * На очень маленьком viewport lower может стать меньше
+     * штатного minHeight, чтобы split никогда не вытолкнул body
+     * за границы viewport.
      */
     const effectiveMinHeight =
         Math.min(
@@ -230,60 +476,17 @@ function ResizableScrollRegion({
             effectiveMaxHeight,
         )
 
-    useLayoutEffect(() => {
-        const root =
-            rootRef.current
+    const renderedHeight =
+        clamp(
+            requestedHeight,
+            effectiveMinHeight,
+            effectiveMaxHeight,
+        )
 
-        if (!root) {
-            return
-        }
+    renderedHeightRef.current =
+        renderedHeight
 
-        const measure = () => {
-            const nextHeight =
-                root
-                    .getBoundingClientRect()
-                    .height
-
-            setContainerHeight(
-                Math.max(
-                    0,
-                    nextHeight,
-                ),
-            )
-        }
-
-        measure()
-
-        if (
-            typeof ResizeObserver
-            === 'undefined'
-        ) {
-            window.addEventListener(
-                'resize',
-                measure,
-            )
-
-            return () => {
-                window.removeEventListener(
-                    'resize',
-                    measure,
-                )
-            }
-        }
-
-        const observer =
-            new ResizeObserver(
-                measure,
-            )
-
-        observer.observe(root)
-
-        return () => {
-            observer.disconnect()
-        }
-    }, [])
-
-    const setClampedHeight =
+    const setUserHeight =
         useCallback((
             nextHeight: number,
         ) => {
@@ -294,48 +497,29 @@ function ResizableScrollRegion({
                     effectiveMaxHeight,
                 )
 
-            heightRef.current =
-                next
-
-            setHeight(next)
+            setRequestedHeight(
+                next,
+            )
         }, [
             effectiveMinHeight,
             effectiveMaxHeight,
         ])
 
-    /*
-     * Перепроверяем высоту после resize окна.
-     */
     useEffect(() => {
-        setClampedHeight(
-            heightRef.current,
-        )
-    }, [
-        effectiveMinHeight,
-        effectiveMaxHeight,
-        setClampedHeight,
-    ])
-
-    /*
-     * Сохраняем пользовательский размер.
-     */
-    useEffect(() => {
-        heightRef.current =
-            height
-
         try {
             window.localStorage.setItem(
                 storageKey,
-                String(height),
+                String(
+                    requestedHeight,
+                ),
             )
         } catch {
-            /*
-             * При недоступном localStorage
-             * resize всё равно работает.
+            /**
+             * При недоступном localStorage resize всё равно работает.
              */
         }
     }, [
-        height,
+        requestedHeight,
         storageKey,
     ])
 
@@ -370,7 +554,7 @@ function ResizableScrollRegion({
         event:
             ReactPointerEvent<HTMLDivElement>,
     ) {
-        /*
+        /**
          * Resize только ЛКМ.
          */
         if (event.button !== 0) {
@@ -385,9 +569,8 @@ function ResizableScrollRegion({
                     event.pointerId,
                 )
         } catch {
-            /*
-             * Pointer capture не является
-             * условием работоспособности layout.
+            /**
+             * Pointer capture не является условием работоспособности.
              */
         }
 
@@ -399,7 +582,7 @@ function ResizableScrollRegion({
                 event.clientY,
 
             startHeight:
-                heightRef.current,
+                renderedHeightRef.current,
 
             previousBodyCursor:
                 document.body.style.cursor,
@@ -425,36 +608,25 @@ function ResizableScrollRegion({
         if (
             !drag
             || drag.pointerId
-            !== event.pointerId
+                !== event.pointerId
         ) {
             return
         }
 
-        /*
-         * КЛЮЧЕВАЯ ФОРМУЛА.
+        /**
+         * Lower закреплён снизу.
          *
-         * Нижняя область закреплена снизу.
+         * Мышь вверх  -> lower увеличивается вверх.
+         * Мышь вниз   -> lower уменьшается вниз.
          *
-         * Двигаем мышь ВВЕРХ:
-         *
-         *     clientY уменьшается
-         *     height увеличивается
-         *
-         * Нижняя область растёт ВВЕРХ.
-         *
-         * Двигаем мышь ВНИЗ:
-         *
-         *     clientY увеличивается
-         *     height уменьшается
-         *
-         * Верхняя часть страницы раскрывается.
+         * Это настоящий split layout, не overlay.
          */
         const nextHeight =
             drag.startHeight
             + drag.startY
             - event.clientY
 
-        setClampedHeight(
+        setUserHeight(
             nextHeight,
         )
     }
@@ -469,7 +641,7 @@ function ResizableScrollRegion({
         if (
             !drag
             || drag.pointerId
-            !== event.pointerId
+                !== event.pointerId
         ) {
             return
         }
@@ -487,9 +659,8 @@ function ResizableScrollRegion({
                     )
             }
         } catch {
-            /*
-             * Pointer мог быть освобождён
-             * самим браузером.
+            /**
+             * Pointer мог быть освобождён самим браузером.
              */
         }
 
@@ -502,12 +673,12 @@ function ResizableScrollRegion({
     ) {
         if (
             event.key
-            === 'ArrowUp'
+                === 'ArrowUp'
         ) {
             event.preventDefault()
 
-            setClampedHeight(
-                heightRef.current
+            setUserHeight(
+                renderedHeightRef.current
                 + KEYBOARD_STEP,
             )
 
@@ -516,12 +687,12 @@ function ResizableScrollRegion({
 
         if (
             event.key
-            === 'ArrowDown'
+                === 'ArrowDown'
         ) {
             event.preventDefault()
 
-            setClampedHeight(
-                heightRef.current
+            setUserHeight(
+                renderedHeightRef.current
                 - KEYBOARD_STEP,
             )
 
@@ -530,11 +701,11 @@ function ResizableScrollRegion({
 
         if (
             event.key
-            === 'Home'
+                === 'Home'
         ) {
             event.preventDefault()
 
-            setClampedHeight(
+            setUserHeight(
                 effectiveMinHeight,
             )
 
@@ -543,11 +714,11 @@ function ResizableScrollRegion({
 
         if (
             event.key
-            === 'End'
+                === 'End'
         ) {
             event.preventDefault()
 
-            setClampedHeight(
+            setUserHeight(
                 effectiveMaxHeight,
             )
         }
@@ -558,19 +729,23 @@ function ResizableScrollRegion({
             ref={rootRef}
             className={[
                 'resizable-scroll-region',
+                preserveUpperContent
+                    ? 'resizable-scroll-region--preserve-upper'
+                    : '',
                 className,
             ]
                 .filter(Boolean)
                 .join(' ')}
             style={{
                 '--resizable-scroll-height':
-                    `${height}px`,
+                    `${renderedHeight}px`,
 
                 '--resizable-upper-min-height':
-                    `${minUpperHeight}px`,
+                    `${effectiveProtectedUpperHeight}px`,
             } as CSSProperties}
         >
             <div
+                ref={upperRef}
                 className={[
                     'resizable-scroll-region__upper',
                     upperClassName,
@@ -610,7 +785,7 @@ function ResizableScrollRegion({
                     }
                     aria-valuenow={
                         Math.round(
-                            height,
+                            renderedHeight,
                         )
                     }
                     tabIndex={0}

@@ -61,8 +61,9 @@ export function AdminUsersView({
     return (
         <>
             <ResizableScrollRegion
-                storageKey="safeai:users-table-height"
+                storageKey="safeai:users-table-height:v2"
                 label="список пользователей"
+                preserveUpperContent
                 upper={
                     <div className="users-page__upper">
                         <div className="users-page-header">
@@ -148,6 +149,12 @@ export function AdminUsersView({
                             />
                         </div>
 
+                        <span
+                            className="resizable-scroll-region__upper-boundary-marker"
+                            data-resizable-upper-boundary
+                            aria-hidden="true"
+                        />
+
                         {loading && (
                             <LoadingState
                                 message="Загрузка пользователей..."
@@ -212,7 +219,7 @@ export function AdminUsersView({
                 }
                 lowerClassName="users-table-card"
                 viewportClassName="users-table-scroll"
-                defaultHeight={500}
+                defaultHeight={430}
                 minHeight={72}
                 maxHeight={760}
                 minUpperHeight={112}
@@ -415,7 +422,6 @@ export function AdminUsersView({
                     </table>
                     )}
             </ResizableScrollRegion>
-
         </>
     )
 }

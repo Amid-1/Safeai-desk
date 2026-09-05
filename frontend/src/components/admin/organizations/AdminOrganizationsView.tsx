@@ -4,6 +4,7 @@ import type {
 import {
     formatDateTime,
 } from '../../../utils/format'
+import ResizableScrollRegion from '../../ResizableScrollRegion'
 import {
     EmptyState,
     ErrorState,
@@ -65,8 +66,13 @@ export function AdminOrganizationsView({
     onEnable,
     onPageChange,
 }: AdminOrganizationsViewProps) {
-    return (
-        <>
+    const hasRows =
+        !loading
+        && !loadError
+        && organizations.length > 0
+
+    const upper = (
+        <div className="organizations-page__upper">
             <header className="organizations-page__header">
                 <div>
                     <span className="organizations-page__eyebrow">
@@ -170,9 +176,75 @@ export function AdminOrganizationsView({
                 )}
             </section>
 
+            <span
+                className="resizable-scroll-region__upper-boundary-marker"
+                data-resizable-upper-boundary
+                aria-hidden="true"
+            />
+        </div>
+    )
+
+    const footer = hasRows
+        ? (
+            <div className="pagination organizations-pagination">
+                <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={
+                        page === 0
+                        || loading
+                        || hasPendingAction
+                    }
+                    onClick={() =>
+                        onPageChange(
+                            Math.max(0, page - 1),
+                        )
+                    }
+                >
+                    Назад
+                </button>
+
+                <span>
+                    Страница {page + 1} из {Math.max(totalPages, 1)}
+                </span>
+
+                <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={
+                        page + 1 >= totalPages
+                        || loading
+                        || hasPendingAction
+                    }
+                    onClick={() =>
+                        onPageChange(page + 1)
+                    }
+                >
+                    Вперёд
+                </button>
+            </div>
+        )
+        : null
+
+    return (
+        <ResizableScrollRegion
+            storageKey="safeai:organizations-table-height:v3"
+            label="список организаций"
+            preserveUpperContent
+            upper={upper}
+            footer={footer}
+            lowerClassName="organizations-table-card"
+            viewportClassName="organizations-table-scroll"
+            footerClassName="organizations-table-footer"
+            defaultHeight={360}
+            minHeight={96}
+            maxHeight={760}
+            minUpperHeight={260}
+        >
             {loading && (
                 <LoadingState
                     message="Загрузка организаций..."
+                    variant="inline"
                 />
             )}
 
@@ -180,6 +252,7 @@ export function AdminOrganizationsView({
                 <ErrorState
                     title="Ошибка загрузки организаций"
                     message={loadError}
+                    variant="inline"
                     action={
                         <button
                             type="button"
@@ -197,202 +270,158 @@ export function AdminOrganizationsView({
                 && (
                     <EmptyState
                         message="Организации не найдены."
+                        variant="inline"
                     />
                 )}
 
-            {!loading
-                && !loadError
-                && organizations.length > 0
-                && (
-                    <section className="card organizations-table-card">
-                        <div className="organizations-table-scroll">
-                            <table className="admin-table organizations-table">
-                                <thead>
-                                    <tr>
-                                        <th>Название</th>
-                                        <th>ID</th>
-                                        <th>Тип</th>
-                                        <th>Статус</th>
-                                        <th>Версия</th>
-                                        <th>Создана</th>
-                                        <th>Действия</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {organizations.map(
-                                        (organization) => {
-                                            const mutable =
-                                                canMutateOrganization(
-                                                    organization,
-                                                )
+            {hasRows && (
+                <table className="admin-table organizations-table">
+                    <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th>ID</th>
+                            <th>Тип</th>
+                            <th>Статус</th>
+                            <th>Версия</th>
+                            <th>Создана</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {organizations.map(
+                            (organization) => {
+                                const mutable =
+                                    canMutateOrganization(
+                                        organization,
+                                    )
 
-                                            return (
-                                                <tr
-                                                    key={organization.id}
-                                                    className={
-                                                        !organization.enabled
-                                                            ? 'organizations-table__row--disabled'
-                                                            : organization.type === 'PLATFORM'
-                                                                ? 'organizations-table__row--platform'
-                                                                : undefined
+                                return (
+                                    <tr
+                                        key={organization.id}
+                                        className={
+                                            !organization.enabled
+                                                ? 'organizations-table__row--disabled'
+                                                : organization.type === 'PLATFORM'
+                                                    ? 'organizations-table__row--platform'
+                                                    : undefined
+                                        }
+                                    >
+                                        <td>
+                                            <strong className="organization-name-cell">
+                                                {organization.name}
+                                            </strong>
+                                        </td>
+                                        <td>
+                                            <code className="organization-id-cell">
+                                                {organization.id}
+                                            </code>
+                                        </td>
+                                        <td>
+                                            <OrganizationTypeBadge
+                                                type={organization.type}
+                                            />
+                                        </td>
+                                        <td>
+                                            <OrganizationStatusBadge
+                                                enabled={organization.enabled}
+                                            />
+                                        </td>
+                                        <td>
+                                            <span className="organization-version">
+                                                v{organization.version}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            {formatDateTime(
+                                                organization.createdAt,
+                                            )}
+                                        </td>
+                                        <td className="actions-cell">
+                                            <div className="organization-actions">
+                                                <button
+                                                    type="button"
+                                                    className="secondary-button"
+                                                    disabled={
+                                                        detailsLoadingId
+                                                        === organization.id
+                                                    }
+                                                    onClick={() =>
+                                                        void onDetails(
+                                                            organization,
+                                                        )
                                                     }
                                                 >
-                                                    <td>
-                                                        <strong className="organization-name-cell">
-                                                            {organization.name}
-                                                        </strong>
-                                                    </td>
-                                                    <td>
-                                                        <code className="organization-id-cell">
-                                                            {organization.id}
-                                                        </code>
-                                                    </td>
-                                                    <td>
-                                                        <OrganizationTypeBadge
-                                                            type={organization.type}
-                                                        />
-                                                    </td>
-                                                    <td>
-                                                        <OrganizationStatusBadge
-                                                            enabled={organization.enabled}
-                                                        />
-                                                    </td>
-                                                    <td>
-                                                        <span className="organization-version">
-                                                            v{organization.version}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        {formatDateTime(
-                                                            organization.createdAt,
-                                                        )}
-                                                    </td>
-                                                    <td className="actions-cell">
-                                                        <div className="organization-actions">
-                                                            <button
-                                                                type="button"
-                                                                className="secondary-button"
-                                                                disabled={
-                                                                    detailsLoadingId
-                                                                    === organization.id
-                                                                }
-                                                                onClick={() =>
-                                                                    void onDetails(
-                                                                        organization,
-                                                                    )
-                                                                }
-                                                            >
-                                                                {detailsLoadingId
-                                                                    === organization.id
-                                                                    ? 'Загрузка...'
-                                                                    : 'Подробнее'}
-                                                            </button>
+                                                    {detailsLoadingId
+                                                        === organization.id
+                                                        ? 'Загрузка...'
+                                                        : 'Подробнее'}
+                                                </button>
 
-                                                            {mutable && (
-                                                                <button
-                                                                    type="button"
-                                                                    className="secondary-button"
-                                                                    disabled={hasPendingAction}
-                                                                    onClick={() =>
-                                                                        onRename(
-                                                                            organization,
-                                                                        )
-                                                                    }
-                                                                >
-                                                                    Переименовать
-                                                                </button>
-                                                            )}
+                                                {mutable && (
+                                                    <button
+                                                        type="button"
+                                                        className="secondary-button"
+                                                        disabled={hasPendingAction}
+                                                        onClick={() =>
+                                                            onRename(
+                                                                organization,
+                                                            )
+                                                        }
+                                                    >
+                                                        Переименовать
+                                                    </button>
+                                                )}
 
-                                                            {mutable && (
-                                                                <button
-                                                                    type="button"
-                                                                    className={
-                                                                        organization.enabled
-                                                                            ? 'danger-button'
-                                                                            : 'secondary-button'
-                                                                    }
-                                                                    disabled={
-                                                                        hasPendingAction
-                                                                        || impactLoadingId
-                                                                            === organization.id
-                                                                    }
-                                                                    onClick={() => {
-                                                                        if (organization.enabled) {
-                                                                            void onDisable(
-                                                                                organization,
-                                                                            )
-                                                                        } else {
-                                                                            onEnable(
-                                                                                organization,
-                                                                            )
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    {impactLoadingId
-                                                                        === organization.id
-                                                                        ? 'Проверка...'
-                                                                        : organization.enabled
-                                                                            ? 'Отключить'
-                                                                            : 'Включить'}
-                                                                </button>
-                                                            )}
-                                                        </div>
-
-                                                        {!mutable && (
-                                                            <span className="organization-protection-label">
-                                                                {getProtectionLabel(
+                                                {mutable && (
+                                                    <button
+                                                        type="button"
+                                                        className={
+                                                            organization.enabled
+                                                                ? 'danger-button'
+                                                                : 'secondary-button'
+                                                        }
+                                                        disabled={
+                                                            hasPendingAction
+                                                            || impactLoadingId
+                                                                === organization.id
+                                                        }
+                                                        onClick={() => {
+                                                            if (organization.enabled) {
+                                                                void onDisable(
                                                                     organization,
-                                                                )}
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            )
-                                        },
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
+                                                                )
+                                                            } else {
+                                                                onEnable(
+                                                                    organization,
+                                                                )
+                                                            }
+                                                        }}
+                                                    >
+                                                        {impactLoadingId
+                                                            === organization.id
+                                                            ? 'Проверка...'
+                                                            : organization.enabled
+                                                                ? 'Отключить'
+                                                                : 'Включить'}
+                                                    </button>
+                                                )}
+                                            </div>
 
-                        <div className="pagination organizations-pagination">
-                            <button
-                                type="button"
-                                className="secondary-button"
-                                disabled={
-                                    page === 0
-                                    || loading
-                                    || hasPendingAction
-                                }
-                                onClick={() =>
-                                    onPageChange(
-                                        Math.max(0, page - 1),
-                                    )
-                                }
-                            >
-                                Назад
-                            </button>
-
-                            <span>
-                                Страница {page + 1} из {Math.max(totalPages, 1)}
-                            </span>
-
-                            <button
-                                type="button"
-                                className="secondary-button"
-                                disabled={
-                                    page + 1 >= totalPages
-                                    || loading
-                                    || hasPendingAction
-                                }
-                                onClick={() =>
-                                    onPageChange(page + 1)
-                                }
-                            >
-                                Вперёд
-                            </button>
-                        </div>
-                    </section>
-                )}
-        </>
+                                            {!mutable && (
+                                                <span className="organization-protection-label">
+                                                    {getProtectionLabel(
+                                                        organization,
+                                                    )}
+                                                </span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                )
+                            },
+                        )}
+                    </tbody>
+                </table>
+            )}
+        </ResizableScrollRegion>
     )
 }

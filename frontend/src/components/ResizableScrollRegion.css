@@ -3,14 +3,14 @@
 
    TRUE VERTICAL SPLIT
 
-   [ upper page                  ]
+   [ protected upper content     ]
    [ -------- drag ------------ ]
-   [ scrollable viewport         ]
+   [ scrollable lower viewport   ]
    [ fixed footer                ]
 
-   Значения custom properties ниже являются безопасными
-   CSS defaults. ResizableScrollRegion.tsx может переопределять
-   их через inline style.
+   Lower никогда не является overlay. Он занимает собственную часть
+   flex-layout. preserve-upper защищает semantic boundary, а не всю
+   scrollHeight верхнего flex-контейнера.
    ============================================================ */
 
 .resizable-scroll-region {
@@ -29,11 +29,8 @@
     overflow: hidden;
 }
 
-
 /* ============================================================
    UPPER
-   Верхняя, обычная часть страницы.
-   Она занимает всё пространство, оставшееся над split.
    ============================================================ */
 
 .resizable-scroll-region__upper {
@@ -48,18 +45,34 @@
     scrollbar-gutter: stable;
 }
 
+/*
+ * В preserve-upper режиме scrollbar gutter не резервируется,
+ * пока внутренний scroll реально не понадобился.
+ */
+.resizable-scroll-region--preserve-upper .resizable-scroll-region__upper {
+    scrollbar-gutter: auto;
+}
+
+/*
+ * Semantic boundary marker.
+ *
+ * Его ставят после последнего control, который split не должен
+ * перекрывать. Маркер не занимает визуальной высоты.
+ */
+.resizable-scroll-region__upper-boundary-marker {
+    display: block;
+    width: 100%;
+    height: 0;
+    min-height: 0;
+    flex: 0 0 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    pointer-events: none;
+}
 
 /* ============================================================
    LOWER
-   Нижняя область.
-
-   Её нижний край остаётся на месте.
-   При resize двигается именно ВЕРХНЯЯ граница.
-
-   В высоту lower входят:
-   - drag handle;
-   - scroll viewport;
-   - fixed footer.
    ============================================================ */
 
 .resizable-scroll-region__lower {
@@ -78,16 +91,13 @@
     overflow: hidden;
 }
 
-
 /* ============================================================
    HANDLE
-   Физическая граница между верхней и нижней частью.
-
-   Пользователь хватает именно эту линию.
    ============================================================ */
 
 .resizable-scroll-region__handle {
     position: relative;
+    z-index: 3;
 
     display: grid;
 
@@ -106,9 +116,6 @@
 
     outline: none;
 }
-
-
-/* Горизонтальная линия разделителя */
 
 .resizable-scroll-region__handle::before {
     position: absolute;
@@ -130,9 +137,6 @@
         height 140ms ease;
 }
 
-
-/* Центральный визуальный grip */
-
 .resizable-scroll-region__handle span {
     position: absolute;
 
@@ -153,13 +157,11 @@
         background-color 140ms ease;
 }
 
-
 .resizable-scroll-region__handle:hover::before,
 .resizable-scroll-region__handle:focus-visible::before {
     height: 2px;
     background: #2563eb;
 }
-
 
 .resizable-scroll-region__handle:hover span,
 .resizable-scroll-region__handle:focus-visible span {
@@ -167,16 +169,13 @@
     background: #2563eb;
 }
 
-
 .resizable-scroll-region__handle:focus-visible {
     outline: 2px solid rgb(37 99 235 / 30%);
     outline-offset: -2px;
 }
 
-
 /* ============================================================
-   VIEWPORT
-   Только эта часть lower прокручивается.
+   LOWER VIEWPORT
    ============================================================ */
 
 .resizable-scroll-region__viewport {
@@ -191,12 +190,8 @@
     scrollbar-gutter: stable;
 }
 
-
 /* ============================================================
    FOOTER
-   Не входит в scroll viewport.
-
-   Поэтому pagination / totals всегда видны снизу.
    ============================================================ */
 
 .resizable-scroll-region__footer {
@@ -207,11 +202,282 @@
     background: inherit;
 }
 
-
 .resizable-scroll-region__footer .pagination {
     margin-top: 0;
 }
 
+/* ============================================================
+   MODELS — COMPACT DESKTOP WORKSPACE
+
+   Цель:
+   при опущенном catalog split на обычном desktop одновременно
+   остаются видны:
+   - hero;
+   - runtime/policy cards;
+   - "Каталог моделей";
+   - SUPER_ADMIN catalog actions.
+
+   Никакая бизнес-логика и JSX не меняются.
+   Эти правила изолированы .models-page и не влияют на Users,
+   Organizations, Chat, Knowledge, Audit или Usage.
+   ============================================================ */
+
+@media
+    (min-width: 1180px)
+    and (min-height: 760px)
+    and (max-height: 1100px) {
+
+    .models-page .models-page__upper {
+        scrollbar-gutter: auto;
+    }
+
+    .models-page .models-page__upper-content {
+        gap: 8px;
+        padding-bottom: 2px;
+    }
+
+    .models-page .models-hero {
+        gap: 16px;
+        padding: 11px 17px;
+        border-radius: 15px;
+    }
+
+    .models-page .models-hero h1 {
+        margin-top: 2px;
+        font-size: 32px;
+        line-height: 1.02;
+    }
+
+    .models-page .models-hero p {
+        margin-top: 4px;
+        font-size: 12px;
+        line-height: 1.3;
+    }
+
+    .models-page .models-eyebrow,
+    .models-page .models-card__heading > div > span {
+        font-size: 9px;
+    }
+
+    .models-page .models-runtime-badge {
+        min-width: 220px;
+        gap: 2px;
+        padding: 8px 10px;
+        border-radius: 11px;
+    }
+
+    .models-page .models-runtime-badge strong {
+        font-size: 14px;
+    }
+
+    .models-page .models-runtime-badge span,
+    .models-page .models-runtime-badge small {
+        font-size: 10px;
+    }
+
+    .models-page .models-overview-grid {
+        gap: 9px;
+    }
+
+    .models-page .models-card {
+        gap: 7px;
+        padding: 11px 12px;
+        border-radius: 13px;
+    }
+
+    .models-page .models-card__heading {
+        gap: 8px;
+    }
+
+    .models-page .models-card__heading h2 {
+        font-size: 18px;
+        line-height: 1.1;
+    }
+
+    /*
+     * Runtime имеет 8 compact facts -> 4 x 2.
+     * Policy имеет 6 facts -> 3 x 2.
+     *
+     * Это уменьшает высоту control plane без скрытия информации.
+     */
+    .models-page .models-card--runtime .models-kv-grid {
+        grid-template-columns:
+            repeat(4, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .models-page .models-card--policy .models-kv-grid {
+        grid-template-columns:
+            repeat(3, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .models-page .models-kv-grid > div {
+        min-height: 52px;
+        padding: 6px 8px;
+        border-radius: 9px;
+    }
+
+    .models-page .models-kv-grid dt {
+        margin-bottom: 2px;
+        font-size: 9px;
+        line-height: 1.15;
+    }
+
+    .models-page .models-kv-grid dd {
+        font-size: 12px;
+        line-height: 1.18;
+    }
+
+    .models-page .models-kv-grid small {
+        margin-top: 2px;
+        font-size: 9px;
+        line-height: 1.18;
+    }
+
+    .models-page .models-status {
+        padding: 4px 7px;
+        font-size: 9px;
+    }
+
+    .models-page .models-policy-organization-summary {
+        gap: 1px;
+        padding: 6px 8px;
+        border-radius: 9px;
+    }
+
+    .models-page .models-policy-organization-summary > span {
+        font-size: 8px;
+    }
+
+    .models-page .models-policy-organization-summary > strong {
+        font-size: 12px;
+    }
+
+    .models-page .models-policy-organization-summary > code {
+        font-size: 9px;
+    }
+
+    .models-page .models-org-picker {
+        gap: 4px;
+        padding: 6px;
+        border-radius: 9px;
+    }
+
+    .models-page .models-org-picker label {
+        gap: 3px;
+        font-size: 10px;
+    }
+
+    .models-page .models-org-picker__input-row {
+        gap: 5px;
+    }
+
+    .models-page .models-org-picker input,
+    .models-page .models-org-picker button {
+        min-height: 31px;
+        padding: 5px 8px;
+        font-size: 11px;
+    }
+
+    .models-page .models-policy-card__footer {
+        gap: 5px;
+    }
+
+    .models-page .models-policy-card__note {
+        padding: 6px 8px;
+        border-radius: 9px;
+        font-size: 10px;
+        line-height: 1.25;
+    }
+
+    .models-page .models-policy-action {
+        min-height: 32px !important;
+        padding-block: 5px;
+        font-size: 11px;
+    }
+
+    .models-page .models-runtime-probe {
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 9px;
+    }
+
+    .models-page .models-runtime-probe strong {
+        font-size: 12px;
+    }
+
+    .models-page .models-runtime-probe small {
+        font-size: 9px;
+        line-height: 1.2;
+    }
+
+    .models-page .models-runtime-probe button {
+        min-height: 31px;
+        padding: 5px 9px;
+        font-size: 10px;
+    }
+
+    .models-page .models-runtime-probe-result {
+        padding: 5px 7px;
+        font-size: 9px;
+    }
+
+    .models-page .models-notice {
+        padding: 6px 9px;
+        font-size: 11px;
+    }
+
+    .models-page .models-catalog-toolbar {
+        gap: 10px;
+        padding-top: 0;
+    }
+
+    .models-page .models-catalog-toolbar h2 {
+        font-size: 18px;
+    }
+
+    .models-page .models-catalog-toolbar p {
+        margin-top: 2px;
+        font-size: 11px;
+        line-height: 1.2;
+    }
+
+    .models-page .models-control-row__actions {
+        gap: 6px;
+    }
+
+    .models-page .models-control-row__actions button {
+        min-height: 32px;
+        padding: 5px 9px;
+        font-size: 10px;
+    }
+
+    .models-page .models-evidence-panel > summary {
+        min-height: 34px;
+        padding: 0 10px;
+        font-size: 11px;
+    }
+
+    .models-page .models-evidence-panel > summary small {
+        font-size: 9px;
+    }
+}
+
+/*
+ * На очень низком desktop viewport полностью исключить внутренний
+ * scroll невозможно без скрытия информации. В этом режиме оставляем
+ * корректный fallback: scroll только внутри upper, не у body.
+ */
+@media
+    (min-width: 1180px)
+    and (max-height: 759px) {
+
+    .models-page .models-page__upper {
+        overflow: auto;
+        scrollbar-gutter: auto;
+    }
+}
 
 /* ============================================================
    MOBILE

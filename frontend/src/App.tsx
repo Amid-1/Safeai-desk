@@ -288,6 +288,7 @@ function AppLayout() {
         || [
             '/chat',
             '/admin/users',
+            '/admin/organizations',
             '/admin/audit',
             '/admin/usage',
             '/admin/models',

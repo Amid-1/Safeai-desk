@@ -19,6 +19,7 @@ import {
     useAdminOrganizationMutations,
 } from './useAdminOrganizationMutations'
 import './AdminOrganizationsPage.css'
+import './AdminOrganizationsWorkspace.css'
 
 function AdminOrganizationsPage() {
     return (
