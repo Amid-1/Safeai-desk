@@ -14,12 +14,16 @@ import ru.safeai.gateway.model.dto.CreateModelCatalogVersionRequest;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 import ru.safeai.gateway.model.dto.ModelCatalogEntryResponse;
 import ru.safeai.gateway.model.dto.ModelRouteDecisionResponse;
+import ru.safeai.gateway.model.domain.RuntimeModelProbeResult;
+import ru.safeai.gateway.model.domain.RuntimeModelProbeStatus;
 import ru.safeai.gateway.model.dto.OrganizationModelPolicyResponse;
+import ru.safeai.gateway.model.dto.RuntimeModelProbeResponse;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusWireResponse;
 import ru.safeai.gateway.model.service.ModelCatalogService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
 import ru.safeai.gateway.model.service.OrganizationModelPolicyService;
+import ru.safeai.gateway.model.service.RuntimeModelProbeService;
 import ru.safeai.gateway.model.service.RuntimeModelStatusService;
 import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
 
@@ -27,6 +31,7 @@ import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -256,7 +261,7 @@ class ModelControllerContractTest {
     }
 
     @Test
-    void runtimeEndpointKeepsMappingAndAdministrativeBoundary()
+    void runtimeEndpointsKeepMappingsAndAuthorizationBoundaries()
             throws NoSuchMethodException {
 
         assertClassMapping(
@@ -269,9 +274,19 @@ class ModelControllerContractTest {
                         "runtime"
                 );
 
+        Method probe =
+                ModelRuntimeController.class.getMethod(
+                        "probe"
+                );
+
         assertGetMapping(
                 runtime,
                 "/runtime"
+        );
+
+        assertPostMapping(
+                probe,
+                "/runtime/probe"
         );
 
         assertThat(
@@ -280,6 +295,14 @@ class ModelControllerContractTest {
                 ).value()
         ).isEqualTo(
                 ADMINISTRATIVE_READ_BOUNDARY
+        );
+
+        assertThat(
+                requirePreAuthorize(
+                        probe
+                ).value()
+        ).isEqualTo(
+                SUPER_ADMIN_WRITE_BOUNDARY
         );
     }
 
@@ -438,10 +461,15 @@ class ModelControllerContractTest {
     }
 
     @Test
-    void runtimeControllerReturnsSanitizedWireReadModel() {
-        RuntimeModelStatusService service =
+    void runtimeControllerReturnsSanitizedWireReadModelAndProbeEvidence() {
+        RuntimeModelStatusService statusService =
                 mock(
                         RuntimeModelStatusService.class
+                );
+
+        RuntimeModelProbeService probeService =
+                mock(
+                        RuntimeModelProbeService.class
                 );
 
         RuntimeModelStatusResponse runtime =
@@ -463,58 +491,108 @@ class ModelControllerContractTest {
                         null
                 );
 
-        RuntimeModelStatusWireResponse expected =
+        RuntimeModelStatusWireResponse expectedRuntime =
                 RuntimeModelStatusWireResponse.from(
                         runtime
                 );
 
+        RuntimeModelProbeResult probe =
+                new RuntimeModelProbeResult(
+                        "openai",
+                        "gpt-test",
+                        RuntimeModelProbeStatus.AVAILABLE,
+                        Instant.parse(
+                                "2026-09-05T18:00:00Z"
+                        ),
+                        123L,
+                        200,
+                        "Провайдер подтвердил доступность модели"
+                );
+
+        RuntimeModelProbeResponse expectedProbe =
+                RuntimeModelProbeResponse.from(
+                        probe
+                );
+
         when(
-                service.current()
+                statusService.current()
         ).thenReturn(
                 runtime
         );
 
+        when(
+                probeService.probe()
+        ).thenReturn(
+                probe
+        );
+
         ModelRuntimeController controller =
                 new ModelRuntimeController(
-                        service
+                        statusService,
+                        probeService
                 );
 
-        RuntimeModelStatusWireResponse actual =
+        RuntimeModelStatusWireResponse actualRuntime =
                 controller.runtime();
 
+        RuntimeModelProbeResponse actualProbe =
+                controller.probe();
+
         assertThat(
-                actual
+                actualRuntime
         ).isEqualTo(
-                expected
+                expectedRuntime
         );
 
         assertThat(
-                actual.provider()
+                actualRuntime.provider()
         ).isEqualTo(
                 "openai"
         );
 
         assertThat(
-                actual.model()
+                actualRuntime.model()
         ).isEqualTo(
                 "gpt-test"
         );
 
         assertThat(
-                actual.maxInputTokens()
+                actualRuntime.maxInputTokens()
         ).isEqualTo(
                 32_000
         );
 
         assertThat(
-                actual.maxOutputTokens()
+                actualRuntime.maxOutputTokens()
         ).isEqualTo(
                 4_096
         );
 
+        assertThat(
+                actualProbe
+        ).isEqualTo(
+                expectedProbe
+        );
+
+        assertThat(
+                actualProbe.status()
+        ).isEqualTo(
+                RuntimeModelProbeStatus.AVAILABLE
+        );
+
+        assertThat(
+                actualProbe.latencyMs()
+        ).isEqualTo(
+                123L
+        );
+
         verify(
-                service
+                statusService
         ).current();
+
+        verify(
+                probeService
+        ).probe();
     }
 
     @Test
@@ -695,10 +773,21 @@ class ModelControllerContractTest {
                         "service"
                 );
 
+        RuntimeModelStatusService statusService =
+                mock(
+                        RuntimeModelStatusService.class
+                );
+
+        RuntimeModelProbeService probeService =
+                mock(
+                        RuntimeModelProbeService.class
+                );
+
         assertThatThrownBy(
                 () ->
                         new ModelRuntimeController(
-                                null
+                                null,
+                                probeService
                         )
         )
                 .isInstanceOf(
@@ -706,6 +795,20 @@ class ModelControllerContractTest {
                 )
                 .hasMessageContaining(
                         "statusService"
+                );
+
+        assertThatThrownBy(
+                () ->
+                        new ModelRuntimeController(
+                                statusService,
+                                null
+                        )
+        )
+                .isInstanceOf(
+                        NullPointerException.class
+                )
+                .hasMessageContaining(
+                        "probeService"
                 );
 
         assertThatThrownBy(

@@ -1,4 +1,5 @@
 import {
+    useMemo,
     useRef,
     useState,
 } from 'react'
@@ -7,13 +8,24 @@ import type {
     CreateOrganizationModelPolicyVersionRequest,
     ModelCatalogEntry,
     OrganizationModelPolicy,
+    RuntimeModelStatus,
 } from '../../../api/modelApi'
-import { BUDGET_ENFORCEMENTS } from '../../../api/modelApi'
+import {
+    BUDGET_ENFORCEMENTS,
+} from '../../../api/modelApi'
 import Modal from '../../Modal'
-import type { ModalResizeOptions } from '../../Modal'
-import { getApiErrorMessage } from '../../../api/http'
-import { ErrorState } from '../../StateBlock'
-import { DecimalInput } from './ModelFormControls'
+import type {
+    ModalResizeOptions,
+} from '../../Modal'
+import {
+    getApiErrorMessage,
+} from '../../../api/http'
+import {
+    ErrorState,
+} from '../../StateBlock'
+import {
+    DecimalInput,
+} from './ModelFormControls'
 import {
     DefaultModelSelector,
     ModelKeySelector,
@@ -25,7 +37,9 @@ import {
     buildPolicyRequest,
     createPolicyDraft,
 } from './modelControlPlaneSupport'
-import type { PolicyDraft } from './modelControlPlaneSupport'
+import type {
+    PolicyDraft,
+} from './modelControlPlaneSupport'
 
 const POLICY_MODAL_RESIZE: ModalResizeOptions = {
     initialWidth: 1140,
@@ -40,7 +54,10 @@ const POLICY_MODAL_RESIZE: ModalResizeOptions = {
 type ModelPolicyModalProps = {
     policy: OrganizationModelPolicy
     catalog: ModelCatalogEntry[]
+    effectiveCatalog: ModelCatalogEntry[]
+    runtime: RuntimeModelStatus
     organizationId: string
+    organizationName: string | null
     pending: boolean
     onClose: () => void
     onSubmit: (
@@ -79,7 +96,10 @@ function budgetEnforcementLabel(
 export function ModelPolicyModal({
     policy,
     catalog,
+    effectiveCatalog,
+    runtime,
     organizationId,
+    organizationName,
     pending,
     onClose,
     onSubmit,
@@ -91,16 +111,22 @@ export function ModelPolicyModal({
 
     const [formError, setFormError] =
         useState('')
-    const [allowSelectorState, setAllowSelectorState] =
-        useState<ModelKeySelectorInteractionState>({
-            hasPendingInput: false,
-            hasError: false,
-        })
-    const [denySelectorState, setDenySelectorState] =
-        useState<ModelKeySelectorInteractionState>({
-            hasPendingInput: false,
-            hasError: false,
-        })
+
+    const [
+        allowSelectorState,
+        setAllowSelectorState,
+    ] = useState<ModelKeySelectorInteractionState>({
+        hasPendingInput: false,
+        hasError: false,
+    })
+
+    const [
+        denySelectorState,
+        setDenySelectorState,
+    ] = useState<ModelKeySelectorInteractionState>({
+        hasPendingInput: false,
+        hasError: false,
+    })
 
     const accessControlRef =
         useRef<HTMLInputElement | null>(null)
@@ -110,6 +136,29 @@ export function ModelPolicyModal({
         useRef<HTMLSelectElement | null>(null)
     const dataControlRef =
         useRef<HTMLInputElement | null>(null)
+
+    const hasExecutableRuntimeCatalogEntry =
+        useMemo(
+            () =>
+                effectiveCatalog.some(
+                    (entry) =>
+                        (
+                            entry.lifecycle === 'ACTIVE'
+                            || entry.lifecycle === 'DEPRECATED'
+                        )
+                        && entry.provider === runtime.provider
+                        && entry.providerModelId === runtime.model,
+                ),
+            [
+                effectiveCatalog,
+                runtime.model,
+                runtime.provider,
+            ],
+        )
+
+    const activationWarning =
+        draft.enabled
+        && !hasExecutableRuntimeCatalogEntry
 
     const focusShortcut = (
         target: HTMLElement | null,
@@ -123,8 +172,7 @@ export function ModelPolicyModal({
         })
 
         if (
-            typeof target.scrollIntoView
-                === 'function'
+            typeof target.scrollIntoView === 'function'
         ) {
             target.scrollIntoView({
                 behavior: 'smooth',
@@ -178,8 +226,8 @@ export function ModelPolicyModal({
 
     const versionMessage =
         policy.configured
-            ? `Сейчас действует версия ${policy.version}. После сохранения появится версия ${policy.version + 1}; предыдущая останется в истории.`
-            : 'Это первая настройка правил для организации. После сохранения появится версия 1.'
+            ? `Сейчас действует версия ${policy.version}. После сохранения появится версия ${policy.version + 1}; предыдущая останется неизменной.`
+            : 'Это первая настройка правил. После сохранения появится версия 1.'
 
     const rulesStatusLabel =
         draft.enabled
@@ -189,7 +237,9 @@ export function ModelPolicyModal({
     const rulesStatusHint =
         draft.enabled
             ? 'Ограничения и лимиты применяются к запросам этой организации.'
-            : 'Ограничения временно не применяются. Организация будет работать без этих правил, пока вы не включите их снова.'
+            : policy.configured
+                ? 'Сохранённая policy существует, но сейчас не ограничивает routing.'
+                : 'Первая policy не включится, пока администратор не активирует её явно.'
 
     return (
         <Modal
@@ -208,10 +258,14 @@ export function ModelPolicyModal({
                 }}
             >
                 <div className="models-policy-form__intro">
-                    <div>
+                    <div className="models-policy-form__organization">
                         <span className="models-policy-form__meta-label">
                             Организация
                         </span>
+                        <strong>
+                            {organizationName
+                                ?? 'Текущая организация'}
+                        </strong>
                         <code className="models-form__code">
                             {organizationId}
                         </code>
@@ -231,11 +285,13 @@ export function ModelPolicyModal({
 
                 <div className="models-policy-form__scope">
                     <div className="models-policy-form__scope-copy">
-                        <strong>Что настраивает это окно</strong>
+                        <strong>
+                            Что настраивает это окно
+                        </strong>
                         <p className="models-form__hint">
-                            Здесь настраивается только блок «Доступ и ограничения» на странице моделей.
-                            Блок «Подключённая модель» слева заполняется автоматически по фактическому
-                            подключению сервера и не меняется в этом окне.
+                            Здесь меняется только блок «Доступ и ограничения».
+                            Фактический provider/model задаётся backend runtime
+                            и через policy не переключается.
                         </p>
                     </div>
 
@@ -246,7 +302,6 @@ export function ModelPolicyModal({
                         <button
                             type="button"
                             className="models-policy-form__scope-tag"
-                            title="Перейти к настройкам доступа"
                             onClick={() => {
                                 focusShortcut(
                                     accessControlRef.current,
@@ -258,7 +313,6 @@ export function ModelPolicyModal({
                         <button
                             type="button"
                             className="models-policy-form__scope-tag"
-                            title="Перейти к лимитам токенов"
                             onClick={() => {
                                 focusShortcut(
                                     limitsControlRef.current,
@@ -270,7 +324,6 @@ export function ModelPolicyModal({
                         <button
                             type="button"
                             className="models-policy-form__scope-tag"
-                            title="Перейти к настройкам бюджета"
                             onClick={() => {
                                 focusShortcut(
                                     budgetControlRef.current,
@@ -282,7 +335,6 @@ export function ModelPolicyModal({
                         <button
                             type="button"
                             className="models-policy-form__scope-tag"
-                            title="Перейти к требованиям к данным"
                             onClick={() => {
                                 focusShortcut(
                                     dataControlRef.current,
@@ -300,12 +352,15 @@ export function ModelPolicyModal({
                             <input
                                 type="checkbox"
                                 checked={draft.enabled}
+                                aria-label={rulesStatusLabel}
                                 onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        enabled:
-                                            event.target.checked,
-                                    }))
+                                    setDraft(
+                                        (current) => ({
+                                            ...current,
+                                            enabled:
+                                                event.target.checked,
+                                        }),
+                                    )
                                 }}
                             />
                             <span className="models-policy-form__switch-track">
@@ -314,8 +369,12 @@ export function ModelPolicyModal({
                         </span>
 
                         <span className="models-policy-form__switch-copy">
-                            <strong>{rulesStatusLabel}</strong>
-                            <small>{rulesStatusHint}</small>
+                            <strong>
+                                {rulesStatusLabel}
+                            </strong>
+                            <small>
+                                {rulesStatusHint}
+                            </small>
                         </span>
                     </label>
 
@@ -326,39 +385,70 @@ export function ModelPolicyModal({
                     </p>
                 </div>
 
+                {activationWarning && (
+                    <div
+                        className="models-policy-form__warning"
+                        role="alert"
+                    >
+                        <strong>
+                            Сейчас нет действующей записи каталога,
+                            совпадающей с runtime.
+                        </strong>
+                        <p>
+                            Если сохранить правила включёнными, AI-запросы
+                            этой организации могут детерминированно
+                            отклоняться до provider I/O. Сохранение намеренно
+                            не блокируется: администратор может сознательно
+                            подготовить fail-closed policy.
+                        </p>
+                    </div>
+                )}
+
                 <div className="models-policy-form__access-grid">
                     <ModelKeySelector
                         label="Разрешённые модели"
-                        hint="Можно выбрать модель из каталога или добавить корректный ключ вручную. Если список пуст, разрешены все модели, кроме явно запрещённых."
+                        hint="Если список пуст, разрешены все модели, кроме явно запрещённых."
                         kind="allow"
                         catalog={catalog}
+                        effectiveCatalog={effectiveCatalog}
+                        runtime={runtime}
                         value={draft.allowModelKeys}
                         conflictingValue={draft.denyModelKeys}
                         disabled={pending}
                         inputRef={accessControlRef}
-                        onInteractionStateChange={setAllowSelectorState}
+                        onInteractionStateChange={
+                            setAllowSelectorState
+                        }
                         onChange={(value) => {
-                            setDraft((current) => ({
-                                ...current,
-                                allowModelKeys: value,
-                            }))
+                            setDraft(
+                                (current) => ({
+                                    ...current,
+                                    allowModelKeys: value,
+                                }),
+                            )
                         }}
                     />
 
                     <ModelKeySelector
                         label="Запрещённые модели"
-                        hint="Можно выбрать модель из каталога или добавить ключ вручную. Модель не может одновременно находиться в разрешённом и запрещённом списке."
+                        hint="Модель не может одновременно быть в allow и deny."
                         kind="deny"
                         catalog={catalog}
+                        effectiveCatalog={effectiveCatalog}
+                        runtime={runtime}
                         value={draft.denyModelKeys}
                         conflictingValue={draft.allowModelKeys}
                         disabled={pending}
-                        onInteractionStateChange={setDenySelectorState}
+                        onInteractionStateChange={
+                            setDenySelectorState
+                        }
                         onChange={(value) => {
-                            setDraft((current) => ({
-                                ...current,
-                                denyModelKeys: value,
-                            }))
+                            setDraft(
+                                (current) => ({
+                                    ...current,
+                                    denyModelKeys: value,
+                                }),
+                            )
                         }}
                     />
                 </div>
@@ -367,20 +457,24 @@ export function ModelPolicyModal({
                     <div className="models-policy-form__setting-field">
                         <span className="models-label-row">
                             Модель по умолчанию
-                            <InfoHint text="Используется, если запрос не выбрал модель явно. Список учитывает разрешённые и запрещённые модели." />
+                            <InfoHint text="Используется, если запрос не выбрал модель явно. Статус рядом показывает связь latest/effective catalog с текущим runtime." />
                         </span>
 
                         <DefaultModelSelector
                             catalog={catalog}
+                            effectiveCatalog={effectiveCatalog}
+                            runtime={runtime}
                             allowModelKeys={draft.allowModelKeys}
                             denyModelKeys={draft.denyModelKeys}
                             value={draft.defaultModelKey}
                             disabled={pending}
                             onChange={(value) => {
-                                setDraft((current) => ({
-                                    ...current,
-                                    defaultModelKey: value,
-                                }))
+                                setDraft(
+                                    (current) => ({
+                                        ...current,
+                                        defaultModelKey: value,
+                                    }),
+                                )
                             }}
                         />
                     </div>
@@ -388,20 +482,20 @@ export function ModelPolicyModal({
                     <label>
                         <span className="models-label-row">
                             Контроль бюджета
-                            <InfoHint text="Мягкий режим показывает превышение, но не останавливает запросы. Жёсткий режим блокирует запрос при превышении бюджета." />
+                            <InfoHint text="SOFT фиксирует превышение, HARD блокирует запрос до provider I/O." />
                         </span>
 
                         <select
                             ref={budgetControlRef}
-                            value={
-                                draft.budgetEnforcement
-                            }
+                            value={draft.budgetEnforcement}
                             onChange={(event) => {
-                                setDraft((current) => ({
-                                    ...current,
-                                    budgetEnforcement:
-                                        event.target.value as BudgetEnforcement,
-                                }))
+                                setDraft(
+                                    (current) => ({
+                                        ...current,
+                                        budgetEnforcement:
+                                            event.target.value as BudgetEnforcement,
+                                    }),
+                                )
                             }}
                         >
                             {BUDGET_ENFORCEMENTS.map(
@@ -410,9 +504,7 @@ export function ModelPolicyModal({
                                         key={value}
                                         value={value}
                                     >
-                                        {budgetEnforcementLabel(
-                                            value,
-                                        )}
+                                        {budgetEnforcementLabel(value)}
                                     </option>
                                 ),
                             )}
@@ -425,15 +517,15 @@ export function ModelPolicyModal({
                             ref={limitsControlRef}
                             inputMode="numeric"
                             placeholder="Например: 32000"
-                            value={
-                                draft.maxInputTokens
-                            }
+                            value={draft.maxInputTokens}
                             onChange={(event) => {
-                                setDraft((current) => ({
-                                    ...current,
-                                    maxInputTokens:
-                                        event.target.value,
-                                }))
+                                setDraft(
+                                    (current) => ({
+                                        ...current,
+                                        maxInputTokens:
+                                            event.target.value,
+                                    }),
+                                )
                             }}
                         />
                     </label>
@@ -443,15 +535,15 @@ export function ModelPolicyModal({
                         <input
                             inputMode="numeric"
                             placeholder="Например: 4096"
-                            value={
-                                draft.maxOutputTokens
-                            }
+                            value={draft.maxOutputTokens}
                             onChange={(event) => {
-                                setDraft((current) => ({
-                                    ...current,
-                                    maxOutputTokens:
-                                        event.target.value,
-                                }))
+                                setDraft(
+                                    (current) => ({
+                                        ...current,
+                                        maxOutputTokens:
+                                            event.target.value,
+                                    }),
+                                )
                             }}
                         />
                     </label>
@@ -459,15 +551,14 @@ export function ModelPolicyModal({
                     <DecimalInput
                         label="Стоимость запроса, USD"
                         placeholder="Без лимита"
-                        value={
-                            draft.maxRequestCostUsd
-                        }
+                        value={draft.maxRequestCostUsd}
                         onChange={(value) => {
-                            setDraft((current) => ({
-                                ...current,
-                                maxRequestCostUsd:
-                                    value,
-                            }))
+                            setDraft(
+                                (current) => ({
+                                    ...current,
+                                    maxRequestCostUsd: value,
+                                }),
+                            )
                         }}
                     />
 
@@ -476,11 +567,12 @@ export function ModelPolicyModal({
                         placeholder="Не задан"
                         value={draft.monthlyBudgetUsd}
                         onChange={(value) => {
-                            setDraft((current) => ({
-                                ...current,
-                                monthlyBudgetUsd:
-                                    value,
-                            }))
+                            setDraft(
+                                (current) => ({
+                                    ...current,
+                                    monthlyBudgetUsd: value,
+                                }),
+                            )
                         }}
                     />
                 </div>
@@ -495,15 +587,15 @@ export function ModelPolicyModal({
                             <input
                                 ref={dataControlRef}
                                 type="checkbox"
-                                checked={
-                                    draft.requireCompletePricing
-                                }
+                                checked={draft.requireCompletePricing}
                                 onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        requireCompletePricing:
-                                            event.target.checked,
-                                    }))
+                                    setDraft(
+                                        (current) => ({
+                                            ...current,
+                                            requireCompletePricing:
+                                                event.target.checked,
+                                        }),
+                                    )
                                 }}
                             />
                             Полные данные о стоимости
@@ -512,15 +604,15 @@ export function ModelPolicyModal({
                         <label>
                             <input
                                 type="checkbox"
-                                checked={
-                                    draft.requireNoTraining
-                                }
+                                checked={draft.requireNoTraining}
                                 onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        requireNoTraining:
-                                            event.target.checked,
-                                    }))
+                                    setDraft(
+                                        (current) => ({
+                                            ...current,
+                                            requireNoTraining:
+                                                event.target.checked,
+                                        }),
+                                    )
                                 }}
                             />
                             Не использовать данные для обучения
@@ -529,15 +621,15 @@ export function ModelPolicyModal({
                         <label>
                             <input
                                 type="checkbox"
-                                checked={
-                                    draft.requireZeroDataRetention
-                                }
+                                checked={draft.requireZeroDataRetention}
                                 onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        requireZeroDataRetention:
-                                            event.target.checked,
-                                    }))
+                                    setDraft(
+                                        (current) => ({
+                                            ...current,
+                                            requireZeroDataRetention:
+                                                event.target.checked,
+                                        }),
+                                    )
                                 }}
                             />
                             Не хранить данные после запроса
@@ -545,7 +637,7 @@ export function ModelPolicyModal({
                     </div>
                 </fieldset>
 
-                <div className="models-form__actions">
+                <div className="models-form__actions models-policy-form__sticky-actions">
                     <button
                         type="button"
                         disabled={pending}

@@ -18,6 +18,7 @@ import {
     getOrganizationModelPolicy,
     getRuntimeModelStatus,
     importRuntimeModelCatalog,
+    probeRuntimeModel,
 } from '../api/modelApi'
 import type {
     CreateModelCatalogVersionRequest,
@@ -25,6 +26,7 @@ import type {
     ModelCatalogEntry,
     ModelRouteDecision,
     OrganizationModelPolicy,
+    RuntimeModelProbe,
     RuntimeModelStatus,
 } from '../api/modelApi'
 import { getApiErrorMessage } from '../api/http'
@@ -54,9 +56,9 @@ function connectionModeLabel(
 ) {
     switch (value) {
         case 'SINGLE_PROVIDER_STATIC':
-            return 'Один активный провайдер'
+            return 'Один фиксированный провайдер'
         default:
-            return 'Подключение активно'
+            return 'Runtime сконфигурирован'
     }
 }
 
@@ -231,6 +233,23 @@ function AdminModelsPage() {
     const [routeError, setRouteError] =
         useState('')
 
+    const [
+        selectedOrganizationName,
+        setSelectedOrganizationName,
+    ] = useState<string | null>(
+        null,
+    )
+
+    const [runtimeProbe, setRuntimeProbe] =
+        useState<RuntimeModelProbe | null>(
+            null,
+        )
+
+    const [
+        runtimeProbePending,
+        setRuntimeProbePending,
+    ] = useState(false)
+
     const heroRef =
         useRef<HTMLElement | null>(null)
 
@@ -312,6 +331,9 @@ function AdminModelsPage() {
 
         setTargetOrganizationId(
             currentUser.organizationId,
+        )
+        setSelectedOrganizationName(
+            null,
         )
     }, [currentUser])
 
@@ -519,6 +541,32 @@ function AdminModelsPage() {
             }
         }, [organizationQuery])
 
+    const handleRuntimeProbe =
+        useCallback(async () => {
+            if (!isSuperAdmin) {
+                return
+            }
+
+            setRuntimeProbePending(true)
+            setError('')
+
+            try {
+                const result =
+                    await probeRuntimeModel()
+
+                setRuntimeProbe(result)
+            } catch (failure) {
+                setError(
+                    getApiErrorMessage(
+                        failure,
+                        'Не удалось проверить доступность runtime-модели.',
+                    ),
+                )
+            } finally {
+                setRuntimeProbePending(false)
+            }
+        }, [isSuperAdmin])
+
     const handleRouteLookup =
         useCallback(async () => {
             const decisionId =
@@ -609,7 +657,7 @@ function AdminModelsPage() {
                 </div>
 
                 <div className="models-runtime-badge">
-                    <span>Сейчас подключено</span>
+                    <span>Runtime настроен на</span>
                     <strong>
                         {runtime.provider} · {runtime.model}
                     </strong>
@@ -641,12 +689,19 @@ function AdminModelsPage() {
                 <RuntimeCard
                     runtime={runtime}
                     effectiveCatalog={effectiveCatalog}
+                    probe={runtimeProbe}
+                    probePending={runtimeProbePending}
+                    canProbe={isSuperAdmin}
+                    onProbe={() => {
+                        void handleRuntimeProbe()
+                    }}
                 />
 
                 <PolicyCard
                     policy={policy}
                     catalog={catalog}
                     organizationId={targetOrganizationId}
+                    organizationName={selectedOrganizationName}
                     isSuperAdmin={isSuperAdmin}
                     organizationQuery={organizationQuery}
                     organizationResults={organizationResults}
@@ -666,6 +721,9 @@ function AdminModelsPage() {
                             organization.id,
                         )
                         setOrganizationQuery(
+                            organization.name,
+                        )
+                        setSelectedOrganizationName(
                             organization.name,
                         )
                         setOrganizationResults([])
@@ -864,8 +922,11 @@ function AdminModelsPage() {
                 <ModelPolicyModal
                     policy={policy}
                     catalog={catalog}
+                    effectiveCatalog={effectiveCatalog}
+                    runtime={runtime}
                     pending={mutationPending}
                     organizationId={targetOrganizationId}
+                    organizationName={selectedOrganizationName}
                     onClose={() => {
                         setPolicyModalOpen(false)
                     }}

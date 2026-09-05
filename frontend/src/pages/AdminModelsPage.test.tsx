@@ -24,6 +24,7 @@ import {
     getOrganizationModelPolicy,
     getRuntimeModelStatus,
     importRuntimeModelCatalog,
+    probeRuntimeModel,
 } from '../api/modelApi'
 import AdminModelsPage from './AdminModelsPage'
 
@@ -47,6 +48,7 @@ vi.mock('../api/modelApi', async (importOriginal) => {
         getOrganizationModelPolicy: vi.fn(),
         createModelCatalogVersion: vi.fn(),
         importRuntimeModelCatalog: vi.fn(),
+        probeRuntimeModel: vi.fn(),
         createOrganizationModelPolicyVersion: vi.fn(),
         getModelRouteDecision: vi.fn(),
     }
@@ -79,6 +81,9 @@ const importRuntimeMock =
 
 const routeDecisionMock =
     vi.mocked(getModelRouteDecision)
+
+const runtimeProbeMock =
+    vi.mocked(probeRuntimeModel)
 
 const ORGANIZATION_ID =
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -161,7 +166,7 @@ function stubLoadedState() {
         id: null,
         organizationId: ORGANIZATION_ID,
         version: 0,
-        enabled: true,
+        enabled: false,
         allowModelKeys: [],
         denyModelKeys: [],
         defaultModelKey: null,
@@ -214,6 +219,13 @@ describe('AdminModelsPage', () => {
             screen.queryByRole(
                 'button',
                 {name: 'Добавить подключённую модель'},
+            ),
+        ).not.toBeInTheDocument()
+
+        expect(
+            screen.queryByRole(
+                'button',
+                {name: 'Проверить доступность'},
             ),
         ).not.toBeInTheDocument()
     })
@@ -326,6 +338,41 @@ describe('AdminModelsPage', () => {
         })
     })
 
+    it('SUPER_ADMIN может запустить metadata-only runtime probe', async () => {
+        authMock.currentUser =
+            currentUser('SUPER_ADMIN')
+
+        runtimeProbeMock.mockResolvedValueOnce({
+            provider: 'mock',
+            model: 'mock-safeai',
+            status: 'AVAILABLE',
+            checkedAt: '2026-09-05T18:00:00Z',
+            latencyMs: 0,
+            httpStatus: null,
+            message: 'Локальный mock provider доступен',
+        })
+
+        render(<AdminModelsPage />)
+
+        const button = await screen.findByRole(
+            'button',
+            {name: 'Проверить доступность'},
+        )
+
+        fireEvent.click(button)
+
+        await waitFor(() => {
+            expect(runtimeProbeMock)
+                .toHaveBeenCalledTimes(1)
+        })
+
+        expect(
+            await screen.findByText(
+                'Локальный mock provider доступен',
+            ),
+        ).toBeInTheDocument()
+    })
+
     it('нижнюю область каталога можно почти полностью опустить вниз', async () => {
         authMock.currentUser =
             currentUser('ADMIN')
@@ -393,6 +440,7 @@ describe('AdminModelsPage', () => {
         ).not.toHaveBeenCalled()
     })
 })
+
 
 
 

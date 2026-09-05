@@ -422,6 +422,7 @@ SafeAI Backend
 
 Напиши полный комментарий сообщение по всем проведенным изменениям для сообщения commit -m "" для файла, 
 который лежит в корне в прошедшем времени на русском и который сделаю
+cd ~/Workspace/Projects/Products/SafeAI-Desk
 git status
 git add -A
 git restore --staged commit-message.txt

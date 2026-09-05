@@ -10,7 +10,11 @@ import type {
 } from 'react'
 import type {
     ModelCatalogEntry,
+    RuntimeModelStatus,
 } from '../../../api/modelApi'
+import {
+    formatDateTime,
+} from '../../../utils/format'
 import {
     normalizeModelKey,
 } from './modelControlPlaneSupport'
@@ -24,11 +28,16 @@ export type ModelKeySelectorInteractionState = {
     hasError: boolean
 }
 
-type ModelKeySelectorProps = {
+type RoutingContextProps = {
+    catalog: ModelCatalogEntry[]
+    effectiveCatalog: ModelCatalogEntry[]
+    runtime: RuntimeModelStatus
+}
+
+type ModelKeySelectorProps = RoutingContextProps & {
     label: string
     hint: string
     kind: SelectorKind
-    catalog: ModelCatalogEntry[]
     value: string
     conflictingValue: string
     disabled?: boolean
@@ -39,8 +48,7 @@ type ModelKeySelectorProps = {
     ) => void
 }
 
-type DefaultModelSelectorProps = {
-    catalog: ModelCatalogEntry[]
+type DefaultModelSelectorProps = RoutingContextProps & {
     allowModelKeys: string
     denyModelKeys: string
     value: string
@@ -142,11 +150,86 @@ function selectorDescription(
         : 'Выбранные модели будут запрещены для организации.'
 }
 
+function modelExecutionLabel(
+    modelKey: string,
+    catalog: ModelCatalogEntry[],
+    effectiveCatalog: ModelCatalogEntry[],
+    runtime: RuntimeModelStatus,
+): string {
+    const normalized = modelKey.toLowerCase()
+
+    const effective =
+        effectiveCatalog.find(
+            (entry) =>
+                entry.modelKey.toLowerCase()
+                    === normalized,
+        ) ?? null
+
+    if (effective) {
+        const runtimeMatch =
+            (
+                effective.lifecycle === 'ACTIVE'
+                || effective.lifecycle === 'DEPRECATED'
+            )
+            && effective.provider === runtime.provider
+            && effective.providerModelId === runtime.model
+
+        return runtimeMatch
+            ? 'Используется сейчас'
+            : 'Есть в каталоге, но runtime сейчас другой'
+    }
+
+    const latest =
+        catalog.find(
+            (entry) =>
+                entry.modelKey.toLowerCase()
+                    === normalized,
+        ) ?? null
+
+    if (!latest) {
+        return 'Ключ пока отсутствует в каталоге'
+    }
+
+    const effectiveFrom =
+        new Date(latest.effectiveFrom)
+
+    if (
+        Number.isFinite(effectiveFrom.getTime())
+        && effectiveFrom.getTime() > Date.now()
+    ) {
+        return `Вступит в силу ${formatDateTime(latest.effectiveFrom)}`
+    }
+
+    return 'Есть в каталоге, но сейчас не действует'
+}
+
+function runtimeExecutionLabel(
+    effectiveCatalog: ModelCatalogEntry[],
+    runtime: RuntimeModelStatus,
+): string {
+    const match =
+        effectiveCatalog.find(
+            (entry) =>
+                (
+                    entry.lifecycle === 'ACTIVE'
+                    || entry.lifecycle === 'DEPRECATED'
+                )
+                && entry.provider === runtime.provider
+                && entry.providerModelId === runtime.model,
+        )
+
+    return match
+        ? `${match.modelKey} · используется сейчас`
+        : `${runtime.provider}/${runtime.model} · нет matching effective catalog entry`
+}
+
 export function ModelKeySelector({
     label,
     hint,
     kind,
     catalog,
+    effectiveCatalog,
+    runtime,
     value,
     conflictingValue,
     disabled = false,
@@ -204,8 +287,7 @@ export function ModelKeySelector({
         query.trim().toLowerCase()
 
     const filteredCatalog = useMemo(() => {
-        const selected =
-            new Set(selectedKeys)
+        const selected = new Set(selectedKeys)
 
         return catalog
             .filter((entry) =>
@@ -237,9 +319,7 @@ export function ModelKeySelector({
 
         if (
             catalogLookup.has(result.value)
-            || selectedKeys.includes(
-                result.value,
-            )
+            || selectedKeys.includes(result.value)
         ) {
             return null
         }
@@ -254,8 +334,7 @@ export function ModelKeySelector({
     const commitKey = (
         rawValue: string,
     ): boolean => {
-        const result =
-            validateModelKey(rawValue)
+        const result = validateModelKey(rawValue)
 
         if (!result.valid) {
             setError(result.message)
@@ -265,9 +344,7 @@ export function ModelKeySelector({
         const key = result.value
 
         if (conflictingKeys.has(key)) {
-            setError(
-                conflictMessage(kind),
-            )
+            setError(conflictMessage(kind))
             return false
         }
 
@@ -278,8 +355,7 @@ export function ModelKeySelector({
         }
 
         if (
-            selectedKeys.length
-                >= MAX_POLICY_MODEL_KEYS
+            selectedKeys.length >= MAX_POLICY_MODEL_KEYS
         ) {
             setError(
                 'Можно указать не более 200 моделей.',
@@ -288,8 +364,7 @@ export function ModelKeySelector({
         }
 
         onChange(
-            [...selectedKeys, key]
-                .join('\n'),
+            [...selectedKeys, key].join('\n'),
         )
         setQuery('')
         setError('')
@@ -311,9 +386,9 @@ export function ModelKeySelector({
         }
 
         const normalized: string[] = []
+
         for (const part of parts) {
-            const result =
-                validateModelKey(part)
+            const result = validateModelKey(part)
 
             if (!result.valid) {
                 setError(
@@ -322,11 +397,7 @@ export function ModelKeySelector({
                 return
             }
 
-            if (
-                conflictingKeys.has(
-                    result.value,
-                )
-            ) {
+            if (conflictingKeys.has(result.value)) {
                 setError(
                     `Не удалось добавить «${part}»: ${conflictMessage(kind)}`,
                 )
@@ -341,10 +412,7 @@ export function ModelKeySelector({
             ...normalized,
         ])
 
-        if (
-            next.length
-                > MAX_POLICY_MODEL_KEYS
-        ) {
+        if (next.length > MAX_POLICY_MODEL_KEYS) {
             setError(
                 'Можно указать не более 200 моделей.',
             )
@@ -363,9 +431,7 @@ export function ModelKeySelector({
     ) => {
         onChange(
             selectedKeys
-                .filter((item) =>
-                    item !== key,
-                )
+                .filter((item) => item !== key)
                 .join('\n'),
         )
         setError('')
@@ -387,8 +453,7 @@ export function ModelKeySelector({
 
             if (
                 target instanceof Node
-                && controlRef.current
-                    ?.contains(target)
+                && controlRef.current?.contains(target)
             ) {
                 return
             }
@@ -416,10 +481,7 @@ export function ModelKeySelector({
         }
 
         setActiveIndex((current) =>
-            Math.min(
-                current,
-                optionCount - 1,
-            ),
+            Math.min(current, optionCount - 1),
         )
     }, [optionCount])
 
@@ -432,8 +494,11 @@ export function ModelKeySelector({
                 >
                     {label}
                 </label>
+
                 <span className="models-model-selector__count">
-                    {selectedKeys.length} / {MAX_POLICY_MODEL_KEYS}
+                    {selectedKeys.length}
+                    {' / '}
+                    {MAX_POLICY_MODEL_KEYS}
                 </span>
             </div>
 
@@ -456,36 +521,41 @@ export function ModelKeySelector({
                         aria-label={`${label}: выбранные модели`}
                     >
                         {selectedKeys.map((key) => {
-                            const entry =
-                                catalogLookup.get(key)
-                            const unknown = !entry
+                            const entry = catalogLookup.get(key)
 
                             return (
                                 <span
                                     key={key}
                                     className={[
                                         'models-model-chip',
-                                        unknown
+                                        !entry
                                             ? 'models-model-chip--warning'
                                             : '',
                                     ].filter(Boolean).join(' ')}
-                                    title={
-                                        unknown
-                                            ? 'Ключ корректен, но такой модели сейчас нет в каталоге. Правило можно сохранить для будущей модели.'
-                                            : `${entry.displayName} · ${entry.provider}/${entry.providerModelId}`
-                                    }
+                                    title={modelExecutionLabel(
+                                        key,
+                                        catalog,
+                                        effectiveCatalog,
+                                        runtime,
+                                    )}
                                 >
                                     {entry && (
                                         <strong>
                                             {entry.displayName}
                                         </strong>
                                     )}
+
                                     <code>{key}</code>
-                                    {unknown && (
-                                        <span className="models-model-chip__warning">
-                                            нет в каталоге
-                                        </span>
-                                    )}
+
+                                    <span className="models-model-chip__state">
+                                        {modelExecutionLabel(
+                                            key,
+                                            catalog,
+                                            effectiveCatalog,
+                                            runtime,
+                                        )}
+                                    </span>
+
                                     <button
                                         type="button"
                                         disabled={disabled}
@@ -508,8 +578,9 @@ export function ModelKeySelector({
                         className="models-model-selector__search-icon"
                         aria-hidden="true"
                     >
-                       ⌕
+                        ⌕
                     </span>
+
                     <input
                         id={inputId}
                         ref={inputRef}
@@ -528,17 +599,14 @@ export function ModelKeySelector({
                             setExpanded(true)
                         }}
                         onChange={(event) => {
-                            setQuery(
-                                event.target.value,
-                            )
+                            setQuery(event.target.value)
                             setError('')
                             setExpanded(true)
                             setActiveIndex(0)
                         }}
                         onPaste={(event) => {
                             const pasted =
-                                event.clipboardData
-                                    .getData('text')
+                                event.clipboardData.getData('text')
 
                             if (/[\n\r,;]/.test(pasted)) {
                                 event.preventDefault()
@@ -567,10 +635,7 @@ export function ModelKeySelector({
                             ) {
                                 event.preventDefault()
                                 setActiveIndex((current) =>
-                                    Math.max(
-                                        current - 1,
-                                        0,
-                                    ),
+                                    Math.max(current - 1, 0),
                                 )
                                 return
                             }
@@ -598,29 +663,8 @@ export function ModelKeySelector({
 
                             event.preventDefault()
 
-                            const exactQuery =
-                                validateModelKey(query)
-
-                            if (
-                                query.trim()
-                                && exactQuery.valid
-                                && (
-                                    catalogLookup.has(
-                                        exactQuery.value,
-                                    )
-                                    || selectedKeys.includes(
-                                        exactQuery.value,
-                                    )
-                                )
-                            ) {
-                                commitKey(query)
-                                return
-                            }
-
                             const activeCatalogEntry =
-                                filteredCatalog[
-                                    activeIndex
-                                ]
+                                filteredCatalog[activeIndex]
 
                             if (
                                 expanded
@@ -692,7 +736,6 @@ export function ModelKeySelector({
                                         <strong>
                                             {entry.displayName}
                                         </strong>
-                                        {' '}
                                         <code>
                                             {entry.modelKey}
                                         </code>
@@ -701,6 +744,13 @@ export function ModelKeySelector({
                                         {entry.provider}
                                         {' / '}
                                         {entry.providerModelId}
+                                        {' · '}
+                                        {modelExecutionLabel(
+                                            entry.modelKey,
+                                            catalog,
+                                            effectiveCatalog,
+                                            runtime,
+                                        )}
                                         {conflict
                                             ? ' · уже в противоположном списке'
                                             : ''}
@@ -749,7 +799,7 @@ export function ModelKeySelector({
                             && (
                                 <div className="models-model-selector__empty">
                                     {query.trim()
-                                        ? 'Совпадений в каталоге нет. Для ручного добавления введите полный ключ, например openai:gpt-5, и нажмите Enter.'
+                                        ? 'Совпадений в каталоге нет. Для ручного добавления введите полный ключ и нажмите Enter.'
                                         : 'Начните вводить название, провайдера или ключ модели.'}
                                 </div>
                             )}
@@ -766,7 +816,11 @@ export function ModelKeySelector({
                 </p>
             ) : (
                 <p className="models-model-selector__hint">
-                    {hint} Регистр не важен: ключ автоматически сохраняется в нижнем регистре. Можно вставить несколько ключей через перенос строки, запятую или точку с запятой.
+                    {hint}
+                    {' '}
+                    Регистр не важен: ключ сохраняется в нижнем регистре.
+                    Можно вставить несколько ключей через перенос строки,
+                    запятую или точку с запятой.
                 </p>
             )}
         </div>
@@ -775,6 +829,8 @@ export function ModelKeySelector({
 
 export function DefaultModelSelector({
     catalog,
+    effectiveCatalog,
+    runtime,
     allowModelKeys,
     denyModelKeys,
     value,
@@ -793,17 +849,13 @@ export function DefaultModelSelector({
 
     const allowKeys = useMemo(
         () => new Set(
-            splitDraftModelKeys(
-                allowModelKeys,
-            ),
+            splitDraftModelKeys(allowModelKeys),
         ),
         [allowModelKeys],
     )
     const denyKeys = useMemo(
         () => new Set(
-            splitDraftModelKeys(
-                denyModelKeys,
-            ),
+            splitDraftModelKeys(denyModelKeys),
         ),
         [denyModelKeys],
     )
@@ -816,8 +868,7 @@ export function DefaultModelSelector({
         const result = new Set<string>()
 
         for (const entry of catalog) {
-            const key =
-                entry.modelKey.toLowerCase()
+            const key = entry.modelKey.toLowerCase()
 
             if (denyKeys.has(key)) {
                 continue
@@ -841,9 +892,7 @@ export function DefaultModelSelector({
 
         if (
             value
-            && !denyKeys.has(
-                value.toLowerCase(),
-            )
+            && !denyKeys.has(value.toLowerCase())
         ) {
             result.add(value.toLowerCase())
         }
@@ -857,8 +906,7 @@ export function DefaultModelSelector({
     ])
 
     const filteredKeys = useMemo(() => {
-        const normalized =
-            query.trim().toLowerCase()
+        const normalized = query.trim().toLowerCase()
 
         return selectableKeys
             .filter((key) => {
@@ -888,13 +936,11 @@ export function DefaultModelSelector({
         const handlePointerDown = (
             event: PointerEvent,
         ) => {
-            const target =
-                event.target
+            const target = event.target
 
             if (
                 !(target instanceof Node)
-                || containerRef.current
-                    ?.contains(target)
+                || containerRef.current?.contains(target)
             ) {
                 return
             }
@@ -921,12 +967,11 @@ export function DefaultModelSelector({
         }
     }, [expanded])
 
-    const selectedKey =
-        value.trim().toLowerCase()
-    const selectedEntry =
-        selectedKey
-            ? lookup.get(selectedKey)
-            : undefined
+    const selectedKey = value.trim().toLowerCase()
+    const selectedEntry = selectedKey
+        ? lookup.get(selectedKey)
+        : undefined
+
     const selectionError =
         selectedKey && denyKeys.has(selectedKey)
             ? 'Модель по умолчанию находится в списке запрещённых. Выберите другую модель.'
@@ -949,9 +994,7 @@ export function DefaultModelSelector({
                 aria-expanded={expanded}
                 aria-controls={listboxId}
                 onClick={() => {
-                    setExpanded((current) =>
-                        !current,
-                    )
+                    setExpanded((current) => !current)
                     setQuery('')
                 }}
             >
@@ -964,10 +1007,16 @@ export function DefaultModelSelector({
                     </strong>
                     <small>
                         {selectedKey
-                            ? selectedEntry
-                                ? selectedEntry.modelKey
-                                : 'Ключ пока отсутствует в текущем каталоге'
-                            : 'Автоматически использовать фактически подключённую модель'}
+                            ? `${selectedKey} · ${modelExecutionLabel(
+                                selectedKey,
+                                catalog,
+                                effectiveCatalog,
+                                runtime,
+                            )}`
+                            : runtimeExecutionLabel(
+                                effectiveCatalog,
+                                runtime,
+                            )}
                     </small>
                 </span>
                 <span
@@ -989,9 +1038,7 @@ export function DefaultModelSelector({
                             autoComplete="off"
                             placeholder="Найти модель"
                             onChange={(event) => {
-                                setQuery(
-                                    event.target.value,
-                                )
+                                setQuery(event.target.value)
                             }}
                             onKeyDown={(event) => {
                                 if (event.key === 'Escape') {
@@ -1021,7 +1068,10 @@ export function DefaultModelSelector({
                                     Подключённая модель
                                 </strong>
                                 <small>
-                                    Использовать фактическое подключение сервера
+                                    {runtimeExecutionLabel(
+                                        effectiveCatalog,
+                                        runtime,
+                                    )}
                                 </small>
                             </span>
                         </button>
@@ -1034,9 +1084,7 @@ export function DefaultModelSelector({
                                     key={key}
                                     type="button"
                                     role="option"
-                                    aria-selected={
-                                        selectedKey === key
-                                    }
+                                    aria-selected={selectedKey === key}
                                     className="models-default-selector__option"
                                     onClick={() => {
                                         onChange(key)
@@ -1045,16 +1093,19 @@ export function DefaultModelSelector({
                                 >
                                     <span>
                                         <strong>
-                                            {entry?.displayName
-                                                ?? key}
+                                            {entry?.displayName ?? key}
                                         </strong>
-                                        {' '}
                                         <code>{key}</code>
                                     </span>
                                     <small>
                                         {entry
-                                            ? `${entry.provider} / ${entry.providerModelId}`
-                                            : 'Ключ из списка разрешённых; модели пока нет в каталоге'}
+                                            ? `${entry.provider} / ${entry.providerModelId} · ${modelExecutionLabel(
+                                                key,
+                                                catalog,
+                                                effectiveCatalog,
+                                                runtime,
+                                            )}`
+                                            : 'Ключ из allowlist; модели пока нет в каталоге'}
                                     </small>
                                 </button>
                             )
@@ -1062,7 +1113,7 @@ export function DefaultModelSelector({
 
                         {filteredKeys.length === 0 && (
                             <div className="models-default-selector__empty">
-                                Подходящих моделей нет. Проверьте список разрешённых и запрещённых моделей.
+                                Подходящих моделей нет. Проверьте списки разрешённых и запрещённых моделей.
                             </div>
                         )}
                     </div>

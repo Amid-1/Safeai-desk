@@ -2103,3 +2103,186 @@ body.modal-resizing {
     font-weight: 750;
     line-height: 1.4;
 }
+
+/* ==========================================================================\n   Model Control Plane production hardening\n   ========================================================================== */
+
+.models-runtime-probe {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: auto;
+    padding: 10px 12px;
+    border: 1px dashed var(--models-border-strong);
+    border-radius: 12px;
+    background: var(--models-surface-soft);
+}
+
+.models-runtime-probe > div {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.models-runtime-probe small,
+.models-runtime-probe-result {
+    color: var(--models-muted);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.models-runtime-probe-result {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 11px;
+    border: 1px solid var(--models-border);
+    border-radius: 11px;
+    background: #fff;
+}
+
+.models-policy-organization-summary {
+    display: grid;
+    gap: 3px;
+    padding: 9px 11px;
+    border: 1px dashed var(--models-border-strong);
+    border-radius: 12px;
+    background: var(--models-surface-soft);
+}
+
+.models-policy-organization-summary > span,
+.models-policy-form__organization > .models-policy-form__meta-label {
+    color: var(--models-muted);
+    font-size: 10px;
+    font-weight: 850;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.models-policy-organization-summary > strong,
+.models-policy-form__organization > strong {
+    font-size: 14px;
+}
+
+.models-policy-organization-summary > code,
+.models-policy-form__organization > code {
+    color: var(--models-muted);
+    font-size: 10px;
+    overflow-wrap: anywhere;
+}
+
+.models-policy-form__organization {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.models-policy-form__warning {
+    display: grid;
+    gap: 5px;
+    padding: 11px 13px;
+    border: 1px solid var(--models-danger-border);
+    border-radius: 12px;
+    background: var(--models-danger-bg);
+    color: var(--models-danger-text);
+}
+
+.models-policy-form__warning p {
+    margin: 0;
+    color: inherit;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.models-model-chip__state {
+    color: var(--models-muted);
+    font-size: 9px;
+    line-height: 1.2;
+}
+
+.models-route-accounting {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--models-border);
+    border-radius: 12px;
+    background: var(--models-surface-soft);
+}
+
+.models-route-accounting h3,
+.models-route-accounting p {
+    margin: 0;
+}
+
+.models-route-accounting h3 {
+    font-size: 13px;
+}
+
+.models-route-accounting > p {
+    color: var(--models-muted);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.models-route-accounting__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.models-route-accounting__grid > div {
+    display: grid;
+    gap: 3px;
+    padding: 9px 10px;
+    border: 1px solid var(--models-border);
+    border-radius: 10px;
+    background: #fff;
+}
+
+.models-route-accounting__grid span {
+    color: var(--models-muted);
+    font-size: 9px;
+    font-weight: 850;
+    letter-spacing: 0.035em;
+    text-transform: uppercase;
+}
+
+.models-route-accounting__grid strong {
+    font-size: 11px;
+    overflow-wrap: anywhere;
+}
+
+.models-route-accounting__grid small {
+    color: var(--models-muted);
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.models-policy-modal .models-policy-form__sticky-actions {
+    position: sticky;
+    z-index: 50;
+    bottom: 0;
+    margin-top: 2px;
+    padding-top: 10px;
+    padding-bottom: 2px;
+    border-top: 1px solid var(--models-border);
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(10px);
+}
+
+@media (max-width: 900px) {
+    .models-runtime-probe,
+    .models-runtime-probe-result {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .models-runtime-probe button {
+        width: 100%;
+    }
+
+    .models-route-accounting__grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+

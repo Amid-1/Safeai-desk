@@ -8,7 +8,16 @@ import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 
-/** Public policy DTO with exact decimal strings for all money fields. */
+/**
+ * Public organization model-policy DTO.
+ *
+ * <p>Money values are exposed as exact decimal strings, so the browser never
+ * has to represent governance money through IEEE-754 numbers.</p>
+ *
+ * <p>If no policy has been persisted yet, the synthetic read model is
+ * deliberately disabled. Creating and enabling policy version 1 must be an
+ * explicit administrator action.</p>
+ */
 public record OrganizationModelPolicyResponse(
         boolean configured,
         UUID id,
@@ -29,6 +38,7 @@ public record OrganizationModelPolicyResponse(
         UUID createdByUserId,
         Instant createdAt
 ) {
+
     public static OrganizationModelPolicyResponse from(
             OrganizationModelPolicy policy
     ) {
@@ -62,7 +72,7 @@ public record OrganizationModelPolicyResponse(
                 null,
                 organizationId,
                 0,
-                true,
+                false,
                 Set.of(),
                 Set.of(),
                 null,

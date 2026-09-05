@@ -103,6 +103,30 @@ export type RuntimeModelStatus = {
     pricingVersion: string | null
 }
 
+
+export const RUNTIME_MODEL_PROBE_STATUSES = [
+    'AVAILABLE',
+    'AUTH_ERROR',
+    'RATE_LIMITED',
+    'MODEL_NOT_FOUND',
+    'UNAVAILABLE',
+    'CONFIGURATION_MISMATCH',
+    'ERROR',
+] as const
+
+export type RuntimeModelProbeStatus =
+    typeof RUNTIME_MODEL_PROBE_STATUSES[number]
+
+export type RuntimeModelProbe = {
+    provider: string
+    model: string
+    status: RuntimeModelProbeStatus
+    checkedAt: string
+    latencyMs: number
+    httpStatus: number | null
+    message: string
+}
+
 export type OrganizationModelPolicy = {
     configured: boolean
     id: string | null
@@ -315,6 +339,20 @@ export async function getRuntimeModelStatus(
     return parseRuntimeModelStatus(raw)
 }
 
+export async function probeRuntimeModel(
+    options: ModelApiRequestOptions = {},
+): Promise<RuntimeModelProbe> {
+    const raw = await apiRequest<unknown>(
+        '/api/admin/models/runtime/probe',
+        {
+            method: 'POST',
+            signal: options.signal,
+        },
+    )
+
+    return parseRuntimeModelProbe(raw)
+}
+
 export async function getModelCatalog(
     options: ModelApiRequestOptions = {},
 ): Promise<ModelCatalogEntry[]> {
@@ -525,6 +563,71 @@ export function parseRuntimeModelStatus(
                 raw.pricingVersion,
                 `${path}.pricingVersion`,
             ),
+    }
+}
+
+export function parseRuntimeModelProbe(
+    value: unknown,
+    path = 'runtimeModelProbe',
+): RuntimeModelProbe {
+    const raw = requireObject(value, path)
+
+    const latencyMs = requireInteger(
+        raw.latencyMs,
+        `${path}.latencyMs`,
+    )
+
+    if (latencyMs < 0) {
+        throw new Error(
+            `${path}.latencyMs не может быть отрицательным`,
+        )
+    }
+
+    const httpStatus =
+        raw.httpStatus === null
+        || raw.httpStatus === undefined
+            ? null
+            : requireInteger(
+                raw.httpStatus,
+                `${path}.httpStatus`,
+            )
+
+    if (
+        httpStatus !== null
+        && (
+            httpStatus < 100
+            || httpStatus > 599
+        )
+    ) {
+        throw new Error(
+            `${path}.httpStatus должен быть 100..599`,
+        )
+    }
+
+    return {
+        provider: requireString(
+            raw.provider,
+            `${path}.provider`,
+        ),
+        model: requireString(
+            raw.model,
+            `${path}.model`,
+        ),
+        status: requireEnum(
+            raw.status,
+            RUNTIME_MODEL_PROBE_STATUSES,
+            `${path}.status`,
+        ),
+        checkedAt: requireString(
+            raw.checkedAt,
+            `${path}.checkedAt`,
+        ),
+        latencyMs,
+        httpStatus,
+        message: requireString(
+            raw.message,
+            `${path}.message`,
+        ),
     }
 }
 

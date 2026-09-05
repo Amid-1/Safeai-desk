@@ -2,175 +2,38 @@ import type {
     ModelCatalogEntry,
     ModelRouteDecision,
     OrganizationModelPolicy,
+    RuntimeModelProbe,
+    RuntimeModelProbeStatus,
     RuntimeModelStatus,
 } from '../../../api/modelApi'
-import type { OrganizationDirectoryItem } from '../../../api/organizationApi'
+import type {
+    OrganizationDirectoryItem,
+} from '../../../api/organizationApi'
 import {
     formatDateTime,
     formatUsd,
 } from '../../../utils/format'
 
-type RuntimeCardProps = {
-    runtime: RuntimeModelStatus
-    effectiveCatalog: ModelCatalogEntry[]
-}
+type StatusTone =
+    | 'success'
+    | 'warning'
+    | 'danger'
+    | 'neutral'
 
-type PolicyCardProps = {
-    policy: OrganizationModelPolicy
-    catalog: ModelCatalogEntry[]
-    organizationId: string
-    isSuperAdmin: boolean
-    organizationQuery: string
-    organizationResults: OrganizationDirectoryItem[]
-    organizationSearchPending: boolean
-    onOrganizationQueryChange: (
-        value: string,
-    ) => void
-    onOrganizationSearch: () =>
-        void | Promise<void>
-    onOrganizationSelect: (
-        organization: OrganizationDirectoryItem,
-    ) => void
-    onEdit: () => void
-}
-
-type CatalogTableProps = {
-    entries: ModelCatalogEntry[]
-    effectiveEntries: ModelCatalogEntry[]
-    runtime: RuntimeModelStatus
-    canEdit: boolean
-    onCreateVersion: (
-        entry: ModelCatalogEntry,
-    ) => void
-}
-
-type StatusPillProps = {
-    tone:
-        | 'success'
-        | 'warning'
-        | 'danger'
-        | 'neutral'
+function StatusPill({
+    tone,
+    label,
+}: {
+    tone: StatusTone
     label: string
-}
-
-const PRICING_STATUS_LABELS: Record<
-    string,
-    string
-> = {
-    FREE: 'Бесплатно',
-    CONFIGURED: 'Стоимость настроена',
-    INCOMPLETE: 'Стоимость заполнена не полностью',
-    UNPRICED: 'Стоимость не указана',
-}
-
-const RETENTION_STATUS_LABELS: Record<
-    string,
-    string
-> = {
-    NOT_DECLARED: 'Не указано',
-    STANDARD: 'Стандартное хранение',
-    ZERO_DATA_RETENTION:
-        'Данные не сохраняются',
-    CUSTOM: 'Особые условия хранения',
-}
-
-const TRAINING_STATUS_LABELS: Record<
-    string,
-    string
-> = {
-    NOT_DECLARED: 'Условия обучения не указаны',
-    NOT_USED: 'Не используется для обучения',
-    MAY_BE_USED: 'Может использоваться для обучения',
-    CONTRACTUAL_NO_TRAINING:
-        'Обучение на данных запрещено договором',
-}
-
-const LIFECYCLE_LABELS: Record<
-    string,
-    string
-> = {
-    ACTIVE: 'Активна',
-    DEPRECATED: 'Устаревает',
-    DISABLED: 'Отключена',
-    RETIRED: 'Выведена из эксплуатации',
-}
-
-const BUDGET_ENFORCEMENT_LABELS: Record<
-    string,
-    string
-> = {
-    SOFT: 'Мягкий контроль',
-    HARD: 'Жёсткий контроль',
-}
-
-const MONTHLY_COST_STATE_LABELS: Record<
-    string,
-    string
-> = {
-    NOT_EVALUATED: 'Не рассчитывалось',
-    KNOWN: 'Полные данные',
-    UNKNOWN: 'Есть неизвестная стоимость',
-}
-
-const CAPABILITY_LABELS: Record<
-    string,
-    string
-> = {
-    TOOLS: 'Инструменты',
-    VISION: 'Изображения',
-    STRUCTURED_OUTPUT:
-        'Структурированный ответ',
-}
-
-const CATALOG_SOURCE_LABELS: Record<
-    string,
-    string
-> = {
-    MANUAL: 'Создана вручную',
-    RUNTIME_IMPORT: 'Добавлена из подключения',
-    MIGRATED: 'Перенесена из прежней конфигурации',
-}
-
-const ROUTE_REASON_LABELS: Record<
-    string,
-    string
-> = {
-    REQUESTED_MODEL:
-        'Выбрана явно запрошенная модель',
-    POLICY_DEFAULT:
-        'Выбрана модель по умолчанию',
-    RUNTIME_ONLY_MATCH:
-        'Совпала с подключённой моделью',
-    LEGACY_RUNTIME_FALLBACK:
-        'Использована подключённая модель',
-    MODEL_NOT_ALLOWED:
-        'Модель не входит в список разрешённых',
-    MODEL_DENIED:
-        'Модель запрещена правилами',
-    MODEL_NOT_FOUND:
-        'Модель не найдена',
-    MODEL_DISABLED:
-        'Модель отключена',
-    RUNTIME_MISMATCH:
-        'Модель не совпадает с подключённой',
-    CAPABILITY_UNSUPPORTED:
-        'Нужная возможность не поддерживается',
-    INPUT_LIMIT_EXCEEDED:
-        'Превышен лимит входных токенов',
-    OUTPUT_LIMIT_EXCEEDED:
-        'Превышен лимит выходных токенов',
-    PRICING_INCOMPLETE:
-        'Недостаточно данных о стоимости',
-    TRAINING_POLICY_UNSATISFIED:
-        'Не выполнено требование по обучению',
-    RETENTION_POLICY_UNSATISFIED:
-        'Не выполнено требование по хранению данных',
-    REQUEST_COST_LIMIT_EXCEEDED:
-        'Превышен лимит стоимости запроса',
-    MONTHLY_BUDGET_EXCEEDED:
-        'Превышен месячный бюджет',
-    MONTHLY_BUDGET_UNVERIFIABLE:
-        'Невозможно надёжно проверить месячный бюджет',
+}) {
+    return (
+        <span
+            className={`models-status models-status--${tone}`}
+        >
+            {label}
+        </span>
+    )
 }
 
 function InfoHint({
@@ -190,22 +53,9 @@ function InfoHint({
     )
 }
 
-function StatusPill({
-    tone,
-    label,
-}: StatusPillProps) {
-    return (
-        <span
-            className={`models-status models-status--${tone}`}
-        >
-            {label}
-        </span>
-    )
-}
-
-function formatEnumFallback(
+function enumLabel(
     value: string | null | undefined,
-) {
+): string {
     if (!value) {
         return '—'
     }
@@ -215,167 +65,112 @@ function formatEnumFallback(
         .split('_')
         .map((part) =>
             part
-                ? part[0]?.toUpperCase()
-                    + part.slice(1)
+                ? `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`
                 : part,
         )
         .join(' ')
 }
 
-function formatPricingStatus(
-    value: string,
-) {
-    return (
-        PRICING_STATUS_LABELS[value]
-        ?? formatEnumFallback(value)
-    )
+function probeLabel(
+    status: RuntimeModelProbeStatus,
+): string {
+    switch (status) {
+        case 'AVAILABLE':
+            return 'Доступна'
+        case 'AUTH_ERROR':
+            return 'Ошибка авторизации'
+        case 'RATE_LIMITED':
+            return 'Ограничена провайдером'
+        case 'MODEL_NOT_FOUND':
+            return 'Модель не найдена'
+        case 'UNAVAILABLE':
+            return 'Недоступна'
+        case 'CONFIGURATION_MISMATCH':
+            return 'Несовпадение конфигурации'
+        case 'ERROR':
+            return 'Ошибка проверки'
+    }
 }
 
-function formatRetentionStatus(
-    value: string,
-) {
-    return (
-        RETENTION_STATUS_LABELS[value]
-        ?? formatEnumFallback(value)
-    )
+function probeTone(
+    status: RuntimeModelProbeStatus,
+): StatusTone {
+    switch (status) {
+        case 'AVAILABLE':
+            return 'success'
+        case 'RATE_LIMITED':
+            return 'warning'
+        case 'AUTH_ERROR':
+        case 'MODEL_NOT_FOUND':
+        case 'UNAVAILABLE':
+        case 'CONFIGURATION_MISMATCH':
+        case 'ERROR':
+            return 'danger'
+    }
 }
 
-function formatTrainingUseStatus(
-    value: string,
-) {
-    return (
-        TRAINING_STATUS_LABELS[value]
-        ?? formatEnumFallback(value)
-    )
-}
-
-function formatLifecycle(
-    value: string,
-) {
-    return (
-        LIFECYCLE_LABELS[value]
-        ?? formatEnumFallback(value)
-    )
-}
-
-function formatBudgetEnforcement(
-    value: string | null,
-) {
-    if (!value) {
-        return '—'
+function runtimeHealthLabel(
+    runtime: RuntimeModelStatus,
+    probe: RuntimeModelProbe | null,
+): string {
+    if (probe) {
+        return probeLabel(probe.status)
     }
 
-    return (
-        BUDGET_ENFORCEMENT_LABELS[value]
-        ?? formatEnumFallback(value)
-    )
+    switch (runtime.healthStatus) {
+        case 'NOT_PROBED':
+            return 'Не выполнялась'
+        case 'AVAILABLE':
+            return 'Доступна'
+        case 'UNAVAILABLE':
+            return 'Недоступна'
+        default:
+            return enumLabel(runtime.healthStatus)
+    }
 }
 
-function formatMonthlyCostState(
-    value: string,
-) {
-    return (
-        MONTHLY_COST_STATE_LABELS[value]
-        ?? formatEnumFallback(value)
-    )
-}
-
-function formatRuntimeCapabilities(
+function runtimeCapabilities(
     runtime: RuntimeModelStatus,
-) {
-    const result: string[] = ['Текст']
+): string {
+    const result = ['Текст']
 
     if (runtime.toolsSupported) {
         result.push('Инструменты')
     }
-
     if (runtime.visionSupported) {
         result.push('Изображения')
     }
-
-    if (
-        runtime.structuredOutputSupported
-    ) {
-        result.push(
-            'Структурированный ответ',
-        )
+    if (runtime.structuredOutputSupported) {
+        result.push('Структурированный ответ')
     }
 
-    return result.join(', ')
-}
-
-function formatCatalogCapabilities(
-    entry: ModelCatalogEntry,
-) {
-    if (entry.capabilities.length === 0) {
-        return 'Текст'
-    }
-
-    return [
-        'Текст',
-        ...entry.capabilities.map(
-            (capability) =>
-                CAPABILITY_LABELS[capability]
-                ?? formatEnumFallback(capability),
-        ),
-    ].join(', ')
-}
-
-function formatPolicyRequirements(
-    policy: OrganizationModelPolicy,
-) {
-    const requirements: string[] = []
-
-    if (
-        policy.requireCompletePricing
-    ) {
-        requirements.push(
-            'Полные данные о стоимости',
-        )
-    }
-
-    if (
-        policy.requireNoTraining
-    ) {
-        requirements.push(
-            'Без обучения на данных',
-        )
-    }
-
-    if (
-        policy.requireZeroDataRetention
-    ) {
-        requirements.push(
-            'Без хранения данных',
-        )
-    }
-
-    if (requirements.length === 0) {
-        return 'Базовые требования'
-    }
-
-    return requirements.join(' · ')
-}
-
-function formatRouteReason(
-    reason: string,
-) {
-    return (
-        ROUTE_REASON_LABELS[reason]
-        ?? formatEnumFallback(reason)
-    )
+    return result.join(' · ')
 }
 
 export function RuntimeCard({
     runtime,
     effectiveCatalog,
-}: RuntimeCardProps) {
+    probe,
+    probePending,
+    canProbe,
+    onProbe,
+}: {
+    runtime: RuntimeModelStatus
+    effectiveCatalog: ModelCatalogEntry[]
+    probe: RuntimeModelProbe | null
+    probePending: boolean
+    canProbe: boolean
+    onProbe: () => void
+}) {
     const catalogMatch =
         effectiveCatalog.find(
             (entry) =>
-                entry.provider === runtime.provider
-                && entry.providerModelId
-                    === runtime.model,
+                (
+                    entry.lifecycle === 'ACTIVE'
+                    || entry.lifecycle === 'DEPRECATED'
+                )
+                && entry.provider === runtime.provider
+                && entry.providerModelId === runtime.model,
         ) ?? null
 
     return (
@@ -387,16 +182,8 @@ export function RuntimeCard({
                 </div>
 
                 <StatusPill
-                    tone={
-                        runtime.enabled
-                            ? 'success'
-                            : 'danger'
-                    }
-                    label={
-                        runtime.enabled
-                            ? 'Активна'
-                            : 'Отключена'
-                    }
+                    tone={runtime.enabled ? 'success' : 'danger'}
+                    label={runtime.enabled ? 'Включена' : 'Отключена'}
                 />
             </div>
 
@@ -405,14 +192,34 @@ export function RuntimeCard({
                     <dt>
                         <span className="models-label-row">
                             Провайдер / модель
-                            <InfoHint text="Модель, к которой сейчас подключён сервер SafeAI." />
+                            <InfoHint text="Фактическая backend runtime-конфигурация. Policy организации её не переключает." />
                         </span>
                     </dt>
                     <dd>
-                        {runtime.provider} / {runtime.model}
+                        {runtime.provider}
+                        {' / '}
+                        {runtime.model}
+                    </dd>
+                    <small>Один фиксированный провайдер</small>
+                </div>
+
+                <div>
+                    <dt>Состояние конфигурации</dt>
+                    <dd>
+                        {runtime.enabled ? 'Включена' : 'Отключена'}
+                    </dd>
+                    <small>Это не network health-check</small>
+                </div>
+
+                <div>
+                    <dt>Проверка доступности</dt>
+                    <dd>
+                        {runtimeHealthLabel(runtime, probe)}
                     </dd>
                     <small>
-                        Один активный провайдер
+                        {probe
+                            ? `${formatDateTime(probe.checkedAt)} · ${probe.latencyMs.toLocaleString('ru-RU')} мс`
+                            : 'Соединение отдельно ещё не проверялось'}
                     </small>
                 </div>
 
@@ -420,51 +227,41 @@ export function RuntimeCard({
                     <dt>
                         <span className="models-label-row">
                             Лимиты токенов
-                            <InfoHint text="Максимальный объём входного контекста и ответа для подключённой модели." />
+                            <InfoHint text="Максимальный вход и выход физически настроенной модели." />
                         </span>
                     </dt>
                     <dd>
-                        {runtime.maxInputTokens.toLocaleString(
-                            'ru-RU',
-                        )}
+                        {runtime.maxInputTokens.toLocaleString('ru-RU')}
                         {' / '}
-                        {runtime.maxOutputTokens.toLocaleString(
-                            'ru-RU',
-                        )}
+                        {runtime.maxOutputTokens.toLocaleString('ru-RU')}
                     </dd>
-                    <small>
-                        вход / выход
-                    </small>
+                    <small>вход / выход</small>
                 </div>
 
                 <div>
                     <dt>Возможности</dt>
-                    <dd>
-                        {formatRuntimeCapabilities(
-                            runtime,
-                        )}
-                    </dd>
+                    <dd>{runtimeCapabilities(runtime)}</dd>
                 </div>
 
                 <div>
                     <dt>Стоимость</dt>
                     <dd>
-                        {formatPricingStatus(
-                            runtime.pricingStatus,
-                        )}
+                        {runtime.pricingStatus === 'FREE'
+                            ? 'Бесплатно'
+                            : enumLabel(runtime.pricingStatus)}
                     </dd>
                     <small>
                         {runtime.pricingVersion
-                            ?? 'Версия тарифа не указана'}
+                            ?? 'Версия стоимости не указана'}
                     </small>
                 </div>
 
                 <div>
                     <dt>Хранение данных</dt>
                     <dd>
-                        {formatRetentionStatus(
-                            runtime.dataRetentionStatus,
-                        )}
+                        {runtime.dataRetentionStatus === 'NOT_DECLARED'
+                            ? 'Не указано'
+                            : enumLabel(runtime.dataRetentionStatus)}
                     </dd>
                 </div>
 
@@ -472,7 +269,7 @@ export function RuntimeCard({
                     <dt>
                         <span className="models-label-row">
                             Запись в каталоге
-                            <InfoHint text="Показывает, есть ли в каталоге действующая запись для подключённой модели." />
+                            <InfoHint text="Действующая catalog version, совпадающая с фактическим provider/model." />
                         </span>
                     </dt>
                     <dd>
@@ -482,6 +279,46 @@ export function RuntimeCard({
                     </dd>
                 </div>
             </dl>
+
+            {canProbe && (
+                <div className="models-runtime-probe">
+                    <div>
+                        <strong>Проверка соединения</strong>
+                        <small>
+                            Metadata-only: без prompt, history,
+                            RAG и пользовательских данных.
+                        </small>
+                    </div>
+
+                    <button
+                        type="button"
+                        disabled={probePending}
+                        onClick={onProbe}
+                    >
+                        {probePending
+                            ? 'Проверяем...'
+                            : 'Проверить доступность'}
+                    </button>
+                </div>
+            )}
+
+            {probe && (
+                <div
+                    className="models-runtime-probe-result"
+                    role="status"
+                >
+                    <StatusPill
+                        tone={probeTone(probe.status)}
+                        label={probeLabel(probe.status)}
+                    />
+                    <span>
+                        {probe.message}
+                        {probe.httpStatus !== null
+                            ? ` · HTTP ${probe.httpStatus}`
+                            : ''}
+                    </span>
+                </div>
+            )}
         </section>
     )
 }
@@ -490,6 +327,7 @@ export function PolicyCard({
     policy,
     catalog,
     organizationId,
+    organizationName,
     isSuperAdmin,
     organizationQuery,
     organizationResults,
@@ -498,13 +336,24 @@ export function PolicyCard({
     onOrganizationSearch,
     onOrganizationSelect,
     onEdit,
-}: PolicyCardProps) {
+}: {
+    policy: OrganizationModelPolicy
+    catalog: ModelCatalogEntry[]
+    organizationId: string
+    organizationName: string | null
+    isSuperAdmin: boolean
+    organizationQuery: string
+    organizationResults: OrganizationDirectoryItem[]
+    organizationSearchPending: boolean
+    onOrganizationQueryChange: (value: string) => void
+    onOrganizationSearch: () => void | Promise<void>
+    onOrganizationSelect: (organization: OrganizationDirectoryItem) => void
+    onEdit: () => void
+}) {
     const defaultEntry =
         policy.defaultModelKey
             ? catalog.find(
-                (entry) =>
-                    entry.modelKey
-                    === policy.defaultModelKey,
+                (entry) => entry.modelKey === policy.defaultModelKey,
             ) ?? null
             : null
 
@@ -518,8 +367,7 @@ export function PolicyCard({
 
                 <StatusPill
                     tone={
-                        policy.configured
-                        && policy.enabled
+                        policy.configured && policy.enabled
                             ? 'success'
                             : policy.configured
                                 ? 'warning'
@@ -527,12 +375,18 @@ export function PolicyCard({
                     }
                     label={
                         policy.configured
-                            ? policy.enabled
-                                ? `Версия ${policy.version} · включены`
-                                : `Версия ${policy.version} · выключены`
+                            ? `Версия ${policy.version} · ${policy.enabled ? 'включены' : 'выключены'}`
                             : 'Не настроены'
                     }
                 />
+            </div>
+
+            <div className="models-policy-organization-summary">
+                <span>Организация</span>
+                <strong>
+                    {organizationName ?? 'Текущая организация'}
+                </strong>
+                <code>{organizationId}</code>
             </div>
 
             {isSuperAdmin && (
@@ -544,7 +398,7 @@ export function PolicyCard({
                     }}
                 >
                     <label>
-                        Организация
+                        Выбрать другую организацию
                         <div className="models-org-picker__input-row">
                             <input
                                 type="search"
@@ -558,54 +412,29 @@ export function PolicyCard({
                             />
                             <button
                                 type="submit"
-                                disabled={
-                                    organizationSearchPending
-                                }
+                                disabled={organizationSearchPending}
                             >
-                                Найти
+                                {organizationSearchPending
+                                    ? 'Поиск...'
+                                    : 'Найти'}
                             </button>
                         </div>
                     </label>
 
-                    <small>
-                        ID выбранной организации:{' '}
-                        {organizationId}
-                    </small>
-
                     {organizationResults.length > 0 && (
                         <div className="models-org-results">
-                            {organizationResults.map(
-                                (
-                                    organization,
-                                ) => (
-                                    <button
-                                        key={
-                                            organization.id
-                                        }
-                                        type="button"
-                                        onClick={() => {
-                                            onOrganizationSelect(
-                                                organization,
-                                            )
-                                        }}
-                                    >
-                                        <strong>
-                                            {
-                                                organization.name
-                                            }
-                                        </strong>
-                                        <small>
-                                            {
-                                                organization.id
-                                            }
-                                            {' · '}
-                                            {organization.enabled
-                                                ? 'активна'
-                                                : 'отключена'}
-                                        </small>
-                                    </button>
-                                ),
-                            )}
+                            {organizationResults.map((organization) => (
+                                <button
+                                    key={organization.id}
+                                    type="button"
+                                    onClick={() => {
+                                        onOrganizationSelect(organization)
+                                    }}
+                                >
+                                    <strong>{organization.name}</strong>
+                                    <small>{organization.id}</small>
+                                </button>
+                            ))}
                         </div>
                     )}
                 </form>
@@ -621,10 +450,8 @@ export function PolicyCard({
                     {defaultEntry && (
                         <small>
                             {defaultEntry.provider}
-                            /
-                            {
-                                defaultEntry.providerModelId
-                            }
+                            {' / '}
+                            {defaultEntry.providerModelId}
                         </small>
                     )}
                 </div>
@@ -632,80 +459,71 @@ export function PolicyCard({
                 <div>
                     <dt>Списки доступа</dt>
                     <dd>
-                        Разрешено:{' '}
-                        {
-                            policy.allowModelKeys
-                                .length
-                        }
+                        Разрешено: {policy.allowModelKeys.length}
                         {' · '}
-                        Запрещено:{' '}
-                        {
-                            policy.denyModelKeys
-                                .length
-                        }
+                        Запрещено: {policy.denyModelKeys.length}
                     </dd>
                 </div>
 
                 <div>
                     <dt>Стоимость запроса</dt>
                     <dd>
-                        {policy.maxRequestCostUsd
-                            ? formatUsd(
-                                policy.maxRequestCostUsd,
-                            )
-                            : 'Без лимита'}
+                        {policy.maxRequestCostUsd === null
+                            ? 'Без лимита'
+                            : formatUsd(policy.maxRequestCostUsd)}
                     </dd>
                 </div>
 
                 <div>
                     <dt>Бюджет на месяц</dt>
                     <dd>
-                        {policy.monthlyBudgetUsd
-                            ? formatUsd(
-                                policy.monthlyBudgetUsd,
-                            )
-                            : 'Не задан'}
+                        {policy.monthlyBudgetUsd === null
+                            ? 'Не задан'
+                            : formatUsd(policy.monthlyBudgetUsd)}
                     </dd>
                     <small>
-                        {policy.monthlyBudgetUsd
-                            ? formatBudgetEnforcement(
-                                policy.budgetEnforcement,
-                            )
-                            : 'Контроль бюджета выключен'}
+                        {policy.monthlyBudgetUsd === null
+                            ? 'Контроль бюджета выключен'
+                            : policy.budgetEnforcement === 'HARD'
+                                ? 'Жёсткий контроль'
+                                : 'Мягкий контроль'}
                     </small>
                 </div>
 
                 <div>
                     <dt>Требования к данным</dt>
                     <dd>
-                        {formatPolicyRequirements(
-                            policy,
-                        )}
+                        {[
+                            policy.requireCompletePricing
+                                ? 'Полная стоимость'
+                                : null,
+                            policy.requireNoTraining
+                                ? 'Без обучения'
+                                : null,
+                            policy.requireZeroDataRetention
+                                ? 'Без хранения'
+                                : null,
+                        ].filter(Boolean).join(' · ')
+                            || 'Базовые требования'}
                     </dd>
                 </div>
 
                 <div>
                     <dt>Лимиты токенов</dt>
                     <dd>
-                        {policy.maxInputTokens?.toLocaleString(
-                            'ru-RU',
-                        ) ?? '—'}
+                        {policy.maxInputTokens?.toLocaleString('ru-RU') ?? '—'}
                         {' / '}
-                        {policy.maxOutputTokens?.toLocaleString(
-                            'ru-RU',
-                        ) ?? '—'}
+                        {policy.maxOutputTokens?.toLocaleString('ru-RU') ?? '—'}
                     </dd>
-                    <small>
-                        вход / выход
-                    </small>
+                    <small>вход / выход</small>
                 </div>
             </dl>
 
             <div className="models-policy-card__footer">
                 <p className="models-policy-card__note">
-                    Этот блок показывает настройки из окна «Правила использования моделей».
-                    Блок «Подключённая модель» слева определяется фактическим подключением сервера
-                    и настраивается отдельно.
+                    Policy ограничивает использование моделей этой
+                    организацией. Физическое подключение сервера слева
+                    настраивается отдельно.
                 </p>
 
                 <button
@@ -728,7 +546,13 @@ export function CatalogTable({
     runtime,
     canEdit,
     onCreateVersion,
-}: CatalogTableProps) {
+}: {
+    entries: ModelCatalogEntry[]
+    effectiveEntries: ModelCatalogEntry[]
+    runtime: RuntimeModelStatus
+    canEdit: boolean
+    onCreateVersion: (entry: ModelCatalogEntry) => void
+}) {
     return (
         <table className="models-catalog-table">
             <thead>
@@ -741,9 +565,7 @@ export function CatalogTable({
                     <th>Стоимость</th>
                     <th>Данные</th>
                     <th>Действует с</th>
-                    {canEdit && (
-                        <th>Действия</th>
-                    )}
+                    {canEdit && <th>Действия</th>}
                 </tr>
             </thead>
 
@@ -751,75 +573,55 @@ export function CatalogTable({
                 {entries.map((entry) => {
                     const effectiveEntry =
                         effectiveEntries.find(
-                            (
-                                candidate,
-                            ) =>
-                                candidate.modelKey
-                                === entry.modelKey,
+                            (candidate) =>
+                                candidate.modelKey === entry.modelKey,
                         ) ?? null
-
                     const isEffectiveVersion =
-                        effectiveEntry?.id
-                        === entry.id
-
+                        effectiveEntry?.id === entry.id
                     const executable =
                         isEffectiveVersion
-                        && (entry.lifecycle
-                            === 'ACTIVE'
-                            || entry.lifecycle
-                                === 'DEPRECATED')
-                        && entry.provider
-                            === runtime.provider
-                        && entry.providerModelId
-                            === runtime.model
-
+                        && (
+                            entry.lifecycle === 'ACTIVE'
+                            || entry.lifecycle === 'DEPRECATED'
+                        )
+                        && entry.provider === runtime.provider
+                        && entry.providerModelId === runtime.model
+                    const effectiveFromMs =
+                        new Date(entry.effectiveFrom).getTime()
                     const scheduled =
-                        new Date(
-                            entry.effectiveFrom,
-                        ).getTime()
-                        > Date.now()
+                        Number.isFinite(effectiveFromMs)
+                        && effectiveFromMs > Date.now()
+
+                    const connectionLabel = executable
+                        ? 'Используется сейчас'
+                        : scheduled
+                            ? `Запланирована с ${formatDateTime(entry.effectiveFrom)}`
+                            : isEffectiveVersion
+                                ? 'Действует, но runtime сейчас другой'
+                                : effectiveEntry
+                                    ? `Сейчас действует версия ${effectiveEntry.version}`
+                                    : 'Сейчас не используется'
 
                     return (
                         <tr key={entry.id}>
                             <td>
-                                <strong>
-                                    {
-                                        entry.displayName
-                                    }
-                                </strong>
-                                <code>
-                                    {
-                                        entry.modelKey
-                                    }
-                                </code>
+                                <strong>{entry.displayName}</strong>
+                                <code>{entry.modelKey}</code>
                                 <small>
-                                    Версия{' '}
-                                    {
-                                        entry.version
-                                    }
+                                    Версия {entry.version}
                                     {' · '}
-                                    {
-                                        CATALOG_SOURCE_LABELS[
-                                            entry.source
-                                        ]
-                                        ?? formatEnumFallback(
-                                            entry.source,
-                                        )
-                                    }
+                                    {entry.source === 'RUNTIME_IMPORT'
+                                        ? 'Добавлена из подключения'
+                                        : enumLabel(entry.source)}
                                 </small>
                             </td>
 
                             <td>
                                 <span>
-                                    {
-                                        entry.provider
-                                    }
+                                    {entry.provider}
                                     {' / '}
-                                    {
-                                        entry.providerModelId
-                                    }
+                                    {entry.providerModelId}
                                 </span>
-
                                 <StatusPill
                                     tone={
                                         executable
@@ -828,64 +630,49 @@ export function CatalogTable({
                                                 ? 'warning'
                                                 : 'neutral'
                                     }
-                                    label={
-                                        executable
-                                            ? 'Используется сейчас'
-                                            : scheduled
-                                                ? 'Запланирована'
-                                                : isEffectiveVersion
-                                                    ? 'Действует, но не подключена'
-                                                    : effectiveEntry
-                                                        ? `Сейчас действует версия ${effectiveEntry.version}`
-                                                        : 'Пока не действует'
-                                    }
+                                    label={connectionLabel}
                                 />
+                                {scheduled && effectiveEntry && (
+                                    <small>
+                                        До этого момента routing использует
+                                        версию {effectiveEntry.version}
+                                    </small>
+                                )}
                             </td>
 
                             <td>
                                 <StatusPill
                                     tone={
-                                        entry.lifecycle
-                                            === 'ACTIVE'
+                                        entry.lifecycle === 'ACTIVE'
                                             ? 'success'
-                                            : entry.lifecycle
-                                                === 'DEPRECATED'
+                                            : entry.lifecycle === 'DEPRECATED'
                                                 ? 'warning'
-                                                : entry.lifecycle
-                                                    === 'DISABLED'
+                                                : entry.lifecycle === 'DISABLED'
                                                     ? 'danger'
                                                     : 'neutral'
                                     }
-                                    label={formatLifecycle(
-                                        entry.lifecycle,
-                                    )}
+                                    label={enumLabel(entry.lifecycle)}
                                 />
                             </td>
 
                             <td>
-                                {entry.maxInputTokens.toLocaleString(
-                                    'ru-RU',
-                                )}
+                                {entry.maxInputTokens.toLocaleString('ru-RU')}
                                 {' / '}
-                                {entry.maxOutputTokens.toLocaleString(
-                                    'ru-RU',
-                                )}
-                                <small>
-                                    вход / выход
-                                </small>
+                                {entry.maxOutputTokens.toLocaleString('ru-RU')}
+                                <small>вход / выход</small>
                             </td>
 
                             <td>
-                                {formatCatalogCapabilities(
-                                    entry,
-                                )}
+                                {entry.capabilities.length === 0
+                                    ? 'Текст'
+                                    : `Текст · ${entry.capabilities.map(enumLabel).join(' · ')}`}
                             </td>
 
                             <td>
                                 <strong>
-                                    {formatPricingStatus(
-                                        entry.pricingStatus,
-                                    )}
+                                    {entry.pricingStatus === 'FREE'
+                                        ? 'Бесплатно'
+                                        : enumLabel(entry.pricingStatus)}
                                 </strong>
                                 <small>
                                     {entry.pricingComplete
@@ -899,21 +686,17 @@ export function CatalogTable({
 
                             <td>
                                 <span>
-                                    {formatRetentionStatus(
-                                        entry.retentionStatus,
-                                    )}
+                                    {entry.retentionStatus === 'NOT_DECLARED'
+                                        ? 'Не указано'
+                                        : enumLabel(entry.retentionStatus)}
                                 </span>
                                 <small>
-                                    {formatTrainingUseStatus(
-                                        entry.trainingUseStatus,
-                                    )}
+                                    {enumLabel(entry.trainingUseStatus)}
                                 </small>
                             </td>
 
                             <td>
-                                {formatDateTime(
-                                    entry.effectiveFrom,
-                                )}
+                                {formatDateTime(entry.effectiveFrom)}
                             </td>
 
                             {canEdit && (
@@ -921,9 +704,7 @@ export function CatalogTable({
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            onCreateVersion(
-                                                entry,
-                                            )
+                                            onCreateVersion(entry)
                                         }}
                                     >
                                         Новая версия
@@ -938,6 +719,33 @@ export function CatalogTable({
     )
 }
 
+function routeReasonLabel(
+    reason: ModelRouteDecision['reason'],
+): string {
+    const labels: Record<string, string> = {
+        REQUESTED_MODEL: 'Использована явно запрошенная модель',
+        POLICY_DEFAULT: 'Выбрана модель по умолчанию',
+        RUNTIME_ONLY_MATCH: 'Совпала с подключённой моделью',
+        LEGACY_RUNTIME_FALLBACK: 'Использован runtime fallback',
+        MODEL_NOT_ALLOWED: 'Модель не входит в список разрешённых',
+        MODEL_DENIED: 'Модель запрещена правилами',
+        MODEL_NOT_FOUND: 'Модель не найдена',
+        MODEL_DISABLED: 'Модель отключена',
+        RUNTIME_MISMATCH: 'Модель не совпадает с подключённой',
+        CAPABILITY_UNSUPPORTED: 'Нужная возможность не поддерживается',
+        INPUT_LIMIT_EXCEEDED: 'Превышен лимит входных токенов',
+        OUTPUT_LIMIT_EXCEEDED: 'Превышен лимит выходных токенов',
+        PRICING_INCOMPLETE: 'Недостаточно данных о стоимости',
+        TRAINING_POLICY_UNSATISFIED: 'Не выполнено требование по обучению',
+        RETENTION_POLICY_UNSATISFIED: 'Не выполнено требование по хранению данных',
+        REQUEST_COST_LIMIT_EXCEEDED: 'Превышен лимит стоимости запроса',
+        MONTHLY_BUDGET_EXCEEDED: 'Превышен месячный бюджет',
+        MONTHLY_BUDGET_UNVERIFIABLE: 'Невозможно надёжно проверить месячный бюджет',
+    }
+
+    return labels[reason] ?? enumLabel(reason)
+}
+
 export function RouteDecisionEvidence({
     decision,
 }: {
@@ -947,129 +755,135 @@ export function RouteDecisionEvidence({
         <section className="models-route-evidence">
             <div className="models-route-evidence__heading">
                 <div>
-                    <strong>
-                        {decision.id}
-                    </strong>
-                    <small>
-                        {formatDateTime(
-                            decision.createdAt,
-                        )}
-                    </small>
+                    <strong>{decision.id}</strong>
+                    <small>{formatDateTime(decision.createdAt)}</small>
                 </div>
 
                 <StatusPill
-                    tone={
-                        decision.outcome
-                        === 'ALLOWED'
-                            ? 'success'
-                            : 'danger'
-                    }
-                    label={`${decision.outcome === 'ALLOWED' ? 'Разрешено' : 'Отклонено'} · ${formatRouteReason(decision.reason)}`}
+                    tone={decision.outcome === 'ALLOWED' ? 'success' : 'danger'}
+                    label={`${decision.outcome === 'ALLOWED' ? 'Разрешено' : 'Отклонено'} · ${routeReasonLabel(decision.reason)}`}
                 />
             </div>
 
             <dl className="models-kv-grid">
                 <div>
                     <dt>Выбранная модель</dt>
-                    <dd>
-                        {decision.selectedModelKey
-                            ?? '—'}
-                    </dd>
+                    <dd>{decision.selectedModelKey ?? '—'}</dd>
                     <small>
-                        {decision.selectedProvider
-                            ?? '—'}
+                        {decision.selectedProvider ?? '—'}
                         {' / '}
-                        {decision.selectedProviderModelId
-                            ?? '—'}
+                        {decision.selectedProviderModelId ?? '—'}
                     </small>
                 </div>
 
                 <div>
                     <dt>Версии настроек</dt>
                     <dd>
-                        {decision.selectedCatalogVersion
-                            != null
+                        {decision.selectedCatalogVersion !== null
                             ? `Каталог ${decision.selectedCatalogVersion}`
                             : 'Каталог —'}
                         {' · '}
-                        {decision.policyVersion
-                            != null
+                        {decision.policyVersion !== null
                             ? `Правила ${decision.policyVersion}`
                             : 'Правила —'}
                     </dd>
                 </div>
 
                 <div>
-                    <dt>Оценка токенов</dt>
+                    <dt>Оценка input/output</dt>
                     <dd>
-                        {decision.estimatedInputTokens?.toLocaleString(
-                            'ru-RU',
-                        ) ?? '—'}
+                        {decision.estimatedInputTokens?.toLocaleString('ru-RU') ?? '—'}
                         {' / '}
-                        {decision.estimatedOutputTokens?.toLocaleString(
-                            'ru-RU',
-                        ) ?? '—'}
+                        {decision.estimatedOutputTokens?.toLocaleString('ru-RU') ?? '—'}
                     </dd>
-                    <small>вход / выход</small>
+                    <small>
+                        Исторические DB/wire-поля всё ещё называются tokens
+                    </small>
                 </div>
 
                 <div>
                     <dt>Оценка стоимости</dt>
                     <dd>
-                        {decision.estimatedMaxCostUsd
-                            ? formatUsd(
-                                decision.estimatedMaxCostUsd,
-                            )
-                            : 'Неизвестно'}
+                        {decision.estimatedMaxCostUsd === null
+                            ? 'Неизвестно'
+                            : formatUsd(decision.estimatedMaxCostUsd)}
                     </dd>
                     <small>
-                        Данные о стоимости:{' '}
-                        {decision.pricingComplete
-                            ? 'полные'
-                            : 'неполные'}
+                        pricingComplete: {decision.pricingComplete ? 'да' : 'нет'}
                     </small>
                 </div>
 
                 <div>
                     <dt>Месячный бюджет</dt>
                     <dd>
-                        {decision.monthlyBudgetUsd
-                            ? formatUsd(
-                                decision.monthlyBudgetUsd,
-                            )
-                            : '—'}
+                        {decision.monthlyBudgetUsd === null
+                            ? 'Не применялся'
+                            : formatUsd(decision.monthlyBudgetUsd)}
                     </dd>
                     <small>
-                        Учтено:{' '}
-                        {decision.monthlySpentUsd
-                            ? formatUsd(
-                                decision.monthlySpentUsd,
-                            )
-                            : '—'}
+                        {decision.monthlyCostState}
                         {' · '}
-                        Состояние:{' '}
-                        {formatMonthlyCostState(
-                            decision.monthlyCostState,
-                        )}
+                        {decision.budgetEnforcement ?? '—'}
                     </small>
                 </div>
 
                 <div>
-                    <dt>Запрос чата</dt>
-                    <dd>
-                        {decision.chatTurnId
-                            ?? 'Запрос был отклонён до запуска модели'}
-                    </dd>
+                    <dt>Причина</dt>
+                    <dd>{routeReasonLabel(decision.reason)}</dd>
+                    <small>{decision.reason}</small>
                 </div>
             </dl>
 
-            <code className="models-route-evidence__hash">
-                Версия контроля целостности: v
-                {decision.decisionIntegrityVersion}
-                {' · '}
-                Контрольная сумма:{' '}
-                {decision.decisionSha256}
-            </code>
+            <div className="models-route-accounting">
+                <h3>V48 governance evidence</h3>
+
+                <div className="models-route-accounting__grid">
+                    <div>
+                        <span>Integrity version</span>
+                        <strong>
+                            v{decision.decisionIntegrityVersion}
+                        </strong>
+                        <small>
+                            Версия canonical evidence/hash-схемы,
+                            а не версия AI-модели.
+                        </small>
+                    </div>
+
+                    <div>
+                        <span>Input accounting</span>
+                        <strong>
+                            {decision.inputAccountingVersion
+                                ?? 'Историческая V1/V2 decision'}
+                        </strong>
+                        <small>
+                            Версия governance-алгоритма input units.
+                            Это не tokenizer провайдера.
+                        </small>
+                    </div>
+
+                    <div>
+                        <span>Additional input envelope</span>
+                        <strong>
+                            {decision.additionalInputUnitUpperBound ?? '—'}
+                        </strong>
+                        <small>
+                            Верхняя граница system/RAG/tool input
+                            до provider I/O.
+                        </small>
+                    </div>
+                </div>
+
+                <code className="models-route-evidence__hash">
+                    SHA-256: {decision.decisionSha256}
+                </code>
+
+                <p>
+                    Для новой V48 decision ожидается integrity v3,
+                    непустая accounting version, неотрицательный envelope
+                    и 64-символьный lowercase SHA-256. Исторические V1/V2
+                    решения не переписываются.
+                </p>
+            </div>
         </section>
     )
 }
