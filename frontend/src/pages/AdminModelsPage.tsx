@@ -452,8 +452,6 @@ function AdminModelsPage() {
                 setNotice(
                     `Сохранена модель ${created.modelKey}, версия ${created.version}.`,
                 )
-            } catch (failure) {
-                throw failure
             } finally {
                 setMutationPending(false)
             }
@@ -480,8 +478,6 @@ function AdminModelsPage() {
                 setNotice(
                     `Правила организации сохранены. Текущая версия: ${created.version}.`,
                 )
-            } catch (failure) {
-                throw failure
             } finally {
                 setMutationPending(false)
             }

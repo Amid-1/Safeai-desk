@@ -1,6 +1,6 @@
 import type { KnowledgeDocument } from '../../../api/knowledgeDocumentApi'
 import Modal from '../../Modal'
-import { formatBytes } from './KnowledgeDetailsContent'
+import { formatBytes } from './knowledgeDocumentFormat'
 
 const ACCEPT =
     '.pdf,.docx,.txt,.html,.htm,.md,.csv,.xlsx,.pptx,.json,.xml,'

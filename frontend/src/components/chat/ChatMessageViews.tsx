@@ -8,6 +8,7 @@ import {
     getModelDisplayName,
     getVisibleMessageContent,
     isMockModel,
+    isSafeToPrepareNewRequest,
 } from '../../pages/chatPage.helpers'
 import { getPendingLabel, getPendingShortLabel } from '../../pages/chatPageSupport'
 
@@ -295,4 +296,3 @@ export function PendingTurnState({
         </div>
     )
 }
-

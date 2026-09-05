@@ -54,8 +54,8 @@ function KnowledgeDetailsPage() {
     const documentActions =
         useKnowledgeDocumentActions({
             knowledgeBaseId,
-            baseEnabled:
-                data.base?.enabled ?? false,
+            canEditDocuments:
+                data.access?.canEditDocuments ?? false,
             documentPage: data.documentPage,
             setError: data.setError,
             loadOverview: data.loadOverview,
@@ -90,6 +90,7 @@ function KnowledgeDetailsPage() {
             <KnowledgeDetailsContent
                 base={data.base}
                 health={data.health}
+                access={data.access}
                 documents={data.documents}
                 documentsPage={data.documentsPage}
                 documentsLoading={
@@ -136,7 +137,8 @@ function KnowledgeDetailsPage() {
                 }
             />
 
-            {upload.uploadTarget && (
+            {data.access?.canEditDocuments
+                && upload.uploadTarget && (
                 <KnowledgeUploadDialog
                     uploadTarget={
                         upload.uploadTarget
@@ -166,7 +168,8 @@ function KnowledgeDetailsPage() {
                 />
             )}
 
-            {versions.versionDocument && (
+            {data.access?.canEditDocuments
+                && versions.versionDocument && (
                 <KnowledgeVersionsDialog
                     versionDocument={
                         versions.versionDocument

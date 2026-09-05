@@ -11,4 +11,16 @@ public record LoginSessionResult(
         String rawRefreshToken,
         Duration refreshCookieMaxAge
 ) {
+
+    @Override
+    @SuppressWarnings("NullableProblems")
+    public String toString() {
+        return "LoginSessionResult["
+                + "currentUser=<redacted>, "
+                + "accessTokenSubject=<redacted>, "
+                + "rawRefreshToken=<redacted>, "
+                + "refreshCookieMaxAge="
+                + refreshCookieMaxAge
+                + "]";
+    }
 }

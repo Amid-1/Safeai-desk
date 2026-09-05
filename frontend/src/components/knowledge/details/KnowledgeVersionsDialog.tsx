@@ -3,7 +3,7 @@ import type { PageResponse } from '../../../utils/page'
 import { formatDateTime } from '../../../utils/format'
 import Modal from '../../Modal'
 import { ErrorState, LoadingState } from '../../StateBlock'
-import { formatBytes } from './KnowledgeDetailsContent'
+import { formatBytes } from './knowledgeDocumentFormat'
 
 type KnowledgeVersionsDialogProps = {
     versionDocument: KnowledgeDocument

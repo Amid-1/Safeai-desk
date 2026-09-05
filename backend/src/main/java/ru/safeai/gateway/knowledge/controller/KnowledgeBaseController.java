@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.CreateKnowledgeBaseMemberRequest;
 import ru.safeai.gateway.knowledge.dto.CreateKnowledgeBaseRequest;
+import ru.safeai.gateway.knowledge.dto.KnowledgeBaseAccessResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseMemberPageResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseMemberResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBasePageResponse;
@@ -26,6 +27,8 @@ import ru.safeai.gateway.knowledge.dto.KnowledgeBaseResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeMemberCandidateResponse;
 import ru.safeai.gateway.knowledge.dto.UpdateKnowledgeBaseMemberRequest;
 import ru.safeai.gateway.knowledge.dto.UpdateKnowledgeBaseRequest;
+import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
+import ru.safeai.gateway.knowledge.service.KnowledgeAccessService;
 import ru.safeai.gateway.knowledge.service.KnowledgeBaseService;
 
 import java.util.List;
@@ -39,6 +42,7 @@ import java.util.UUID;
 public class KnowledgeBaseController {
 
     private final KnowledgeBaseService knowledgeBaseService;
+    private final KnowledgeAccessService knowledgeAccessService;
 
     @GetMapping
     public KnowledgeBasePageResponse findAll(
@@ -68,6 +72,24 @@ public class KnowledgeBaseController {
         return knowledgeBaseService.findById(
                 knowledgeBaseId,
                 currentUser
+        );
+    }
+
+    @GetMapping("/{knowledgeBaseId}/access")
+    public KnowledgeBaseAccessResponse access(
+            @PathVariable UUID knowledgeBaseId,
+            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+    ) {
+        KnowledgeAccessService.Access access =
+                knowledgeAccessService.requireAccess(
+                        knowledgeBaseId,
+                        currentUser,
+                        KnowledgeBaseAccessLevel.VIEWER
+                );
+
+        return KnowledgeBaseAccessResponse.from(
+                knowledgeBaseId,
+                access
         );
     }
 

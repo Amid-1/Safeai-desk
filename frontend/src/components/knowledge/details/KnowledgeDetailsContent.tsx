@@ -1,6 +1,6 @@
 import type { RefObject } from 'react'
 import { Link } from 'react-router-dom'
-import type { KnowledgeBase } from '../../../api/knowledgeApi'
+import type { KnowledgeBase, KnowledgeBaseAccess } from '../../../api/knowledgeApi'
 import type {
     KnowledgeDocument,
     KnowledgeHealth,
@@ -42,6 +42,7 @@ const STATUS_HINT:
 export type KnowledgeDetailsContentProps = {
     base: KnowledgeBase
     health: KnowledgeHealth | null
+    access: KnowledgeBaseAccess | null
     documents: KnowledgeDocument[]
     documentsPage: PageResponse<KnowledgeDocument>
     documentsLoading: boolean
@@ -65,6 +66,7 @@ export type KnowledgeDetailsContentProps = {
 export function KnowledgeDetailsContent({
     base,
     health,
+    access,
     documents,
     documentsPage,
     documentsLoading,
@@ -145,23 +147,32 @@ export function KnowledgeDetailsContent({
                                                 : 'База отключена'
                                         }
                                     </span>
+
+                                    {access && !access.canEditDocuments && (
+                                        <span
+                                            className="knowledge-details__base-state"
+                                            title={`Уровень доступа: ${access.accessLevel}`}
+                                        >
+                                            Только чтение
+                                        </span>
+                                    )}
                                 </div>
                             </div>
 
-                            <button
-                                type="button"
-                                className="knowledge-details__upload-button"
-                                disabled={
-                                    !base.enabled
-                                }
-                                onClick={() =>
-                                    openUpload(
-                                        'new',
-                                    )
-                                }
-                            >
-                                Загрузить документ
-                            </button>
+                            {access?.canEditDocuments && (
+                                <button
+                                    type="button"
+                                    className="knowledge-details__upload-button"
+                                    disabled={busy}
+                                    onClick={() =>
+                                        openUpload(
+                                            'new',
+                                        )
+                                    }
+                                >
+                                    Загрузить документ
+                                </button>
+                            )}
                         </header>
 
                         {!base.enabled && (
@@ -170,7 +181,9 @@ export function KnowledgeDetailsContent({
                                     База знаний отключена.
                                 </strong>
                                 <span>
-                                    Обычные пользователи не видят её и не могут читать документы.
+                                    {access?.canEditDocuments
+                                        ? 'Обычные пользователи не видят её. Вы можете подготовить документы перед повторным включением базы.'
+                                        : 'База недоступна для обычной работы.'}
                                 </span>
                             </div>
                         )}
@@ -303,7 +316,11 @@ export function KnowledgeDetailsContent({
                             <EmptyState
                                 variant="inline"
                                 title="Документов пока нет"
-                                message="Загрузите первый корпоративный документ. Поддерживаются PDF, DOCX, TXT, HTML, MD, CSV, XLSX, PPTX, JSON и XML до 25 МБ."
+                                message={
+                                    access?.canEditDocuments
+                                        ? 'Загрузите первый корпоративный документ. Поддерживаются PDF, DOCX, TXT, HTML, MD, CSV, XLSX, PPTX, JSON и XML до 25 МБ.'
+                                        : 'В этой базе знаний пока нет доступных документов.'
+                                }
                             />
                         </div>
                     )}
@@ -474,44 +491,44 @@ export function KnowledgeDetailsContent({
                                                 }
                                             </button>
 
-                                            <button
-                                                type="button"
-                                                className="secondary-button"
-                                                disabled={
-                                                    busy
-                                                    || !base.enabled
-                                                }
-                                                onClick={() =>
-                                                    openUpload(
-                                                        document,
-                                                    )
-                                                }
-                                            >
-                                                Новая версия
-                                            </button>
+                                            {access?.canEditDocuments && (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        className="secondary-button"
+                                                        disabled={busy}
+                                                        onClick={() =>
+                                                            openUpload(
+                                                                document,
+                                                            )
+                                                        }
+                                                    >
+                                                        Новая версия
+                                                    </button>
 
-                                            <button
-                                                type="button"
-                                                className="secondary-button"
-                                                onClick={() => void openVersionHistory(document)}
-                                            >
-                                                Версии
-                                            </button>
+                                                    <button
+                                                        type="button"
+                                                        className="secondary-button"
+                                                        onClick={() => void openVersionHistory(document)}
+                                                    >
+                                                        Версии
+                                                    </button>
 
-                                            <button
-                                                type="button"
-                                                className="secondary-button document-reindex-button"
-                                                disabled={
-                                                    busy
-                                                    || !base.enabled
-                                                    || reindexingDocumentId === document.id
-                                                    || !document.currentVersionId
-                                                }
-                                                title="Повторно извлечь текст, создать chunks и embeddings для текущей версии"
-                                                onClick={() => void requestReindex(document)}
-                                            >
-                                                {reindexingDocumentId === document.id ? 'Запускаем…' : 'Переиндексировать'}
-                                            </button>
+                                                    <button
+                                                        type="button"
+                                                        className="secondary-button document-reindex-button"
+                                                        disabled={
+                                                            busy
+                                                            || reindexingDocumentId === document.id
+                                                            || !document.currentVersionId
+                                                        }
+                                                        title="Повторно извлечь текст, создать chunks и embeddings для текущей версии"
+                                                        onClick={() => void requestReindex(document)}
+                                                    >
+                                                        {reindexingDocumentId === document.id ? 'Запускаем…' : 'Переиндексировать'}
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
@@ -532,6 +549,7 @@ function healthStateLabel(state: KnowledgeHealth['state']): string {
         case 'HEALTHY': return 'База готова к ответам'
         case 'INDEXING': return 'Документы подготавливаются'
         case 'DEGRADED': return 'Некоторые документы требуют внимания'
+        case 'DISABLED': return 'База отключена'
         default: return 'Документов пока нет'
     }
 }

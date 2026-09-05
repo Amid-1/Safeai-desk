@@ -61,17 +61,30 @@ public class RefreshTokenService {
             String rawRefreshToken,
             Duration refreshCookieMaxAge
     ) {
+
         public RefreshTokenRotationResult {
             Objects.requireNonNull(
                     accessTokenSubject,
                     "accessTokenSubject не должен быть null"
             );
+
             validateTokenResult(
                     rawRefreshToken,
                     "rawRefreshToken",
                     refreshCookieMaxAge,
                     "refreshCookieMaxAge"
             );
+        }
+
+        @Override
+        @SuppressWarnings("NullableProblems")
+        public String toString() {
+            return "RefreshTokenRotationResult["
+                    + "accessTokenSubject=<redacted>, "
+                    + "rawRefreshToken=<redacted>, "
+                    + "refreshCookieMaxAge="
+                    + refreshCookieMaxAge
+                    + "]";
         }
     }
 
@@ -80,17 +93,31 @@ public class RefreshTokenService {
             String rawToken,
             Duration cookieMaxAge
     ) {
+
         public CreatedRefreshToken {
             Objects.requireNonNull(
                     id,
                     "id не должен быть null"
             );
+
             validateTokenResult(
                     rawToken,
                     "rawToken",
                     cookieMaxAge,
                     "cookieMaxAge"
             );
+        }
+
+        @Override
+        @SuppressWarnings("NullableProblems")
+        public String toString() {
+            return "CreatedRefreshToken["
+                    + "id="
+                    + id
+                    + ", rawToken=<redacted>, "
+                    + "cookieMaxAge="
+                    + cookieMaxAge
+                    + "]";
         }
     }
 
@@ -100,13 +127,26 @@ public class RefreshTokenService {
             HttpServletRequest request,
             Instant now
     ) {
-        Objects.requireNonNull(user, "user не должен быть null");
-        Objects.requireNonNull(request, "request не должен быть null");
-        Objects.requireNonNull(now, "now не должен быть null");
-
-        Instant familyExpiresAt = now.plus(
-                authCookieProperties.refreshTokenAbsoluteMaxAge()
+        Objects.requireNonNull(
+                user,
+                "user не должен быть null"
         );
+
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
+
+        Instant familyExpiresAt =
+                now.plus(
+                        authCookieProperties
+                                .refreshTokenAbsoluteMaxAge()
+                );
 
         return createToken(
                 user,
@@ -134,38 +174,70 @@ public class RefreshTokenService {
             String rawToken,
             HttpServletRequest request
     ) {
-        Objects.requireNonNull(request, "request не должен быть null");
-        validateRawToken(rawToken);
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
 
-        Instant now = clock.instant();
+        validateRawToken(
+                rawToken
+        );
 
-        RefreshTokenEntity oldToken = refreshTokenRepository
-                .findByTokenHashForUpdate(hash(rawToken))
-                .orElseThrow(() -> new InvalidRefreshTokenException(
-                        "Refresh token не найден"
-                ));
+        Instant now =
+                clock.instant();
 
-        UUID userId = oldToken.getUser().getId();
-        UUID familyId = oldToken.getTokenFamilyId();
+        RefreshTokenEntity oldToken =
+                refreshTokenRepository
+                        .findByTokenHashForUpdate(
+                                hash(
+                                        rawToken
+                                )
+                        )
+                        .orElseThrow(
+                                () ->
+                                        new InvalidRefreshTokenException(
+                                                "Refresh token не найден"
+                                        )
+                        );
 
-        Optional<UserEntity> optionalUser = userRepository
-                .findByIdWithRolesAndOrganization(userId);
+        UUID userId =
+                oldToken
+                        .getUser()
+                        .getId();
 
-        oldToken.setLastUsedAt(now);
+        UUID familyId =
+                oldToken
+                        .getTokenFamilyId();
+
+        Optional<UserEntity> optionalUser =
+                userRepository
+                        .findByIdWithRolesAndOrganization(
+                                userId
+                        );
+
+        oldToken.setLastUsedAt(
+                now
+        );
 
         if (optionalUser.isEmpty()) {
             terminateFamily(
                     familyId,
                     now,
-                    RefreshTokenRevocationReason.SECURITY_STATE_CHANGED
+                    RefreshTokenRevocationReason
+                            .SECURITY_STATE_CHANGED
             );
+
             throw new InvalidRefreshTokenException(
                     "Пользователь refresh session не найден"
             );
         }
 
-        UserEntity user = optionalUser.get();
-        UUID organizationId = user.getOrganization().getId();
+        UserEntity user =
+                optionalUser.get();
+
+        UUID organizationId =
+                user.getOrganization()
+                        .getId();
 
         if (oldToken.getRevokedAt() != null) {
             if (oldToken.getRevocationReason()
@@ -173,8 +245,10 @@ public class RefreshTokenService {
                 terminateFamily(
                         familyId,
                         now,
-                        RefreshTokenRevocationReason.REUSE_DETECTED
+                        RefreshTokenRevocationReason
+                                .REUSE_DETECTED
                 );
+
                 throw new RefreshTokenReuseDetectedException(
                         "Обнаружено повторное использование refresh token",
                         userId,
@@ -188,13 +262,20 @@ public class RefreshTokenService {
             );
         }
 
-        if (!oldToken.getExpiresAt().isAfter(now)
-                || !oldToken.getFamilyExpiresAt().isAfter(now)) {
+        if (!oldToken.getExpiresAt()
+                .isAfter(
+                        now
+                )
+                || !oldToken.getFamilyExpiresAt()
+                .isAfter(
+                        now
+                )) {
             terminateFamily(
                     familyId,
                     now,
                     RefreshTokenRevocationReason.EXPIRED
             );
+
             throw new ExpiredRefreshTokenException(
                     "Refresh token истек"
             );
@@ -204,15 +285,18 @@ public class RefreshTokenService {
             terminateForSecurityState(
                     familyId,
                     now,
-                    RefreshTokenRevocationReason.USER_DISABLED
+                    RefreshTokenRevocationReason
+                            .USER_DISABLED
             );
         }
 
-        if (!user.getOrganization().isEnabled()) {
+        if (!user.getOrganization()
+                .isEnabled()) {
             terminateForSecurityState(
                     familyId,
                     now,
-                    RefreshTokenRevocationReason.ORGANIZATION_DISABLED
+                    RefreshTokenRevocationReason
+                            .ORGANIZATION_DISABLED
             );
         }
 
@@ -221,37 +305,48 @@ public class RefreshTokenService {
             terminateForSecurityState(
                     familyId,
                     now,
-                    RefreshTokenRevocationReason.SECURITY_STATE_CHANGED
+                    RefreshTokenRevocationReason
+                            .SECURITY_STATE_CHANGED
             );
         }
 
         if (oldToken.getIssuedOrganizationAuthVersion()
-                != user.getOrganization().getAuthVersion()) {
+                != user.getOrganization()
+                .getAuthVersion()) {
             terminateForSecurityState(
                     familyId,
                     now,
-                    RefreshTokenRevocationReason.SECURITY_STATE_CHANGED
+                    RefreshTokenRevocationReason
+                            .SECURITY_STATE_CHANGED
             );
         }
 
-        oldToken.setRevokedAt(now);
+        oldToken.setRevokedAt(
+                now
+        );
+
         oldToken.setRevocationReason(
                 RefreshTokenRevocationReason.ROTATED
         );
 
-        CreatedRefreshToken replacement = createToken(
-                user,
-                request,
-                familyId,
-                now,
-                oldToken.getFamilyCreatedAt(),
-                oldToken.getFamilyExpiresAt()
+        CreatedRefreshToken replacement =
+                createToken(
+                        user,
+                        request,
+                        familyId,
+                        now,
+                        oldToken.getFamilyCreatedAt(),
+                        oldToken.getFamilyExpiresAt()
+                );
+
+        oldToken.setReplacedByTokenId(
+                replacement.id()
         );
 
-        oldToken.setReplacedByTokenId(replacement.id());
-
         return new RefreshTokenRotationResult(
-                toAccessTokenSubject(user),
+                toAccessTokenSubject(
+                        user
+                ),
                 replacement.rawToken(),
                 replacement.cookieMaxAge()
         );
@@ -261,19 +356,27 @@ public class RefreshTokenService {
     public Optional<LogoutAuditSubject> revokeFamilyAndReturnSubject(
             String rawToken
     ) {
-        validateRawToken(rawToken);
+        validateRawToken(
+                rawToken
+        );
 
-        Instant now = clock.instant();
+        Instant now =
+                clock.instant();
+
         Optional<RefreshTokenEntity> optionalToken =
-                refreshTokenRepository.findByTokenHashForUpdate(
-                        hash(rawToken)
-                );
+                refreshTokenRepository
+                        .findByTokenHashForUpdate(
+                                hash(
+                                        rawToken
+                                )
+                        );
 
         if (optionalToken.isEmpty()) {
             return Optional.empty();
         }
 
-        RefreshTokenEntity token = optionalToken.get();
+        RefreshTokenEntity token =
+                optionalToken.get();
 
         if (token.getRevokedAt() != null
                 && token.getRevocationReason()
@@ -281,27 +384,42 @@ public class RefreshTokenService {
             return Optional.empty();
         }
 
-        UUID userId = token.getUser().getId();
-        UUID familyId = token.getTokenFamilyId();
+        UUID userId =
+                token.getUser()
+                        .getId();
+
+        UUID familyId =
+                token.getTokenFamilyId();
 
         Optional<UserEntity> optionalUser =
-                userRepository.findByIdWithOrganization(userId);
+                userRepository
+                        .findByIdWithOrganization(
+                                userId
+                        );
 
         if (optionalUser.isEmpty()) {
             terminateFamily(
                     familyId,
                     now,
-                    RefreshTokenRevocationReason.SECURITY_STATE_CHANGED
+                    RefreshTokenRevocationReason
+                            .SECURITY_STATE_CHANGED
             );
+
             return Optional.empty();
         }
 
-        UserEntity user = optionalUser.get();
-        LogoutAuditSubject subject = new LogoutAuditSubject(
-                user.getId(),
-                user.getOrganization().getId(),
-                canonicalEmail(user.getEmail())
-        );
+        UserEntity user =
+                optionalUser.get();
+
+        LogoutAuditSubject subject =
+                new LogoutAuditSubject(
+                        user.getId(),
+                        user.getOrganization()
+                                .getId(),
+                        canonicalEmail(
+                                user.getEmail()
+                        )
+                );
 
         terminateFamily(
                 familyId,
@@ -309,7 +427,9 @@ public class RefreshTokenService {
                 RefreshTokenRevocationReason.LOGOUT
         );
 
-        return Optional.of(subject);
+        return Optional.of(
+                subject
+        );
     }
 
     private void terminateForSecurityState(
@@ -317,7 +437,12 @@ public class RefreshTokenService {
             Instant revokedAt,
             RefreshTokenRevocationReason reason
     ) {
-        terminateFamily(familyId, revokedAt, reason);
+        terminateFamily(
+                familyId,
+                revokedAt,
+                reason
+        );
+
         throw new InvalidRefreshTokenException(
                 "Security state пользователя изменилось"
         );
@@ -328,15 +453,28 @@ public class RefreshTokenService {
             Instant revokedAt,
             RefreshTokenRevocationReason reason
     ) {
-        Objects.requireNonNull(familyId, "familyId не должен быть null");
-        Objects.requireNonNull(revokedAt, "revokedAt не должен быть null");
-        Objects.requireNonNull(reason, "reason не должен быть null");
-
-        int affectedRows = refreshTokenRepository.terminateFamily(
+        Objects.requireNonNull(
                 familyId,
-                revokedAt,
-                reason
+                "familyId не должен быть null"
         );
+
+        Objects.requireNonNull(
+                revokedAt,
+                "revokedAt не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                reason,
+                "reason не должен быть null"
+        );
+
+        int affectedRows =
+                refreshTokenRepository
+                        .terminateFamily(
+                                familyId,
+                                revokedAt,
+                                reason
+                        );
 
         if (affectedRows == 0) {
             log.warn(
@@ -345,6 +483,7 @@ public class RefreshTokenService {
                     familyId,
                     reason
             );
+
             return;
         }
 
@@ -365,62 +504,142 @@ public class RefreshTokenService {
             Instant familyCreatedAt,
             Instant familyExpiresAt
     ) {
-        Objects.requireNonNull(user, "user не должен быть null");
-        Objects.requireNonNull(request, "request не должен быть null");
-        Objects.requireNonNull(tokenFamilyId, "tokenFamilyId не должен быть null");
-        Objects.requireNonNull(now, "now не должен быть null");
-        Objects.requireNonNull(familyCreatedAt, "familyCreatedAt не должен быть null");
-        Objects.requireNonNull(familyExpiresAt, "familyExpiresAt не должен быть null");
+        Objects.requireNonNull(
+                user,
+                "user не должен быть null"
+        );
 
-        if (!familyExpiresAt.isAfter(familyCreatedAt)) {
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                tokenFamilyId,
+                "tokenFamilyId не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                familyCreatedAt,
+                "familyCreatedAt не должен быть null"
+        );
+
+        Objects.requireNonNull(
+                familyExpiresAt,
+                "familyExpiresAt не должен быть null"
+        );
+
+        if (!familyExpiresAt.isAfter(
+                familyCreatedAt
+        )) {
             throw new IllegalStateException(
                     "familyExpiresAt должен быть позже familyCreatedAt"
             );
         }
 
-        Instant idleExpiresAt = now.plus(
-                authCookieProperties.refreshTokenMaxAge()
-        );
-        Instant expiresAt = idleExpiresAt.isBefore(familyExpiresAt)
-                ? idleExpiresAt
-                : familyExpiresAt;
+        Instant idleExpiresAt =
+                now.plus(
+                        authCookieProperties
+                                .refreshTokenMaxAge()
+                );
 
-        if (!expiresAt.isAfter(now)) {
+        Instant expiresAt =
+                idleExpiresAt.isBefore(
+                        familyExpiresAt
+                )
+                        ? idleExpiresAt
+                        : familyExpiresAt;
+
+        if (!expiresAt.isAfter(
+                now
+        )) {
             throw new ExpiredRefreshTokenException(
                     "Абсолютный срок refresh session истек"
             );
         }
 
-        String rawToken = generateRawRefreshToken();
-        UUID tokenId = UUID.randomUUID();
+        String rawToken =
+                generateRawRefreshToken();
 
-        RefreshTokenEntity entity = new RefreshTokenEntity();
+        UUID tokenId =
+                UUID.randomUUID();
 
-        entity.setId(tokenId);
-        entity.setUser(user);
-        entity.setTokenHash(hash(rawToken));
-        entity.setIssuedTokenVersion(user.getTokenVersion());
-        entity.setIssuedOrganizationAuthVersion(
-                user.getOrganization().getAuthVersion()
+        RefreshTokenEntity entity =
+                new RefreshTokenEntity();
+
+        entity.setId(
+                tokenId
         );
-        entity.setTokenFamilyId(tokenFamilyId);
-        entity.setCreatedAt(now);
-        entity.setExpiresAt(expiresAt);
-        entity.setFamilyCreatedAt(familyCreatedAt);
-        entity.setFamilyExpiresAt(familyExpiresAt);
-        entity.setCreatedByIp(clientIpResolver.resolve(request));
-        entity.setUserAgent(
-                truncateUserAgent(
-                        request.getHeader("User-Agent")
+
+        entity.setUser(
+                user
+        );
+
+        entity.setTokenHash(
+                hash(
+                        rawToken
                 )
         );
 
-        refreshTokenRepository.save(entity);
+        entity.setIssuedTokenVersion(
+                user.getTokenVersion()
+        );
+
+        entity.setIssuedOrganizationAuthVersion(
+                user.getOrganization()
+                        .getAuthVersion()
+        );
+
+        entity.setTokenFamilyId(
+                tokenFamilyId
+        );
+
+        entity.setCreatedAt(
+                now
+        );
+
+        entity.setExpiresAt(
+                expiresAt
+        );
+
+        entity.setFamilyCreatedAt(
+                familyCreatedAt
+        );
+
+        entity.setFamilyExpiresAt(
+                familyExpiresAt
+        );
+
+        entity.setCreatedByIp(
+                clientIpResolver.resolve(
+                        request
+                )
+        );
+
+        entity.setUserAgent(
+                truncateUserAgent(
+                        request.getHeader(
+                                "User-Agent"
+                        )
+                )
+        );
+
+        refreshTokenRepository.save(
+                entity
+        );
 
         return new CreatedRefreshToken(
                 tokenId,
                 rawToken,
-                cookieMaxAge(now, expiresAt)
+                cookieMaxAge(
+                        now,
+                        expiresAt
+                )
         );
     }
 
@@ -429,15 +648,24 @@ public class RefreshTokenService {
     ) {
         return new AccessTokenSubject(
                 user.getId(),
-                user.getOrganization().getId(),
+                user.getOrganization()
+                        .getId(),
                 user.getTokenVersion(),
-                user.getOrganization().getAuthVersion(),
-                UserRoleMapper.toRoleNames(user)
+                user.getOrganization()
+                        .getAuthVersion(),
+                UserRoleMapper.toRoleNames(
+                        user
+                )
         );
     }
 
-    private void validateRawToken(String rawToken) {
-        Objects.requireNonNull(rawToken, "rawToken не должен быть null");
+    private void validateRawToken(
+            String rawToken
+    ) {
+        Objects.requireNonNull(
+                rawToken,
+                "rawToken не должен быть null"
+        );
 
         if (rawToken.isBlank()) {
             throw new InvalidRefreshTokenException(
@@ -445,8 +673,13 @@ public class RefreshTokenService {
             );
         }
 
-        if (rawToken.length() > MAX_RAW_REFRESH_TOKEN_LENGTH
-                || !BASE64_URL_PATTERN.matcher(rawToken).matches()) {
+        if (rawToken.length()
+                > MAX_RAW_REFRESH_TOKEN_LENGTH
+                || !BASE64_URL_PATTERN
+                .matcher(
+                        rawToken
+                )
+                .matches()) {
             throw new InvalidRefreshTokenException(
                     "Некорректный формат refresh token"
             );
@@ -454,21 +687,41 @@ public class RefreshTokenService {
     }
 
     private String generateRawRefreshToken() {
-        byte[] bytes = new byte[REFRESH_TOKEN_BYTES];
-        SECURE_RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder()
+        byte[] bytes =
+                new byte[
+                        REFRESH_TOKEN_BYTES
+                        ];
+
+        SECURE_RANDOM.nextBytes(
+                bytes
+        );
+
+        return Base64
+                .getUrlEncoder()
                 .withoutPadding()
-                .encodeToString(bytes);
+                .encodeToString(
+                        bytes
+                );
     }
 
-    private String hash(String rawToken) {
+    private String hash(
+            String rawToken
+    ) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(
-                    digest.digest(
-                            rawToken.getBytes(StandardCharsets.UTF_8)
-                    )
-            );
+            MessageDigest digest =
+                    MessageDigest.getInstance(
+                            "SHA-256"
+                    );
+
+            return HexFormat.of()
+                    .formatHex(
+                            digest.digest(
+                                    rawToken.getBytes(
+                                            StandardCharsets.UTF_8
+                                    )
+                            )
+                    );
+
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(
                     "SHA-256 is not available",
@@ -481,22 +734,37 @@ public class RefreshTokenService {
             Instant now,
             Instant expiresAt
     ) {
-        long seconds = Duration.between(
-                now,
-                expiresAt
-        ).toSeconds();
+        long seconds =
+                Duration.between(
+                        now,
+                        expiresAt
+                ).toSeconds();
 
         return Duration.ofSeconds(
-                Math.max(1, seconds)
+                Math.max(
+                        1,
+                        seconds
+                )
         );
     }
 
-    private String canonicalEmail(String email) {
-        Objects.requireNonNull(email, "email не должен быть null");
-        String canonical = email.trim().toLowerCase(Locale.ROOT);
+    private String canonicalEmail(
+            String email
+    ) {
+        Objects.requireNonNull(
+                email,
+                "email не должен быть null"
+        );
+
+        String canonical =
+                email.trim()
+                        .toLowerCase(
+                                Locale.ROOT
+                        );
 
         if (canonical.isBlank()
-                || canonical.length() > MAX_EMAIL_LENGTH) {
+                || canonical.length()
+                > MAX_EMAIL_LENGTH) {
             throw new IllegalStateException(
                     "Некорректный email пользователя"
             );
@@ -508,14 +776,21 @@ public class RefreshTokenService {
     private @Nullable String truncateUserAgent(
             @Nullable String value
     ) {
-        if (value == null || value.isBlank()) {
+        if (value == null
+                || value.isBlank()) {
             return null;
         }
 
-        String trimmed = value.trim();
-        return trimmed.length() <= MAX_USER_AGENT_LENGTH
+        String trimmed =
+                value.trim();
+
+        return trimmed.length()
+                <= MAX_USER_AGENT_LENGTH
                 ? trimmed
-                : trimmed.substring(0, MAX_USER_AGENT_LENGTH);
+                : trimmed.substring(
+                        0,
+                        MAX_USER_AGENT_LENGTH
+                );
     }
 
     private static void validateTokenResult(
@@ -524,8 +799,15 @@ public class RefreshTokenService {
             Duration maxAge,
             String maxAgeFieldName
     ) {
-        requireText(token, tokenFieldName);
-        requirePositiveDuration(maxAge, maxAgeFieldName);
+        requireText(
+                token,
+                tokenFieldName
+        );
+
+        requirePositiveDuration(
+                maxAge,
+                maxAgeFieldName
+        );
     }
 
     private static void requireText(
@@ -536,6 +818,7 @@ public class RefreshTokenService {
                 value,
                 fieldName + " не должен быть null"
         );
+
         if (value.isBlank()) {
             throw new IllegalArgumentException(
                     fieldName + " не должен быть пустым"
@@ -551,7 +834,9 @@ public class RefreshTokenService {
                 value,
                 fieldName + " не должен быть null"
         );
-        if (value.isZero() || value.isNegative()) {
+
+        if (value.isZero()
+                || value.isNegative()) {
             throw new IllegalArgumentException(
                     fieldName + " должен быть положительным"
             );

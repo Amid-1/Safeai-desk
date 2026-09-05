@@ -5,9 +5,11 @@ import {
 } from 'react'
 import {
     getKnowledgeBase,
+    getKnowledgeBaseAccess,
 } from '../api/knowledgeApi'
 import type {
     KnowledgeBase,
+    KnowledgeBaseAccess,
 } from '../api/knowledgeApi'
 import {
     getKnowledgeDocuments,
@@ -42,6 +44,8 @@ export function useKnowledgeDetailsData(
         useState<KnowledgeBase | null>(null)
     const [health, setHealth] =
         useState<KnowledgeHealth | null>(null)
+    const [access, setAccess] =
+        useState<KnowledgeBaseAccess | null>(null)
     const [loading, setLoading] =
         useState(true)
     const [error, setError] =
@@ -63,6 +67,7 @@ export function useKnowledgeDetailsData(
             const [
                 knowledgeBase,
                 knowledgeHealth,
+                knowledgeAccess,
             ] = await Promise.all([
                 getKnowledgeBase(
                     knowledgeBaseId,
@@ -74,10 +79,17 @@ export function useKnowledgeDetailsData(
                     knowledgeBaseId,
                     signal,
                 ),
+                getKnowledgeBaseAccess(
+                    knowledgeBaseId,
+                    {
+                        signal,
+                    },
+                ),
             ])
 
             setBase(knowledgeBase)
             setHealth(knowledgeHealth)
+            setAccess(knowledgeAccess)
         },
         [knowledgeBaseId],
     )
@@ -281,6 +293,7 @@ export function useKnowledgeDetailsData(
     return {
         base,
         health,
+        access,
         loading,
         error,
         setError,

@@ -430,7 +430,7 @@ describe('modelApi contract', () => {
                 '77777777-7777-4777-8777-777777777777',
             requestContentHash: 'a'.repeat(64),
             requiredCapabilities: [],
-            monthlyCostKnown: true,
+            monthlyCostKnown: false,
             monthlyCostState: 'NOT_EVALUATED',
             budgetExceeded: false,
             pricingComplete: false,
@@ -464,10 +464,12 @@ describe('modelApi contract', () => {
     })
 
     it('rejects unknown governance enum values', async () => {
-        vi.mocked(apiRequest).mockResolvedValueOnce({
-            ...CATALOG_ENTRY,
-            lifecycle: 'MAGIC',
-        })
+        vi.mocked(apiRequest).mockResolvedValueOnce([
+            {
+                ...CATALOG_ENTRY,
+                lifecycle: 'MAGIC',
+            },
+        ])
 
         await expect(
             getModelCatalog(),

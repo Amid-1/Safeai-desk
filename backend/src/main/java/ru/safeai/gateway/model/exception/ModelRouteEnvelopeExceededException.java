@@ -1,14 +1,16 @@
 package ru.safeai.gateway.model.exception;
 
 import java.io.Serial;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
  * Raised before provider I/O when the fully materialized AI request exceeds
- * the input-token envelope approved by model governance.
+ * the input-unit envelope approved by model governance.
  *
- * <p>The structured values are intentionally retained separately from the
- * message so observability code can consume them without parsing text.</p>
+ * <p>This is a deterministic pre-provider failure. The provider has not been
+ * invoked, therefore the corresponding ChatTurn must become FAILED rather
+ * than AMBIGUOUS.</p>
  */
 public final class ModelRouteEnvelopeExceededException
         extends RuntimeException {
@@ -17,52 +19,72 @@ public final class ModelRouteEnvelopeExceededException
     private static final long serialVersionUID = 1L;
 
     private final UUID decisionId;
-    private final long reservedInputTokens;
-    private final long actualEstimatedInputTokens;
+    private final long reservedInputUnits;
+    private final long actualEstimatedInputUnits;
 
     public ModelRouteEnvelopeExceededException(
             UUID decisionId,
-            long reservedInputTokens,
-            long actualEstimatedInputTokens
+            long reservedInputUnits,
+            long actualEstimatedInputUnits
     ) {
         super(
-                "Prepared AI request exceeds reserved model-route input envelope: "
-                        + "decisionId=" + decisionId
-                        + ", reserved=" + reservedInputTokens
-                        + ", prepared=" + actualEstimatedInputTokens
+                buildMessage(
+                        decisionId,
+                        reservedInputUnits,
+                        actualEstimatedInputUnits
+                )
         );
 
-        if (reservedInputTokens < 0L) {
+        this.decisionId =
+                Objects.requireNonNull(
+                        decisionId,
+                        "decisionId не должен быть null"
+                );
+
+        if (reservedInputUnits < 0L) {
             throw new IllegalArgumentException(
-                    "reservedInputTokens не может быть отрицательным"
+                    "reservedInputUnits не может быть отрицательным"
             );
         }
 
-        if (actualEstimatedInputTokens <= reservedInputTokens) {
+        if (actualEstimatedInputUnits <= reservedInputUnits) {
             throw new IllegalArgumentException(
-                    "actualEstimatedInputTokens должен превышать "
-                            + "reservedInputTokens"
+                    "actualEstimatedInputUnits должен превышать "
+                            + "reservedInputUnits"
             );
         }
 
-        this.decisionId = decisionId;
-        this.reservedInputTokens = reservedInputTokens;
-        this.actualEstimatedInputTokens = actualEstimatedInputTokens;
+        this.reservedInputUnits =
+                reservedInputUnits;
+
+        this.actualEstimatedInputUnits =
+                actualEstimatedInputUnits;
     }
 
-    /**
-     * Persisted model-route decision. Null is allowed only for compatibility
-     * callers that execute the guard without ChatTurn governance context.
-     */
     public UUID decisionId() {
         return decisionId;
     }
 
-    public long reservedInputTokens() {
-        return reservedInputTokens;
+    public long reservedInputUnits() {
+        return reservedInputUnits;
     }
 
-    public long actualEstimatedInputTokens() {
-        return actualEstimatedInputTokens;
+    public long actualEstimatedInputUnits() {
+        return actualEstimatedInputUnits;
+    }
+
+    private static String buildMessage(
+            UUID decisionId,
+            long reservedInputUnits,
+            long actualEstimatedInputUnits
+    ) {
+        return "Prepared AI request exceeds reserved "
+                + "model-route input envelope: "
+                + "decisionId="
+                + decisionId
+                + ", reservedUnits="
+                + reservedInputUnits
+                + ", preparedUnits="
+                + actualEstimatedInputUnits;
     }
 }

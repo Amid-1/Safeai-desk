@@ -1,11 +1,13 @@
 package ru.safeai.gateway.knowledge.dto;
 
+import ru.safeai.gateway.knowledge.model.KnowledgeHealthState;
+
 import java.time.Instant;
 import java.util.UUID;
 
 public record KnowledgeHealthResponse(
         UUID knowledgeBaseId,
-        String state,
+        KnowledgeHealthState state,
         String activeEmbeddingModel,
         long totalDocuments,
         long enabledDocuments,

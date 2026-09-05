@@ -12,6 +12,7 @@ import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
@@ -58,8 +59,16 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ChatServiceTest {
 
-    private static final long RESERVED_INPUT_TOKENS =
-            64L;
+    /**
+     * Keep the ordinary ChatService scenarios exactly on the current V48
+     * accounting boundary. If the accounting contract changes, this fixture
+     * changes with it instead of silently becoming under-reserved.
+     */
+    private static final long RESERVED_INPUT_UNITS =
+            AiInputUnitEstimator.estimateBaseRequest(
+                    "Question",
+                    List.of()
+            );
 
     private static final int MAX_OUTPUT_TOKENS =
             256;
@@ -610,6 +619,69 @@ class ChatServiceTest {
     }
 
     @Test
+    void preparedInputExceedingRouteReservationFailsDeterministicallyBeforeProviderIo() {
+        ChatProcessingContext underReserved =
+                processingContext(
+                        RESERVED_INPUT_UNITS - 1L
+                );
+
+        stubOwnedChat();
+
+        when(
+                reservationService.reserveOrReplay(
+                        eq(ChatTestFixtures.CHAT_ID),
+                        eq(request()),
+                        any(SafeAiUserPrincipal.class)
+                )
+        ).thenReturn(
+                underReserved
+        );
+
+        when(
+                leaseService.watch(
+                        ChatTestFixtures.CHAT_ID,
+                        ChatTestFixtures.TURN_ID,
+                        ChatTestFixtures.CLIENT_REQUEST_ID,
+                        ChatTestFixtures.PROCESSING_TOKEN
+                )
+        ).thenReturn(
+                leaseWatch
+        );
+
+        assertThatThrownBy(() ->
+                service.sendMessage(
+                        ChatTestFixtures.CHAT_ID,
+                        request(),
+                        ChatTestFixtures.principal()
+                )
+        )
+                .isInstanceOf(ChatTurnFailedException.class)
+                .extracting("code")
+                .isEqualTo(
+                        "MODEL_ROUTE_INPUT_ENVELOPE_EXCEEDED"
+                );
+
+        verify(finalizationService).failBeforeProviderCall(
+                eq(underReserved),
+                eq("MODEL_ROUTE_ENVELOPE_EXCEEDED"),
+                eq("MODEL_ROUTE_INPUT_ENVELOPE_EXCEEDED"),
+                any(SafeAiUserPrincipal.class)
+        );
+
+        verify(finalizationService, never())
+                .markProviderCallStarted(any());
+
+        verify(aiProvider, never())
+                .sendMessage(any());
+
+        verify(leaseService)
+                .close(leaseWatch);
+
+        verify(lockService)
+                .unlockQuietly(redisLock);
+    }
+
+    @Test
     void createUsesClockAndTenantSafeUserLookup() {
         when(userRepository.findByIdAndOrganizationId(
                 ChatTestFixtures.USER_ID,
@@ -713,6 +785,14 @@ class ChatServiceTest {
     }
 
     private static ChatProcessingContext processingContext() {
+        return processingContext(
+                RESERVED_INPUT_UNITS
+        );
+    }
+
+    private static ChatProcessingContext processingContext(
+            long reservedInputUnits
+    ) {
         AiChatRequest aiRequest =
                 new AiChatRequest(
                         ChatTestFixtures.USER_ID,
@@ -723,7 +803,7 @@ class ChatServiceTest {
                         null,
                         "Question",
                         List.of(),
-                        RESERVED_INPUT_TOKENS,
+                        reservedInputUnits,
                         MAX_OUTPUT_TOKENS
                 );
 

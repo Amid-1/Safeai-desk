@@ -47,6 +47,15 @@ export type KnowledgeBaseVisibility =
 export type KnowledgeBaseAccessLevel =
     typeof ACCESS_LEVELS[number]
 
+export type KnowledgeBaseAccess = {
+    knowledgeBaseId: string
+    accessLevel: KnowledgeBaseAccessLevel
+    administrator: boolean
+    canEditDocuments: boolean
+    canManageBase: boolean
+    canManageMembers: boolean
+}
+
 export type KnowledgeBase = {
     id: string
     organizationId: string
@@ -176,6 +185,25 @@ export async function getKnowledgeBases(
 export async function getKnowledgeBase(knowledgeBaseId:string,options:RequestOptions={}):Promise<KnowledgeBase>{
     const response=await apiRequest<unknown>(`${BASE_PATH}/${uuidPathSegment(knowledgeBaseId)}`,{method:'GET',signal:options.signal,timeoutMs:API_TIMEOUTS.default})
     return parseKnowledgeBase(response,'knowledgeBase')
+}
+
+export async function getKnowledgeBaseAccess(
+    knowledgeBaseId: string,
+    options: RequestOptions = {},
+): Promise<KnowledgeBaseAccess> {
+    const response = await apiRequest<unknown>(
+        `${BASE_PATH}/${uuidPathSegment(knowledgeBaseId)}/access`,
+        {
+            method: 'GET',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseKnowledgeBaseAccess(
+        response,
+        'knowledgeBaseAccess',
+    )
 }
 
 export async function createKnowledgeBase(
@@ -573,6 +601,44 @@ export function parseKnowledgeBase(
                 record.updatedAt,
                 `${field}.updatedAt`,
             ),
+    }
+}
+
+export function parseKnowledgeBaseAccess(
+    value: unknown,
+    field = 'knowledgeBaseAccess',
+): KnowledgeBaseAccess {
+    const record = expectRecord(
+        value,
+        field,
+    )
+
+    return {
+        knowledgeBaseId: expectUuid(
+            record.knowledgeBaseId,
+            `${field}.knowledgeBaseId`,
+        ),
+        accessLevel: expectEnum(
+            record.accessLevel,
+            `${field}.accessLevel`,
+            ACCESS_LEVELS,
+        ),
+        administrator: expectBoolean(
+            record.administrator,
+            `${field}.administrator`,
+        ),
+        canEditDocuments: expectBoolean(
+            record.canEditDocuments,
+            `${field}.canEditDocuments`,
+        ),
+        canManageBase: expectBoolean(
+            record.canManageBase,
+            `${field}.canManageBase`,
+        ),
+        canManageMembers: expectBoolean(
+            record.canManageMembers,
+            `${field}.canManageMembers`,
+        ),
     }
 }
 

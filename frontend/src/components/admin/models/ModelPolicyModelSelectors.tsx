@@ -598,6 +598,25 @@ export function ModelKeySelector({
 
                             event.preventDefault()
 
+                            const exactQuery =
+                                validateModelKey(query)
+
+                            if (
+                                query.trim()
+                                && exactQuery.valid
+                                && (
+                                    catalogLookup.has(
+                                        exactQuery.value,
+                                    )
+                                    || selectedKeys.includes(
+                                        exactQuery.value,
+                                    )
+                                )
+                            ) {
+                                commitKey(query)
+                                return
+                            }
+
                             const activeCatalogEntry =
                                 filteredCatalog[
                                     activeIndex
@@ -673,6 +692,7 @@ export function ModelKeySelector({
                                         <strong>
                                             {entry.displayName}
                                         </strong>
+                                        {' '}
                                         <code>
                                             {entry.modelKey}
                                         </code>
@@ -1028,6 +1048,7 @@ export function DefaultModelSelector({
                                             {entry?.displayName
                                                 ?? key}
                                         </strong>
+                                        {' '}
                                         <code>{key}</code>
                                     </span>
                                     <small>
@@ -1059,4 +1080,3 @@ export function DefaultModelSelector({
         </div>
     )
 }
-

@@ -14,7 +14,7 @@ import {
 
 type UseKnowledgeDocumentActionsOptions = {
     knowledgeBaseId: string
-    baseEnabled: boolean
+    canEditDocuments: boolean
     documentPage: number
     setError: (message: string) => void
     loadOverview: () => Promise<void>
@@ -23,7 +23,7 @@ type UseKnowledgeDocumentActionsOptions = {
 
 export function useKnowledgeDocumentActions({
     knowledgeBaseId,
-    baseEnabled,
+    canEditDocuments,
     documentPage,
     setError,
     loadOverview,
@@ -175,7 +175,7 @@ export function useKnowledgeDocumentActions({
     ) {
         if (
             reindexingDocumentId
-            || !baseEnabled
+            || !canEditDocuments
         ) {
             return
         }

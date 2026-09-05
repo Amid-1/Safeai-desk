@@ -4,6 +4,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 import ru.safeai.gateway.knowledge.storage.KnowledgeStorageProperties;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.util.Objects;
 
 @Component
@@ -99,6 +101,10 @@ public class KnowledgeDocumentFileValidator {
         @Override
         public byte[] bytes() {
             return bytes.clone();
+        }
+
+        public InputStream openStream() {
+            return new ByteArrayInputStream(bytes);
         }
 
         public int sizeBytes() {

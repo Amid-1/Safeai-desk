@@ -84,8 +84,7 @@ public class ModelCatalogService {
                 "Недостаточно прав для просмотра model catalog"
         );
 
-        Instant now =
-                clock.instant();
+        Instant now = clock.instant();
 
         return repository.findEffectiveAll(now)
                 .stream()
@@ -98,19 +97,11 @@ public class ModelCatalogService {
             CreateModelCatalogVersionRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        ModelControlPlaneAccess.requireSuperAdmin(
-                currentUser
-        );
-
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        ModelControlPlaneAccess.requireSuperAdmin(currentUser);
+        Objects.requireNonNull(request, "request не должен быть null");
 
         String modelKey =
-                normalizeModelKey(
-                        request.modelKey()
-                );
+                normalizeModelKey(request.modelKey());
 
         String provider =
                 ModelCatalogRules.normalizeProvider(
@@ -168,32 +159,23 @@ public class ModelCatalogService {
         Set<ModelCapability> capabilities =
                 request.capabilities() == null
                         ? Set.of()
-                        : Set.copyOf(
-                                request.capabilities()
-                        );
+                        : Set.copyOf(request.capabilities());
 
         Set<ModelModality> inputModalities =
                 request.inputModalities() == null
-                        ? Set.of(
-                                ModelModality.TEXT
-                        )
-                        : Set.copyOf(
-                                request.inputModalities()
-                        );
+                        ? Set.of(ModelModality.TEXT)
+                        : Set.copyOf(request.inputModalities());
 
         Set<ModelModality> outputModalities =
                 request.outputModalities() == null
-                        ? Set.of(
-                                ModelModality.TEXT
-                        )
-                        : Set.copyOf(
-                                request.outputModalities()
-                        );
+                        ? Set.of(ModelModality.TEXT)
+                        : Set.copyOf(request.outputModalities());
 
         ModelCatalogRules.validateCatalogSemantics(
                 request.lifecycle(),
                 request.maxInputTokens(),
                 request.maxOutputTokens(),
+                capabilities,
                 inputModalities,
                 outputModalities,
                 request.retentionStatus(),
@@ -209,21 +191,14 @@ public class ModelCatalogService {
                 extraPricingJson
         );
 
-        repository.lockModelKey(
-                modelKey
-        );
+        repository.lockModelKey(modelKey);
 
         int previousVersion =
-                repository.findLatest(
-                                modelKey
-                        )
-                        .map(
-                                ModelCatalogEntry::version
-                        )
+                repository.findLatest(modelKey)
+                        .map(ModelCatalogEntry::version)
                         .orElse(0);
 
-        if (previousVersion
-                != request.expectedPreviousVersion()) {
+        if (previousVersion != request.expectedPreviousVersion()) {
             throw new ConflictException(
                     "Model catalog version conflict: expected previous version "
                             + request.expectedPreviousVersion()
@@ -232,8 +207,7 @@ public class ModelCatalogService {
             );
         }
 
-        Instant now =
-                clock.instant();
+        Instant now = clock.instant();
 
         ModelCatalogEntry entry =
                 new ModelCatalogEntry(
@@ -268,34 +242,24 @@ public class ModelCatalogService {
                         now
                 );
 
-        repository.insert(
-                entry
-        );
+        repository.insert(entry);
+        recordCatalogAudit(currentUser, entry);
 
-        recordCatalogAudit(
-                currentUser,
-                entry
-        );
-
-        return ModelCatalogEntryResponse.from(
-                entry
-        );
+        return ModelCatalogEntryResponse.from(entry);
     }
+
     /**
-     * Bootstraps the catalog from the physical runtime without overstating
-     * retention/training/specialized pricing metadata.
+     * Bootstraps the catalog from the one physical runtime without overstating
+     * retention/training/special pricing facts.
      *
-     * <p>The operation is idempotent for an unchanged latest RUNTIME_IMPORT:
-     * repeated button clicks/API retries return the existing immutable
-     * snapshot instead of manufacturing v2/v3/v4 copies.</p>
+     * <p>An unchanged latest RUNTIME_IMPORT is idempotent. A latest MANUAL or
+     * MIGRATED version is never overwritten by runtime discovery.</p>
      */
     @Transactional
     public ModelCatalogEntryResponse importRuntime(
             SafeAiUserPrincipal currentUser
     ) {
-        ModelControlPlaneAccess.requireSuperAdmin(
-                currentUser
-        );
+        ModelControlPlaneAccess.requireSuperAdmin(currentUser);
 
         RuntimeModelStatusResponse runtime =
                 Objects.requireNonNull(
@@ -339,51 +303,36 @@ public class ModelCatalogService {
 
         switch (runtimePricingStatus) {
             case "FREE" -> {
-                pricingStatus =
-                        ModelPricingStatus.FREE;
-                pricingComplete =
-                        true;
+                pricingStatus = ModelPricingStatus.FREE;
+                pricingComplete = true;
             }
             case "CONFIGURED" -> {
                 /*
-                 * The legacy runtime exposes only ordinary input/output prices.
-                 * Cached input, cache-write and extra dimensions are not proven.
+                 * Current runtime exposes only flat input/output prices.
+                 * Cached-input/cache-write/extra dimensions are not proven.
                  */
-                pricingStatus =
-                        ModelPricingStatus.INCOMPLETE;
-                pricingComplete =
-                        false;
+                pricingStatus = ModelPricingStatus.INCOMPLETE;
+                pricingComplete = false;
             }
             case "UNPRICED" -> {
-                pricingStatus =
-                        ModelPricingStatus.UNPRICED;
-                pricingComplete =
-                        false;
+                pricingStatus = ModelPricingStatus.UNPRICED;
+                pricingComplete = false;
             }
-            default ->
-                    throw new IllegalStateException(
-                            "Unsupported runtime pricing status: "
-                                    + runtimePricingStatus
-                    );
+            default -> throw new IllegalStateException(
+                    "Unsupported runtime pricing status: "
+                            + runtimePricingStatus
+            );
         }
 
         EnumSet<ModelCapability> capabilities =
-                EnumSet.noneOf(
-                        ModelCapability.class
-                );
+                EnumSet.noneOf(ModelCapability.class);
 
         if (runtime.toolsSupported()) {
-            capabilities.add(
-                    ModelCapability.TOOLS
-            );
+            capabilities.add(ModelCapability.TOOLS);
         }
-
         if (runtime.visionSupported()) {
-            capabilities.add(
-                    ModelCapability.VISION
-            );
+            capabilities.add(ModelCapability.VISION);
         }
-
         if (runtime.structuredOutputSupported()) {
             capabilities.add(
                     ModelCapability.STRUCTURED_OUTPUT
@@ -391,20 +340,14 @@ public class ModelCatalogService {
         }
 
         EnumSet<ModelModality> inputModalities =
-                EnumSet.of(
-                        ModelModality.TEXT
-                );
+                EnumSet.of(ModelModality.TEXT);
 
         if (runtime.visionSupported()) {
-            inputModalities.add(
-                    ModelModality.IMAGE
-            );
+            inputModalities.add(ModelModality.IMAGE);
         }
 
         Set<ModelModality> outputModalities =
-                Set.of(
-                        ModelModality.TEXT
-                );
+                Set.of(ModelModality.TEXT);
 
         BigDecimal runtimeInputPrice =
                 ModelCatalogRules.normalizeMoney(
@@ -427,6 +370,7 @@ public class ModelCatalogService {
                 ModelLifecycle.ACTIVE,
                 runtime.maxInputTokens(),
                 runtime.maxOutputTokens(),
+                capabilities,
                 inputModalities,
                 outputModalities,
                 ModelRetentionStatus.NOT_DECLARED,
@@ -442,13 +386,10 @@ public class ModelCatalogService {
                 "{}"
         );
 
-        repository.lockModelKey(
-                modelKey
-        );
+        repository.lockModelKey(modelKey);
+
         ModelCatalogEntry latest =
-                repository.findLatest(
-                                modelKey
-                        )
+                repository.findLatest(modelKey)
                         .orElse(null);
 
         if (latest != null
@@ -461,28 +402,27 @@ public class ModelCatalogService {
                             + ", version="
                             + latest.version()
                             + "). Создайте новую версию явно: "
-                            + "import-runtime не переопределяет ручное или мигрированное governance-состояние."
+                            + "import-runtime не переопределяет ручное "
+                            + "или мигрированное governance-состояние."
             );
         }
 
         if (latest != null
                 && sameRuntimeSnapshot(
-                        latest,
-                        runtimeProvider,
-                        runtimeModel,
-                        runtime,
-                        capabilities,
-                        inputModalities,
-                        outputModalities,
-                        pricingStatus,
-                        pricingComplete,
-                        runtimeInputPrice,
-                        runtimeOutputPrice,
-                        runtimePricingVersion
-                )) {
-            return ModelCatalogEntryResponse.from(
-                    latest
-            );
+                latest,
+                runtimeProvider,
+                runtimeModel,
+                runtime,
+                capabilities,
+                inputModalities,
+                outputModalities,
+                pricingStatus,
+                pricingComplete,
+                runtimeInputPrice,
+                runtimeOutputPrice,
+                runtimePricingVersion
+        )) {
+            return ModelCatalogEntryResponse.from(latest);
         }
 
         int previousVersion =
@@ -490,8 +430,7 @@ public class ModelCatalogService {
                         ? 0
                         : latest.version();
 
-        Instant now =
-                clock.instant();
+        Instant now = clock.instant();
 
         ModelCatalogEntry entry =
                 new ModelCatalogEntry(
@@ -524,18 +463,10 @@ public class ModelCatalogService {
                         now
                 );
 
-        repository.insert(
-                entry
-        );
+        repository.insert(entry);
+        recordCatalogAudit(currentUser, entry);
 
-        recordCatalogAudit(
-                currentUser,
-                entry
-        );
-
-        return ModelCatalogEntryResponse.from(
-                entry
-        );
+        return ModelCatalogEntryResponse.from(entry);
     }
 
     private static boolean sameRuntimeSnapshot(
@@ -559,9 +490,7 @@ public class ModelCatalogService {
                                         + providerModelId
                         )
                 )
-                && latest.provider().equals(
-                        provider
-                )
+                && latest.provider().equals(provider)
                 && latest.providerModelId().equals(
                         providerModelId
                 )
@@ -585,8 +514,7 @@ public class ModelCatalogService {
                 )
                 && latest.retentionStatus()
                 == ModelRetentionStatus.NOT_DECLARED
-                && latest.retentionDays()
-                == null
+                && latest.retentionDays() == null
                 && latest.trainingUseStatus()
                 == ModelTrainingUseStatus.NOT_DECLARED
                 && latest.pricingStatus()
@@ -622,9 +550,7 @@ public class ModelCatalogService {
             return left == right;
         }
 
-        return left.compareTo(
-                right
-        ) == 0;
+        return left.compareTo(right) == 0;
     }
 
     private void recordCatalogAudit(
@@ -635,17 +561,13 @@ public class ModelCatalogService {
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.MODEL_CATALOG_VERSION_CREATED,
-                ModelCatalogAuditDetailsFactory.create(
-                        entry
-                )
+                ModelCatalogAuditDetailsFactory.create(entry)
         );
     }
 
     static String normalizeModelKey(
             String value
     ) {
-        return ModelCatalogRules.normalizeModelKey(
-                value
-        );
+        return ModelCatalogRules.normalizeModelKey(value);
     }
 }

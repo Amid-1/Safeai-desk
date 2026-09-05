@@ -5,7 +5,9 @@ import ru.safeai.gateway.model.domain.ModelCapability;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
 import ru.safeai.gateway.model.domain.ModelRouteReason;
+import ru.safeai.gateway.model.domain.MonthlyCostState;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
@@ -27,6 +29,8 @@ public record ModelRouteDecisionResponse(
         UUID policyId,
         Integer policyVersion,
         Set<ModelCapability> requiredCapabilities,
+        String inputAccountingVersion,
+        Long additionalInputUnitUpperBound,
         Long estimatedInputTokens,
         Long estimatedOutputTokens,
         String estimatedMaxCostUsd,
@@ -34,7 +38,7 @@ public record ModelRouteDecisionResponse(
         String monthlySpentUsd,
         String monthlyProjectedUsd,
         boolean monthlyCostKnown,
-        ru.safeai.gateway.model.domain.MonthlyCostState monthlyCostState,
+        MonthlyCostState monthlyCostState,
         BudgetEnforcement budgetEnforcement,
         boolean budgetExceeded,
         boolean pricingComplete,
@@ -64,6 +68,8 @@ public record ModelRouteDecisionResponse(
                 decision.policyId(),
                 decision.policyVersion(),
                 decision.requiredCapabilities(),
+                decision.inputAccountingVersion(),
+                decision.additionalInputUnitUpperBound(),
                 decision.estimatedInputTokens(),
                 decision.estimatedOutputTokens(),
                 decimal(decision.estimatedMaxCostUsd()),
@@ -83,7 +89,11 @@ public record ModelRouteDecisionResponse(
         );
     }
 
-    private static String decimal(java.math.BigDecimal value) {
-        return value == null ? null : value.toPlainString();
+    private static String decimal(
+            BigDecimal value
+    ) {
+        return value == null
+                ? null
+                : value.toPlainString();
     }
 }

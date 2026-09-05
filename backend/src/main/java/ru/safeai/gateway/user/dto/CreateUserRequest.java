@@ -33,4 +33,15 @@ public record CreateUserRequest(
                 String
                 > roles
 ) {
+    @Override
+    @SuppressWarnings("NullableProblems")
+    public String toString() {
+        return "CreateUserRequest["
+                + "organizationId=" + organizationId
+                + ", email=<redacted>"
+                + ", password=<redacted>"
+                + ", fullName=<redacted>"
+                + ", roles=" + roles
+                + "]";
+    }
 }

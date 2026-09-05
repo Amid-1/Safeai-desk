@@ -419,3 +419,14 @@ SafeAI Backend
            └── bucket safeai-knowledge
                  └── реальные загруженные файлы
 ```
+
+Напиши полный комментарий сообщение по всем проведенным изменениям для сообщения commit -m "" для файла, 
+который лежит в корне в прошедшем времени на русском и который сделаю
+git status
+git add -A
+git restore --staged commit-message.txt
+git diff --cached --stat
+git diff --cached
+git commit -F commit-message.txt
+git log -1 --stat
+git push

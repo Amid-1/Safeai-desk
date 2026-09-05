@@ -24,6 +24,7 @@ import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
+import ru.safeai.gateway.model.repository.ModelRouteRequestMutexRepository;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
 
@@ -57,6 +58,9 @@ class ModelRoutingServiceTest {
     private ModelRouteDecisionRepository decisionRepository;
 
     @Mock
+    private ModelRouteRequestMutexRepository requestMutexRepository;
+
+    @Mock
     private RuntimeModelStatusService runtimeStatusService;
 
     @Mock
@@ -70,6 +74,7 @@ class ModelRoutingServiceTest {
                 catalogRepository,
                 policyRepository,
                 decisionRepository,
+                requestMutexRepository,
                 runtimeStatusService,
                 audit,
                 ModelTestFixtures.CLOCK
@@ -201,6 +206,10 @@ class ModelRoutingServiceTest {
 
         assertThat(result.decisionId())
                 .isEqualTo(persisted.id());
+        verify(requestMutexRepository).lock(
+                ModelTestFixtures.CHAT_ID,
+                ModelTestFixtures.CLIENT_REQUEST_ID
+        );
         verify(runtimeStatusService, never()).current();
         verify(policyRepository, never()).findLatest(any());
         verify(decisionRepository, never())
@@ -458,6 +467,8 @@ class ModelRoutingServiceTest {
                 otherTenantPrincipal
         )).isInstanceOf(ForbiddenOperationException.class);
 
+        verify(requestMutexRepository, never())
+                .lock(any(), any());
         verify(decisionRepository, never())
                 .findByRequest(any(), any());
     }
@@ -568,6 +579,8 @@ class ModelRoutingServiceTest {
                 "chatTurnId",
                 "decisionIntegrityVersion",
                 "decisionSha256",
+                "inputAccountingVersion",
+                "additionalInputUnitUpperBound",
                 "outcome",
                 "reason",
                 "modelKey",
@@ -578,6 +591,27 @@ class ModelRoutingServiceTest {
                 "budgetExceeded",
                 "monthlyCostKnown",
                 "monthlyCostState"
+        );
+
+        assertThat(
+                detailsCaptor.getValue()
+                        .get("decisionIntegrityVersion")
+        ).isEqualTo(
+                (short) 3
+        );
+
+        assertThat(
+                detailsCaptor.getValue()
+                        .get("inputAccountingVersion")
+        ).isEqualTo(
+                ru.safeai.gateway.ai.input.AiInputUnitEstimator.VERSION
+        );
+
+        assertThat(
+                detailsCaptor.getValue()
+                        .get("additionalInputUnitUpperBound")
+        ).isEqualTo(
+                0L
         );
 
         assertThat(
@@ -693,6 +727,8 @@ class ModelRoutingServiceTest {
                 base.policyId(),
                 base.policyVersion(),
                 base.requiredCapabilities(),
+                base.inputAccountingVersion(),
+                base.additionalInputUnitUpperBound(),
                 base.estimatedInputTokens(),
                 base.estimatedOutputTokens(),
                 base.estimatedMaxCostUsd(),
@@ -733,6 +769,8 @@ class ModelRoutingServiceTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
+                source.inputAccountingVersion(),
+                source.additionalInputUnitUpperBound(),
                 source.estimatedInputTokens(),
                 source.estimatedOutputTokens(),
                 source.estimatedMaxCostUsd(),

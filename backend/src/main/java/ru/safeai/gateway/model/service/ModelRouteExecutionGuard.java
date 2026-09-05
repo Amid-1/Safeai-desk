@@ -1,19 +1,24 @@
 package ru.safeai.gateway.model.service;
 
 import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
 import ru.safeai.gateway.model.exception.ModelRouteEnvelopeExceededException;
 
 import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Final fail-closed guard between prompt/RAG materialization and provider I/O.
+ * Final fail-closed boundary between prompt/RAG materialization and provider I/O.
  */
 public final class ModelRouteExecutionGuard {
 
     private ModelRouteExecutionGuard() {
     }
 
+    /**
+     * The only production entry point. A governed request is always bound to
+     * an immutable model-route decision.
+     */
     public static void assertWithinReservedInputEnvelope(
             UUID decisionId,
             AiChatRequest reservedRequest,
@@ -23,34 +28,6 @@ public final class ModelRouteExecutionGuard {
                 decisionId,
                 "decisionId не должен быть null"
         );
-
-        assertWithinReservedInputEnvelopeInternal(
-                decisionId,
-                reservedRequest,
-                preparedRequest
-        );
-    }
-
-    /**
-     * Compatibility entry point for direct/legacy tests that do not have a
-     * model-route decision id.
-     */
-    public static void assertWithinReservedInputEnvelope(
-            AiChatRequest reservedRequest,
-            AiChatRequest preparedRequest
-    ) {
-        assertWithinReservedInputEnvelopeInternal(
-                null,
-                reservedRequest,
-                preparedRequest
-        );
-    }
-
-    private static void assertWithinReservedInputEnvelopeInternal(
-            UUID decisionId,
-            AiChatRequest reservedRequest,
-            AiChatRequest preparedRequest
-    ) {
         Objects.requireNonNull(
                 reservedRequest,
                 "reservedRequest не должен быть null"
@@ -60,26 +37,63 @@ public final class ModelRouteExecutionGuard {
                 "preparedRequest не должен быть null"
         );
 
-        Long reserved =
-                reservedRequest.reservedInputTokens();
+        requireBaseRequestIdentity(
+                reservedRequest,
+                preparedRequest
+        );
+
+        long reserved = requireReservedInputUnits(
+                decisionId,
+                reservedRequest
+        );
+
+        requireExecutionEnvelopePreserved(
+                reservedRequest,
+                preparedRequest,
+                reserved
+        );
+
+        long prepared =
+                AiInputUnitEstimator.estimatePreparedRequest(
+                        preparedRequest
+                );
+
+        if (prepared > reserved) {
+            throw new ModelRouteEnvelopeExceededException(
+                    decisionId,
+                    reserved,
+                    prepared
+            );
+        }
+    }
+
+    private static long requireReservedInputUnits(
+            UUID decisionId,
+            AiChatRequest reservedRequest
+    ) {
+        Long reserved = reservedRequest.reservedInputUnits();
 
         if (reserved == null) {
-            if (decisionId != null) {
-                throw new IllegalStateException(
-                        "Governed AI request has no reservedInputTokens: "
-                                + decisionId
-                );
-            }
-
-            return;
+            throw new IllegalStateException(
+                    "Governed AI request has no reservedInputUnits: "
+                            + decisionId
+            );
         }
 
+        return reserved;
+    }
+
+    private static void requireExecutionEnvelopePreserved(
+            AiChatRequest reservedRequest,
+            AiChatRequest preparedRequest,
+            long reservedInputUnits
+    ) {
         if (!Objects.equals(
-                preparedRequest.reservedInputTokens(),
-                reserved
+                preparedRequest.reservedInputUnits(),
+                reservedInputUnits
         )) {
             throw new IllegalStateException(
-                    "RAG/context transformation changed reservedInputTokens"
+                    "RAG/context transformation changed reserved input envelope"
             );
         }
 
@@ -91,17 +105,38 @@ public final class ModelRouteExecutionGuard {
                     "RAG/context transformation changed maxOutputTokens"
             );
         }
+    }
 
-        long prepared =
-                ModelInputTokenEstimator.estimatePreparedRequest(
-                        preparedRequest
-                );
-
-        if (prepared > reserved) {
-            throw new ModelRouteEnvelopeExceededException(
-                    decisionId,
-                    reserved,
-                    prepared
+    private static void requireBaseRequestIdentity(
+            AiChatRequest reserved,
+            AiChatRequest prepared
+    ) {
+        if (!Objects.equals(
+                reserved.userId(),
+                prepared.userId()
+        )
+                || !Objects.equals(
+                reserved.organizationId(),
+                prepared.organizationId()
+        )
+                || !Objects.equals(
+                reserved.chatId(),
+                prepared.chatId()
+        )
+                || !Objects.equals(
+                reserved.providerOperationId(),
+                prepared.providerOperationId()
+        )
+                || !Objects.equals(
+                reserved.userMessage(),
+                prepared.userMessage()
+        )
+                || !Objects.equals(
+                reserved.history(),
+                prepared.history()
+        )) {
+            throw new IllegalStateException(
+                    "AI request transformation changed route-bound request identity"
             );
         }
     }

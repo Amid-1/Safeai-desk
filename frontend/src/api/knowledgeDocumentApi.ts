@@ -14,7 +14,7 @@ import {
 import type {PageResponse} from '../utils/page'
 
 const STATUSES = ['PENDING', 'VALIDATING', 'EXTRACTING', 'CHUNKING', 'READY', 'FAILED'] as const
-const HEALTH_STATES = ['EMPTY', 'HEALTHY', 'INDEXING', 'DEGRADED'] as const
+const HEALTH_STATES = ['DISABLED', 'EMPTY', 'HEALTHY', 'INDEXING', 'DEGRADED'] as const
 export type KnowledgeIngestionStatus = typeof STATUSES[number]
 export type KnowledgeHealthState = typeof HEALTH_STATES[number]
 export type KnowledgeDocument = {
@@ -71,7 +71,7 @@ export type KnowledgeReindexResult = {
     documentId: string
     documentVersionId: string
     ingestionJobId: string
-    status: string
+    status: KnowledgeIngestionStatus
     requestedAt: string
 }
 
@@ -302,10 +302,10 @@ export async function reindexKnowledgeDocument(
             record.ingestionJobId,
             'knowledgeReindex.ingestionJobId',
         ),
-        status: expectString(
+        status: expectEnum(
             record.status,
             'knowledgeReindex.status',
-            {maxLength: 32},
+            STATUSES,
         ),
         requestedAt: expectInstant(
             record.requestedAt,

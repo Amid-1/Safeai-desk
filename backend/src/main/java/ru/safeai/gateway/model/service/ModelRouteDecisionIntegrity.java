@@ -19,81 +19,144 @@ final class ModelRouteDecisionIntegrity {
 
     private static final short V1 = 1;
     private static final short V2 = 2;
+    private static final short V3 = 3;
 
     private ModelRouteDecisionIntegrity() {
     }
 
-    static Instant normalizeDatabaseTimestamp(Instant value) {
-        return Objects.requireNonNull(value, "timestamp не должен быть null")
-                .truncatedTo(ChronoUnit.MICROS);
+    static Instant normalizeDatabaseTimestamp(
+            Instant value
+    ) {
+        return Objects.requireNonNull(
+                value,
+                "timestamp не должен быть null"
+        ).truncatedTo(ChronoUnit.MICROS);
     }
 
-    static ModelRouteDecision seal(ModelRouteDecision decision) {
-        Objects.requireNonNull(decision, "decision не должен быть null");
-        if (decision.decisionIntegrityVersion() != V2) {
+    static ModelRouteDecision seal(
+            ModelRouteDecision decision
+    ) {
+        Objects.requireNonNull(
+                decision,
+                "decision не должен быть null"
+        );
+
+        if (decision.decisionIntegrityVersion() != V3) {
             throw new IllegalArgumentException(
-                    "New route decision must use integrity version 2"
+                    "New route decision must use integrity version 3"
             );
         }
-        return copyWithHash(decision, calculateSha256(decision));
+
+        return copyWithHash(
+                decision,
+                calculateSha256(decision)
+        );
     }
 
-    static void requireValid(ModelRouteDecision decision) {
-        Objects.requireNonNull(decision, "decision не должен быть null");
+    static void requireValid(
+            ModelRouteDecision decision
+    ) {
+        Objects.requireNonNull(
+                decision,
+                "decision не должен быть null"
+        );
 
-        String persisted = decision.decisionSha256();
-        if (persisted == null || !persisted.matches("[0-9a-f]{64}")) {
+        String persisted =
+                decision.decisionSha256();
+
+        if (persisted == null
+                || !persisted.matches("[0-9a-f]{64}")) {
             throw new IllegalStateException(
-                    "Model route decision содержит некорректный decisionSha256: "
+                    "Model route decision содержит "
+                            + "некорректный decisionSha256: "
                             + decision.id()
             );
         }
 
         switch (decision.decisionIntegrityVersion()) {
-            case V1 -> requireValidV1(decision, persisted);
+            case V1 -> requireValidV1(
+                    decision,
+                    persisted
+            );
             case V2 -> {
-                if (!hashMatches(persisted, calculateV2Sha256(decision))) {
+                if (!hashMatches(
+                        persisted,
+                        calculateV2Sha256(decision)
+                )) {
+                    throw integrityFailure(decision);
+                }
+            }
+            case V3 -> {
+                if (!hashMatches(
+                        persisted,
+                        calculateV3Sha256(decision)
+                )) {
                     throw integrityFailure(decision);
                 }
             }
             default -> throw new IllegalStateException(
                     "Unsupported model route decision integrity version: "
                             + decision.decisionIntegrityVersion()
-                            + ", decisionId=" + decision.id()
+                            + ", decisionId="
+                            + decision.id()
             );
         }
     }
 
-    static String calculateSha256(ModelRouteDecision decision) {
+    static String calculateSha256(
+            ModelRouteDecision decision
+    ) {
         return switch (decision.decisionIntegrityVersion()) {
-            case V1 -> calculateV1Sha256(decision, false);
+            case V1 -> calculateV1Sha256(
+                    decision,
+                    false
+            );
             case V2 -> calculateV2Sha256(decision);
+            case V3 -> calculateV3Sha256(decision);
             default -> throw new IllegalArgumentException(
-                    "Unsupported integrity version: " + decision.decisionIntegrityVersion()
+                    "Unsupported integrity version: "
+                            + decision.decisionIntegrityVersion()
             );
         };
     }
 
-    private static void requireValidV1(ModelRouteDecision decision, String persisted) {
-        boolean freeZeroEstimate = decision.estimatedMaxCostUsd() != null
-                && decision.estimatedMaxCostUsd().signum() == 0;
+    private static void requireValidV1(
+            ModelRouteDecision decision,
+            String persisted
+    ) {
+        boolean freeZeroEstimate =
+                decision.estimatedMaxCostUsd() != null
+                        && decision.estimatedMaxCostUsd().signum() == 0;
 
-        if (hashMatches(persisted, calculateV1Sha256(decision, false))) {
+        if (hashMatches(
+                persisted,
+                calculateV1Sha256(decision, false)
+        )) {
             return;
         }
 
-        // Compatibility with early V45 FREE zero before numeric(30,12) coercion.
         if (freeZeroEstimate
-                && hashMatches(persisted, calculateV1Sha256(decision, true))) {
+                && hashMatches(
+                persisted,
+                calculateV1Sha256(decision, true)
+        )) {
             return;
         }
 
-        // Compatibility with early V45 sub-microsecond Clock.instant() hashing.
-        if (matchesLegacyTimestampPrecision(decision, persisted, false)) {
+        if (matchesLegacyTimestampPrecision(
+                decision,
+                persisted,
+                false
+        )) {
             return;
         }
+
         if (freeZeroEstimate
-                && matchesLegacyTimestampPrecision(decision, persisted, true)) {
+                && matchesLegacyTimestampPrecision(
+                decision,
+                persisted,
+                true
+        )) {
             return;
         }
 
@@ -101,71 +164,144 @@ final class ModelRouteDecisionIntegrity {
     }
 
     /**
-     * V2 uses fixed field order plus length-prefixed UTF-8 values. Null is
-     * encoded as length -1, so neither newlines nor sentinel-looking strings
-     * can collide with another field distribution.
+     * Exact V46 V2 canonical representation.
+     *
+     * <p>Never add V3 fields here: persisted V2 hashes must remain byte-for-byte
+     * verifiable forever.</p>
      */
-    private static String calculateV2Sha256(ModelRouteDecision decision) {
+    private static String calculateV2Sha256(
+            ModelRouteDecision decision
+    ) {
         try {
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream(1024);
-            try (DataOutputStream out = new DataOutputStream(bytes)) {
+            ByteArrayOutputStream bytes =
+                    new ByteArrayOutputStream(1024);
+
+            try (
+                    DataOutputStream out =
+                            new DataOutputStream(bytes)
+            ) {
                 out.writeShort(V2);
-                writeValue(out, decision.id());
-                writeValue(out, decision.organizationId());
-                writeValue(out, decision.userId());
-                writeValue(out, decision.chatId());
-                writeValue(out, decision.chatTurnId());
-                writeValue(out, decision.clientRequestId());
-                writeValue(out, decision.requestContentHash());
-                writeValue(out, decision.requestedModelKey());
-                writeValue(out, decision.selectedCatalogEntryId());
-                writeValue(out, decision.selectedCatalogVersion());
-                writeValue(out, decision.selectedModelKey());
-                writeValue(out, decision.selectedProvider());
-                writeValue(out, decision.selectedProviderModelId());
-                writeValue(out, decision.policyId());
-                writeValue(out, decision.policyVersion());
-
-                String[] capabilities = decision.requiredCapabilities().stream()
-                        .map(Enum::name)
-                        .sorted()
-                        .toArray(String[]::new);
-                out.writeInt(capabilities.length);
-                for (String capability : capabilities) {
-                    writeUtf8(out, capability);
-                }
-
+                writeIdentityAndSelection(out, decision);
+                writeCapabilities(out, decision);
                 writeValue(out, decision.estimatedInputTokens());
                 writeValue(out, decision.estimatedOutputTokens());
-                writeDecimal(out, decision.estimatedMaxCostUsd());
-                writeDecimal(out, decision.monthlyBudgetUsd());
-                writeDecimal(out, decision.monthlySpentUsd());
-                writeDecimal(out, decision.monthlyProjectedUsd());
-                out.writeBoolean(decision.monthlyCostKnown());
-                writeValue(out, decision.budgetEnforcement());
-                out.writeBoolean(decision.budgetExceeded());
-                out.writeBoolean(decision.pricingComplete());
-                writeValue(out, decision.outcome());
-                writeValue(out, decision.reason());
-                writeValue(out, decision.createdAt());
+                writeFinancialAndOutcomeTail(out, decision);
             }
+
             return sha256(bytes.toByteArray());
         } catch (IOException exception) {
-            // ByteArrayOutputStream/DataOutputStream should not fail in-memory.
-            throw new IllegalStateException("Cannot build route decision canonical form", exception);
+            throw new IllegalStateException(
+                    "Cannot build V2 route decision canonical form",
+                    exception
+            );
         }
     }
 
-    /** Exact V45 canonical representation, kept only for persisted v1 rows. */
+    /**
+     * V3 extends the unambiguous V2 field ordering with exact accounting
+     * provenance before the estimated input/output values.
+     */
+    private static String calculateV3Sha256(
+            ModelRouteDecision decision
+    ) {
+        try {
+            ByteArrayOutputStream bytes =
+                    new ByteArrayOutputStream(1152);
+
+            try (
+                    DataOutputStream out =
+                            new DataOutputStream(bytes)
+            ) {
+                out.writeShort(V3);
+                writeIdentityAndSelection(out, decision);
+                writeCapabilities(out, decision);
+                writeValue(out, decision.inputAccountingVersion());
+                writeValue(out, decision.additionalInputUnitUpperBound());
+                writeValue(out, decision.estimatedInputTokens());
+                writeValue(out, decision.estimatedOutputTokens());
+                writeFinancialAndOutcomeTail(out, decision);
+            }
+
+            return sha256(bytes.toByteArray());
+        } catch (IOException exception) {
+            throw new IllegalStateException(
+                    "Cannot build V3 route decision canonical form",
+                    exception
+            );
+        }
+    }
+
+    private static void writeIdentityAndSelection(
+            DataOutputStream out,
+            ModelRouteDecision decision
+    ) throws IOException {
+        writeValue(out, decision.id());
+        writeValue(out, decision.organizationId());
+        writeValue(out, decision.userId());
+        writeValue(out, decision.chatId());
+        writeValue(out, decision.chatTurnId());
+        writeValue(out, decision.clientRequestId());
+        writeValue(out, decision.requestContentHash());
+        writeValue(out, decision.requestedModelKey());
+        writeValue(out, decision.selectedCatalogEntryId());
+        writeValue(out, decision.selectedCatalogVersion());
+        writeValue(out, decision.selectedModelKey());
+        writeValue(out, decision.selectedProvider());
+        writeValue(out, decision.selectedProviderModelId());
+        writeValue(out, decision.policyId());
+        writeValue(out, decision.policyVersion());
+    }
+
+    private static void writeCapabilities(
+            DataOutputStream out,
+            ModelRouteDecision decision
+    ) throws IOException {
+        String[] capabilities =
+                decision.requiredCapabilities()
+                        .stream()
+                        .map(Enum::name)
+                        .sorted()
+                        .toArray(String[]::new);
+
+        out.writeInt(capabilities.length);
+
+        for (String capability : capabilities) {
+            writeUtf8(out, capability);
+        }
+    }
+
+    private static void writeFinancialAndOutcomeTail(
+            DataOutputStream out,
+            ModelRouteDecision decision
+    ) throws IOException {
+        writeDecimal(out, decision.estimatedMaxCostUsd());
+        writeDecimal(out, decision.monthlyBudgetUsd());
+        writeDecimal(out, decision.monthlySpentUsd());
+        writeDecimal(out, decision.monthlyProjectedUsd());
+        out.writeBoolean(decision.monthlyCostKnown());
+        writeValue(out, decision.budgetEnforcement());
+        out.writeBoolean(decision.budgetExceeded());
+        out.writeBoolean(decision.pricingComplete());
+        writeValue(out, decision.outcome());
+        writeValue(out, decision.reason());
+        writeValue(out, decision.createdAt());
+    }
+
+    /** Exact V45 canonical representation, kept only for persisted V1 rows. */
     private static String calculateV1Sha256(
             ModelRouteDecision decision,
             boolean legacyFreeZeroEstimate
     ) {
-        String capabilities = decision.requiredCapabilities().stream()
-                .map(Enum::name)
-                .sorted()
-                .reduce((left, right) -> left + "," + right)
-                .orElse("");
+        String capabilities =
+                decision.requiredCapabilities()
+                        .stream()
+                        .map(Enum::name)
+                        .sorted()
+                        .reduce(
+                                (left, right) ->
+                                        left + "," + right
+                        )
+                        .orElse("");
 
         String canonical = String.join(
                 "\n",
@@ -206,7 +342,9 @@ final class ModelRouteDecisionIntegrity {
                 "createdAt=" + decision.createdAt()
         );
 
-        return sha256(canonical.getBytes(StandardCharsets.UTF_8));
+        return sha256(
+                canonical.getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     private static boolean matchesLegacyTimestampPrecision(
@@ -215,65 +353,115 @@ final class ModelRouteDecisionIntegrity {
             boolean legacyFreeZeroEstimate
     ) {
         Instant stored = decision.createdAt();
-        if (stored == null || stored.getNano() % 1_000 != 0) {
+
+        if (stored == null
+                || stored.getNano() % 1_000 != 0) {
             return false;
         }
 
-        for (int offsetNanos = -999; offsetNanos <= 999; offsetNanos++) {
+        for (
+                int offsetNanos = -999;
+                offsetNanos <= 999;
+                offsetNanos++
+        ) {
             if (offsetNanos == 0) {
                 continue;
             }
-            ModelRouteDecision candidate = copyWithCreatedAt(
-                    decision,
-                    stored.plusNanos(offsetNanos)
-            );
+
+            ModelRouteDecision candidate =
+                    copyWithCreatedAt(
+                            decision,
+                            stored.plusNanos(offsetNanos)
+                    );
+
             if (hashMatches(
                     persisted,
-                    calculateV1Sha256(candidate, legacyFreeZeroEstimate)
+                    calculateV1Sha256(
+                            candidate,
+                            legacyFreeZeroEstimate
+                    )
             )) {
                 return true;
             }
         }
+
         return false;
     }
 
-    private static void writeValue(DataOutputStream out, Object value) throws IOException {
-        writeUtf8(out, value == null ? null : value.toString());
+    private static void writeValue(
+            DataOutputStream out,
+            Object value
+    ) throws IOException {
+        writeUtf8(
+                out,
+                value == null
+                        ? null
+                        : value.toString()
+        );
     }
 
-    private static void writeDecimal(DataOutputStream out, BigDecimal value) throws IOException {
-        writeUtf8(out, value == null ? null : value.toPlainString());
+    private static void writeDecimal(
+            DataOutputStream out,
+            BigDecimal value
+    ) throws IOException {
+        writeUtf8(
+                out,
+                value == null
+                        ? null
+                        : value.toPlainString()
+        );
     }
 
-    private static void writeUtf8(DataOutputStream out, String value) throws IOException {
+    private static void writeUtf8(
+            DataOutputStream out,
+            String value
+    ) throws IOException {
         if (value == null) {
             out.writeInt(-1);
             return;
         }
-        byte[] encoded = value.getBytes(StandardCharsets.UTF_8);
+
+        byte[] encoded =
+                value.getBytes(StandardCharsets.UTF_8);
+
         out.writeInt(encoded.length);
         out.write(encoded);
     }
 
-    private static String sha256(byte[] value) {
+    private static String sha256(
+            byte[] value
+    ) {
         try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value);
-            return HexFormat.of().formatHex(digest);
+            return HexFormat.of()
+                    .formatHex(
+                            MessageDigest
+                                    .getInstance("SHA-256")
+                                    .digest(value)
+                    );
         } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable", exception);
+            throw new IllegalStateException(
+                    "SHA-256 is unavailable",
+                    exception
+            );
         }
     }
 
-    private static boolean hashMatches(String persisted, String calculated) {
+    private static boolean hashMatches(
+            String persisted,
+            String calculated
+    ) {
         return MessageDigest.isEqual(
                 calculated.getBytes(StandardCharsets.US_ASCII),
                 persisted.getBytes(StandardCharsets.US_ASCII)
         );
     }
 
-    private static IllegalStateException integrityFailure(ModelRouteDecision decision) {
+    private static IllegalStateException integrityFailure(
+            ModelRouteDecision decision
+    ) {
         return new IllegalStateException(
-                "Model route decision integrity check failed: " + decision.id()
+                "Model route decision integrity check failed: "
+                        + decision.id()
         );
     }
 
@@ -281,36 +469,8 @@ final class ModelRouteDecisionIntegrity {
             ModelRouteDecision decision,
             String decisionSha256
     ) {
-        return new ModelRouteDecision(
-                decision.id(),
-                decision.organizationId(),
-                decision.userId(),
-                decision.chatId(),
-                decision.chatTurnId(),
-                decision.clientRequestId(),
-                decision.requestContentHash(),
-                decision.requestedModelKey(),
-                decision.selectedCatalogEntryId(),
-                decision.selectedCatalogVersion(),
-                decision.selectedModelKey(),
-                decision.selectedProvider(),
-                decision.selectedProviderModelId(),
-                decision.policyId(),
-                decision.policyVersion(),
-                decision.requiredCapabilities(),
-                decision.estimatedInputTokens(),
-                decision.estimatedOutputTokens(),
-                decision.estimatedMaxCostUsd(),
-                decision.monthlyBudgetUsd(),
-                decision.monthlySpentUsd(),
-                decision.monthlyProjectedUsd(),
-                decision.monthlyCostKnown(),
-                decision.budgetEnforcement(),
-                decision.budgetExceeded(),
-                decision.pricingComplete(),
-                decision.outcome(),
-                decision.reason(),
-                decision.decisionIntegrityVersion(),
+        return copy(
+                decision,
                 decisionSha256,
                 decision.createdAt()
         );
@@ -318,6 +478,18 @@ final class ModelRouteDecisionIntegrity {
 
     private static ModelRouteDecision copyWithCreatedAt(
             ModelRouteDecision decision,
+            Instant createdAt
+    ) {
+        return copy(
+                decision,
+                decision.decisionSha256(),
+                createdAt
+        );
+    }
+
+    private static ModelRouteDecision copy(
+            ModelRouteDecision decision,
+            String hash,
             Instant createdAt
     ) {
         return new ModelRouteDecision(
@@ -337,6 +509,8 @@ final class ModelRouteDecisionIntegrity {
                 decision.policyId(),
                 decision.policyVersion(),
                 decision.requiredCapabilities(),
+                decision.inputAccountingVersion(),
+                decision.additionalInputUnitUpperBound(),
                 decision.estimatedInputTokens(),
                 decision.estimatedOutputTokens(),
                 decision.estimatedMaxCostUsd(),
@@ -350,16 +524,24 @@ final class ModelRouteDecisionIntegrity {
                 decision.outcome(),
                 decision.reason(),
                 decision.decisionIntegrityVersion(),
-                decision.decisionSha256(),
+                hash,
                 createdAt
         );
     }
 
-    private static String nullable(Object value) {
-        return value == null ? "<null>" : value.toString();
+    private static String nullable(
+            Object value
+    ) {
+        return value == null
+                ? "<null>"
+                : value.toString();
     }
 
-    private static String decimal(BigDecimal value) {
-        return value == null ? "<null>" : value.toPlainString();
+    private static String decimal(
+            BigDecimal value
+    ) {
+        return value == null
+                ? "<null>"
+                : value.toPlainString();
     }
 }

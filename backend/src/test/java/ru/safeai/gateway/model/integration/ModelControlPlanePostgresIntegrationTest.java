@@ -35,6 +35,7 @@ import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
+import ru.safeai.gateway.model.repository.ModelRouteRequestMutexRepository;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 import ru.safeai.gateway.model.service.ModelCatalogService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
@@ -87,6 +88,7 @@ class ModelControlPlanePostgresIntegrationTest {
     private ModelCatalogRepository catalogRepository;
     private OrganizationModelPolicyRepository policyRepository;
     private ModelRouteDecisionRepository decisionRepository;
+    private ModelRouteRequestMutexRepository requestMutexRepository;
 
     @BeforeAll
     static void migrateSchema() {
@@ -208,6 +210,11 @@ class ModelControlPlanePostgresIntegrationTest {
 
         decisionRepository =
                 new ModelRouteDecisionRepository(
+                        jdbc
+                );
+
+        requestMutexRepository =
+                new ModelRouteRequestMutexRepository(
                         jdbc
                 );
     }
@@ -1140,6 +1147,7 @@ class ModelControlPlanePostgresIntegrationTest {
                 catalogRepository,
                 policyRepository,
                 decisionRepository,
+                requestMutexRepository,
                 runtimeStatus,
                 mock(
                         AuditEventService.class

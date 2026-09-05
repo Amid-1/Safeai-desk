@@ -32,6 +32,7 @@ import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentPageResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentResponse;
 import ru.safeai.gateway.knowledge.model.KnowledgeBaseVisibility;
 import ru.safeai.gateway.knowledge.model.KnowledgeIngestionStatus;
+import ru.safeai.gateway.knowledge.service.KnowledgeAccessService;
 import ru.safeai.gateway.knowledge.service.KnowledgeBaseService;
 import ru.safeai.gateway.knowledge.service.KnowledgeDocumentService;
 import ru.safeai.gateway.knowledge.service.KnowledgeOperationsService;
@@ -108,6 +109,16 @@ class KnowledgeControllerSecurityTest {
 
     @MockitoBean
     private KnowledgeBaseService knowledgeBaseService;
+
+    /**
+     * Constructor collaborator of the current KnowledgeBaseController.
+     *
+     * <p>This remains a mock intentionally: this is a WebMvc slice test.
+     * Authorization behavior exercised here is controller/method-security
+     * behavior; KnowledgeAccessService itself is covered by its service tests.</p>
+     */
+    @MockitoBean
+    private KnowledgeAccessService knowledgeAccessService;
 
     @MockitoBean
     private KnowledgeDocumentService knowledgeDocumentService;

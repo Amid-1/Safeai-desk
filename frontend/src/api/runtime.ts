@@ -1,4 +1,4 @@
-import { ApiError } from './http'
+import { ApiError } from './httpErrors'
 import type { PageResponse } from '../utils/page'
 
 const UUID_PATTERN =

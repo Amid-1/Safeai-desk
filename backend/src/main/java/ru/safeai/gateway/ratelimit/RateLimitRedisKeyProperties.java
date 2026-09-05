@@ -38,6 +38,16 @@ public record RateLimitRedisKeyProperties(
         keyVersion = normalizeKeyVersion(keyVersion);
     }
 
+    @Override
+    @SuppressWarnings("NullableProblems")
+    public String toString() {
+        return "RateLimitRedisKeyProperties["
+                + "keyPrefix=" + keyPrefix
+                + ", hmacSecret=<redacted>"
+                + ", keyVersion=" + keyVersion
+                + "]";
+    }
+
     private static String normalizeKeyPrefix(
             String rawPrefix
     ) {

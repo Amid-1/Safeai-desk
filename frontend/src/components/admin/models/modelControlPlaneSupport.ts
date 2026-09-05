@@ -480,7 +480,7 @@ export function parseModelKeyList(
     value: string,
 ): string[] {
     const keys = value
-        .split(/[\s,;]+/)
+        .split(/[\n\r,;]+/)
         .map((item) => item.trim())
         .filter(Boolean)
         .map(normalizeModelKey)
@@ -753,4 +753,3 @@ export function isZeroOrNull(
     return value === null
         || decimalToScale12(value) === 0n
 }
-

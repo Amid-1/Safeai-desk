@@ -8,19 +8,53 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Shared conservative input-unit estimator for governance and materialization.
+ * Canonical deterministic governance accounting for the current text data plane.
  *
- * <p>The unit is UTF-8 bytes plus a small per-message framing allowance. This
- * is deliberately tokenizer-independent and conservative. Any component that
- * reserves or materializes provider input must use this same representation;
- * char/code-point heuristics must not be used as a governance boundary.</p>
+ * <p>Input units are intentionally not called provider tokens. The estimator
+ * accounts UTF-8 payload bytes plus conservative structural allowances. Model
+ * routing, RAG fitting and the final pre-provider guard must all call this
+ * implementation, so there is only one accounting semantic.</p>
+ *
+ * <p>When tools, multimodal input or structured-output schemas become part of
+ * the provider request, extend this estimator and advance {@link #VERSION}
+ * before enabling the corresponding execution capability.</p>
  */
 public final class AiInputUnitEstimator {
 
-    public static final long MESSAGE_OVERHEAD_UNITS =
-            8L;
+    public static final String VERSION =
+            "UTF8_STRUCTURAL_UNITS_V2";
+
+    private static final long REQUEST_STRUCTURAL_OVERHEAD_UNITS = 256L;
+    private static final long MESSAGE_STRUCTURAL_OVERHEAD_UNITS = 64L;
 
     private AiInputUnitEstimator() {
+    }
+
+    public static long estimateBaseRequest(
+            String userMessage,
+            List<AiMessage> history
+    ) {
+        Objects.requireNonNull(
+                userMessage,
+                "userMessage не должен быть null"
+        );
+
+        List<AiMessage> safeHistory = history == null
+                ? List.of()
+                : history;
+
+        long total = REQUEST_STRUCTURAL_OVERHEAD_UNITS;
+        total = addMessage(total, userMessage);
+
+        for (AiMessage message : safeHistory) {
+            Objects.requireNonNull(
+                    message,
+                    "history не должен содержать null"
+            );
+            total = addMessage(total, message.content());
+        }
+
+        return total;
     }
 
     public static long estimatePreparedRequest(
@@ -31,88 +65,46 @@ public final class AiInputUnitEstimator {
                 "request не должен быть null"
         );
 
-        long total =
-                estimateTextMessage(
-                        request.userMessage()
-                );
-
-        if (request.systemInstructions()
-                != null) {
-            total =
-                    Math.addExact(
-                            total,
-                            estimateTextMessage(
-                                    request.systemInstructions()
-                            )
-                    );
-        }
-
-        if (request.developerInstructions()
-                != null) {
-            total =
-                    Math.addExact(
-                            total,
-                            estimateTextMessage(
-                                    request.developerInstructions()
-                            )
-                    );
-        }
-
-        return Math.addExact(
-                total,
-                estimateHistory(
-                        request.history()
-                )
-        );
-    }
-
-    public static long estimateHistory(
-            List<AiMessage> history
-    ) {
-        Objects.requireNonNull(
-                history,
-                "history не должен быть null"
+        long total = estimateBaseRequest(
+                request.userMessage(),
+                request.history()
         );
 
-        long total =
-                0L;
-
-        for (AiMessage message : history) {
-            Objects.requireNonNull(
-                    message,
-                    "history не должен содержать null"
+        if (request.systemInstructions() != null) {
+            total = addMessage(
+                    total,
+                    request.systemInstructions()
             );
+        }
 
-            total =
-                    Math.addExact(
-                            total,
-                            estimateTextMessage(
-                                    message.content()
-                            )
-                    );
+        if (request.developerInstructions() != null) {
+            total = addMessage(
+                    total,
+                    request.developerInstructions()
+            );
         }
 
         return total;
     }
 
-    public static long utf8Length(
+    private static long addMessage(
+            long current,
+            String content
+    ) {
+        return Math.addExact(
+                current,
+                Math.addExact(
+                        utf8Length(content),
+                        MESSAGE_STRUCTURAL_OVERHEAD_UNITS
+                )
+        );
+    }
+
+    private static long utf8Length(
             String value
     ) {
         return value == null
                 ? 0L
-                : value.getBytes(
-                        StandardCharsets.UTF_8
-                ).length;
-    }
-
-    private static long estimateTextMessage(
-            String value
-    ) {
-        return Math.addExact(
-                utf8Length(
-                        value
-                ),
-                MESSAGE_OVERHEAD_UNITS
-        );
+                : value.getBytes(StandardCharsets.UTF_8).length;
     }
 }

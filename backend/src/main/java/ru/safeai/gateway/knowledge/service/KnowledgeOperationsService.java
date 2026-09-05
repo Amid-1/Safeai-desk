@@ -13,6 +13,8 @@ import ru.safeai.gateway.knowledge.dto.KnowledgeReindexResponse;
 import ru.safeai.gateway.knowledge.embedding.KnowledgeEmbeddingProvider;
 import ru.safeai.gateway.knowledge.entity.KnowledgeDocumentEntity;
 import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
+import ru.safeai.gateway.knowledge.model.KnowledgeHealthState;
+import ru.safeai.gateway.knowledge.model.KnowledgeIngestionStatus;
 import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentRepository;
 
 import java.sql.ResultSet;
@@ -252,7 +254,7 @@ public class KnowledgeOperationsService {
             );
         }
 
-        String state =
+        KnowledgeHealthState state =
                 resolveState(
                         access,
                         counts
@@ -388,37 +390,37 @@ public class KnowledgeOperationsService {
                 documentId,
                 document.getCurrentVersionId(),
                 job.id(),
-                "PENDING",
+                KnowledgeIngestionStatus.PENDING,
                 now
         );
     }
 
-    private static String resolveState(
+    private static KnowledgeHealthState resolveState(
             KnowledgeAccessService.Access access,
             Counts counts
     ) {
         if (!access.knowledgeBase().isEnabled()) {
-            return "DISABLED";
+            return KnowledgeHealthState.DISABLED;
         }
 
         if (counts.totalDocuments() == 0) {
-            return "EMPTY";
+            return KnowledgeHealthState.EMPTY;
         }
 
         if (counts.failedDocuments() > 0
                 || counts.staleEmbeddingDocuments() > 0) {
-            return "DEGRADED";
+            return KnowledgeHealthState.DEGRADED;
         }
 
         if (counts.pendingDocuments() > 0
                 || counts.processingDocuments() > 0) {
-            return "INDEXING";
+            return KnowledgeHealthState.INDEXING;
         }
 
         return counts.searchableDocuments()
                 == counts.enabledDocuments()
-                ? "HEALTHY"
-                : "INDEXING";
+                ? KnowledgeHealthState.HEALTHY
+                : KnowledgeHealthState.INDEXING;
     }
 
     private Counts mapCounts(

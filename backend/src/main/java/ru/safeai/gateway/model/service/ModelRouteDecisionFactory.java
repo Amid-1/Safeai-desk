@@ -1,5 +1,6 @@
 package ru.safeai.gateway.model.service;
 
+import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
@@ -17,7 +18,7 @@ import java.util.UUID;
 
 final class ModelRouteDecisionFactory {
 
-    private static final short CURRENT_INTEGRITY_VERSION = 2;
+    private static final short CURRENT_INTEGRITY_VERSION = 3;
 
     ModelRouteDecision buildDecision(
             ModelRouteRequest request,
@@ -52,44 +53,59 @@ final class ModelRouteDecisionFactory {
                 budget.monthlyProjectedUsd(),
                 "monthlyProjectedUsd"
         );
-        Instant createdAt =
-                ModelRouteDecisionIntegrity.normalizeDatabaseTimestamp(now);
 
-        ModelRouteDecision unsealed = new ModelRouteDecision(
-                UUID.randomUUID(),
-                request.organizationId(),
-                request.userId(),
-                request.chatId(),
-                chatTurnId,
-                request.clientRequestId(),
-                request.requestContentHash(),
-                ModelRoutingSelectionPolicy.normalizeNullableKey(
-                        request.requestedModelKey()
-                ),
-                draft.entry() == null ? null : draft.entry().id(),
-                draft.entry() == null ? null : draft.entry().version(),
-                draft.selectedModelKey(),
-                draft.provider(),
-                draft.providerModelId(),
-                policy == null ? null : policy.id(),
-                policy == null ? null : policy.version(),
-                request.requiredCapabilities(),
-                draft.estimatedInputTokens(),
-                draft.estimatedOutputTokens(),
-                estimatedCost,
-                monthlyBudgetUsd,
-                monthlySpentUsd,
-                monthlyProjectedUsd,
-                budget.monthlyCostKnown(),
-                policy == null ? null : policy.budgetEnforcement(),
-                budget.exceeded(),
-                draft.pricingComplete(),
-                draft.outcome(),
-                draft.reason(),
-                CURRENT_INTEGRITY_VERSION,
-                "",
-                createdAt
-        );
+        Instant createdAt =
+                ModelRouteDecisionIntegrity
+                        .normalizeDatabaseTimestamp(now);
+
+        ModelRouteDecision unsealed =
+                new ModelRouteDecision(
+                        UUID.randomUUID(),
+                        request.organizationId(),
+                        request.userId(),
+                        request.chatId(),
+                        chatTurnId,
+                        request.clientRequestId(),
+                        request.requestContentHash(),
+                        ModelRoutingSelectionPolicy.normalizeNullableKey(
+                                request.requestedModelKey()
+                        ),
+                        draft.entry() == null
+                                ? null
+                                : draft.entry().id(),
+                        draft.entry() == null
+                                ? null
+                                : draft.entry().version(),
+                        draft.selectedModelKey(),
+                        draft.provider(),
+                        draft.providerModelId(),
+                        policy == null
+                                ? null
+                                : policy.id(),
+                        policy == null
+                                ? null
+                                : policy.version(),
+                        request.requiredCapabilities(),
+                        AiInputUnitEstimator.VERSION,
+                        request.additionalInputUnitUpperBound(),
+                        draft.estimatedInputTokens(),
+                        draft.estimatedOutputTokens(),
+                        estimatedCost,
+                        monthlyBudgetUsd,
+                        monthlySpentUsd,
+                        monthlyProjectedUsd,
+                        budget.monthlyCostKnown(),
+                        policy == null
+                                ? null
+                                : policy.budgetEnforcement(),
+                        budget.exceeded(),
+                        draft.pricingComplete(),
+                        draft.outcome(),
+                        draft.reason(),
+                        CURRENT_INTEGRITY_VERSION,
+                        "",
+                        createdAt
+                );
 
         return ModelRouteDecisionIntegrity.seal(unsealed);
     }
@@ -100,6 +116,7 @@ final class ModelRouteDecisionFactory {
     ) {
         Objects.requireNonNull(decision, "decision не должен быть null");
         Objects.requireNonNull(request, "request не должен быть null");
+
         ModelRouteDecisionIntegrity.requireValid(decision);
 
         String normalizedRequestedModelKey =
@@ -111,33 +128,48 @@ final class ModelRouteDecisionFactory {
                 decision.organizationId().equals(request.organizationId())
                         && decision.userId().equals(request.userId())
                         && decision.chatId().equals(request.chatId())
-                        && decision.clientRequestId().equals(request.clientRequestId())
-                        && decision.requestContentHash().equals(request.requestContentHash())
+                        && decision.clientRequestId()
+                        .equals(request.clientRequestId())
+                        && decision.requestContentHash()
+                        .equals(request.requestContentHash())
                         && Objects.equals(
-                                decision.requestedModelKey(),
-                                normalizedRequestedModelKey
-                        )
-                        && decision.requiredCapabilities().equals(
-                                request.requiredCapabilities()
-                        );
+                        decision.requestedModelKey(),
+                        normalizedRequestedModelKey
+                )
+                        && decision.requiredCapabilities()
+                        .equals(request.requiredCapabilities());
 
         if (!sameRequestIdentity) {
             throw new ConflictException(
-                    "clientRequestId уже использован для другого model route request"
+                    "clientRequestId уже использован "
+                            + "для другого model route request"
             );
         }
+
+        /*
+         * Do not compare current server envelope/accounting configuration here.
+         * A legitimate retry replays immutable original evidence even if server
+         * configuration changed after the first committed request.
+         */
 
         if (decision.outcome() == ModelRouteOutcome.DENIED) {
             throw new ModelRouteDeniedException(
                     decision.id(),
                     decision.reason(),
-                    publicDenialMessage(decision.reason(), decision.id())
+                    publicDenialMessage(
+                            decision.reason(),
+                            decision.id()
+                    )
             );
         }
 
-        if (!Objects.equals(decision.chatTurnId(), request.plannedTurnId())) {
+        if (!Objects.equals(
+                decision.chatTurnId(),
+                request.plannedTurnId()
+        )) {
             throw new IllegalStateException(
-                    "ALLOWED model route decision имеет другой planned ChatTurn identity"
+                    "ALLOWED model route decision имеет "
+                            + "другой planned ChatTurn identity"
             );
         }
 
@@ -151,7 +183,8 @@ final class ModelRouteDecisionFactory {
 
         if (decision.outcome() != ModelRouteOutcome.ALLOWED) {
             throw new IllegalArgumentException(
-                    "ModelRouteResult можно построить только из ALLOWED decision"
+                    "ModelRouteResult можно построить "
+                            + "только из ALLOWED decision"
             );
         }
 

@@ -46,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -57,15 +58,25 @@ import static org.mockito.Mockito.when;
 class ChatTurnReservationServiceTest {
 
     private static final UUID MODEL_ROUTE_DECISION_ID =
-            UUID.fromString("77777777-7777-4777-8777-777777777777");
+            UUID.fromString(
+                    "77777777-7777-4777-8777-777777777777"
+            );
 
     private static final UUID MODEL_CATALOG_ENTRY_ID =
-            UUID.fromString("88888888-8888-4888-8888-888888888888");
+            UUID.fromString(
+                    "88888888-8888-4888-8888-888888888888"
+            );
 
     private static final UUID MODEL_POLICY_ID =
-            UUID.fromString("99999999-9999-4999-8999-999999999999");
+            UUID.fromString(
+                    "99999999-9999-4999-8999-999999999999"
+            );
 
-    private static final long ROUTING_ENVELOPE_TOKENS =
+    /**
+     * V48 governance accounting uses input units rather than claiming these
+     * values are exact provider tokens.
+     */
+    private static final long ROUTING_ENVELOPE_INPUT_UNITS =
             4_096L;
 
     @Mock
@@ -110,16 +121,19 @@ class ChatTurnReservationServiceTest {
 
     @BeforeEach
     void setUp() {
-        properties = new ChatProperties(
-                50,
-                50,
-                100,
-                100,
-                16_000,
-                Duration.ofMinutes(3),
-                4,
-                1000
-        );
+        properties =
+                new ChatProperties(
+                        50,
+                        50,
+                        100,
+                        100,
+                        16_000,
+                        Duration.ofMinutes(
+                                3
+                        ),
+                        4,
+                        1000
+                );
 
         normalizer =
                 new ChatContentNormalizer(
@@ -163,21 +177,27 @@ class ChatTurnReservationServiceTest {
                         ChatTestFixtures.CLIENT_REQUEST_ID
                 )
         ).thenReturn(
-                Optional.of(turn)
+                Optional.of(
+                        turn
+                )
         );
 
         ChatProcessingContext result =
                 service.reserveOrReplay(
                         ChatTestFixtures.CHAT_ID,
-                        request("Hello"),
+                        request(
+                                "Hello"
+                        ),
                         ChatTestFixtures.principal()
                 );
 
-        assertThat(result.replay())
-                .isTrue();
+        assertThat(
+                result.replay()
+        ).isTrue();
 
-        assertThat(result.aiRequest())
-                .isNull();
+        assertThat(
+                result.aiRequest()
+        ).isNull();
 
         verifyNoInteractions(
                 rateLimitService,
@@ -187,15 +207,18 @@ class ChatTurnReservationServiceTest {
                 modelRoutingService
         );
 
-        verify(metrics)
-                .recordReplay(
-                        ChatTurnState.SUCCEEDED
-                );
+        verify(
+                metrics
+        ).recordReplay(
+                ChatTurnState.SUCCEEDED
+        );
 
         verify(
                 messageRepository,
                 never()
-        ).saveAndFlush(any());
+        ).saveAndFlush(
+                any()
+        );
     }
 
     @Test
@@ -214,14 +237,18 @@ class ChatTurnReservationServiceTest {
                         ChatTestFixtures.CLIENT_REQUEST_ID
                 )
         ).thenReturn(
-                Optional.of(turn)
+                Optional.of(
+                        turn
+                )
         );
 
         assertThatThrownBy(
                 () ->
                         service.reserveOrReplay(
                                 ChatTestFixtures.CHAT_ID,
-                                request("second"),
+                                request(
+                                        "second"
+                                ),
                                 ChatTestFixtures.principal()
                         )
         )
@@ -260,21 +287,27 @@ class ChatTurnReservationServiceTest {
                         ChatTestFixtures.CLIENT_REQUEST_ID
                 )
         ).thenReturn(
-                Optional.of(turn)
+                Optional.of(
+                        turn
+                )
         );
 
         assertThatThrownBy(
                 () ->
                         service.reserveOrReplay(
                                 ChatTestFixtures.CHAT_ID,
-                                request("Hello"),
+                                request(
+                                        "Hello"
+                                ),
                                 ChatTestFixtures.principal()
                         )
         )
                 .isInstanceOf(
                         ChatTurnFailedException.class
                 )
-                .extracting("code")
+                .extracting(
+                        "code"
+                )
                 .isEqualTo(
                         "AI_PROVIDER_INVALID_REQUEST"
                 );
@@ -309,14 +342,18 @@ class ChatTurnReservationServiceTest {
                         ChatTestFixtures.CLIENT_REQUEST_ID
                 )
         ).thenReturn(
-                Optional.of(turn)
+                Optional.of(
+                        turn
+                )
         );
 
         assertThatThrownBy(
                 () ->
                         service.reserveOrReplay(
                                 ChatTestFixtures.CHAT_ID,
-                                request("Hello"),
+                                request(
+                                        "Hello"
+                                ),
                                 ChatTestFixtures.principal()
                         )
         )
@@ -370,21 +407,27 @@ class ChatTurnReservationServiceTest {
                         ChatTestFixtures.CLIENT_REQUEST_ID
                 )
         ).thenReturn(
-                Optional.of(turn)
+                Optional.of(
+                        turn
+                )
         );
 
         assertThatThrownBy(
                 () ->
                         service.reserveOrReplay(
                                 ChatTestFixtures.CHAT_ID,
-                                request("Hello"),
+                                request(
+                                        "Hello"
+                                ),
                                 ChatTestFixtures.principal()
                         )
         )
                 .isInstanceOf(
                         ChatTurnFailedException.class
                 )
-                .extracting("code")
+                .extracting(
+                        "code"
+                )
                 .isEqualTo(
                         "STALE_BEFORE_PROVIDER_CALL"
                 );
@@ -432,14 +475,18 @@ class ChatTurnReservationServiceTest {
                         ChatTestFixtures.CLIENT_REQUEST_ID
                 )
         ).thenReturn(
-                Optional.of(turn)
+                Optional.of(
+                        turn
+                )
         );
 
         assertThatThrownBy(
                 () ->
                         service.reserveOrReplay(
                                 ChatTestFixtures.CHAT_ID,
-                                request("Hello"),
+                                request(
+                                        "Hello"
+                                ),
                                 ChatTestFixtures.principal()
                         )
         ).isInstanceOf(
@@ -485,8 +532,9 @@ class ChatTurnReservationServiceTest {
                 turnCaptor.capture()
         );
 
-        verify(metrics)
-                .recordReservedAfterCommit();
+        verify(
+                metrics
+        ).recordReservedAfterCommit();
 
         ChatTurnEntity persisted =
                 turnCaptor.getValue();
@@ -519,9 +567,13 @@ class ChatTurnReservationServiceTest {
                 MODEL_ROUTE_DECISION_ID
         );
 
+        /*
+         * V48 source field is still named reservedInputTokens for compatibility,
+         * but new code must use the input-unit accessor.
+         */
         assertThat(
                 result.aiRequest()
-                        .reservedInputTokens()
+                        .reservedInputUnits()
         ).isEqualTo(
                 64L
         );
@@ -559,7 +611,9 @@ class ChatTurnReservationServiceTest {
         ChatProcessingContext result =
                 service.reserveOrReplay(
                         ChatTestFixtures.CHAT_ID,
-                        request("Hello"),
+                        request(
+                                "Hello"
+                        ),
                         ChatTestFixtures.principal()
                 );
 
@@ -582,16 +636,22 @@ class ChatTurnReservationServiceTest {
 
         order.verify(
                 routingEnvelopeService
-        ).additionalInputTokenUpperBound(
-                eq(false),
-                any()
+        ).additionalInputUnitUpperBound(
+                eq(
+                        false
+                ),
+                anySet()
         );
 
         order.verify(
                 modelRoutingService
         ).decide(
-                any(ModelRouteRequest.class),
-                any(SafeAiUserPrincipal.class)
+                any(
+                        ModelRouteRequest.class
+                ),
+                any(
+                        SafeAiUserPrincipal.class
+                )
         );
 
         order.verify(
@@ -682,7 +742,9 @@ class ChatTurnReservationServiceTest {
                 () ->
                         service.reserveOrReplay(
                                 ChatTestFixtures.CHAT_ID,
-                                request("Hello"),
+                                request(
+                                        "Hello"
+                                ),
                                 ChatTestFixtures.principal()
                         )
         )
@@ -750,7 +812,9 @@ class ChatTurnReservationServiceTest {
                 () ->
                         service.reserveOrReplay(
                                 ChatTestFixtures.CHAT_ID,
-                                request("Hello"),
+                                request(
+                                        "Hello"
+                                ),
                                 ChatTestFixtures.principal()
                         )
         ).isInstanceOf(
@@ -767,8 +831,12 @@ class ChatTurnReservationServiceTest {
         verify(
                 modelRoutingService
         ).decide(
-                any(ModelRouteRequest.class),
-                any(SafeAiUserPrincipal.class)
+                any(
+                        ModelRouteRequest.class
+                ),
+                any(
+                        SafeAiUserPrincipal.class
+                )
         );
     }
 
@@ -807,14 +875,18 @@ class ChatTurnReservationServiceTest {
                         ChatTurnState.PROCESSING
                 )
         ).thenReturn(
-                Optional.of(active)
+                Optional.of(
+                        active
+                )
         );
 
         assertThatThrownBy(
                 () ->
                         service.reserveOrReplay(
                                 ChatTestFixtures.CHAT_ID,
-                                request("Hello"),
+                                request(
+                                        "Hello"
+                                ),
                                 ChatTestFixtures.principal()
                         )
         ).isInstanceOf(
@@ -890,12 +962,12 @@ class ChatTurnReservationServiceTest {
         );
 
         when(
-                routingEnvelopeService.additionalInputTokenUpperBound(
+                routingEnvelopeService.additionalInputUnitUpperBound(
                         anyBoolean(),
-                        any()
+                        anySet()
                 )
         ).thenReturn(
-                ROUTING_ENVELOPE_TOKENS
+                ROUTING_ENVELOPE_INPUT_UNITS
         );
 
         when(
@@ -989,10 +1061,8 @@ class ChatTurnReservationServiceTest {
                 state
         );
 
-        if (
-                state
-                        != ChatTurnState.PROCESSING
-        ) {
+        if (state
+                != ChatTurnState.PROCESSING) {
             turn.setProcessingToken(
                     null
             );
@@ -1006,10 +1076,8 @@ class ChatTurnReservationServiceTest {
             );
         }
 
-        if (
-                state
-                        == ChatTurnState.SUCCEEDED
-        ) {
+        if (state
+                == ChatTurnState.SUCCEEDED) {
             turn.setAssistantMessageId(
                     ChatTestFixtures.ASSISTANT_MESSAGE_ID
             );
@@ -1021,10 +1089,8 @@ class ChatTurnReservationServiceTest {
             );
         }
 
-        if (
-                state
-                        == ChatTurnState.AMBIGUOUS
-        ) {
+        if (state
+                == ChatTurnState.AMBIGUOUS) {
             turn.setOutcomeAmbiguous(
                     true
             );

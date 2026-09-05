@@ -21,74 +21,52 @@ public record ModelRouteRequest(
         String userMessage,
         List<AiMessage> history,
         Set<ModelCapability> requiredCapabilities,
-        long additionalInputTokenUpperBound
+        long additionalInputUnitUpperBound
 ) {
-
     public ModelRouteRequest {
         Objects.requireNonNull(
                 organizationId,
                 "organizationId не должен быть null"
         );
-
-        Objects.requireNonNull(
-                userId,
-                "userId не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                chatId,
-                "chatId не должен быть null"
-        );
-
+        Objects.requireNonNull(userId, "userId не должен быть null");
+        Objects.requireNonNull(chatId, "chatId не должен быть null");
         Objects.requireNonNull(
                 plannedTurnId,
                 "plannedTurnId не должен быть null"
         );
-
         Objects.requireNonNull(
                 clientRequestId,
                 "clientRequestId не должен быть null"
         );
-
         Objects.requireNonNull(
                 requestContentHash,
                 "requestContentHash не должен быть null"
         );
-
         Objects.requireNonNull(
                 userMessage,
                 "userMessage не должен быть null"
         );
 
-        if (additionalInputTokenUpperBound < 0L) {
+        if (additionalInputUnitUpperBound < 0L) {
             throw new IllegalArgumentException(
-                    "additionalInputTokenUpperBound не может быть отрицательным"
+                    "additionalInputUnitUpperBound не может быть отрицательным"
             );
         }
 
-        history =
-                history == null
-                        ? List.of()
-                        : List.copyOf(history);
+        history = history == null
+                ? List.of()
+                : List.copyOf(history);
 
         if (requiredCapabilities == null
                 || requiredCapabilities.isEmpty()) {
-            requiredCapabilities =
-                    Set.of();
+            requiredCapabilities = Set.of();
         } else {
             EnumSet<ModelCapability> copy =
-                    EnumSet.noneOf(
-                            ModelCapability.class
-                    );
-
-            copy.addAll(
-                    requiredCapabilities
-            );
-
+                    EnumSet.noneOf(ModelCapability.class);
+            copy.addAll(requiredCapabilities);
             requiredCapabilities =
-                    Collections.unmodifiableSet(
-                            copy
-                    );
+                    Collections.unmodifiableSet(copy);
         }
     }
+
 }

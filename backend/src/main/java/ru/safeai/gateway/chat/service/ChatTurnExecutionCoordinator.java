@@ -282,33 +282,32 @@ final class ChatTurnExecutionCoordinator {
                     context.modelRouteDecisionId();
 
             if (decisionId == null) {
-                /*
-                 * Compatibility for legacy/direct coordinator tests. Real V46
-                 * reserved turns carry a persisted model-route decision id.
-                 */
-                ModelRouteExecutionGuard
-                        .assertWithinReservedInputEnvelope(
-                                reservedRequest,
-                                preparedRequest
-                        );
-            } else {
-                ModelRouteExecutionGuard
-                        .assertWithinReservedInputEnvelope(
-                                decisionId,
-                                reservedRequest,
-                                preparedRequest
-                        );
+                throw new IllegalStateException(
+                        "Governed ChatTurn has no modelRouteDecisionId: "
+                                + "chatId="
+                                + context.chatId()
+                                + ", turnId="
+                                + context.turnId()
+                );
             }
+
+            ModelRouteExecutionGuard
+                    .assertWithinReservedInputEnvelope(
+                            decisionId,
+                            reservedRequest,
+                            preparedRequest
+                    );
+
         } catch (ModelRouteEnvelopeExceededException exception) {
             log.warn(
                     "Model route input envelope exceeded before provider call: "
                             + "chatId={}, turnId={}, decisionId={}, "
-                            + "reservedInputTokens={}, actualEstimatedInputTokens={}",
+                            + "reservedInputUnits={}, actualEstimatedInputUnits={}",
                     context.chatId(),
                     context.turnId(),
                     exception.decisionId(),
-                    exception.reservedInputTokens(),
-                    exception.actualEstimatedInputTokens()
+                    exception.reservedInputUnits(),
+                    exception.actualEstimatedInputUnits()
             );
 
             failRouteEnvelope(
@@ -316,9 +315,11 @@ final class ChatTurnExecutionCoordinator {
                     currentUser,
                     exception
             );
+
         } catch (IllegalStateException exception) {
             log.warn(
-                    "Model route execution envelope integrity violation before provider call: "
+                    "Model route execution envelope integrity violation "
+                            + "before provider call: "
                             + "chatId={}, turnId={}, decisionId={}, error={}",
                     context.chatId(),
                     context.turnId(),

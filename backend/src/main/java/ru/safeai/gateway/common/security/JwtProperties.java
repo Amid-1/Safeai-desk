@@ -29,6 +29,7 @@ public record JwtProperties(
         String activeKeyId,
         List<KeyEntry> keys
 ) {
+
     private static final long MAX_EXPIRATION_MINUTES = 60;
 
     private static final Pattern KEY_ID_PATTERN =
@@ -52,17 +53,19 @@ public record JwtProperties(
             );
         }
 
-        String normalizedIssuer = validateIssuer(
-                requireText(
-                        issuer,
-                        "JWT issuer не задан. Укажите app.security.jwt.issuer"
-                )
-        );
+        String normalizedIssuer =
+                validateIssuer(
+                        requireText(
+                                issuer,
+                                "JWT issuer не задан. Укажите app.security.jwt.issuer"
+                        )
+                );
 
-        String normalizedAudience = requireText(
-                audience,
-                "JWT audience не задан. Укажите app.security.jwt.audience"
-        );
+        String normalizedAudience =
+                requireText(
+                        audience,
+                        "JWT audience не задан. Укажите app.security.jwt.audience"
+                );
 
         if (normalizedAudience.length() > 255) {
             throw new IllegalStateException(
@@ -70,20 +73,34 @@ public record JwtProperties(
             );
         }
 
-        String normalizedActiveKeyId = requireKeyId(
-                activeKeyId,
-                "app.security.jwt.active-key-id"
-        );
+        String normalizedActiveKeyId =
+                requireKeyId(
+                        activeKeyId,
+                        "app.security.jwt.active-key-id"
+                );
 
-        List<KeyEntry> normalizedKeys = normalizeKeys(keys);
+        List<KeyEntry> normalizedKeys =
+                normalizeKeys(
+                        keys
+                );
 
-        KeyEntry activeKey = normalizedKeys.stream()
-                .filter(key -> key.id().equals(normalizedActiveKeyId))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                        "Активный JWT key id не найден в app.security.jwt.keys: "
-                                + normalizedActiveKeyId
-                ));
+        KeyEntry activeKey =
+                normalizedKeys.stream()
+                        .filter(
+                                key ->
+                                        key.id().equals(
+                                                normalizedActiveKeyId
+                                        )
+                        )
+                        .findFirst()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Активный JWT key id не найден "
+                                                        + "в app.security.jwt.keys: "
+                                                        + normalizedActiveKeyId
+                                        )
+                        );
 
         if (activeKey.privateKey() == null
                 || activeKey.privateKey().isBlank()) {
@@ -93,24 +110,60 @@ public record JwtProperties(
             );
         }
 
-        this.expirationMinutes = expirationMinutes;
-        this.issuer = normalizedIssuer;
-        this.audience = normalizedAudience;
-        this.activeKeyId = normalizedActiveKeyId;
-        this.keys = normalizedKeys;
+        this.expirationMinutes =
+                expirationMinutes;
+
+        this.issuer =
+                normalizedIssuer;
+
+        this.audience =
+                normalizedAudience;
+
+        this.activeKeyId =
+                normalizedActiveKeyId;
+
+        this.keys =
+                normalizedKeys;
+    }
+
+    /**
+     * RSA key material must never be exposed through the record-generated
+     * toString().
+     */
+    @Override
+    public String toString() {
+        return "JwtProperties["
+                + "expirationMinutes="
+                + expirationMinutes
+                + ", issuer="
+                + issuer
+                + ", audience="
+                + audience
+                + ", activeKeyId="
+                + activeKeyId
+                + ", keys=<redacted:"
+                + keys.size()
+                + ">"
+                + "]";
     }
 
     private static List<KeyEntry> normalizeKeys(
             List<KeyEntry> source
     ) {
-        if (source == null || source.isEmpty()) {
+        if (source == null
+                || source.isEmpty()) {
             throw new IllegalStateException(
                     "app.security.jwt.keys должен содержать хотя бы один RSA key"
             );
         }
 
-        List<KeyEntry> result = new ArrayList<>(source.size());
-        Set<String> ids = new HashSet<>();
+        List<KeyEntry> result =
+                new ArrayList<>(
+                        source.size()
+                );
+
+        Set<String> ids =
+                new HashSet<>();
 
         for (KeyEntry key : source) {
             if (key == null) {
@@ -119,27 +172,47 @@ public record JwtProperties(
                 );
             }
 
-            if (!ids.add(key.id())) {
+            if (!ids.add(
+                    key.id()
+            )) {
                 throw new IllegalStateException(
-                        "Повторяющийся JWT key id: " + key.id()
+                        "Повторяющийся JWT key id: "
+                                + key.id()
                 );
             }
 
-            result.add(key);
+            result.add(
+                    key
+            );
         }
 
-        return List.copyOf(result);
+        return List.copyOf(
+                result
+        );
     }
 
-    private static String validateIssuer(String value) {
+    private static String validateIssuer(
+            String value
+    ) {
         try {
-            URI uri = new URI(value);
+            URI uri =
+                    new URI(
+                            value
+                    );
 
-            String scheme = uri.getScheme() == null
-                    ? ""
-                    : uri.getScheme().toLowerCase(Locale.ROOT);
+            String scheme =
+                    uri.getScheme() == null
+                            ? ""
+                            : uri.getScheme()
+                                    .toLowerCase(
+                                            Locale.ROOT
+                                    );
 
-            if (!("http".equals(scheme) || "https".equals(scheme))
+            if (!("http".equals(
+                    scheme
+            ) || "https".equals(
+                    scheme
+            ))
                     || uri.getHost() == null
                     || uri.getUserInfo() != null
                     || uri.getRawQuery() != null
@@ -151,6 +224,7 @@ public record JwtProperties(
             }
 
             return value;
+
         } catch (URISyntaxException exception) {
             throw new IllegalStateException(
                     "JWT issuer имеет некорректный URI",
@@ -163,15 +237,22 @@ public record JwtProperties(
             String value,
             String propertyName
     ) {
-        String normalized = requireText(
-                value,
-                propertyName + " не задан"
-        );
+        String normalized =
+                requireText(
+                        value,
+                        propertyName
+                                + " не задан"
+                );
 
-        if (!KEY_ID_PATTERN.matcher(normalized).matches()) {
+        if (!KEY_ID_PATTERN
+                .matcher(
+                        normalized
+                )
+                .matches()) {
             throw new IllegalStateException(
                     propertyName
-                            + " должен соответствовать [A-Za-z0-9._-]{1,64}"
+                            + " должен соответствовать "
+                            + "[A-Za-z0-9._-]{1,64}"
             );
         }
 
@@ -182,15 +263,22 @@ public record JwtProperties(
             String value,
             String message
     ) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(message);
+        if (value == null
+                || value.isBlank()) {
+            throw new IllegalStateException(
+                    message
+            );
         }
 
-        String normalized = value.trim();
+        String normalized =
+                value.trim();
 
-        if (!normalized.equals(value)) {
+        if (!normalized.equals(
+                value
+        )) {
             throw new IllegalStateException(
-                    message + ": значение содержит внешние пробелы"
+                    message
+                            + ": значение содержит внешние пробелы"
             );
         }
 
@@ -202,6 +290,7 @@ public record JwtProperties(
             String publicKey,
             @Nullable String privateKey
     ) {
+
         /**
          * Explicit canonical constructor avoids parameter-reassignment
          * inspections and keeps nullable private-key normalization explicit.
@@ -211,31 +300,57 @@ public record JwtProperties(
                 String publicKey,
                 @Nullable String privateKey
         ) {
-            String normalizedId = requireKeyId(
-                    id,
-                    "app.security.jwt.keys[].id"
-            );
+            String normalizedId =
+                    requireKeyId(
+                            id,
+                            "app.security.jwt.keys[].id"
+                    );
 
-            String normalizedPublicKey = requireText(
-                    publicKey,
-                    "app.security.jwt.keys["
-                            + normalizedId
-                            + "].public-key не задан"
-            );
+            String normalizedPublicKey =
+                    requireText(
+                            publicKey,
+                            "app.security.jwt.keys["
+                                    + normalizedId
+                                    + "].public-key не задан"
+                    );
 
-            String normalizedPrivateKey = null;
+            String normalizedPrivateKey =
+                    null;
 
             if (privateKey != null) {
-                String candidate = privateKey.trim();
+                String candidate =
+                        privateKey.trim();
 
                 if (!candidate.isEmpty()) {
-                    normalizedPrivateKey = candidate;
+                    normalizedPrivateKey =
+                            candidate;
                 }
             }
 
-            this.id = normalizedId;
-            this.publicKey = normalizedPublicKey;
-            this.privateKey = normalizedPrivateKey;
+            this.id =
+                    normalizedId;
+
+            this.publicKey =
+                    normalizedPublicKey;
+
+            this.privateKey =
+                    normalizedPrivateKey;
+        }
+
+        /**
+         * Both public and private RSA material are deliberately redacted.
+         *
+         * <p>The public key is not a secret cryptographically, but there is no
+         * operational benefit in dumping complete PEM material into logs.</p>
+         */
+        @Override
+        public String toString() {
+            return "KeyEntry["
+                    + "id="
+                    + id
+                    + ", publicKey=<redacted>"
+                    + ", privateKey=<redacted>"
+                    + "]";
         }
     }
 }

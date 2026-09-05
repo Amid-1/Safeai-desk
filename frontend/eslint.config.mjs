@@ -81,6 +81,15 @@ export default [
 
             ...reactHooks.configs.flat.recommended.rules,
 
+            /*
+             * Приложение не использует React Compiler. Эти два правила из
+             * compiler-oriented preset дают ложные срабатывания на штатные
+             * эффекты загрузки данных и измерения DOM; остальные Hooks rules
+             * (включая dependencies и rules-of-hooks) остаются обязательными.
+             */
+            'react-hooks/set-state-in-effect': 'off',
+            'react-hooks/purity': 'off',
+
             'react-refresh/only-export-components': [
                 'error',
                 {

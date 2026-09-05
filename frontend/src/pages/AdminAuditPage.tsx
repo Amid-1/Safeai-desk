@@ -40,9 +40,8 @@ import AuditFilters
     from '../components/admin/audit/AuditFilters'
 import AuditPagination
     from '../components/admin/audit/AuditPagination'
-import AuditTable, {
-    downloadAuditCsv,
-} from '../components/admin/audit/AuditTable'
+import AuditTable from '../components/admin/audit/AuditTable'
+import { downloadAuditCsv } from '../components/admin/audit/auditCsv'
 import {
     auditDraftFiltersEqual,
 } from '../components/admin/audit/types'
