@@ -47,6 +47,7 @@ import {
 import { ModelCatalogVersionModal } from '../components/admin/models/ModelCatalogVersionModal'
 import { ModelPolicyModal } from '../components/admin/models/ModelPolicyModal'
 import './AdminModelsPage.css'
+import './AdminModelsPageVisualRefresh.css'
 
 const UUID_PATTERN =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -924,9 +925,9 @@ function AdminModelsPage() {
                     catalog={catalog}
                     effectiveCatalog={effectiveCatalog}
                     runtime={runtime}
-                    pending={mutationPending}
                     organizationId={targetOrganizationId}
                     organizationName={selectedOrganizationName}
+                    pending={mutationPending}
                     onClose={() => {
                         setPolicyModalOpen(false)
                     }}

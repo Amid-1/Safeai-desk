@@ -1,20 +1,20 @@
 SafeAI Desk
 
-SafeAI Desk — production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного использования 
-внешних AI-моделей внутри организаций.
+SafeAI Desk — production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного и управляемого 
+использования внешних AI-моделей внутри организаций.
 
-Актуальность: 28 августа 2026.
-Документ описывает фактически реализованный baseline текущих backend/frontend исходников и Flyway-миграций до V45 
-включительно.
-Будущее развитие вынесено в ROADMAP.md.
+Актуальность: 6 сентября 2026.
 
-SafeAI Desk — не UI-обёртка над LLM. Проект строит управляемый слой вокруг корпоративного AI:
+README описывает фактически реализованный baseline текущего проекта: backend, frontend и Flyway-эволюцию схемы до V48 
+включительно. Будущее развитие и крупные продуктовые этапы должны оставаться в ROADMAP.md.
+
+SafeAI Desk — не UI-обёртка над LLM и не «чат с API-ключом». Проект строит управляемый корпоративный слой вокруг AI:
 
 organization-based multi-tenancy;
 
 RBAC SUPER_ADMIN / ADMIN / USER;
 
-HttpOnly cookie JWT authentication + CSRF;
+HttpOnly-cookie JWT authentication + CSRF;
 
 строгую JWT validation и security revocation epochs;
 
@@ -34,19 +34,28 @@ immutable actor/target audit snapshots;
 
 usage/pricing quality model без подмены неизвестных данных нулём;
 
-OpenAI / Anthropic / mock provider abstraction;
+Mock / OpenAI / Anthropic provider abstraction;
 
-Knowledge/RAG platform: Knowledge Bases, immutable document versions, ingestion, object storage, extraction, embeddings, 
-hybrid retrieval, citations и Answer Passport;
+Knowledge/RAG: Knowledge Bases, immutable document versions, ingestion, object storage, extraction, embeddings, hybrid 
+retrieval, citations и Answer Passport;
 
-V45 Model Control Plane: versioned Model Catalog, organization model policies и immutable model-route evidence;
+Model Control Plane: versioned Model Catalog, organization model policies и immutable model-route evidence;
+
+V48 input-accounting provenance и integrity v3 для новых route decisions;
+
+fail-closed capability enforcement для ещё не реализованного specialized data plane;
+
+runtime configuration/probe UI, отдельно от organization policy;
 
 PostgreSQL/Flyway constraints как часть integrity model;
 
-React frontend с runtime validation API contracts, abortable requests и production error handling.
+React frontend с runtime validation API contracts, abortable requests, production error handling и адаптивными 
+административными workspace.
 
-Текущий статус: production-oriented pre-1.0 / portfolio-ready baseline. Это серьёзная база B2B-продукта, но не заявление 
-compliance certification, billing-grade accounting, формально доказанной HA/SLA или полном multi-provider data plane.
+Текущий статус: production-oriented pre-1.0 / portfolio-ready baseline.
+
+Это серьёзная база B2B AI-platform / AI Gateway, но не заявление о compliance certification, billing-grade accounting, 
+формально доказанной HA/SLA, полноценном dynamic multi-provider data plane или автономной agent platform.
 
 Содержание
 
@@ -56,27 +65,29 @@ compliance certification, billing-grade accounting, формально дока�
 
 Стек
 
-Роли
+Роли и границы доступа
 
-Multi-tenancy и integrity
+Multi-tenancy и database integrity
 
 Security architecture
 
 Backend-модули
 
-ChatTurn
+Durable ChatTurn
 
-AI providers
+AI providers и runtime
 
 Knowledge / RAG
 
-Model Control Plane — V45
+Model Control Plane — V45→V48
+
+Input accounting и V48 route evidence
 
 Rate limiting
 
 Audit
 
-Usage
+Usage / pricing quality
 
 User management
 
@@ -102,20 +113,45 @@ Positioning
 
 Что решает проект
 
-Корпоративный AI требует отвечать не только на «что ответила модель», но и на:
+Корпоративный AI требует отвечать не только на вопрос «что ответила модель».
 
-Кто сделал запрос?
-Из какой организации?
-Какие у него права?
-Активен ли user и tenant?
-Не устарела ли access-сессия?
-Какие корпоративные знания разрешено использовать?
-Какая версия документа попала в evidence?
-Какая модель была разрешена policy в момент запроса?
-Можно ли безопасно повторить AI operation?
-Сколько было токенов и каково качество pricing data?
-Кто изменил security/governance state?
-Что произошло при crash во время provider I/O?
+Нужно уметь установить:
+
+кто сделал запрос;
+
+из какой организации;
+
+какие права были у пользователя;
+
+был ли user и tenant активен;
+
+не устарела ли access-сессия;
+
+какие Knowledge Bases разрешено использовать;
+
+какая версия документа участвовала в retrieval;
+
+какой model policy был действующим;
+
+какая версия model catalog была effective в момент routing;
+
+какая физическая runtime model реально могла выполнить запрос;
+
+какой input accounting использовался;
+
+какой объём был зарезервирован до provider I/O;
+
+можно ли безопасно повторить AI operation;
+
+был ли provider call фактически начат;
+
+сколько usage/cost данных известно и какого они качества;
+
+кто изменил governance/security state;
+
+что произошло при crash во время provider I/O;
+
+какое immutable evidence осталось после решения маршрутизации.
 
 SafeAI Desk объединяет:
 
@@ -125,6 +161,7 @@ Identity
 + Durable chat operations
 + Knowledge / Retrieval provenance
 + Model governance
++ Input accounting provenance
 + Rate limits / quotas
 + Provider abstraction
 + Usage / pricing quality
@@ -132,7 +169,10 @@ Identity
 
 Архитектура
 
-Проект — модульный монолит. Это сознательно сохраняет сильные transactional/tenant/security invariants без преждевременной микросервисной сложности.
+Проект построен как модульный монолит.
+
+Это сознательный выбор: текущие tenant/security/durability/governance invariants выгодно держать внутри одной 
+transactional boundary, не добавляя преждевременную микросервисную сложность.
 
 ┌──────────────────────────────┐
 │ React + TypeScript Frontend  │
@@ -144,34 +184,41 @@ Identity
 │ Edge / Nginx                 │
 └──────────────┬───────────────┘
                ▼
-┌──────────────────────────────────────────────────┐
-│ Spring Boot Backend                              │
-│ auth / common / user / org / model / chat / ai  │
-│ knowledge / audit / usage / ratelimit            │
-└───────┬──────────────────────┬───────────────────┘
-        │                      │
-        ▼                      ▼
-┌─────────────┐         ┌──────────────┐
-│ PostgreSQL  │         │ Redis        │
-│ + Flyway    │         │ rate limits │
-│ source of   │         │ coordination│
-│ truth       │         │ optional    │
-└──────┬──────┘         └──────────────┘
-       │
-       ├──────────────► S3-compatible object storage
-       │                 Knowledge documents
-       │
-       │ provider call outside long DB transaction
-       ▼
-┌──────────────────────────────┐
-│ Mock / OpenAI / Anthropic    │
-└──────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│ Spring Boot Backend                                     │
+│ auth / common / organization / user / model / chat / ai │
+│ knowledge / audit / usage / ratelimit                   │
+└─────────────┬────────────────┬──────────────────────────┘
+              │                │
+              ▼                ▼
+      ┌─────────────┐    ┌──────────────┐
+      │ PostgreSQL  │    │ Redis        │
+      │ + Flyway    │    │ rate limits  │
+      │ source of   │    │ coordination │
+      │ truth       │    │ optional     │
+      └──────┬──────┘    └──────────────┘
+             │
+             ├──────────────► S3-compatible object storage
+             │                 Knowledge documents
+             │
+             │ provider call outside long DB transaction
+             ▼
+      ┌──────────────────────────────┐
+      │ Mock / OpenAI / Anthropic    │
+      └──────────────────────────────┘
 
-PostgreSQL — source of truth. Redis — coordination/rate-limit/cache layer. Security correctness не должна зависеть 
-только от Redis cache.
+PostgreSQL — source of truth для durable/security/governance state.
+Redis — coordination/rate-limit/cache layer. Security correctness не должна зависеть только от Redis cache.
+S3-compatible storage — содержимое Knowledge documents.
+Provider I/O выполняется вне долгой database transaction.
 
-V45 не превращает текущий runtime в полноценный dynamic multi-provider executor: catalog/policy принимают governance 
-decision, но ALLOWED route пока обязан совпадать с физически активным provider/model adapter текущего deployment.
+Control plane и data plane
+
+Model Control Plane уже умеет хранить versioned Model Catalog, определять latest/effective версии, применять organization 
+policy, проверять pricing/data requirements, делать budget preflight и фиксировать immutable route decision.
+
+Но текущий runtime всё ещё представляет один физически активный provider/model adapter на deployment. Governance plane 
+может разрешить logical model только если её effective snapshot исполним текущим runtime.
 
 Стек
 
@@ -179,13 +226,15 @@ Backend
 
 Java 21;
 
-Spring Boot 4.1.0;
+Spring Boot 4.1.0-M1;
 
 Spring Web MVC;
 
 Spring Security;
 
 Spring Data JPA / Hibernate;
+
+Spring JDBC;
 
 PostgreSQL;
 
@@ -199,17 +248,27 @@ Bean Validation;
 
 Lombok;
 
+MapStruct;
+
 JUnit 5 / Mockito / Spring Test;
 
 Testcontainers;
 
 MinIO / S3-compatible storage;
 
-PDFBox / Apache POI / jsoup;
+AWS SDK v2;
+
+Apache Tika;
+
+PDFBox;
+
+Apache POI;
+
+jsoup;
 
 Micrometer / Prometheus;
 
-structured JSON logging;
+structured logging;
 
 Docker / Docker Compose.
 
@@ -217,83 +276,93 @@ Docker / Docker Compose.
 
 Frontend
 
-По текущему package.json:
+По текущему frontend/package.json:
 
-React 19;
+React 19.1.1;
 
-React DOM 19;
+React DOM 19.1.1;
 
-React Router;
+React Router DOM 7.8.2;
 
-TypeScript 6;
+TypeScript 6.0.0-dev.20250826;
 
-Vite 8;
+Vite 8.0.0-beta.13;
 
-Vitest;
+Vitest 3.2.4;
 
 Testing Library;
 
-ESLint + TypeScript ESLint;
+ESLint 9 + TypeScript ESLint;
 
 eslint-plugin-jsx-a11y;
 
-Recharts;
+Recharts 3.1.2;
 
-Node.js 24;
+Node.js >=24.6.0;
 
-npm 11.
+npm >=11.5.1.
 
-Frontend работает в strict TypeScript mode и имеет отдельные typecheck, lint, test, coverage, build, ci.
+Frontend работает в strict TypeScript mode и имеет scripts для typecheck, lint, tests, coverage, production build, combined check, CI и production dependency audit.
 
-Роли
+Роли и границы доступа
 
-У пользователя должна быть ровно одна системная роль:
+У пользователя ровно одна системная роль:
 
 SUPER_ADMIN
 ADMIN
 USER
 
-Это поддерживается backend policy, frontend runtime parser и БД.
-
 SUPER_ADMIN
 
 Platform/control-plane administrator:
 
-создаёт/просматривает tenant organizations;
+создаёт и просматривает tenant organizations;
 
 управляет обычными ADMIN/USER;
 
 видит global audit и usage;
 
+читает runtime model status;
+
 управляет глобальным Model Catalog;
 
-импортирует физический runtime model в catalog;
+импортирует текущую runtime model в catalog;
 
-задаёт/просматривает organization model policies;
+создаёт новые immutable catalog versions;
 
-читает immutable route decisions.
+читает/изменяет organization model policies;
 
-Через ordinary user-management flow не создаёт и не изменяет SUPER_ADMIN.
+выбирает tenant для model-governance administration;
 
-Текущий frontend рассматривает SUPER_ADMIN как control-plane роль и не выдаёт ей Chat route.
+читает immutable route decisions разных организаций;
+
+может запускать административную проверку runtime model availability.
+
+Через ordinary user-management flow не должен создавать/превращать пользователя в SUPER_ADMIN.
+
+Текущий frontend рассматривает SUPER_ADMIN как platform/control-plane роль и не выдаёт ей обычный Chat route.
 
 ADMIN
 
 Tenant administrator:
 
-работает с chat;
+работает с Chat;
 
 управляет USER своей организации;
 
-управляет Knowledge Bases в разрешённом tenant scope;
+работает с Knowledge Bases в tenant scope;
 
 видит tenant audit/usage;
 
-видит Model Catalog/runtime;
+читает runtime status;
 
-читает и изменяет model policy своей организации;
+читает глобальный Model Catalog/effective catalog;
 
-читает route evidence только своей организации.
+создаёт новую version model policy своей организации;
+
+читает route-decision evidence своей организации.
+
+Не может мутировать глобальный catalog, импортировать runtime, управлять policy чужого tenant или читать чужой route evidence.
 
 USER
 
@@ -301,22 +370,106 @@ USER
 
 использует разрешённые Knowledge Bases;
 
+получает AI responses в рамках organization policy;
+
 не имеет administrative routes.
+
+Model Control Plane RBAC
+
+Возможность
+
+USER
+
+ADMIN
+
+SUPER_ADMIN
+
+Страница «Модели»
+
+нет
+
+да
+
+да
+
+Runtime status
+
+нет
+
+read
+
+read
+
+Global catalog
+
+нет
+
+read-only
+
+read/write
+
+Import runtime → catalog
+
+нет
+
+нет
+
+да
+
+New catalog version
+
+нет
+
+нет
+
+да
+
+Policy своей организации
+
+нет
+
+read/write
+
+read/write
+
+Policy другой организации
+
+нет
+
+нет
+
+read/write
+
+Route decision своей организации
+
+нет
+
+read
+
+read
+
+Route decision другой организации
+
+нет
+
+нет
+
+read
 
 Frontend guards — UX. Security boundary — backend.
 
-Multi-tenancy и integrity
+Multi-tenancy и database integrity
 
 Tenant key — organization_id.
 
-SUPER_ADMIN -> global/platform scope
+SUPER_ADMIN -> platform/global scope
 ADMIN       -> organization scope
 USER        -> own-resource scope
 
 Tenant isolation применяется к users, organizations, sessions/messages/turns, Knowledge Bases/memberships/documents, 
 quota reservations, audit, usage, model policies, model-route decisions, rate limiting и security-state lookup.
 
-Схема БД дополнительно содержит composite tenant-safe relationships, например:
+Composite tenant-safe relationships включают:
 
 chat_session(user_id, organization_id)
     -> user(id, organization_id)
@@ -327,20 +480,20 @@ chat_message(session_id, organization_id)
 chat_turn(session_id, organization_id, user_id)
     -> chat_session(id, organization_id, user_id)
 
-V45 продолжает ту же модель integrity:
+Model governance продолжает ту же модель:
 
 model_route_decision
     -> exact model_catalog snapshot
     -> exact organization_model_policy snapshot
-    -> exact chat_session tenant/user scope
+    -> exact chat/user/organization context
 
 chat_turn.model_route_decision_id
-    -> exact ALLOWED model_route_decision
+    -> exact ALLOWED route decision
 
 answer_passport.model_route_decision_id
-    -> exact model-route evidence
+    -> exact governance evidence
 
-Цель — не допустить cross-tenant или provenance mismatch даже при application bug.
+Цель — не допустить cross-tenant/provenance mismatch даже при application bug.
 
 Security architecture
 
@@ -350,79 +503,55 @@ access token  -> HttpOnly cookie
 refresh token -> HttpOnly cookie
 XSRF-TOKEN    -> readable cookie
 
-JWT не хранится в localStorage.
+JWT не хранится в localStorage. Unsafe methods передают X-XSRF-TOKEN. После login CSRF token ротируется.
 
-Unsafe methods:
+JWT validation
 
-POST / PUT / PATCH / DELETE
-
-отправляют X-XSRF-TOKEN.
-
-После login CSRF token ротируется.
-
-JWT
-
-Access token использует claims:
-
-sub
-email/user identity fields according to token contract
-userId
-organizationId
-roles
-tokenVersion
-organizationAuthVersion
-jti
-iat
-exp
-iss
-aud
-
-Валидация включает issuer/audience/type/identity, а не только подпись.
+Access token валидируется по signature и contract claims: identity, userId, organizationId, role, token/org security 
+versions, jti, iat, exp, iss, aud, token type.
 
 Security epochs
 
 users.token_version меняется при user-specific security mutation.
-organizations.auth_version — отдельный tenant-level epoch.
+organizations.auth_version — tenant-level epoch.
 
-UserStatusFilter сопоставляет user/org enabled state и token epochs. Failure security-state lookup должен fail closed.
+Failure security-state lookup должен fail closed.
 
-Refresh rotation
+Refresh rotation/reuse
 
-Refresh token хранится как hash. Rotation/reuse flow использует locked token, predecessor/successor family integrity, 
-reuse detection и family termination.
+Refresh token хранится как hash. Rotation/reuse flow использует locked token state, predecessor/successor family 
+integrity, reuse detection и family termination.
 
-Пароли
+Passwords
 
-BCrypt limit — 72 UTF-8 bytes, не 72 символа.
-
-Текущий baseline:
-
-{bcrypt} через DelegatingPasswordEncoder;
-
-BCrypt strength 12;
-
-legacy unprefixed BCrypt fallback на migration period;
-
-create/reset используют current password policy.
+BCrypt limit — 72 UTF-8 bytes, не 72 символа. Baseline использует DelegatingPasswordEncoder, {bcrypt}, BCrypt strength 
+12 и legacy unprefixed BCrypt fallback только на migration period.
 
 Request ID
 
-Backend генерирует собственный canonical UUID на каждый request. Incoming X-Request-Id может быть клиентской metadata, 
-но не становится server correlation ID.
+Backend генерирует canonical UUID request ID. Incoming X-Request-Id не становится автоматически server correlation ID.
 
-Client IP / proxy trust
+Client IP / trusted proxy
 
-Forwarded headers доверяются только при direct peer из trustedProxyCidrs. Empty proxy list = trust nobody. Production 
-запрещает trust-all CIDR.
+Forwarded headers доверяются только когда direct peer принадлежит configured trustedProxyCidrs.
+
+empty proxy allowlist = trust nobody
+
+Production не должен использовать trust-all CIDR.
 
 CORS
 
-Production — explicit HTTPS allowlist. Wildcard/userinfo/query/fragment/path и malformed origins запрещены validator-ом.
+Production — explicit HTTPS allowlist.
 
-Errors
+Public errors
 
-MVC и Spring Security используют единый public error contract через ApiErrorResponse. Internal diagnostics не должны 
-попадать клиенту.
+MVC и Spring Security используют безопасный public error contract. Internal stack traces/secrets/provider diagnostics 
+не должны попадать клиенту.
+
+Runtime health probe safety
+
+Runtime probe отделён от Chat flow и не должен передавать user prompt, history, RAG context или document content. HTTP 
+hardening включает HTTPS-only URL, disabled redirects, bounded timeouts, discarded response body и controlled status mapping.
 
 Backend-модули
 
@@ -432,7 +561,7 @@ Backend-модули
 
 auth
 
-login/logout/refresh, cookies, rotation, revocation
+login/logout/refresh, cookies, token rotation/revocation
 
 common
 
@@ -444,23 +573,23 @@ tenant lifecycle, platform invariants, org security epoch
 
 user
 
-users, one-role policy, optimistic versions, password/security mutation
+users, exactly-one-role policy, optimistic versions, password/security mutations
 
 model
 
-V45 Model Catalog, organization model policy, runtime status, immutable route decisions
+runtime status/probe, catalog, organization policy, immutable route decisions, V48 accounting provenance
 
 chat
 
-sessions/messages/turns, quotas, lease/fencing/recovery, model-route binding
+sessions/messages/turns, quotas, idempotency, lease/fencing/recovery, route binding
 
 ai
 
-provider abstraction, retry/errors/context/pricing metadata
+provider abstraction, retry/errors, input accounting, provider metadata
 
 knowledge
 
-KB/ACL, documents/versions, storage, extraction, ingestion, embeddings, hybrid retrieval, RAG, Answer Passport
+KB/ACL, documents/versions, storage, extraction, ingestion, embeddings, retrieval, RAG, Answer Passport
 
 ratelimit
 
@@ -472,14 +601,11 @@ snapshots, outbox, cursor queries, retention
 
 usage
 
-live/rollup analytics + data quality
+live/rollup analytics + pricing/data-quality state
 
-ru.safeai.gateway.common остаётся cross-cutting infrastructure layer, а domain-specific governance не переносится в 
-common без необходимости.
+Durable ChatTurn
 
-ChatTurn
-
-Durable state machine:
+State machine:
 
 NEW
 PROCESSING
@@ -487,20 +613,21 @@ SUCCEEDED
 FAILED
 AMBIGUOUS
 
-Frontend transport/UI statuses дополнительно включают SENDING, SEND_UNKNOWN, RATE_LIMITED, QUOTA_BLOCKED, ACCESS_REVOKED, 
-IDEMPOTENCY_CONFLICT и др.
+Frontend дополнительно различает transport/UI states вроде SENDING, SEND_UNKNOWN, RATE_LIMITED, QUOTA_BLOCKED, 
+ACCESS_REVOKED, IDEMPOTENCY_CONFLICT.
 
 Idempotency
 
-Frontend генерирует secure clientRequestId.
-
-same id + same normalized request
+same clientRequestId + same semantic request
 → replay
 
-same id + different request
+same clientRequestId + different semantic request
 → IDEMPOTENCY_CONFLICT
 
-Durable external-I/O boundary
+V48 replay identity учитывает semantic request, включая knowledge selection, а не текущую mutable routing envelope 
+configuration.
+
+External-I/O boundary
 
 До provider I/O фиксируются:
 
@@ -509,32 +636,31 @@ processingToken
 providerOperationId
 leaseUntil
 quota reservation
-modelRouteDecisionId
+ModelRouteDecision
+route/input reservation
 
 Provider call выполняется вне долгой DB transaction.
 
 Fencing
 
-Finalization проверяет processingToken; stale processor не может завершить turn после lease takeover.
+Finalization проверяет processingToken. Stale worker не может завершить turn после lease takeover.
 
 Provider ambiguity
 
-provider_call_started_at разделяет recovery:
-
-null
+provider_call_started_at = null
 → provider точно не начинался
-→ безопасный recovery
+→ safe recovery possible
 
-non-null
-→ provider мог выполнить request
+provider_call_started_at != null
+→ provider мог выполнить operation
 → blind retry запрещён
 → uncertainty => AMBIGUOUS
 
-Frontend намеренно не запускает автоматический новый provider request из AMBIGUOUS.
+Frontend не запускает автоматический новый provider request из AMBIGUOUS.
 
-AI providers
+AI providers и runtime
 
-Интерфейс:
+Provider abstraction:
 
 public interface AiProvider {
     AiChatResponse sendMessage(AiChatRequest request);
@@ -542,43 +668,62 @@ public interface AiProvider {
 
 Реализации:
 
+MockAiProvider;
+
+OpenAiProvider;
+
+AnthropicProvider.
+
+Provider error taxonomy различает timeout, rate limit, overload, quota/billing, context limit, too-large, unavailable и 
+generic provider error.
+
+Runtime ≠ organization policy
+
+Физическая configured model определяется backend runtime.
+
+safeai.ai.provider=mock
+        ↓
 MockAiProvider
-OpenAiProvider
-AnthropicProvider
+        ↓
+mock-safeai
 
-Есть provider error taxonomy: timeout, rate-limit, overload, quota/billing, context limit, response-too-large, 
-unavailable и generic provider error.
+Organization policy не переключает provider adapter.
 
-Usage / pricing status
+Runtime health
 
-Usage:
+UI разделяет:
 
-NOT_APPLICABLE
+Конфигурация: включена
+
+и:
+
+Проверка доступности: NOT_PROBED / ...
+
+enabled=true не означает, что provider уже проверен по сети.
+
+Типовые probe states:
+
 AVAILABLE
-MISSING
-PARTIAL
+AUTH_ERROR
+MODEL_NOT_FOUND
+RATE_LIMITED
+UNAVAILABLE
+ERROR
+NOT_PROBED
 
-Pricing:
-
-NOT_APPLICABLE
-PRICED
-FREE
-UNPRICED
-CALCULATION_FAILED
-
-Unknown pricing не превращается в zero.
+Probe — point-in-time metadata-only check, не SLA/HA monitoring.
 
 Knowledge / RAG
 
-Knowledge/RAG baseline уже реализован и не является «будущим модулем».
+Knowledge/RAG уже реализован.
 
-Основные возможности:
+Возможности:
 
 tenant/ACL-aware Knowledge Bases;
 
-ORGANIZATION / MEMBERS visibility/access model;
+ORGANIZATION / MEMBERS access model;
 
-Knowledge Base memberships;
+memberships;
 
 immutable document versions;
 
@@ -586,9 +731,9 @@ durable ingestion jobs;
 
 S3-compatible object storage;
 
-bounded extraction для PDF/DOCX/PPTX/XLSX/HTML/Markdown/JSON/XML/CSV/plain text;
+bounded extraction;
 
-optional OCR provider boundary;
+optional OCR boundary;
 
 embeddings;
 
@@ -596,9 +741,9 @@ PostgreSQL pgvector + FTS hybrid retrieval;
 
 context assembly;
 
-GENERAL, KNOWLEDGE_ASSISTED, KNOWLEDGE_ONLY modes;
+GENERAL / KNOWLEDGE_ASSISTED / KNOWLEDGE_ONLY modes;
 
-knowledge-only controlled abstention/fail-closed behavior;
+controlled abstention/fail-closed behavior;
 
 inline citations;
 
@@ -606,18 +751,35 @@ retrieval provenance;
 
 Answer Passport;
 
-Knowledge health/reindex/evaluation backend;
+health/reindex/evaluation backend;
 
-Knowledge frontend для KB/documents/memberships/status/reindex и source/passport UX baseline.
+frontend для KB/documents/memberships/status/reindex/sources/passport.
 
-Для knowledge-assisted turn retrieval provenance фиксируется до provider boundary и связывается с ChatTurn/Answer 
-Passport.
+Extraction baseline включает PDF, DOCX, PPTX, XLSX, HTML, Markdown, JSON, XML, CSV и plain text.
 
-Model Control Plane — V45
+V48 envelope
 
-V45 добавляет governance plane поверх существующего single-provider data plane.
+RAG context не может обходить route reservation. KnowledgeContextAssembler сохраняет reserved input units/output cap 
+и route identity. Prepared request проверяется execution guard. Если actual prepared input превышает reservation, 
+operation завершается детерминированно до provider I/O.
 
-1. Versioned Model Catalog
+Model Control Plane — V45→V48
+
+Архитектура разделяет:
+
+Runtime
+= что физически настроено deployment
+
+Catalog
+= какие immutable model snapshots знает governance
+
+Organization Policy
+= что разрешено tenant
+
+Route Decision
+= какое immutable решение принято для конкретного request
+
+Versioned Model Catalog
 
 model_catalog_entries — append-only snapshots:
 
@@ -627,11 +789,10 @@ provider
 providerModelId
 displayName
 lifecycle
-context/token limits
+limits
 capabilities/modalities
 retention/training metadata
-pricing status + dimensions
-pricingVersion
+pricing status/dimensions/version
 effectiveFrom
 source
 createdBy
@@ -639,46 +800,24 @@ createdAt
 
 Latest vs effective
 
-Это два разных понятия:
+latest
+→ последняя созданная version
+→ может быть scheduled
 
-latest created version
-→ административный/version-allocation view
-→ может быть scheduled в будущем
+effective
+→ уже вступила в силу на server decision time
+→ участвует в routing
 
-effective version at route time
-→ max(version) where effective_from <= server decision time
-→ только она участвует в routing
+Старая version не редактируется.
 
-Frontend имеет отдельные latest/effective views. Backend endpoint /api/admin/models/catalog/effective вычисляет snapshot 
-по server-side Clock, а не по времени браузера.
+Pricing integrity
 
-Важно: runtime identity filter применяется после выбора effective snapshot каждого modelKey. Старая версия того же logical 
-model не может снова стать executable только потому, что её provider/model всё ещё совпадает с физическим adapter.
+Catalog различает UNPRICED, FREE, CONFIGURED, INCOMPLETE. Unknown pricing не превращается в zero. Money wire contract 
+использует exact decimal strings.
 
-2. Pricing integrity
+Organization Model Policies
 
-V45 различает:
-
-UNPRICED
-FREE
-CONFIGURED
-INCOMPLETE
-
-API/service validation согласована с DB constraints, включая PostgreSQL numeric(30,12).
-
-Ключевые semantics:
-
-UNPRICED: никаких price dimensions, pricingComplete=false, empty extra pricing;
-
-FREE: complete + ordinary price = 0, optional cached/cache-write только 0, empty extra pricing;
-
-CONFIGURED: complete + input/output + pricingVersion, cached/cache-write не выше ordinary input, empty extra pricing;
-
-INCOMPLETE: pricingComplete=false, допускает частичные/extra dimensions.
-
-3. Organization Model Policies
-
-Versioned tenant policy поддерживает:
+Policy поддерживает:
 
 enabled
 allowModelKeys
@@ -693,74 +832,140 @@ requireCompletePricing
 requireNoTraining
 requireZeroDataRetention
 
-Policies append-only и используют optimistic expectedPreviousVersion + DB locking для version allocation.
+Policies append-only и используют expectedPreviousVersion + locking/version allocation.
 
-4. Immutable route decision
+Safe unconfigured state
 
-Перед quota/rate-limit/provider I/O создаётся deterministic governance decision:
+Для отсутствующей policy:
 
-requested model key
-selected catalog snapshot
-selected provider/model
-policy snapshot
-required capabilities
-estimated input/output tokens
-estimated max cost
-monthly budget snapshot
-budget enforcement/outcome
-pricing completeness
-reason
-decision SHA-256
+configured = false
+version = 0
+enabled = false
 
-Decision immutable и audit-visible.
+Это предотвращает случайное включение fail-closed policy при первом сохранении.
 
-ALLOWED decision должен быть связан с exact planned ChatTurn; deferred DB constraint не позволяет commit governance 
-decision без соответствующего turn binding.
+UI предупреждает, если enabled policy не имеет исполнимой effective catalog entry, совпадающей с runtime. Save не 
+блокируется полностью, потому что administrator может сознательно подготовить fail-closed/staged policy.
 
-Answer Passport хранит ссылку на exact route decision, поэтому knowledge answer может показать не только evidence 
-документов, но и governance evidence модели.
+Runtime compatibility
 
-5. Текущая data-plane граница
+policy allows
++
+effective catalog exists
++
+governance checks pass
++
+catalog provider/model matches active runtime
+→ executable
 
-V45 не заявляет dynamic multi-provider execution.
+Иначе controlled denial/mismatch.
 
-Сейчас deployment устанавливает один физический AiProvider adapter. Поэтому:
+Immutable ModelRouteDecision
 
-catalog/policy may allow logical model
-        ↓
-route must still match active runtime provider/model
-        ↓
-otherwise controlled RUNTIME_MISMATCH / MODEL_NOT_FOUND
+Перед provider I/O фиксируются requested/selected model, exact catalog/policy snapshots, provider/model, capabilities, 
+accounting/output reservation, budget/pricing state, outcome/reason, integrity version и SHA-256.
 
-Настоящий provider/model multiplexer — следующий отдельный data-plane milestone, а не скрытая возможность V45.
+Historical integrity versions v1/v2 сохраняются. Новые V48 decisions используют integrity v3.
 
-6. Budget semantics
+Frontend умеет читать immutable route evidence по decisionId.
 
-V45 budget — governance preflight, а не billing-grade ledger.
+Input accounting и V48 route evidence
 
-estimate deliberately conservative;
+Старый отдельный ModelInputTokenEstimator удалён. Используется единый:
 
-committed/processing/ambiguous operations учитываются безопасно;
+ru.safeai.gateway.ai.input.AiInputUnitEstimator
 
-unknown cost делает HARD budget unverifiable и может fail closed;
+Accounting version:
 
-окончательная usage/cost остаётся отдельной usage quality model;
+UTF8_STRUCTURAL_UNITS_V2
 
-RAG context и будущие specialized pricing dimensions требуют дальнейшего FinOps развития.
+Новые governance API используют термин input units: internal deterministic estimator не выдаётся за точный tokenizer 
+provider. Исторические DB fields *_tokens сохраняются.
+
+V48 provenance
+
+Новые route decisions сохраняют:
+
+input_accounting_version
+additional_input_unit_upper_bound
+
+Для integrity v3:
+
+input_accounting_version != null
+additional_input_unit_upper_bound >= 0
+decision_sha256 = 64 lowercase hex
+
+Для historical v1/v2 provenance fields остаются NULL.
+
+Execution guard
+
+До проверки размера guard подтверждает exact request identity:
+
+user;
+
+organization;
+
+chat/session;
+
+providerOperationId;
+
+user message;
+
+history;
+
+reservation;
+
+output cap.
+
+Затем:
+
+prepared estimated input units
+<=
+reserved input units
+
+Иначе deterministic failure до provider I/O.
+
+Route reservation path сериализуется по (chatId, clientRequestId).
+
+Capability enforcement
+
+Catalog может описывать capabilities/modalities, но metadata ещё не означает реализованный data plane.
+
+На текущем этапе специализированные возможности:
+
+TOOLS
+VISION
+STRUCTURED_OUTPUT
+
+должны fail closed, пока соответствующий end-to-end provider flow не реализован. TEXT flow остаётся рабочим.
+
+V48 также нормализует integrity между vision/image-input metadata.
+
+Budget semantics
+
+Budget — governance preflight, не billing ledger.
+
+estimate conservative;
+
+processing/ambiguous operations не должны оптимистично игнорироваться;
+
+unknown cost делает HARD budget unverifiable;
+
+HARD может fail closed;
+
+final usage/cost остаётся отдельной usage quality model.
 
 Rate limiting
 
 Redis-backed limits:
 
-login: identity/email + IP
-AI: user + organization
-refresh: dedicated policy
+login   -> identity/email + IP
+AI      -> user + organization
+refresh -> dedicated policy
 
-Atomic counter/TTL выполняется Lua script. Infrastructure outage имеет controlled error вместо silent allow-all.
+Atomic counter/TTL выполняется Lua. Infrastructure outage не должен превращаться в silent allow-all.
 
 Audit
-
-Architecture:
 
 business transaction
  ├─ domain mutation
@@ -770,23 +975,28 @@ business transaction
        ↓
  audit_events
 
-Outbox поддерживает retry/dead-letter. Actor и target organization snapshots immutable.
+Outbox поддерживает retry/dead-letter. Actor/target snapshots immutable. Audit покрывает security/governance mutations, 
+включая catalog, organization policy и route-decision related events.
 
-V45 добавляет audit events для catalog/policy/route decisions. Audit details проходят sanitization/size limits и 
-frontend defence-in-depth redaction.
+Usage / pricing quality
 
-Usage
+Usage states:
 
-Usage subsystem считает не только sums, но и data quality:
+NOT_APPLICABLE
+AVAILABLE
+MISSING
+PARTIAL
 
-available / partial / missing usage
-priced / free / unpriced / pricing failed
-ambiguous provider operation count
+Pricing states:
 
-Daily aggregation — UTC. Frontend сохраняет большие counters/decimal values в string-safe форме и использует BigInt 
-для форматирования там, где нельзя безопасно проходить через JS number.
+NOT_APPLICABLE
+PRICED
+FREE
+UNPRICED
+CALCULATION_FAILED
 
-V45 budget preflight не заменяет usage source of truth.
+Unknown pricing не превращается в 0. Daily aggregation — UTC. Большие counters/decimal money сохраняются string-safe и 
+не должны терять точность через JS number.
 
 User management
 
@@ -802,8 +1012,10 @@ PATCH /api/users/{id}/roles
 POST  /api/users/{id}/reset-password
 POST  /api/users/{id}/permanent-deletion
 
-Mutations используют expectedVersion для optimistic concurrency. Wire roles остаётся массивом для compatibility, но 
-требует ровно одну role.
+Mutations используют expectedVersion. Exactly-one-role invariant сохраняется.
+
+Frontend Users использует адаптивный resizable workspace: control area отдельно, table viewport отдельно, 
+pagination/footer не перекрываются таблицей.
 
 Organization management
 
@@ -814,20 +1026,20 @@ PATCH /api/organizations/{id}
 POST  /api/organizations/{id}/disable
 POST  /api/organizations/{id}/enable
 
-Disable/enable используют version checks и organization authVersion для security invalidation.
+Disable/enable используют version checks и organization.authVersion.
+
+Frontend отделяет tenant creation controls от resizable organization table viewport.
 
 Frontend
 
-Frontend — defensive client, а не только набор страниц.
+Frontend — defensive client.
 
-Runtime contracts
+Runtime parsers
 
-API parsers валидируют UUID/Instant/enums/non-negative values/decimal strings/page contracts/nullability. Malformed 
-backend response превращается в controlled client contract error.
+Валидируются UUID, Instant/date, enums, non-negative values, nullable/page contracts, exact decimal strings, 
+ModelRouteDecision integrity 1/2/3 и V48 provenance invariants.
 
-HTTP/Auth
-
-Общий HTTP layer отвечает за cookies, CSRF, timeouts, AbortSignal, error envelope и auth coordination.
+Malformed backend response превращается в controlled client contract error.
 
 Chat
 
@@ -835,49 +1047,64 @@ secure client UUID;
 
 optimistic USER message;
 
-reconciliation по idempotency key;
+idempotency reconciliation;
 
-durable turn polling/status;
+durable turn polling;
 
 no blind retry after AMBIGUOUS;
 
-knowledge mode / source/passport integration;
+knowledge mode;
 
-model-route metadata в durable response/passport chain.
+citations/sources;
 
-Knowledge
+Answer Passport;
 
-Текущий frontend содержит KB list/details, memberships, documents/versions, ingestion status/errors, reindex, health, 
-sources/citations и Answer Passport UX baseline.
+route/model metadata.
 
 Models
 
-AdminModelsPage содержит:
+AdminModelsPage разделяет три слоя:
 
-physical runtime status;
+Подключённая модель / Runtime — физическая backend configuration + health/probe state.
 
-latest catalog snapshots;
+Catalog — latest/effective/scheduled immutable snapshots.
 
-effective catalog snapshots;
+Organization Policy — allow/deny/default/limits/budget/data requirements.
 
-scheduled future version visibility;
+SUPER_ADMIN видит catalog mutation actions; ADMIN получает read-only catalog и own-tenant policy.
 
-catalog version creation/import runtime;
+Policy modal:
 
-organization policy editor;
+первая policy открывается disabled;
 
-route decision evidence lookup;
+предупреждает о runtime/effective mismatch;
 
-exact decimal validation без JS floating-point comparison для V45 money fields.
+создаёт immutable policy versions;
 
-UI hardening
+resizable;
 
-Есть ErrorBoundary/PageErrorBoundary, incident ID, production-safe frontend error reporting, loading/error/empty states, 
-modal/focus handling, live regions, focus-visible и reduced motion.
+адаптируется к ширине/высоте;
 
-Это accessibility hardening, не заявление о формальной WCAG certification.
+не закрывается случайным backdrop click;
+
+не закрывается по Escape;
+
+закрывается крестиком или после successful Save;
+
+использует fixed header + scrollable body + fixed action footer.
+
+Administrative pages используют resizable/fixed workspace там, где это оправдано, без overlay таблиц поверх control area.
+
+Error/accessibility hardening
+
+Есть ErrorBoundary, PageErrorBoundary, loading/error/empty states, modal focus management, inert background, focus trap, 
+live regions, focus-visible и reduced motion support.
+
+Это не заявление о формальной WCAG certification.
 
 API
+
+Ниже — основные contracts; дополнительные routes определяются текущими controllers/frontend clients.
 
 Auth
 
@@ -930,18 +1157,27 @@ POST /api/admin/models/policies/{organizationId}
 
 GET  /api/admin/models/route-decisions/{decisionId}
 
-Catalog writes — SUPER_ADMIN. Policy scope дополнительно проверяется service-level tenant authorization.
+Runtime availability probe существует как отдельная administrative operation в runtime model control path; exact route 
+определяется текущим ModelRuntimeController.
+
+Authorization:
+
+catalog read   -> ADMIN / SUPER_ADMIN
+catalog mutate -> SUPER_ADMIN
+
+policy         -> ADMIN own tenant / SUPER_ADMIN platform
+route evidence -> ADMIN own tenant / SUPER_ADMIN platform
 
 Knowledge
 
-Knowledge module предоставляет API для Knowledge Bases, memberships, documents/versions, reindex/health, 
-retrieval/evaluation и Answer Passport. Конкретный route contract определяется текущими controllers/frontend API clients.
+Knowledge module предоставляет API для Knowledge Bases, memberships, documents/versions, upload/ingestion, reindex, 
+health, retrieval/evaluation и Answer Passport.
 
 Audit
 
 GET /api/admin/audit-events
 
-Плюс directory API для event types/actors/target organizations.
+Плюс directory/filter API, используемые текущим UI.
 
 Usage
 
@@ -969,14 +1205,14 @@ backend/src/main/resources/db/local-migration/R__seed_local_demo_data.sql
 Правила:
 
 never edit applied migration
-new schema => new migration
+new schema change => new migration
 Hibernate ddl-auto=validate
 critical invariants in PostgreSQL where practical
-local seed is not production reference data
+local seed != production reference data
 
-Текущая история — до V45 включительно.
+Текущая история — до V48.
 
-Milestone
+Версии
 
 Содержание
 
@@ -1022,7 +1258,7 @@ target organization snapshots
 
 V38–V42
 
-Knowledge Base, versioned documents, durable ingestion, hybrid retrieval, RAG Answer Passport
+Knowledge Base, immutable document versions, ingestion, hybrid retrieval, RAG Answer Passport
 
 V43
 
@@ -1034,10 +1270,32 @@ Knowledge production integrity hardening
 
 V45
 
-Model Control Plane: catalog, org policies, immutable route decisions, ChatTurn/Answer Passport binding
+Model Control Plane baseline
 
-V45 не изменяется после применения. Production hardening найденных runtime semantics выполняется в Java/frontend поверх 
-существующей migration. Будущие schema changes должны получать новый свободный Flyway version.
+V46–V47
+
+follow-up Model Control Plane / integrity / rolling-compatibility hardening
+
+V48
+
+input-accounting provenance, decision integrity v3 semantics, accounting envelope provenance, vision/image capability 
+integrity normalization
+
+V48 schema hardening
+
+Добавлены:
+
+model_route_decisions.input_accounting_version
+model_route_decisions.additional_input_unit_upper_bound
+
+Integrity versions:
+
+1 / 2 / 3
+
+V1/V2 сохраняют provenance fields NULL. V3 требует non-blank accounting version, non-negative upper bound и 64-char 
+lowercase hex SHA.
+
+Applied migrations не редактируются задним числом. Новое schema изменение получает новый Flyway version.
 
 Local development
 
@@ -1057,7 +1315,7 @@ Backend
 
 Windows:
 
-cd /d "D:\Java projects\Safeai-desk\backend"
+cd /d "D:\Java projects\Safeai-deskackend"
 set SPRING_PROFILES_ACTIVE=local
 set SAFEAI_JWT_SECRET=safeai-local-development-secret-key-change-this-value-please-123456789
 set REDIS_PASSWORD=safeai_redis_password
@@ -1100,9 +1358,8 @@ Windows:
 cd backend
 mvnw.cmd clean test
 
-Для отдельного topology profile:
-
-./mvnw verify -Prate-limit-topology-it
+Integration tests с Testcontainers требуют работающий Docker и доступность нужных images. Container startup failure 
+следует отличать от unit/domain assertion failure.
 
 Frontend
 
@@ -1111,32 +1368,59 @@ npm ci
 npm run check
 npm run audit:prod
 
-CI-oriented:
+Текущий check объединяет lint, Vitest run и production TypeScript/Vite build.
+
+CI:
 
 npm run ci
 
 Flyway / release candidate
 
-Проверить:
-
-select installed_rank, version, description, success
+select
+    installed_rank,
+    version,
+    description,
+    success
 from flyway_schema_history
 order by installed_rank;
 
-Release candidate обязан дополнительно проходить:
+Release candidate должен дополнительно проходить:
 
-fresh V1→V45 migration
-upgrade from representative populated V44 snapshot to V45
-backend clean test
-frontend ci/check
-container build/start
-prod-like startup invariants
-Model Catalog latest/effective scheduling tests
-stale-runtime-version routing test
-organization model-policy tenant isolation tests
-ALLOWED route → exact ChatTurn deferred-integrity test
-Answer Passport → route-decision integrity test
-backup/restore drill
+fresh V1→V48;
+
+representative pre-V48 → V48 upgrade;
+
+rolling/bridge compatibility verification where required;
+
+backend clean test;
+
+frontend check/CI;
+
+container build/start;
+
+prod-like startup invariants;
+
+latest/effective catalog scheduling;
+
+stale runtime/catalog mismatch;
+
+policy optimistic concurrency;
+
+tenant isolation;
+
+exact ChatTurn/route binding;
+
+Answer Passport/route evidence integrity;
+
+V48 integrity v3/provenance;
+
+prepared-request envelope enforcement;
+
+idempotent replay after mutable governance changes;
+
+capability fail-closed tests;
+
+backup/restore drill.
 
 Production notes
 
@@ -1147,11 +1431,11 @@ Internet
 → Nginx
 → backend internal port
 
-Backend не должен публиковаться напрямую.
+Backend не должен публиковаться напрямую без edge controls.
 
 Trusted proxy
 
-Указывать только реальный edge CIDR. Не использовать trust-all networks.
+Только реальные trusted edge CIDR. Не использовать trust-all networks.
 
 CORS
 
@@ -1161,74 +1445,78 @@ Secrets
 
 Не хранить в Git:
 
-JWT private/secret material
-DB password
-Redis password
-OpenAI key
-Anthropic key
-S3 credentials
-future BYOK/KMS credentials
+JWT secret/private material;
+
+DB/Redis passwords;
+
+OpenAI/Anthropic keys;
+
+S3 credentials;
+
+future BYOK/KMS credentials.
 
 Object storage
 
-Production Knowledge storage должен использовать durable S3-compatible backend с lifecycle/backup policy. Local 
-filesystem storage — только там, где это осознанно допустимо.
+Production Knowledge storage требует durable S3-compatible backend с lifecycle/backup/restore/access policy/monitoring.
 
 Prometheus
 
 /actuator/prometheus — internal/network-protected.
 
-User status cache
-
-До доказанной fail-safe invalidation strategy strict security mode предпочтительно держать status cache disabled.
-
 Logs
 
-Не логировать по умолчанию:
+Не логировать passwords, raw JWT/refresh token, cookies, Authorization, API keys, full prompts/responses, raw document 
+chunks и secret connector credentials.
 
-passwords
-raw JWT/refresh token
-cookies
-Authorization
-API keys
-full prompts/responses
-raw document chunks
-secret connector credentials
+Runtime probe
+
+Probe не отправляет пользовательские данные, не должен follow redirects с credentials и не является заменой monitoring/SLA.
 
 Текущие границы
 
-На 28 августа 2026 проект уже содержит Knowledge/RAG и V45 Model Control Plane, но ещё не является законченной 
-enterprise 1.0 платформой.
+На 6 сентября 2026 SafeAI Desk уже содержит tenant/security baseline, durable ChatTurn, audit outbox, usage/pricing 
+quality, Knowledge/RAG, Answer Passport, Model Control Plane, V48 route-accounting provenance и administrative model 
+runtime/catalog/policy UI.
 
-Текущие ограничения:
+Но это ещё не enterprise 1.0.
 
-один физический provider/model adapter на deployment; нет настоящего runtime multiplexer;
+Ограничения:
 
-V45 budget — conservative preflight, не billing-grade ledger;
+один физический provider/model adapter на deployment;
 
-нет полноценного provider routing/fallback/data-residency router;
+нет runtime provider/model multiplexer;
 
-нет DLP/data-classification policy plane;
+нет полноценного provider fallback/data-residency router;
 
-нет централизованного general-purpose Policy Engine;
+runtime probe — point-in-time check, не HA monitoring;
+
+TOOLS/VISION/STRUCTURED_OUTPUT fail closed до реализации data plane;
+
+budget — conservative preflight, не billing-grade ledger;
+
+нет DLP/data-classification plane;
+
+нет general-purpose Policy Engine;
 
 нет Groups/Departments;
 
-нет enterprise connector sync/ACL mirroring baseline уровня 1.0;
+нет enterprise connector sync/ACL mirroring baseline 1.0;
 
-нет OIDC/SCIM enterprise provisioning;
+нет OIDC/SCIM;
 
-нет Prompt/Configuration Registry;
+нет Prompt/Configuration Registry уровня enterprise governance;
 
-нет формально завершённых regression/security evaluation gates;
+нет завершённых regression/security evaluation gates;
 
-нет MCP Tool Gateway / approvals / durable Agent Runtime;
+нет MCP Tool Gateway/approvals;
 
-HA/SLO/backup-restore должны подтверждаться deployment drills, а не только кодом;
+нет durable Agent Runtime;
+
+HA/SLO/backup-restore должны подтверждаться deployment drills;
 
 compliance certification не заявляется.
 
-Не заявлять текущую версию как:
+Не описывать текущую версию как:
 
 billing-grade
 compliance-certified
@@ -1240,48 +1528,69 @@ autonomous agent platform
 
 Positioning
 
-Для собеседования:
+Для собеседования
 
-SafeAI Desk — modular-monolith корпоративного AI Gateway: multi-tenancy, one-role RBAC, cookie JWT + CSRF, refresh 
-rotation/reuse detection, user/org security epochs, durable idempotent ChatTurn с lease/fencing/ambiguity protection, 
-Knowledge/RAG provenance + Answer Passport, transactional audit outbox, usage/pricing quality analytics и V45 Model 
-Control Plane с immutable route evidence.
+SafeAI Desk — modular-monolith корпоративного AI Gateway: multi-tenancy, exactly-one-role RBAC, cookie JWT + CSRF, 
+refresh rotation/reuse detection, user/org security epochs, durable idempotent ChatTurn с lease/fencing/ambiguity 
+protection, Knowledge/RAG provenance + Answer Passport, transactional audit outbox, usage/pricing quality analytics, 
+versioned Model Catalog, organization policies, immutable route decisions и V48 input-accounting provenance/integrity v3.
 
-Для продукта:
+Для продукта
 
-Управляемая корпоративная AI-платформа, где известно кто, к каким данным и знаниям получил доступ, какая policy и версия 
-модели были применены, на каком evidence основан ответ, что произошло и сколько это стоило с известной степенью качества 
-данных.
+Управляемая корпоративная AI-платформа, где можно установить кто сделал запрос, из какой организации, какие права и 
+knowledge evidence использовались, какая policy/catalog version применялась, какая runtime model была исполнима, какой 
+accounting contract использовался, почему routing был ALLOWED/DENIED и сколько usage/cost данных известно с какой 
+степенью качества.
 
 Следующий этап
 
-Ближайший приоритет — не ещё один чат и не agents.
+После V48 hardening логичный порядок:
 
-После V45 production hardening:
+Release-candidate verification V1→V48 и representative upgrade path.
 
-1. Release-candidate verification V1→V45 / V44→V45
-2. Knowledge UX + RAG evaluation/regression gates
-3. Multi-provider/model data-plane routing
-4. AI FinOps / budgets reconciliation
-5. Data Classification + DLP
-6. Groups / Departments
-7. Enterprise Knowledge Connectors
-8. OIDC / SCIM
-9. General Policy Engine / Governance
-10. Enterprise Assistants
-11. MCP Tool Gateway + approvals
-12. Durable Agent Runtime
+Knowledge UX + RAG evaluation/regression gates.
 
-При развитии routing сохраняется текущий invariant:
+Dynamic multi-provider/model data-plane routing.
+
+Provider fallback / residency-aware routing.
+
+AI FinOps / budget reconciliation / ledger-quality accounting.
+
+Data Classification + DLP.
+
+Groups / Departments.
+
+Enterprise Knowledge Connectors.
+
+OIDC / SCIM.
+
+General Policy Engine / Governance.
+
+Prompt / Configuration Registry.
+
+Enterprise Assistants.
+
+MCP Tool Gateway + approvals.
+
+Durable Agent Runtime.
+
+Routing evolution должна сохранять invariant:
 
 reserveOrReplay()
         │
         ├─ idempotency lookup
         ├─ immutable model governance decision
-        ├─ ChatTurn reservation + quota/rate-limit state
-        ▼ commit short transaction
+        ├─ input-accounting provenance
+        ├─ ChatTurn reservation
+        ├─ quota/rate-limit state
+        ▼
+commit short transaction
 
 Retrieval / context preparation
+        │
+        ├─ preserve route identity
+        ├─ preserve output cap
+        ├─ enforce reserved input envelope
         ▼
 markProviderCallStarted()
         ▼
@@ -1289,5 +1598,7 @@ provider I/O outside long DB transaction
         ▼
 fenced finalization
 
-Главное правило дальнейшей эволюции: governance/provenance не должны ослаблять уже реализованные ChatTurn durability, 
-tenant isolation и database-enforced integrity invariants.
+Главное правило дальнейшей эволюции:
+
+новые governance, routing, RAG, FinOps и agent capabilities не должны ослаблять уже реализованные ChatTurn durability, 
+tenant isolation, idempotency, provider-ambiguity protection, provenance и database-enforced integrity invariants.

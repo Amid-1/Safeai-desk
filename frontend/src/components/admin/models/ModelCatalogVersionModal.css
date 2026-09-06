@@ -1,0 +1,407 @@
+/* ============================================================
+   frontend/src/components/admin/models/ModelCatalogVersionModal.css
+
+   Resizable Model Catalog modal.
+   Modal.tsx owns resize math and content scale variables.
+   This stylesheet owns only catalog presentation/reflow.
+   ============================================================ */
+
+.modal-card.models-catalog-modal.modal-card--resizable {
+    --catalog-panel-bg: #fbfdff;
+    --catalog-panel-border: #d9e4f3;
+    --catalog-primary-soft: #eef4ff;
+    --catalog-success-soft: #effbf5;
+    --catalog-pricing-soft: #f7f4ff;
+
+    container-name: model-catalog-modal;
+    container-type: inline-size;
+
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 18px;
+    font-size: var(--modal-resize-font-size, 13px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .modal-header {
+    min-width: 0;
+    flex: 0 0 auto;
+    margin: 0;
+    padding: var(--modal-resize-header-padding-y, 14px) var(--modal-resize-padding-x, 20px);
+    border-bottom: 1px solid var(--models-border);
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .modal-header h2 {
+    font-size: var(--modal-resize-title-font-size, 22px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .modal-body {
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    max-height: none;
+    padding: var(--modal-resize-body-padding-y, 13px) var(--modal-resize-padding-x, 20px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scroll-padding-block: var(--modal-resize-gap, 10px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .modal-footer {
+    position: relative;
+    z-index: 50;
+    min-width: 0;
+    flex: 0 0 auto;
+    padding: var(--modal-resize-footer-padding-y, 10px) var(--modal-resize-padding-x, 20px);
+    border-top: 1px solid var(--models-border);
+    background: #ffffff;
+    box-shadow: 0 -6px 18px rgb(15 23 42 / 5%);
+}
+
+.models-catalog-modal__footer {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--modal-resize-gap, 10px);
+}
+
+.models-catalog-modal__footer button {
+    min-width: 126px;
+    min-height: var(--modal-resize-control-height, 38px);
+}
+
+.models-catalog-form {
+    gap: var(--modal-resize-gap, 10px);
+}
+
+.models-catalog-form__intro {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--modal-resize-gap, 10px);
+    padding: var(--modal-resize-body-padding-y, 13px);
+    border: 1px solid #dfe5ff;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f5f7ff 0%, #ffffff 100%);
+}
+
+.models-catalog-form__intro-badge {
+    display: grid;
+    width: var(--modal-resize-control-height, 38px);
+    height: var(--modal-resize-control-height, 38px);
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 10px;
+    background: #edf3ff;
+}
+
+.models-catalog-form__intro-badge::before {
+    color: var(--models-accent);
+    content: '◇';
+    font-size: var(--modal-resize-title-font-size, 22px);
+    font-weight: 900;
+}
+
+.models-catalog-form__intro > div {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+}
+
+.models-catalog-form__intro strong {
+    font-size: var(--modal-resize-strong-font-size, 15px);
+}
+
+.models-catalog-form__intro p {
+    font-size: var(--modal-resize-hint-font-size, 12px);
+}
+
+.models-catalog-form__layout {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+    grid-template-areas: "identity limits" "data capabilities" "pricing pricing";
+    gap: var(--modal-resize-gap, 10px);
+}
+
+.models-catalog-form__panel {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: var(--modal-resize-gap, 10px);
+    padding: var(--modal-resize-body-padding-y, 13px);
+    border: 1px solid var(--catalog-panel-border);
+    border-radius: 13px;
+    background: var(--catalog-panel-bg);
+}
+
+.models-catalog-form__panel--identity {
+    grid-area: identity;
+}
+
+.models-catalog-form__panel--limits {
+    grid-area: limits;
+}
+
+.models-catalog-form__panel--data {
+    grid-area: data;
+}
+
+.models-catalog-form__panel--capabilities {
+    grid-area: capabilities;
+}
+
+.models-catalog-form__panel--pricing {
+    grid-area: pricing;
+    background: linear-gradient(180deg, var(--catalog-pricing-soft) 0%, #ffffff 58%);
+}
+
+.models-catalog-form__section-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--modal-resize-gap, 10px);
+}
+
+.models-catalog-form__section-heading > div {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+}
+
+.models-catalog-form__section-heading h3,
+.models-catalog-form__section-heading p {
+    margin: 0;
+}
+
+.models-catalog-form__section-heading h3 {
+    font-size: var(--modal-resize-strong-font-size, 15px);
+    line-height: 1.2;
+}
+
+.models-catalog-form__section-heading p {
+    color: var(--models-muted);
+    font-size: var(--modal-resize-small-font-size, 11px);
+    line-height: 1.25;
+}
+
+.models-catalog-form__section-icon {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 9px;
+    background: var(--catalog-primary-soft);
+}
+
+.models-catalog-form__section-icon::before {
+    color: var(--models-accent);
+    content: '◆';
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+.models-catalog-form__section-heading--success .models-catalog-form__section-icon {
+    background: var(--catalog-success-soft);
+}
+
+.models-catalog-form__section-heading--success .models-catalog-form__section-icon::before {
+    color: #1b8d55;
+}
+
+.models-catalog-form__section-heading--neutral .models-catalog-form__section-icon::before {
+    content: '↕';
+}
+
+.models-catalog-form__section-heading--pricing .models-catalog-form__section-icon {
+    background: var(--catalog-pricing-soft);
+}
+
+.models-catalog-form__section-heading--pricing .models-catalog-form__section-icon::before {
+    content: '$';
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .models-form__grid,
+.modal-card.models-catalog-modal.modal-card--resizable .models-form__two-columns {
+    gap: var(--modal-resize-gap, 10px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .models-form label,
+.modal-card.models-catalog-modal.modal-card--resizable .models-check-row {
+    gap: 4px;
+    font-size: var(--modal-resize-font-size, 13px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable input,
+.modal-card.models-catalog-modal.modal-card--resizable select,
+.modal-card.models-catalog-modal.modal-card--resizable button {
+    min-height: var(--modal-resize-control-height, 38px);
+    font-size: var(--modal-resize-control-font-size, 12px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable textarea {
+    min-height: var(--modal-resize-textarea-height, 76px);
+    font-size: var(--modal-resize-control-font-size, 12px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable fieldset {
+    padding: var(--modal-resize-body-padding-y, 13px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable legend {
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .models-form__checks {
+    gap: 6px 12px;
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .models-form input[type='checkbox'] {
+    width: var(--modal-resize-checkbox-size, 14px);
+    min-width: var(--modal-resize-checkbox-size, 14px);
+    height: var(--modal-resize-checkbox-size, 14px);
+    min-height: var(--modal-resize-checkbox-size, 14px);
+}
+
+.models-catalog-form__pricing-complete {
+    width: fit-content;
+}
+
+.models-catalog-form__pricing-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+}
+
+.models-catalog-form__panel--pricing .models-form__advanced {
+    padding-top: 5px;
+}
+
+.models-catalog-form__panel--pricing .models-form__advanced > summary {
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+/* Resize handles are scoped to the catalog modal only. */
+.models-catalog-modal .modal-resize-layer {
+    position: absolute;
+    z-index: 70;
+    inset: 0;
+    pointer-events: none;
+}
+
+.models-catalog-modal .modal-resize-handle {
+    position: absolute;
+    pointer-events: auto;
+    touch-action: none;
+}
+
+.models-catalog-modal .modal-resize-handle--n,
+.models-catalog-modal .modal-resize-handle--s {
+    right: 18px;
+    left: 18px;
+    height: 10px;
+    cursor: ns-resize;
+}
+
+.models-catalog-modal .modal-resize-handle--n {
+    top: 0;
+}
+
+.models-catalog-modal .modal-resize-handle--s {
+    bottom: 0;
+}
+
+.models-catalog-modal .modal-resize-handle--e,
+.models-catalog-modal .modal-resize-handle--w {
+    top: 18px;
+    bottom: 18px;
+    width: 10px;
+    cursor: ew-resize;
+}
+
+.models-catalog-modal .modal-resize-handle--e {
+    right: 0;
+}
+
+.models-catalog-modal .modal-resize-handle--w {
+    left: 0;
+}
+
+.models-catalog-modal :is(
+    .modal-resize-handle--ne,
+    .modal-resize-handle--nw,
+    .modal-resize-handle--se,
+    .modal-resize-handle--sw
+) {
+    z-index: 2;
+    width: 20px;
+    height: 20px;
+}
+
+.models-catalog-modal .modal-resize-handle--ne {
+    top: 0;
+    right: 0;
+    cursor: nesw-resize;
+}
+
+.models-catalog-modal .modal-resize-handle--nw {
+    top: 0;
+    left: 0;
+    cursor: nwse-resize;
+}
+
+.models-catalog-modal .modal-resize-handle--se {
+    right: 0;
+    bottom: 0;
+    cursor: nwse-resize;
+}
+
+.models-catalog-modal .modal-resize-handle--sw {
+    bottom: 0;
+    left: 0;
+    cursor: nesw-resize;
+}
+
+@container model-catalog-modal (max-width: 980px) {
+    .models-catalog-form__layout {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas: "identity identity" "limits data" "capabilities capabilities" "pricing pricing";
+    }
+
+    .models-catalog-form__pricing-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+}
+
+@container model-catalog-modal (max-width: 760px) {
+    .models-catalog-form__layout {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "identity" "limits" "data" "capabilities" "pricing";
+    }
+
+    .models-catalog-form__pricing-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .models-catalog-form__panel--capabilities .models-form__two-columns {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .models-catalog-modal__footer {
+        justify-content: stretch;
+    }
+
+    .models-catalog-modal__footer button {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+}
+
+@media (max-height: 700px) {
+    .modal-card.models-catalog-modal.modal-card--resizable .modal-body {
+        scrollbar-width: thin;
+    }
+}

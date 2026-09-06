@@ -1,4 +1,11 @@
-import { useState } from 'react'
+// ============================================================
+// frontend/src/components/admin/models/ModelCatalogVersionModal.tsx
+// ============================================================
+
+import {
+    useId,
+    useState,
+} from 'react'
 import type {
     CreateModelCatalogVersionRequest,
     ModelCatalogEntry,
@@ -19,8 +26,15 @@ import {
     MODEL_TRAINING_USE_STATUSES,
 } from '../../../api/modelApi'
 import Modal from '../../Modal'
-import { getApiErrorMessage } from '../../../api/http'
-import { ErrorState } from '../../StateBlock'
+import type {
+    ModalResizeOptions,
+} from '../../Modal'
+import {
+    getApiErrorMessage,
+} from '../../../api/http'
+import {
+    ErrorState,
+} from '../../StateBlock'
 import {
     CheckboxGroup,
     DecimalInput,
@@ -30,7 +44,10 @@ import {
     createCatalogDraft,
     normalizeDraftForPricingStatus,
 } from './modelControlPlaneSupport'
-import type { CatalogDraft } from './modelControlPlaneSupport'
+import type {
+    CatalogDraft,
+} from './modelControlPlaneSupport'
+import './ModelCatalogVersionModal.css'
 
 type ModelCatalogVersionModalProps = {
     base: ModelCatalogEntry | null
@@ -42,6 +59,22 @@ type ModelCatalogVersionModalProps = {
         request: CreateModelCatalogVersionRequest,
     ) => Promise<void>
 }
+
+const CATALOG_MODAL_RESIZE:
+    ModalResizeOptions = {
+        initialWidth: 1120,
+        initialHeight: 790,
+
+        minWidth: 700,
+        minHeight: 520,
+
+        maxWidth: 1480,
+        maxHeight: 980,
+
+        scaleContent: true,
+        minScale: 0.80,
+        maxScale: 1.18,
+    }
 
 const OUTPUT_MODALITIES =
     MODEL_MODALITIES.filter(
@@ -126,6 +159,44 @@ function InfoHint({
     )
 }
 
+function SectionHeading({
+    title,
+    hint,
+    tone = 'primary',
+}: {
+    title: string
+    hint: string
+    tone?:
+        | 'primary'
+        | 'success'
+        | 'neutral'
+        | 'pricing'
+}) {
+    return (
+        <div
+            className={[
+                'models-catalog-form__section-heading',
+                `models-catalog-form__section-heading--${tone}`,
+            ].join(' ')}
+        >
+            <span
+                className="models-catalog-form__section-icon"
+                aria-hidden="true"
+            />
+
+            <div>
+                <h3>
+                    {title}
+                </h3>
+
+                <p>
+                    {hint}
+                </p>
+            </div>
+        </div>
+    )
+}
+
 export function ModelCatalogVersionModal({
     base,
     runtime,
@@ -134,6 +205,9 @@ export function ModelCatalogVersionModal({
     onClose,
     onSubmit,
 }: ModelCatalogVersionModalProps) {
+    const formId =
+        useId()
+
     const [draft, setDraft] =
         useState<CatalogDraft>(() =>
             createCatalogDraft(
@@ -175,6 +249,31 @@ export function ModelCatalogVersionModal({
         }
     }
 
+    const modalFooter = (
+        <div
+            className="models-catalog-modal__footer"
+        >
+            <button
+                type="button"
+                disabled={pending}
+                onClick={onClose}
+            >
+                Отмена
+            </button>
+
+            <button
+                type="submit"
+                form={formId}
+                className="btn-primary"
+                disabled={pending}
+            >
+                {pending
+                    ? 'Сохраняем...'
+                    : 'Сохранить версию'}
+            </button>
+        </div>
+    )
+
     return (
         <Modal
             title={
@@ -182,23 +281,56 @@ export function ModelCatalogVersionModal({
                     ? `Новая версия: ${base.displayName}`
                     : 'Добавление модели в каталог'
             }
+            footer={modalFooter}
             onClose={onClose}
             closeDisabled={pending}
+
+            /**
+             * Каталожная форма содержит много полей.
+             * Случайный click по backdrop не должен уничтожать draft.
+             */
+            closeOnBackdrop={false}
+
+            /**
+             * Поведение совпадает с policy modal:
+             * закрытие — крестик / Отмена / успешный Save.
+             */
+            closeOnEscape={false}
+
             size="lg"
             className="models-catalog-modal"
+            resize={CATALOG_MODAL_RESIZE}
         >
             <form
+                id={formId}
                 className="models-form models-catalog-form"
                 onSubmit={(event) => {
                     event.preventDefault()
                     void handleSubmit()
                 }}
             >
-                <p className="models-form__hint">
-                    {base
-                        ? `После сохранения появится версия ${expectedPreviousVersion + 1}. Предыдущая версия останется в истории.`
-                        : 'После сохранения появится первая версия модели в каталоге.'}
-                </p>
+                <div
+                    className="models-catalog-form__intro"
+                >
+                    <span
+                        className="models-catalog-form__intro-badge"
+                        aria-hidden="true"
+                    />
+
+                    <div>
+                        <strong>
+                            {base
+                                ? 'Новая immutable-версия модели'
+                                : 'Новая модель в Model Catalog'}
+                        </strong>
+
+                        <p className="models-form__hint">
+                            {base
+                                ? `После сохранения появится версия ${expectedPreviousVersion + 1}. Предыдущая версия останется в истории.`
+                                : 'После сохранения появится первая версия модели в каталоге.'}
+                        </p>
+                    </div>
+                </div>
 
                 {formError && (
                     <ErrorState
@@ -207,428 +339,519 @@ export function ModelCatalogVersionModal({
                     />
                 )}
 
-                <section className="models-form__section">
-                    <h3>Основные данные</h3>
-
-                    <div className="models-form__grid">
-                        <label>
-                            <span className="models-label-row">
-                                Ключ модели
-                                <InfoHint text="Уникальное техническое имя модели в каталоге, например openai:gpt-5." />
-                            </span>
-                            <input
-                                required
-                                maxLength={160}
-                                value={draft.modelKey}
-                                disabled={base !== null}
-                                placeholder="openai:gpt-5"
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        modelKey: event.target.value,
-                                    }))
-                                }}
-                            />
-                        </label>
-
-                        <label>
-                            Название
-                            <input
-                                required
-                                maxLength={255}
-                                value={draft.displayName}
-                                placeholder="Название для администраторов"
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        displayName: event.target.value,
-                                    }))
-                                }}
-                            />
-                        </label>
-
-                        <label>
-                            Провайдер
-                            <input
-                                required
-                                maxLength={32}
-                                value={draft.provider}
-                                placeholder="openai"
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        provider: event.target.value,
-                                    }))
-                                }}
-                            />
-                        </label>
-
-                        <label>
-                            ID модели у провайдера
-                            <input
-                                required
-                                maxLength={100}
-                                value={draft.providerModelId}
-                                placeholder="gpt-5"
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        providerModelId: event.target.value,
-                                    }))
-                                }}
-                            />
-                        </label>
-
-                        <label>
-                            Статус модели
-                            <select
-                                value={draft.lifecycle}
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        lifecycle: event.target.value as ModelLifecycle,
-                                    }))
-                                }}
-                            >
-                                {MODEL_LIFECYCLES.map(
-                                    (value) => (
-                                        <option
-                                            key={value}
-                                            value={value}
-                                        >
-                                            {LIFECYCLE_LABELS[value]}
-                                        </option>
-                                    ),
-                                )}
-                            </select>
-                        </label>
-
-                        <label>
-                            Начать использовать с
-                            <input
-                                type="datetime-local"
-                                value={draft.effectiveFrom}
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        effectiveFrom: event.target.value,
-                                    }))
-                                }}
-                            />
-                        </label>
-
-                        <label>
-                            Входные токены, максимум
-                            <input
-                                required
-                                inputMode="numeric"
-                                value={draft.maxInputTokens}
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        maxInputTokens: event.target.value,
-                                    }))
-                                }}
-                            />
-                        </label>
-
-                        <label>
-                            Выходные токены, максимум
-                            <input
-                                required
-                                inputMode="numeric"
-                                value={draft.maxOutputTokens}
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        maxOutputTokens: event.target.value,
-                                    }))
-                                }}
-                            />
-                        </label>
-                    </div>
-                </section>
-
-                <section className="models-form__section models-catalog-form__capabilities">
-                    <h3>Возможности и типы данных</h3>
-
-                    <fieldset>
-                        <legend>Дополнительные возможности</legend>
-                        <CheckboxGroup
-                            values={MODEL_CAPABILITIES}
-                            selected={draft.capabilities}
-                            getLabel={(value) =>
-                                CAPABILITY_LABELS[value]}
-                            onChange={(capabilities) => {
-                                setDraft((current) => ({
-                                    ...current,
-                                    capabilities,
-                                }))
-                            }}
+                <div
+                    className="models-catalog-form__layout"
+                >
+                    <section
+                        className={[
+                            'models-catalog-form__panel',
+                            'models-catalog-form__panel--identity',
+                        ].join(' ')}
+                    >
+                        <SectionHeading
+                            title="Основные данные"
+                            hint="Идентификаторы модели и момент вступления версии в силу."
                         />
-                    </fieldset>
 
-                    <div className="models-form__two-columns">
-                        <fieldset>
-                            <legend>Входные данные</legend>
-                            <CheckboxGroup
-                                values={MODEL_MODALITIES}
-                                selected={draft.inputModalities}
-                                getLabel={(value) =>
-                                    MODALITY_LABELS[value]}
-                                onChange={(inputModalities) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        inputModalities,
-                                    }))
-                                }}
-                            />
-                        </fieldset>
+                        <div className="models-form__grid">
+                            <label>
+                                <span className="models-label-row">
+                                    Ключ модели
+                                    <InfoHint text="Уникальное техническое имя модели в каталоге, например openai:gpt-5." />
+                                </span>
 
-                        <fieldset>
-                            <legend>Выходные данные</legend>
-                            <CheckboxGroup
-                                values={OUTPUT_MODALITIES}
-                                selected={draft.outputModalities.filter(
-                                    (value) => value !== 'IMAGE',
-                                )}
-                                getLabel={(value) =>
-                                    MODALITY_LABELS[value]}
-                                onChange={(outputModalities) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        outputModalities,
-                                    }))
-                                }}
-                            />
-                        </fieldset>
-                    </div>
-                </section>
+                                <input
+                                    required
+                                    maxLength={160}
+                                    value={draft.modelKey}
+                                    disabled={base !== null}
+                                    placeholder="openai:gpt-5"
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            modelKey:
+                                                event.target.value,
+                                        }))
+                                    }}
+                                />
+                            </label>
 
-                <section className="models-form__section">
-                    <h3>Данные и стоимость</h3>
+                            <label>
+                                Название
+                                <input
+                                    required
+                                    maxLength={255}
+                                    value={draft.displayName}
+                                    placeholder="Название для администраторов"
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            displayName:
+                                                event.target.value,
+                                        }))
+                                    }}
+                                />
+                            </label>
 
-                    <div className="models-form__grid">
-                        <label>
-                            Хранение данных
-                            <select
-                                value={draft.retentionStatus}
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        retentionStatus: event.target.value as ModelRetentionStatus,
-                                    }))
-                                }}
-                            >
-                                {MODEL_RETENTION_STATUSES.map(
-                                    (value) => (
-                                        <option
-                                            key={value}
-                                            value={value}
-                                        >
-                                            {RETENTION_LABELS[value]}
-                                        </option>
-                                    ),
-                                )}
-                            </select>
-                        </label>
+                            <label>
+                                Провайдер
+                                <input
+                                    required
+                                    maxLength={32}
+                                    value={draft.provider}
+                                    placeholder="openai"
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            provider:
+                                                event.target.value,
+                                        }))
+                                    }}
+                                />
+                            </label>
 
-                        <label>
-                            Срок хранения, дней
-                            <input
-                                inputMode="numeric"
-                                placeholder="Если применимо"
-                                value={draft.retentionDays}
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        retentionDays: event.target.value,
-                                    }))
-                                }}
-                            />
-                        </label>
+                            <label>
+                                ID модели у провайдера
+                                <input
+                                    required
+                                    maxLength={100}
+                                    value={draft.providerModelId}
+                                    placeholder="gpt-5"
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            providerModelId:
+                                                event.target.value,
+                                        }))
+                                    }}
+                                />
+                            </label>
 
-                        <label>
-                            Использование для обучения
-                            <select
-                                value={draft.trainingUseStatus}
-                                onChange={(event) => {
-                                    setDraft((current) => ({
-                                        ...current,
-                                        trainingUseStatus: event.target.value as ModelTrainingUseStatus,
-                                    }))
-                                }}
-                            >
-                                {MODEL_TRAINING_USE_STATUSES.map(
-                                    (value) => (
-                                        <option
-                                            key={value}
-                                            value={value}
-                                        >
-                                            {TRAINING_LABELS[value]}
-                                        </option>
-                                    ),
-                                )}
-                            </select>
-                        </label>
-
-                        <label>
-                            Статус стоимости
-                            <select
-                                value={draft.pricingStatus}
-                                onChange={(event) => {
-                                    const pricingStatus =
-                                        event.target.value as ModelPricingStatus
-
-                                    setDraft((current) =>
-                                        normalizeDraftForPricingStatus(
-                                            {
-                                                ...current,
-                                                pricingStatus,
-                                            },
+                            <label>
+                                Статус модели
+                                <select
+                                    value={draft.lifecycle}
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            lifecycle:
+                                                (
+                                                    event.target.value as ModelLifecycle
+                                                ),
+                                        }))
+                                    }}
+                                >
+                                    {MODEL_LIFECYCLES.map(
+                                        (value) => (
+                                            <option
+                                                key={value}
+                                                value={value}
+                                            >
+                                                {LIFECYCLE_LABELS[value]}
+                                            </option>
                                         ),
-                                    )
+                                    )}
+                                </select>
+                            </label>
+
+                            <label>
+                                Начать использовать с
+                                <input
+                                    type="datetime-local"
+                                    value={draft.effectiveFrom}
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            effectiveFrom:
+                                                event.target.value,
+                                        }))
+                                    }}
+                                />
+                            </label>
+                        </div>
+                    </section>
+
+                    <section
+                        className={[
+                            'models-catalog-form__panel',
+                            'models-catalog-form__panel--limits',
+                        ].join(' ')}
+                    >
+                        <SectionHeading
+                            title="Лимиты"
+                            hint="Ограничения на объём входа и ответа модели."
+                            tone="neutral"
+                        />
+
+                        <div className="models-form__grid">
+                            <label>
+                                Входные токены, максимум
+                                <input
+                                    required
+                                    inputMode="numeric"
+                                    value={draft.maxInputTokens}
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            maxInputTokens:
+                                                event.target.value,
+                                        }))
+                                    }}
+                                />
+                            </label>
+
+                            <label>
+                                Выходные токены, максимум
+                                <input
+                                    required
+                                    inputMode="numeric"
+                                    value={draft.maxOutputTokens}
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            maxOutputTokens:
+                                                event.target.value,
+                                        }))
+                                    }}
+                                />
+                            </label>
+                        </div>
+                    </section>
+
+                    <section
+                        className={[
+                            'models-catalog-form__panel',
+                            'models-catalog-form__panel--data',
+                        ].join(' ')}
+                    >
+                        <SectionHeading
+                            title="Данные и использование"
+                            hint="Retention, обучение и семантика стоимости."
+                            tone="success"
+                        />
+
+                        <div className="models-form__grid">
+                            <label>
+                                Хранение данных
+                                <select
+                                    value={draft.retentionStatus}
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            retentionStatus:
+                                                (
+                                                    event.target.value as ModelRetentionStatus
+                                                ),
+                                        }))
+                                    }}
+                                >
+                                    {MODEL_RETENTION_STATUSES.map(
+                                        (value) => (
+                                            <option
+                                                key={value}
+                                                value={value}
+                                            >
+                                                {RETENTION_LABELS[value]}
+                                            </option>
+                                        ),
+                                    )}
+                                </select>
+                            </label>
+
+                            <label>
+                                Срок хранения, дней
+                                <input
+                                    inputMode="numeric"
+                                    placeholder="Если применимо"
+                                    value={draft.retentionDays}
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            retentionDays:
+                                                event.target.value,
+                                        }))
+                                    }}
+                                />
+                            </label>
+
+                            <label>
+                                Использование для обучения
+                                <select
+                                    value={draft.trainingUseStatus}
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            trainingUseStatus:
+                                                (
+                                                    event.target.value as ModelTrainingUseStatus
+                                                ),
+                                        }))
+                                    }}
+                                >
+                                    {MODEL_TRAINING_USE_STATUSES.map(
+                                        (value) => (
+                                            <option
+                                                key={value}
+                                                value={value}
+                                            >
+                                                {TRAINING_LABELS[value]}
+                                            </option>
+                                        ),
+                                    )}
+                                </select>
+                            </label>
+
+                            <label>
+                                Статус стоимости
+                                <select
+                                    value={draft.pricingStatus}
+                                    onChange={(event) => {
+                                        const pricingStatus =
+                                            (
+                                                event.target.value as ModelPricingStatus
+                                            )
+
+                                        setDraft((current) =>
+                                            normalizeDraftForPricingStatus(
+                                                {
+                                                    ...current,
+                                                    pricingStatus,
+                                                },
+                                            ),
+                                        )
+                                    }}
+                                >
+                                    {MODEL_PRICING_STATUSES.map(
+                                        (value) => (
+                                            <option
+                                                key={value}
+                                                value={value}
+                                            >
+                                                {PRICING_LABELS[value]}
+                                            </option>
+                                        ),
+                                    )}
+                                </select>
+                            </label>
+                        </div>
+                    </section>
+
+                    <section
+                        className={[
+                            'models-catalog-form__panel',
+                            'models-catalog-form__panel--capabilities',
+                        ].join(' ')}
+                    >
+                        <SectionHeading
+                            title="Возможности и типы данных"
+                            hint="Что модель умеет и с какими входами/выходами работает."
+                            tone="primary"
+                        />
+
+                        <fieldset>
+                            <legend>
+                                Дополнительные возможности
+                            </legend>
+
+                            <CheckboxGroup
+                                values={MODEL_CAPABILITIES}
+                                selected={draft.capabilities}
+                                getLabel={(value) =>
+                                    CAPABILITY_LABELS[value]}
+                                onChange={(capabilities) => {
+                                    setDraft((current) => ({
+                                        ...current,
+                                        capabilities,
+                                    }))
                                 }}
-                            >
-                                {MODEL_PRICING_STATUSES.map(
-                                    (value) => (
-                                        <option
-                                            key={value}
-                                            value={value}
-                                        >
-                                            {PRICING_LABELS[value]}
-                                        </option>
-                                    ),
-                                )}
-                            </select>
-                        </label>
-                    </div>
+                            />
+                        </fieldset>
 
-                    <label className="models-check-row">
-                        <input
-                            type="checkbox"
-                            checked={draft.pricingComplete}
-                            disabled={
-                                draft.pricingStatus
-                                    === 'FREE'
-                                || draft.pricingStatus
-                                    === 'UNPRICED'
-                                || draft.pricingStatus
-                                    === 'INCOMPLETE'
-                            }
-                            onChange={(event) => {
-                                setDraft((current) => ({
-                                    ...current,
-                                    pricingComplete: event.target.checked,
-                                }))
-                            }}
-                        />
-                        Все варианты тарификации известны
-                    </label>
+                        <div className="models-form__two-columns">
+                            <fieldset>
+                                <legend>
+                                    Входные данные
+                                </legend>
 
-                    <div className="models-form__grid models-form__pricing-grid">
-                        <DecimalInput
-                            label="Вход, USD за 1 млн токенов"
-                            value={draft.inputUsdPer1mTokens}
-                            onChange={(value) => {
-                                setDraft((current) => ({
-                                    ...current,
-                                    inputUsdPer1mTokens: value,
-                                }))
-                            }}
-                        />
+                                <CheckboxGroup
+                                    values={MODEL_MODALITIES}
+                                    selected={draft.inputModalities}
+                                    getLabel={(value) =>
+                                        MODALITY_LABELS[value]}
+                                    onChange={(inputModalities) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            inputModalities,
+                                        }))
+                                    }}
+                                />
+                            </fieldset>
 
-                        <DecimalInput
-                            label="Кэшированный вход, USD за 1 млн"
-                            value={draft.cachedInputUsdPer1mTokens}
-                            onChange={(value) => {
-                                setDraft((current) => ({
-                                    ...current,
-                                    cachedInputUsdPer1mTokens: value,
-                                }))
-                            }}
-                        />
+                            <fieldset>
+                                <legend>
+                                    Выходные данные
+                                </legend>
 
-                        <DecimalInput
-                            label="Запись кэша, USD за 1 млн"
-                            value={draft.cacheWriteInputUsdPer1mTokens}
-                            onChange={(value) => {
-                                setDraft((current) => ({
-                                    ...current,
-                                    cacheWriteInputUsdPer1mTokens: value,
-                                }))
-                            }}
+                                <CheckboxGroup
+                                    values={OUTPUT_MODALITIES}
+                                    selected={draft.outputModalities.filter(
+                                        (value) =>
+                                            value !== 'IMAGE',
+                                    )}
+                                    getLabel={(value) =>
+                                        MODALITY_LABELS[value]}
+                                    onChange={(outputModalities) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            outputModalities,
+                                        }))
+                                    }}
+                                />
+                            </fieldset>
+                        </div>
+                    </section>
+
+                    <section
+                        className={[
+                            'models-catalog-form__panel',
+                            'models-catalog-form__panel--pricing',
+                        ].join(' ')}
+                    >
+                        <SectionHeading
+                            title="Тарификация"
+                            hint="Версионированные price dimensions. Неизвестная стоимость не превращается в ноль."
+                            tone="pricing"
                         />
 
-                        <DecimalInput
-                            label="Выход, USD за 1 млн токенов"
-                            value={draft.outputUsdPer1mTokens}
-                            onChange={(value) => {
-                                setDraft((current) => ({
-                                    ...current,
-                                    outputUsdPer1mTokens: value,
-                                }))
-                            }}
-                        />
-
-                        <label>
-                            Версия тарифа
+                        <label
+                            className={[
+                                'models-check-row',
+                                'models-check-row--strong',
+                                'models-catalog-form__pricing-complete',
+                            ].join(' ')}
+                        >
                             <input
-                                maxLength={64}
-                                value={draft.pricingVersion}
-                                placeholder="Например: 2026-08"
+                                type="checkbox"
+                                checked={draft.pricingComplete}
+                                disabled={
+                                    draft.pricingStatus
+                                        === 'FREE'
+                                    || draft.pricingStatus
+                                        === 'UNPRICED'
+                                    || draft.pricingStatus
+                                        === 'INCOMPLETE'
+                                }
                                 onChange={(event) => {
                                     setDraft((current) => ({
                                         ...current,
-                                        pricingVersion: event.target.value,
+                                        pricingComplete:
+                                            event.target.checked,
                                     }))
                                 }}
                             />
-                        </label>
-                    </div>
 
-                    <details className="models-form__advanced">
-                        <summary>
-                            Дополнительные параметры тарификации
-                        </summary>
-                        <label>
-                            JSON-параметры
-                            <textarea
-                                rows={3}
-                                maxLength={16_000}
-                                value={draft.extraPricingJson}
-                                onChange={(event) => {
+                            Все варианты тарификации известны
+                        </label>
+
+                        <div
+                            className={[
+                                'models-form__grid',
+                                'models-form__pricing-grid',
+                                'models-catalog-form__pricing-grid',
+                            ].join(' ')}
+                        >
+                            <DecimalInput
+                                label="Вход, USD за 1 млн токенов"
+                                value={draft.inputUsdPer1mTokens}
+                                onChange={(value) => {
                                     setDraft((current) => ({
                                         ...current,
-                                        extraPricingJson: event.target.value,
+                                        inputUsdPer1mTokens:
+                                            value,
                                     }))
                                 }}
                             />
-                            <small>
-                                Для обычной полной тарификации оставьте {'{}'}.
-                            </small>
-                        </label>
-                    </details>
-                </section>
 
-                <div className="models-form__actions">
-                    <button
-                        type="button"
-                        disabled={pending}
-                        onClick={onClose}
-                    >
-                        Отмена
-                    </button>
+                            <DecimalInput
+                                label="Кэшированный вход, USD за 1 млн"
+                                value={draft.cachedInputUsdPer1mTokens}
+                                onChange={(value) => {
+                                    setDraft((current) => ({
+                                        ...current,
+                                        cachedInputUsdPer1mTokens:
+                                            value,
+                                    }))
+                                }}
+                            />
 
-                    <button
-                        type="submit"
-                        className="btn-primary"
-                        disabled={pending}
-                    >
-                        {pending
-                            ? 'Сохраняем...'
-                            : 'Сохранить версию'}
-                    </button>
+                            <DecimalInput
+                                label="Запись кэша, USD за 1 млн"
+                                value={draft.cacheWriteInputUsdPer1mTokens}
+                                onChange={(value) => {
+                                    setDraft((current) => ({
+                                        ...current,
+                                        cacheWriteInputUsdPer1mTokens:
+                                            value,
+                                    }))
+                                }}
+                            />
+
+                            <DecimalInput
+                                label="Выход, USD за 1 млн токенов"
+                                value={draft.outputUsdPer1mTokens}
+                                onChange={(value) => {
+                                    setDraft((current) => ({
+                                        ...current,
+                                        outputUsdPer1mTokens:
+                                            value,
+                                    }))
+                                }}
+                            />
+
+                            <label>
+                                Версия тарифа
+                                <input
+                                    maxLength={64}
+                                    value={draft.pricingVersion}
+                                    placeholder="Например: 2026-08"
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            pricingVersion:
+                                                event.target.value,
+                                        }))
+                                    }}
+                                />
+                            </label>
+                        </div>
+
+                        <details className="models-form__advanced">
+                            <summary>
+                                Дополнительные параметры тарификации
+                            </summary>
+
+                            <label>
+                                JSON-параметры
+                                <textarea
+                                    rows={3}
+                                    maxLength={16_000}
+                                    value={draft.extraPricingJson}
+                                    onChange={(event) => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            extraPricingJson:
+                                                event.target.value,
+                                        }))
+                                    }}
+                                />
+
+                                <small>
+                                    Для обычной полной тарификации
+                                    оставьте {'{}'}.
+                                </small>
+                            </label>
+                        </details>
+                    </section>
                 </div>
             </form>
         </Modal>
