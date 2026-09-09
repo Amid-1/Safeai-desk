@@ -45,6 +45,7 @@ import {
 import type {
     PolicyDraft,
 } from './modelControlPlaneSupport'
+import './ModelControlPlaneModalShell.css'
 import './ModelPolicyModal.css'
 
 const POLICY_MODAL_RESIZE:
@@ -340,11 +341,11 @@ export function ModelPolicyModal({
             )
             : policy.configured
                 ? (
-                    'Сохранённая policy существует, '
-                    + 'но сейчас не ограничивает routing.'
+                    'Сохранённые правила существуют, '
+                    + 'но сейчас не ограничивают маршрутизацию.'
                 )
                 : (
-                    'Первая policy не включится, '
+                    'Первая настройка не включится, '
                     + 'пока администратор не активирует её явно.'
                 )
 
@@ -484,11 +485,11 @@ export function ModelPolicyModal({
                             Здесь меняется только блок
                             {' '}
                             «Доступ и ограничения».
-                            Фактический provider/model
+                            Фактический провайдер и модель
                             {' '}
-                            задаётся backend runtime и
+                            задаются конфигурацией Runtime на сервере.
                             {' '}
-                            через policy не переключается.
+                            Правила организации их не переключают.
                         </p>
                     </div>
 
@@ -503,7 +504,7 @@ export function ModelPolicyModal({
                         <button
                             type="button"
                             className={
-                                'models-policy-form__scope-tag'
+                                'models-policy-form__scope-tag models-policy-form__scope-tag--access'
                             }
                             onClick={() => {
                                 focusShortcut(
@@ -517,7 +518,7 @@ export function ModelPolicyModal({
                         <button
                             type="button"
                             className={
-                                'models-policy-form__scope-tag'
+                                'models-policy-form__scope-tag models-policy-form__scope-tag--limits'
                             }
                             onClick={() => {
                                 focusShortcut(
@@ -531,7 +532,7 @@ export function ModelPolicyModal({
                         <button
                             type="button"
                             className={
-                                'models-policy-form__scope-tag'
+                                'models-policy-form__scope-tag models-policy-form__scope-tag--budget'
                             }
                             onClick={() => {
                                 focusShortcut(
@@ -545,7 +546,7 @@ export function ModelPolicyModal({
                         <button
                             type="button"
                             className={
-                                'models-policy-form__scope-tag'
+                                'models-policy-form__scope-tag models-policy-form__scope-tag--data'
                             }
                             onClick={() => {
                                 focusShortcut(
@@ -560,7 +561,10 @@ export function ModelPolicyModal({
 
                 <div
                     className={
-                        'models-policy-form__toggle'
+                        'models-policy-form__toggle '
+                        + (draft.enabled
+                            ? 'models-policy-form__toggle--enabled'
+                            : 'models-policy-form__toggle--disabled')
                     }
                 >
                     <label
@@ -656,25 +660,21 @@ export function ModelPolicyModal({
                                 {' '}
                                 записи каталога,
                                 {' '}
-                                совпадающей с runtime.
+                                совпадающей с Runtime.
                             </strong>
 
                             <p>
-                                Если сохранить правила
+                                Если сохранить правила включёнными,
                                 {' '}
-                                включёнными, AI-запросы
+                                запросы этой организации будут
                                 {' '}
-                                этой организации могут
+                                предсказуемо отклоняться до обращения
                                 {' '}
-                                детерминированно отклоняться
-                                {' '}
-                                до provider I/O. Сохранение
-                                {' '}
-                                намеренно не блокируется:
+                                к провайдеру. Сохранение не блокируется:
                                 {' '}
                                 администратор может сознательно
                                 {' '}
-                                подготовить fail-closed policy.
+                                подготовить правила заранее.
                             </p>
                         </div>
                     )}
@@ -734,7 +734,7 @@ export function ModelPolicyModal({
                         label="Запрещённые модели"
                         hint={
                             'Модель не может одновременно '
-                            + 'быть в allow и deny.'
+                            + 'быть в списке разрешённых и запрещённых.'
                         }
                         kind="deny"
                         catalog={
@@ -781,7 +781,7 @@ export function ModelPolicyModal({
                 >
                     <div
                         className={
-                            'models-policy-form__setting-field'
+                            'models-policy-form__setting-field models-policy-form__setting-field--access'
                         }
                     >
                         <span
@@ -794,8 +794,8 @@ export function ModelPolicyModal({
                             <InfoHint
                                 text={
                                     'Используется, если запрос не выбрал модель явно. '
-                                    + 'Статус рядом показывает связь latest/effective '
-                                    + 'catalog с текущим runtime.'
+                                    + 'Статус рядом показывает связь последней и действующей '
+                                    + 'версий каталога с текущим Runtime.'
                                 }
                             />
                         </span>
@@ -838,7 +838,7 @@ export function ModelPolicyModal({
                         />
                     </div>
 
-                    <label>
+                    <label className="models-policy-form__setting-field models-policy-form__setting-field--budget">
                         <span
                             className={
                                 'models-label-row'
@@ -848,8 +848,8 @@ export function ModelPolicyModal({
 
                             <InfoHint
                                 text={
-                                    'SOFT фиксирует превышение, '
-                                    + 'HARD блокирует запрос до provider I/O.'
+                                    'Мягкий режим фиксирует превышение, '
+                                    + 'жёсткий блокирует запрос до обращения к провайдеру.'
                                 }
                             />
                         </span>
@@ -896,7 +896,7 @@ export function ModelPolicyModal({
                         </select>
                     </label>
 
-                    <label>
+                    <label className="models-policy-form__setting-field models-policy-form__setting-field--limits">
                         Входные токены, максимум
 
                         <input
@@ -926,7 +926,7 @@ export function ModelPolicyModal({
                         />
                     </label>
 
-                    <label>
+                    <label className="models-policy-form__setting-field models-policy-form__setting-field--limits">
                         Выходные токены, максимум
 
                         <input
@@ -953,47 +953,51 @@ export function ModelPolicyModal({
                         />
                     </label>
 
-                    <DecimalInput
-                        label="Стоимость запроса, USD"
-                        placeholder="Без лимита"
-                        value={
-                            draft.maxRequestCostUsd
-                        }
-                        onChange={(
-                            value,
-                        ) => {
-                            setDraft(
-                                (
-                                    current,
-                                ) => ({
-                                    ...current,
-                                    maxRequestCostUsd:
-                                        value,
-                                }),
-                            )
-                        }}
-                    />
+                    <div className="models-policy-form__setting-field models-policy-form__setting-field--budget">
+                        <DecimalInput
+                            label="Стоимость запроса, USD"
+                            placeholder="Без лимита"
+                            value={
+                                draft.maxRequestCostUsd
+                            }
+                            onChange={(
+                                value,
+                            ) => {
+                                setDraft(
+                                    (
+                                        current,
+                                    ) => ({
+                                        ...current,
+                                        maxRequestCostUsd:
+                                            value,
+                                    }),
+                                )
+                            }}
+                        />
+                    </div>
 
-                    <DecimalInput
-                        label="Бюджет на месяц, USD"
-                        placeholder="Не задан"
-                        value={
-                            draft.monthlyBudgetUsd
-                        }
-                        onChange={(
-                            value,
-                        ) => {
-                            setDraft(
-                                (
-                                    current,
-                                ) => ({
-                                    ...current,
-                                    monthlyBudgetUsd:
-                                        value,
-                                }),
-                            )
-                        }}
-                    />
+                    <div className="models-policy-form__setting-field models-policy-form__setting-field--budget">
+                        <DecimalInput
+                            label="Бюджет на месяц, USD"
+                            placeholder="Не задан"
+                            value={
+                                draft.monthlyBudgetUsd
+                            }
+                            onChange={(
+                                value,
+                            ) => {
+                                setDraft(
+                                    (
+                                        current,
+                                    ) => ({
+                                        ...current,
+                                        monthlyBudgetUsd:
+                                            value,
+                                    }),
+                                )
+                            }}
+                        />
+                    </div>
                 </div>
 
                 <fieldset

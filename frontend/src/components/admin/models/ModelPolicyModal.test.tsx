@@ -1,3 +1,6 @@
+/* ============================================================
+   frontend/src/components/admin/models/ModelPolicyModal.test.tsx
+   ============================================================ */
 import {
     fireEvent,
     render,
@@ -11,20 +14,43 @@ import {
     vi,
 } from 'vitest'
 import type {
+    CreateOrganizationModelPolicyVersionRequest,
     ModelCatalogEntry,
     OrganizationModelPolicy,
+    RuntimeModelStatus,
 } from '../../../api/modelApi'
 import { ModelPolicyModal } from './ModelPolicyModal'
 
 const ORGANIZATION_ID =
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
+const ORGANIZATION_NAME =
+    'Demo Company'
+
+const RUNTIME: RuntimeModelStatus = {
+    provider: 'openai',
+    model: 'gpt-5',
+    enabled: true,
+    routingMode: 'SINGLE_PROVIDER_STATIC',
+    maxInputTokens: 64_000,
+    maxOutputTokens: 8_192,
+    toolsSupported: false,
+    visionSupported: false,
+    structuredOutputSupported: false,
+    dataRetentionStatus: 'NOT_DECLARED',
+    healthStatus: 'NOT_PROBED',
+    pricingStatus: 'UNPRICED',
+    inputUsdPer1mTokens: null,
+    outputUsdPer1mTokens: null,
+    pricingVersion: null,
+}
+
 const POLICY: OrganizationModelPolicy = {
     configured: false,
     id: null,
     organizationId: ORGANIZATION_ID,
     version: 0,
-    enabled: true,
+    enabled: false,
     allowModelKeys: [],
     denyModelKeys: [],
     defaultModelKey: null,
@@ -39,7 +65,6 @@ const POLICY: OrganizationModelPolicy = {
     createdByUserId: null,
     createdAt: null,
 }
-
 
 const CATALOG: ModelCatalogEntry[] = [
     {
@@ -73,18 +98,38 @@ const CATALOG: ModelCatalogEntry[] = [
     },
 ]
 
+type PolicySubmit = (
+    request: CreateOrganizationModelPolicyVersionRequest,
+) => Promise<void>
+
+function renderPolicyModal({
+    catalog = [],
+    effectiveCatalog = catalog,
+    onSubmit = vi.fn<PolicySubmit>()
+        .mockResolvedValue(undefined),
+}: {
+    catalog?: ModelCatalogEntry[]
+    effectiveCatalog?: ModelCatalogEntry[]
+    onSubmit?: PolicySubmit
+} = {}) {
+    return render(
+        <ModelPolicyModal
+            policy={POLICY}
+            catalog={catalog}
+            effectiveCatalog={effectiveCatalog}
+            runtime={RUNTIME}
+            organizationId={ORGANIZATION_ID}
+            organizationName={ORGANIZATION_NAME}
+            pending={false}
+            onClose={vi.fn()}
+            onSubmit={onSubmit}
+        />,
+    )
+}
+
 describe('ModelPolicyModal', () => {
     it('показывает пользовательские названия без внутренних SOFT/runtime/policy формулировок', () => {
-        render(
-            <ModelPolicyModal
-                policy={POLICY}
-                catalog={[]}
-                organizationId={ORGANIZATION_ID}
-                pending={false}
-                onClose={vi.fn()}
-                onSubmit={vi.fn()}
-            />,
-        )
+        renderPolicyModal()
 
         expect(
             screen.getByRole(
@@ -97,7 +142,13 @@ describe('ModelPolicyModal', () => {
 
         expect(
             screen.getByText(
-                'Это первая настройка правил для организации. После сохранения появится версия 1.',
+                'Это первая настройка правил. После сохранения появится версия 1.',
+            ),
+        ).toBeInTheDocument()
+
+        expect(
+            screen.getByText(
+                ORGANIZATION_NAME,
             ),
         ).toBeInTheDocument()
 
@@ -136,16 +187,7 @@ describe('ModelPolicyModal', () => {
     })
 
     it('позволяет менять размер окна с любой грани и угла', () => {
-        render(
-            <ModelPolicyModal
-                policy={POLICY}
-                catalog={[]}
-                organizationId={ORGANIZATION_ID}
-                pending={false}
-                onClose={vi.fn()}
-                onSubmit={vi.fn()}
-            />,
-        )
+        renderPolicyModal()
 
         const dialog =
             screen.getByRole('dialog')
@@ -182,30 +224,8 @@ describe('ModelPolicyModal', () => {
         ])
     })
 
-    it('меняет подпись статуса при выключении правил', () => {
-        render(
-            <ModelPolicyModal
-                policy={POLICY}
-                catalog={[]}
-                organizationId={ORGANIZATION_ID}
-                pending={false}
-                onClose={vi.fn()}
-                onSubmit={vi.fn()}
-            />,
-        )
-
-        expect(
-            screen.getByText(
-                'Правила включены',
-            ),
-        ).toBeInTheDocument()
-
-        fireEvent.click(
-            screen.getByRole(
-                'checkbox',
-                {name: /Правила включены/},
-            ),
-        )
+    it('меняет подпись статуса при включении правил', () => {
+        renderPolicyModal()
 
         expect(
             screen.getByText(
@@ -215,22 +235,33 @@ describe('ModelPolicyModal', () => {
 
         expect(
             screen.getByText(
-                'Сейчас ограничения этой организации отключены.',
+                'Первая настройка не включится, пока администратор не активирует её явно.',
+            ),
+        ).toBeInTheDocument()
+
+        fireEvent.click(
+            screen.getByRole(
+                'checkbox',
+                {name: /Правила выключены/},
+            ),
+        )
+
+        expect(
+            screen.getByText(
+                'Правила включены',
+            ),
+        ).toBeInTheDocument()
+
+        expect(
+            screen.getByText(
+                'Ограничения и лимиты применяются к запросам этой организации.',
             ),
         ).toBeInTheDocument()
     })
 
     it('быстрые разделы переводят фокус к соответствующим настройкам', () => {
-        render(
-            <ModelPolicyModal
-                policy={POLICY}
-                catalog={[]}
-                organizationId={ORGANIZATION_ID}
-                pending={false}
-                onClose={vi.fn()}
-                onSubmit={vi.fn()}
-            />,
-        )
+        renderPolicyModal()
+
         const allowedModelsInput =
             screen.getByRole(
                 'combobox',
@@ -287,19 +318,12 @@ describe('ModelPolicyModal', () => {
     })
 
     it('сохраняет первую версию правил с optimistic version 0', async () => {
-        const onSubmit = vi.fn()
+        const onSubmit = vi.fn<PolicySubmit>()
             .mockResolvedValue(undefined)
 
-        render(
-            <ModelPolicyModal
-                policy={POLICY}
-                catalog={[]}
-                organizationId={ORGANIZATION_ID}
-                pending={false}
-                onClose={vi.fn()}
-                onSubmit={onSubmit}
-            />,
-        )
+        renderPolicyModal({
+            onSubmit,
+        })
 
         fireEvent.click(
             screen.getByRole(
@@ -315,7 +339,7 @@ describe('ModelPolicyModal', () => {
                 .toHaveBeenCalledWith(
                     expect.objectContaining({
                         expectedPreviousVersion: 0,
-                        enabled: true,
+                        enabled: false,
                         budgetEnforcement: 'SOFT',
                     }),
                 )
@@ -323,19 +347,14 @@ describe('ModelPolicyModal', () => {
     })
 
     it('выбирает модель из каталога и отправляет нормализованный allowlist', async () => {
-        const onSubmit = vi.fn()
+        const onSubmit = vi.fn<PolicySubmit>()
             .mockResolvedValue(undefined)
 
-        render(
-            <ModelPolicyModal
-                policy={POLICY}
-                catalog={CATALOG}
-                organizationId={ORGANIZATION_ID}
-                pending={false}
-                onClose={vi.fn()}
-                onSubmit={onSubmit}
-            />,
-        )
+        renderPolicyModal({
+            catalog: CATALOG,
+            effectiveCatalog: CATALOG,
+            onSubmit,
+        })
 
         const allowedModelsInput =
             screen.getByRole(
@@ -379,19 +398,14 @@ describe('ModelPolicyModal', () => {
     })
 
     it('не сохраняет форму, пока в поиске остался незавершённый ввод', async () => {
-        const onSubmit = vi.fn()
+        const onSubmit = vi.fn<PolicySubmit>()
             .mockResolvedValue(undefined)
 
-        render(
-            <ModelPolicyModal
-                policy={POLICY}
-                catalog={CATALOG}
-                organizationId={ORGANIZATION_ID}
-                pending={false}
-                onClose={vi.fn()}
-                onSubmit={onSubmit}
-            />,
-        )
+        renderPolicyModal({
+            catalog: CATALOG,
+            effectiveCatalog: CATALOG,
+            onSubmit,
+        })
 
         fireEvent.change(
             screen.getByRole(
@@ -417,8 +431,9 @@ describe('ModelPolicyModal', () => {
                 /Завершите добавление модели/,
             ),
         ).toBeInTheDocument()
+
         expect(onSubmit)
             .not.toHaveBeenCalled()
     })
-
 })
+

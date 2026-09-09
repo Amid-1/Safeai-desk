@@ -30,8 +30,13 @@ import type {
     RuntimeModelStatus,
 } from '../api/modelApi'
 import { getApiErrorMessage } from '../api/http'
-import { searchOrganizationDirectory } from '../api/organizationApi'
-import type { OrganizationDirectoryItem } from '../api/organizationApi'
+import {
+    getOrganizationDetails,
+    searchOrganizationDirectory,
+} from '../api/organizationApi'
+import type {
+    OrganizationDirectoryItem,
+} from '../api/organizationApi'
 import { useAuth } from '../auth/useAuth'
 import ResizableScrollRegion from '../components/ResizableScrollRegion'
 import {
@@ -44,6 +49,7 @@ import {
     RouteDecisionEvidence,
     RuntimeCard,
 } from '../components/admin/models/ModelControlPlaneViews'
+import { ModelCatalogHistoryModal } from '../components/admin/models/ModelCatalogHistoryModal'
 import { ModelCatalogVersionModal } from '../components/admin/models/ModelCatalogVersionModal'
 import { ModelPolicyModal } from '../components/admin/models/ModelPolicyModal'
 import './AdminModelsPage.css'
@@ -57,7 +63,7 @@ function connectionModeLabel(
 ) {
     switch (value) {
         case 'SINGLE_PROVIDER_STATIC':
-            return 'Один фиксированный провайдер'
+            return 'Один фиксированный провайдер и модель'
         default:
             return 'Runtime сконфигурирован'
     }
@@ -108,18 +114,26 @@ function CatalogEmptyState({
 
                 <p>
                     {isSuperAdmin
-                        ? 'Добавьте подключённую модель в каталог или создайте первую карточку модели вручную. После этого здесь появятся версии, лимиты, стоимость и признаки доступности.'
-                        : 'Каталог ещё не настроен администратором. Когда он будет заполнен, здесь появится список моделей, их лимиты, стоимость и параметры доступа.'}
+                        ? 'Добавьте текущий Runtime в каталог управления или создайте первую неизменяемую версию модели вручную. Сам каталог не подключает провайдера к серверу.'
+                        : 'Каталог ещё не настроен администратором. После заполнения здесь появятся последняя и действующая версии, лимиты, стоимость и параметры управления.'}
                 </p>
 
                 <div className="models-empty-catalog__info">
                     <div>
                         <strong>Что будет показано здесь</strong>
-                        <small>Версии моделей, их статус, лимиты, возможности, стоимость и дата вступления в силу.</small>
+                        <small>
+                            Последняя и действующая версии моделей, статус каталога,
+                            лимиты, возможности, стоимость и дата вступления
+                            версии в силу.
+                        </small>
                     </div>
                     <div>
-                        <strong>Как это связано с правилами</strong>
-                        <small>Окно «Правила использования моделей» ограничивает доступ к моделям именно из этого каталога.</small>
+                        <strong>Как это связано с Runtime</strong>
+                        <small>
+                            Каталог описывает сохранённую версию параметров модели.
+                            Физический провайдер и модель настраиваются отдельно
+                            в Runtime на сервере.
+                        </small>
                     </div>
                 </div>
 
@@ -130,7 +144,7 @@ function CatalogEmptyState({
                             disabled={mutationPending}
                             onClick={onImportRuntime}
                         >
-                            Добавить подключённую модель
+                            Добавить Runtime в каталог
                         </button>
 
                         <button
@@ -181,6 +195,19 @@ function AdminModelsPage() {
         currentUser?.organizationId ?? '',
     )
 
+    const [
+        selectedOrganization,
+        setSelectedOrganization,
+    ] = useState<{
+        id: string
+        name: string
+    } | null>(null)
+
+    const selectedOrganizationName =
+        selectedOrganization?.id === targetOrganizationId
+            ? selectedOrganization.name
+            : null
+
     const [loading, setLoading] =
         useState(true)
 
@@ -194,6 +221,9 @@ function AdminModelsPage() {
         useState<{
             base: ModelCatalogEntry | null
         } | null>(null)
+
+    const [historyModalEntry, setHistoryModalEntry] =
+        useState<ModelCatalogEntry | null>(null)
 
     const [
         policyModalOpen,
@@ -233,13 +263,6 @@ function AdminModelsPage() {
 
     const [routeError, setRouteError] =
         useState('')
-
-    const [
-        selectedOrganizationName,
-        setSelectedOrganizationName,
-    ] = useState<string | null>(
-        null,
-    )
 
     const [runtimeProbe, setRuntimeProbe] =
         useState<RuntimeModelProbe | null>(
@@ -333,10 +356,55 @@ function AdminModelsPage() {
         setTargetOrganizationId(
             currentUser.organizationId,
         )
-        setSelectedOrganizationName(
-            null,
-        )
+        setSelectedOrganization(null)
     }, [currentUser])
+
+    /*
+     * Название tenant — presentation metadata. Его отдельная загрузка
+     * не должна делать весь Model Control Plane недоступным при сбое
+     * directory/details endpoint. UUID остаётся authoritative fallback.
+     */
+    useEffect(() => {
+        if (
+            !currentUser
+            || !targetOrganizationId
+        ) {
+            return
+        }
+
+        const controller =
+            new AbortController()
+
+        void getOrganizationDetails(
+            targetOrganizationId,
+            {
+                signal: controller.signal,
+            },
+        )
+            .then((organization) => {
+                if (controller.signal.aborted) {
+                    return
+                }
+
+                setSelectedOrganization({
+                    id: organization.id,
+                    name: organization.name,
+                })
+            })
+            .catch(() => {
+                /*
+                 * Не повышаем presentation failure до page-level error.
+                 * Policy/runtime/catalog продолжают работать по UUID.
+                 */
+            })
+
+        return () => {
+            controller.abort()
+        }
+    }, [
+        currentUser,
+        targetOrganizationId,
+    ])
 
     useEffect(() => {
         if (!currentUser) {
@@ -444,13 +512,13 @@ function AdminModelsPage() {
                 await refreshCatalog()
 
                 setNotice(
-                    `Подключённая модель синхронизирована с каталогом: ${imported.modelKey}, версия ${imported.version}.`,
+                    `Runtime добавлен или синхронизирован с каталогом: ${imported.modelKey}, версия ${imported.version}.`,
                 )
             } catch (failure) {
                 setError(
                     getApiErrorMessage(
                         failure,
-                        'Не удалось добавить подключённую модель в каталог.',
+                        'Не удалось добавить Runtime в каталог.',
                     ),
                 )
             } finally {
@@ -650,10 +718,10 @@ function AdminModelsPage() {
                     </h1>
 
                     <p>
-                        Настройте доступные модели,
-                        лимиты и бюджет организации.
-                        Здесь же видно, какая модель
-                        фактически подключена к серверу.
+                        Runtime показывает физически подключённую модель.
+                        Каталог хранит неизменяемые версии её параметров.
+                        Правила ограничивают использование для выбранной
+                        организации.
                     </p>
                 </div>
 
@@ -701,6 +769,7 @@ function AdminModelsPage() {
                 <PolicyCard
                     policy={policy}
                     catalog={catalog}
+                    runtime={runtime}
                     organizationId={targetOrganizationId}
                     organizationName={selectedOrganizationName}
                     isSuperAdmin={isSuperAdmin}
@@ -724,9 +793,10 @@ function AdminModelsPage() {
                         setOrganizationQuery(
                             organization.name,
                         )
-                        setSelectedOrganizationName(
-                            organization.name,
-                        )
+                        setSelectedOrganization({
+                            id: organization.id,
+                            name: organization.name,
+                        })
                         setOrganizationResults([])
                     }}
                     onEdit={() => {
@@ -739,9 +809,11 @@ function AdminModelsPage() {
                 <div className="models-catalog-toolbar__copy">
                     <h2>Каталог моделей</h2>
                     <p>
-                        Версии моделей и их параметры.
-                        В работу попадает только версия,
-                        которая уже вступила в силу.
+                        В таблице показана последняя версия каждой модели;
+                        полная цепочка открывается через «История версий».
+                        Каталог не подключает провайдера к серверу:
+                        в маршрутизации участвует действующая версия,
+                        определённая сервером и совместимая с Runtime.
                     </p>
                 </div>
 
@@ -754,7 +826,7 @@ function AdminModelsPage() {
                                 void handleImportRuntime()
                             }}
                         >
-                            Добавить подключённую модель
+                            Добавить Runtime в каталог
                         </button>
 
                         <button
@@ -847,9 +919,9 @@ function AdminModelsPage() {
                 <span>
                     Моделей: {catalog.length}
                     {' · '}
-                    Действующих: {effectiveCatalog.length}
+                    Действующих версий: {effectiveCatalog.length}
                     {' · '}
-                    Подключено: {runtime.provider}/{runtime.model}
+                    Runtime: {runtime.provider}/{runtime.model}
                     {' · '}
                     Правила:{' '}
                     {policy.configured
@@ -900,9 +972,23 @@ function AdminModelsPage() {
                                 base: entry,
                             })
                         }}
+                        onOpenHistory={(entry) => {
+                            setHistoryModalEntry(entry)
+                        }}
                     />
                 )}
             </ResizableScrollRegion>
+
+            {historyModalEntry && (
+                <ModelCatalogHistoryModal
+                    modelKey={historyModalEntry.modelKey}
+                    displayName={historyModalEntry.displayName}
+                    runtime={runtime}
+                    onClose={() => {
+                        setHistoryModalEntry(null)
+                    }}
+                />
+            )}
 
             {catalogModal && (
                 <ModelCatalogVersionModal

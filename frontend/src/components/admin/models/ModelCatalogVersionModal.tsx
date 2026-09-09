@@ -47,6 +47,7 @@ import {
 import type {
     CatalogDraft,
 } from './modelControlPlaneSupport'
+import './ModelControlPlaneModalShell.css'
 import './ModelCatalogVersionModal.css'
 
 type ModelCatalogVersionModalProps = {
@@ -320,14 +321,14 @@ export function ModelCatalogVersionModal({
                     <div>
                         <strong>
                             {base
-                                ? 'Новая immutable-версия модели'
-                                : 'Новая модель в Model Catalog'}
+                                ? 'Новая неизменяемая версия модели'
+                                : 'Новая модель в каталоге управления'}
                         </strong>
 
                         <p className="models-form__hint">
                             {base
-                                ? `После сохранения появится версия ${expectedPreviousVersion + 1}. Предыдущая версия останется в истории.`
-                                : 'После сохранения появится первая версия модели в каталоге.'}
+                                ? `После сохранения появится версия ${expectedPreviousVersion + 1}. Предыдущая версия останется неизменной и доступной в истории.`
+                                : 'После сохранения появится первая версия модели в каталоге. Физическое подключение провайдера выполняется отдельно в Runtime.'}
                         </p>
                     </div>
                 </div>
@@ -428,7 +429,7 @@ export function ModelCatalogVersionModal({
                             </label>
 
                             <label>
-                                Статус модели
+                                Статус каталога
                                 <select
                                     value={draft.lifecycle}
                                     onChange={(event) => {
@@ -455,7 +456,7 @@ export function ModelCatalogVersionModal({
                             </label>
 
                             <label>
-                                Начать использовать с
+                                Вступает в силу
                                 <input
                                     type="datetime-local"
                                     value={draft.effectiveFrom}
@@ -526,7 +527,7 @@ export function ModelCatalogVersionModal({
                     >
                         <SectionHeading
                             title="Данные и использование"
-                            hint="Retention, обучение и семантика стоимости."
+                            hint="Хранение данных, использование для обучения и статус стоимости."
                             tone="success"
                         />
 
@@ -644,7 +645,7 @@ export function ModelCatalogVersionModal({
                     >
                         <SectionHeading
                             title="Возможности и типы данных"
-                            hint="Что модель умеет и с какими входами/выходами работает."
+                            hint="Заявленные возможности и типы данных. Фактическое исполнение отдельно проверяет Runtime."
                             tone="primary"
                         />
 
@@ -719,7 +720,7 @@ export function ModelCatalogVersionModal({
                     >
                         <SectionHeading
                             title="Тарификация"
-                            hint="Версионированные price dimensions. Неизвестная стоимость не превращается в ноль."
+                            hint="Версионированные параметры тарификации. Неизвестная стоимость не считается нулевой."
                             tone="pricing"
                         />
 

@@ -92,6 +92,24 @@ public class ModelCatalogService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<ModelCatalogEntryResponse> findHistory(
+            String modelKey,
+            SafeAiUserPrincipal currentUser
+    ) {
+        ModelControlPlaneAccess.requireAdminOrSuperAdmin(
+                currentUser,
+                "Недостаточно прав для просмотра истории каталога моделей"
+        );
+
+        String normalizedModelKey = normalizeModelKey(modelKey);
+
+        return repository.findVersions(normalizedModelKey)
+                .stream()
+                .map(ModelCatalogEntryResponse::from)
+                .toList();
+    }
+
     @Transactional
     public ModelCatalogEntryResponse createVersion(
             CreateModelCatalogVersionRequest request,

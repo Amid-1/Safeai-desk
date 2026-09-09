@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.dto.CreateModelCatalogVersionRequest;
@@ -46,6 +47,15 @@ public class ModelCatalogController {
             SafeAiUserPrincipal currentUser
     ) {
         return service.findEffective(currentUser);
+    }
+
+    @GetMapping("/versions")
+    public List<ModelCatalogEntryResponse> history(
+            @RequestParam("modelKey") String modelKey,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
+    ) {
+        return service.findHistory(modelKey, currentUser);
     }
 
     @PostMapping

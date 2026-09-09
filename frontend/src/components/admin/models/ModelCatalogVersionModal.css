@@ -13,61 +13,15 @@
     --catalog-success-soft: #effbf5;
     --catalog-pricing-soft: #f7f4ff;
 
+    /*
+     * Local static defaults make the stylesheet self-contained for CSS tooling.
+     * Modal.tsx may override these custom properties inline while resizing.
+     */
+    --modal-resize-small-font-size: 11px;
+    --modal-resize-strong-font-size: 15px;
+
     container-name: model-catalog-modal;
     container-type: inline-size;
-
-    display: flex;
-    min-width: 0;
-    min-height: 0;
-    flex-direction: column;
-    overflow: hidden;
-    border-radius: 18px;
-    font-size: var(--modal-resize-font-size, 13px);
-}
-
-.modal-card.models-catalog-modal.modal-card--resizable .modal-header {
-    min-width: 0;
-    flex: 0 0 auto;
-    margin: 0;
-    padding: var(--modal-resize-header-padding-y, 14px) var(--modal-resize-padding-x, 20px);
-    border-bottom: 1px solid var(--models-border);
-    background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-}
-
-.modal-card.models-catalog-modal.modal-card--resizable .modal-header h2 {
-    font-size: var(--modal-resize-title-font-size, 22px);
-}
-
-.modal-card.models-catalog-modal.modal-card--resizable .modal-body {
-    min-width: 0;
-    min-height: 0;
-    flex: 1 1 auto;
-    max-height: none;
-    padding: var(--modal-resize-body-padding-y, 13px) var(--modal-resize-padding-x, 20px);
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-    scroll-padding-block: var(--modal-resize-gap, 10px);
-}
-
-.modal-card.models-catalog-modal.modal-card--resizable .modal-footer {
-    position: relative;
-    z-index: 50;
-    min-width: 0;
-    flex: 0 0 auto;
-    padding: var(--modal-resize-footer-padding-y, 10px) var(--modal-resize-padding-x, 20px);
-    border-top: 1px solid var(--models-border);
-    background: #ffffff;
-    box-shadow: 0 -6px 18px rgb(15 23 42 / 5%);
-}
-
-.models-catalog-modal__footer {
-    display: flex;
-    width: 100%;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--modal-resize-gap, 10px);
 }
 
 .models-catalog-modal__footer button {
@@ -330,12 +284,10 @@
     left: 0;
 }
 
-.models-catalog-modal :is(
-    .modal-resize-handle--ne,
-    .modal-resize-handle--nw,
-    .modal-resize-handle--se,
-    .modal-resize-handle--sw
-) {
+.models-catalog-modal .modal-resize-handle--ne,
+.models-catalog-modal .modal-resize-handle--nw,
+.models-catalog-modal .modal-resize-handle--se,
+.models-catalog-modal .modal-resize-handle--sw {
     z-index: 2;
     width: 20px;
     height: 20px;
@@ -400,8 +352,123 @@
     }
 }
 
-@media (max-height: 700px) {
-    .modal-card.models-catalog-modal.modal-card--resizable .modal-body {
-        scrollbar-width: thin;
-    }
+/* ============================================================
+   SEMANTIC COLOR SYSTEM
+   Identity = blue, limits = cyan, data = green,
+   capabilities = indigo, pricing = amber/violet.
+   ============================================================ */
+
+.modal-card.models-catalog-modal.modal-card--resizable {
+    --catalog-identity: #4057f2;
+    --catalog-identity-soft: #f2f5ff;
+    --catalog-limits: #237da8;
+    --catalog-limits-soft: #f0f9fd;
+    --catalog-data: #178a55;
+    --catalog-data-soft: #effaf4;
+    --catalog-capabilities: #6654d8;
+    --catalog-capabilities-soft: #f6f3ff;
+    --catalog-pricing: #9a6812;
+    --catalog-pricing-soft-2: #fff8e8;
+}
+
+.models-catalog-form__intro {
+    border-color: #dbe3ff;
+    background: linear-gradient(135deg, #f3f6ff 0%, #ffffff 72%);
+}
+
+.models-catalog-form__panel {
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 14px rgb(15 23 42 / 3%);
+}
+
+.models-catalog-form__panel::before {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+    border-radius: 0 4px 4px 0;
+    content: '';
+}
+
+.models-catalog-form__panel--identity {
+    border-color: #d7defe;
+    background: linear-gradient(180deg, #ffffff 0%, var(--catalog-identity-soft) 100%);
+}
+
+.models-catalog-form__panel--identity::before {
+    background: var(--catalog-identity);
+}
+
+.models-catalog-form__panel--limits {
+    border-color: #cce5f0;
+    background: linear-gradient(180deg, #ffffff 0%, var(--catalog-limits-soft) 100%);
+}
+
+.models-catalog-form__panel--limits::before {
+    background: var(--catalog-limits);
+}
+
+.models-catalog-form__panel--data {
+    border-color: #c8e7d6;
+    background: linear-gradient(180deg, #ffffff 0%, var(--catalog-data-soft) 100%);
+}
+
+.models-catalog-form__panel--data::before {
+    background: var(--catalog-data);
+}
+
+.models-catalog-form__panel--capabilities {
+    border-color: #dbd3f7;
+    background: linear-gradient(180deg, #ffffff 0%, var(--catalog-capabilities-soft) 100%);
+}
+
+.models-catalog-form__panel--capabilities::before {
+    background: var(--catalog-capabilities);
+}
+
+.models-catalog-form__panel--pricing {
+    border-color: #ecd9a8;
+    background: linear-gradient(180deg, #fffdf8 0%, var(--catalog-pricing-soft-2) 100%);
+}
+
+.models-catalog-form__panel--pricing::before {
+    background: linear-gradient(180deg, var(--catalog-pricing) 0%, #8a58d0 100%);
+}
+
+.models-catalog-form__panel--identity .models-catalog-form__section-icon {
+    background: #e9eeff;
+}
+
+.models-catalog-form__panel--limits .models-catalog-form__section-icon {
+    background: #e7f6fc;
+}
+
+.models-catalog-form__panel--limits .models-catalog-form__section-icon::before {
+    color: var(--catalog-limits);
+}
+
+.models-catalog-form__panel--data .models-catalog-form__section-icon {
+    background: #e7f8ef;
+}
+
+.models-catalog-form__panel--capabilities .models-catalog-form__section-icon {
+    background: #eeeaff;
+}
+
+.models-catalog-form__panel--capabilities .models-catalog-form__section-icon::before {
+    color: var(--catalog-capabilities);
+}
+
+.models-catalog-form__panel--pricing .models-catalog-form__section-icon {
+    background: #fff1c9;
+}
+
+.models-catalog-form__panel--pricing .models-catalog-form__section-icon::before {
+    color: var(--catalog-pricing);
+}
+
+.models-catalog-form__panel fieldset {
+    background: rgb(255 255 255 / 62%);
 }

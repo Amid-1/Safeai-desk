@@ -538,6 +538,9 @@ backend/
 │   │       │       ├── V43__archive_chat_sessions.sql
 │   │       │       ├── V44__knowledge_production_integrity.sql
 │   │       │       ├── V45__model_control_plane.sql
+│   │       │       ├── V46__model_control_plane_hardening.sql
+│   │       │       ├── V47__knowledge_chunk_generation_uniqueness.sql
+│   │       │       ├── V48__model_input_accounting_provenance.sql
 │   │       │       └── README_DB.md
 │   │       ├── META-INF/
 │   │       ├── application.yml
@@ -575,6 +578,8 @@ ai/
 │   ├── AiProviderResponseTooLargeException
 │   ├── AiProviderTimeoutException
 │   └── AiProviderUnavailableException
+├── input/
+│   ├── AiInputUnitEstimator
 ├── metadata/
 │   ├── AiResponseStatus
 │   ├── AiTokenUsage
@@ -784,8 +789,11 @@ chat/
     ├── ChatQuotaService
     ├── ChatSecurityStateService
     ├── ChatService
+    ├── ChatTurnAuditDetailsFactory
+    ├── ChatTurnExecutionCoordinator
     ├── ChatTurnFinalizationService
     ├── ChatTurnLeaseService
+    ├── ChatTurnReadSupport
     ├── ChatTurnRecoveryCoordinator
     ├── ChatTurnRecoveryScheduler
     ├── ChatTurnRecoveryService
@@ -805,6 +813,7 @@ common/
 │   ├── ApiErrorResponseFactory
 │   ├── ApiErrorResponseWriter
 │   ├── ApiException
+│   ├── ApiExceptionResponseSupport
 │   ├── AuthServiceUnavailableException
 │   ├── BadRequestException
 │   ├── ChatBusyException
@@ -817,10 +826,12 @@ common/
 │   ├── OrganizationVersionConflictException
 │   ├── RateLimitExceededException
 │   ├── RateLimitUnavailableException
+│   ├── RateLimitUnavailableLogger
 │   ├── README.md
 │   ├── RefreshTokenReuseDetectedException
 │   ├── ResourceNotFoundException
-│   └── UserVersionConflictException
+│   ├── UserVersionConflictException
+│   └── ValidationErrorExtractor
 ├── pagination/
 │   └── StablePageableNormalizer
 ├── persistence/
@@ -860,6 +871,7 @@ knowledge/
 │   ├── KnowledgeChunkCandidate
 │   └── KnowledgeChunker
 ├── config/
+│   ├── KnowledgeEmbeddingConfigurationInvariantVerifier
 │   ├── KnowledgeEmbeddingProperties
 │   ├── KnowledgeIngestionProperties
 │   ├── KnowledgeOcrConfigurationInvariantVerifier
@@ -878,6 +890,7 @@ knowledge/
 │   ├── AnswerPassportResponse
 │   ├── CreateKnowledgeBaseMemberRequest
 │   ├── CreateKnowledgeBaseRequest
+│   ├── KnowledgeBaseAccessResponse
 │   ├── KnowledgeBaseMemberPageResponse
 │   ├── KnowledgeBaseMemberResponse
 │   ├── KnowledgeBasePageResponse
@@ -914,6 +927,8 @@ knowledge/
 │   └── KnowledgeIngestionJobEntity
 ├── evaluation/
 │   └── KnowledgeRetrievalMetrics
+├── exception/
+│   └── KnowledgeStorageUnavailableException
 ├── extraction/
 │   ├── CsvKnowledgeExtractor
 │   ├── DocxKnowledgeExtractor
@@ -946,6 +961,7 @@ knowledge/
 ├── model/
 │   ├── KnowledgeBaseAccessLevel
 │   ├── KnowledgeBaseVisibility
+│   ├── KnowledgeHealthState
 │   └── KnowledgeIngestionStatus
 ├── ocr/
 │   ├── DisabledKnowledgeOcrProvider
@@ -981,13 +997,19 @@ knowledge/
 │   ├── KnowledgeBaseNameNormalizer
 │   ├── KnowledgeBaseService
 │   ├── KnowledgeDocumentFileValidator
+│   ├── KnowledgeDocumentMediaTypeDetector
+│   ├── KnowledgeDocumentMediaType
 │   ├── KnowledgeDocumentNameNormalizer
 │   ├── KnowledgeDocumentService
 │   ├── KnowledgeDocumentWriteService
 │   ├── KnowledgeEvaluationService
 │   ├── KnowledgeNameNormalizerSupport
+│   ├── KnowledgeOoxmlDetector
 │   ├── KnowledgeOperationsService
-│   └── KnowledgeRetrievalService
+│   ├── KnowledgeRetrievalService
+│   ├── KnowledgeStructuredTextValidator
+│   ├── KnowledgeUploadFileSupport
+│   └── KnowledgeValidationErrors
 └── storage/
     ├── KnowledgeStorageConfiguration
     ├── KnowledgeStorageProductionInvariantVerifier
@@ -1001,9 +1023,8 @@ knowledge/
   
   
 model/
-├── /
-│   ├── 
-│   └── 
+├── config/
+│   └── ModelRoutingEnvelopeProperties
 ├── controller/
 │   ├── ModelCatalogController
 │   ├── ModelRouteDecisionController
@@ -1011,39 +1032,48 @@ model/
 │   └── OrganizationModelPolicyController
 ├── domain/
 │   ├── BudgetEnforcement
-│   ├──
-│   ├──
-│   ├──
-│   ├──
-│   ├──
-│   ├──
-│   ├──
-│   ├──
-│   ├──
-│   ├──
-│   ├──
-│   ├──
-│   ├── 
-│   └── OrganizationModelPolicy
+│   ├── ModelCapability
+│   ├── ModelCatalogEntry
+│   ├── ModelCatalogSource
+│   ├── ModelLifecycle
+│   ├── ModelModality
+│   ├── ModelPricingStatus
+│   ├── ModelRetentionStatus
+│   ├── ModelRouteDecision
+│   ├── ModelRouteOutcome
+│   ├── ModelRouteReason
+│   ├── ModelRouteRequest
+│   ├── ModelRouteResult
+│   ├── ModelTrainingUseStatus
+│   ├── MonthlyCostState
+│   ├── OrganizationModelPolicy
+│   ├── RuntimeModelProbeResult
+│   └── RuntimeModelProbeStatus
 ├── dto/
 │   ├── CreateModelCatalogVersionRequest
 │   ├── CreateOrganizationModelPolicyVersionRequest
 │   ├── ModelCatalogEntryResponse
 │   ├── ModelRouteDecisionResponse
 │   ├── OrganizationModelPolicyResponse
-│   └── RuntimeModelStatusResponse
+│   ├── RuntimeModelProbeResponse
+│   ├── RuntimeModelStatusResponse
+│   └── RuntimeModelStatusWireResponse
 ├── exception/
-│   └── ModelRouteDeniedException
+│   ├── ModelRouteDeniedException
+│   └── ModelRouteEnvelopeExceededException
 ├── repository/
 │   ├── ModelCatalogRepository
 │   ├── ModelRouteDecisionRepository
-│   ├── OrganizationModelPolicyRepository
+│   ├── ModelRouteRequestMutexRepository
+│   └──OrganizationModelPolicyRepository
 │   ├── 
 │   ├── 
 │   ├── 
 │   ├── 
 │   └── 
 ├── service/
+│   ├── AnthropicRuntimeModelHealthProbe
+│   ├── MockRuntimeModelHealthProbe
 │   ├── ModelCatalogAuditDetailsFactory
 │   ├── ModelCatalogRules
 │   ├── ModelCatalogService
@@ -1051,12 +1081,19 @@ model/
 │   ├── ModelControlPlaneNumericValidation
 │   ├── ModelRouteDecisionFactory
 │   ├── ModelRouteDecisionIntegrity
+│   ├── ModelRouteExecutionGuard
 │   ├── ModelRoutingCostPolicy
+│   ├── ModelRoutingEnvelopeService
+│   ├── ModelRoutingExecutionCapabilityGate
 │   ├── ModelRoutingSelectionPolicy
 │   ├── ModelRoutingService
+│   ├── OpenAiRuntimeModelHealthProbe
 │   ├── OrganizationModelPolicyAuditDetailsFactory
 │   ├── OrganizationModelPolicyRules
 │   ├── OrganizationModelPolicyService
+│   ├── RuntimeModelHealthProbe
+│   ├── RuntimeModelProbeHttpSupport
+│   ├── RuntimeModelProbeService
 │   └── RuntimeModelStatusService
 └── /
     ├── 
@@ -1091,7 +1128,11 @@ organization/
 │   ├── OrganizationImpactQueryRepository
 │   └── OrganizationRepository
 └── service/
+    ├── OrganizationAccessPolicy
+    ├── OrganizationCommandOperations
     ├── OrganizationNameNormalizer
+    ├── OrganizationQueryOperations
+    ├── OrganizationResponseMapper
     ├── OrganizationService
     ├── OrganizationStatusCacheInvalidationListener
     └── PlatformOrganizationInvariantVerifier
@@ -1141,11 +1182,15 @@ usage/
 │   └── UsageUserSummaryResponse
 ├── repository/
 │   ├── JdbcUsageQueryRepository
+│   ├── UsageFactQueryBuilder
+│   ├── UsageFactSql
 │   ├── UsageInstantRange
 │   ├── UsageQueryCriteria
 │   ├── UsageQueryPlan
 │   ├── UsageQueryRepository
-│   └── UsageRollupStateRepository
+│   ├── UsageRollupStateRepository
+│   ├── UsageRowMapperSupport
+│   └── UsageSqlFragments
 └── service/
     ├── UsageQueryService
     ├── UsageReportExecutor

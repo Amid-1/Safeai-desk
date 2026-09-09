@@ -1,3 +1,6 @@
+/* ============================================================
+   frontend/src/components/admin/models/ModelPolicyModelSelectors.test.tsx
+   ============================================================ */
 import {
     useState,
 } from 'react'
@@ -14,6 +17,7 @@ import {
 } from 'vitest'
 import type {
     ModelCatalogEntry,
+    RuntimeModelStatus,
 } from '../../../api/modelApi'
 import {
     DefaultModelSelector,
@@ -81,6 +85,24 @@ const CATALOG: ModelCatalogEntry[] = [
     },
 ]
 
+const RUNTIME: RuntimeModelStatus = {
+    provider: 'openai',
+    model: 'gpt-5',
+    enabled: true,
+    routingMode: 'SINGLE_PROVIDER_STATIC',
+    maxInputTokens: 64_000,
+    maxOutputTokens: 8_192,
+    toolsSupported: false,
+    visionSupported: false,
+    structuredOutputSupported: false,
+    dataRetentionStatus: 'NOT_DECLARED',
+    healthStatus: 'NOT_PROBED',
+    pricingStatus: 'UNPRICED',
+    inputUsdPer1mTokens: null,
+    outputUsdPer1mTokens: null,
+    pricingVersion: null,
+}
+
 type SelectorHarnessProps = {
     initialValue?: string
     conflictingValue?: string
@@ -105,6 +127,8 @@ function SelectorHarness({
             hint="Подсказка"
             kind={kind}
             catalog={CATALOG}
+            effectiveCatalog={CATALOG}
+            runtime={RUNTIME}
             value={value}
             conflictingValue={conflictingValue}
             onChange={setValue}
@@ -135,11 +159,14 @@ describe('ModelKeySelector', () => {
                 '.models-model-chip',
             ),
         ).toHaveLength(1)
+
         expect(
             container.querySelector(
                 '.models-model-chip code',
             ),
-        ).toHaveTextContent('openai:gpt-5')
+        ).toHaveTextContent(
+            'openai:gpt-5',
+        )
 
         fireEvent.change(input, {
             target: {value: 'OPENAI:GPT-5'},
@@ -177,6 +204,7 @@ describe('ModelKeySelector', () => {
         ).toHaveTextContent(
             'Ключ модели может содержать только латинские буквы',
         )
+
         expect(
             container.querySelectorAll(
                 '.models-model-chip',
@@ -204,6 +232,7 @@ describe('ModelKeySelector', () => {
         expect(
             screen.getByText('openai:gpt-6'),
         ).toBeInTheDocument()
+
         expect(
             screen.getByText('нет в каталоге'),
         ).toBeInTheDocument()
@@ -298,6 +327,8 @@ describe('DefaultModelSelector', () => {
         render(
             <DefaultModelSelector
                 catalog={CATALOG}
+                effectiveCatalog={CATALOG}
+                runtime={RUNTIME}
                 allowModelKeys={
                     'openai:gpt-5\nopenai:gpt-6'
                 }

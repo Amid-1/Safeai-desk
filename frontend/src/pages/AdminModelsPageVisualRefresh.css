@@ -4,23 +4,13 @@
    Тонкий presentation-layer для /admin/models.
    Базовый layout, ResizableScrollRegion, responsive-поведение,
    размеры таблицы и механика drag остаются в AdminModelsPage.css.
-
-   В этом файле только дополнительные визуальные акценты и несколько
-   desktop-density overrides. Он намеренно не повторяет большие
-   фрагменты базового stylesheet.
    ============================================================ */
 
 .models-page {
-    --models-refresh-blue-soft: #edf3ff;
-    --models-refresh-violet-soft: #f0efff;
     --models-refresh-green-soft: #effbf4;
     --models-refresh-card-shadow: 0 8px 20px rgb(15 23 42 / 5%);
     --models-refresh-hero-shadow: 0 10px 26px rgb(15 23 42 / 6%);
 }
-
-/* ============================================================
-   HERO
-   ============================================================ */
 
 .models-page .models-hero {
     position: relative;
@@ -41,10 +31,6 @@
 .models-page .models-runtime-badge {
     background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
-
-/* ============================================================
-   CONTROL-PLANE CARDS
-   ============================================================ */
 
 .models-page .models-card {
     position: relative;
@@ -67,16 +53,16 @@
 
 .models-page .models-runtime-probe {
     border-color: #cfeedd;
-    background: linear-gradient(180deg, var(--models-refresh-green-soft) 0%, #f8fffb 100%);
+    background: linear-gradient(
+        180deg,
+        var(--models-refresh-green-soft) 0%,
+        #f8fffb 100%
+    );
 }
 
 .models-page .models-policy-organization-summary {
     background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
 }
-
-/* ============================================================
-   CATALOG / ROUTING DIAGNOSTICS
-   ============================================================ */
 
 .models-page .models-catalog-toolbar {
     border-color: var(--models-border);
@@ -115,10 +101,19 @@
     color: #122033;
 }
 
-/* ============================================================
-   DESKTOP DENSITY
-   Только компактность. Нижний catalog split остаётся resizable.
-   ============================================================ */
+.models-page .models-catalog-version-flags,
+.models-page .models-catalog-effective-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.models-page .models-catalog-version-flags .models-status,
+.models-page .models-catalog-effective-state .models-status {
+    width: fit-content;
+}
 
 @media (min-width: 1180px) and (min-height: 780px) {
     .models-page .models-page__upper {
@@ -288,9 +283,6 @@
     }
 }
 
-/* На низком или узком viewport верхняя часть снова получает
-   внутренний scroll вместо обрезания содержимого. */
-
 @media (min-width: 1180px) and (max-height: 779px) {
     .models-page .models-page__upper {
         overflow: auto;
@@ -309,4 +301,33 @@
     .models-page .models-catalog-table tbody tr {
         transition: none;
     }
+}
+
+/* ============================================================
+   VERSION ACTIONS
+   ============================================================ */
+
+.models-page .models-catalog-row-actions {
+    display: grid;
+    gap: 6px;
+    min-width: 126px;
+}
+
+.models-page .models-catalog-row-actions button {
+    width: 100%;
+    min-height: 32px;
+    padding-inline: 10px;
+    white-space: nowrap;
+}
+
+.models-page .models-catalog-row-actions button:first-child {
+    border-color: #cbd6e8;
+    background: #f8fbff;
+    color: #30435e;
+}
+
+.models-page .models-catalog-row-actions button:first-child:hover,
+.models-page .models-catalog-row-actions button:first-child:focus-visible {
+    border-color: #9fb0cc;
+    background: #f1f6fd;
 }

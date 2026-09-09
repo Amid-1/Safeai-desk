@@ -1,0 +1,89 @@
+/* ============================================================
+   frontend/src/components/admin/models/ModelControlPlaneModalShell.css
+
+   Shared shell for resizable Model Control Plane dialogs.
+
+   Modal.tsx owns resize geometry and scale variables. This file owns
+   only the common fixed-header / scroll-body / fixed-footer layout.
+   ============================================================ */
+
+.modal-card.models-policy-modal.modal-card--resizable,
+.modal-card.models-catalog-modal.modal-card--resizable,
+.modal-card.models-history-modal.modal-card--resizable {
+    /*
+     * Static fallback for CSS tooling.
+     * Modal.tsx may override this custom property inline.
+     */
+    --modal-resize-footer-padding-y: 10px;
+
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: calc(18px * var(--modal-resize-scale, 1));
+    font-size: var(--modal-resize-font-size, 13px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .modal-header,
+.modal-card.models-catalog-modal.modal-card--resizable .modal-header,
+.modal-card.models-history-modal.modal-card--resizable .modal-header {
+    min-width: 0;
+    flex: 0 0 auto;
+    margin: 0;
+    padding: var(--modal-resize-header-padding-y, 14px) var(--modal-resize-padding-x, 20px);
+    border-bottom: 1px solid #dde5f1;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .modal-header h2,
+.modal-card.models-catalog-modal.modal-card--resizable .modal-header h2,
+.modal-card.models-history-modal.modal-card--resizable .modal-header h2 {
+    min-width: 0;
+    font-size: var(--modal-resize-title-font-size, 22px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .modal-body,
+.modal-card.models-catalog-modal.modal-card--resizable .modal-body,
+.modal-card.models-history-modal.modal-card--resizable .modal-body {
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    max-height: none;
+    padding: var(--modal-resize-body-padding-y, 13px) var(--modal-resize-padding-x, 20px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scroll-padding-block: var(--modal-resize-gap, 10px);
+    background: #fcfdff;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .modal-footer,
+.modal-card.models-catalog-modal.modal-card--resizable .modal-footer {
+    position: relative;
+    z-index: 50;
+    min-width: 0;
+    flex: 0 0 auto;
+    padding: var(--modal-resize-footer-padding-y, 10px) var(--modal-resize-padding-x, 20px);
+    border-top: 1px solid #dde5f1;
+    background: rgb(255 255 255 / 98%);
+    box-shadow: 0 -7px 20px rgb(15 23 42 / 5%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-modal__footer,
+.modal-card.models-catalog-modal.modal-card--resizable .models-catalog-modal__footer {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--modal-resize-gap, 10px);
+}
+
+@media (max-height: 700px) {
+    .modal-card.models-policy-modal.modal-card--resizable .modal-body,
+    .modal-card.models-catalog-modal.modal-card--resizable .modal-body,
+    .modal-card.models-history-modal.modal-card--resizable .modal-body {
+        scrollbar-width: thin;
+    }
+}

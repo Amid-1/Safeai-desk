@@ -1,194 +1,59 @@
 /* ============================================================
    frontend/src/components/admin/models/ModelPolicyModal.css
 
-   RESIZABLE POLICY MODAL — FINAL LAYOUT
-
-   Structure:
-   [ fixed header  ]
-   [ scroll body   ]
-   [ fixed footer  ]
-
-   Footer does NOT live inside the form scroll area, therefore it
-   cannot overlap fields and does not require fake reserved space.
+   Production theme for the resizable organization-policy modal.
+   Header and footer are fixed flex siblings; only modal-body scrolls.
+   Colors are semantic and intentionally restrained:
+   access = blue, limits = cyan, budget = violet, data = green.
    ============================================================ */
 
 .modal-card.models-policy-modal.modal-card--resizable {
-    --modal-resize-scale: 1;
+    --policy-blue: #4057f2;
+    --policy-blue-soft: #f2f5ff;
+    --policy-cyan: #237da8;
+    --policy-cyan-soft: #f0f9fd;
+    --policy-violet: #6f52d9;
+    --policy-violet-soft: #f7f3ff;
+    --policy-green: #178a55;
+    --policy-green-soft: #effaf4;
+    --policy-amber: #996a16;
+    --policy-amber-soft: #fff8e9;
 
-    --modal-resize-font-size: 13px;
-    --modal-resize-hint-font-size: 12px;
+    /*
+     * Local static defaults keep this stylesheet self-contained for
+     * CSS tooling. Modal.tsx may override them inline while resizing.
+     */
     --modal-resize-small-font-size: 11px;
-    --modal-resize-title-font-size: 22px;
     --modal-resize-strong-font-size: 15px;
-    --modal-resize-control-font-size: 12px;
-
-    --modal-resize-control-height: 38px;
-    --modal-resize-textarea-height: 76px;
-
-    --modal-resize-gap: 10px;
-    --modal-resize-padding-x: 20px;
-    --modal-resize-header-padding-y: 14px;
-    --modal-resize-body-padding-y: 13px;
-    --modal-resize-footer-padding-y: 10px;
-    --modal-resize-checkbox-size: 14px;
-
-    --modal-resize-scope-tag-height:
-        calc(30px * var(--modal-resize-scale));
-
-    --modal-resize-scope-tag-padding-x:
-        calc(12px * var(--modal-resize-scale));
-
-    --modal-resize-switch-width:
-        calc(56px * var(--modal-resize-scale));
-
-    --modal-resize-switch-height:
-        calc(32px * var(--modal-resize-scale));
-
-    --modal-resize-switch-padding:
-        calc(4px * var(--modal-resize-scale));
-
-    --modal-resize-switch-thumb-size:
-        calc(22px * var(--modal-resize-scale));
-
-    --modal-resize-switch-translate:
-        calc(24px * var(--modal-resize-scale));
-
-    --modal-resize-footer-button-min-width:
-        calc(150px * var(--modal-resize-scale));
 
     container-name: model-policy-modal;
     container-type: inline-size;
-
-    display: flex;
-    min-width: 0;
-    min-height: 0;
-
-    flex-direction: column;
-
-    overflow: hidden;
-
-    font-size: var(--modal-resize-font-size);
 }
 
-/* ============================================================
-   HEADER
-   ============================================================ */
-
-.modal-card.models-policy-modal.modal-card--resizable .modal-header {
-    min-width: 0;
-
-    flex: 0 0 auto;
-
-    padding:
-        var(--modal-resize-header-padding-y)
-        var(--modal-resize-padding-x);
-}
-
-.modal-card.models-policy-modal.modal-card--resizable .modal-header h2 {
-    min-width: 0;
-
-    font-size: var(--modal-resize-title-font-size);
-}
-
-/* ============================================================
-   BODY
-
-   Единственная прокручиваемая вертикальная область modal.
-   Никаких reserved padding и отрицательных margin под Save.
-   ============================================================ */
-
-.modal-card.models-policy-modal.modal-card--resizable .modal-body {
-    min-width: 0;
-    min-height: 0;
-
-    flex: 1 1 auto;
-
-    padding:
-        var(--modal-resize-body-padding-y)
-        var(--modal-resize-padding-x);
-
-    overflow-x: hidden;
-    overflow-y: auto;
-
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-
-    scroll-padding:
-        var(--modal-resize-gap)
-        0;
-}
 
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form {
     min-width: 0;
-
-    gap: var(--modal-resize-gap);
-
+    gap: var(--modal-resize-gap, 10px);
     padding-bottom: 2px;
 }
 
-/* ============================================================
-   FIXED FOOTER
-
-   Реально отдельный flex-child modal.
-   Высота равна только фактической высоте кнопки + padding.
-   ============================================================ */
-
-.modal-card.models-policy-modal.modal-card--resizable .modal-footer {
-    position: relative;
-    z-index: 50;
-
-    min-width: 0;
-
-    flex: 0 0 auto;
-
-    padding:
-        var(--modal-resize-footer-padding-y)
-        var(--modal-resize-padding-x);
-
-    border-top:
-        1px solid var(--models-border);
-
-    background:
-        rgba(255, 255, 255, 0.98);
-
-    box-shadow:
-        0 -6px 18px
-        rgba(15, 23, 42, 0.05);
-}
-
-.modal-card.models-policy-modal.modal-card--resizable .models-policy-modal__footer {
-    display: flex;
-
-    width: 100%;
-
-    justify-content: flex-end;
-    align-items: center;
-}
 
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-modal__footer button {
-    min-width:
-        var(--modal-resize-footer-button-min-width);
-
-    min-height:
-        var(--modal-resize-control-height);
-
+    min-width: 11.5em;
+    min-height: var(--modal-resize-control-height, 38px);
     margin: 0;
 }
-
-/* ============================================================
-   TYPOGRAPHY / CONTROLS
-   ============================================================ */
 
 .modal-card.models-policy-modal.modal-card--resizable .models-form label,
 .modal-card.models-policy-modal.modal-card--resizable .models-label-row,
 .modal-card.models-policy-modal.modal-card--resizable .models-model-selector__label {
-    font-size: var(--modal-resize-font-size);
+    font-size: var(--modal-resize-font-size, 13px);
 }
 
 .modal-card.models-policy-modal.modal-card--resizable .models-form__hint,
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch-copy small,
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle-note {
-    font-size: var(--modal-resize-hint-font-size);
+    font-size: var(--modal-resize-hint-font-size, 12px);
 }
 
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__meta-label,
@@ -197,205 +62,235 @@
 .modal-card.models-policy-modal.modal-card--resizable .models-model-selector__hint,
 .modal-card.models-policy-modal.modal-card--resizable .models-model-selector__error,
 .modal-card.models-policy-modal.modal-card--resizable .models-form__code {
-    font-size: var(--modal-resize-small-font-size);
+    font-size: var(--modal-resize-small-font-size, 11px);
 }
 
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch-copy strong,
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-copy strong {
-    font-size: var(--modal-resize-strong-font-size);
+    font-size: var(--modal-resize-strong-font-size, 15px);
 }
 
 .modal-card.models-policy-modal.modal-card--resizable input,
 .modal-card.models-policy-modal.modal-card--resizable select,
 .modal-card.models-policy-modal.modal-card--resizable textarea,
 .modal-card.models-policy-modal.modal-card--resizable button {
-    font-size: var(--modal-resize-control-font-size);
+    font-size: var(--modal-resize-control-font-size, 12px);
 }
 
 .modal-card.models-policy-modal.modal-card--resizable input,
 .modal-card.models-policy-modal.modal-card--resizable select,
 .modal-card.models-policy-modal.modal-card--resizable button {
-    min-height: var(--modal-resize-control-height);
+    min-height: var(--modal-resize-control-height, 38px);
 }
 
 .modal-card.models-policy-modal.modal-card--resizable textarea {
-    min-height: var(--modal-resize-textarea-height);
+    min-height: var(--modal-resize-textarea-height, 76px);
 }
 
-/* ============================================================
-   SCOPE SHORTCUTS
-   ============================================================ */
+.modal-card.models-policy-modal.modal-card--resizable .models-form input[type='checkbox'] {
+    width: var(--modal-resize-checkbox-size, 14px);
+    min-width: var(--modal-resize-checkbox-size, 14px);
+    height: var(--modal-resize-checkbox-size, 14px);
+    min-height: var(--modal-resize-checkbox-size, 14px);
+}
+
+/* Organization + purpose */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__intro {
+    padding: 10px 12px;
+    border: 1px solid #dce4f2;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__organization {
+    padding-left: 10px;
+    border-left: 3px solid var(--policy-blue);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope {
+    padding: 12px 14px;
+    border: 1px solid #dce3ff;
+    border-radius: 13px;
+    background: linear-gradient(135deg, var(--policy-blue-soft) 0%, #ffffff 72%);
+}
 
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag {
-    min-height:
-        var(--modal-resize-scope-tag-height);
-
-    padding-inline:
-        var(--modal-resize-scope-tag-padding-x);
-
-    font-size:
-        var(--modal-resize-small-font-size);
+    min-height: 2.35em;
+    padding-inline: 0.9em;
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 10px;
+    background: #ffffff;
+    font-size: var(--modal-resize-small-font-size, 11px);
+    font-weight: 800;
 }
 
-/* ============================================================
-   SWITCH
-   ============================================================ */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag--access {
+    border-color: #bdc8ff;
+    color: var(--policy-blue);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag--limits {
+    border-color: #b9dfef;
+    color: var(--policy-cyan);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag--budget {
+    border-color: #d5c7f6;
+    color: var(--policy-violet);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag--data {
+    border-color: #bee6d0;
+    color: var(--policy-green);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag:hover,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag:focus-visible {
+    box-shadow: 0 4px 12px rgb(35 56 99 / 8%);
+}
+
+/* Enable/disable state */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle {
+    padding: 12px 14px;
+    border: 1px solid #dce5f1;
+    border-radius: 13px;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle--disabled {
+    background: #f8fafc;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle--enabled {
+    border-color: #bfe5d0;
+    background: var(--policy-green-soft);
+}
 
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch-track {
-    width:
-        var(--modal-resize-switch-width);
-
-    height:
-        var(--modal-resize-switch-height);
-
-    padding:
-        var(--modal-resize-switch-padding);
+    width: 4.25em;
+    height: 2.45em;
+    padding: 0.3em;
 }
 
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch-thumb {
-    width:
-        var(--modal-resize-switch-thumb-size);
-
-    height:
-        var(--modal-resize-switch-thumb-size);
+    width: 1.75em;
+    height: 1.75em;
 }
 
 .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch input:checked + .models-policy-form__switch-track .models-policy-form__switch-thumb {
-    transform:
-        translateX(
-            var(--modal-resize-switch-translate)
-        );
+    transform: translateX(1.8em);
 }
 
-/* ============================================================
-   CHECKBOXES
-   ============================================================ */
-
-.modal-card.models-policy-modal.modal-card--resizable .models-form input[type='checkbox'] {
-    width:
-        var(--modal-resize-checkbox-size);
-
-    min-width:
-        var(--modal-resize-checkbox-size);
-
-    height:
-        var(--modal-resize-checkbox-size);
-
-    min-height:
-        var(--modal-resize-checkbox-size);
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__warning {
+    border-color: #efd49a;
+    background: var(--policy-amber-soft);
+    color: #6e5119;
 }
 
-/* ============================================================
-   CONTAINER RESPONSIVENESS
-   ============================================================ */
+/* Access lists */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__access-grid > * {
+    padding: 10px 11px;
+    border: 1px solid #dce3ff;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #fbfcff 0%, var(--policy-blue-soft) 100%);
+}
+
+/* Settings: semantic classes keep color meaning stable if fields move. */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__setting-field {
+    min-width: 0;
+    padding: 9px 10px;
+    border: 1px solid #e0e6ef;
+    border-radius: 11px;
+    background: #ffffff;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__setting-field--access {
+    border-color: #d7defe;
+    background: var(--policy-blue-soft);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__setting-field--budget {
+    border-color: #dfd3f8;
+    background: var(--policy-violet-soft);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__setting-field--limits {
+    border-color: #cce6f2;
+    background: var(--policy-cyan-soft);
+}
+
+/* Data requirements */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements {
+    padding: 10px 12px;
+    border-color: #c8e7d6;
+    background: linear-gradient(180deg, #ffffff 0%, var(--policy-green-soft) 100%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements legend {
+    color: #226b49;
+    font-weight: 850;
+}
 
 @container model-policy-modal (max-width: 980px) {
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__intro,
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope,
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle {
-        grid-template-columns:
-            minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tags {
-        justify-content:
-            flex-start;
+        justify-content: flex-start;
     }
 
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__access-grid {
-        grid-template-columns:
-            minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr);
     }
 
-    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__settings-grid {
-        grid-template-columns:
-            repeat(
-                2,
-                minmax(0, 1fr)
-            );
-    }
-
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__settings-grid,
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements .models-form__checks {
-        grid-template-columns:
-            repeat(
-                2,
-                minmax(0, 1fr)
-            );
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
 @container model-policy-modal (max-width: 760px) {
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__settings-grid,
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements .models-form__checks {
-        grid-template-columns:
-            minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tags {
-        display:
-            grid;
-
-        grid-template-columns:
-            repeat(
-                2,
-                minmax(0, 1fr)
-            );
-
-        width:
-            100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
     }
 
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag {
-        width:
-            100%;
-
-        white-space:
-            normal;
-
-        line-height:
-            1.2;
-    }
-
-    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle-note {
-        width:
-            100%;
+        width: 100%;
+        white-space: normal;
+        line-height: 1.2;
     }
 }
 
 @container model-policy-modal (max-width: 660px) {
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tags {
-        grid-template-columns:
-            minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-modal__footer {
-        justify-content:
-            stretch;
+        justify-content: stretch;
     }
 
     .modal-card.models-policy-modal.modal-card--resizable .models-policy-modal__footer button {
-        width:
-            100%;
-
-        min-width:
-            0;
+        width: 100%;
+        min-width: 0;
     }
 }
 
-/* ============================================================
-   LOW HEIGHT / REDUCED MOTION
-   ============================================================ */
-
-@media (max-height: 700px) {
-    .modal-card.models-policy-modal.modal-card--resizable .modal-body {
-        scrollbar-width:
-            thin;
-    }
-}
 
 @media (prefers-reduced-motion: reduce) {
-    .modal-card.models-policy-modal.modal-card--resizable * {
-        scroll-behavior:
-            auto !important;
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle {
+        transition: none;
     }
 }
+

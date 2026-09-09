@@ -142,6 +142,20 @@ public class ModelCatalogRepository {
     }
 
     /**
+     * Full append-only history of one logical model key, newest version first.
+     * This is an administrative read model only; routing still uses the exact
+     * effective snapshot selected at a server-controlled instant.
+     */
+    public List<ModelCatalogEntry> findVersions(String modelKey) {
+        return jdbc.query(
+                "select " + SELECT_COLUMNS + " from model_catalog_entries "
+                        + "where model_key = ? order by version desc",
+                this::map,
+                modelKey
+        );
+    }
+
+    /**
      * Effective snapshot for one logical model key at a server-controlled time.
      * Version is the supersession order; effective_from is only the activation
      * gate. Once a later version becomes effective, its higher version number
