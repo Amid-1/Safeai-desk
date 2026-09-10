@@ -26,6 +26,16 @@ import ru.safeai.gateway.chat.service.ChatTurnFinalizationService;
 import ru.safeai.gateway.chat.service.ChatTurnReservationService;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.model.domain.ModelCatalogEntry;
+import ru.safeai.gateway.model.domain.ModelCatalogSource;
+import ru.safeai.gateway.model.domain.ModelLifecycle;
+import ru.safeai.gateway.model.domain.ModelModality;
+import ru.safeai.gateway.model.domain.ModelPricingStatus;
+import ru.safeai.gateway.model.domain.ModelRetentionStatus;
+import ru.safeai.gateway.model.domain.ModelTrainingUseStatus;
+import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
+import ru.safeai.gateway.model.repository.ModelCatalogRepository;
+import ru.safeai.gateway.model.service.RuntimeModelStatusService;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -52,6 +62,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ChatTurnStateMachineIntegrationTest
         extends AbstractChatPostgresIntegrationTest {
 
+    /*
+     * The test profile configures the physical AI Runtime as mock/mock-safeai.
+     *
+     * Strict Model Control Plane routing intentionally refuses to execute a
+     * physical Runtime that has no effective logical catalog mapping. These
+     * state-machine tests therefore create one explicit effective snapshot and
+     * keep the routing invariant visible instead of relying on a legacy fallback.
+     */
+    private static final String TEST_RUNTIME_PROVIDER = "mock";
+    private static final String TEST_RUNTIME_MODEL = "mock-safeai";
+    private static final String TEST_MODEL_KEY = "mock:mock-safeai";
+
+    private static final UUID TEST_CATALOG_ENTRY_ID =
+            UUID.fromString(
+                    "92929292-9292-4929-8929-929292929292"
+            );
+
     @Autowired
     private ChatTurnReservationService reservationService;
 
@@ -67,8 +94,55 @@ class ChatTurnStateMachineIntegrationTest
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    @Autowired
+    private ModelCatalogRepository modelCatalogRepository;
+
+    @Autowired
+    private RuntimeModelStatusService runtimeModelStatusService;
+
     @BeforeEach
-    void preparePrimaryChat() {
+    void prepareGovernedRuntimeAndPrimaryChat() {
+        resetModelControlPlaneFixtures();
+
+        RuntimeModelStatusResponse runtime =
+                runtimeModelStatusService.current();
+
+        assertThat(runtime.provider())
+                .as("Test Runtime provider")
+                .isEqualTo(TEST_RUNTIME_PROVIDER);
+
+        assertThat(runtime.model())
+                .as("Test Runtime model")
+                .isEqualTo(TEST_RUNTIME_MODEL);
+
+        assertThat(runtime.enabled())
+                .as("Test Runtime must be executable")
+                .isTrue();
+
+        modelCatalogRepository.insert(
+                effectiveCatalogEntry(runtime)
+        );
+
+        assertThat(
+                modelCatalogRepository.findEffectiveByRuntime(
+                        runtime.provider(),
+                        runtime.model(),
+                        clock.instant()
+                )
+        )
+                .as(
+                        "State-machine tests require exactly one effective "
+                                + "logical catalog mapping for the physical Runtime"
+                )
+                .singleElement()
+                .satisfies(entry -> {
+                    assertThat(entry.modelKey())
+                            .isEqualTo(TEST_MODEL_KEY);
+
+                    assertThat(entry.lifecycle())
+                            .isEqualTo(ModelLifecycle.ACTIVE);
+                });
+
         alignChatTimestamps();
         assertOwnedChatVisible();
     }
@@ -542,6 +616,68 @@ class ChatTurnStateMachineIntegrationTest
                 .isEqualTo("resolved-model");
     }
 
+    private void resetModelControlPlaneFixtures() {
+        /*
+         * The superclass recreates the tenant/user/chat fixture before this
+         * method runs. model_catalog_entries is global and has no tenant FK, so
+         * it is not removed by the superclass organization TRUNCATE CASCADE.
+         *
+         * Catalog snapshots are append-only in production. In the isolated
+         * Testcontainers database, TRUNCATE is the correct fixture reset:
+         * otherwise every @BeforeEach would accumulate another effective
+         * logical mapping for the same physical Runtime and strict routing
+         * would correctly fail with AMBIGUOUS_RUNTIME_MAPPING.
+         */
+        jdbcTemplate.execute(
+                "truncate table public.model_catalog_entries cascade"
+        );
+    }
+
+    private ModelCatalogEntry effectiveCatalogEntry(
+            RuntimeModelStatusResponse runtime
+    ) {
+        Instant effectiveFrom =
+                clock.instant().minusSeconds(1);
+
+        Instant createdAt =
+                effectiveFrom.minusSeconds(1);
+
+        /*
+         * State-machine behavior must not depend on external provider pricing.
+         * A FREE snapshot isolates these tests to reservation/finalization
+         * semantics while still exercising the real strict routing path.
+         */
+        return new ModelCatalogEntry(
+                TEST_CATALOG_ENTRY_ID,
+                TEST_MODEL_KEY,
+                1,
+                runtime.provider(),
+                runtime.model(),
+                "SafeAI state-machine test Runtime",
+                ModelLifecycle.ACTIVE,
+                runtime.maxInputTokens(),
+                runtime.maxOutputTokens(),
+                Set.of(),
+                Set.of(ModelModality.TEXT),
+                Set.of(ModelModality.TEXT),
+                ModelRetentionStatus.NOT_DECLARED,
+                null,
+                ModelTrainingUseStatus.NOT_DECLARED,
+                ModelPricingStatus.FREE,
+                true,
+                BigDecimal.ZERO,
+                null,
+                null,
+                BigDecimal.ZERO,
+                "{}",
+                "integration-test-free-v1",
+                effectiveFrom,
+                ModelCatalogSource.RUNTIME_IMPORT,
+                USER_ID,
+                createdAt
+        );
+    }
+
     private ChatProcessingContext reserve(
             String content,
             UUID clientRequestId
@@ -889,3 +1025,4 @@ class ChatTurnStateMachineIntegrationTest
     }
 
 }
+

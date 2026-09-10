@@ -318,6 +318,37 @@ describe('ModelKeySelector', () => {
             ),
         ).toHaveLength(2)
     })
+    it('связывает keyboard-active option через aria-activedescendant', () => {
+        const {container} = render(
+            <SelectorHarness />,
+        )
+
+        const input = screen.getByRole(
+            'combobox',
+            {name: 'Разрешённые модели'},
+        )
+
+        fireEvent.change(input, {
+            target: {value: 'gpt'},
+        })
+
+        const firstActive =
+            input.getAttribute('aria-activedescendant')
+        expect(firstActive).toBeTruthy()
+        expect(
+            container.ownerDocument.getElementById(firstActive ?? ''),
+        ).toHaveAttribute('role', 'option')
+
+        fireEvent.keyDown(input, {key: 'ArrowDown'})
+        const secondActive =
+            input.getAttribute('aria-activedescendant')
+        expect(secondActive).not.toBe(firstActive)
+
+        fireEvent.keyDown(input, {key: 'Enter'})
+        expect(
+            container.querySelector('.models-model-chip code'),
+        ).toHaveTextContent('openai:gpt-5-mini')
+    })
 })
 
 describe('DefaultModelSelector', () => {
@@ -371,4 +402,42 @@ describe('DefaultModelSelector', () => {
                 'openai:gpt-6',
             )
     })
+
+    it('поддерживает ArrowDown/Enter в listbox модели по умолчанию', () => {
+        const onChange = vi.fn()
+
+        render(
+            <DefaultModelSelector
+                catalog={CATALOG}
+                effectiveCatalog={CATALOG}
+                runtime={RUNTIME}
+                allowModelKeys="openai:gpt-5\nopenai:gpt-6"
+                denyModelKeys="openai:gpt-5-mini"
+                value=""
+                onChange={onChange}
+            />,
+        )
+
+        fireEvent.click(
+            screen.getByRole(
+                'button',
+                {name: /Использовать подключённую модель/},
+            ),
+        )
+
+        const search = screen.getByRole(
+            'combobox',
+            {name: 'Найти модель по умолчанию'},
+        )
+
+        expect(
+            search.getAttribute('aria-activedescendant'),
+        ).toBeTruthy()
+
+        fireEvent.keyDown(search, {key: 'ArrowDown'})
+        fireEvent.keyDown(search, {key: 'Enter'})
+
+        expect(onChange).toHaveBeenCalledWith('openai:gpt-5')
+    })
+
 })

@@ -43,6 +43,7 @@ export type ModelRouteReason =
     | 'MODEL_NOT_ALLOWED'
     | 'MODEL_DENIED'
     | 'MODEL_NOT_FOUND'
+    | 'AMBIGUOUS_RUNTIME_MAPPING'
     | 'MODEL_DISABLED'
     | 'RUNTIME_MISMATCH'
     | 'CAPABILITY_UNSUPPORTED'
@@ -85,19 +86,34 @@ export type ModelCatalogEntry = {
     createdAt: string
 }
 
+export type RuntimeRoutingMode =
+    typeof RUNTIME_ROUTING_MODES[number]
+
+export type RuntimeDataRetentionStatus =
+    typeof RUNTIME_DATA_RETENTION_STATUSES[number]
+
+export type RuntimeHealthStatus =
+    typeof RUNTIME_HEALTH_STATUSES[number]
+
+export type RuntimePricingStatus =
+    typeof RUNTIME_PRICING_STATUSES[number]
+
+export type InputAccountingVersion =
+    typeof INPUT_ACCOUNTING_VERSIONS[number]
+
 export type RuntimeModelStatus = {
     provider: string
     model: string
     enabled: boolean
-    routingMode: string
+    routingMode: RuntimeRoutingMode
     maxInputTokens: number
     maxOutputTokens: number
     toolsSupported: boolean
     visionSupported: boolean
     structuredOutputSupported: boolean
-    dataRetentionStatus: string
-    healthStatus: string
-    pricingStatus: string
+    dataRetentionStatus: RuntimeDataRetentionStatus
+    healthStatus: RuntimeHealthStatus
+    pricingStatus: RuntimePricingStatus
     inputUsdPer1mTokens: string | null
     outputUsdPer1mTokens: string | null
     pricingVersion: string | null
@@ -116,6 +132,33 @@ export const RUNTIME_MODEL_PROBE_STATUSES = [
 
 export type RuntimeModelProbeStatus =
     typeof RUNTIME_MODEL_PROBE_STATUSES[number]
+
+export const RUNTIME_ROUTING_MODES = [
+    'SINGLE_PROVIDER_STATIC',
+] as const
+
+export const RUNTIME_DATA_RETENTION_STATUSES = [
+    'NOT_DECLARED',
+    'STANDARD',
+    'ZERO_DATA_RETENTION',
+    'CUSTOM',
+] as const
+
+export const RUNTIME_HEALTH_STATUSES = [
+    'NOT_PROBED',
+    'AVAILABLE',
+    'UNAVAILABLE',
+] as const
+
+export const RUNTIME_PRICING_STATUSES = [
+    'UNPRICED',
+    'FREE',
+    'CONFIGURED',
+] as const
+
+export const INPUT_ACCOUNTING_VERSIONS = [
+    'UTF8_STRUCTURAL_UNITS_V2',
+] as const
 
 export type RuntimeModelProbe = {
     provider: string
@@ -165,7 +208,7 @@ export type ModelRouteDecision = {
     policyId: string | null
     policyVersion: number | null
     requiredCapabilities: ModelCapability[]
-    inputAccountingVersion: string | null
+    inputAccountingVersion: InputAccountingVersion | null
     additionalInputUnitUpperBound: number | null
     estimatedInputTokens: number | null
     estimatedOutputTokens: number | null
@@ -225,6 +268,39 @@ export type CreateOrganizationModelPolicyVersionRequest = {
     requireCompletePricing: boolean
     requireNoTraining: boolean
     requireZeroDataRetention: boolean
+}
+
+export type ModelPolicyPreviewItem = {
+    modelKey: string
+    catalogVersion: number
+    provider: string
+    providerModelId: string
+    lifecycle: ModelLifecycle
+    outcome: ModelRouteOutcome
+    reason: ModelRouteReason | null
+    effectiveInputLimit: number
+    effectiveOutputLimit: number
+    pricingComplete: boolean
+    estimatedMaxCostUsd: string | null
+    monthlyBudgetUsd: string | null
+    monthlyProjectedUsd: string | null
+    monthlyCostKnown: boolean
+    budgetExceeded: boolean
+}
+
+export type ModelPolicyPreview = {
+    organizationId: string
+    basePolicyVersion: number
+    enabled: boolean
+    evaluatedAt: string
+    runtimeProvider: string
+    runtimeModel: string
+    automaticOutcome: ModelRouteOutcome
+    automaticReason: ModelRouteReason
+    automaticModelKey: string | null
+    executableModelCount: number
+    wouldLockOutOrganization: boolean
+    models: ModelPolicyPreviewItem[]
 }
 
 export const MODEL_CAPABILITIES = [
@@ -300,6 +376,7 @@ const DENIED_REASONS = [
     'MODEL_NOT_ALLOWED',
     'MODEL_DENIED',
     'MODEL_NOT_FOUND',
+    'AMBIGUOUS_RUNTIME_MAPPING',
     'MODEL_DISABLED',
     'RUNTIME_MISMATCH',
     'CAPABILITY_UNSUPPORTED',
@@ -435,9 +512,11 @@ export async function getOrganizationModelPolicy(
     organizationId: string,
     options: ModelApiRequestOptions = {},
 ): Promise<OrganizationModelPolicy> {
+    const validatedOrganizationId =
+        requireUuid(organizationId, 'organizationId')
     const raw = await apiRequest<unknown>(
         `/api/admin/models/policies/${
-            encodeURIComponent(organizationId)
+            encodeURIComponent(validatedOrganizationId)
         }`,
         {
             method: 'GET',
@@ -456,9 +535,11 @@ export async function createOrganizationModelPolicyVersion(
     request: CreateOrganizationModelPolicyVersionRequest,
     options: ModelApiRequestOptions = {},
 ): Promise<OrganizationModelPolicy> {
+    const validatedOrganizationId =
+        requireUuid(organizationId, 'organizationId')
     const raw = await apiRequest<unknown>(
         `/api/admin/models/policies/${
-            encodeURIComponent(organizationId)
+            encodeURIComponent(validatedOrganizationId)
         }`,
         {
             method: 'POST',
@@ -473,13 +554,39 @@ export async function createOrganizationModelPolicyVersion(
     )
 }
 
+export async function previewOrganizationModelPolicy(
+    organizationId: string,
+    request: CreateOrganizationModelPolicyVersionRequest,
+    options: ModelApiRequestOptions = {},
+): Promise<ModelPolicyPreview> {
+    const validatedOrganizationId =
+        requireUuid(organizationId, 'organizationId')
+    const raw = await apiRequest<unknown>(
+        `/api/admin/models/policies/${
+            encodeURIComponent(validatedOrganizationId)
+        }/preview`,
+        {
+            method: 'POST',
+            json: request,
+            signal: options.signal,
+        },
+    )
+
+    return parseModelPolicyPreview(
+        raw,
+        'modelPolicyPreview',
+    )
+}
+
 export async function getModelRouteDecision(
     decisionId: string,
     options: ModelApiRequestOptions = {},
 ): Promise<ModelRouteDecision> {
+    const validatedDecisionId =
+        requireUuid(decisionId, 'decisionId')
     const raw = await apiRequest<unknown>(
         `/api/admin/models/route-decisions/${
-            encodeURIComponent(decisionId)
+            encodeURIComponent(validatedDecisionId)
         }`,
         {
             method: 'GET',
@@ -500,11 +607,11 @@ export function parseRuntimeModelStatus(
     const raw = requireObject(value, path)
 
     return {
-        provider: requireString(
+        provider: requireNonBlankString(
             raw.provider,
             `${path}.provider`,
         ),
-        model: requireString(
+        model: requireNonBlankString(
             raw.model,
             `${path}.model`,
         ),
@@ -512,15 +619,16 @@ export function parseRuntimeModelStatus(
             raw.enabled,
             `${path}.enabled`,
         ),
-        routingMode: requireString(
+        routingMode: requireEnum(
             raw.routingMode,
+            RUNTIME_ROUTING_MODES,
             `${path}.routingMode`,
         ),
-        maxInputTokens: requireInteger(
+        maxInputTokens: requirePositiveInteger(
             raw.maxInputTokens,
             `${path}.maxInputTokens`,
         ),
-        maxOutputTokens: requireInteger(
+        maxOutputTokens: requirePositiveInteger(
             raw.maxOutputTokens,
             `${path}.maxOutputTokens`,
         ),
@@ -536,16 +644,19 @@ export function parseRuntimeModelStatus(
             raw.structuredOutputSupported,
             `${path}.structuredOutputSupported`,
         ),
-        dataRetentionStatus: requireString(
+        dataRetentionStatus: requireEnum(
             raw.dataRetentionStatus,
+            RUNTIME_DATA_RETENTION_STATUSES,
             `${path}.dataRetentionStatus`,
         ),
-        healthStatus: requireString(
+        healthStatus: requireEnum(
             raw.healthStatus,
+            RUNTIME_HEALTH_STATUSES,
             `${path}.healthStatus`,
         ),
-        pricingStatus: requireString(
+        pricingStatus: requireEnum(
             raw.pricingStatus,
+            RUNTIME_PRICING_STATUSES,
             `${path}.pricingStatus`,
         ),
         inputUsdPer1mTokens:
@@ -559,7 +670,7 @@ export function parseRuntimeModelStatus(
                 `${path}.outputUsdPer1mTokens`,
             ),
         pricingVersion:
-            optionalString(
+            optionalNonBlankString(
                 raw.pricingVersion,
                 `${path}.pricingVersion`,
             ),
@@ -605,11 +716,11 @@ export function parseRuntimeModelProbe(
     }
 
     return {
-        provider: requireString(
+        provider: requireNonBlankString(
             raw.provider,
             `${path}.provider`,
         ),
-        model: requireString(
+        model: requireNonBlankString(
             raw.model,
             `${path}.model`,
         ),
@@ -618,7 +729,7 @@ export function parseRuntimeModelProbe(
             RUNTIME_MODEL_PROBE_STATUSES,
             `${path}.status`,
         ),
-        checkedAt: requireString(
+        checkedAt: requireInstant(
             raw.checkedAt,
             `${path}.checkedAt`,
         ),
@@ -637,25 +748,25 @@ export function parseModelCatalogEntry(
 ): ModelCatalogEntry {
     const raw = requireObject(value, path)
 
-    return {
-        id: requireString(raw.id, `${path}.id`),
-        modelKey: requireString(
+    const entry: ModelCatalogEntry = {
+        id: requireUuid(raw.id, `${path}.id`),
+        modelKey: requireModelKey(
             raw.modelKey,
             `${path}.modelKey`,
         ),
-        version: requireInteger(
+        version: requirePositiveInteger(
             raw.version,
             `${path}.version`,
         ),
-        provider: requireString(
+        provider: requireNonBlankString(
             raw.provider,
             `${path}.provider`,
         ),
-        providerModelId: requireString(
+        providerModelId: requireNonBlankString(
             raw.providerModelId,
             `${path}.providerModelId`,
         ),
-        displayName: requireString(
+        displayName: requireNonBlankString(
             raw.displayName,
             `${path}.displayName`,
         ),
@@ -664,11 +775,11 @@ export function parseModelCatalogEntry(
             MODEL_LIFECYCLES,
             `${path}.lifecycle`,
         ),
-        maxInputTokens: requireInteger(
+        maxInputTokens: requirePositiveInteger(
             raw.maxInputTokens,
             `${path}.maxInputTokens`,
         ),
-        maxOutputTokens: requireInteger(
+        maxOutputTokens: requirePositiveInteger(
             raw.maxOutputTokens,
             `${path}.maxOutputTokens`,
         ),
@@ -692,7 +803,7 @@ export function parseModelCatalogEntry(
             MODEL_RETENTION_STATUSES,
             `${path}.retentionStatus`,
         ),
-        retentionDays: optionalInteger(
+        retentionDays: optionalNonNegativeInteger(
             raw.retentionDays,
             `${path}.retentionDays`,
         ),
@@ -710,35 +821,31 @@ export function parseModelCatalogEntry(
             raw.pricingComplete,
             `${path}.pricingComplete`,
         ),
-        inputUsdPer1mTokens:
-            optionalDecimalString(
-                raw.inputUsdPer1mTokens,
-                `${path}.inputUsdPer1mTokens`,
-            ),
-        cachedInputUsdPer1mTokens:
-            optionalDecimalString(
-                raw.cachedInputUsdPer1mTokens,
-                `${path}.cachedInputUsdPer1mTokens`,
-            ),
-        cacheWriteInputUsdPer1mTokens:
-            optionalDecimalString(
-                raw.cacheWriteInputUsdPer1mTokens,
-                `${path}.cacheWriteInputUsdPer1mTokens`,
-            ),
-        outputUsdPer1mTokens:
-            optionalDecimalString(
-                raw.outputUsdPer1mTokens,
-                `${path}.outputUsdPer1mTokens`,
-            ),
-        extraPricingJson: requireString(
+        inputUsdPer1mTokens: optionalDecimalString(
+            raw.inputUsdPer1mTokens,
+            `${path}.inputUsdPer1mTokens`,
+        ),
+        cachedInputUsdPer1mTokens: optionalDecimalString(
+            raw.cachedInputUsdPer1mTokens,
+            `${path}.cachedInputUsdPer1mTokens`,
+        ),
+        cacheWriteInputUsdPer1mTokens: optionalDecimalString(
+            raw.cacheWriteInputUsdPer1mTokens,
+            `${path}.cacheWriteInputUsdPer1mTokens`,
+        ),
+        outputUsdPer1mTokens: optionalDecimalString(
+            raw.outputUsdPer1mTokens,
+            `${path}.outputUsdPer1mTokens`,
+        ),
+        extraPricingJson: requireJsonObjectString(
             raw.extraPricingJson,
             `${path}.extraPricingJson`,
         ),
-        pricingVersion: optionalString(
+        pricingVersion: optionalNonBlankString(
             raw.pricingVersion,
             `${path}.pricingVersion`,
         ),
-        effectiveFrom: requireString(
+        effectiveFrom: requireInstant(
             raw.effectiveFrom,
             `${path}.effectiveFrom`,
         ),
@@ -747,15 +854,18 @@ export function parseModelCatalogEntry(
             MODEL_CATALOG_SOURCES,
             `${path}.source`,
         ),
-        createdByUserId: requireString(
+        createdByUserId: requireUuid(
             raw.createdByUserId,
             `${path}.createdByUserId`,
         ),
-        createdAt: requireString(
+        createdAt: requireInstant(
             raw.createdAt,
             `${path}.createdAt`,
         ),
     }
+
+    validateCatalogSemantics(entry, path)
+    return entry
 }
 
 export function parseOrganizationModelPolicy(
@@ -764,20 +874,20 @@ export function parseOrganizationModelPolicy(
 ): OrganizationModelPolicy {
     const raw = requireObject(value, path)
 
-    return {
+    const policy: OrganizationModelPolicy = {
         configured: requireBoolean(
             raw.configured,
             `${path}.configured`,
         ),
-        id: optionalString(
+        id: optionalUuid(
             raw.id,
             `${path}.id`,
         ),
-        organizationId: requireString(
+        organizationId: requireUuid(
             raw.organizationId,
             `${path}.organizationId`,
         ),
-        version: requireInteger(
+        version: requireNonNegativeInteger(
             raw.version,
             `${path}.version`,
         ),
@@ -785,36 +895,34 @@ export function parseOrganizationModelPolicy(
             raw.enabled,
             `${path}.enabled`,
         ),
-        allowModelKeys: requireStringArray(
+        allowModelKeys: requireModelKeyArray(
             raw.allowModelKeys,
             `${path}.allowModelKeys`,
         ),
-        denyModelKeys: requireStringArray(
+        denyModelKeys: requireModelKeyArray(
             raw.denyModelKeys,
             `${path}.denyModelKeys`,
         ),
-        defaultModelKey: optionalString(
+        defaultModelKey: optionalModelKey(
             raw.defaultModelKey,
             `${path}.defaultModelKey`,
         ),
-        maxInputTokens: optionalInteger(
+        maxInputTokens: optionalPositiveInteger(
             raw.maxInputTokens,
             `${path}.maxInputTokens`,
         ),
-        maxOutputTokens: optionalInteger(
+        maxOutputTokens: optionalPositiveInteger(
             raw.maxOutputTokens,
             `${path}.maxOutputTokens`,
         ),
-        maxRequestCostUsd:
-            optionalDecimalString(
-                raw.maxRequestCostUsd,
-                `${path}.maxRequestCostUsd`,
-            ),
-        monthlyBudgetUsd:
-            optionalDecimalString(
-                raw.monthlyBudgetUsd,
-                `${path}.monthlyBudgetUsd`,
-            ),
+        maxRequestCostUsd: optionalDecimalString(
+            raw.maxRequestCostUsd,
+            `${path}.maxRequestCostUsd`,
+        ),
+        monthlyBudgetUsd: optionalDecimalString(
+            raw.monthlyBudgetUsd,
+            `${path}.monthlyBudgetUsd`,
+        ),
         budgetEnforcement: requireEnum(
             raw.budgetEnforcement,
             BUDGET_ENFORCEMENTS,
@@ -832,15 +940,18 @@ export function parseOrganizationModelPolicy(
             raw.requireZeroDataRetention,
             `${path}.requireZeroDataRetention`,
         ),
-        createdByUserId: optionalString(
+        createdByUserId: optionalUuid(
             raw.createdByUserId,
             `${path}.createdByUserId`,
         ),
-        createdAt: optionalString(
+        createdAt: optionalInstant(
             raw.createdAt,
             `${path}.createdAt`,
         ),
     }
+
+    validateOrganizationPolicySemantics(policy, path)
+    return policy
 }
 
 export function parseModelRouteDecision(
@@ -876,60 +987,60 @@ export function parseModelRouteDecision(
     }
 
     const decision: ModelRouteDecision = {
-        id: requireString(raw.id, `${path}.id`),
-        organizationId: requireString(
+        id: requireUuid(raw.id, `${path}.id`),
+        organizationId: requireUuid(
             raw.organizationId,
             `${path}.organizationId`,
         ),
-        userId: requireString(
+        userId: requireUuid(
             raw.userId,
             `${path}.userId`,
         ),
-        chatId: requireString(
+        chatId: requireUuid(
             raw.chatId,
             `${path}.chatId`,
         ),
-        chatTurnId: optionalString(
+        chatTurnId: optionalUuid(
             raw.chatTurnId,
             `${path}.chatTurnId`,
         ),
-        clientRequestId: requireString(
+        clientRequestId: requireUuid(
             raw.clientRequestId,
             `${path}.clientRequestId`,
         ),
-        requestContentHash: requireString(
+        requestContentHash: requireSha256(
             raw.requestContentHash,
             `${path}.requestContentHash`,
         ),
-        requestedModelKey: optionalString(
+        requestedModelKey: optionalModelKey(
             raw.requestedModelKey,
             `${path}.requestedModelKey`,
         ),
-        selectedCatalogEntryId: optionalString(
+        selectedCatalogEntryId: optionalUuid(
             raw.selectedCatalogEntryId,
             `${path}.selectedCatalogEntryId`,
         ),
-        selectedCatalogVersion: optionalInteger(
+        selectedCatalogVersion: optionalPositiveInteger(
             raw.selectedCatalogVersion,
             `${path}.selectedCatalogVersion`,
         ),
-        selectedModelKey: optionalString(
+        selectedModelKey: optionalModelKey(
             raw.selectedModelKey,
             `${path}.selectedModelKey`,
         ),
-        selectedProvider: optionalString(
+        selectedProvider: optionalNonBlankString(
             raw.selectedProvider,
             `${path}.selectedProvider`,
         ),
-        selectedProviderModelId: optionalString(
+        selectedProviderModelId: optionalNonBlankString(
             raw.selectedProviderModelId,
             `${path}.selectedProviderModelId`,
         ),
-        policyId: optionalString(
+        policyId: optionalUuid(
             raw.policyId,
             `${path}.policyId`,
         ),
-        policyVersion: optionalInteger(
+        policyVersion: optionalPositiveInteger(
             raw.policyVersion,
             `${path}.policyVersion`,
         ),
@@ -938,19 +1049,20 @@ export function parseModelRouteDecision(
             MODEL_CAPABILITIES,
             `${path}.requiredCapabilities`,
         ),
-        inputAccountingVersion: optionalString(
+        inputAccountingVersion: optionalEnum(
             raw.inputAccountingVersion,
+            INPUT_ACCOUNTING_VERSIONS,
             `${path}.inputAccountingVersion`,
         ),
-        additionalInputUnitUpperBound: optionalInteger(
+        additionalInputUnitUpperBound: optionalNonNegativeInteger(
             raw.additionalInputUnitUpperBound,
             `${path}.additionalInputUnitUpperBound`,
         ),
-        estimatedInputTokens: optionalInteger(
+        estimatedInputTokens: optionalNonNegativeInteger(
             raw.estimatedInputTokens,
             `${path}.estimatedInputTokens`,
         ),
-        estimatedOutputTokens: optionalInteger(
+        estimatedOutputTokens: optionalNonNegativeInteger(
             raw.estimatedOutputTokens,
             `${path}.estimatedOutputTokens`,
         ),
@@ -1003,11 +1115,11 @@ export function parseModelRouteDecision(
         outcome,
         reason,
         decisionIntegrityVersion: integrity,
-        decisionSha256: requireString(
+        decisionSha256: requireSha256(
             raw.decisionSha256,
             `${path}.decisionSha256`,
         ),
-        createdAt: requireString(
+        createdAt: requireInstant(
             raw.createdAt,
             `${path}.createdAt`,
         ),
@@ -1019,6 +1131,185 @@ export function parseModelRouteDecision(
     )
 
     return decision
+}
+
+export function parseModelPolicyPreview(
+    value: unknown,
+    path = 'modelPolicyPreview',
+): ModelPolicyPreview {
+    const raw = requireObject(value, path)
+    const models = requireArray(raw.models, `${path}.models`)
+        .map((item, index): ModelPolicyPreviewItem => {
+            const model = requireObject(
+                item,
+                `${path}.models[${index}]`,
+            )
+            return {
+                modelKey: requireModelKey(
+                    model.modelKey,
+                    `${path}.models[${index}].modelKey`,
+                ),
+                catalogVersion: requirePositiveInteger(
+                    model.catalogVersion,
+                    `${path}.models[${index}].catalogVersion`,
+                ),
+                provider: requireNonBlankString(
+                    model.provider,
+                    `${path}.models[${index}].provider`,
+                ),
+                providerModelId: requireNonBlankString(
+                    model.providerModelId,
+                    `${path}.models[${index}].providerModelId`,
+                ),
+                lifecycle: requireEnum(
+                    model.lifecycle,
+                    MODEL_LIFECYCLES,
+                    `${path}.models[${index}].lifecycle`,
+                ),
+                outcome: requireEnum(
+                    model.outcome,
+                    MODEL_ROUTE_OUTCOMES,
+                    `${path}.models[${index}].outcome`,
+                ),
+                reason: optionalEnum(
+                    model.reason,
+                    MODEL_ROUTE_REASONS,
+                    `${path}.models[${index}].reason`,
+                ),
+                effectiveInputLimit: requirePositiveInteger(
+                    model.effectiveInputLimit,
+                    `${path}.models[${index}].effectiveInputLimit`,
+                ),
+                effectiveOutputLimit: requirePositiveInteger(
+                    model.effectiveOutputLimit,
+                    `${path}.models[${index}].effectiveOutputLimit`,
+                ),
+                pricingComplete: requireBoolean(
+                    model.pricingComplete,
+                    `${path}.models[${index}].pricingComplete`,
+                ),
+                estimatedMaxCostUsd: optionalDecimalString(
+                    model.estimatedMaxCostUsd,
+                    `${path}.models[${index}].estimatedMaxCostUsd`,
+                ),
+                monthlyBudgetUsd: optionalDecimalString(
+                    model.monthlyBudgetUsd,
+                    `${path}.models[${index}].monthlyBudgetUsd`,
+                ),
+                monthlyProjectedUsd: optionalDecimalString(
+                    model.monthlyProjectedUsd,
+                    `${path}.models[${index}].monthlyProjectedUsd`,
+                ),
+                monthlyCostKnown: requireBoolean(
+                    model.monthlyCostKnown,
+                    `${path}.models[${index}].monthlyCostKnown`,
+                ),
+                budgetExceeded: requireBoolean(
+                    model.budgetExceeded,
+                    `${path}.models[${index}].budgetExceeded`,
+                ),
+            }
+        })
+
+    const result: ModelPolicyPreview = {
+        organizationId: requireUuid(
+            raw.organizationId,
+            `${path}.organizationId`,
+        ),
+        basePolicyVersion: requireNonNegativeInteger(
+            raw.basePolicyVersion,
+            `${path}.basePolicyVersion`,
+        ),
+        enabled: requireBoolean(
+            raw.enabled,
+            `${path}.enabled`,
+        ),
+        evaluatedAt: requireInstant(
+            raw.evaluatedAt,
+            `${path}.evaluatedAt`,
+        ),
+        runtimeProvider: requireNonBlankString(
+            raw.runtimeProvider,
+            `${path}.runtimeProvider`,
+        ),
+        runtimeModel: requireNonBlankString(
+            raw.runtimeModel,
+            `${path}.runtimeModel`,
+        ),
+        automaticOutcome: requireEnum(
+            raw.automaticOutcome,
+            MODEL_ROUTE_OUTCOMES,
+            `${path}.automaticOutcome`,
+        ),
+        automaticReason: requireEnum(
+            raw.automaticReason,
+            MODEL_ROUTE_REASONS,
+            `${path}.automaticReason`,
+        ),
+        automaticModelKey: optionalModelKey(
+            raw.automaticModelKey,
+            `${path}.automaticModelKey`,
+        ),
+        executableModelCount: requireNonNegativeInteger(
+            raw.executableModelCount,
+            `${path}.executableModelCount`,
+        ),
+        wouldLockOutOrganization: requireBoolean(
+            raw.wouldLockOutOrganization,
+            `${path}.wouldLockOutOrganization`,
+        ),
+        models,
+    }
+
+    const modelKeys = models.map(item => item.modelKey)
+    if (new Set(modelKeys).size !== modelKeys.length) {
+        throw new Error(`${path}.models содержит duplicate modelKey`)
+    }
+
+    for (const [index, item] of models.entries()) {
+        if (item.outcome === 'ALLOWED' && item.reason !== null) {
+            throw new Error(
+                `${path}.models[${index}] ALLOWED не должен иметь denial reason`,
+            )
+        }
+        if (item.outcome === 'DENIED'
+            && (item.reason === null
+                || !DENIED_REASONS.includes(item.reason as never))) {
+            throw new Error(
+                `${path}.models[${index}] DENIED требует denial reason`,
+            )
+        }
+    }
+
+    const automaticReasonSet =
+        result.automaticOutcome === 'ALLOWED'
+            ? ALLOWED_REASONS
+            : DENIED_REASONS
+    if (!automaticReasonSet.includes(result.automaticReason as never)) {
+        throw new Error(
+            `${path}.automaticReason не соответствует automaticOutcome`,
+        )
+    }
+    if (result.automaticOutcome === 'ALLOWED'
+        && result.automaticModelKey === null) {
+        throw new Error(
+            `${path}.automaticModelKey обязателен для ALLOWED`,
+        )
+    }
+
+    if (result.executableModelCount
+        !== models.filter(item => item.outcome === 'ALLOWED').length) {
+        throw new Error(
+            `${path}.executableModelCount не соответствует models`,
+        )
+    }
+    if (result.wouldLockOutOrganization
+        !== (result.enabled && result.executableModelCount === 0)) {
+        throw new Error(
+            `${path}.wouldLockOutOrganization противоречит preview`,
+        )
+    }
+    return result
 }
 
 function validateRouteSemantics(
@@ -1113,6 +1404,292 @@ function validateRouteSemantics(
     }
 }
 
+const UUID_PATTERN =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const SHA256_PATTERN = /^[0-9a-f]{64}$/
+const MODEL_KEY_PATTERN = /^[a-z0-9][a-z0-9._:/-]{0,159}$/
+const INSTANT_PATTERN =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/
+
+function requireNonBlankString(
+    value: unknown,
+    path: string,
+): string {
+    const result = requireString(value, path)
+    if (!result.trim()) {
+        throw new Error(`${path} не должен быть пустым`)
+    }
+    return result
+}
+
+function optionalNonBlankString(
+    value: unknown,
+    path: string,
+): string | null {
+    return value === null || value === undefined
+        ? null
+        : requireNonBlankString(value, path)
+}
+
+function requireUuid(value: unknown, path: string): string {
+    const result = requireString(value, path)
+    if (!UUID_PATTERN.test(result)) {
+        throw new Error(`${path} должен быть UUID`)
+    }
+    return result
+}
+
+function optionalUuid(value: unknown, path: string): string | null {
+    return value === null || value === undefined
+        ? null
+        : requireUuid(value, path)
+}
+
+function requireSha256(value: unknown, path: string): string {
+    const result = requireString(value, path)
+    if (!SHA256_PATTERN.test(result)) {
+        throw new Error(`${path} должен быть lowercase SHA-256`)
+    }
+    return result
+}
+
+function requireInstant(value: unknown, path: string): string {
+    const result = requireString(value, path)
+    const match = INSTANT_PATTERN.exec(result)
+
+    if (!match) {
+        throw new Error(`${path} должен быть ISO-8601 Instant в UTC`)
+    }
+
+    const year = Number(result.slice(0, 4))
+    const month = Number(result.slice(5, 7))
+    const day = Number(result.slice(8, 10))
+    const hour = Number(result.slice(11, 13))
+    const minute = Number(result.slice(14, 16))
+    const second = Number(result.slice(17, 19))
+
+    if (month < 1 || month > 12
+        || day < 1
+        || day > daysInUtcMonth(year, month)
+        || hour > 23
+        || minute > 59
+        || second > 59
+        || Number.isNaN(Date.parse(result))) {
+        throw new Error(`${path} должен быть корректным ISO-8601 Instant в UTC`)
+    }
+
+    return result
+}
+
+function daysInUtcMonth(year: number, month: number): number {
+    if (month === 2) {
+        const leap = year % 4 === 0
+            && (year % 100 !== 0 || year % 400 === 0)
+        return leap ? 29 : 28
+    }
+
+    return [4, 6, 9, 11].includes(month)
+        ? 30
+        : 31
+}
+
+function optionalInstant(value: unknown, path: string): string | null {
+    return value === null || value === undefined
+        ? null
+        : requireInstant(value, path)
+}
+
+function requirePositiveInteger(value: unknown, path: string): number {
+    const result = requireInteger(value, path)
+    if (result <= 0) {
+        throw new Error(`${path} должен быть положительным safe integer`)
+    }
+    return result
+}
+
+function requireNonNegativeInteger(value: unknown, path: string): number {
+    const result = requireInteger(value, path)
+    if (result < 0) {
+        throw new Error(`${path} должен быть неотрицательным safe integer`)
+    }
+    return result
+}
+
+function optionalPositiveInteger(value: unknown, path: string): number | null {
+    return value === null || value === undefined
+        ? null
+        : requirePositiveInteger(value, path)
+}
+
+function optionalNonNegativeInteger(value: unknown, path: string): number | null {
+    return value === null || value === undefined
+        ? null
+        : requireNonNegativeInteger(value, path)
+}
+
+function requireModelKey(value: unknown, path: string): string {
+    const result = requireString(value, path)
+    if (!MODEL_KEY_PATTERN.test(result) || result !== result.toLowerCase()) {
+        throw new Error(`${path} должен быть нормализованным modelKey`)
+    }
+    return result
+}
+
+function optionalModelKey(value: unknown, path: string): string | null {
+    return value === null || value === undefined
+        ? null
+        : requireModelKey(value, path)
+}
+
+function requireModelKeyArray(value: unknown, path: string): string[] {
+    const result = requireArray(value, path).map(
+        (item, index) => requireModelKey(item, `${path}[${index}]`),
+    )
+    if (new Set(result).size !== result.length) {
+        throw new Error(`${path} содержит дубликаты`)
+    }
+    return result
+}
+
+function optionalEnum<T extends readonly string[]>(
+    value: unknown,
+    allowed: T,
+    path: string,
+): T[number] | null {
+    return value === null || value === undefined
+        ? null
+        : requireEnum(value, allowed, path)
+}
+
+function requireJsonObjectString(value: unknown, path: string): string {
+    const result = requireString(value, path)
+
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(result) as unknown
+    } catch {
+        throw new Error(`${path} должен быть JSON object string`)
+    }
+
+    if (
+        parsed === null
+        || typeof parsed !== 'object'
+        || Array.isArray(parsed)
+    ) {
+        throw new Error(`${path} должен быть JSON object string`)
+    }
+
+    return result
+}
+
+function validateOrganizationPolicySemantics(
+    policy: OrganizationModelPolicy,
+    path: string,
+): void {
+    const overlap = policy.allowModelKeys.filter(
+        key => policy.denyModelKeys.includes(key),
+    )
+    if (overlap.length > 0) {
+        throw new Error(`${path} allow/deny lists пересекаются`)
+    }
+    if (policy.defaultModelKey !== null
+        && policy.denyModelKeys.includes(policy.defaultModelKey)) {
+        throw new Error(`${path}.defaultModelKey находится в denylist`)
+    }
+    if (policy.defaultModelKey !== null
+        && policy.allowModelKeys.length > 0
+        && !policy.allowModelKeys.includes(policy.defaultModelKey)) {
+        throw new Error(`${path}.defaultModelKey отсутствует в allowlist`)
+    }
+
+    if (!policy.configured) {
+        const validSynthetic =
+            policy.id === null
+            && policy.version === 0
+            && !policy.enabled
+            && policy.allowModelKeys.length === 0
+            && policy.denyModelKeys.length === 0
+            && policy.defaultModelKey === null
+            && policy.maxInputTokens === null
+            && policy.maxOutputTokens === null
+            && policy.maxRequestCostUsd === null
+            && policy.monthlyBudgetUsd === null
+            && policy.budgetEnforcement === 'SOFT'
+            && !policy.requireCompletePricing
+            && !policy.requireNoTraining
+            && !policy.requireZeroDataRetention
+            && policy.createdByUserId === null
+            && policy.createdAt === null
+        if (!validSynthetic) {
+            throw new Error(`${path} содержит некорректное unconfigured состояние`)
+        }
+        return
+    }
+
+    if (policy.id === null
+        || policy.version <= 0
+        || policy.createdByUserId === null
+        || policy.createdAt === null) {
+        throw new Error(`${path} содержит неполное configured состояние`)
+    }
+}
+
+function validateCatalogSemantics(
+    entry: ModelCatalogEntry,
+    path: string,
+): void {
+    if (entry.inputModalities.length === 0 || entry.outputModalities.length === 0) {
+        throw new Error(`${path}.modalities не должны быть пустыми`)
+    }
+    if (entry.outputModalities.includes('IMAGE')) {
+        throw new Error(`${path} не поддерживает IMAGE output modality`)
+    }
+    const hasVision = entry.capabilities.includes('VISION')
+    const hasImageInput = entry.inputModalities.includes('IMAGE')
+    if (hasVision !== hasImageInput) {
+        throw new Error(`${path} VISION и IMAGE input должны объявляться совместно`)
+    }
+    if (entry.retentionStatus === 'ZERO_DATA_RETENTION'
+        && entry.retentionDays !== null
+        && entry.retentionDays !== 0) {
+        throw new Error(`${path} ZERO_DATA_RETENTION требует retentionDays=0 или null`)
+    }
+
+    const noExtraPricing = entry.extraPricingJson === '{}'
+    if (entry.pricingStatus === 'UNPRICED') {
+        if (entry.pricingComplete
+            || entry.inputUsdPer1mTokens !== null
+            || entry.cachedInputUsdPer1mTokens !== null
+            || entry.cacheWriteInputUsdPer1mTokens !== null
+            || entry.outputUsdPer1mTokens !== null
+            || !noExtraPricing) {
+            throw new Error(`${path} содержит некорректный UNPRICED pricing`)
+        }
+    } else if (entry.pricingStatus === 'FREE') {
+        const zero = (value: string | null) => value === null || /^0+(?:\.0+)?$/.test(value)
+        if (!entry.pricingComplete
+            || entry.inputUsdPer1mTokens === null
+            || !zero(entry.inputUsdPer1mTokens)
+            || entry.outputUsdPer1mTokens === null
+            || !zero(entry.outputUsdPer1mTokens)
+            || !zero(entry.cachedInputUsdPer1mTokens)
+            || !zero(entry.cacheWriteInputUsdPer1mTokens)
+            || !noExtraPricing) {
+            throw new Error(`${path} содержит некорректный FREE pricing`)
+        }
+    } else if (entry.pricingStatus === 'CONFIGURED') {
+        if (!entry.pricingComplete
+            || entry.inputUsdPer1mTokens === null
+            || entry.outputUsdPer1mTokens === null
+            || entry.pricingVersion === null
+            || !noExtraPricing) {
+            throw new Error(`${path} содержит некорректный CONFIGURED pricing`)
+        }
+    } else if (entry.pricingComplete) {
+        throw new Error(`${path} INCOMPLETE не может быть pricingComplete=true`)
+    }
+}
+
 function optionalDecimalString(
     value: unknown,
     path: string,
@@ -1130,30 +1707,18 @@ function optionalDecimalString(
         )
     }
 
+    const [integerPart, fractionPart = ''] = value.split('.')
+    const significantIntegerDigits = integerPart.replace(/^0+/, '').length
+    if (significantIntegerDigits > 18 || fractionPart.length > 12) {
+        throw new Error(
+            `${path} должен помещаться в NUMERIC(30,12)`,
+        )
+    }
+
     return value
 }
 
-function optionalString(
-    value: unknown,
-    path: string,
-): string | null {
-    if (value === null || value === undefined) {
-        return null
-    }
 
-    return requireString(value, path)
-}
-
-function optionalInteger(
-    value: unknown,
-    path: string,
-): number | null {
-    if (value === null || value === undefined) {
-        return null
-    }
-
-    return requireInteger(value, path)
-}
 
 function requireObject(
     value: unknown,
@@ -1227,23 +1792,6 @@ function requireInteger(
     return value
 }
 
-function requireStringArray(
-    value: unknown,
-    path: string,
-): string[] {
-    if (
-        !Array.isArray(value)
-        || value.some(
-            item => typeof item !== 'string',
-        )
-    ) {
-        throw new Error(
-            `${path} должен быть string[]`,
-        )
-    }
-
-    return [...value] as string[]
-}
 
 function requireEnumArray<
     T extends readonly string[],
@@ -1288,3 +1836,4 @@ function requireEnum<
 
     return value as T[number]
 }
+

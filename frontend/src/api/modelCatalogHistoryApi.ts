@@ -15,6 +15,9 @@ type ModelCatalogHistoryRequestOptions = {
     signal?: AbortSignal
 }
 
+const MODEL_KEY_PATTERN =
+    /^[a-z0-9][a-z0-9._:/-]{0,159}$/
+
 export async function getModelCatalogHistory(
     modelKey: string,
     options: ModelCatalogHistoryRequestOptions = {},
@@ -23,6 +26,10 @@ export async function getModelCatalogHistory(
 
     if (!normalized) {
         throw new Error('modelKey не должен быть пустым')
+    }
+
+    if (!MODEL_KEY_PATTERN.test(normalized)) {
+        throw new Error('modelKey имеет некорректный формат')
     }
 
     const raw = await apiRequest<unknown>(

@@ -187,7 +187,7 @@
 
     .models-page .models-kv-grid dt {
         margin-bottom: 2px;
-        font-size: 9px;
+        font-size: 11px;
     }
 
     .models-page .models-kv-grid dd {
@@ -196,12 +196,12 @@
 
     .models-page .models-kv-grid small {
         margin-top: 2px;
-        font-size: 9px;
+        font-size: 11px;
     }
 
     .models-page .models-status {
         padding: 4px 7px;
-        font-size: 9px;
+        font-size: 11px;
     }
 
     .models-page .models-runtime-probe {
@@ -215,7 +215,7 @@
     }
 
     .models-page .models-runtime-probe small {
-        font-size: 9px;
+        font-size: 11px;
         line-height: 1.2;
     }
 
@@ -243,7 +243,7 @@
 
     .models-page .models-policy-card__note {
         padding: 6px 8px;
-        font-size: 9px;
+        font-size: 11px;
         line-height: 1.25;
     }
 

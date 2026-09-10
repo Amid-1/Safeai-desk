@@ -278,3 +278,90 @@
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* ============================================================
+   Production hardening: unknown effective state + version diff.
+   ============================================================ */
+
+.models-history-state--unknown {
+    border-color: #d8e0ed;
+    background: #f8fafc;
+    color: #5f6f83;
+}
+
+.models-history-modal__warning {
+    margin-bottom: calc(10px * var(--modal-resize-scale, 1));
+    padding: calc(10px * var(--modal-resize-scale, 1)) calc(12px * var(--modal-resize-scale, 1));
+    border: 1px solid #f0d79e;
+    border-radius: var(--history-small-radius);
+    background: var(--history-amber-soft);
+    color: #715018;
+    font-size: var(--modal-resize-hint-font-size, 12px);
+    line-height: 1.4;
+}
+
+.models-history-card__diff {
+    border-top: 1px solid #edf1f6;
+    padding-top: calc(8px * var(--modal-resize-scale, 1));
+}
+
+.models-history-card__diff > summary {
+    width: fit-content;
+    cursor: pointer;
+    color: #4057f2;
+    font-size: var(--modal-resize-small-font-size, 11px);
+    font-weight: 800;
+}
+
+.models-history-card__diff > p {
+    margin: calc(8px * var(--modal-resize-scale, 1)) 0 0;
+    color: #6b7b90;
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+.models-history-card__diff-list {
+    display: grid;
+    gap: calc(6px * var(--modal-resize-scale, 1));
+    margin: calc(8px * var(--modal-resize-scale, 1)) 0 0;
+}
+
+.models-history-card__diff-list > div {
+    display: grid;
+    grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr);
+    gap: calc(8px * var(--modal-resize-scale, 1));
+    align-items: start;
+    padding: calc(6px * var(--modal-resize-scale, 1)) calc(8px * var(--modal-resize-scale, 1));
+    border-radius: var(--history-small-radius);
+    background: #f8fbff;
+}
+
+.models-history-card__diff-list dt {
+    color: #65758d;
+    font-size: var(--modal-resize-small-font-size, 11px);
+    font-weight: 800;
+}
+
+.models-history-card__diff-list dd {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: calc(6px * var(--modal-resize-scale, 1));
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: #34435a;
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+.models-history-card__diff-list dd strong {
+    color: #172033;
+}
+
+@container model-history-modal (max-width: 620px) {
+    .models-history-card__diff-list > div {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .models-history-card__diff-list dd {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

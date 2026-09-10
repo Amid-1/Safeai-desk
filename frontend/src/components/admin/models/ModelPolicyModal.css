@@ -294,3 +294,82 @@
     }
 }
 
+
+/* Backend-driven draft policy preview. */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview {
+    display: grid;
+    gap: var(--modal-resize-gap, 10px);
+    padding: 11px 12px;
+    border: 1px solid #cfe0f4;
+    border-radius: 12px;
+    background: #f8fbff;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview--ok {
+    border-color: #bfe5d0;
+    background: var(--policy-green-soft);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview--danger {
+    border-color: #efc5c5;
+    background: #fff5f5;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-summary {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px 14px;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-summary > div {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-summary small,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-row small {
+    color: var(--models-muted);
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-list {
+    display: grid;
+    gap: 6px;
+    max-height: 220px;
+    overflow: auto;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) auto minmax(180px, 1.2fr);
+    gap: 8px;
+    align-items: center;
+    padding: 7px 8px;
+    border: 1px solid rgb(148 163 184 / 24%);
+    border-radius: 9px;
+    background: rgb(255 255 255 / 72%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-row code {
+    overflow-wrap: anywhere;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__lockout-confirm {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #efc5c5;
+    color: #8d2f36;
+    font-weight: 750;
+}
+
+@container model-policy-modal (max-width: 760px) {
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

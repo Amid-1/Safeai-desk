@@ -998,6 +998,7 @@ function routeReasonLabel(
         MODEL_NOT_ALLOWED: 'Модель не входит в список разрешённых',
         MODEL_DENIED: 'Модель запрещена правилами',
         MODEL_NOT_FOUND: 'Модель не найдена',
+        AMBIGUOUS_RUNTIME_MAPPING: 'Runtime неоднозначно сопоставлен с каталогом',
         MODEL_DISABLED: 'Модель отключена',
         RUNTIME_MISMATCH: 'Модель не совпадает с подключённой',
         CAPABILITY_UNSUPPORTED: 'Нужная возможность не поддерживается',

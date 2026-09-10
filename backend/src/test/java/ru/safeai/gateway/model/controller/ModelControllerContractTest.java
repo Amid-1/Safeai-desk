@@ -14,6 +14,7 @@ import ru.safeai.gateway.model.dto.CreateModelCatalogVersionRequest;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 import ru.safeai.gateway.model.dto.ModelCatalogEntryResponse;
 import ru.safeai.gateway.model.dto.ModelRouteDecisionResponse;
+import ru.safeai.gateway.model.dto.ModelPolicyPreviewResponse;
 import ru.safeai.gateway.model.domain.RuntimeModelProbeResult;
 import ru.safeai.gateway.model.domain.RuntimeModelProbeStatus;
 import ru.safeai.gateway.model.dto.OrganizationModelPolicyResponse;
@@ -21,6 +22,7 @@ import ru.safeai.gateway.model.dto.RuntimeModelProbeResponse;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusWireResponse;
 import ru.safeai.gateway.model.service.ModelCatalogService;
+import ru.safeai.gateway.model.service.ModelPolicyPreviewService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
 import ru.safeai.gateway.model.service.OrganizationModelPolicyService;
 import ru.safeai.gateway.model.service.RuntimeModelProbeService;
@@ -221,6 +223,14 @@ class ModelControllerContractTest {
                         SafeAiUserPrincipal.class
                 );
 
+        Method preview =
+                OrganizationModelPolicyController.class.getMethod(
+                        "preview",
+                        UUID.class,
+                        CreateOrganizationModelPolicyVersionRequest.class,
+                        SafeAiUserPrincipal.class
+                );
+
         assertGetMapping(
                 current,
                 "/{organizationId}"
@@ -231,12 +241,21 @@ class ModelControllerContractTest {
                 "/{organizationId}"
         );
 
+        assertPostMapping(
+                preview,
+                "/{organizationId}/preview"
+        );
+
         assertNoMethodPreAuthorize(
                 current
         );
 
         assertNoMethodPreAuthorize(
                 createVersion
+        );
+
+        assertNoMethodPreAuthorize(
+                preview
         );
 
         assertPathVariable(
@@ -257,6 +276,18 @@ class ModelControllerContractTest {
 
         assertAuthenticationPrincipal(
                 createVersion.getParameters()[2]
+        );
+
+        assertPathVariable(
+                preview.getParameters()[0]
+        );
+
+        assertRequestBodyValidated(
+                preview.getParameters()[1]
+        );
+
+        assertAuthenticationPrincipal(
+                preview.getParameters()[2]
         );
     }
 
@@ -649,15 +680,21 @@ class ModelControllerContractTest {
     }
 
     @Test
-    void policyControllerDelegatesCurrentAndCreateVersionWithExactArguments() {
+    void policyControllerDelegatesCurrentCreateAndPreviewWithExactArguments() {
         OrganizationModelPolicyService service =
                 mock(
                         OrganizationModelPolicyService.class
                 );
 
+        ModelPolicyPreviewService previewService =
+                mock(
+                        ModelPolicyPreviewService.class
+                );
+
         OrganizationModelPolicyController controller =
                 new OrganizationModelPolicyController(
-                        service
+                        service,
+                        previewService
                 );
 
         UUID organizationId =
@@ -681,6 +718,11 @@ class ModelControllerContractTest {
                         OrganizationModelPolicyResponse.class
                 );
 
+        ModelPolicyPreviewResponse preview =
+                mock(
+                        ModelPolicyPreviewResponse.class
+                );
+
         when(
                 service.current(
                         organizationId,
@@ -698,6 +740,16 @@ class ModelControllerContractTest {
                 )
         ).thenReturn(
                 created
+        );
+
+        when(
+                previewService.preview(
+                        organizationId,
+                        request,
+                        principal
+                )
+        ).thenReturn(
+                preview
         );
 
         assertThat(
@@ -719,6 +771,16 @@ class ModelControllerContractTest {
                 created
         );
 
+        assertThat(
+                controller.preview(
+                        organizationId,
+                        request,
+                        principal
+                )
+        ).isSameAs(
+                preview
+        );
+
         verify(
                 service
         ).current(
@@ -733,6 +795,20 @@ class ModelControllerContractTest {
         verify(
                 service
         ).createVersion(
+                eq(
+                        organizationId
+                ),
+                same(
+                        request
+                ),
+                same(
+                        principal
+                )
+        );
+
+        verify(
+                previewService
+        ).preview(
                 eq(
                         organizationId
                 ),
@@ -811,10 +887,21 @@ class ModelControllerContractTest {
                         "probeService"
                 );
 
+        OrganizationModelPolicyService policyService =
+                mock(
+                        OrganizationModelPolicyService.class
+                );
+
+        ModelPolicyPreviewService previewService =
+                mock(
+                        ModelPolicyPreviewService.class
+                );
+
         assertThatThrownBy(
                 () ->
                         new OrganizationModelPolicyController(
-                                null
+                                null,
+                                previewService
                         )
         )
                 .isInstanceOf(
@@ -822,6 +909,20 @@ class ModelControllerContractTest {
                 )
                 .hasMessageContaining(
                         "service"
+                );
+
+        assertThatThrownBy(
+                () ->
+                        new OrganizationModelPolicyController(
+                                policyService,
+                                null
+                        )
+        )
+                .isInstanceOf(
+                        NullPointerException.class
+                )
+                .hasMessageContaining(
+                        "previewService"
                 );
     }
 
@@ -1002,3 +1103,4 @@ class ModelControllerContractTest {
         ).isNotNull();
     }
 }
+

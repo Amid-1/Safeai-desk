@@ -26,6 +26,9 @@ import {
     importRuntimeModelCatalog,
     probeRuntimeModel,
 } from '../api/modelApi'
+import {
+    getOrganizationDetails,
+} from '../api/organizationApi'
 import AdminModelsPage from './AdminModelsPage'
 
 const authMock = vi.hoisted(() => ({
@@ -51,6 +54,7 @@ vi.mock('../api/modelApi', async (importOriginal) => {
         probeRuntimeModel: vi.fn(),
         createOrganizationModelPolicyVersion: vi.fn(),
         getModelRouteDecision: vi.fn(),
+        previewOrganizationModelPolicy: vi.fn(),
     }
 })
 
@@ -61,6 +65,7 @@ vi.mock('../api/organizationApi', async (importOriginal) => {
     return {
         ...actual,
         searchOrganizationDirectory: vi.fn(),
+        getOrganizationDetails: vi.fn(),
     }
 })
 
@@ -84,6 +89,10 @@ const routeDecisionMock =
 
 const runtimeProbeMock =
     vi.mocked(probeRuntimeModel)
+
+
+const organizationDetailsMock =
+    vi.mocked(getOrganizationDetails)
 
 const ORGANIZATION_ID =
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -135,6 +144,11 @@ function currentUser(
 }
 
 function stubLoadedState() {
+    organizationDetailsMock.mockResolvedValue({
+        id: ORGANIZATION_ID,
+        name: 'Demo Organization',
+    } as Awaited<ReturnType<typeof getOrganizationDetails>>)
+
     runtimeMock.mockResolvedValue({
         provider: 'mock',
         model: 'mock-safeai',
@@ -218,7 +232,7 @@ describe('AdminModelsPage', () => {
         expect(
             screen.queryByRole(
                 'button',
-                {name: 'Добавить подключённую модель'},
+                {name: 'Добавить Runtime в каталог'},
             ),
         ).not.toBeInTheDocument()
 
@@ -307,7 +321,7 @@ describe('AdminModelsPage', () => {
         const importButton =
             await screen.findByRole(
                 'button',
-                {name: 'Добавить подключённую модель'},
+                {name: 'Добавить Runtime в каталог'},
             )
 
         importRuntimeMock.mockResolvedValueOnce({
@@ -336,6 +350,44 @@ describe('AdminModelsPage', () => {
                 importRuntimeMock,
             ).toHaveBeenCalledTimes(1)
         })
+    })
+
+    it('не сообщает об ошибке mutation, если Runtime уже сохранён, а refresh упал', async () => {
+        authMock.currentUser =
+            currentUser('SUPER_ADMIN')
+
+        render(<AdminModelsPage />)
+
+        const importButton =
+            await screen.findByRole(
+                'button',
+                {name: 'Добавить Runtime в каталог'},
+            )
+
+        importRuntimeMock.mockResolvedValueOnce({
+            ...CATALOG_ENTRY,
+            version: 2,
+        })
+        catalogMock.mockRejectedValueOnce(
+            new Error('refresh failed'),
+        )
+        effectiveCatalogMock.mockResolvedValueOnce([
+            CATALOG_ENTRY,
+        ])
+
+        fireEvent.click(importButton)
+
+        expect(
+            await screen.findByText(
+                /Runtime сохранён в каталоге:.*повторно добавлять Runtime не нужно/i,
+            ),
+        ).toBeInTheDocument()
+
+        expect(
+            screen.queryByText(
+                'Не удалось добавить Runtime в каталог.',
+            ),
+        ).not.toBeInTheDocument()
     })
 
     it('SUPER_ADMIN может запустить metadata-only runtime probe', async () => {

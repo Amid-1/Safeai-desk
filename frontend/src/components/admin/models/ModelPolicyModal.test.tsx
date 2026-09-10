@@ -16,6 +16,7 @@ import {
 import type {
     CreateOrganizationModelPolicyVersionRequest,
     ModelCatalogEntry,
+    ModelPolicyPreview,
     OrganizationModelPolicy,
     RuntimeModelStatus,
 } from '../../../api/modelApi'
@@ -102,14 +103,21 @@ type PolicySubmit = (
     request: CreateOrganizationModelPolicyVersionRequest,
 ) => Promise<void>
 
+type PolicyPreviewFn = (
+    request: CreateOrganizationModelPolicyVersionRequest,
+) => Promise<ModelPolicyPreview>
+
 function renderPolicyModal({
     catalog = [],
     effectiveCatalog = catalog,
+    onPreview = vi.fn<PolicyPreviewFn>()
+        .mockRejectedValue(new Error('Preview не ожидался в этом тесте')),
     onSubmit = vi.fn<PolicySubmit>()
         .mockResolvedValue(undefined),
 }: {
     catalog?: ModelCatalogEntry[]
     effectiveCatalog?: ModelCatalogEntry[]
+    onPreview?: PolicyPreviewFn
     onSubmit?: PolicySubmit
 } = {}) {
     return render(
@@ -122,6 +130,7 @@ function renderPolicyModal({
             organizationName={ORGANIZATION_NAME}
             pending={false}
             onClose={vi.fn()}
+            onPreview={onPreview}
             onSubmit={onSubmit}
         />,
     )

@@ -53,6 +53,16 @@ describe('modelCatalogHistoryApi', () => {
         expect(apiRequestMock).not.toHaveBeenCalled()
     })
 
+    it('rejects an invalid model key before making a request', async () => {
+        await expect(
+            getModelCatalogHistory('openai:gpt test'),
+        ).rejects.toThrow(
+            'modelKey имеет некорректный формат',
+        )
+
+        expect(apiRequestMock).not.toHaveBeenCalled()
+    })
+
     it('rejects a malformed non-array response', async () => {
         apiRequestMock.mockResolvedValue({})
 

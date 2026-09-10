@@ -20,10 +20,24 @@ public record RuntimeModelProbeResult(
 ) {
 
     public RuntimeModelProbeResult {
-        provider = requireText(provider, "provider", 32);
-        model = requireText(model, "model", 100);
-        status = Objects.requireNonNull(status, "status не должен быть null");
-        checkedAt = Objects.requireNonNull(
+        provider = requireText(
+                provider,
+                "provider",
+                32
+        );
+
+        model = requireText(
+                model,
+                "model",
+                100
+        );
+
+        Objects.requireNonNull(
+                status,
+                "status не должен быть null"
+        );
+
+        Objects.requireNonNull(
                 checkedAt,
                 "checkedAt не должен быть null"
         );
@@ -34,14 +48,20 @@ public record RuntimeModelProbeResult(
             );
         }
 
-        if (httpStatus != null
-                && (httpStatus < 100 || httpStatus > 599)) {
+        if (
+                httpStatus != null
+                        && (httpStatus < 100 || httpStatus > 599)
+        ) {
             throw new IllegalArgumentException(
                     "httpStatus должен быть в диапазоне 100..599"
             );
         }
 
-        message = requireText(message, "message", 255);
+        message = requireText(
+                message,
+                "message",
+                255
+        );
     }
 
     private static String requireText(
@@ -54,14 +74,25 @@ public record RuntimeModelProbeResult(
                 field + " не должен быть null"
         ).trim();
 
-        if (normalized.isEmpty() || normalized.length() > maxChars) {
+        if (
+                normalized.isEmpty()
+                        || normalized.length() > maxChars
+        ) {
             throw new IllegalArgumentException(
                     field + " имеет недопустимую длину"
             );
         }
 
-        for (int index = 0; index < normalized.length(); index++) {
-            if (Character.isISOControl(normalized.charAt(index))) {
+        for (
+                int index = 0;
+                index < normalized.length();
+                index++
+        ) {
+            if (
+                    Character.isISOControl(
+                            normalized.charAt(index)
+                    )
+            ) {
                 throw new IllegalArgumentException(
                         field + " содержит управляющие символы"
                 );

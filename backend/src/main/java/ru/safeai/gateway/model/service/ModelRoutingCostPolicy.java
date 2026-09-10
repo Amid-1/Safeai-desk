@@ -42,13 +42,61 @@ final class ModelRoutingCostPolicy {
             PricingEstimate currentPricing,
             Instant now
     ) {
-        Objects.requireNonNull(
-                currentPricing,
-                "currentPricing не должен быть null"
+        return evaluateBudget(
+                loadBudgetContext(
+                        organizationId,
+                        policy,
+                        policyEnabled,
+                        now
+                ),
+                policy,
+                currentPricing
         );
+    }
 
+    BudgetContext loadBudgetContext(
+            UUID organizationId,
+            OrganizationModelPolicy policy,
+            boolean policyEnabled,
+            Instant now
+    ) {
+        return loadBudgetContext(
+                organizationId,
+                policy,
+                policyEnabled,
+                now,
+                true
+        );
+    }
+
+    /**
+     * Read-only snapshot for administrative preview. Preview must never acquire
+     * the live routing advisory lock and therefore cannot block data-plane work.
+     */
+    BudgetContext loadBudgetContextForPreview(
+            UUID organizationId,
+            OrganizationModelPolicy policy,
+            boolean policyEnabled,
+            Instant now
+    ) {
+        return loadBudgetContext(
+                organizationId,
+                policy,
+                policyEnabled,
+                now,
+                false
+        );
+    }
+
+    private BudgetContext loadBudgetContext(
+            UUID organizationId,
+            OrganizationModelPolicy policy,
+            boolean policyEnabled,
+            Instant now,
+            boolean lockForRouting
+    ) {
         if (!policyEnabled) {
-            return BudgetSnapshot.none();
+            return BudgetContext.none();
         }
 
         Objects.requireNonNull(
@@ -57,10 +105,12 @@ final class ModelRoutingCostPolicy {
         );
 
         if (policy.monthlyBudgetUsd() == null) {
-            return BudgetSnapshot.none();
+            return BudgetContext.none();
         }
 
-        decisionRepository.lockOrganizationBudget(organizationId);
+        if (lockForRouting) {
+            decisionRepository.lockOrganizationBudget(organizationId);
+        }
 
         YearMonth month =
                 YearMonth.from(now.atZone(ZoneOffset.UTC));
@@ -84,18 +134,49 @@ final class ModelRoutingCostPolicy {
                 );
 
         BigDecimal spent = commitment.committedCostUsd();
+        boolean valid = !ModelControlPlaneNumericValidation
+                .violatesNonNegativeNumeric30Scale12(spent);
 
-        if (ModelControlPlaneNumericValidation
-                .violatesNonNegativeNumeric30Scale12(spent)) {
+        return new BudgetContext(
+                true,
+                valid,
+                spent,
+                commitment.unknownCommittedCostCount()
+        );
+    }
+
+    BudgetSnapshot evaluateBudget(
+            BudgetContext context,
+            OrganizationModelPolicy policy,
+            PricingEstimate currentPricing
+    ) {
+        Objects.requireNonNull(context, "context не должен быть null");
+        Objects.requireNonNull(
+                currentPricing,
+                "currentPricing не должен быть null"
+        );
+
+        if (!context.evaluated()) {
+            return BudgetSnapshot.none();
+        }
+
+        Objects.requireNonNull(
+                policy,
+                "policy не должен быть null при budget evaluation"
+        );
+
+        if (!context.valid()) {
             return unverifiableBudget(policy);
         }
+
+        BigDecimal spent = context.committedCostUsd();
 
         boolean currentCostKnown =
                 currentPricing.complete()
                         && currentPricing.cost() != null;
 
         boolean costKnown =
-                commitment.unknownCommittedCostCount() == 0L
+                context.unknownCommittedCostCount() == 0L
                         && currentCostKnown;
 
         BigDecimal knownLowerBound =
@@ -329,6 +410,22 @@ final class ModelRoutingCostPolicy {
                         MONEY_SCALE,
                         RoundingMode.HALF_UP
                 );
+    }
+
+    record BudgetContext(
+            boolean evaluated,
+            boolean valid,
+            BigDecimal committedCostUsd,
+            long unknownCommittedCostCount
+    ) {
+        static BudgetContext none() {
+            return new BudgetContext(
+                    false,
+                    true,
+                    BigDecimal.ZERO,
+                    0L
+            );
+        }
     }
 
     record PricingEstimate(

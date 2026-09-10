@@ -684,29 +684,9 @@ export function validatePricingDraft(
             )
         }
 
-        if (
-            cachedInput !== null
-            && compareDecimalStrings(
-                cachedInput,
-                input,
-            ) > 0
-        ) {
-            throw new Error(
-                'Стоимость кэшированного входа не может превышать обычную стоимость входа.',
-            )
-        }
+        // Generic catalog pricing intentionally does not impose
+        // provider-specific relationships between input/cache rates.
 
-        if (
-            cacheWrite !== null
-            && compareDecimalStrings(
-                cacheWrite,
-                input,
-            ) > 0
-        ) {
-            throw new Error(
-                'Стоимость записи кэша не может превышать обычную стоимость входа.',
-            )
-        }
         return
     }
 

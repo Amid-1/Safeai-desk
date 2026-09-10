@@ -93,21 +93,17 @@ class ModelCatalogRulesTest {
     }
 
     @Test
-    void configuredPricingRejectsSpecializedPriceAboveInput() {
-        assertThatThrownBy(() ->
+    void configuredPricingDoesNotAssumeProviderSpecificCacheRateOrdering() {
+        assertThatCode(() ->
                 validateCompletePricing(
                         ModelPricingStatus.CONFIGURED,
-                        new BigDecimal("1"),
-                        null,
-                        new BigDecimal("1.01"),
-                        new BigDecimal("4"),
-                        "pricing-v1"
+                        new BigDecimal("5"),
+                        new BigDecimal("7"),
+                        new BigDecimal("10"),
+                        new BigDecimal("15"),
+                        "provider-2026-09"
                 )
-        )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining(
-                        "cacheWriteInputUsdPer1mTokens"
-                );
+        ).doesNotThrowAnyException();
     }
 
     /**

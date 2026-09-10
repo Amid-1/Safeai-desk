@@ -16,9 +16,6 @@ import type {
     RuntimeModelStatus,
 } from '../../../api/modelApi'
 import {
-    formatDateTime,
-} from '../../../utils/format'
-import {
     normalizeModelKey,
 } from './modelControlPlaneSupport'
 
@@ -193,17 +190,7 @@ function modelExecutionLabel(
         return 'Ключ пока отсутствует в каталоге'
     }
 
-    const effectiveFrom =
-        new Date(latest.effectiveFrom)
-
-    if (
-        Number.isFinite(effectiveFrom.getTime())
-        && effectiveFrom.getTime() > Date.now()
-    ) {
-        return `Вступит в силу ${formatDateTime(latest.effectiveFrom)}`
-    }
-
-    return 'Есть в каталоге, но сейчас не действует'
+    return 'Есть в последней версии каталога, но сервер не считает её действующей сейчас'
 }
 
 function runtimeExecutionLabel(
@@ -488,6 +475,11 @@ export function ModelKeySelector({
         )
     }, [optionCount])
 
+    const activeOptionId =
+        expanded && optionCount > 0
+            ? `${listboxId}-option-${activeIndex}`
+            : undefined
+
     return (
         <div className="models-model-selector">
             <div className="models-model-selector__heading">
@@ -596,6 +588,7 @@ export function ModelKeySelector({
                         aria-expanded={expanded}
                         aria-controls={listboxId}
                         aria-autocomplete="list"
+                        aria-activedescendant={activeOptionId}
                         aria-invalid={Boolean(error)}
                         placeholder="Найти в каталоге или ввести ключ модели"
                         onFocus={() => {
@@ -711,10 +704,11 @@ export function ModelKeySelector({
 
                             return (
                                 <button
+                                    id={`${listboxId}-option-${index}`}
                                     key={entry.modelKey}
                                     type="button"
                                     role="option"
-                                    aria-selected={false}
+                                    aria-selected={activeIndex === index}
                                     disabled={disabled || conflict}
                                     className={[
                                         'models-model-selector__option',
@@ -724,6 +718,9 @@ export function ModelKeySelector({
                                     ].filter(Boolean).join(' ')}
                                     onMouseDown={(event) => {
                                         event.preventDefault()
+                                    }}
+                                    onMouseMove={() => {
+                                        setActiveIndex(index)
                                     }}
                                     onClick={() => {
                                         if (conflict) {
@@ -764,9 +761,10 @@ export function ModelKeySelector({
 
                         {manualCandidate && (
                             <button
+                                id={`${listboxId}-option-${filteredCatalog.length}`}
                                 type="button"
                                 role="option"
-                                aria-selected={false}
+                                aria-selected={activeIndex === filteredCatalog.length}
                                 disabled={disabled}
                                 className={[
                                     'models-model-selector__option',
@@ -778,6 +776,9 @@ export function ModelKeySelector({
                                 ].filter(Boolean).join(' ')}
                                 onMouseDown={(event) => {
                                     event.preventDefault()
+                                }}
+                                onMouseMove={() => {
+                                    setActiveIndex(filteredCatalog.length)
                                 }}
                                 onClick={() => {
                                     commitKey(manualCandidate)
@@ -842,6 +843,8 @@ export function DefaultModelSelector({
 }: DefaultModelSelectorProps) {
     const containerRef =
         useRef<HTMLDivElement | null>(null)
+    const triggerRef =
+        useRef<HTMLButtonElement | null>(null)
     const searchRef =
         useRef<HTMLInputElement | null>(null)
     const listboxId = useId()
@@ -849,6 +852,8 @@ export function DefaultModelSelector({
         useState(false)
     const [query, setQuery] =
         useState('')
+    const [activeIndex, setActiveIndex] =
+        useState(0)
 
     const allowKeys = useMemo(
         () => new Set(
@@ -931,6 +936,27 @@ export function DefaultModelSelector({
         selectableKeys,
     ])
 
+    const defaultOptionCount = 1 + filteredKeys.length
+    const activeDefaultOptionId = expanded
+        ? `${listboxId}-option-${activeIndex}`
+        : undefined
+
+    const chooseDefaultOption = (index: number) => {
+        if (index === 0) {
+            onChange('')
+            setExpanded(false)
+            return
+        }
+
+        const key = filteredKeys[index - 1]
+        if (!key) {
+            return
+        }
+
+        onChange(key)
+        setExpanded(false)
+    }
+
     useEffect(() => {
         if (!expanded) {
             return
@@ -970,6 +996,12 @@ export function DefaultModelSelector({
         }
     }, [expanded])
 
+    useEffect(() => {
+        setActiveIndex((current) =>
+            Math.min(current, Math.max(defaultOptionCount - 1, 0)),
+        )
+    }, [defaultOptionCount])
+
     const selectedKey = value.trim().toLowerCase()
     const selectedEntry = selectedKey
         ? lookup.get(selectedKey)
@@ -990,6 +1022,7 @@ export function DefaultModelSelector({
             className="models-default-selector"
         >
             <button
+                ref={triggerRef}
                 type="button"
                 className="models-default-selector__button"
                 disabled={disabled}
@@ -999,6 +1032,7 @@ export function DefaultModelSelector({
                 onClick={() => {
                     setExpanded((current) => !current)
                     setQuery('')
+                    setActiveIndex(0)
                 }}
             >
                 <span>
@@ -1039,13 +1073,47 @@ export function DefaultModelSelector({
                             type="text"
                             value={query}
                             autoComplete="off"
+                            role="combobox"
+                            aria-label="Найти модель по умолчанию"
+                            aria-expanded={expanded}
+                            aria-controls={listboxId}
+                            aria-autocomplete="list"
+                            aria-activedescendant={activeDefaultOptionId}
                             placeholder="Найти модель"
                             onChange={(event) => {
                                 setQuery(event.target.value)
+                                setActiveIndex(0)
                             }}
                             onKeyDown={(event) => {
+                                if (event.key === 'ArrowDown') {
+                                    event.preventDefault()
+                                    setActiveIndex((current) =>
+                                        Math.min(
+                                            current + 1,
+                                            defaultOptionCount - 1,
+                                        ),
+                                    )
+                                    return
+                                }
+
+                                if (event.key === 'ArrowUp') {
+                                    event.preventDefault()
+                                    setActiveIndex((current) =>
+                                        Math.max(current - 1, 0),
+                                    )
+                                    return
+                                }
+
+                                if (event.key === 'Enter') {
+                                    event.preventDefault()
+                                    chooseDefaultOption(activeIndex)
+                                    return
+                                }
+
                                 if (event.key === 'Escape') {
+                                    event.preventDefault()
                                     setExpanded(false)
+                                    triggerRef.current?.focus()
                                 }
                             }}
                         />
@@ -1057,13 +1125,21 @@ export function DefaultModelSelector({
                         className="models-default-selector__options"
                     >
                         <button
+                            id={`${listboxId}-option-0`}
                             type="button"
                             role="option"
                             aria-selected={!selectedKey}
-                            className="models-default-selector__option"
+                            className={[
+                                'models-default-selector__option',
+                                activeIndex === 0
+                                    ? 'models-default-selector__option--active'
+                                    : '',
+                            ].filter(Boolean).join(' ')}
+                            onMouseMove={() => {
+                                setActiveIndex(0)
+                            }}
                             onClick={() => {
-                                onChange('')
-                                setExpanded(false)
+                                chooseDefaultOption(0)
                             }}
                         >
                             <span>
@@ -1079,19 +1155,28 @@ export function DefaultModelSelector({
                             </span>
                         </button>
 
-                        {filteredKeys.map((key) => {
+                        {filteredKeys.map((key, index) => {
                             const entry = lookup.get(key)
+                            const optionIndex = index + 1
 
                             return (
                                 <button
+                                    id={`${listboxId}-option-${optionIndex}`}
                                     key={key}
                                     type="button"
                                     role="option"
                                     aria-selected={selectedKey === key}
-                                    className="models-default-selector__option"
+                                    className={[
+                                        'models-default-selector__option',
+                                        activeIndex === optionIndex
+                                            ? 'models-default-selector__option--active'
+                                            : '',
+                                    ].filter(Boolean).join(' ')}
+                                    onMouseMove={() => {
+                                        setActiveIndex(optionIndex)
+                                    }}
                                     onClick={() => {
-                                        onChange(key)
-                                        setExpanded(false)
+                                        chooseDefaultOption(optionIndex)
                                     }}
                                 >
                                     <span>

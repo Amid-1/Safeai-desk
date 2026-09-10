@@ -209,7 +209,8 @@ public class ModelCatalogRepository {
     /**
      * Returns whether this physical runtime identity has ever been governed by
      * a catalog version that was effective at or before {@code asOf}. Future-only
-     * scheduled rows do not disable bootstrap compatibility early.
+     * scheduled rows are intentionally excluded: routing only reasons about
+     * server-clock-effective history and never executes a catalog-less runtime.
      */
     public boolean hasEffectiveHistoryByRuntime(
             String provider,

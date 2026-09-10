@@ -12,12 +12,17 @@ import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 
+/**
+ * Deterministic, fail-closed model selection rules shared by routing and policy preview.
+ *
+ * <p>No bootstrap path may execute a physical runtime that has no effective catalog
+ * snapshot. Historical {@code LEGACY_RUNTIME_FALLBACK} evidence remains readable, but
+ * this policy never creates new fallback decisions.</p>
+ */
 final class ModelRoutingSelectionPolicy {
 
     private final ModelCatalogRepository catalogRepository;
@@ -76,16 +81,9 @@ final class ModelRoutingSelectionPolicy {
                                 runtime.provider(),
                                 runtime.model(),
                                 now
-                        )
-                        .stream()
-                        .sorted(
-                                Comparator.comparing(
-                                        ModelCatalogEntry::modelKey
-                                )
-                        )
-                        .toList();
+                        );
 
-        Optional<ModelCatalogEntry> executable =
+        List<ModelCatalogEntry> policyVisible =
                 runtimeCandidates.stream()
                         .filter(entry ->
                                 isAllowedByLists(
@@ -94,17 +92,19 @@ final class ModelRoutingSelectionPolicy {
                                         policyEnabled
                                 )
                         )
-                        .filter(entry ->
-                                entry.lifecycle() == ModelLifecycle.ACTIVE
-                                        || entry.lifecycle()
-                                        == ModelLifecycle.DEPRECATED
-                        )
-                        .findFirst();
+                        .toList();
 
-        if (executable.isPresent()) {
-            ModelCatalogEntry selected =
-                    executable.get();
+        List<ModelCatalogEntry> executable =
+                policyVisible.stream()
+                        .filter(ModelRoutingSelectionPolicy::isRouteEligibleLifecycle)
+                        .toList();
 
+        if (executable.size() > 1) {
+            return Selection.ambiguous(runtime);
+        }
+
+        if (executable.size() == 1) {
+            ModelCatalogEntry selected = executable.getFirst();
             return Selection.resolved(
                     selected,
                     selected.modelKey(),
@@ -112,34 +112,36 @@ final class ModelRoutingSelectionPolicy {
             );
         }
 
-        if (!runtimeCandidates.isEmpty()) {
-            Optional<ModelCatalogEntry> policyVisible =
-                    runtimeCandidates.stream()
-                            .filter(entry ->
-                                    isAllowedByLists(
-                                            entry.modelKey(),
-                                            policy,
-                                            policyEnabled
-                                    )
-                            )
-                            .findFirst();
-
-            ModelCatalogEntry selected =
-                    policyVisible.orElse(
-                            runtimeCandidates.getFirst()
-                    );
-
-            return Selection.resolved(
-                    selected,
-                    selected.modelKey(),
-                    ModelRouteReason.RUNTIME_ONLY_MATCH
+        /*
+         * Multiple logical keys are ambiguous only when more than one candidate is
+         * actually executable. If policy/lifecycle rules eliminate every candidate,
+         * report the governing denial instead of an unrelated alphabetical choice.
+         */
+        if (!policyVisible.isEmpty()) {
+            return Selection.denied(
+                    runtime,
+                    ModelRouteReason.MODEL_DISABLED,
+                    policyVisible.size() == 1
+                            ? policyVisible.getFirst().modelKey()
+                            : null
             );
         }
 
-        if (policyEnabled) {
-            return Selection.modelNotFound(null);
+        if (policyEnabled && !runtimeCandidates.isEmpty()) {
+            return Selection.denied(
+                    runtime,
+                    ModelRouteReason.MODEL_NOT_ALLOWED,
+                    runtimeCandidates.size() == 1
+                            ? runtimeCandidates.getFirst().modelKey()
+                            : null
+            );
         }
 
+        /*
+         * Strict production invariant: no effective catalog snapshot means no
+         * execution. A stale historical mapping is reported as runtime mismatch;
+         * a never-governed runtime is model-not-found. Neither is executable.
+         */
         if (catalogRepository.hasEffectiveHistoryByRuntime(
                 runtime.provider(),
                 runtime.model(),
@@ -155,14 +157,7 @@ final class ModelRoutingSelectionPolicy {
             );
         }
 
-        return new Selection(
-                null,
-                runtimeKey(runtime),
-                runtime.provider(),
-                runtime.model(),
-                ModelRouteReason.LEGACY_RUNTIME_FALLBACK,
-                null
-        );
+        return Selection.modelNotFound(null);
     }
 
     ModelRouteReason validateCatalogAndPolicy(
@@ -173,8 +168,7 @@ final class ModelRoutingSelectionPolicy {
             boolean policyEnabled,
             Set<ModelCapability> requiredCapabilities
     ) {
-        if (entry.lifecycle() == ModelLifecycle.DISABLED
-                || entry.lifecycle() == ModelLifecycle.RETIRED) {
+        if (!isRouteEligibleLifecycle(entry)) {
             return ModelRouteReason.MODEL_DISABLED;
         }
 
@@ -196,12 +190,6 @@ final class ModelRoutingSelectionPolicy {
             return ModelRouteReason.MODEL_NOT_ALLOWED;
         }
 
-        /*
-         * End-to-end feature gate precedes catalog/runtime declarations. A
-         * future runtime flag cannot accidentally activate TOOLS/VISION/etc.
-         * before request representation + accounting + provider serialization
-         * exist.
-         */
         if (!ModelRoutingExecutionCapabilityGate
                 .supportsAll(requiredCapabilities)) {
             return ModelRouteReason.CAPABILITY_UNSUPPORTED;
@@ -232,6 +220,13 @@ final class ModelRoutingSelectionPolicy {
         }
 
         return null;
+    }
+
+    private static boolean isRouteEligibleLifecycle(
+            ModelCatalogEntry entry
+    ) {
+        return entry.lifecycle() == ModelLifecycle.ACTIVE
+                || entry.lifecycle() == ModelLifecycle.DEPRECATED;
     }
 
     private static boolean isAllowedByLists(
@@ -321,6 +316,34 @@ final class ModelRoutingSelectionPolicy {
                     null,
                     null,
                     ModelRouteReason.MODEL_NOT_FOUND
+            );
+        }
+
+        static Selection denied(
+                RuntimeModelStatusResponse runtime,
+                ModelRouteReason denialReason,
+                String modelKey
+        ) {
+            return new Selection(
+                    null,
+                    modelKey,
+                    runtime.provider(),
+                    runtime.model(),
+                    null,
+                    Objects.requireNonNull(denialReason)
+            );
+        }
+
+        static Selection ambiguous(
+                RuntimeModelStatusResponse runtime
+        ) {
+            return new Selection(
+                    null,
+                    null,
+                    runtime.provider(),
+                    runtime.model(),
+                    null,
+                    ModelRouteReason.AMBIGUOUS_RUNTIME_MAPPING
             );
         }
     }

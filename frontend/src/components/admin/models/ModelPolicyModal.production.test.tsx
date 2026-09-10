@@ -14,7 +14,9 @@ import {
     vi,
 } from 'vitest'
 import type {
+    CreateOrganizationModelPolicyVersionRequest,
     ModelCatalogEntry,
+    ModelPolicyPreview,
     OrganizationModelPolicy,
     RuntimeModelStatus,
 } from '../../../api/modelApi'
@@ -74,6 +76,17 @@ const ENTRY: ModelCatalogEntry = {
     createdAt: '2026-09-05T10:00:00Z',
 }
 
+type PolicySubmit = (
+    request: CreateOrganizationModelPolicyVersionRequest,
+) => Promise<void>
+
+type PolicyPreviewFn = (
+    request: CreateOrganizationModelPolicyVersionRequest,
+) => Promise<ModelPolicyPreview>
+
+const unusedPreview = vi.fn<PolicyPreviewFn>()
+    .mockRejectedValue(new Error('Preview не ожидался в этом тесте'))
+
 const UNCONFIGURED: OrganizationModelPolicy = {
     configured: false,
     id: null,
@@ -107,7 +120,8 @@ describe('ModelPolicyModal production safety', () => {
                 organizationName="Demo Company"
                 pending={false}
                 onClose={vi.fn()}
-                onSubmit={vi.fn()}
+                onPreview={unusedPreview}
+                onSubmit={vi.fn<PolicySubmit>()}
             />,
         )
 
@@ -130,7 +144,8 @@ describe('ModelPolicyModal production safety', () => {
                 organizationName="Demo Company"
                 pending={false}
                 onClose={vi.fn()}
-                onSubmit={vi.fn()}
+                onPreview={unusedPreview}
+                onSubmit={vi.fn<PolicySubmit>()}
             />,
         )
 
@@ -149,7 +164,7 @@ describe('ModelPolicyModal production safety', () => {
     })
 
     it('first save uses expectedPreviousVersion 0', async () => {
-        const onSubmit = vi.fn().mockResolvedValue(undefined)
+        const onSubmit = vi.fn<PolicySubmit>().mockResolvedValue(undefined)
 
         render(
             <ModelPolicyModal
@@ -161,6 +176,7 @@ describe('ModelPolicyModal production safety', () => {
                 organizationName="Demo Company"
                 pending={false}
                 onClose={vi.fn()}
+                onPreview={unusedPreview}
                 onSubmit={onSubmit}
             />,
         )
@@ -182,4 +198,101 @@ describe('ModelPolicyModal production safety', () => {
                 )
         })
     })
+
+    it('requires a current server preview and explicit acknowledgement before lockout save', async () => {
+        const onSubmit = vi.fn<PolicySubmit>()
+            .mockResolvedValue(undefined)
+        const onPreview = vi.fn<PolicyPreviewFn>()
+            .mockResolvedValue({
+                organizationId: ORGANIZATION_ID,
+                basePolicyVersion: 0,
+                enabled: true,
+                evaluatedAt: '2026-09-09T17:00:00Z',
+                runtimeProvider: 'mock',
+                runtimeModel: 'mock-safeai',
+                automaticOutcome: 'DENIED',
+                automaticReason: 'MODEL_NOT_FOUND',
+                automaticModelKey: null,
+                executableModelCount: 0,
+                wouldLockOutOrganization: true,
+                models: [],
+            })
+
+        render(
+            <ModelPolicyModal
+                policy={UNCONFIGURED}
+                catalog={[]}
+                effectiveCatalog={[]}
+                runtime={RUNTIME}
+                organizationId={ORGANIZATION_ID}
+                organizationName="Demo Company"
+                pending={false}
+                onClose={vi.fn()}
+                onPreview={onPreview}
+                onSubmit={onSubmit}
+            />,
+        )
+
+        fireEvent.click(
+            screen.getByRole(
+                'checkbox',
+                {name: 'Правила выключены'},
+            ),
+        )
+
+        fireEvent.click(
+            screen.getByRole(
+                'button',
+                {name: 'Сохранить правила'},
+            ),
+        )
+        expect(onSubmit).not.toHaveBeenCalled()
+        expect(
+            await screen.findByText(/выполните «Проверить правила»/),
+        ).toBeInTheDocument()
+
+        fireEvent.click(
+            screen.getByRole(
+                'button',
+                {name: 'Проверить правила'},
+            ),
+        )
+
+        await waitFor(() => {
+            expect(onPreview).toHaveBeenCalledTimes(1)
+        })
+        expect(
+            await screen.findByText(/Исполняемых моделей: 0/),
+        ).toBeInTheDocument()
+
+        fireEvent.click(
+            screen.getByRole(
+                'button',
+                {name: 'Сохранить правила'},
+            ),
+        )
+        expect(onSubmit).not.toHaveBeenCalled()
+        expect(
+            await screen.findByText(/Подтвердите осознанную блокировку/),
+        ).toBeInTheDocument()
+
+        fireEvent.click(
+            screen.getByRole(
+                'checkbox',
+                {name: /Подтверждаю осознанную блокировку/},
+            ),
+        )
+
+        fireEvent.click(
+            screen.getByRole(
+                'button',
+                {name: 'Сохранить правила'},
+            ),
+        )
+
+        await waitFor(() => {
+            expect(onSubmit).toHaveBeenCalledTimes(1)
+        })
+    })
+
 })

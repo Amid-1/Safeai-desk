@@ -162,28 +162,79 @@ class ModelRoutingServiceTest {
     }
 
     @Test
-    void futureOnlyCatalogHistoryDoesNotDisableBootstrapFallbackEarly() {
+    void runtimeWithoutEffectiveCatalogOrHistoryFailsClosedAsModelNotFound() {
         stubNewDecisionNoPolicy();
+
         when(catalogRepository.findEffectiveByRuntime(
                 "openai",
                 "gpt-test",
                 ModelTestFixtures.NOW
         )).thenReturn(List.of());
+
         when(catalogRepository.hasEffectiveHistoryByRuntime(
                 "openai",
                 "gpt-test",
                 ModelTestFixtures.NOW
         )).thenReturn(false);
 
-        var result = service.decide(
-                request(null, Set.of()),
-                ModelTestFixtures.userPrincipal()
-        );
+        ModelRouteDeniedException exception =
+                catchDenial(
+                        request(
+                                null,
+                                Set.of()
+                        )
+                );
 
-        assertThat(result.reason())
-                .isEqualTo(ModelRouteReason.LEGACY_RUNTIME_FALLBACK);
-        assertThat(result.modelKey())
-                .isEqualTo("runtime:openai:gpt-test");
+        assertThat(exception.getReason())
+                .isEqualTo(
+                        ModelRouteReason.MODEL_NOT_FOUND
+                );
+
+        ArgumentCaptor<ModelRouteDecision> captor =
+                ArgumentCaptor.forClass(
+                        ModelRouteDecision.class
+                );
+
+        verify(decisionRepository)
+                .insert(
+                        captor.capture()
+                );
+
+        ModelRouteDecision persisted =
+                captor.getValue();
+
+        assertThat(persisted.outcome())
+                .isEqualTo(
+                        ModelRouteOutcome.DENIED
+                );
+
+        assertThat(persisted.reason())
+                .isEqualTo(
+                        ModelRouteReason.MODEL_NOT_FOUND
+                );
+
+        assertThat(persisted.chatTurnId())
+                .isNull();
+
+        assertThat(persisted.selectedCatalogEntryId())
+                .isNull();
+
+        assertThat(persisted.selectedCatalogVersion())
+                .isNull();
+
+        assertThat(persisted.selectedModelKey())
+                .isNull();
+
+        assertThat(persisted.selectedProvider())
+                .isNull();
+
+        assertThat(persisted.selectedProviderModelId())
+                .isNull();
+
+        assertThat(persisted.decisionSha256())
+                .matches(
+                        "[0-9a-f]{64}"
+                );
     }
 
     @Test
@@ -789,3 +840,4 @@ class ModelRoutingServiceTest {
         );
     }
 }
+

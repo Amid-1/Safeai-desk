@@ -50,6 +50,7 @@ type HistoryState =
     | 'effective'
     | 'scheduled'
     | 'historical'
+    | 'unknown'
 
 function lifecycleLabel(
     lifecycle: ModelCatalogEntry['lifecycle'],
@@ -170,11 +171,17 @@ function versionState(
     entry: ModelCatalogEntry,
     latestEntry: ModelCatalogEntry,
     effectiveEntry: ModelCatalogEntry | null,
+    effectiveKnown: boolean,
 ): HistoryState[] {
     const states: HistoryState[] = []
 
     if (entry.id === latestEntry.id) {
         states.push('latest')
+    }
+
+    if (!effectiveKnown) {
+        states.push('unknown')
+        return states
     }
 
     if (effectiveEntry?.id === entry.id) {
@@ -206,7 +213,9 @@ function StateBadge({
                 ? 'Действующая версия'
                 : state === 'scheduled'
                     ? 'Запланирована'
-                    : 'Историческая'
+                    : state === 'historical'
+                        ? 'Историческая'
+                        : 'Статус действия недоступен'
 
     return (
         <span
@@ -216,6 +225,126 @@ function StateBadge({
         >
             {label}
         </span>
+    )
+}
+
+type VersionDiff = {
+    label: string
+    before: string
+    after: string
+}
+
+function listValue(values: readonly string[]): string {
+    return values.length > 0
+        ? [...values].sort().join(', ')
+        : '—'
+}
+
+function nullableValue(value: string | number | null): string {
+    return value === null
+        ? '—'
+        : String(value)
+}
+
+function buildVersionDiff(
+    current: ModelCatalogEntry,
+    previous: ModelCatalogEntry,
+): VersionDiff[] {
+    const candidates: VersionDiff[] = [
+        {
+            label: 'Runtime target',
+            before: `${previous.provider} / ${previous.providerModelId}`,
+            after: `${current.provider} / ${current.providerModelId}`,
+        },
+        {
+            label: 'Название',
+            before: previous.displayName,
+            after: current.displayName,
+        },
+        {
+            label: 'Lifecycle',
+            before: previous.lifecycle,
+            after: current.lifecycle,
+        },
+        {
+            label: 'Лимит входа',
+            before: String(previous.maxInputTokens),
+            after: String(current.maxInputTokens),
+        },
+        {
+            label: 'Лимит выхода',
+            before: String(previous.maxOutputTokens),
+            after: String(current.maxOutputTokens),
+        },
+        {
+            label: 'Capabilities',
+            before: listValue(previous.capabilities),
+            after: listValue(current.capabilities),
+        },
+        {
+            label: 'Input modalities',
+            before: listValue(previous.inputModalities),
+            after: listValue(current.inputModalities),
+        },
+        {
+            label: 'Output modalities',
+            before: listValue(previous.outputModalities),
+            after: listValue(current.outputModalities),
+        },
+        {
+            label: 'Хранение данных',
+            before: `${previous.retentionStatus} / ${nullableValue(previous.retentionDays)}`,
+            after: `${current.retentionStatus} / ${nullableValue(current.retentionDays)}`,
+        },
+        {
+            label: 'Использование для обучения',
+            before: previous.trainingUseStatus,
+            after: current.trainingUseStatus,
+        },
+        {
+            label: 'Pricing status',
+            before: `${previous.pricingStatus} / complete=${previous.pricingComplete}`,
+            after: `${current.pricingStatus} / complete=${current.pricingComplete}`,
+        },
+        {
+            label: 'Input $/1M',
+            before: nullableValue(previous.inputUsdPer1mTokens),
+            after: nullableValue(current.inputUsdPer1mTokens),
+        },
+        {
+            label: 'Cached input $/1M',
+            before: nullableValue(previous.cachedInputUsdPer1mTokens),
+            after: nullableValue(current.cachedInputUsdPer1mTokens),
+        },
+        {
+            label: 'Cache write $/1M',
+            before: nullableValue(previous.cacheWriteInputUsdPer1mTokens),
+            after: nullableValue(current.cacheWriteInputUsdPer1mTokens),
+        },
+        {
+            label: 'Output $/1M',
+            before: nullableValue(previous.outputUsdPer1mTokens),
+            after: nullableValue(current.outputUsdPer1mTokens),
+        },
+        {
+            label: 'Pricing version',
+            before: nullableValue(previous.pricingVersion),
+            after: nullableValue(current.pricingVersion),
+        },
+        {
+            label: 'Extra pricing',
+            before: previous.extraPricingJson,
+            after: current.extraPricingJson,
+        },
+        {
+            label: 'Вступает в силу',
+            before: previous.effectiveFrom,
+            after: current.effectiveFrom,
+        },
+    ]
+
+    return candidates.filter(
+        (item) => item.before !== item.after,
     )
 }
 
@@ -234,6 +363,10 @@ export function ModelCatalogHistoryModal({
         useState<ModelCatalogEntry[]>([])
     const [effectiveEntry, setEffectiveEntry] =
         useState<ModelCatalogEntry | null>(null)
+    const [effectiveKnown, setEffectiveKnown] =
+        useState(false)
+    const [effectiveWarning, setEffectiveWarning] =
+        useState('')
     const [loading, setLoading] =
         useState(true)
     const [error, setError] =
@@ -245,7 +378,10 @@ export function ModelCatalogHistoryModal({
         setLoading(true)
         setError('')
 
-        void Promise.all([
+        setEffectiveKnown(false)
+        setEffectiveWarning('')
+
+        void Promise.allSettled([
             getModelCatalogHistory(
                 modelKey,
                 {
@@ -256,24 +392,35 @@ export function ModelCatalogHistoryModal({
                 signal: controller.signal,
             }),
         ])
-            .then(([
-                history,
-                effectiveCatalog,
-            ]) => {
+            .then(([historyResult, effectiveResult]) => {
                 if (controller.signal.aborted) {
                     return
                 }
 
-                const normalizedModelKey =
-                    modelKey.trim().toLowerCase()
+                if (historyResult.status === 'rejected') {
+                    throw historyResult.reason
+                }
 
-                setVersions(history)
-                setEffectiveEntry(
-                    effectiveCatalog.find(
-                        (entry) =>
-                            entry.modelKey === normalizedModelKey,
-                    ) ?? null,
-                )
+                setVersions(historyResult.value)
+
+                if (effectiveResult.status === 'fulfilled') {
+                    const normalizedModelKey =
+                        modelKey.trim().toLowerCase()
+
+                    setEffectiveEntry(
+                        effectiveResult.value.find(
+                            (entry) =>
+                                entry.modelKey === normalizedModelKey,
+                        ) ?? null,
+                    )
+                    setEffectiveKnown(true)
+                } else {
+                    setEffectiveEntry(null)
+                    setEffectiveKnown(false)
+                    setEffectiveWarning(
+                        'История загружена, но серверный статус действующей версии сейчас недоступен. Интерфейс не будет угадывать его по часам браузера.',
+                    )
+                }
             })
             .catch((failure) => {
                 if (!controller.signal.aborted) {
@@ -312,7 +459,7 @@ export function ModelCatalogHistoryModal({
             title={`История версий: ${displayName}`}
             onClose={onClose}
             closeOnBackdrop={false}
-            closeOnEscape={false}
+            closeOnEscape={true}
             size="lg"
             className="models-history-modal"
             resize={HISTORY_MODAL_RESIZE}
@@ -342,6 +489,15 @@ export function ModelCatalogHistoryModal({
                 />
             )}
 
+            {!error && effectiveWarning && (
+                <div
+                    className="models-history-modal__warning"
+                    role="status"
+                >
+                    {effectiveWarning}
+                </div>
+            )}
+
             {!loading && !error && sortedVersions.length === 0 && (
                 <div className="models-history-modal__empty">
                     История для этой модели пока пуста.
@@ -354,11 +510,18 @@ export function ModelCatalogHistoryModal({
                 && sortedVersions.length > 0
                 && (
                     <ol className="models-history-list">
-                        {sortedVersions.map((entry) => {
+                        {sortedVersions.map((entry, index) => {
+                            const previousEntry =
+                                sortedVersions[index + 1] ?? null
+                            const diffs = previousEntry
+                                ? buildVersionDiff(entry, previousEntry)
+                                : []
+
                             const states = versionState(
                                 entry,
                                 latestEntry,
                                 effectiveEntry,
+                                effectiveKnown,
                             )
 
                             const runtimeMatches =
@@ -450,6 +613,39 @@ export function ModelCatalogHistoryModal({
                                             <dd>{formatDateTime(entry.effectiveFrom)}</dd>
                                         </div>
                                     </dl>
+
+                                    <details className="models-history-card__diff">
+                                        <summary>
+                                            {previousEntry
+                                                ? `Изменения относительно версии ${previousEntry.version} · ${diffs.length}`
+                                                : 'Базовая версия'}
+                                        </summary>
+
+                                        {previousEntry ? (
+                                            diffs.length > 0 ? (
+                                                <dl className="models-history-card__diff-list">
+                                                    {diffs.map((diff) => (
+                                                        <div key={diff.label}>
+                                                            <dt>{diff.label}</dt>
+                                                            <dd>
+                                                                <span>{diff.before}</span>
+                                                                <span aria-hidden="true">→</span>
+                                                                <strong>{diff.after}</strong>
+                                                            </dd>
+                                                        </div>
+                                                    ))}
+                                                </dl>
+                                            ) : (
+                                                <p>
+                                                    Семантические параметры не изменились.
+                                                </p>
+                                            )
+                                        ) : (
+                                            <p>
+                                                Это первая сохранённая версия модели.
+                                            </p>
+                                        )}
+                                    </details>
 
                                     <div className="models-history-card__footer">
                                         <span>{sourceLabel(entry.source)}</span>

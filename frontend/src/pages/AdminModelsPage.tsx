@@ -19,12 +19,14 @@ import {
     getRuntimeModelStatus,
     importRuntimeModelCatalog,
     probeRuntimeModel,
+    previewOrganizationModelPolicy,
 } from '../api/modelApi'
 import type {
     CreateModelCatalogVersionRequest,
     CreateOrganizationModelPolicyVersionRequest,
     ModelCatalogEntry,
     ModelRouteDecision,
+    ModelPolicyPreview,
     OrganizationModelPolicy,
     RuntimeModelProbe,
     RuntimeModelStatus,
@@ -204,7 +206,8 @@ function AdminModelsPage() {
     } | null>(null)
 
     const selectedOrganizationName =
-        selectedOrganization?.id === targetOrganizationId
+        selectedOrganization !== null
+        && selectedOrganization.id === targetOrganizationId
             ? selectedOrganization.name
             : null
 
@@ -490,13 +493,25 @@ function AdminModelsPage() {
     const refreshCatalog =
         useCallback(async () => {
             const [latest, effective] =
-                await Promise.all([
+                await Promise.allSettled([
                     getModelCatalog(),
                     getEffectiveModelCatalog(),
                 ])
 
-            setCatalog(latest)
-            setEffectiveCatalog(effective)
+            if (latest.status === 'fulfilled') {
+                setCatalog(latest.value)
+            }
+            if (effective.status === 'fulfilled') {
+                setEffectiveCatalog(effective.value)
+            }
+
+            if (latest.status === 'rejected') {
+                throw latest.reason
+            }
+
+            if (effective.status === 'rejected') {
+                throw effective.reason
+            }
         }, [])
 
     const handleImportRuntime =
@@ -505,21 +520,31 @@ function AdminModelsPage() {
             setError('')
             setNotice('')
 
+            let imported: ModelCatalogEntry
+
             try {
-                const imported =
+                imported =
                     await importRuntimeModelCatalog()
-
-                await refreshCatalog()
-
-                setNotice(
-                    `Runtime добавлен или синхронизирован с каталогом: ${imported.modelKey}, версия ${imported.version}.`,
-                )
             } catch (failure) {
                 setError(
                     getApiErrorMessage(
                         failure,
                         'Не удалось добавить Runtime в каталог.',
                     ),
+                )
+                setMutationPending(false)
+                return
+            }
+
+            try {
+                await refreshCatalog()
+
+                setNotice(
+                    `Runtime добавлен или синхронизирован с каталогом: ${imported.modelKey}, версия ${imported.version}.`,
+                )
+            } catch {
+                setNotice(
+                    `Runtime сохранён в каталоге: ${imported.modelKey}, версия ${imported.version}. Обновить представление каталога не удалось — перезагрузите данные страницы. Повторно добавлять Runtime не нужно.`,
                 )
             } finally {
                 setMutationPending(false)
@@ -540,12 +565,19 @@ function AdminModelsPage() {
                         request,
                     )
 
-                await refreshCatalog()
+                // POST уже committed: modal больше не должен предлагать обычный retry.
                 setCatalogModal(null)
 
-                setNotice(
-                    `Сохранена модель ${created.modelKey}, версия ${created.version}.`,
-                )
+                try {
+                    await refreshCatalog()
+                    setNotice(
+                        `Сохранена модель ${created.modelKey}, версия ${created.version}.`,
+                    )
+                } catch {
+                    setNotice(
+                        `Модель ${created.modelKey}, версия ${created.version}, сохранена успешно, но обновить представление каталога не удалось. Перезагрузите данные страницы; повторно сохранять версию не нужно.`,
+                    )
+                }
             } finally {
                 setMutationPending(false)
             }
@@ -576,6 +608,15 @@ function AdminModelsPage() {
                 setMutationPending(false)
             }
         }, [targetOrganizationId])
+
+    const handlePreviewPolicy =
+        useCallback(async (
+            request: CreateOrganizationModelPolicyVersionRequest,
+        ): Promise<ModelPolicyPreview> =>
+            previewOrganizationModelPolicy(
+                targetOrganizationId,
+                request,
+            ), [targetOrganizationId])
 
     const handleOrganizationSearch =
         useCallback(async () => {
@@ -1017,6 +1058,9 @@ function AdminModelsPage() {
                     onClose={() => {
                         setPolicyModalOpen(false)
                     }}
+                    onPreview={
+                        handlePreviewPolicy
+                    }
                     onSubmit={
                         handleCreatePolicyVersion
                     }
@@ -1027,3 +1071,4 @@ function AdminModelsPage() {
 }
 
 export default AdminModelsPage
+

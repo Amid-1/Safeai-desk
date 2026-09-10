@@ -199,21 +199,9 @@ final class ModelCatalogRules {
                     );
                 }
 
-                if (cachedInput != null
-                        && cachedInput.compareTo(input) > 0) {
-                    throw new BadRequestException(
-                            "cachedInputUsdPer1mTokens не может превышать "
-                                    + "inputUsdPer1mTokens"
-                    );
-                }
-
-                if (cacheWrite != null
-                        && cacheWrite.compareTo(input) > 0) {
-                    throw new BadRequestException(
-                            "cacheWriteInputUsdPer1mTokens не может превышать "
-                                    + "inputUsdPer1mTokens"
-                    );
-                }
+                // Provider-specific price relationships are intentionally not
+                // encoded as generic catalog invariants. Every known price is
+                // validated independently as non-negative NUMERIC(30,12).
             }
 
             case INCOMPLETE -> {

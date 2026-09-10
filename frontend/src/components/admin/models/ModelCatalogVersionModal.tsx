@@ -4,6 +4,7 @@
 
 import {
     useId,
+    useRef,
     useState,
 } from 'react'
 import type {
@@ -217,8 +218,32 @@ export function ModelCatalogVersionModal({
             ),
         )
 
+    const initialDraftFingerprint = useRef(
+        JSON.stringify(draft),
+    ).current
+
     const [formError, setFormError] =
         useState('')
+
+    const isDirty =
+        JSON.stringify(draft) !== initialDraftFingerprint
+
+    const requestClose = () => {
+        if (pending) {
+            return
+        }
+
+        if (
+            isDirty
+            && !window.confirm(
+                'Отменить несохранённые изменения версии каталога?',
+            )
+        ) {
+            return
+        }
+
+        onClose()
+    }
 
     const expectedPreviousVersion =
         catalogByKey.get(
@@ -257,7 +282,7 @@ export function ModelCatalogVersionModal({
             <button
                 type="button"
                 disabled={pending}
-                onClick={onClose}
+                onClick={requestClose}
             >
                 Отмена
             </button>
@@ -283,7 +308,7 @@ export function ModelCatalogVersionModal({
                     : 'Добавление модели в каталог'
             }
             footer={modalFooter}
-            onClose={onClose}
+            onClose={requestClose}
             closeDisabled={pending}
 
             /**
@@ -293,10 +318,10 @@ export function ModelCatalogVersionModal({
             closeOnBackdrop={false}
 
             /**
-             * Поведение совпадает с policy modal:
-             * закрытие — крестик / Отмена / успешный Save.
+             * Escape/X проходят через requestClose: dirty draft требует
+             * явного подтверждения вместо полной блокировки клавиатуры.
              */
-            closeOnEscape={false}
+            closeOnEscape={true}
 
             size="lg"
             className="models-catalog-modal"

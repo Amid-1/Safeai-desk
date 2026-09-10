@@ -294,8 +294,11 @@ class ModelCatalogServiceTest {
     }
 
     @Test
-    void configuredRejectsCachedPriceAboveOrdinaryInputPrice() {
-        assertRejectedBeforeInsert(pricingRequest(
+    void configuredAllowsCachedPriceAboveOrdinaryInputPrice() {
+        when(repository.findLatest("openai:gpt-test"))
+                .thenReturn(Optional.empty());
+
+        CreateModelCatalogVersionRequest request = pricingRequest(
                 ModelPricingStatus.CONFIGURED,
                 true,
                 new BigDecimal("1.00"),
@@ -304,12 +307,48 @@ class ModelCatalogServiceTest {
                 new BigDecimal("4.00"),
                 "{}",
                 "pricing-2026-08"
-        ));
+        );
+
+        service.createVersion(
+                request,
+                ModelTestFixtures.superAdminPrincipal()
+        );
+
+        ArgumentCaptor<ModelCatalogEntry> captor =
+                ArgumentCaptor.forClass(ModelCatalogEntry.class);
+
+        verify(repository).insert(captor.capture());
+
+        ModelCatalogEntry entry = captor.getValue();
+
+        assertThat(entry.inputUsdPer1mTokens())
+                .isEqualTo(new BigDecimal("1.000000000000"));
+
+        assertThat(entry.cachedInputUsdPer1mTokens())
+                .isEqualTo(new BigDecimal("1.010000000000"));
+
+        assertThat(entry.cacheWriteInputUsdPer1mTokens())
+                .isNull();
+
+        assertThat(entry.outputUsdPer1mTokens())
+                .isEqualTo(new BigDecimal("4.000000000000"));
+
+        assertThat(entry.pricingStatus())
+                .isEqualTo(ModelPricingStatus.CONFIGURED);
+
+        assertThat(entry.pricingComplete())
+                .isTrue();
+
+        assertThat(entry.pricingVersion())
+                .isEqualTo("pricing-2026-08");
     }
 
     @Test
-    void configuredRejectsCacheWritePriceAboveOrdinaryInputPrice() {
-        assertRejectedBeforeInsert(pricingRequest(
+    void configuredAllowsCacheWritePriceAboveOrdinaryInputPrice() {
+        when(repository.findLatest("openai:gpt-test"))
+                .thenReturn(Optional.empty());
+
+        CreateModelCatalogVersionRequest request = pricingRequest(
                 ModelPricingStatus.CONFIGURED,
                 true,
                 new BigDecimal("1.00"),
@@ -318,7 +357,40 @@ class ModelCatalogServiceTest {
                 new BigDecimal("4.00"),
                 "{}",
                 "pricing-2026-08"
-        ));
+        );
+
+        service.createVersion(
+                request,
+                ModelTestFixtures.superAdminPrincipal()
+        );
+
+        ArgumentCaptor<ModelCatalogEntry> captor =
+                ArgumentCaptor.forClass(ModelCatalogEntry.class);
+
+        verify(repository).insert(captor.capture());
+
+        ModelCatalogEntry entry = captor.getValue();
+
+        assertThat(entry.inputUsdPer1mTokens())
+                .isEqualTo(new BigDecimal("1.000000000000"));
+
+        assertThat(entry.cachedInputUsdPer1mTokens())
+                .isNull();
+
+        assertThat(entry.cacheWriteInputUsdPer1mTokens())
+                .isEqualTo(new BigDecimal("1.010000000000"));
+
+        assertThat(entry.outputUsdPer1mTokens())
+                .isEqualTo(new BigDecimal("4.000000000000"));
+
+        assertThat(entry.pricingStatus())
+                .isEqualTo(ModelPricingStatus.CONFIGURED);
+
+        assertThat(entry.pricingComplete())
+                .isTrue();
+
+        assertThat(entry.pricingVersion())
+                .isEqualTo("pricing-2026-08");
     }
 
     @Test
@@ -792,3 +864,4 @@ class ModelCatalogServiceTest {
         );
     }
 }
+

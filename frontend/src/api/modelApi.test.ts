@@ -315,7 +315,7 @@ describe('modelApi contract', () => {
             configured: false,
             organizationId,
             version: 0,
-            enabled: true,
+            enabled: false,
             allowModelKeys: [],
             denyModelKeys: [],
             budgetEnforcement: 'SOFT',
@@ -333,7 +333,7 @@ describe('modelApi contract', () => {
             id: null,
             organizationId,
             version: 0,
-            enabled: true,
+            enabled: false,
             allowModelKeys: [],
             denyModelKeys: [],
             defaultModelKey: null,
@@ -348,6 +348,30 @@ describe('modelApi contract', () => {
             createdByUserId: null,
             createdAt: null,
         })
+    })
+
+    it('fails closed when synthetic unconfigured policy is enabled', async () => {
+        const organizationId =
+            'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+
+        vi.mocked(apiRequest).mockResolvedValueOnce({
+            configured: false,
+            organizationId,
+            version: 0,
+            enabled: true,
+            allowModelKeys: [],
+            denyModelKeys: [],
+            budgetEnforcement: 'SOFT',
+            requireCompletePricing: false,
+            requireNoTraining: false,
+            requireZeroDataRetention: false,
+        })
+
+        await expect(
+            getOrganizationModelPolicy(organizationId),
+        ).rejects.toThrow(
+            'modelPolicy содержит некорректное unconfigured состояние',
+        )
     })
 
     it('parses UNPRICED runtime when nullable pricing fields are omitted', async () => {

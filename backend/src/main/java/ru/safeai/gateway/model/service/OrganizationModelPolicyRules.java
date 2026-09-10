@@ -2,17 +2,75 @@ package ru.safeai.gateway.model.service;
 
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
+import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
+import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 
 /** Pure canonicalization and semantic validation for tenant model policies. */
 final class OrganizationModelPolicyRules {
 
     private OrganizationModelPolicyRules() {
+    }
+
+    static OrganizationModelPolicy buildPolicy(
+            UUID id,
+            UUID organizationId,
+            int version,
+            CreateOrganizationModelPolicyVersionRequest request,
+            UUID createdByUserId,
+            Instant createdAt
+    ) {
+        Set<String> allow = normalizeModelKeys(request.allowModelKeys());
+        Set<String> deny = normalizeModelKeys(request.denyModelKeys());
+        String defaultModelKey = normalizeNullableModelKey(
+                request.defaultModelKey()
+        );
+        BigDecimal maxRequestCostUsd = normalizeMoney(
+                request.maxRequestCostUsd(),
+                "maxRequestCostUsd"
+        );
+        BigDecimal monthlyBudgetUsd = normalizeMoney(
+                request.monthlyBudgetUsd(),
+                "monthlyBudgetUsd"
+        );
+
+        validate(
+                allow,
+                deny,
+                defaultModelKey,
+                request.maxInputTokens(),
+                request.maxOutputTokens(),
+                maxRequestCostUsd,
+                monthlyBudgetUsd,
+                request.budgetEnforcement()
+        );
+
+        return new OrganizationModelPolicy(
+                id,
+                organizationId,
+                version,
+                request.enabled(),
+                allow,
+                deny,
+                defaultModelKey,
+                request.maxInputTokens(),
+                request.maxOutputTokens(),
+                maxRequestCostUsd,
+                monthlyBudgetUsd,
+                request.budgetEnforcement(),
+                request.requireCompletePricing(),
+                request.requireNoTraining(),
+                request.requireZeroDataRetention(),
+                createdByUserId,
+                createdAt
+        );
     }
 
     static BigDecimal normalizeMoney(

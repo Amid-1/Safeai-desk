@@ -145,7 +145,7 @@ describe(
                         inputUsdPer1mTokens: 2,
                     }),
                 ).toThrow(
-                    /exact decimal string/,
+                    /decimal string/,
                 )
             },
         )
@@ -159,7 +159,7 @@ describe(
                         monthlyBudgetUsd: 250,
                     }),
                 ).toThrow(
-                    /exact decimal string/,
+                    /decimal string/,
                 )
             },
         )
@@ -201,7 +201,7 @@ describe(
                         inputAccountingVersion: null,
                     }),
                 ).toThrow(
-                    /requires accounting provenance/,
+                    /input accounting provenance/,
                 )
             },
         )
@@ -215,7 +215,7 @@ describe(
                         estimatedMaxCostUsd: 0.1,
                     }),
                 ).toThrow(
-                    /exact decimal string/,
+                    /decimal string/,
                 )
             },
         )

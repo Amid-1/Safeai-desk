@@ -76,4 +76,29 @@ describe('modelControlPlaneSupport', () => {
         )
     })
 
+
+    it('разрешает provider-specific cache rates выше base input rate', () => {
+        const draft = createCatalogDraft(
+            null,
+            RUNTIME,
+        )
+
+        draft.pricingStatus = 'CONFIGURED'
+        draft.pricingComplete = true
+        draft.inputUsdPer1mTokens = '5'
+        draft.cachedInputUsdPer1mTokens = '7'
+        draft.cacheWriteInputUsdPer1mTokens = '10'
+        draft.outputUsdPer1mTokens = '15'
+        draft.pricingVersion = 'provider-2026-09'
+        draft.extraPricingJson = '{}'
+
+        const request = buildCatalogRequest(
+            draft,
+            0,
+        )
+
+        expect(request.cachedInputUsdPer1mTokens).toBe('7')
+        expect(request.cacheWriteInputUsdPer1mTokens).toBe('10')
+    })
+
 })

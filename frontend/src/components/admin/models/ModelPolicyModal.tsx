@@ -3,6 +3,7 @@
 // ============================================================
 
 import {
+    useEffect,
     useId,
     useMemo,
     useRef,
@@ -12,6 +13,8 @@ import type {
     BudgetEnforcement,
     CreateOrganizationModelPolicyVersionRequest,
     ModelCatalogEntry,
+    ModelPolicyPreview,
+    ModelRouteReason,
     OrganizationModelPolicy,
     RuntimeModelStatus,
 } from '../../../api/modelApi'
@@ -89,6 +92,11 @@ type ModelPolicyModalProps = {
     onClose:
         () => void
 
+    onPreview: (
+        request:
+            CreateOrganizationModelPolicyVersionRequest,
+    ) => Promise<ModelPolicyPreview>
+
     onSubmit: (
         request:
             CreateOrganizationModelPolicyVersionRequest,
@@ -127,6 +135,35 @@ function budgetEnforcementLabel(
     }
 }
 
+
+function previewReasonLabel(
+    reason: ModelRouteReason,
+): string {
+    const labels: Partial<Record<ModelRouteReason, string>> = {
+        REQUESTED_MODEL: 'Модель проходит проверку',
+        POLICY_DEFAULT: 'Модель по умолчанию проходит проверку',
+        RUNTIME_ONLY_MATCH: 'Runtime однозначно сопоставлен',
+        LEGACY_RUNTIME_FALLBACK: 'Исторический legacy fallback',
+        MODEL_NOT_ALLOWED: 'Модель не входит в allowlist',
+        MODEL_DENIED: 'Модель находится в denylist',
+        MODEL_NOT_FOUND: 'Действующая модель каталога не найдена',
+        AMBIGUOUS_RUNTIME_MAPPING: 'Runtime неоднозначно сопоставлен с каталогом',
+        MODEL_DISABLED: 'Модель отключена или выведена из эксплуатации',
+        RUNTIME_MISMATCH: 'Модель не совпадает с текущим Runtime',
+        CAPABILITY_UNSUPPORTED: 'Требуемая возможность не поддерживается',
+        INPUT_LIMIT_EXCEEDED: 'Превышен входной лимит',
+        OUTPUT_LIMIT_EXCEEDED: 'Превышен выходной лимит',
+        PRICING_INCOMPLETE: 'Недостаточно данных о стоимости',
+        TRAINING_POLICY_UNSATISFIED: 'Не выполнено требование по обучению',
+        RETENTION_POLICY_UNSATISFIED: 'Не выполнено требование по хранению данных',
+        REQUEST_COST_LIMIT_EXCEEDED: 'Превышен лимит стоимости запроса',
+        MONTHLY_BUDGET_EXCEEDED: 'Превышен месячный бюджет',
+        MONTHLY_BUDGET_UNVERIFIABLE: 'Месячный бюджет нельзя надёжно проверить',
+    }
+
+    return labels[reason] ?? reason
+}
+
 export function ModelPolicyModal({
     policy,
     catalog,
@@ -136,6 +173,7 @@ export function ModelPolicyModal({
     organizationName,
     pending,
     onClose,
+    onPreview,
     onSubmit,
 }: ModelPolicyModalProps) {
     const formId =
@@ -152,6 +190,13 @@ export function ModelPolicyModal({
                 ),
         )
 
+    const initialDraftFingerprint =
+        useRef(
+            JSON.stringify(
+                createPolicyDraft(policy),
+            ),
+        ).current
+
     const [
         formError,
         setFormError,
@@ -159,6 +204,31 @@ export function ModelPolicyModal({
         useState(
             '',
         )
+
+    const [
+        policyPreview,
+        setPolicyPreview,
+    ] = useState<ModelPolicyPreview | null>(null)
+
+    const [
+        previewFingerprint,
+        setPreviewFingerprint,
+    ] = useState('')
+
+    const [
+        previewPending,
+        setPreviewPending,
+    ] = useState(false)
+
+    const [
+        previewError,
+        setPreviewError,
+    ] = useState('')
+
+    const [
+        lockoutAcknowledged,
+        setLockoutAcknowledged,
+    ] = useState(false)
 
     const [
         allowSelectorState,
@@ -231,6 +301,42 @@ export function ModelPolicyModal({
         draft.enabled
         && !hasExecutableRuntimeCatalogEntry
 
+
+    const draftFingerprint = useMemo(
+        () => JSON.stringify(draft),
+        [draft],
+    )
+
+    const currentPreview =
+        previewFingerprint === draftFingerprint
+            ? policyPreview
+            : null
+
+    useEffect(() => {
+        setPreviewError('')
+        setLockoutAcknowledged(false)
+    }, [draftFingerprint])
+
+    const isDirty =
+        draftFingerprint !== initialDraftFingerprint
+
+    const requestClose = () => {
+        if (pending || previewPending) {
+            return
+        }
+
+        if (
+            isDirty
+            && !window.confirm(
+                'Отменить несохранённые изменения правил?',
+            )
+        ) {
+            return
+        }
+
+        onClose()
+    }
+
     const focusShortcut = (
         target:
             HTMLElement | null,
@@ -262,59 +368,110 @@ export function ModelPolicyModal({
         }
     }
 
-    const handleSubmit =
-        async () => {
-            setFormError(
-                '',
-            )
+    const buildCurrentRequest =
+        (): CreateOrganizationModelPolicyVersionRequest | null => {
+            setFormError('')
 
             if (
-                allowSelectorState
-                    .hasError
-                || denySelectorState
-                    .hasError
+                allowSelectorState.hasError
+                || denySelectorState.hasError
             ) {
                 setFormError(
                     'Исправьте ошибки в списках моделей перед сохранением.',
                 )
-
-                return
+                return null
             }
 
             if (
-                allowSelectorState
-                    .hasPendingInput
-                || denySelectorState
-                    .hasPendingInput
+                allowSelectorState.hasPendingInput
+                || denySelectorState.hasPendingInput
             ) {
                 setFormError(
                     'Завершите добавление модели: выберите её из списка, нажмите Enter для ручного ключа или очистите строку поиска.',
                 )
-
-                return
+                return null
             }
 
             try {
-                await onSubmit(
-                    buildPolicyRequest(
-                        draft,
-                        policy.version,
-                    ),
+                return buildPolicyRequest(
+                    draft,
+                    policy.version,
                 )
-            } catch (
-                failure
-            ) {
+            } catch (failure) {
                 setFormError(
-                    failure
-                        instanceof Error
-                        ? getApiErrorMessage(
-                            failure,
-                            failure.message,
-                        )
-                        : 'Не удалось сохранить правила.',
+                    failure instanceof Error
+                        ? failure.message
+                        : 'Проверьте заполнение правил.',
                 )
+                return null
             }
         }
+
+    const handlePreview = async () => {
+        const request = buildCurrentRequest()
+        if (!request) {
+            return
+        }
+
+        const fingerprint = draftFingerprint
+        setPreviewPending(true)
+        setPreviewError('')
+        setLockoutAcknowledged(false)
+
+        try {
+            const result = await onPreview(request)
+            setPolicyPreview(result)
+            setPreviewFingerprint(fingerprint)
+        } catch (failure) {
+            setPolicyPreview(null)
+            setPreviewFingerprint('')
+            setPreviewError(
+                failure instanceof Error
+                    ? getApiErrorMessage(failure, failure.message)
+                    : 'Не удалось проверить правила.',
+            )
+        } finally {
+            setPreviewPending(false)
+        }
+    }
+
+    const handleSubmit = async () => {
+        const request = buildCurrentRequest()
+        if (!request) {
+            return
+        }
+
+        if (draft.enabled && currentPreview === null) {
+            setFormError(
+                'Перед сохранением включённых правил выполните «Проверить правила». Проверка должна соответствовать текущему черновику.',
+            )
+            return
+        }
+
+        if (
+            draft.enabled
+            && currentPreview?.wouldLockOutOrganization
+            && !lockoutAcknowledged
+        ) {
+            setFormError(
+                'Проверка показала, что правила заблокируют все исполняемые модели. Подтвердите осознанную блокировку перед сохранением.',
+            )
+            return
+        }
+
+        try {
+            await onSubmit(request)
+        } catch (failure) {
+            setFormError(
+                failure instanceof Error
+                    ? getApiErrorMessage(
+                        failure,
+                        failure.message,
+                    )
+                    : 'Не удалось сохранить правила.',
+            )
+        }
+    }
 
     const versionMessage =
         policy.configured
@@ -356,6 +513,21 @@ export function ModelPolicyModal({
             }
         >
             <button
+                type="button"
+                disabled={
+                    pending
+                    || previewPending
+                }
+                onClick={() => {
+                    void handlePreview()
+                }}
+            >
+                {previewPending
+                    ? 'Проверяем...'
+                    : 'Проверить правила'}
+            </button>
+
+            <button
                 type="submit"
                 form={
                     formId
@@ -363,6 +535,7 @@ export function ModelPolicyModal({
                 className="btn-primary"
                 disabled={
                     pending
+                    || previewPending
                 }
             >
                 {pending
@@ -379,16 +552,17 @@ export function ModelPolicyModal({
                 modalFooter
             }
             onClose={
-                onClose
+                requestClose
             }
             closeDisabled={
                 pending
+                || previewPending
             }
             closeOnBackdrop={
                 false
             }
             closeOnEscape={
-                false
+                true
             }
             size="lg"
             className="models-policy-modal"
@@ -670,14 +844,86 @@ export function ModelPolicyModal({
                                 {' '}
                                 предсказуемо отклоняться до обращения
                                 {' '}
-                                к провайдеру. Сохранение не блокируется:
+                                к провайдеру. Перед сохранением включённых
                                 {' '}
-                                администратор может сознательно
-                                {' '}
-                                подготовить правила заранее.
+                                правил выполните серверную проверку черновика.
                             </p>
                         </div>
                     )}
+
+                {previewError && (
+                    <ErrorState
+                        message={previewError}
+                        variant="inline"
+                    />
+                )}
+
+                {currentPreview && (
+                    <section
+                        className={
+                            'models-policy-form__preview '
+                            + (currentPreview.wouldLockOutOrganization
+                                ? 'models-policy-form__preview--danger'
+                                : 'models-policy-form__preview--ok')
+                        }
+                        aria-live="polite"
+                    >
+                        <div className="models-policy-form__preview-summary">
+                            <div>
+                                <strong>Серверная проверка черновика</strong>
+                                <small>
+                                    Runtime: {currentPreview.runtimeProvider}/{currentPreview.runtimeModel}
+                                    {' · '}
+                                    Исполняемых моделей: {currentPreview.executableModelCount}
+                                </small>
+                            </div>
+
+                            <span>
+                                {currentPreview.automaticOutcome === 'ALLOWED'
+                                    ? 'Автовыбор разрешён'
+                                    : 'Автовыбор отклонён'}
+                                {' · '}
+                                {previewReasonLabel(currentPreview.automaticReason)}
+                            </span>
+                        </div>
+
+                        <div className="models-policy-form__preview-list">
+                            {currentPreview.models.map((item) => (
+                                <div
+                                    key={`${item.modelKey}:${item.catalogVersion}`}
+                                    className="models-policy-form__preview-row"
+                                >
+                                    <code>{item.modelKey}</code>
+                                    <span>
+                                        v{item.catalogVersion}
+                                        {' · '}
+                                        {item.outcome === 'ALLOWED' ? 'Разрешено' : 'Отклонено'}
+                                    </span>
+                                    <small>
+                                        {item.reason
+                                            ? previewReasonLabel(item.reason)
+                                            : 'Проходит все проверки'}
+                                    </small>
+                                </div>
+                            ))}
+                        </div>
+
+                        {currentPreview.wouldLockOutOrganization && (
+                            <label className="models-policy-form__lockout-confirm">
+                                <input
+                                    type="checkbox"
+                                    checked={lockoutAcknowledged}
+                                    onChange={(event) => {
+                                        setLockoutAcknowledged(event.target.checked)
+                                    }}
+                                />
+                                <span>
+                                    Подтверждаю осознанную блокировку всех исполняемых моделей этой организации.
+                                </span>
+                            </label>
+                        )}
+                    </section>
+                )}
 
                 <div
                     className={
