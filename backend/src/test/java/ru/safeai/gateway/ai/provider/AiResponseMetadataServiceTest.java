@@ -3,8 +3,10 @@ package ru.safeai.gateway.ai.provider;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
+import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
 import ru.safeai.gateway.ai.pricing.ModelPricingService;
+import ru.safeai.gateway.ai.pricing.StaticConfigurationPricingResolver;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -47,6 +49,7 @@ class AiResponseMetadataServiceTest {
         AiResponseMetadataService.AiResponseMetadata metadata =
                 service.extract(
                         response,
+                        target(),
                         "gpt-snapshot"
                 );
 
@@ -98,6 +101,7 @@ class AiResponseMetadataServiceTest {
         AiResponseMetadataService.AiResponseMetadata metadata =
                 service.extract(
                         response,
+                        target(),
                         "gpt-snapshot"
                 );
 
@@ -140,7 +144,11 @@ class AiResponseMetadataServiceTest {
                 );
 
         return new AiResponseMetadataService(
-                pricingService
+                new StaticConfigurationPricingResolver(pricingService)
         );
+    }
+
+    private static ProviderExecutionTarget target() {
+        return ProviderExecutionTarget.staticTarget("openai", "gpt-snapshot");
     }
 }

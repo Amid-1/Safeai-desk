@@ -27,38 +27,19 @@ public record KnowledgeBaseAccessResponse(
     }
 
     public static KnowledgeBaseAccessResponse from(
-            UUID knowledgeBaseId,
             KnowledgeAccessService.Access access
     ) {
-        Objects.requireNonNull(
-                access,
-                "access не должен быть null"
-        );
+        Objects.requireNonNull(access, "access не должен быть null");
 
-        boolean canEditDocuments =
-                access.administrator()
-                        || access.atLeast(
-                        KnowledgeBaseAccessLevel.EDITOR
-                );
-
-        /*
-         * Current controller contract intentionally keeps base/member
-         * administration tenant-admin only. OWNER does not silently gain
-         * permissions that backend endpoints do not grant.
-         */
-        boolean canManageBase =
-                access.administrator();
-
-        boolean canManageMembers =
-                access.administrator();
+        boolean administrator = access.administrator();
 
         return new KnowledgeBaseAccessResponse(
-                knowledgeBaseId,
+                access.knowledgeBase().getId(),
                 access.level(),
-                access.administrator(),
-                canEditDocuments,
-                canManageBase,
-                canManageMembers
+                administrator,
+                administrator || access.atLeast(KnowledgeBaseAccessLevel.EDITOR),
+                administrator,
+                administrator
         );
     }
 }

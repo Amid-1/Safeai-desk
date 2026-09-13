@@ -12,9 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 import ru.safeai.gateway.model.dto.OrganizationModelPolicyResponse;
-import ru.safeai.gateway.model.dto.ModelPolicyPreviewResponse;
 import ru.safeai.gateway.model.service.OrganizationModelPolicyService;
-import ru.safeai.gateway.model.service.ModelPolicyPreviewService;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -25,19 +23,13 @@ import java.util.UUID;
 public class OrganizationModelPolicyController {
 
     private final OrganizationModelPolicyService service;
-    private final ModelPolicyPreviewService previewService;
 
     public OrganizationModelPolicyController(
-            OrganizationModelPolicyService service,
-            ModelPolicyPreviewService previewService
+            OrganizationModelPolicyService service
     ) {
         this.service = Objects.requireNonNull(
                 service,
                 "service не должен быть null"
-        );
-        this.previewService = Objects.requireNonNull(
-                previewService,
-                "previewService не должен быть null"
         );
     }
 
@@ -58,15 +50,5 @@ public class OrganizationModelPolicyController {
             SafeAiUserPrincipal currentUser
     ) {
         return service.createVersion(organizationId, request, currentUser);
-    }
-
-    @PostMapping("/{organizationId}/preview")
-    public ModelPolicyPreviewResponse preview(
-            @PathVariable UUID organizationId,
-            @Valid @RequestBody CreateOrganizationModelPolicyVersionRequest request,
-            @AuthenticationPrincipal(errorOnInvalidType = true)
-            SafeAiUserPrincipal currentUser
-    ) {
-        return previewService.preview(organizationId, request, currentUser);
     }
 }

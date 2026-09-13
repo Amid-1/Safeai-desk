@@ -19,6 +19,7 @@ import ru.safeai.gateway.ai.provider.AiContextWindowService;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
+import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 import ru.safeai.gateway.ai.provider.AiProviderSupport;
 import ru.safeai.gateway.ai.provider.AiResponseMetadataService;
 import tools.jackson.databind.JsonNode;
@@ -330,6 +331,10 @@ public final class AnthropicProvider implements AiProvider {
         AiResponseMetadataService.AiResponseMetadata metadata =
                 responseMetadataService.extract(
                         response,
+                        ProviderExecutionTarget.staticTarget(
+                                PROVIDER_NAME,
+                                properties.model()
+                        ),
                         parsed.actualModel()
                 );
 
@@ -371,8 +376,7 @@ public final class AnthropicProvider implements AiProvider {
                 providerRequestId,
                 parsed.status(),
                 parsed.stopReason(),
-                metadata.inputTokens(),
-                metadata.outputTokens(),
+                metadata.usageEvidence(),
                 metadata.pricing()
         );
     }

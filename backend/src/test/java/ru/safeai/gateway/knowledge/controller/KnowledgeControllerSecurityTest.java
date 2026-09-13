@@ -30,6 +30,8 @@ import ru.safeai.gateway.knowledge.dto.CreateKnowledgeBaseRequest;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentPageResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeDocumentResponse;
+import ru.safeai.gateway.knowledge.entity.KnowledgeBaseEntity;
+import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
 import ru.safeai.gateway.knowledge.model.KnowledgeBaseVisibility;
 import ru.safeai.gateway.knowledge.model.KnowledgeIngestionStatus;
 import ru.safeai.gateway.knowledge.service.KnowledgeAccessService;
@@ -110,13 +112,6 @@ class KnowledgeControllerSecurityTest {
     @MockitoBean
     private KnowledgeBaseService knowledgeBaseService;
 
-    /**
-     * Constructor collaborator of the current KnowledgeBaseController.
-     *
-     * <p>This remains a mock intentionally: this is a WebMvc slice test.
-     * Authorization behavior exercised here is controller/method-security
-     * behavior; KnowledgeAccessService itself is covered by its service tests.</p>
-     */
     @MockitoBean
     private KnowledgeAccessService knowledgeAccessService;
 
@@ -208,6 +203,63 @@ class KnowledgeControllerSecurityTest {
     }
 
     @Test
+    void effectiveAccessReturnsCurrentUsersCapabilities()
+            throws Exception {
+        SafeAiUserPrincipal currentUser =
+                principal("ROLE_USER");
+        KnowledgeBaseEntity knowledgeBase =
+                new KnowledgeBaseEntity();
+        knowledgeBase.setId(KB_ID);
+        knowledgeBase.setOrganizationId(ORGANIZATION_ID);
+        knowledgeBase.setName("Production Runbooks");
+        knowledgeBase.setVisibility(
+                KnowledgeBaseVisibility.MEMBERS
+        );
+        knowledgeBase.setEnabled(true);
+        knowledgeBase.setCreatedByUserId(USER_ID);
+
+        when(knowledgeAccessService.requireAccess(
+                KB_ID,
+                currentUser,
+                KnowledgeBaseAccessLevel.VIEWER
+        )).thenReturn(
+                new KnowledgeAccessService.Access(
+                        knowledgeBase,
+                        KnowledgeBaseAccessLevel.EDITOR,
+                        false
+                )
+        );
+
+        mockMvc.perform(
+                        get(
+                                "/api/knowledge-bases/{knowledgeBaseId}/access",
+                                KB_ID
+                        ).with(
+                                authentication(
+                                        authToken(currentUser)
+                                )
+                        )
+                )
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.knowledgeBaseId")
+                                .value(KB_ID.toString())
+                )
+                .andExpect(
+                        jsonPath("$.accessLevel")
+                                .value("EDITOR")
+                )
+                .andExpect(
+                        jsonPath("$.canEditDocuments")
+                                .value(Boolean.TRUE)
+                )
+                .andExpect(
+                        jsonPath("$.canManageBase")
+                                .value(Boolean.FALSE)
+                );
+    }
+
+    @Test
     void createWithUserRole_returns403AndDoesNotCallService()
             throws Exception {
         SafeAiUserPrincipal currentUser =
@@ -223,12 +275,12 @@ class KnowledgeControllerSecurityTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
-                                        {
-                                          "name": "Forbidden",
-                                          "description": null,
-                                          "visibility": "ORGANIZATION"
-                                        }
-                                        """
+                                                {
+                                                  "name": "Forbidden",
+                                                  "description": null,
+                                                  "visibility": "ORGANIZATION"
+                                                }
+                                                """
                                 )
                 )
                 .andExpect(status().isForbidden());
@@ -265,12 +317,12 @@ class KnowledgeControllerSecurityTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
-                                        {
-                                          "name": "Production Runbooks",
-                                          "description": "Docs",
-                                          "visibility": "ORGANIZATION"
-                                        }
-                                        """
+                                                {
+                                                  "name": "Production Runbooks",
+                                                  "description": "Docs",
+                                                  "visibility": "ORGANIZATION"
+                                                }
+                                                """
                                 )
                 )
                 .andExpect(status().isOk())

@@ -48,24 +48,19 @@ public record RateLimitRedisKeyProperties(
                 + "]";
     }
 
-    private static String normalizeKeyPrefix(
-            String rawPrefix
-    ) {
+    private static String normalizeKeyPrefix(String rawPrefix) {
         String normalized = requireNonBlank(
                 rawPrefix,
                 KEY_PREFIX_PROPERTY
         ).trim();
 
         normalized = removeTrailingColons(normalized);
-
         validateKeyPrefix(normalized);
 
         return normalized;
     }
 
-    private static String removeTrailingColons(
-            String value
-    ) {
+    private static String removeTrailingColons(String value) {
         int endIndex = value.length();
 
         while (endIndex > 0
@@ -76,9 +71,7 @@ public record RateLimitRedisKeyProperties(
         return value.substring(0, endIndex);
     }
 
-    private static void validateKeyPrefix(
-            String keyPrefix
-    ) {
+    private static void validateKeyPrefix(String keyPrefix) {
         if (keyPrefix.isBlank()) {
             throw new IllegalStateException(
                     KEY_PREFIX_PROPERTY + " не задан"
@@ -102,9 +95,7 @@ public record RateLimitRedisKeyProperties(
         }
     }
 
-    private static String requireValidHmacSecret(
-            String hmacSecret
-    ) {
+    private static String requireValidHmacSecret(String hmacSecret) {
         String validated = requireNonBlank(
                 hmacSecret,
                 HMAC_SECRET_PROPERTY
@@ -123,20 +114,14 @@ public record RateLimitRedisKeyProperties(
             );
         }
 
-        /*
-         * Секрет намеренно не trim-ится:
-         * пробелы могут являться частью криптографического ключа.
-         */
+        // Секрет намеренно не trim-ится: пробелы могут быть частью ключа.
         return validated;
     }
 
-    private static String normalizeKeyVersion(
-            String rawVersion
-    ) {
-        String normalized =
-                rawVersion == null || rawVersion.isBlank()
-                        ? DEFAULT_KEY_VERSION
-                        : rawVersion.trim();
+    private static String normalizeKeyVersion(String rawVersion) {
+        String normalized = rawVersion == null || rawVersion.isBlank()
+                ? DEFAULT_KEY_VERSION
+                : rawVersion.trim();
 
         if (!VERSION_PATTERN.matcher(normalized).matches()) {
             throw new IllegalStateException(

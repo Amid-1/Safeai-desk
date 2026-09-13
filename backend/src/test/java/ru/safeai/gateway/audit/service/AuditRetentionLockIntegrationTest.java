@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(
+        classes = ru.safeai.gateway.SafeaiBackendApplication.class,
         properties =
                 "spring.datasource.hikari.maximum-pool-size=4"
 )

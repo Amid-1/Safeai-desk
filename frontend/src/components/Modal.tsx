@@ -35,6 +35,11 @@ export type ModalResizeOptions = {
 
     minScale?: number
     maxScale?: number
+
+    /**
+     * Показывать системную кнопку разворота и восстановления окна.
+     */
+    maximizable?: boolean
 }
 
 type ModalProps = {
@@ -81,6 +86,13 @@ type ResizeSession = {
     startBounds: ModalBounds
 }
 
+type DragSession = {
+    pointerId: number
+    startX: number
+    startY: number
+    startBounds: ModalBounds
+}
+
 type ResolvedModalResize =
     | {
         enabled: false
@@ -120,6 +132,8 @@ const RESIZE_DIRECTIONS:
 const RESIZE_VIEWPORT_MARGIN = 12
 const DEFAULT_MIN_SCALE = 0.78
 const DEFAULT_MAX_SCALE = 1.20
+const CONTENT_FIT_HEADROOM = 0.98
+const COMPACT_CONTENT_FIT_HEADROOM = 0.94
 
 let modalEntries: ModalEntry[] = []
 let modalStackVersion = 0
@@ -167,6 +181,8 @@ function Modal({
         resize?.minScale
     const resizeMaxScale =
         resize?.maxScale
+    const resizeMaximizable =
+        resize?.maximizable
 
     const resizeState =
         useMemo<ResolvedModalResize>(
@@ -203,6 +219,8 @@ function Modal({
                             resizeMinScale,
                         maxScale:
                             resizeMaxScale,
+                        maximizable:
+                            resizeMaximizable,
                     },
                 }
             },
@@ -216,6 +234,7 @@ function Modal({
                 resizeScaleContent,
                 resizeMinScale,
                 resizeMaxScale,
+                resizeMaximizable,
             ],
         )
 
@@ -241,6 +260,19 @@ function Modal({
         useRef<ResizeSession | null>(
             null,
         )
+
+    const dragSessionRef =
+        useRef<DragSession | null>(
+            null,
+        )
+
+    const restoreBoundsRef =
+        useRef<ModalBounds | null>(
+            null,
+        )
+
+    const [maximized, setMaximized] =
+        useState(false)
 
     const [resizeBounds, setResizeBounds] =
         useState<ModalBounds | null>(
@@ -537,7 +569,9 @@ function Modal({
             current:
                 ModalBounds | null,
         ): ModalBounds => (
-            current
+            maximized
+                ? createMaximizedModalBounds()
+                : current
                 ? fitModalBoundsToViewport(
                     current,
                     options,
@@ -569,6 +603,7 @@ function Modal({
             )
         }
     }, [
+        maximized,
         resizeState,
     ])
 
@@ -578,8 +613,15 @@ function Modal({
                 resizeSessionRef.current =
                     null
 
+                dragSessionRef.current =
+                    null
+
                 document.body.classList.remove(
                     'modal-resizing',
+                )
+
+                document.body.classList.remove(
+                    'modal-dragging',
                 )
             }
         ),
@@ -670,6 +712,55 @@ function Modal({
             } as CSSProperties
             : undefined
 
+    function toggleMaximized() {
+        if (
+            !resizeState.enabled
+            || !resizeState.options.maximizable
+            || !resizeBounds
+        ) {
+            return
+        }
+
+        resizeSessionRef.current =
+            null
+
+        dragSessionRef.current =
+            null
+
+        document.body.classList.remove(
+            'modal-resizing',
+        )
+
+        document.body.classList.remove(
+            'modal-dragging',
+        )
+
+        if (maximized) {
+            const restored =
+                restoreBoundsRef.current
+                ?? createInitialModalBounds(
+                    resizeState.options,
+                )
+
+            setMaximized(false)
+            setResizeBounds(
+                fitModalBoundsToViewport(
+                    restored,
+                    resizeState.options,
+                ),
+            )
+            return
+        }
+
+        restoreBoundsRef.current =
+            resizeBounds
+
+        setMaximized(true)
+        setResizeBounds(
+            createMaximizedModalBounds(),
+        )
+    }
+
     function handleResizePointerDown(
         direction:
             ResizeDirection,
@@ -680,6 +771,7 @@ function Modal({
             !resizeState.enabled
             || !resizeBounds
             || !topmost
+            || maximized
         ) {
             return
         }
@@ -723,6 +815,9 @@ function Modal({
         document.body.classList.add(
             'modal-resizing',
         )
+
+        dragSessionRef.current =
+            null
     }
 
     function handleResizePointerMove(
@@ -799,6 +894,174 @@ function Modal({
         )
     }
 
+    function handleDragPointerDown(
+        event:
+            ReactPointerEvent<HTMLDivElement>,
+    ) {
+        if (
+            !resizeState.enabled
+            || !resizeBounds
+            || !topmost
+            || maximized
+            || event.button !== 0
+        ) {
+            return
+        }
+
+        const eventTarget =
+            event.target
+
+        if (
+            eventTarget instanceof Element
+            && eventTarget.closest(
+                'button, a, input, select, textarea, [role="button"]',
+            )
+        ) {
+            return
+        }
+
+        event.preventDefault()
+
+        const handle =
+            event.currentTarget
+
+        if (
+            typeof handle
+                .setPointerCapture
+                === 'function'
+        ) {
+            try {
+                handle.setPointerCapture(
+                    event.pointerId,
+                )
+            } catch {
+                // Pointer capture optional.
+            }
+        }
+
+        dragSessionRef.current = {
+            pointerId:
+                event.pointerId,
+            startX:
+                event.clientX,
+            startY:
+                event.clientY,
+            startBounds:
+                resizeBounds,
+        }
+
+        resizeSessionRef.current =
+            null
+
+        document.body.classList.add(
+            'modal-dragging',
+        )
+    }
+
+    function handleDragPointerMove(
+        event:
+            ReactPointerEvent<HTMLDivElement>,
+    ) {
+        const session =
+            dragSessionRef.current
+
+        if (
+            !resizeState.enabled
+            || !session
+            || session.pointerId
+                !== event.pointerId
+        ) {
+            return
+        }
+
+        event.preventDefault()
+
+        const limits =
+            getResizeLimits(
+                resizeState.options,
+            )
+
+        const maxLeft =
+            Math.max(
+                RESIZE_VIEWPORT_MARGIN,
+                limits.viewportWidth
+                    - RESIZE_VIEWPORT_MARGIN
+                    - session.startBounds.width,
+            )
+
+        const maxTop =
+            Math.max(
+                RESIZE_VIEWPORT_MARGIN,
+                limits.viewportHeight
+                    - RESIZE_VIEWPORT_MARGIN
+                    - session.startBounds.height,
+            )
+
+        setResizeBounds({
+            ...session.startBounds,
+            left: clamp(
+                session.startBounds.left
+                    + event.clientX
+                    - session.startX,
+                RESIZE_VIEWPORT_MARGIN,
+                maxLeft,
+            ),
+            top: clamp(
+                session.startBounds.top
+                    + event.clientY
+                    - session.startY,
+                RESIZE_VIEWPORT_MARGIN,
+                maxTop,
+            ),
+        })
+    }
+
+    function handleDragPointerEnd(
+        event:
+            ReactPointerEvent<HTMLDivElement>,
+    ) {
+        const session =
+            dragSessionRef.current
+
+        if (
+            !session
+            || session.pointerId
+                !== event.pointerId
+        ) {
+            return
+        }
+
+        const handle =
+            event.currentTarget
+
+        if (
+            typeof handle
+                .hasPointerCapture
+                === 'function'
+            && handle.hasPointerCapture(
+                event.pointerId,
+            )
+            && typeof handle
+                .releasePointerCapture
+                === 'function'
+        ) {
+            try {
+                handle.releasePointerCapture(
+                    event.pointerId,
+                )
+            } catch {
+                // Browser could release it first.
+            }
+        }
+
+        dragSessionRef.current =
+            null
+
+        document.body.classList.remove(
+            'modal-dragging',
+        )
+    }
+
     function handleBackdropPointerDown(
         event:
             ReactPointerEvent<HTMLDivElement>,
@@ -834,6 +1097,9 @@ function Modal({
                     resizeState.enabled
                         ? 'modal-card--resizable'
                         : '',
+                    maximized
+                        ? 'modal-card--maximized'
+                        : '',
                     className,
                 ]
                     .filter(Boolean)
@@ -854,41 +1120,116 @@ function Modal({
                     cardStyle
                 }
             >
-                <div className="modal-header">
+                <div
+                    className={[
+                        'modal-header',
+                        resizeState.enabled
+                            ? 'modal-drag-handle'
+                            : '',
+                    ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    data-modal-drag-handle={
+                        resizeState.enabled
+                            ? 'true'
+                            : undefined
+                    }
+                    data-modal-maximized={
+                        maximized
+                            ? 'true'
+                            : 'false'
+                    }
+                    onPointerDown={
+                        handleDragPointerDown
+                    }
+                    onPointerMove={
+                        handleDragPointerMove
+                    }
+                    onPointerUp={
+                        handleDragPointerEnd
+                    }
+                    onPointerCancel={
+                        handleDragPointerEnd
+                    }
+                    onLostPointerCapture={
+                        handleDragPointerEnd
+                    }
+                    onDoubleClick={(event) => {
+                        const eventTarget =
+                            event.target
+
+                        if (
+                            eventTarget instanceof Element
+                            && eventTarget.closest(
+                                'button, a, input, select, textarea, [role="button"]',
+                            )
+                        ) {
+                            return
+                        }
+
+                        toggleMaximized()
+                    }}
+                >
                     <h2
                         id={titleId}
                     >
                         {title}
                     </h2>
 
-                    <button
-                        type="button"
-                        className={
-                            'modal-close-button'
-                        }
-                        data-modal-close="true"
-                        aria-label={
-                            closeDisabled
-                                ? (
-                                    'Закрытие недоступно '
-                                    + 'во время выполнения операции'
-                                )
-                                : 'Закрыть окно'
-                        }
-                        disabled={
-                            closeDisabled
-                        }
-                        onClick={() => {
-                            if (
-                                !closeDisabledRef
-                                    .current
-                            ) {
-                                onCloseRef.current()
+                    <div className="modal-window-actions">
+                        {resizeState.enabled
+                            && resizeState.options.maximizable
+                            && (
+                                <button
+                                    type="button"
+                                    className="modal-maximize-button"
+                                    data-modal-maximize="true"
+                                    aria-label={
+                                        maximized
+                                            ? 'Восстановить размер окна'
+                                            : 'Развернуть окно на весь экран'
+                                    }
+                                    aria-pressed={maximized}
+                                    title={
+                                        maximized
+                                            ? 'Восстановить размер'
+                                            : 'Развернуть на весь экран'
+                                    }
+                                    onClick={toggleMaximized}
+                                >
+                                    <span aria-hidden="true" />
+                                </button>
+                            )}
+
+                        <button
+                            type="button"
+                            className={
+                                'modal-close-button'
                             }
-                        }}
-                    >
-                        ×
-                    </button>
+                            data-modal-close="true"
+                            aria-label={
+                                closeDisabled
+                                    ? (
+                                        'Закрытие недоступно '
+                                        + 'во время выполнения операции'
+                                    )
+                                    : 'Закрыть окно'
+                            }
+                            disabled={
+                                closeDisabled
+                            }
+                            onClick={() => {
+                                if (
+                                    !closeDisabledRef
+                                        .current
+                                ) {
+                                    onCloseRef.current()
+                                }
+                            }}
+                        >
+                            ×
+                        </button>
+                    </div>
                 </div>
 
                 <div className="modal-body">
@@ -905,6 +1246,7 @@ function Modal({
 
                 {resizeState.enabled
                     && resizeBounds
+                    && !maximized
                     && (
                         <div
                             className={
@@ -953,6 +1295,15 @@ function Modal({
         </div>,
         portalRoot,
     )
+}
+
+function createMaximizedModalBounds(): ModalBounds {
+    return {
+        left: 0,
+        top: 0,
+        width: Math.max(320, window.innerWidth),
+        height: Math.max(320, window.innerHeight),
+    }
 }
 
 function clamp(
@@ -1307,14 +1658,14 @@ function resizeModalBounds(
 }
 
 /**
- * Масштаб учитывает обе оси, но вертикальная ёмкость является
- * жёстким потолком.
+ * Обе оси участвуют в масштабе, но ограничивающая ось получает основной
+ * вес. Благодаря этому расширение только по ширине или высоте слегка
+ * увеличивает содержимое, не вызывая скрытого overflow по второй оси.
  *
  * Поэтому:
- * - расширение только по горизонтали НЕ увеличивает font/control height;
- * - уменьшение width/height по-прежнему уменьшает содержимое;
- * - увеличение высоты позволяет содержимому расти;
- * - footer и нижние поля не вытесняются горизонтальным resize.
+ * - расширение по любой грани увеличивает содержимое;
+ * - уменьшение по любой грани уменьшает typography и controls;
+ * - угловой resize учитывает ширину и высоту одновременно.
  */
 function calculateResizeScale(
     bounds:
@@ -1330,16 +1681,31 @@ function calculateResizeScale(
         bounds.height
         / resize.initialHeight
 
-    const areaScale =
-        Math.sqrt(
-            widthRatio
-            * heightRatio,
+    const limitingRatio =
+        Math.min(
+            widthRatio,
+            heightRatio,
+        )
+
+    const spaciousRatio =
+        Math.max(
+            widthRatio,
+            heightRatio,
         )
 
     const capacityAwareScale =
-        Math.min(
-            areaScale,
-            heightRatio,
+        Math.pow(
+            limitingRatio,
+            0.85,
+        )
+        * Math.pow(
+            spaciousRatio,
+            0.15,
+        )
+        * (
+            limitingRatio < 1
+                ? COMPACT_CONTENT_FIT_HEADROOM
+                : CONTENT_FIT_HEADROOM
         )
 
     const minimumScale =

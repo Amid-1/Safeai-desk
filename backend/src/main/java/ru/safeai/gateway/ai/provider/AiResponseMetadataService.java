@@ -1,22 +1,26 @@
 package ru.safeai.gateway.ai.provider;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 import ru.safeai.gateway.ai.metadata.AiTokenUsage;
 import ru.safeai.gateway.ai.metadata.UsageStatus;
-import ru.safeai.gateway.ai.pricing.ModelPricingService;
+import ru.safeai.gateway.ai.pricing.PricingResolver;
 import ru.safeai.gateway.ai.pricing.PricingResult;
 import tools.jackson.databind.JsonNode;
 
 @Service
-@RequiredArgsConstructor
 public class AiResponseMetadataService {
 
-    private final ModelPricingService pricingService;
+    private final PricingResolver pricingResolver;
+
+    public AiResponseMetadataService(PricingResolver pricingResolver) {
+        this.pricingResolver = pricingResolver;
+    }
 
     public AiResponseMetadata extract(
             JsonNode response,
-            String resolvedModel
+            ProviderExecutionTarget target,
+            String resolvedPhysicalModel
     ) {
         AiTokenUsage tokenUsage =
                 AiProviderSupport.extractTokenUsage(
@@ -27,8 +31,9 @@ public class AiResponseMetadataService {
                 tokenUsage.usageStatus();
 
         PricingResult pricing =
-                pricingService.calculate(
-                        resolvedModel,
+                pricingResolver.resolve(
+                        target,
+                        resolvedPhysicalModel,
                         tokenUsage
                 );
 
@@ -54,5 +59,15 @@ public class AiResponseMetadataService {
             boolean specializedBillingDimensionsValid,
             PricingResult pricing
     ) {
+        public AiTokenUsage usageEvidence() {
+            return new AiTokenUsage(
+                    inputTokens,
+                    cachedInputTokens,
+                    cacheWriteInputTokens,
+                    outputTokens,
+                    specializedBillingDimensionsPresent,
+                    specializedBillingDimensionsValid
+            );
+        }
     }
 }

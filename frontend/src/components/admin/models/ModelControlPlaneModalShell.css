@@ -25,15 +25,307 @@
     font-size: var(--modal-resize-font-size, 13px);
 }
 
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable.modal-card--maximized {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+body.modal-resizing,
+body.modal-dragging {
+    cursor: grabbing;
+    user-select: none;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .modal-drag-handle,
+.modal-card.models-catalog-modal.modal-card--resizable .modal-drag-handle,
+.modal-card.models-history-modal.modal-card--resizable .modal-drag-handle {
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .modal-drag-handle:active,
+.modal-card.models-catalog-modal.modal-card--resizable .modal-drag-handle:active,
+.modal-card.models-history-modal.modal-card--resizable .modal-drag-handle:active {
+    cursor: grabbing;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--maximized .modal-drag-handle,
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--maximized .modal-drag-handle:active {
+    cursor: default;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-window-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: calc(7px * var(--modal-resize-scale, 1));
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable :is(
+    .modal-maximize-button,
+    .modal-close-button
+) {
+    display: grid;
+    width: var(--modal-resize-control-height, 38px);
+    min-width: var(--modal-resize-control-height, 38px);
+    height: var(--modal-resize-control-height, 38px);
+    min-height: var(--modal-resize-control-height, 38px);
+    padding: 0;
+    place-items: center;
+    border: 1px solid #cbd7e8;
+    border-radius: calc(10px * var(--modal-resize-scale, 1));
+    background: #ffffff;
+    box-shadow: none;
+    color: #1f2a3b;
+    line-height: 1;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-maximize-button:hover {
+    border-color: #8da0f7;
+    background: #f3f6ff;
+    box-shadow: 0 5px 14px rgb(64 87 242 / 12%);
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-maximize-button > span {
+    position: relative;
+    display: block;
+    width: calc(13px * var(--modal-resize-scale, 1));
+    height: calc(11px * var(--modal-resize-scale, 1));
+    border: max(1px, calc(1.5px * var(--modal-resize-scale, 1))) solid currentcolor;
+    border-radius: calc(2px * var(--modal-resize-scale, 1));
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--maximized .modal-maximize-button > span {
+    transform: translate(-2px, 2px);
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--maximized .modal-maximize-button > span::after {
+    position: absolute;
+    z-index: -1;
+    top: -5px;
+    right: -5px;
+    width: 100%;
+    height: 100%;
+    border: inherit;
+    border-radius: inherit;
+    background: #ffffff;
+    content: '';
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .modal-close-button,
+.modal-card.models-catalog-modal.modal-card--resizable .modal-close-button,
+.modal-card.models-history-modal.modal-card--resizable .modal-close-button {
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-resize-layer {
+    position: absolute;
+    z-index: 70;
+    inset: 0;
+    pointer-events: none;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-resize-handle {
+    position: absolute;
+    pointer-events: auto;
+    touch-action: none;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable :is(
+    .modal-resize-handle--n,
+    .modal-resize-handle--s
+) {
+    right: 18px;
+    left: 18px;
+    height: 10px;
+    cursor: ns-resize;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-resize-handle--n {
+    top: 0;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-resize-handle--s {
+    bottom: 0;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable :is(
+    .modal-resize-handle--e,
+    .modal-resize-handle--w
+) {
+    top: 18px;
+    bottom: 18px;
+    width: 10px;
+    cursor: ew-resize;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-resize-handle--e {
+    right: 0;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-resize-handle--w {
+    left: 0;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable :is(
+    .modal-resize-handle--ne,
+    .modal-resize-handle--nw,
+    .modal-resize-handle--se,
+    .modal-resize-handle--sw
+) {
+    z-index: 2;
+    width: 20px;
+    height: 20px;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-resize-handle--ne {
+    top: 0;
+    right: 0;
+    cursor: nesw-resize;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-resize-handle--nw {
+    top: 0;
+    left: 0;
+    cursor: nwse-resize;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-resize-handle--se {
+    right: 0;
+    bottom: 0;
+    cursor: nwse-resize;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal,
+    .models-history-modal
+).modal-card--resizable .modal-resize-handle--sw {
+    bottom: 0;
+    left: 0;
+    cursor: nesw-resize;
+}
+
 .modal-card.models-policy-modal.modal-card--resizable .modal-header,
 .modal-card.models-catalog-modal.modal-card--resizable .modal-header,
 .modal-card.models-history-modal.modal-card--resizable .modal-header {
+    position: relative;
     min-width: 0;
     flex: 0 0 auto;
     margin: 0;
     padding: var(--modal-resize-header-padding-y, 14px) var(--modal-resize-padding-x, 20px);
     border-bottom: 1px solid #dde5f1;
     background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .modal-drag-handle::after,
+.modal-card.models-catalog-modal.modal-card--resizable .modal-drag-handle::after,
+.modal-card.models-history-modal.modal-card--resizable .modal-drag-handle::after {
+    position: absolute;
+    bottom: calc(4px * var(--modal-resize-scale, 1));
+    left: 50%;
+    width: calc(42px * var(--modal-resize-scale, 1));
+    height: max(2px, calc(3px * var(--modal-resize-scale, 1)));
+    border-radius: 999px;
+    background: #cbd5e1;
+    content: '';
+    opacity: 0.72;
+    transform: translateX(-50%);
+    transition: width 140ms ease, background-color 140ms ease;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .modal-drag-handle:hover::after,
+.modal-card.models-catalog-modal.modal-card--resizable .modal-drag-handle:hover::after,
+.modal-card.models-history-modal.modal-card--resizable .modal-drag-handle:hover::after {
+    width: calc(58px * var(--modal-resize-scale, 1));
+    background: #7789f5;
 }
 
 .modal-card.models-policy-modal.modal-card--resizable .modal-header h2,
@@ -46,6 +338,7 @@
 .modal-card.models-policy-modal.modal-card--resizable .modal-body,
 .modal-card.models-catalog-modal.modal-card--resizable .modal-body,
 .modal-card.models-history-modal.modal-card--resizable .modal-body {
+    display: flex;
     min-width: 0;
     min-height: 0;
     flex: 1 1 auto;
@@ -57,6 +350,71 @@
     scrollbar-gutter: stable;
     scroll-padding-block: var(--modal-resize-gap, 10px);
     background: #fcfdff;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal
+).modal-card--resizable .modal-body > .models-form {
+    width: 100%;
+    min-height: 0;
+    height: 100%;
+    flex: 1 1 auto;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable.modal-card--maximized .modal-body,
+.modal-card.models-catalog-modal.modal-card--resizable.modal-card--maximized .modal-body {
+    overflow-y: hidden;
+}
+
+/*
+ * Все размеры controls используют тот же scale, что и typography.
+ * Это исключает эффект, когда поле визуально растёт быстрее текста.
+ */
+:is(
+    .models-policy-modal,
+    .models-catalog-modal
+).modal-card--resizable .models-form label {
+    gap: calc(5px * var(--modal-resize-scale, 1));
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal
+).modal-card--resizable :is(input, select, textarea) {
+    padding: calc(8px * var(--modal-resize-scale, 1)) calc(11px * var(--modal-resize-scale, 1));
+    border-radius: calc(10px * var(--modal-resize-scale, 1));
+    line-height: 1.25;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal
+).modal-card--resizable button {
+    padding-inline: calc(14px * var(--modal-resize-scale, 1));
+    border-radius: calc(10px * var(--modal-resize-scale, 1));
+    line-height: 1.2;
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal
+).modal-card--resizable input[type='checkbox'] {
+    padding: 0;
+    border-radius: calc(4px * var(--modal-resize-scale, 1));
+}
+
+:is(
+    .models-policy-modal,
+    .models-catalog-modal
+).modal-card--resizable fieldset {
+    border-radius: calc(12px * var(--modal-resize-scale, 1));
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .modal-body > *,
+.modal-card.models-catalog-modal.modal-card--resizable .modal-body > *,
+.modal-card.models-history-modal.modal-card--resizable .modal-body > * {
+    min-width: 0;
 }
 
 .modal-card.models-policy-modal.modal-card--resizable .modal-footer,
@@ -85,5 +443,13 @@
     .modal-card.models-catalog-modal.modal-card--resizable .modal-body,
     .modal-card.models-history-modal.modal-card--resizable .modal-body {
         scrollbar-width: thin;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .modal-card.models-policy-modal.modal-card--resizable .modal-drag-handle::after,
+    .modal-card.models-catalog-modal.modal-card--resizable .modal-drag-handle::after,
+    .modal-card.models-history-modal.modal-card--resizable .modal-drag-handle::after {
+        transition: none;
     }
 }

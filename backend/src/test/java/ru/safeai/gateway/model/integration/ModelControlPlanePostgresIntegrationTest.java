@@ -35,7 +35,6 @@ import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
-import ru.safeai.gateway.model.repository.ModelRouteRequestMutexRepository;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 import ru.safeai.gateway.model.service.ModelCatalogService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
@@ -88,7 +87,6 @@ class ModelControlPlanePostgresIntegrationTest {
     private ModelCatalogRepository catalogRepository;
     private OrganizationModelPolicyRepository policyRepository;
     private ModelRouteDecisionRepository decisionRepository;
-    private ModelRouteRequestMutexRepository requestMutexRepository;
 
     @BeforeAll
     static void migrateSchema() {
@@ -210,11 +208,6 @@ class ModelControlPlanePostgresIntegrationTest {
 
         decisionRepository =
                 new ModelRouteDecisionRepository(
-                        jdbc
-                );
-
-        requestMutexRepository =
-                new ModelRouteRequestMutexRepository(
                         jdbc
                 );
     }
@@ -906,15 +899,10 @@ class ModelControlPlanePostgresIntegrationTest {
         assertThat(
                 catalogRepository.findLatest(
                         modelKey
-                )
-        )
-                .get()
-                .extracting(
-                        ModelCatalogEntry::version
-                )
-                .isEqualTo(
-                        2
-                );
+                ).orElseThrow().version()
+        ).isEqualTo(
+                2
+        );
     }
 
     @Test
@@ -946,7 +934,7 @@ class ModelControlPlanePostgresIntegrationTest {
                         0
                 );
 
-        List<Object> outcomes =
+        List<ConcurrentOutcome> outcomes =
                 runTwoConcurrent(
                         () ->
                                 transaction.execute(
@@ -964,9 +952,7 @@ class ModelControlPlanePostgresIntegrationTest {
                 outcomes
         )
                 .filteredOn(
-                        value ->
-                                value
-                                        instanceof ru.safeai.gateway.model.dto.ModelCatalogEntryResponse
+                        ConcurrentSuccess.class::isInstance
                 )
                 .hasSize(
                         1
@@ -976,9 +962,10 @@ class ModelControlPlanePostgresIntegrationTest {
                 outcomes
         )
                 .filteredOn(
-                        value ->
-                                value
-                                        instanceof ru.safeai.gateway.common.exception.ConflictException
+                        outcome ->
+                                outcome instanceof ConcurrentFailure(
+                                        ru.safeai.gateway.common.exception.ConflictException ignored
+                                )
                 )
                 .hasSize(
                         1
@@ -987,15 +974,10 @@ class ModelControlPlanePostgresIntegrationTest {
         assertThat(
                 catalogRepository.findLatest(
                         modelKey
-                )
-        )
-                .get()
-                .extracting(
-                        ModelCatalogEntry::version
-                )
-                .isEqualTo(
-                        1
-                );
+                ).orElseThrow().version()
+        ).isEqualTo(
+                1
+        );
     }
 
     @Test
@@ -1058,15 +1040,10 @@ class ModelControlPlanePostgresIntegrationTest {
         assertThat(
                 policyRepository.findLatest(
                         organizationId
-                )
-        )
-                .get()
-                .extracting(
-                        OrganizationModelPolicy::version
-                )
-                .isEqualTo(
-                        2
-                );
+                ).orElseThrow().version()
+        ).isEqualTo(
+                2
+        );
     }
 
     @Test
@@ -1086,7 +1063,7 @@ class ModelControlPlanePostgresIntegrationTest {
                         0
                 );
 
-        List<Object> outcomes =
+        List<ConcurrentOutcome> outcomes =
                 runTwoConcurrent(
                         () ->
                                 transaction.execute(
@@ -1105,9 +1082,7 @@ class ModelControlPlanePostgresIntegrationTest {
                 outcomes
         )
                 .filteredOn(
-                        value ->
-                                value
-                                        instanceof ru.safeai.gateway.model.dto.OrganizationModelPolicyResponse
+                        ConcurrentSuccess.class::isInstance
                 )
                 .hasSize(
                         1
@@ -1117,9 +1092,10 @@ class ModelControlPlanePostgresIntegrationTest {
                 outcomes
         )
                 .filteredOn(
-                        value ->
-                                value
-                                        instanceof ru.safeai.gateway.common.exception.ConflictException
+                        outcome ->
+                                outcome instanceof ConcurrentFailure(
+                                        ru.safeai.gateway.common.exception.ConflictException ignored
+                                )
                 )
                 .hasSize(
                         1
@@ -1128,15 +1104,10 @@ class ModelControlPlanePostgresIntegrationTest {
         assertThat(
                 policyRepository.findLatest(
                         organizationId
-                )
-        )
-                .get()
-                .extracting(
-                        OrganizationModelPolicy::version
-                )
-                .isEqualTo(
-                        1
-                );
+                ).orElseThrow().version()
+        ).isEqualTo(
+                1
+        );
     }
 
     private ModelRoutingService routingService(
@@ -1147,7 +1118,6 @@ class ModelControlPlanePostgresIntegrationTest {
                 catalogRepository,
                 policyRepository,
                 decisionRepository,
-                requestMutexRepository,
                 runtimeStatus,
                 mock(
                         AuditEventService.class
@@ -1156,8 +1126,8 @@ class ModelControlPlanePostgresIntegrationTest {
         );
     }
 
-    private List<Object> runTwoConcurrent(
-            ThrowingSupplier supplier
+    private List<ConcurrentOutcome> runTwoConcurrent(
+            ThrowingRunnable operation
     ) throws Exception {
         CountDownLatch ready =
                 new CountDownLatch(
@@ -1173,24 +1143,27 @@ class ModelControlPlanePostgresIntegrationTest {
                 ExecutorService executor =
                         Executors.newVirtualThreadPerTaskExecutor()
         ) {
-            java.util.concurrent.Callable<Object> task =
+            java.util.concurrent.Callable<ConcurrentOutcome> task =
                     () -> {
                         ready.countDown();
                         start.await();
 
                         try {
-                            return supplier.get();
+                            operation.run();
+                            return new ConcurrentSuccess();
                         } catch (Throwable throwable) {
-                            return throwable;
+                            return new ConcurrentFailure(
+                                    throwable
+                            );
                         }
                     };
 
-            Future<Object> first =
+            Future<ConcurrentOutcome> first =
                     executor.submit(
                             task
                     );
 
-            Future<Object> second =
+            Future<ConcurrentOutcome> second =
                     executor.submit(
                             task
                     );
@@ -1451,7 +1424,19 @@ class ModelControlPlanePostgresIntegrationTest {
     }
 
     @FunctionalInterface
-    private interface ThrowingSupplier {
-        Object get() throws Exception;
+    private interface ThrowingRunnable {
+        void run() throws Exception;
+    }
+
+    private sealed interface ConcurrentOutcome
+            permits ConcurrentSuccess, ConcurrentFailure {
+    }
+
+    private record ConcurrentSuccess() implements ConcurrentOutcome {
+    }
+
+    private record ConcurrentFailure(
+            Throwable cause
+    ) implements ConcurrentOutcome {
     }
 }

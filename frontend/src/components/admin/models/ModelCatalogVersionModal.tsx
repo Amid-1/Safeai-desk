@@ -4,7 +4,6 @@
 
 import {
     useId,
-    useRef,
     useState,
 } from 'react'
 import type {
@@ -64,18 +63,16 @@ type ModelCatalogVersionModalProps = {
 
 const CATALOG_MODAL_RESIZE:
     ModalResizeOptions = {
-        initialWidth: 1120,
-        initialHeight: 790,
+        initialWidth: 1480,
+        initialHeight: 920,
 
-        minWidth: 700,
-        minHeight: 520,
-
-        maxWidth: 1480,
-        maxHeight: 980,
+        minWidth: 640,
+        minHeight: 480,
 
         scaleContent: true,
-        minScale: 0.80,
-        maxScale: 1.18,
+        minScale: 0.72,
+        maxScale: 1.08,
+        maximizable: true,
     }
 
 const OUTPUT_MODALITIES =
@@ -218,9 +215,8 @@ export function ModelCatalogVersionModal({
             ),
         )
 
-    const initialDraftFingerprint = useRef(
-        JSON.stringify(draft),
-    ).current
+    const [initialDraftFingerprint] =
+        useState(() => JSON.stringify(draft))
 
     const [formError, setFormError] =
         useState('')

@@ -15,11 +15,10 @@ public record ResetUserPasswordRequest(
         Long expectedVersion
 ) {
     @Override
-    @SuppressWarnings("NullableProblems")
     public String toString() {
-        return "ResetUserPasswordRequest["
-                + "password=<redacted>"
-                + ", expectedVersion=" + expectedVersion
+        return "ResetUserPasswordRequest[password=<redacted>, "
+                + "expectedVersion="
+                + expectedVersion
                 + "]";
     }
 }

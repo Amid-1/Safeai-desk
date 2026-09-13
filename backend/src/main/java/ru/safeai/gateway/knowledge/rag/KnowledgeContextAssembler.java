@@ -56,10 +56,11 @@ public class KnowledgeContextAssembler {
     public KnowledgeContextAssembler(
             KnowledgeRagProperties properties
     ) {
-        this.properties = Objects.requireNonNull(
-                properties,
-                "properties не должен быть null"
-        );
+        this.properties =
+                Objects.requireNonNull(
+                        properties,
+                        "properties не должен быть null"
+                );
     }
 
     public AssembledContext assemble(
@@ -67,11 +68,16 @@ public class KnowledgeContextAssembler {
             KnowledgeRetrievalExecution retrieval,
             AiChatRequest original
     ) {
-        Objects.requireNonNull(mode, "mode не должен быть null");
+        Objects.requireNonNull(
+                mode,
+                "mode не должен быть null"
+        );
+
         Objects.requireNonNull(
                 retrieval,
                 "retrieval не должен быть null"
         );
+
         Objects.requireNonNull(
                 original,
                 "original не должен быть null"
@@ -95,6 +101,12 @@ public class KnowledgeContextAssembler {
                         ? KNOWLEDGE_ONLY_POLICY
                         : ASSISTED_POLICY;
 
+        /*
+         * Проверяем fixed RAG overhead ещё до materialization sources.
+         *
+         * Если SYSTEM_POLICY + mode policy + sources header уже не помещаются
+         * в route reservation, ни один source это исправить не сможет.
+         */
         AiChatRequest emptyContextRequest =
                 materializeRequest(
                         original,
@@ -105,7 +117,7 @@ public class KnowledgeContextAssembler {
 
         requireWithinReservedInput(
                 emptyContextRequest,
-                original.reservedInputUnits()
+                original.reservedInputTokens()
         );
 
         StringBuilder context =
@@ -125,19 +137,27 @@ public class KnowledgeContextAssembler {
                 continue;
             }
 
-            if (context.length() >= properties.maxContextChars()) {
+            if (context.length()
+                    >= properties.maxContextChars()) {
                 break;
             }
 
             String sanitizedContent =
-                    sanitizeSourceText(hit.content());
+                    sanitizeSourceText(
+                            hit.content()
+                    );
 
+            /*
+             * Blank retrieval hit не должен останавливать обработку
+             * следующих ranked hits.
+             */
             if (sanitizedContent.isBlank()) {
                 continue;
             }
 
             String label =
-                    "C" + (sources.size() + 1);
+                    "C"
+                            + (sources.size() + 1);
 
             String block =
                     largestFittingSourceBlock(
@@ -150,11 +170,17 @@ public class KnowledgeContextAssembler {
                             modePolicy
                     );
 
+            /*
+             * Конкретный hit может не помещаться из-за длинной metadata,
+             * тогда как следующий hit ещё может поместиться.
+             */
             if (block == null) {
                 continue;
             }
 
-            context.append(block);
+            context.append(
+                    block
+            );
 
             sources.add(
                     new KnowledgeContextSource(
@@ -175,13 +201,21 @@ public class KnowledgeContextAssembler {
                         sourceContext
                 );
 
+        /*
+         * Defense in depth.
+         *
+         * Binary search выше уже должен гарантировать envelope, однако final
+         * materialized request проверяется повторно до выхода из assembler.
+         */
         requireWithinReservedInput(
                 request,
-                original.reservedInputUnits()
+                original.reservedInputTokens()
         );
 
         return new AssembledContext(
-                KnowledgeHashing.sha256(sourceContext),
+                KnowledgeHashing.sha256(
+                        sourceContext
+                ),
                 sources,
                 request
         );
@@ -230,12 +264,18 @@ public class KnowledgeContextAssembler {
                         )
                 );
 
-        if (minimumBlock.length() > availableChars) {
+        if (minimumBlock.length()
+                > availableChars) {
             return null;
         }
 
+        /*
+         * String concatenation invokes String.valueOf(currentContext)
+         * automatically; explicit toString() here is unnecessary.
+         */
         String minimumCandidateContext =
-                currentContext + minimumBlock;
+                currentContext
+                        + minimumBlock;
 
         AiChatRequest minimumCandidate =
                 materializeRequest(
@@ -247,18 +287,28 @@ public class KnowledgeContextAssembler {
 
         if (!fitsReservedInput(
                 minimumCandidate,
-                original.reservedInputUnits()
+                original.reservedInputTokens()
         )) {
             return null;
         }
 
-        int low = 1;
-        int high = maximumCodePoints;
-        String best = minimumBlock;
+        int low =
+                1;
 
+        int high =
+                maximumCodePoints;
+
+        String best =
+                minimumBlock;
+
+        /*
+         * Размер materialized request монотонно растёт с увеличением excerpt,
+         * поэтому ищем максимальный допустимый excerpt binary search.
+         */
         while (low <= high) {
             int middle =
-                    low + (high - low) / 2;
+                    low
+                            + (high - low) / 2;
 
             String excerpt =
                     truncateCodePoints(
@@ -273,13 +323,17 @@ public class KnowledgeContextAssembler {
                             excerpt
                     );
 
-            if (block.length() > availableChars) {
-                high = middle - 1;
+            if (block.length()
+                    > availableChars) {
+                high =
+                        middle - 1;
+
                 continue;
             }
 
             String candidateContext =
-                    currentContext + block;
+                    currentContext
+                            + block;
 
             AiChatRequest candidate =
                     materializeRequest(
@@ -291,12 +345,16 @@ public class KnowledgeContextAssembler {
 
             if (fitsReservedInput(
                     candidate,
-                    original.reservedInputUnits()
+                    original.reservedInputTokens()
             )) {
-                best = block;
-                low = middle + 1;
+                best =
+                        block;
+
+                low =
+                        middle + 1;
             } else {
-                high = middle - 1;
+                high =
+                        middle - 1;
             }
         }
 
@@ -313,13 +371,18 @@ public class KnowledgeContextAssembler {
                 combine(
                         original.developerInstructions(),
                         modePolicy,
-                        SOURCES_HEADER + sourceContext
+                        SOURCES_HEADER
+                                + sourceContext
                 );
 
         /*
-         * This is intentionally the only RAG transformation path.
-         * withInstructions() preserves providerOperationId, base request
-         * identity and both route-bound execution caps.
+         * Никогда не реконструируем AiChatRequest вручную.
+         *
+         * withInstructions() сохраняет route-bound поля:
+         *
+         * - providerOperationId
+         * - reservedInputTokens
+         * - maxOutputTokens
          */
         return original.withInstructions(
                 systemInstructions,
@@ -335,8 +398,13 @@ public class KnowledgeContextAssembler {
             return true;
         }
 
-        return AiInputUnitEstimator
-                .estimatePreparedRequest(request)
+        long estimated =
+                AiInputUnitEstimator
+                        .estimatePreparedRequest(
+                                request
+                        );
+
+        return estimated
                 <= reservedInputUnits;
     }
 
@@ -344,7 +412,10 @@ public class KnowledgeContextAssembler {
             AiChatRequest request,
             Long reservedInputUnits
     ) {
-        if (!fitsReservedInput(request, reservedInputUnits)) {
+        if (!fitsReservedInput(
+                request,
+                reservedInputUnits
+        )) {
             throw new IllegalStateException(
                     "Knowledge RAG materialization exceeds "
                             + "reserved input envelope"
@@ -372,12 +443,18 @@ public class KnowledgeContextAssembler {
                 END [%s]
                 """.formatted(
                 label,
-                sanitizeMetadata(hit.documentName()),
+                sanitizeMetadata(
+                        hit.documentName()
+                ),
                 hit.documentVersionId(),
                 hit.versionNumber(),
                 hit.chunkOrdinal(),
-                page(hit),
-                sanitizeMetadata(hit.heading()),
+                page(
+                        hit
+                ),
+                sanitizeMetadata(
+                        hit.heading()
+                ),
                 hit.contentSha256(),
                 content,
                 label
@@ -387,39 +464,62 @@ public class KnowledgeContextAssembler {
     private static String sanitizeSourceText(
             String value
     ) {
-        if (value == null || value.isBlank()) {
+        if (value == null
+                || value.isBlank()) {
             return "";
         }
 
         return SOURCE_CITATION_MARKER
-                .matcher(value)
-                .replaceAll("〔C$1〕");
+                .matcher(
+                        value
+                )
+                .replaceAll(
+                        "〔C$1〕"
+                );
     }
 
     private static String sanitizeMetadata(
             String value
     ) {
-        if (value == null || value.isBlank()) {
+        if (value == null
+                || value.isBlank()) {
             return "-";
         }
 
         String singleLine =
-                value.replace('\r', ' ')
-                        .replace('\n', ' ')
-                        .replace('\t', ' ')
+                value.replace(
+                                '\r',
+                                ' '
+                        )
+                        .replace(
+                                '\n',
+                                ' '
+                        )
+                        .replace(
+                                '\t',
+                                ' '
+                        )
                         .strip()
-                        .replaceAll(" +", " ");
+                        .replaceAll(
+                                " +",
+                                " "
+                        );
 
         return SOURCE_CITATION_MARKER
-                .matcher(singleLine)
-                .replaceAll("〔C$1〕");
+                .matcher(
+                        singleLine
+                )
+                .replaceAll(
+                        "〔C$1〕"
+                );
     }
 
     private static String truncateCodePoints(
             String value,
             int maximumCodePoints
     ) {
-        if (maximumCodePoints <= 0 || value.isEmpty()) {
+        if (maximumCodePoints <= 0
+                || value.isEmpty()) {
             return "";
         }
 
@@ -429,7 +529,8 @@ public class KnowledgeContextAssembler {
                         value.length()
                 );
 
-        if (count <= maximumCodePoints) {
+        if (count
+                <= maximumCodePoints) {
             return value;
         }
 
@@ -439,37 +540,58 @@ public class KnowledgeContextAssembler {
                         maximumCodePoints
                 );
 
-        return value.substring(0, end);
+        return value.substring(
+                0,
+                end
+        );
     }
 
     private static String page(
             KnowledgeRetrievalHit hit
     ) {
-        Integer pageFrom = hit.pageFrom();
-        Integer pageTo = hit.pageTo();
+        Integer pageFrom =
+                hit.pageFrom();
+
+        Integer pageTo =
+                hit.pageTo();
 
         if (pageFrom == null) {
             return "-";
         }
 
-        if (pageTo == null || pageFrom.equals(pageTo)) {
-            return Integer.toString(pageFrom);
+        if (pageTo == null
+                || pageFrom.equals(
+                        pageTo
+                )) {
+            return Integer.toString(
+                    pageFrom
+            );
         }
 
-        return pageFrom + "-" + pageTo;
+        return pageFrom
+                + "-"
+                + pageTo;
     }
 
     private static String combine(
             String... values
     ) {
-        return Arrays.stream(values)
+        return Arrays.stream(
+                        values
+                )
                 .filter(
                         value ->
                                 value != null
                                         && !value.isBlank()
                 )
-                .map(String::strip)
-                .collect(Collectors.joining("\n\n"));
+                .map(
+                        String::strip
+                )
+                .collect(
+                        Collectors.joining(
+                                "\n\n"
+                        )
+                );
     }
 
     public record AssembledContext(
@@ -477,21 +599,27 @@ public class KnowledgeContextAssembler {
             List<KnowledgeContextSource> sources,
             AiChatRequest request
     ) {
+
         public AssembledContext {
             Objects.requireNonNull(
                     contextSha256,
                     "contextSha256 не должен быть null"
             );
+
             Objects.requireNonNull(
                     sources,
                     "sources не должен быть null"
             );
+
             Objects.requireNonNull(
                     request,
                     "request не должен быть null"
             );
 
-            sources = List.copyOf(sources);
+            sources =
+                    List.copyOf(
+                            sources
+                    );
         }
     }
 }

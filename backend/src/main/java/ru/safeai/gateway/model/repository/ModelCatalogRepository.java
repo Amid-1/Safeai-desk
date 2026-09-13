@@ -133,18 +133,9 @@ public class ModelCatalogRepository {
         return rows.stream().findFirst();
     }
 
-    /** Latest created version of every key, including future-effective rows. */
-    public List<ModelCatalogEntry> findLatestAll() {
-        return jdbc.query(
-                FIND_LATEST_ALL_SQL,
-                this::map
-        );
-    }
-
     /**
      * Full append-only history of one logical model key, newest version first.
-     * This is an administrative read model only; routing still uses the exact
-     * effective snapshot selected at a server-controlled instant.
+     * Routing itself still uses a server-clock-effective immutable snapshot.
      */
     public List<ModelCatalogEntry> findVersions(String modelKey) {
         return jdbc.query(
@@ -152,6 +143,14 @@ public class ModelCatalogRepository {
                         + "where model_key = ? order by version desc",
                 this::map,
                 modelKey
+        );
+    }
+
+    /** Latest created version of every key, including future-effective rows. */
+    public List<ModelCatalogEntry> findLatestAll() {
+        return jdbc.query(
+                FIND_LATEST_ALL_SQL,
+                this::map
         );
     }
 
@@ -209,8 +208,7 @@ public class ModelCatalogRepository {
     /**
      * Returns whether this physical runtime identity has ever been governed by
      * a catalog version that was effective at or before {@code asOf}. Future-only
-     * scheduled rows are intentionally excluded: routing only reasons about
-     * server-clock-effective history and never executes a catalog-less runtime.
+     * scheduled rows do not disable bootstrap compatibility early.
      */
     public boolean hasEffectiveHistoryByRuntime(
             String provider,

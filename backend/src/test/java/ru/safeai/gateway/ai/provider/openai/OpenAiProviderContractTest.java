@@ -18,6 +18,7 @@ import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
 import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
 import ru.safeai.gateway.ai.pricing.ModelPricingService;
+import ru.safeai.gateway.ai.pricing.StaticConfigurationPricingResolver;
 import ru.safeai.gateway.ai.provider.AiContextWindowProperties;
 import ru.safeai.gateway.ai.provider.AiContextWindowService;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
@@ -592,7 +593,7 @@ class OpenAiProviderContractTest {
         return new OpenAiProvider(
                 properties,
                 new AiResponseMetadataService(
-                        pricingService
+                        new StaticConfigurationPricingResolver(pricingService)
                 ),
                 new AiProviderRetryExecutor(
                         retryProperties

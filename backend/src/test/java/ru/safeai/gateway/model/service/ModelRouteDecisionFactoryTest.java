@@ -39,15 +39,7 @@ class ModelRouteDecisionFactoryTest {
                 .matches("[0-9a-f]{64}");
 
         assertThat(decision.decisionIntegrityVersion())
-                .isEqualTo((short) 3);
-
-        assertThat(decision.inputAccountingVersion())
-                .isEqualTo(
-                        ru.safeai.gateway.ai.input.AiInputUnitEstimator.VERSION
-                );
-
-        assertThat(decision.additionalInputUnitUpperBound())
-                .isEqualTo(0L);
+                .isEqualTo((short) 2);
 
         assertThatCode(() ->
                 ModelRouteDecisionIntegrity.requireValid(decision)
@@ -175,32 +167,27 @@ class ModelRouteDecisionFactoryTest {
 
     @Test
     void replayRequiresSameRequestedModelKey() {
-        ModelRouteRequest original =
-                ModelTestFixtures.routeRequest(
-                        "openai:gpt-test",
-                        Set.of(),
-                        0L
-                );
-
-        ModelRouteDecision decision =
-                buildAllowedDecision(
-                        original
-                );
-
-        ModelRouteRequest changed =
-                new ModelRouteRequest(
-                        original.organizationId(),
-                        original.userId(),
-                        original.chatId(),
-                        original.plannedTurnId(),
-                        original.clientRequestId(),
-                        original.requestContentHash(),
-                        "openai:other-model",
-                        original.userMessage(),
-                        original.history(),
-                        original.requiredCapabilities(),
-                        original.additionalInputUnitUpperBound()
-                );
+        ModelRouteRequest original = ModelTestFixtures.routeRequest(
+                "openai:gpt-test",
+                Set.of(),
+                0L
+        );
+        ModelRouteDecision decision = buildAllowedDecision(
+                original
+        );
+        ModelRouteRequest changed = new ModelRouteRequest(
+                original.organizationId(),
+                original.userId(),
+                original.chatId(),
+                original.plannedTurnId(),
+                original.clientRequestId(),
+                original.requestContentHash(),
+                "openai:other-model",
+                original.userMessage(),
+                original.history(),
+                original.requiredCapabilities(),
+                original.additionalInputTokenUpperBound()
+        );
 
         assertThatThrownBy(() ->
                 factory.replayDecision(
@@ -212,32 +199,27 @@ class ModelRouteDecisionFactoryTest {
 
     @Test
     void replayRequiresSameCapabilitiesEvenWhenContentHashMatches() {
-        ModelRouteRequest original =
-                ModelTestFixtures.routeRequest(
-                        null,
-                        Set.of(),
-                        0L
-                );
-
-        ModelRouteDecision decision =
-                buildAllowedDecision(
-                        original
-                );
-
-        ModelRouteRequest changed =
-                new ModelRouteRequest(
-                        original.organizationId(),
-                        original.userId(),
-                        original.chatId(),
-                        original.plannedTurnId(),
-                        original.clientRequestId(),
-                        original.requestContentHash(),
-                        original.requestedModelKey(),
-                        original.userMessage(),
-                        original.history(),
-                        Set.of(ModelCapability.VISION),
-                        original.additionalInputUnitUpperBound()
-                );
+        ModelRouteRequest original = ModelTestFixtures.routeRequest(
+                null,
+                Set.of(),
+                0L
+        );
+        ModelRouteDecision decision = buildAllowedDecision(
+                original
+        );
+        ModelRouteRequest changed = new ModelRouteRequest(
+                original.organizationId(),
+                original.userId(),
+                original.chatId(),
+                original.plannedTurnId(),
+                original.clientRequestId(),
+                original.requestContentHash(),
+                original.requestedModelKey(),
+                original.userMessage(),
+                original.history(),
+                Set.of(ModelCapability.VISION),
+                original.additionalInputTokenUpperBound()
+        );
 
         assertThatThrownBy(() ->
                 factory.replayDecision(
@@ -249,32 +231,27 @@ class ModelRouteDecisionFactoryTest {
 
     @Test
     void replayRequiresSamePlannedTurnForAllowedDecision() {
-        ModelRouteRequest original =
-                ModelTestFixtures.routeRequest(
-                        null,
-                        Set.of(),
-                        0L
-                );
-
-        ModelRouteDecision decision =
-                buildAllowedDecision(
-                        original
-                );
-
-        ModelRouteRequest changedTurn =
-                new ModelRouteRequest(
-                        original.organizationId(),
-                        original.userId(),
-                        original.chatId(),
-                        UUID.randomUUID(),
-                        original.clientRequestId(),
-                        original.requestContentHash(),
-                        original.requestedModelKey(),
-                        original.userMessage(),
-                        original.history(),
-                        original.requiredCapabilities(),
-                        original.additionalInputUnitUpperBound()
-                );
+        ModelRouteRequest original = ModelTestFixtures.routeRequest(
+                null,
+                Set.of(),
+                0L
+        );
+        ModelRouteDecision decision = buildAllowedDecision(
+                original
+        );
+        ModelRouteRequest changedTurn = new ModelRouteRequest(
+                original.organizationId(),
+                original.userId(),
+                original.chatId(),
+                UUID.randomUUID(),
+                original.clientRequestId(),
+                original.requestContentHash(),
+                original.requestedModelKey(),
+                original.userMessage(),
+                original.history(),
+                original.requiredCapabilities(),
+                original.additionalInputTokenUpperBound()
+        );
 
         assertThatThrownBy(() ->
                 factory.replayDecision(
@@ -283,9 +260,7 @@ class ModelRouteDecisionFactoryTest {
                 )
         )
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(
-                        "planned ChatTurn identity"
-                );
+                .hasMessageContaining("planned ChatTurn identity");
     }
 
     @Test
@@ -429,8 +404,6 @@ class ModelRouteDecisionFactoryTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
-                source.inputAccountingVersion(),
-                source.additionalInputUnitUpperBound(),
                 source.estimatedInputTokens(),
                 source.estimatedOutputTokens(),
                 source.estimatedMaxCostUsd(),
@@ -471,8 +444,6 @@ class ModelRouteDecisionFactoryTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
-                source.inputAccountingVersion(),
-                source.additionalInputUnitUpperBound(),
                 source.estimatedInputTokens(),
                 source.estimatedOutputTokens(),
                 estimatedCost,
@@ -513,8 +484,6 @@ class ModelRouteDecisionFactoryTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
-                source.inputAccountingVersion(),
-                source.additionalInputUnitUpperBound(),
                 source.estimatedInputTokens(),
                 source.estimatedOutputTokens(),
                 source.estimatedMaxCostUsd(),
@@ -553,8 +522,6 @@ class ModelRouteDecisionFactoryTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
-                source.inputAccountingVersion(),
-                source.additionalInputUnitUpperBound(),
                 null,
                 null,
                 source.estimatedMaxCostUsd(),

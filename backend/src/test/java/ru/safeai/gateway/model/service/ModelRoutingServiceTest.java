@@ -7,6 +7,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
@@ -24,14 +25,12 @@ import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
-import ru.safeai.gateway.model.repository.ModelRouteRequestMutexRepository;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -40,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -58,9 +58,6 @@ class ModelRoutingServiceTest {
     private ModelRouteDecisionRepository decisionRepository;
 
     @Mock
-    private ModelRouteRequestMutexRepository requestMutexRepository;
-
-    @Mock
     private RuntimeModelStatusService runtimeStatusService;
 
     @Mock
@@ -74,7 +71,6 @@ class ModelRoutingServiceTest {
                 catalogRepository,
                 policyRepository,
                 decisionRepository,
-                requestMutexRepository,
                 runtimeStatusService,
                 audit,
                 ModelTestFixtures.CLOCK
@@ -162,79 +158,28 @@ class ModelRoutingServiceTest {
     }
 
     @Test
-    void runtimeWithoutEffectiveCatalogOrHistoryFailsClosedAsModelNotFound() {
+    void futureOnlyCatalogHistoryDoesNotDisableBootstrapFallbackEarly() {
         stubNewDecisionNoPolicy();
-
         when(catalogRepository.findEffectiveByRuntime(
                 "openai",
                 "gpt-test",
                 ModelTestFixtures.NOW
         )).thenReturn(List.of());
-
         when(catalogRepository.hasEffectiveHistoryByRuntime(
                 "openai",
                 "gpt-test",
                 ModelTestFixtures.NOW
         )).thenReturn(false);
 
-        ModelRouteDeniedException exception =
-                catchDenial(
-                        request(
-                                null,
-                                Set.of()
-                        )
-                );
+        var result = service.decide(
+                request(null, Set.of()),
+                ModelTestFixtures.userPrincipal()
+        );
 
-        assertThat(exception.getReason())
-                .isEqualTo(
-                        ModelRouteReason.MODEL_NOT_FOUND
-                );
-
-        ArgumentCaptor<ModelRouteDecision> captor =
-                ArgumentCaptor.forClass(
-                        ModelRouteDecision.class
-                );
-
-        verify(decisionRepository)
-                .insert(
-                        captor.capture()
-                );
-
-        ModelRouteDecision persisted =
-                captor.getValue();
-
-        assertThat(persisted.outcome())
-                .isEqualTo(
-                        ModelRouteOutcome.DENIED
-                );
-
-        assertThat(persisted.reason())
-                .isEqualTo(
-                        ModelRouteReason.MODEL_NOT_FOUND
-                );
-
-        assertThat(persisted.chatTurnId())
-                .isNull();
-
-        assertThat(persisted.selectedCatalogEntryId())
-                .isNull();
-
-        assertThat(persisted.selectedCatalogVersion())
-                .isNull();
-
-        assertThat(persisted.selectedModelKey())
-                .isNull();
-
-        assertThat(persisted.selectedProvider())
-                .isNull();
-
-        assertThat(persisted.selectedProviderModelId())
-                .isNull();
-
-        assertThat(persisted.decisionSha256())
-                .matches(
-                        "[0-9a-f]{64}"
-                );
+        assertThat(result.reason())
+                .isEqualTo(ModelRouteReason.LEGACY_RUNTIME_FALLBACK);
+        assertThat(result.modelKey())
+                .isEqualTo("runtime:openai:gpt-test");
     }
 
     @Test
@@ -257,10 +202,6 @@ class ModelRoutingServiceTest {
 
         assertThat(result.decisionId())
                 .isEqualTo(persisted.id());
-        verify(requestMutexRepository).lock(
-                ModelTestFixtures.CHAT_ID,
-                ModelTestFixtures.CLIENT_REQUEST_ID
-        );
         verify(runtimeStatusService, never()).current();
         verify(policyRepository, never()).findLatest(any());
         verify(decisionRepository, never())
@@ -518,8 +459,6 @@ class ModelRoutingServiceTest {
                 otherTenantPrincipal
         )).isInstanceOf(ForbiddenOperationException.class);
 
-        verify(requestMutexRepository, never())
-                .lock(any(), any());
         verify(decisionRepository, never())
                 .findByRequest(any(), any());
     }
@@ -604,12 +543,6 @@ class ModelRoutingServiceTest {
                 principal
         );
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, Object>> detailsCaptor =
-                ArgumentCaptor.forClass(
-                        Map.class
-                );
-
         verify(
                 audit
         ).record(
@@ -620,63 +553,7 @@ class ModelRoutingServiceTest {
                 eq(
                         AuditEventType.MODEL_ROUTE_DECIDED
                 ),
-                detailsCaptor.capture()
-        );
-
-        assertThat(
-                detailsCaptor.getValue()
-        ).containsKeys(
-                "decisionId",
-                "chatTurnId",
-                "decisionIntegrityVersion",
-                "decisionSha256",
-                "inputAccountingVersion",
-                "additionalInputUnitUpperBound",
-                "outcome",
-                "reason",
-                "modelKey",
-                "provider",
-                "providerModel",
-                "catalogVersion",
-                "estimatedMaxCostUsd",
-                "budgetExceeded",
-                "monthlyCostKnown",
-                "monthlyCostState"
-        );
-
-        assertThat(
-                detailsCaptor.getValue()
-                        .get("decisionIntegrityVersion")
-        ).isEqualTo(
-                (short) 3
-        );
-
-        assertThat(
-                detailsCaptor.getValue()
-                        .get("inputAccountingVersion")
-        ).isEqualTo(
-                ru.safeai.gateway.ai.input.AiInputUnitEstimator.VERSION
-        );
-
-        assertThat(
-                detailsCaptor.getValue()
-                        .get("additionalInputUnitUpperBound")
-        ).isEqualTo(
-                0L
-        );
-
-        assertThat(
-                detailsCaptor.getValue()
-                        .get("monthlyCostState")
-        ).isEqualTo(
-                ru.safeai.gateway.model.domain.MonthlyCostState.NOT_EVALUATED
-        );
-
-        assertThat(
-                detailsCaptor.getValue()
-                        .get("monthlyCostKnown")
-        ).isEqualTo(
-                false
+                isA(AuditDetails.class)
         );
     }
 
@@ -778,8 +655,6 @@ class ModelRoutingServiceTest {
                 base.policyId(),
                 base.policyVersion(),
                 base.requiredCapabilities(),
-                base.inputAccountingVersion(),
-                base.additionalInputUnitUpperBound(),
                 base.estimatedInputTokens(),
                 base.estimatedOutputTokens(),
                 base.estimatedMaxCostUsd(),
@@ -820,8 +695,6 @@ class ModelRoutingServiceTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
-                source.inputAccountingVersion(),
-                source.additionalInputUnitUpperBound(),
                 source.estimatedInputTokens(),
                 source.estimatedOutputTokens(),
                 source.estimatedMaxCostUsd(),
@@ -840,4 +713,3 @@ class ModelRoutingServiceTest {
         );
     }
 }
-

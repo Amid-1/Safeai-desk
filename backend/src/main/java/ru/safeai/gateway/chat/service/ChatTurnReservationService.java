@@ -25,13 +25,13 @@ import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 import ru.safeai.gateway.common.exception.ChatBusyException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 import ru.safeai.gateway.model.domain.ModelCapability;
 import ru.safeai.gateway.model.domain.ModelRouteRequest;
 import ru.safeai.gateway.model.domain.ModelRouteResult;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
 import ru.safeai.gateway.model.service.ModelRoutingEnvelopeService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
-import ru.safeai.gateway.ratelimit.RedisRateLimitService;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -61,6 +61,7 @@ public class ChatTurnReservationService {
     private final ChatProperties chatProperties;
     private final ChatMetrics metrics;
     private final Clock clock;
+
 
     public ChatTurnReservationService(
             ChatSessionRepository sessionRepository,
@@ -147,10 +148,18 @@ public class ChatTurnReservationService {
     }
 
     /**
-     * One short reservation transaction. Provider I/O starts only after commit.
+     * One short transaction: idempotency lookup, complete-turn history
+     * validation, model governance, USER/PROCESSING persistence, durable
+     * quota/audit intent and finally the external Redis rate-limit reservation.
+     * Provider I/O starts only after this method commits.
      *
-     * <p>Lock order is kept deterministic:
-     * chat mutex -> model request mutex -> organization budget mutex.</p>
+     * <p>The V45 deferred ALLOWED-decision -> exact ChatTurn trigger is forced
+     * to IMMEDIATE before Redis is called. Therefore a DB-linkage failure
+     * cannot consume a rate-limit slot.</p>
+     *
+     * <p>ChatTurnFailedException, AiOutcomeAmbiguousException and deterministic
+     * ModelRouteDeniedException intentionally do not roll back their durable
+     * state transitions/evidence.</p>
      */
     @Transactional(
             noRollbackFor = {
@@ -164,31 +173,30 @@ public class ChatTurnReservationService {
             SendMessageRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        requireArguments(chatId, request, currentUser);
+        requireArguments(
+                chatId,
+                request,
+                currentUser
+        );
 
         String content =
                 contentNormalizer.normalize(
                         request.content()
                 );
 
-        /*
-         * This client-semantic hash already binds knowledge mode/base.
-         * Do not add server envelope config to it: an idempotent retry must
-         * replay the original immutable route if server config later changes.
-         */
-        String contentHash =
-                contentNormalizer.requestHash(
-                        content,
-                        request.knowledgeBaseId(),
-                        request.knowledgeMode()
-                );
+        String contentHash = contentNormalizer.requestHash(
+                content,
+                request.knowledgeBaseId(),
+                request.knowledgeMode()
+        );
 
         UUID clientRequestId =
                 request.clientRequestId();
 
-        Instant now = clock.instant();
+        Instant now =
+                clock.instant();
 
-        // Existing cross-node chat serialization remains the outer mutex.
+        // Serializes all reservations for one chat across application nodes.
         mutexRepository.lockChat(chatId);
 
         ChatSessionEntity session =
@@ -218,11 +226,15 @@ public class ChatTurnReservationService {
                 );
 
         if (active.isPresent()) {
-            ChatTurnEntity processing = active.get();
+            ChatTurnEntity processing =
+                    active.get();
 
             if (processing.getLeaseUntil() != null
                     && !processing.getLeaseUntil().isAfter(now)) {
-                recoverExpired(processing, now);
+                recoverExpired(
+                        processing,
+                        now
+                );
             } else {
                 throw new ChatBusyException(
                         "В этом чате уже обрабатывается другой запрос"
@@ -230,6 +242,11 @@ public class ChatTurnReservationService {
             }
         }
 
+        /*
+         * Validate and materialize the complete-turn history before any
+         * external side effect. Malformed legacy data therefore cannot consume
+         * a rate-limit slot or create a partial reservation.
+         */
         List<AiMessage> history =
                 historyBuilder.build(
                         historyRepository.findNewestSucceededTurns(
@@ -240,22 +257,23 @@ public class ChatTurnReservationService {
                         )
                 );
 
-        UUID turnId = UUID.randomUUID();
+        UUID turnId =
+                UUID.randomUUID();
 
-        /*
-         * Current data plane is intentionally text-only. Specialized
-         * capabilities remain empty until their full provider representation
-         * and accounting are implemented.
-         */
         Set<ModelCapability> requiredCapabilities =
                 Set.of();
 
-        long additionalInputUnitUpperBound =
-                routingEnvelopeService.additionalInputUnitUpperBound(
-                        request.knowledgeMode().usesKnowledge(),
+        long additionalInputTokenUpperBound =
+                routingEnvelopeService.additionalInputTokenUpperBound(
+                        request.knowledgeMode()
+                                .usesKnowledge(),
                         requiredCapabilities
                 );
 
+        /*
+         * ModelRoutingService owns route-time via its injected server Clock.
+         * Caller cannot activate a future catalog snapshot by supplying now.
+         */
         ModelRouteResult route =
                 modelRoutingService.decide(
                         new ModelRouteRequest(
@@ -269,14 +287,19 @@ public class ChatTurnReservationService {
                                 content,
                                 history,
                                 requiredCapabilities,
-                                additionalInputUnitUpperBound
+                                additionalInputTokenUpperBound
                         ),
                         currentUser
                 );
 
-        UUID userMessageId = UUID.randomUUID();
-        UUID providerOperationId = UUID.randomUUID();
-        UUID processingToken = UUID.randomUUID();
+        UUID userMessageId =
+                UUID.randomUUID();
+
+        UUID providerOperationId =
+                UUID.randomUUID();
+
+        UUID processingToken =
+                UUID.randomUUID();
 
         Instant leaseUntil =
                 now.plus(
@@ -293,7 +316,9 @@ public class ChatTurnReservationService {
 
         userMessage.setId(userMessageId);
 
-        messageRepository.saveAndFlush(userMessage);
+        messageRepository.saveAndFlush(
+                userMessage
+        );
 
         ChatTurnEntity turn =
                 ChatTurnEntity.processing(
@@ -313,7 +338,9 @@ public class ChatTurnReservationService {
                         request.knowledgeMode()
                 );
 
-        turnRepository.saveAndFlush(turn);
+        turnRepository.saveAndFlush(
+                turn
+        );
 
         quotaService.reserve(
                 chatId,
@@ -344,17 +371,20 @@ public class ChatTurnReservationService {
         );
 
         /*
-         * Force V45 exact route<->turn linkage while still DB-only. A linkage
-         * failure cannot consume a Redis slot or touch the AI provider.
+         * Force deferred exact-link validation NOW, while everything is still
+         * DB-only. This closes the commit-time-error -> consumed Redis slot gap.
          */
         modelRoutingService
                 .validateAllowedTurnLinkBeforeExternalSideEffects();
 
         /*
-         * Redis stays the only non-transactional reservation and remains last.
-         * Its rejection rolls back USER/turn/quota/audit DB rows.
+         * Redis remains the only non-transactional reservation and still runs
+         * last. Rejection rolls back USER/turn/quota/audit rows, preserving the
+         * original rate-limit semantics and existing constructor wiring.
          */
-        rateLimitService.checkAiMessageAllowed(currentUser);
+        rateLimitService.checkAiMessageAllowed(
+                currentUser
+        );
 
         metrics.recordReservedAfterCommit();
 
@@ -383,6 +413,7 @@ public class ChatTurnReservationService {
                 processingToken,
                 leaseUntil,
                 route.decisionId(),
+                route.providerModelId(),
                 aiRequest,
                 request.knowledgeBaseId(),
                 request.knowledgeMode(),
@@ -403,7 +434,9 @@ public class ChatTurnReservationService {
             );
         }
 
-        metrics.recordReplay(turn.getState());
+        metrics.recordReplay(
+                turn.getState()
+        );
 
         return switch (turn.getState()) {
             case SUCCEEDED ->
@@ -416,6 +449,7 @@ public class ChatTurnReservationService {
                             null,
                             null,
                             turn.getModelRouteDecisionId(),
+                            turn.getRequestedModel(),
                             null,
                             turn.getKnowledgeBaseId(),
                             turn.getKnowledgeMode(),
@@ -442,7 +476,10 @@ public class ChatTurnReservationService {
             case PROCESSING -> {
                 if (turn.getLeaseUntil() != null
                         && !turn.getLeaseUntil().isAfter(now)) {
-                    recoverExpired(turn, now);
+                    recoverExpired(
+                            turn,
+                            now
+                    );
 
                     if (turn.getProviderCallStartedAt() == null) {
                         throw new ChatTurnFailedException(
@@ -486,7 +523,10 @@ public class ChatTurnReservationService {
             ChatTurnEntity turn,
             Instant now
     ) {
-        recoveryCoordinator.recoverInline(turn, now);
+        recoveryCoordinator.recoverInline(
+                turn,
+                now
+        );
     }
 
     private ChatProcessingContext throwInProgress(
@@ -513,11 +553,10 @@ public class ChatTurnReservationService {
                         currentUser.getId(),
                         currentUser.getOrganizationId()
                 )
-                .orElseThrow(
-                        () ->
-                                new ResourceNotFoundException(
-                                        "Чат не найден: " + chatId
-                                )
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Чат не найден: " + chatId
+                        )
                 );
     }
 
@@ -530,14 +569,17 @@ public class ChatTurnReservationService {
                 chatId,
                 "chatId не должен быть null"
         );
+
         Objects.requireNonNull(
                 request,
                 "request не должен быть null"
         );
+
         Objects.requireNonNull(
                 request.clientRequestId(),
                 "clientRequestId не должен быть null"
         );
+
         Objects.requireNonNull(
                 currentUser,
                 "currentUser не должен быть null"

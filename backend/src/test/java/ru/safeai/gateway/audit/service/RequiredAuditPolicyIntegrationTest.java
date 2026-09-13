@@ -22,7 +22,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 
-@SpringBootTest
+@SpringBootTest(
+        classes = ru.safeai.gateway.SafeaiBackendApplication.class
+)
 @ActiveProfiles("test")
 @Import(
         RequiredAuditPolicyIntegrationTest

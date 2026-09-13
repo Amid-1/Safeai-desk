@@ -27,6 +27,7 @@ import ru.safeai.gateway.knowledge.storage.ObjectStorage;
 import ru.safeai.gateway.knowledge.storage.StoredObject;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.NoSuchFileException;
 import java.util.Map;
 import java.util.Objects;
@@ -476,10 +477,10 @@ public class KnowledgeDocumentService {
             String storageKey,
             KnowledgeDocumentFileValidator.ValidatedUpload upload
     ) {
-        try {
+        try (InputStream content = upload.openStream()) {
             storage.put(
                     storageKey,
-                    upload.openStream()
+                    content
             );
         } catch (IOException exception) {
             /*

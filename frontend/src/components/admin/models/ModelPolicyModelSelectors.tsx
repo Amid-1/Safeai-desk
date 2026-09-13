@@ -77,7 +77,7 @@ function splitDraftModelKeys(
     }
 
     return value
-        .split(/[\s,;]+/)
+        .split(/(?:\\[nr]|[\s,;])+/)
         .map((item) => item.trim())
         .filter(Boolean)
         .map((item) => item.toLowerCase())
@@ -187,7 +187,7 @@ function modelExecutionLabel(
         ) ?? null
 
     if (!latest) {
-        return 'Ключ пока отсутствует в каталоге'
+        return 'нет в каталоге'
     }
 
     return 'Есть в последней версии каталога, но сервер не считает её действующей сейчас'
@@ -659,6 +659,31 @@ export function ModelKeySelector({
 
                             event.preventDefault()
 
+                            const normalizedExactQuery =
+                                validateModelKey(query)
+
+                            if (
+                                normalizedExactQuery.valid
+                                && (
+                                    catalogLookup.has(
+                                        normalizedExactQuery.value,
+                                    )
+                                    || selectedKeys.includes(
+                                        normalizedExactQuery.value,
+                                    )
+                                    || (
+                                        manualCandidate
+                                            === normalizedExactQuery.value
+                                        && filteredCatalog.length === 0
+                                    )
+                                )
+                            ) {
+                                commitKey(
+                                    normalizedExactQuery.value,
+                                )
+                                return
+                            }
+
                             const activeCatalogEntry =
                                 filteredCatalog[activeIndex]
 
@@ -708,6 +733,19 @@ export function ModelKeySelector({
                                     key={entry.modelKey}
                                     type="button"
                                     role="option"
+                                    aria-label={[
+                                        `${entry.displayName} ${entry.modelKey}`,
+                                        `${entry.provider} / ${entry.providerModelId}`,
+                                        modelExecutionLabel(
+                                            entry.modelKey,
+                                            catalog,
+                                            effectiveCatalog,
+                                            runtime,
+                                        ),
+                                        conflict
+                                            ? 'уже в противоположном списке'
+                                            : '',
+                                    ].filter(Boolean).join(' · ')}
                                     aria-selected={activeIndex === index}
                                     disabled={disabled || conflict}
                                     className={[
@@ -1165,6 +1203,14 @@ export function DefaultModelSelector({
                                     key={key}
                                     type="button"
                                     role="option"
+                                    aria-label={entry
+                                        ? `${entry.displayName} ${key} · ${entry.provider} / ${entry.providerModelId} · ${modelExecutionLabel(
+                                            key,
+                                            catalog,
+                                            effectiveCatalog,
+                                            runtime,
+                                        )}`
+                                        : `${key} · Ключ из allowlist; модели пока нет в каталоге`}
                                     aria-selected={selectedKey === key}
                                     className={[
                                         'models-default-selector__option',

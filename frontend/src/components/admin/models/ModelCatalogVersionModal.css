@@ -30,6 +30,9 @@
 }
 
 .models-catalog-form {
+    min-height: 0;
+    height: 100%;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: var(--modal-resize-gap, 10px);
 }
 
@@ -78,6 +81,8 @@
 .models-catalog-form__layout {
     display: grid;
     min-width: 0;
+    min-height: 0;
+    height: 100%;
     grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
     grid-template-areas: "identity limits" "data capabilities" "pricing pricing";
     gap: var(--modal-resize-gap, 10px);
@@ -92,6 +97,22 @@
     border: 1px solid var(--catalog-panel-border);
     border-radius: 13px;
     background: var(--catalog-panel-bg);
+}
+
+.models-catalog-form__panel--identity,
+.models-catalog-form__panel--limits,
+.models-catalog-form__panel--data {
+    grid-template-rows: auto minmax(0, 1fr);
+}
+
+.models-catalog-form__panel--identity .models-form__grid,
+.models-catalog-form__panel--limits .models-form__grid,
+.models-catalog-form__panel--data .models-form__grid {
+    align-content: center;
+}
+
+.models-catalog-form__panel--capabilities {
+    align-content: space-between;
 }
 
 .models-catalog-form__panel--identity {
@@ -146,8 +167,8 @@
 
 .models-catalog-form__section-icon {
     display: grid;
-    width: 30px;
-    height: 30px;
+    width: calc(30px * var(--modal-resize-scale, 1));
+    height: calc(30px * var(--modal-resize-scale, 1));
     flex: 0 0 auto;
     place-items: center;
     border-radius: 9px;
@@ -325,6 +346,44 @@
 
     .models-catalog-form__pricing-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+}
+
+@container model-catalog-modal (min-width: 1400px) {
+    .models-catalog-form__layout {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-areas:
+            "identity limits data capabilities"
+            "pricing pricing pricing pricing";
+        align-items: stretch;
+        grid-template-rows: minmax(0, 1fr) auto;
+    }
+
+    .models-catalog-form__panel--identity,
+    .models-catalog-form__panel--limits,
+    .models-catalog-form__panel--data,
+    .models-catalog-form__panel--capabilities {
+        height: 100%;
+    }
+
+    .models-catalog-form__panel--identity .models-form__grid,
+    .models-catalog-form__panel--data .models-form__grid,
+    .models-catalog-form__panel--limits .models-form__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .models-catalog-form__panel--capabilities .models-form__two-columns {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .models-catalog-form__panel--capabilities .models-form__checks {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@container model-catalog-modal (min-width: 981px) and (max-width: 1399px) {
+    .models-catalog-form__layout {
+        grid-template-rows: repeat(2, minmax(0, 1fr)) auto;
     }
 }
 

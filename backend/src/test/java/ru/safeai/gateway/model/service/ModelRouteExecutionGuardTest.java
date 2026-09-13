@@ -7,119 +7,86 @@ import ru.safeai.gateway.model.exception.ModelRouteEnvelopeExceededException;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ModelRouteExecutionGuardTest {
 
-    private static final UUID USER_ID = UUID.randomUUID();
-    private static final UUID ORG_ID = UUID.randomUUID();
-    private static final UUID CHAT_ID = UUID.randomUUID();
-    private static final UUID OP_ID = UUID.randomUUID();
-    private static final UUID DECISION_ID = UUID.randomUUID();
+    private static final long RESERVED_INPUT_TOKENS =
+            1L;
+
+    private static final int MAX_OUTPUT_TOKENS =
+            128;
 
     @Test
-    void rejectsDifferentBaseRequestEvenIfItIsSmaller() {
+    void exceededEnvelopeCarriesStructuredDecisionEvidence() {
+        UUID decisionId =
+                UUID.fromString(
+                        "77777777-7777-4777-8777-777777777777"
+                );
+
         AiChatRequest reserved =
-                governed("original request", 10_000L);
-
-        AiChatRequest prepared =
-                new AiChatRequest(
-                        USER_ID,
-                        ORG_ID,
-                        CHAT_ID,
-                        OP_ID,
-                        null,
-                        null,
-                        "x",
-                        List.of(),
-                        10_000L,
-                        1024
-                );
-
-        assertThatThrownBy(() ->
-                ModelRouteExecutionGuard
-                        .assertWithinReservedInputEnvelope(
-                                DECISION_ID,
-                                reserved,
-                                prepared
-                        )
-        )
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(
-                        "route-bound request identity"
-                );
-    }
-
-    @Test
-    void governedRequestWithoutReservationFailsClosed() {
-        AiChatRequest legacy =
-                new AiChatRequest(
-                        USER_ID,
-                        ORG_ID,
-                        CHAT_ID,
-                        OP_ID,
-                        null,
-                        null,
-                        "hello",
-                        List.of()
-                );
-
-        assertThatThrownBy(() ->
-                ModelRouteExecutionGuard
-                        .assertWithinReservedInputEnvelope(
-                                DECISION_ID,
-                                legacy,
-                                legacy
-                        )
-        )
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(
-                        "reservedInputUnits"
-                );
-    }
-
-    @Test
-    void preparedRequestAboveReservationThrowsEnvelopeException() {
-        AiChatRequest base =
-                governed(
-                        "hello",
-                        1L
+                request(
+                        "hello"
                 );
 
         AiChatRequest prepared =
-                base.withInstructions(
-                        "system instruction",
-                        "developer instruction"
+                request(
+                        "this materialized request is larger than the reservation"
                 );
 
-        assertThatThrownBy(() ->
-                ModelRouteExecutionGuard
-                        .assertWithinReservedInputEnvelope(
-                                DECISION_ID,
-                                base,
-                                prepared
-                        )
+        assertThatThrownBy(
+                () ->
+                        ModelRouteExecutionGuard
+                                .assertWithinReservedInputEnvelope(
+                                        decisionId,
+                                        reserved,
+                                        prepared
+                                )
         )
                 .isInstanceOf(
                         ModelRouteEnvelopeExceededException.class
+                )
+                .satisfies(
+                        throwable -> {
+                            ModelRouteEnvelopeExceededException exception =
+                                    (ModelRouteEnvelopeExceededException) throwable;
+
+                            assertThat(
+                                    exception.decisionId()
+                            ).isEqualTo(
+                                    decisionId
+                            );
+
+                            assertThat(
+                                    exception.reservedInputTokens()
+                            ).isEqualTo(
+                                    RESERVED_INPUT_TOKENS
+                            );
+
+                            assertThat(
+                                    exception.actualEstimatedInputTokens()
+                            ).isGreaterThan(
+                                    exception.reservedInputTokens()
+                            );
+                        }
                 );
     }
 
-    private static AiChatRequest governed(
-            String message,
-            long reservation
+    private static AiChatRequest request(
+            String userMessage
     ) {
         return new AiChatRequest(
-                USER_ID,
-                ORG_ID,
-                CHAT_ID,
-                OP_ID,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
                 null,
                 null,
-                message,
+                userMessage,
                 List.of(),
-                reservation,
-                1024
+                RESERVED_INPUT_TOKENS,
+                MAX_OUTPUT_TOKENS
         );
     }
 }

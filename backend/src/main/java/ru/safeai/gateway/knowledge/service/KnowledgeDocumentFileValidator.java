@@ -103,12 +103,16 @@ public class KnowledgeDocumentFileValidator {
             return bytes.clone();
         }
 
-        public InputStream openStream() {
-            return new ByteArrayInputStream(bytes);
-        }
-
         public int sizeBytes() {
             return bytes.length;
+        }
+
+        /**
+         * Opens a fresh stream without creating the defensive array copy used
+         * by the public bytes() accessor.
+         */
+        public InputStream openStream() {
+            return new ByteArrayInputStream(bytes);
         }
     }
 }

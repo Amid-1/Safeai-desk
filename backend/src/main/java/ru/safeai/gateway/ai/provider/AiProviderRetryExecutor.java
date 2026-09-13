@@ -1,14 +1,14 @@
 package ru.safeai.gateway.ai.provider;
 
-import lombok.RequiredArgsConstructor;
-
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.execution.AiExecutionAttemptScope;
 
 import java.time.Duration;
 
@@ -26,11 +26,24 @@ import java.util.function.Supplier;
 
 @Component
 
-@RequiredArgsConstructor
-
 public class AiProviderRetryExecutor {
 
     private final AiRetryProperties properties;
+    private final AiExecutionAttemptScope attemptScope;
+
+    @Autowired
+    public AiProviderRetryExecutor(
+            AiRetryProperties properties,
+            AiExecutionAttemptScope attemptScope
+    ) {
+        this.properties = Objects.requireNonNull(properties, "properties не должен быть null");
+        this.attemptScope = Objects.requireNonNull(attemptScope, "attemptScope не должен быть null");
+    }
+
+    /** For isolated adapter tests that do not create an execution scope. */
+    public AiProviderRetryExecutor(AiRetryProperties properties) {
+        this(properties, new AiExecutionAttemptScope());
+    }
 
     public AiChatResponse execute(
             String provider,
@@ -83,8 +96,18 @@ public class AiProviderRetryExecutor {
                     );
 
             try {
-                return action.apply(context);
+                if (attemptScope.active()) {
+                    attemptScope.started(context);
+                }
+                AiChatResponse response = action.apply(context);
+                if (attemptScope.active()) {
+                    attemptScope.succeeded(context, response);
+                }
+                return response;
             } catch (AiProviderException exception) {
+                if (attemptScope.active()) {
+                    attemptScope.failed(context, exception);
+                }
                 if (!shouldRetry(
                         exception,
                         attempt,
@@ -136,6 +159,11 @@ public class AiProviderRetryExecutor {
 
                 sleep(delay, provider, model, exception);
                 backoff = nextBackoff(backoff);
+            } catch (RuntimeException exception) {
+                if (attemptScope.active()) {
+                    attemptScope.ambiguous(context, exception);
+                }
+                throw exception;
             }
         }
 

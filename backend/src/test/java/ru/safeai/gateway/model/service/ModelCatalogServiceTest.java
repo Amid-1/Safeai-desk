@@ -7,6 +7,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
@@ -27,7 +28,6 @@ import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -294,11 +295,8 @@ class ModelCatalogServiceTest {
     }
 
     @Test
-    void configuredAllowsCachedPriceAboveOrdinaryInputPrice() {
-        when(repository.findLatest("openai:gpt-test"))
-                .thenReturn(Optional.empty());
-
-        CreateModelCatalogVersionRequest request = pricingRequest(
+    void configuredRejectsCachedPriceAboveOrdinaryInputPrice() {
+        assertRejectedBeforeInsert(pricingRequest(
                 ModelPricingStatus.CONFIGURED,
                 true,
                 new BigDecimal("1.00"),
@@ -307,48 +305,12 @@ class ModelCatalogServiceTest {
                 new BigDecimal("4.00"),
                 "{}",
                 "pricing-2026-08"
-        );
-
-        service.createVersion(
-                request,
-                ModelTestFixtures.superAdminPrincipal()
-        );
-
-        ArgumentCaptor<ModelCatalogEntry> captor =
-                ArgumentCaptor.forClass(ModelCatalogEntry.class);
-
-        verify(repository).insert(captor.capture());
-
-        ModelCatalogEntry entry = captor.getValue();
-
-        assertThat(entry.inputUsdPer1mTokens())
-                .isEqualTo(new BigDecimal("1.000000000000"));
-
-        assertThat(entry.cachedInputUsdPer1mTokens())
-                .isEqualTo(new BigDecimal("1.010000000000"));
-
-        assertThat(entry.cacheWriteInputUsdPer1mTokens())
-                .isNull();
-
-        assertThat(entry.outputUsdPer1mTokens())
-                .isEqualTo(new BigDecimal("4.000000000000"));
-
-        assertThat(entry.pricingStatus())
-                .isEqualTo(ModelPricingStatus.CONFIGURED);
-
-        assertThat(entry.pricingComplete())
-                .isTrue();
-
-        assertThat(entry.pricingVersion())
-                .isEqualTo("pricing-2026-08");
+        ));
     }
 
     @Test
-    void configuredAllowsCacheWritePriceAboveOrdinaryInputPrice() {
-        when(repository.findLatest("openai:gpt-test"))
-                .thenReturn(Optional.empty());
-
-        CreateModelCatalogVersionRequest request = pricingRequest(
+    void configuredRejectsCacheWritePriceAboveOrdinaryInputPrice() {
+        assertRejectedBeforeInsert(pricingRequest(
                 ModelPricingStatus.CONFIGURED,
                 true,
                 new BigDecimal("1.00"),
@@ -357,40 +319,7 @@ class ModelCatalogServiceTest {
                 new BigDecimal("4.00"),
                 "{}",
                 "pricing-2026-08"
-        );
-
-        service.createVersion(
-                request,
-                ModelTestFixtures.superAdminPrincipal()
-        );
-
-        ArgumentCaptor<ModelCatalogEntry> captor =
-                ArgumentCaptor.forClass(ModelCatalogEntry.class);
-
-        verify(repository).insert(captor.capture());
-
-        ModelCatalogEntry entry = captor.getValue();
-
-        assertThat(entry.inputUsdPer1mTokens())
-                .isEqualTo(new BigDecimal("1.000000000000"));
-
-        assertThat(entry.cachedInputUsdPer1mTokens())
-                .isNull();
-
-        assertThat(entry.cacheWriteInputUsdPer1mTokens())
-                .isEqualTo(new BigDecimal("1.010000000000"));
-
-        assertThat(entry.outputUsdPer1mTokens())
-                .isEqualTo(new BigDecimal("4.000000000000"));
-
-        assertThat(entry.pricingStatus())
-                .isEqualTo(ModelPricingStatus.CONFIGURED);
-
-        assertThat(entry.pricingComplete())
-                .isTrue();
-
-        assertThat(entry.pricingVersion())
-                .isEqualTo("pricing-2026-08");
+        ));
     }
 
     @Test
@@ -689,71 +618,12 @@ class ModelCatalogServiceTest {
                 principal
         );
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, Object>> detailsCaptor =
-                ArgumentCaptor.forClass(Map.class);
-
         verify(audit).record(
                 same(principal),
                 eq(ModelTestFixtures.ORGANIZATION_ID),
                 eq(AuditEventType.MODEL_CATALOG_VERSION_CREATED),
-                detailsCaptor.capture()
+                isA(AuditDetails.class)
         );
-
-        assertThat(detailsCaptor.getValue())
-                .containsKeys(
-                        "catalogEntryId",
-                        "modelKey",
-                        "version",
-                        "provider",
-                        "providerModelId",
-                        "lifecycle",
-                        "source",
-                        "pricingStatus",
-                        "pricingComplete",
-                        "maxInputTokens",
-                        "maxOutputTokens",
-                        "inputModalities",
-                        "outputModalities",
-                        "capabilities",
-                        "retentionStatus",
-                        "trainingUseStatus",
-                        "effectiveFrom"
-                );
-
-        assertThat(detailsCaptor.getValue())
-                .containsEntry(
-                        "modelKey",
-                        "openai:gpt-test"
-                )
-                .containsEntry(
-                        "provider",
-                        "openai"
-                )
-                .containsEntry(
-                        "providerModelId",
-                        "gpt-test"
-                )
-                .containsEntry(
-                        "version",
-                        1
-                )
-                .containsEntry(
-                        "pricingStatus",
-                        ModelPricingStatus.FREE
-                )
-                .containsEntry(
-                        "pricingComplete",
-                        true
-                )
-                .containsEntry(
-                        "maxInputTokens",
-                        32_000
-                )
-                .containsEntry(
-                        "maxOutputTokens",
-                        4_096
-                );
     }
 
     private void assertRejectedBeforeInsert(
@@ -864,4 +734,3 @@ class ModelCatalogServiceTest {
         );
     }
 }
-

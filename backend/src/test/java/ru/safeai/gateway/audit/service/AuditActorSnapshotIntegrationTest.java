@@ -16,7 +16,9 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(
+        classes = ru.safeai.gateway.SafeaiBackendApplication.class
+)
 @ActiveProfiles("test")
 @SuppressWarnings({
         "SqlResolve",

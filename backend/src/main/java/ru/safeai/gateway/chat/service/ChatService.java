@@ -7,7 +7,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.safeai.gateway.ai.provider.AiProvider;
+import ru.safeai.gateway.ai.execution.AiExecutionService;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.config.ChatProperties;
@@ -58,14 +58,14 @@ public class ChatService {
     private final ChatTurnExecutionCoordinator turnExecution;
 
     /**
-     * Constructor signature intentionally remains unchanged for Spring wiring
-     * and existing unit tests.
+     * Chat has no provider dependency. All physical I/O is delegated to the
+     * execution boundary, which records a durable attempt ledger.
      */
     public ChatService(
             ChatSessionRepository sessionRepository,
             ChatMessageRepository messageRepository,
             UserRepository userRepository,
-            AiProvider aiProvider,
+            AiExecutionService aiExecutionService,
             AuditEventService auditEventService,
             ChatTurnReservationService reservationService,
             ChatTurnFinalizationService finalizationService,
@@ -101,7 +101,7 @@ public class ChatService {
         this.properties = Objects.requireNonNull(properties, "properties не должен быть null");
         this.clock = Objects.requireNonNull(clock, "clock не должен быть null");
         this.turnExecution = new ChatTurnExecutionCoordinator(
-                aiProvider,
+                aiExecutionService,
                 reservationService,
                 finalizationService,
                 securityStateService,

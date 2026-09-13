@@ -7,7 +7,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.safeai.gateway.ai.dto.AiMessage;
 import ru.safeai.gateway.ai.dto.AiMessageRole;
-import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelPricingStatus;
@@ -47,7 +46,7 @@ class ModelRoutingCostPolicyTest {
     }
 
     @Test
-    void inputEstimateUsesVersionedUtf8StructuralInputUnits() {
+    void inputEstimateUsesUtf8BytesAndPerMessageOverhead() {
         ModelRouteRequest request =
                 new ModelRouteRequest(
                         ModelTestFixtures.ORGANIZATION_ID,
@@ -69,29 +68,15 @@ class ModelRoutingCostPolicyTest {
                 );
 
         /*
-         * V48 / UTF8_STRUCTURAL_UNITS_V2:
-         *
-         * request structural overhead = 256
-         * two logical messages         = 2 * 64
-         * "é" UTF-8 payload            = 2 bytes
-         * "A" UTF-8 payload            = 1 byte
-         *
-         * total = 256 + 128 + 2 + 1 = 387 input units.
-         *
-         * This deliberately does not claim provider-token equivalence.
+         * "é" = 2 UTF-8 bytes, "A" = 1 byte,
+         * two messages * 8 tokens conservative overhead.
          */
-        assertThat(
-                AiInputUnitEstimator.VERSION
-        ).isEqualTo(
-                "UTF8_STRUCTURAL_UNITS_V2"
-        );
-
         assertThat(
                 policy.estimateInputTokens(
                         request
                 )
         ).isEqualTo(
-                387L
+                19L
         );
     }
 

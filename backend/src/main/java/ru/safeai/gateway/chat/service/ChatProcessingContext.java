@@ -23,6 +23,7 @@ public record ChatProcessingContext(
         UUID processingToken,
         Instant leaseUntil,
         UUID modelRouteDecisionId,
+        String requestedPhysicalModel,
         AiChatRequest aiRequest,
         UUID knowledgeBaseId,
         KnowledgeMode knowledgeMode,
@@ -114,8 +115,9 @@ public record ChatProcessingContext(
             UUID providerOperationId,
             UUID processingToken,
             Instant leaseUntil,
-            UUID modelRouteDecisionId,
-            AiChatRequest aiRequest,
+        UUID modelRouteDecisionId,
+        String requestedPhysicalModel,
+        AiChatRequest aiRequest,
             boolean replay
     ) {
         this(
@@ -127,6 +129,7 @@ public record ChatProcessingContext(
                 processingToken,
                 leaseUntil,
                 modelRouteDecisionId,
+                requestedPhysicalModel,
                 aiRequest,
                 null,
                 KnowledgeMode.GENERAL,
@@ -166,6 +169,7 @@ public record ChatProcessingContext(
                 processingToken,
                 leaseUntil,
                 null,
+                null,
                 aiRequest,
                 knowledgeBaseId,
                 knowledgeMode,
@@ -191,6 +195,7 @@ public record ChatProcessingContext(
                 processingToken,
                 leaseUntil,
                 modelRouteDecisionId,
+                requestedPhysicalModel,
                 request,
                 knowledgeBaseId,
                 knowledgeMode,

@@ -25,7 +25,6 @@ public record LoginRequest(
         @BcryptUtf8Length
         String password
 ) {
-
     @Override
     @SuppressWarnings("NullableProblems")
     public String toString() {

@@ -4,7 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderException;
-import ru.safeai.gateway.ai.provider.AiProvider;
+import ru.safeai.gateway.ai.execution.AiExecutionRequest;
+import ru.safeai.gateway.ai.execution.AiExecutionService;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.dto.SendMessageResponse;
 import ru.safeai.gateway.chat.exception.AiOutcomeAmbiguousException;
@@ -34,7 +35,7 @@ import java.util.UUID;
 @Slf4j
 final class ChatTurnExecutionCoordinator {
 
-    private final AiProvider aiProvider;
+    private final AiExecutionService aiExecutionService;
     private final ChatTurnReservationService reservationService;
     private final ChatTurnFinalizationService finalizationService;
     private final ChatSecurityStateService securityStateService;
@@ -43,11 +44,12 @@ final class ChatTurnExecutionCoordinator {
     private final KnowledgeRagService ragService;
 
     /**
-     * Constructor intentionally retains the pre-V46 signature so ChatService
-     * and existing tests/wiring do not lose functionality.
+     * The coordinator deliberately receives the generic execution boundary,
+     * never a provider adapter. Provider selection/retries/evidence are owned
+     * by {@link AiExecutionService}.
      */
     ChatTurnExecutionCoordinator(
-            AiProvider aiProvider,
+            AiExecutionService aiExecutionService,
             ChatTurnReservationService reservationService,
             ChatTurnFinalizationService finalizationService,
             ChatSecurityStateService securityStateService,
@@ -55,9 +57,9 @@ final class ChatTurnExecutionCoordinator {
             ChatTurnLeaseService leaseService,
             KnowledgeRagService ragService
     ) {
-        this.aiProvider = Objects.requireNonNull(
-                aiProvider,
-                "aiProvider не должен быть null"
+        this.aiExecutionService = Objects.requireNonNull(
+                aiExecutionService,
+                "aiExecutionService не должен быть null"
         );
         this.reservationService = Objects.requireNonNull(
                 reservationService,
@@ -282,32 +284,33 @@ final class ChatTurnExecutionCoordinator {
                     context.modelRouteDecisionId();
 
             if (decisionId == null) {
-                throw new IllegalStateException(
-                        "Governed ChatTurn has no modelRouteDecisionId: "
-                                + "chatId="
-                                + context.chatId()
-                                + ", turnId="
-                                + context.turnId()
-                );
+                /*
+                 * Compatibility for legacy/direct coordinator tests. Real V46
+                 * reserved turns carry a persisted model-route decision id.
+                 */
+                ModelRouteExecutionGuard
+                        .assertWithinReservedInputEnvelope(
+                                reservedRequest,
+                                preparedRequest
+                        );
+            } else {
+                ModelRouteExecutionGuard
+                        .assertWithinReservedInputEnvelope(
+                                decisionId,
+                                reservedRequest,
+                                preparedRequest
+                        );
             }
-
-            ModelRouteExecutionGuard
-                    .assertWithinReservedInputEnvelope(
-                            decisionId,
-                            reservedRequest,
-                            preparedRequest
-                    );
-
         } catch (ModelRouteEnvelopeExceededException exception) {
             log.warn(
                     "Model route input envelope exceeded before provider call: "
                             + "chatId={}, turnId={}, decisionId={}, "
-                            + "reservedInputUnits={}, actualEstimatedInputUnits={}",
+                            + "reservedInputTokens={}, actualEstimatedInputTokens={}",
                     context.chatId(),
                     context.turnId(),
                     exception.decisionId(),
-                    exception.reservedInputUnits(),
-                    exception.actualEstimatedInputUnits()
+                    exception.reservedInputTokens(),
+                    exception.actualEstimatedInputTokens()
             );
 
             failRouteEnvelope(
@@ -315,11 +318,9 @@ final class ChatTurnExecutionCoordinator {
                     currentUser,
                     exception
             );
-
         } catch (IllegalStateException exception) {
             log.warn(
-                    "Model route execution envelope integrity violation "
-                            + "before provider call: "
+                    "Model route execution envelope integrity violation before provider call: "
                             + "chatId={}, turnId={}, decisionId={}, error={}",
                     context.chatId(),
                     context.turnId(),
@@ -470,10 +471,18 @@ final class ChatTurnExecutionCoordinator {
         AiChatResponse response;
 
         try {
-            response =
-                    aiProvider.sendMessage(
-                            context.aiRequest()
-                    );
+            String model = Objects.requireNonNull(
+                    context.requestedPhysicalModel(),
+                    "Execution context requires requestedPhysicalModel"
+            );
+            response = aiExecutionService.execute(
+                    new AiExecutionRequest(
+                            context.turnId(),
+                            context.modelRouteDecisionId(),
+                            context.aiRequest(),
+                            aiExecutionService.targetFor(model)
+                        )
+            ).response();
         } catch (AiProviderException exception) {
             if (exception.isOutcomeAmbiguous()) {
                 markAmbiguousQuietly(

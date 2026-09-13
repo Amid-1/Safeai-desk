@@ -20,6 +20,10 @@ public record AiChatResponse(
         AiResponseStatus responseStatus,
         String finishReason,
         Integer inputTokens,
+        Integer cachedInputTokens,
+        Integer cacheWriteInputTokens,
+        boolean specializedBillingDimensionsPresent,
+        boolean specializedBillingDimensionsValid,
         Integer outputTokens,
         UsageStatus usageStatus,
         BigDecimal costUsd,
@@ -80,6 +84,30 @@ public record AiChatResponse(
         );
 
         validateToken(
+                cachedInputTokens,
+                "cachedInputTokens"
+        );
+
+        validateToken(
+                cacheWriteInputTokens,
+                "cacheWriteInputTokens"
+        );
+
+        if (!specializedBillingDimensionsPresent
+                && (cachedInputTokens != null || cacheWriteInputTokens != null)) {
+            throw new IllegalArgumentException(
+                    "Absent specialized dimensions cannot contain counters"
+            );
+        }
+
+        if (!specializedBillingDimensionsPresent
+                && !specializedBillingDimensionsValid) {
+            throw new IllegalArgumentException(
+                    "Absent specialized dimensions must be valid"
+            );
+        }
+
+        validateToken(
                 outputTokens,
                 "outputTokens"
         );
@@ -125,6 +153,37 @@ public record AiChatResponse(
     }
 
     /**
+     * Compatibility projection for the public flat response contract that
+     * existed before cache-token evidence was exposed. New provider adapters
+     * must use {@link #fromProvider(String, String, String, String, String,
+     * AiResponseStatus, String, AiTokenUsage, PricingResult)}.
+     */
+    public AiChatResponse(
+            String content,
+            String requestedModel,
+            String model,
+            String providerMessageId,
+            String providerRequestId,
+            AiResponseStatus responseStatus,
+            String finishReason,
+            Integer inputTokens,
+            Integer outputTokens,
+            UsageStatus usageStatus,
+            BigDecimal costUsd,
+            PricingStatus pricingStatus,
+            String currency,
+            String priceVersion,
+            Instant pricingCalculatedAt
+    ) {
+        this(
+                content, requestedModel, model, providerMessageId,
+                providerRequestId, responseStatus, finishReason, inputTokens,
+                null, null, false, true, outputTokens, usageStatus, costUsd, pricingStatus,
+                currency, priceVersion, pricingCalculatedAt
+        );
+    }
+
+    /**
      * Каноническая фабрика для успешного ответа AI-провайдера.
      *
      * @param requestedModel    модель, которую запросило приложение
@@ -158,6 +217,10 @@ public record AiChatResponse(
                 responseStatus,
                 finishReason,
                 inputTokens,
+                null,
+                null,
+                false,
+                true,
                 outputTokens,
                 determineUsageStatus(
                         inputTokens,
@@ -168,6 +231,36 @@ public record AiChatResponse(
                 pricing.currency(),
                 pricing.priceVersion(),
                 pricing.calculatedAt()
+        );
+    }
+
+    /**
+     * Complete response factory. The two specialized counters remain visible
+     * to compatibility consumers, while the execution ledger persists the
+     * same evidence as the canonical financial record.
+     */
+    public static AiChatResponse fromProvider(
+            String content,
+            String requestedModel,
+            String resolvedModel,
+            String providerMessageId,
+            String providerRequestId,
+            AiResponseStatus responseStatus,
+            String finishReason,
+            AiTokenUsage usage,
+            PricingResult pricing
+    ) {
+        Objects.requireNonNull(usage, "usage не должен быть null");
+        Objects.requireNonNull(pricing, "pricing не должен быть null");
+        return new AiChatResponse(
+                content, requestedModel, resolvedModel, providerMessageId,
+                providerRequestId, responseStatus, finishReason,
+                usage.inputTokens(), usage.cachedInputTokens(),
+                usage.cacheWriteInputTokens(),
+                usage.specializedBillingDimensionsPresent(),
+                usage.specializedBillingDimensionsValid(), usage.outputTokens(),
+                usage.usageStatus(), pricing.costUsd(), pricing.status(),
+                pricing.currency(), pricing.priceVersion(), pricing.calculatedAt()
         );
     }
 

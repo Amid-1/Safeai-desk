@@ -22,6 +22,7 @@ import ru.safeai.gateway.ai.provider.AiContextWindowService;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
+import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 import ru.safeai.gateway.ai.provider.AiProviderSupport;
 import ru.safeai.gateway.ai.provider.AiRestClientFactory;
 import ru.safeai.gateway.ai.provider.AiResponseMetadataService;
@@ -312,6 +313,10 @@ public class OpenAiProvider implements AiProvider {
         AiResponseMetadataService.AiResponseMetadata metadata =
                 responseMetadataService.extract(
                         response,
+                        ProviderExecutionTarget.staticTarget(
+                                PROVIDER_NAME,
+                                properties.model()
+                        ),
                         parsed.actualModel()
                 );
 
@@ -351,8 +356,7 @@ public class OpenAiProvider implements AiProvider {
                 providerRequestId,
                 parsed.status(),
                 parsed.finishReason(),
-                metadata.inputTokens(),
-                metadata.outputTokens(),
+                metadata.usageEvidence(),
                 metadata.pricing()
         );
     }

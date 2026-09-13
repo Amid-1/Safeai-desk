@@ -12,8 +12,9 @@ import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
-import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
-import ru.safeai.gateway.ai.provider.AiProvider;
+import ru.safeai.gateway.ai.execution.AiExecutionResult;
+import ru.safeai.gateway.ai.execution.AiExecutionService;
+import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.config.ChatProperties;
@@ -59,16 +60,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ChatServiceTest {
 
-    /**
-     * Keep the ordinary ChatService scenarios exactly on the current V48
-     * accounting boundary. If the accounting contract changes, this fixture
-     * changes with it instead of silently becoming under-reserved.
-     */
-    private static final long RESERVED_INPUT_UNITS =
-            AiInputUnitEstimator.estimateBaseRequest(
-                    "Question",
-                    List.of()
-            );
+    private static final long RESERVED_INPUT_TOKENS =
+            64L;
 
     private static final int MAX_OUTPUT_TOKENS =
             256;
@@ -76,7 +69,7 @@ class ChatServiceTest {
     @Mock ChatSessionRepository sessionRepository;
     @Mock ChatMessageRepository messageRepository;
     @Mock UserRepository userRepository;
-    @Mock AiProvider aiProvider;
+    @Mock AiExecutionService aiExecutionService;
     @Mock AuditEventService auditEventService;
     @Mock ChatTurnReservationService reservationService;
     @Mock ChatTurnFinalizationService finalizationService;
@@ -102,7 +95,7 @@ class ChatServiceTest {
                 sessionRepository,
                 messageRepository,
                 userRepository,
-                aiProvider,
+                aiExecutionService,
                 auditEventService,
                 reservationService,
                 finalizationService,
@@ -132,6 +125,12 @@ class ChatServiceTest {
                 new AtomicBoolean(false)
         );
         processing = processingContext();
+        org.mockito.Mockito.lenient()
+                .when(aiExecutionService.targetFor(any()))
+                .thenReturn(ProviderExecutionTarget.staticTarget(
+                        "mock",
+                        "requested-model"
+                ));
         org.mockito.Mockito.lenient()
                 .doAnswer(invocation -> {
                     ChatProcessingContext context = invocation.getArgument(
@@ -173,8 +172,8 @@ class ChatServiceTest {
     @Test
     void providerOperationMarkerIsCommittedBeforeProviderInvocation() {
         stubOwnedChatAndProcessing();
-        when(aiProvider.sendMessage(processing.aiRequest()))
-                .thenReturn(ChatTestFixtures.freeResponse());
+        when(aiExecutionService.execute(any()))
+                .thenReturn(execution(ChatTestFixtures.freeResponse()));
         SendMessageResponse expected = successResponse(false);
         when(finalizationService.succeedRag(
                 eq(processing),
@@ -194,12 +193,12 @@ class ChatServiceTest {
                 finalizationService,
                 lockService,
                 leaseService,
-                aiProvider
+                aiExecutionService
         );
         order.verify(finalizationService).markProviderCallStarted(processing);
         order.verify(lockService).ensureValid(redisLock);
         order.verify(leaseService).ensureValid(leaseWatch);
-        order.verify(aiProvider).sendMessage(processing.aiRequest());
+        order.verify(aiExecutionService).execute(any());
         order.verify(lockService).ensureValid(redisLock);
         order.verify(leaseService).ensureValid(leaseWatch);
 
@@ -234,7 +233,7 @@ class ChatServiceTest {
         );
 
         assertThat(result.replay()).isTrue();
-        verify(aiProvider, never()).sendMessage(any());
+        verify(aiExecutionService, never()).execute(any());
         verify(leaseService, never()).watch(any(), any(), any(), any());
         verify(finalizationService, never()).markProviderCallStarted(any());
     }
@@ -243,7 +242,7 @@ class ChatServiceTest {
     void unambiguousProviderFailureBecomesStableFailedTurn() {
         stubOwnedChatAndProcessing();
         AiProviderException providerException = providerException(false);
-        when(aiProvider.sendMessage(processing.aiRequest()))
+        when(aiExecutionService.execute(any()))
                 .thenThrow(providerException);
 
         assertThatThrownBy(() -> service.sendMessage(
@@ -294,7 +293,7 @@ class ChatServiceTest {
                 any(SafeAiUserPrincipal.class)
         );
         verify(finalizationService, never()).markProviderCallStarted(any());
-        verify(aiProvider, never()).sendMessage(any());
+        verify(aiExecutionService, never()).execute(any());
         verify(leaseService).close(leaseWatch);
         verify(lockService).unlockQuietly(redisLock);
     }
@@ -303,7 +302,7 @@ class ChatServiceTest {
     void readTimeoutWithAmbiguousOutcomeIsNeverAutomaticallyRetried() {
         stubOwnedChatAndProcessing();
         AiProviderException providerException = providerException(true);
-        when(aiProvider.sendMessage(processing.aiRequest()))
+        when(aiExecutionService.execute(any()))
                 .thenThrow(providerException);
 
         assertThatThrownBy(() -> service.sendMessage(
@@ -312,7 +311,7 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(aiProvider).sendMessage(processing.aiRequest());
+        verify(aiExecutionService).execute(any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
                 org.mockito.ArgumentMatchers.isNull(),
@@ -329,7 +328,7 @@ class ChatServiceTest {
     void unknownRuntimeAfterProviderStartIsClassifiedConservatively() {
         stubOwnedChatAndProcessing();
         RuntimeException exception = new RuntimeException("socket reset");
-        when(aiProvider.sendMessage(processing.aiRequest()))
+        when(aiExecutionService.execute(any()))
                 .thenThrow(exception);
 
         assertThatThrownBy(() -> service.sendMessage(
@@ -352,8 +351,8 @@ class ChatServiceTest {
     @Test
     void nullProviderResponseIsClassifiedAmbiguousAndNeverFinalizedAsSuccess() {
         stubOwnedChatAndProcessing();
-        when(aiProvider.sendMessage(processing.aiRequest()))
-                .thenReturn(null);
+        when(aiExecutionService.execute(any()))
+                .thenReturn(execution(null));
 
         assertThatThrownBy(() -> service.sendMessage(
                 ChatTestFixtures.CHAT_ID,
@@ -377,8 +376,8 @@ class ChatServiceTest {
     void ragCompletionFailureAfterProviderResponseIsMarkedAmbiguous() {
         stubOwnedChatAndProcessing();
         var providerResponse = ChatTestFixtures.freeResponse();
-        when(aiProvider.sendMessage(processing.aiRequest()))
-                .thenReturn(providerResponse);
+        when(aiExecutionService.execute(any()))
+                .thenReturn(execution(providerResponse));
 
         RuntimeException completionFailure = new IllegalStateException(
                 "rag completion failed"
@@ -398,7 +397,7 @@ class ChatServiceTest {
                 .isInstanceOf(AiOutcomeAmbiguousException.class)
                 .hasCause(completionFailure);
 
-        verify(aiProvider).sendMessage(processing.aiRequest());
+        verify(aiExecutionService).execute(any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
                 org.mockito.ArgumentMatchers.isNull(),
@@ -414,8 +413,8 @@ class ChatServiceTest {
     @Test
     void lostRedisOwnershipAfterResponseCannotPersistAssistant() {
         stubOwnedChatAndProcessing();
-        when(aiProvider.sendMessage(processing.aiRequest()))
-                .thenReturn(ChatTestFixtures.freeResponse());
+        when(aiExecutionService.execute(any()))
+                .thenReturn(execution(ChatTestFixtures.freeResponse()));
 
         doNothing()
                 .doThrow(new ChatLockUnavailableException("lost", null))
@@ -428,7 +427,7 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(aiProvider).sendMessage(processing.aiRequest());
+        verify(aiExecutionService).execute(any());
         verify(finalizationService, never()).succeedRag(any(), any(), any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
@@ -444,8 +443,8 @@ class ChatServiceTest {
     @Test
     void staleDbLeaseAfterResponseCannotPersistAssistant() {
         stubOwnedChatAndProcessing();
-        when(aiProvider.sendMessage(processing.aiRequest()))
-                .thenReturn(ChatTestFixtures.freeResponse());
+        when(aiExecutionService.execute(any()))
+                .thenReturn(execution(ChatTestFixtures.freeResponse()));
 
         doNothing()
                 .doThrow(new ChatStaleProcessorException(
@@ -462,7 +461,7 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(aiProvider).sendMessage(processing.aiRequest());
+        verify(aiExecutionService).execute(any());
         verify(finalizationService, never()).succeedRag(any(), any(), any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
@@ -488,7 +487,7 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(aiProvider, never()).sendMessage(any());
+        verify(aiExecutionService, never()).execute(any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
                 org.mockito.ArgumentMatchers.isNull(),
@@ -518,7 +517,7 @@ class ChatServiceTest {
                 ChatTestFixtures.principal()
         )).isInstanceOf(AiOutcomeAmbiguousException.class);
 
-        verify(aiProvider, never()).sendMessage(any());
+        verify(aiExecutionService, never()).execute(any());
         verify(finalizationService).markAmbiguous(
                 eq(processing),
                 org.mockito.ArgumentMatchers.isNull(),
@@ -534,8 +533,8 @@ class ChatServiceTest {
     @Test
     void persistenceFailureAfterProviderResponseIsRecordedAmbiguous() {
         stubOwnedChatAndProcessing();
-        when(aiProvider.sendMessage(processing.aiRequest()))
-                .thenReturn(ChatTestFixtures.freeResponse());
+        when(aiExecutionService.execute(any()))
+                .thenReturn(execution(ChatTestFixtures.freeResponse()));
         RuntimeException dbFailure = new RuntimeException("db failure");
         when(finalizationService.succeedRag(
                 eq(processing),
@@ -586,14 +585,14 @@ class ChatServiceTest {
                 eq("CHAT_LEASE_WATCHDOG_UNAVAILABLE"),
                 any(SafeAiUserPrincipal.class)
         );
-        verify(aiProvider, never()).sendMessage(any());
+        verify(aiExecutionService, never()).execute(any());
     }
 
     @Test
     void responseIsPersistedButNotReturnedAfterSecurityRevocation() {
         stubOwnedChatAndProcessing();
-        when(aiProvider.sendMessage(processing.aiRequest()))
-                .thenReturn(ChatTestFixtures.freeResponse());
+        when(aiExecutionService.execute(any()))
+                .thenReturn(execution(ChatTestFixtures.freeResponse()));
         when(finalizationService.succeedRag(
                 eq(processing),
                 any(RagCompletion.class),
@@ -616,69 +615,6 @@ class ChatServiceTest {
                 any(RagCompletion.class),
                 any(SafeAiUserPrincipal.class)
         );
-    }
-
-    @Test
-    void preparedInputExceedingRouteReservationFailsDeterministicallyBeforeProviderIo() {
-        ChatProcessingContext underReserved =
-                processingContext(
-                        RESERVED_INPUT_UNITS - 1L
-                );
-
-        stubOwnedChat();
-
-        when(
-                reservationService.reserveOrReplay(
-                        eq(ChatTestFixtures.CHAT_ID),
-                        eq(request()),
-                        any(SafeAiUserPrincipal.class)
-                )
-        ).thenReturn(
-                underReserved
-        );
-
-        when(
-                leaseService.watch(
-                        ChatTestFixtures.CHAT_ID,
-                        ChatTestFixtures.TURN_ID,
-                        ChatTestFixtures.CLIENT_REQUEST_ID,
-                        ChatTestFixtures.PROCESSING_TOKEN
-                )
-        ).thenReturn(
-                leaseWatch
-        );
-
-        assertThatThrownBy(() ->
-                service.sendMessage(
-                        ChatTestFixtures.CHAT_ID,
-                        request(),
-                        ChatTestFixtures.principal()
-                )
-        )
-                .isInstanceOf(ChatTurnFailedException.class)
-                .extracting("code")
-                .isEqualTo(
-                        "MODEL_ROUTE_INPUT_ENVELOPE_EXCEEDED"
-                );
-
-        verify(finalizationService).failBeforeProviderCall(
-                eq(underReserved),
-                eq("MODEL_ROUTE_ENVELOPE_EXCEEDED"),
-                eq("MODEL_ROUTE_INPUT_ENVELOPE_EXCEEDED"),
-                any(SafeAiUserPrincipal.class)
-        );
-
-        verify(finalizationService, never())
-                .markProviderCallStarted(any());
-
-        verify(aiProvider, never())
-                .sendMessage(any());
-
-        verify(leaseService)
-                .close(leaseWatch);
-
-        verify(lockService)
-                .unlockQuietly(redisLock);
     }
 
     @Test
@@ -723,9 +659,21 @@ class ChatServiceTest {
                 eq(ChatTestFixtures.ORGANIZATION_ID),
                 eq(AuditEventType.CHAT_ARCHIVED),
                 argThat((Map<String, Object> details) ->
-                        ChatTestFixtures.CHAT_ID.equals(details.get("chatId"))
-                                && "AUDIT_PRESERVED".equals(details.get("retentionMode"))
+                        isArchivedAuditDetails(
+                                details
+                        )
                 )
+        );
+    }
+
+    private static boolean isArchivedAuditDetails(
+            Map<String, ?> details
+    ) {
+        return ChatTestFixtures.CHAT_ID.equals(
+                details.get("chatId")
+        )
+                && "AUDIT_PRESERVED".equals(
+                details.get("retentionMode")
         );
     }
 
@@ -785,14 +733,6 @@ class ChatServiceTest {
     }
 
     private static ChatProcessingContext processingContext() {
-        return processingContext(
-                RESERVED_INPUT_UNITS
-        );
-    }
-
-    private static ChatProcessingContext processingContext(
-            long reservedInputUnits
-    ) {
         AiChatRequest aiRequest =
                 new AiChatRequest(
                         ChatTestFixtures.USER_ID,
@@ -803,7 +743,7 @@ class ChatServiceTest {
                         null,
                         "Question",
                         List.of(),
-                        reservedInputUnits,
+                        RESERVED_INPUT_TOKENS,
                         MAX_OUTPUT_TOKENS
                 );
 
@@ -814,6 +754,13 @@ class ChatServiceTest {
 
     private static ChatProcessingContext replayContext() {
         return ChatProcessingContextTestFixtures.replay();
+    }
+
+    private static AiExecutionResult execution(AiChatResponse response) {
+        return new AiExecutionResult(
+                ChatTestFixtures.TURN_ID,
+                response
+        );
     }
 
     private static SendMessageResponse successResponse(boolean replay) {

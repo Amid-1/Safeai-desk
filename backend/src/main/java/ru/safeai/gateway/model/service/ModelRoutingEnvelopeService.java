@@ -23,33 +23,34 @@ public class ModelRoutingEnvelopeService {
         );
     }
 
-    public long additionalInputUnitUpperBound(
+    public long additionalInputTokenUpperBound(
             boolean usesKnowledge,
             Set<ModelCapability> requiredCapabilities
     ) {
         Set<ModelCapability> capabilities =
                 requiredCapabilities == null
                         ? Set.of()
-                        : Set.copyOf(requiredCapabilities);
+                        : requiredCapabilities;
 
         long result =
-                properties.systemAndDeveloperInputUnits();
+                properties.systemAndDeveloperTokens();
 
         if (usesKnowledge) {
             result = Math.addExact(
                     result,
-                    properties.ragContextInputUnits()
+                    properties.ragContextTokens()
             );
         }
 
-        if (capabilities.contains(ModelCapability.TOOLS)) {
+        if (capabilities.contains(
+                ModelCapability.TOOLS
+        )) {
             result = Math.addExact(
                     result,
-                    properties.toolSchemaInputUnits()
+                    properties.toolSchemaTokens()
             );
         }
 
         return result;
     }
-
 }

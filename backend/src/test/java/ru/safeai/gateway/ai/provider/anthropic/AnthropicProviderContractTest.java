@@ -19,6 +19,7 @@ import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
 import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
 import ru.safeai.gateway.ai.pricing.ModelPricingService;
+import ru.safeai.gateway.ai.pricing.StaticConfigurationPricingResolver;
 import ru.safeai.gateway.ai.provider.*;
 import ru.safeai.gateway.ai.testsupport.ProviderContractTestServer;
 import tools.jackson.databind.JsonNode;
@@ -279,7 +280,9 @@ class AnthropicProviderContractTest {
 
         return new AnthropicProvider(
                 properties,
-                new AiResponseMetadataService(pricingService),
+                new AiResponseMetadataService(
+                        new StaticConfigurationPricingResolver(pricingService)
+                ),
                 new AiProviderRetryExecutor(retryProperties),
                 new AiContextWindowService(
                         AiContextWindowProperties.defaults()

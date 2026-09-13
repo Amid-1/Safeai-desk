@@ -19,17 +19,17 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.CreateKnowledgeBaseMemberRequest;
 import ru.safeai.gateway.knowledge.dto.CreateKnowledgeBaseRequest;
-import ru.safeai.gateway.knowledge.dto.KnowledgeBaseAccessResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseMemberPageResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseMemberResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBasePageResponse;
+import ru.safeai.gateway.knowledge.dto.KnowledgeBaseAccessResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeMemberCandidateResponse;
 import ru.safeai.gateway.knowledge.dto.UpdateKnowledgeBaseMemberRequest;
 import ru.safeai.gateway.knowledge.dto.UpdateKnowledgeBaseRequest;
-import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
-import ru.safeai.gateway.knowledge.service.KnowledgeAccessService;
 import ru.safeai.gateway.knowledge.service.KnowledgeBaseService;
+import ru.safeai.gateway.knowledge.service.KnowledgeAccessService;
+import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
 
 import java.util.List;
 import java.util.UUID;
@@ -76,20 +76,16 @@ public class KnowledgeBaseController {
     }
 
     @GetMapping("/{knowledgeBaseId}/access")
-    public KnowledgeBaseAccessResponse access(
+    public KnowledgeBaseAccessResponse effectiveAccess(
             @PathVariable UUID knowledgeBaseId,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
-        KnowledgeAccessService.Access access =
+        return KnowledgeBaseAccessResponse.from(
                 knowledgeAccessService.requireAccess(
                         knowledgeBaseId,
                         currentUser,
                         KnowledgeBaseAccessLevel.VIEWER
-                );
-
-        return KnowledgeBaseAccessResponse.from(
-                knowledgeBaseId,
-                access
+                )
         );
     }
 

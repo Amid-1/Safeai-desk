@@ -23,7 +23,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 
-@SpringBootTest
+@SpringBootTest(
+        classes = ru.safeai.gateway.SafeaiBackendApplication.class
+)
 @ActiveProfiles("test")
 @Import(
         BestEffortAuditPolicyIntegrationTest

@@ -53,18 +53,16 @@ import './ModelPolicyModal.css'
 
 const POLICY_MODAL_RESIZE:
     ModalResizeOptions = {
-        initialWidth: 1140,
-        initialHeight: 760,
+        initialWidth: 1480,
+        initialHeight: 900,
 
-        minWidth: 640,
-        minHeight: 460,
-
-        maxWidth: 1480,
-        maxHeight: 980,
+        minWidth: 620,
+        minHeight: 440,
 
         scaleContent: true,
-        minScale: 0.78,
-        maxScale: 1.20,
+        minScale: 0.72,
+        maxScale: 1.08,
+        maximizable: true,
     }
 
 type ModelPolicyModalProps = {
@@ -190,12 +188,12 @@ export function ModelPolicyModal({
                 ),
         )
 
-    const initialDraftFingerprint =
-        useRef(
+    const [initialDraftFingerprint] =
+        useState(() =>
             JSON.stringify(
                 createPolicyDraft(policy),
             ),
-        ).current
+        )
 
     const [
         formError,
@@ -637,11 +635,12 @@ export function ModelPolicyModal({
                         />
                     )}
 
-                <div
-                    className={
-                        'models-policy-form__scope'
-                    }
-                >
+                <div className="models-policy-form__overview-grid">
+                    <div
+                        className={
+                            'models-policy-form__scope'
+                        }
+                    >
                     <div
                         className={
                             'models-policy-form__scope-copy'
@@ -731,16 +730,16 @@ export function ModelPolicyModal({
                             Требования к данным
                         </button>
                     </nav>
-                </div>
+                    </div>
 
-                <div
-                    className={
-                        'models-policy-form__toggle '
-                        + (draft.enabled
-                            ? 'models-policy-form__toggle--enabled'
-                            : 'models-policy-form__toggle--disabled')
-                    }
-                >
+                    <div
+                        className={
+                            'models-policy-form__toggle '
+                            + (draft.enabled
+                                ? 'models-policy-form__toggle--enabled'
+                                : 'models-policy-form__toggle--disabled')
+                        }
+                    >
                     <label
                         className={
                             'models-policy-form__switch-card'
@@ -819,6 +818,7 @@ export function ModelPolicyModal({
                                 + 'организации отключены.'
                             )}
                     </p>
+                    </div>
                 </div>
 
                 {activationWarning

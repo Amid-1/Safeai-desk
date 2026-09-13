@@ -14,26 +14,20 @@ import ru.safeai.gateway.model.dto.CreateModelCatalogVersionRequest;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 import ru.safeai.gateway.model.dto.ModelCatalogEntryResponse;
 import ru.safeai.gateway.model.dto.ModelRouteDecisionResponse;
-import ru.safeai.gateway.model.dto.ModelPolicyPreviewResponse;
-import ru.safeai.gateway.model.domain.RuntimeModelProbeResult;
-import ru.safeai.gateway.model.domain.RuntimeModelProbeStatus;
 import ru.safeai.gateway.model.dto.OrganizationModelPolicyResponse;
-import ru.safeai.gateway.model.dto.RuntimeModelProbeResponse;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusWireResponse;
 import ru.safeai.gateway.model.service.ModelCatalogService;
-import ru.safeai.gateway.model.service.ModelPolicyPreviewService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
 import ru.safeai.gateway.model.service.OrganizationModelPolicyService;
-import ru.safeai.gateway.model.service.RuntimeModelProbeService;
 import ru.safeai.gateway.model.service.RuntimeModelStatusService;
+import ru.safeai.gateway.model.service.RuntimeModelProbeService;
 import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -223,14 +217,6 @@ class ModelControllerContractTest {
                         SafeAiUserPrincipal.class
                 );
 
-        Method preview =
-                OrganizationModelPolicyController.class.getMethod(
-                        "preview",
-                        UUID.class,
-                        CreateOrganizationModelPolicyVersionRequest.class,
-                        SafeAiUserPrincipal.class
-                );
-
         assertGetMapping(
                 current,
                 "/{organizationId}"
@@ -241,21 +227,12 @@ class ModelControllerContractTest {
                 "/{organizationId}"
         );
 
-        assertPostMapping(
-                preview,
-                "/{organizationId}/preview"
-        );
-
         assertNoMethodPreAuthorize(
                 current
         );
 
         assertNoMethodPreAuthorize(
                 createVersion
-        );
-
-        assertNoMethodPreAuthorize(
-                preview
         );
 
         assertPathVariable(
@@ -277,22 +254,10 @@ class ModelControllerContractTest {
         assertAuthenticationPrincipal(
                 createVersion.getParameters()[2]
         );
-
-        assertPathVariable(
-                preview.getParameters()[0]
-        );
-
-        assertRequestBodyValidated(
-                preview.getParameters()[1]
-        );
-
-        assertAuthenticationPrincipal(
-                preview.getParameters()[2]
-        );
     }
 
     @Test
-    void runtimeEndpointsKeepMappingsAndAuthorizationBoundaries()
+    void runtimeEndpointKeepsMappingAndAdministrativeBoundary()
             throws NoSuchMethodException {
 
         assertClassMapping(
@@ -305,19 +270,9 @@ class ModelControllerContractTest {
                         "runtime"
                 );
 
-        Method probe =
-                ModelRuntimeController.class.getMethod(
-                        "probe"
-                );
-
         assertGetMapping(
                 runtime,
                 "/runtime"
-        );
-
-        assertPostMapping(
-                probe,
-                "/runtime/probe"
         );
 
         assertThat(
@@ -326,14 +281,6 @@ class ModelControllerContractTest {
                 ).value()
         ).isEqualTo(
                 ADMINISTRATIVE_READ_BOUNDARY
-        );
-
-        assertThat(
-                requirePreAuthorize(
-                        probe
-                ).value()
-        ).isEqualTo(
-                SUPER_ADMIN_WRITE_BOUNDARY
         );
     }
 
@@ -492,16 +439,13 @@ class ModelControllerContractTest {
     }
 
     @Test
-    void runtimeControllerReturnsSanitizedWireReadModelAndProbeEvidence() {
-        RuntimeModelStatusService statusService =
+    void runtimeControllerReturnsSanitizedWireReadModel() {
+        RuntimeModelStatusService service =
                 mock(
                         RuntimeModelStatusService.class
                 );
-
         RuntimeModelProbeService probeService =
-                mock(
-                        RuntimeModelProbeService.class
-                );
+                mock(RuntimeModelProbeService.class);
 
         RuntimeModelStatusResponse runtime =
                 new RuntimeModelStatusResponse(
@@ -522,108 +466,59 @@ class ModelControllerContractTest {
                         null
                 );
 
-        RuntimeModelStatusWireResponse expectedRuntime =
+        RuntimeModelStatusWireResponse expected =
                 RuntimeModelStatusWireResponse.from(
                         runtime
                 );
 
-        RuntimeModelProbeResult probe =
-                new RuntimeModelProbeResult(
-                        "openai",
-                        "gpt-test",
-                        RuntimeModelProbeStatus.AVAILABLE,
-                        Instant.parse(
-                                "2026-09-05T18:00:00Z"
-                        ),
-                        123L,
-                        200,
-                        "Провайдер подтвердил доступность модели"
-                );
-
-        RuntimeModelProbeResponse expectedProbe =
-                RuntimeModelProbeResponse.from(
-                        probe
-                );
-
         when(
-                statusService.current()
+                service.current()
         ).thenReturn(
                 runtime
         );
 
-        when(
-                probeService.probe()
-        ).thenReturn(
-                probe
-        );
-
         ModelRuntimeController controller =
                 new ModelRuntimeController(
-                        statusService,
+                        service,
                         probeService
                 );
 
-        RuntimeModelStatusWireResponse actualRuntime =
+        RuntimeModelStatusWireResponse actual =
                 controller.runtime();
 
-        RuntimeModelProbeResponse actualProbe =
-                controller.probe();
-
         assertThat(
-                actualRuntime
+                actual
         ).isEqualTo(
-                expectedRuntime
+                expected
         );
 
         assertThat(
-                actualRuntime.provider()
+                actual.provider()
         ).isEqualTo(
                 "openai"
         );
 
         assertThat(
-                actualRuntime.model()
+                actual.model()
         ).isEqualTo(
                 "gpt-test"
         );
 
         assertThat(
-                actualRuntime.maxInputTokens()
+                actual.maxInputTokens()
         ).isEqualTo(
                 32_000
         );
 
         assertThat(
-                actualRuntime.maxOutputTokens()
+                actual.maxOutputTokens()
         ).isEqualTo(
                 4_096
         );
 
-        assertThat(
-                actualProbe
-        ).isEqualTo(
-                expectedProbe
-        );
-
-        assertThat(
-                actualProbe.status()
-        ).isEqualTo(
-                RuntimeModelProbeStatus.AVAILABLE
-        );
-
-        assertThat(
-                actualProbe.latencyMs()
-        ).isEqualTo(
-                123L
-        );
-
         verify(
-                statusService
+                service
         ).current();
-
-        verify(
-                probeService
-        ).probe();
     }
 
     @Test
@@ -680,21 +575,15 @@ class ModelControllerContractTest {
     }
 
     @Test
-    void policyControllerDelegatesCurrentCreateAndPreviewWithExactArguments() {
+    void policyControllerDelegatesCurrentAndCreateVersionWithExactArguments() {
         OrganizationModelPolicyService service =
                 mock(
                         OrganizationModelPolicyService.class
                 );
 
-        ModelPolicyPreviewService previewService =
-                mock(
-                        ModelPolicyPreviewService.class
-                );
-
         OrganizationModelPolicyController controller =
                 new OrganizationModelPolicyController(
-                        service,
-                        previewService
+                        service
                 );
 
         UUID organizationId =
@@ -718,11 +607,6 @@ class ModelControllerContractTest {
                         OrganizationModelPolicyResponse.class
                 );
 
-        ModelPolicyPreviewResponse preview =
-                mock(
-                        ModelPolicyPreviewResponse.class
-                );
-
         when(
                 service.current(
                         organizationId,
@@ -740,16 +624,6 @@ class ModelControllerContractTest {
                 )
         ).thenReturn(
                 created
-        );
-
-        when(
-                previewService.preview(
-                        organizationId,
-                        request,
-                        principal
-                )
-        ).thenReturn(
-                preview
         );
 
         assertThat(
@@ -771,16 +645,6 @@ class ModelControllerContractTest {
                 created
         );
 
-        assertThat(
-                controller.preview(
-                        organizationId,
-                        request,
-                        principal
-                )
-        ).isSameAs(
-                preview
-        );
-
         verify(
                 service
         ).current(
@@ -795,20 +659,6 @@ class ModelControllerContractTest {
         verify(
                 service
         ).createVersion(
-                eq(
-                        organizationId
-                ),
-                same(
-                        request
-                ),
-                same(
-                        principal
-                )
-        );
-
-        verify(
-                previewService
-        ).preview(
                 eq(
                         organizationId
                 ),
@@ -849,21 +699,11 @@ class ModelControllerContractTest {
                         "service"
                 );
 
-        RuntimeModelStatusService statusService =
-                mock(
-                        RuntimeModelStatusService.class
-                );
-
-        RuntimeModelProbeService probeService =
-                mock(
-                        RuntimeModelProbeService.class
-                );
-
         assertThatThrownBy(
                 () ->
                         new ModelRuntimeController(
                                 null,
-                                probeService
+                                mock(RuntimeModelProbeService.class)
                         )
         )
                 .isInstanceOf(
@@ -875,33 +715,8 @@ class ModelControllerContractTest {
 
         assertThatThrownBy(
                 () ->
-                        new ModelRuntimeController(
-                                statusService,
-                                null
-                        )
-        )
-                .isInstanceOf(
-                        NullPointerException.class
-                )
-                .hasMessageContaining(
-                        "probeService"
-                );
-
-        OrganizationModelPolicyService policyService =
-                mock(
-                        OrganizationModelPolicyService.class
-                );
-
-        ModelPolicyPreviewService previewService =
-                mock(
-                        ModelPolicyPreviewService.class
-                );
-
-        assertThatThrownBy(
-                () ->
                         new OrganizationModelPolicyController(
-                                null,
-                                previewService
+                                null
                         )
         )
                 .isInstanceOf(
@@ -909,20 +724,6 @@ class ModelControllerContractTest {
                 )
                 .hasMessageContaining(
                         "service"
-                );
-
-        assertThatThrownBy(
-                () ->
-                        new OrganizationModelPolicyController(
-                                policyService,
-                                null
-                        )
-        )
-                .isInstanceOf(
-                        NullPointerException.class
-                )
-                .hasMessageContaining(
-                        "previewService"
                 );
     }
 
@@ -1103,4 +904,3 @@ class ModelControllerContractTest {
         ).isNotNull();
     }
 }
-

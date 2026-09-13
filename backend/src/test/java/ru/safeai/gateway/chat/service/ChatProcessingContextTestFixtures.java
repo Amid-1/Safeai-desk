@@ -27,6 +27,7 @@ final class ChatProcessingContextTestFixtures {
                 ChatTestFixtures.PROCESSING_TOKEN,
                 ChatTestFixtures.NOW.plus(Duration.ofMinutes(3)),
                 MODEL_ROUTE_DECISION_ID,
+                "requested-model",
                 aiRequest,
                 false
         );
@@ -42,6 +43,7 @@ final class ChatProcessingContextTestFixtures {
                 null,
                 null,
                 MODEL_ROUTE_DECISION_ID,
+                null,
                 null,
                 true
         );

@@ -20,7 +20,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@SpringBootTest
+@SpringBootTest(
+        classes = ru.safeai.gateway.SafeaiBackendApplication.class
+)
 @ActiveProfiles("test")
 class AuditOutboxIntegrationTest
         extends AbstractAuditPostgresIntegrationTest {

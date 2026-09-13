@@ -16,18 +16,7 @@ import ru.safeai.gateway.chat.service.ChatProcessingContext;
 import ru.safeai.gateway.chat.service.ChatTurnReservationService;
 import ru.safeai.gateway.common.exception.ChatBusyException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.model.domain.ModelCatalogEntry;
-import ru.safeai.gateway.model.domain.ModelCatalogSource;
-import ru.safeai.gateway.model.domain.ModelLifecycle;
-import ru.safeai.gateway.model.domain.ModelModality;
-import ru.safeai.gateway.model.domain.ModelPricingStatus;
-import ru.safeai.gateway.model.domain.ModelRetentionStatus;
-import ru.safeai.gateway.model.domain.ModelTrainingUseStatus;
-import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
-import ru.safeai.gateway.model.repository.ModelCatalogRepository;
-import ru.safeai.gateway.model.service.RuntimeModelStatusService;
 
-import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
@@ -40,6 +29,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -61,99 +51,26 @@ class ChatConcurrencyIntegrationTest
     private static final long READY_TIMEOUT_SECONDS = 10;
     private static final long RESULT_TIMEOUT_SECONDS = 20;
 
-    /*
-     * This integration test is intentionally pinned to the application's
-     * test Runtime configured by AbstractPostgresIntegrationTest.
-     *
-     * Keeping these values explicit makes a future test-runtime change fail
-     * visibly instead of silently turning a concurrency test into a routing
-     * test.
-     */
-    private static final String TEST_RUNTIME_PROVIDER = "mock";
-    private static final String TEST_RUNTIME_MODEL = "mock-safeai";
-    private static final String TEST_MODEL_KEY = "mock:mock-safeai";
-
-    private static final UUID TEST_CATALOG_ENTRY_ID =
-            UUID.fromString(
-                    "91919191-9191-4919-8919-919191919191"
-            );
-
     @Autowired
     private ChatTurnReservationService reservationService;
-
-    @Autowired
-    private ModelCatalogRepository modelCatalogRepository;
-
-    @Autowired
-    private RuntimeModelStatusService runtimeModelStatusService;
 
     @Autowired
     private Clock clock;
 
     @BeforeEach
-    void prepareGovernedRuntimeAndPrimaryChat() {
-        /*
-         * Strict Model Control Plane routing no longer permits a physical
-         * Runtime without an effective catalog snapshot.
-         *
-         * Model catalog rows are append-only and are not safely reusable as
-         * per-test mutable fixtures. TRUNCATE is appropriate only here, in an
-         * isolated Testcontainers database, and avoids accumulating multiple
-         * effective logical keys for the same Runtime (which would correctly
-         * become AMBIGUOUS_RUNTIME_MAPPING).
-         */
-        resetModelControlPlaneFixtures();
-
-        RuntimeModelStatusResponse runtime =
-                runtimeModelStatusService.current();
-
-        assertThat(runtime.provider())
-                .as("Test Runtime provider")
-                .isEqualTo(TEST_RUNTIME_PROVIDER);
-
-        assertThat(runtime.model())
-                .as("Test Runtime model")
-                .isEqualTo(TEST_RUNTIME_MODEL);
-
-        assertThat(runtime.enabled())
-                .as("Test Runtime must be executable")
-                .isTrue();
-
-        modelCatalogRepository.insert(
-                effectiveCatalogEntry(runtime)
-        );
-
-        assertThat(
-                modelCatalogRepository.findEffectiveByRuntime(
-                        runtime.provider(),
-                        runtime.model(),
-                        clock.instant()
-                )
-        )
-                .as(
-                        "Concurrency tests require exactly one effective "
-                                + "logical catalog mapping for the physical Runtime"
-                )
-                .singleElement()
-                .satisfies(entry -> {
-                    assertThat(entry.modelKey())
-                            .isEqualTo(TEST_MODEL_KEY);
-
-                    assertThat(entry.lifecycle())
-                            .isEqualTo(ModelLifecycle.ACTIVE);
-                });
-
+    void alignPrimaryChatWithTestClock() {
         alignChatTimestamps(CHAT_ID);
-        assertOwnedChatVisible(CHAT_ID);
     }
 
     @Test
     void concurrentDuplicateRequestsCreateOneUserMessageAndOneTurn()
             throws Exception {
 
+        assertOwnedChatVisible(CHAT_ID);
+
         UUID clientRequestId = UUID.randomUUID();
 
-        List<Object> outcomes = race(
+        List<RaceOutcome> outcomes = race(
                 () -> reserve(
                         CHAT_ID,
                         clientRequestId,
@@ -167,8 +84,8 @@ class ChatConcurrencyIntegrationTest
         );
 
         /*
-         * Same clientRequestId means the same logical request is already
-         * being processed. Exactly one reservation succeeds.
+         * Одинаковый clientRequestId означает повтор того же запроса,
+         * который в этот момент уже обрабатывается.
          */
         assertRaceOutcomes(
                 outcomes,
@@ -189,10 +106,12 @@ class ChatConcurrencyIntegrationTest
     void differentClientRequestIdsInOneChatCannotProcessInParallel()
             throws Exception {
 
+        assertOwnedChatVisible(CHAT_ID);
+
         UUID firstClientRequestId = UUID.randomUUID();
         UUID secondClientRequestId = UUID.randomUUID();
 
-        List<Object> outcomes = race(
+        List<RaceOutcome> outcomes = race(
                 () -> reserve(
                         CHAT_ID,
                         firstClientRequestId,
@@ -206,8 +125,8 @@ class ChatConcurrencyIntegrationTest
         );
 
         /*
-         * Different clientRequestId values are different requests. A chat has
-         * one processing turn at a time, so the loser must fail as CHAT_BUSY.
+         * Разные clientRequestId означают разные запросы.
+         * Пока первый запрос обрабатывается, второй получает ChatBusyException.
          */
         assertRaceOutcomes(
                 outcomes,
@@ -270,7 +189,7 @@ class ChatConcurrencyIntegrationTest
         UUID firstClientRequestId = UUID.randomUUID();
         UUID secondClientRequestId = UUID.randomUUID();
 
-        List<Object> outcomes = race(
+        List<RaceOutcome> outcomes = race(
                 () -> reserve(
                         CHAT_ID,
                         firstClientRequestId,
@@ -296,63 +215,6 @@ class ChatConcurrencyIntegrationTest
 
         assertThat(countRows(Table.CHAT_QUOTA_RESERVATIONS))
                 .isEqualTo(1);
-    }
-
-    private void resetModelControlPlaneFixtures() {
-        jdbcTemplate.execute(
-                """
-                truncate table
-                    public.model_route_decisions,
-                    public.organization_model_policies,
-                    public.model_catalog_entries
-                cascade
-                """
-        );
-    }
-
-    private ModelCatalogEntry effectiveCatalogEntry(
-            RuntimeModelStatusResponse runtime
-    ) {
-        Instant effectiveFrom =
-                clock.instant().minusSeconds(1);
-
-        Instant createdAt =
-                effectiveFrom.minusSeconds(1);
-
-        /*
-         * Chat concurrency/quota tests must not depend on external provider
-         * pricing. A FREE catalog snapshot isolates the test to reservation
-         * semantics while still exercising the real strict routing path.
-         */
-        return new ModelCatalogEntry(
-                TEST_CATALOG_ENTRY_ID,
-                TEST_MODEL_KEY,
-                1,
-                runtime.provider(),
-                runtime.model(),
-                "SafeAI integration-test Runtime",
-                ModelLifecycle.ACTIVE,
-                runtime.maxInputTokens(),
-                runtime.maxOutputTokens(),
-                Set.of(),
-                Set.of(ModelModality.TEXT),
-                Set.of(ModelModality.TEXT),
-                ModelRetentionStatus.NOT_DECLARED,
-                null,
-                ModelTrainingUseStatus.NOT_DECLARED,
-                ModelPricingStatus.FREE,
-                true,
-                BigDecimal.ZERO,
-                null,
-                null,
-                BigDecimal.ZERO,
-                "{}",
-                "integration-test-free-v1",
-                effectiveFrom,
-                ModelCatalogSource.RUNTIME_IMPORT,
-                USER_ID,
-                createdAt
-        );
     }
 
     private ChatProcessingContext reserve(
@@ -413,8 +275,8 @@ class ChatConcurrencyIntegrationTest
 
     private Instant fixtureTimestamp() {
         /*
-         * The integration Clock is fixed. The chat is placed one second
-         * before the timestamp used by the reservation service.
+         * Тестовый Clock фиксирован. Чат создаётся на секунду
+         * раньше времени, которое сервис использует как updatedAt.
          */
         return clock.instant().minusSeconds(1);
     }
@@ -449,7 +311,7 @@ class ChatConcurrencyIntegrationTest
                 .isTrue();
     }
 
-    private List<Object> race(
+    private List<RaceOutcome> race(
             Callable<ChatProcessingContext> first,
             Callable<ChatProcessingContext> second
     ) throws Exception {
@@ -463,7 +325,7 @@ class ChatConcurrencyIntegrationTest
         try (ExecutorService executor =
                      Executors.newFixedThreadPool(2)) {
 
-            Future<Object> firstFuture =
+            Future<RaceOutcome> firstFuture =
                     executor.submit(
                             () -> run(
                                     ready,
@@ -472,7 +334,7 @@ class ChatConcurrencyIntegrationTest
                             )
                     );
 
-            Future<Object> secondFuture =
+            Future<RaceOutcome> secondFuture =
                     executor.submit(
                             () -> run(
                                     ready,
@@ -496,13 +358,13 @@ class ChatConcurrencyIntegrationTest
 
                 start.countDown();
 
-                Object firstOutcome =
+                RaceOutcome firstOutcome =
                         firstFuture.get(
                                 RESULT_TIMEOUT_SECONDS,
                                 TimeUnit.SECONDS
                         );
 
-                Object secondOutcome =
+                RaceOutcome secondOutcome =
                         secondFuture.get(
                                 RESULT_TIMEOUT_SECONDS,
                                 TimeUnit.SECONDS
@@ -528,18 +390,19 @@ class ChatConcurrencyIntegrationTest
             ExecutorService executor
     ) {
         /*
-         * Releases workers if setup failed before the regular start signal.
+         * Разблокирует задания, если сбой произошёл
+         * до обычного start.countDown().
          */
         start.countDown();
 
         /*
-         * Interrupts workers that may still be blocked. try-with-resources
-         * closes the executor after this method returns.
+         * Прерывает задания, которые могли зависнуть.
+         * try-with-resources закроет executor после выхода.
          */
         executor.shutdownNow();
     }
 
-    private Object run(
+    private RaceOutcome run(
             CountDownLatch ready,
             CountDownLatch start,
             Callable<ChatProcessingContext> action
@@ -553,26 +416,34 @@ class ChatConcurrencyIntegrationTest
             );
 
             if (!started) {
-                return new IllegalStateException(
-                        "Истекло время ожидания старта race"
+                return new RaceFailure(
+                        new IllegalStateException(
+                                "Истекло время ожидания старта race"
+                        )
                 );
             }
 
-            return action.call();
+            return new RaceSuccess(
+                    action.call()
+            );
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            return exception;
+            return new RaceFailure(
+                    exception
+            );
         } catch (Exception exception) {
             /*
-             * An expected concurrency conflict is returned to the coordinator
-             * thread as one race outcome.
+             * Ожидаемый конкурентный конфликт возвращается
+             * управляющему потоку как результат race.
              */
-            return exception;
+            return new RaceFailure(
+                    exception
+            );
         }
     }
 
     private static void assertRaceOutcomes(
-            List<Object> outcomes,
+            List<RaceOutcome> outcomes,
             Class<? extends Throwable> expectedFailureType
     ) {
         String description =
@@ -587,13 +458,19 @@ class ChatConcurrencyIntegrationTest
 
         long successCount = outcomes.stream()
                 .filter(
-                        ChatProcessingContext.class::isInstance
+                        RaceSuccess.class::isInstance
                 )
                 .count();
 
         long expectedFailureCount = outcomes.stream()
                 .filter(
-                        expectedFailureType::isInstance
+                        outcome ->
+                                outcome instanceof RaceFailure(
+                                        Throwable failure
+                                )
+                                        && expectedFailureType.isInstance(
+                                        failure
+                                )
                 )
                 .count();
 
@@ -619,45 +496,52 @@ class ChatConcurrencyIntegrationTest
                         description
                 )
                 .allMatch(outcome ->
-                        outcome instanceof ChatProcessingContext
-                                || expectedFailureType.isInstance(
-                                        outcome
-                                )
+                        outcome instanceof RaceSuccess
+                                || outcome instanceof RaceFailure(
+                                Throwable failure
+                        ) && expectedFailureType.isInstance(
+                                failure
+                        )
                 );
     }
 
     private static String describeOutcomes(
-            List<Object> outcomes
+            List<RaceOutcome> outcomes
     ) {
         return outcomes.stream()
                 .map(
                         ChatConcurrencyIntegrationTest
                                 ::describeOutcome
                 )
-                .toList()
-                .toString();
+                .collect(
+                        Collectors.joining(
+                                ", ",
+                                "[",
+                                "]"
+                        )
+                );
     }
 
     private static String describeOutcome(
-            Object outcome
+            RaceOutcome outcome
     ) {
-        if (outcome == null) {
-            return "null";
+        if (outcome instanceof RaceSuccess) {
+            return "success";
         }
 
-        if (outcome instanceof Throwable throwable) {
-            String message =
-                    throwable.getMessage();
+        if (outcome instanceof RaceFailure(
+                Throwable failure
+        )) {
+            String message = failure.getMessage();
 
-            return throwable.getClass().getName()
-                    + (
-                    message == null
-                            ? ""
-                            : ": " + message
-            );
+            return message == null
+                    ? "failure without message"
+                    : "failure: " + message;
         }
 
-        return outcome.getClass().getName();
+        throw new IllegalStateException(
+                "Unknown race outcome"
+        );
     }
 
     private long countRows(
@@ -691,5 +575,19 @@ class ChatConcurrencyIntegrationTest
         CHAT_TURNS,
         CHAT_MESSAGES,
         CHAT_QUOTA_RESERVATIONS
+    }
+
+    private sealed interface RaceOutcome
+            permits RaceSuccess, RaceFailure {
+    }
+
+    private record RaceSuccess(
+            ChatProcessingContext context
+    ) implements RaceOutcome {
+    }
+
+    private record RaceFailure(
+            Throwable cause
+    ) implements RaceOutcome {
     }
 }

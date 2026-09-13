@@ -29,9 +29,7 @@ final class OrganizationModelPolicyRules {
     ) {
         Set<String> allow = normalizeModelKeys(request.allowModelKeys());
         Set<String> deny = normalizeModelKeys(request.denyModelKeys());
-        String defaultModelKey = normalizeNullableModelKey(
-                request.defaultModelKey()
-        );
+        String defaultModelKey = normalizeNullableModelKey(request.defaultModelKey());
         BigDecimal maxRequestCostUsd = normalizeMoney(
                 request.maxRequestCostUsd(),
                 "maxRequestCostUsd"

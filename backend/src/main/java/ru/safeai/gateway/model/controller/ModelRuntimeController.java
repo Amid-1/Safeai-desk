@@ -12,10 +12,7 @@ import ru.safeai.gateway.model.service.RuntimeModelStatusService;
 
 import java.util.Objects;
 
-/**
- * Administrative runtime read model and explicit connectivity probe.
- * Credentials, provider URLs and provider response bodies are never exposed.
- */
+/** Administrative read model; credentials and provider URLs are never exposed. */
 @RestController
 @RequestMapping("/api/admin/models")
 public class ModelRuntimeController {
@@ -45,17 +42,10 @@ public class ModelRuntimeController {
         );
     }
 
-    /**
-     * Performs a metadata-only provider/model availability check.
-     *
-     * <p>SUPER_ADMIN only: even a metadata probe reaches the external provider
-     * and can consume provider-side rate limit.</p>
-     */
+    /** Performs a metadata-only provider/model availability check. */
     @PostMapping("/runtime/probe")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     public RuntimeModelProbeResponse probe() {
-        return RuntimeModelProbeResponse.from(
-                probeService.probe()
-        );
+        return RuntimeModelProbeResponse.from(probeService.probe());
     }
 }
