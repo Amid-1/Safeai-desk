@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.service;
 
 import ru.safeai.gateway.common.exception.ConflictException;
+import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
@@ -17,7 +18,7 @@ import java.util.UUID;
 
 final class ModelRouteDecisionFactory {
 
-    private static final short CURRENT_INTEGRITY_VERSION = 2;
+    private static final short CURRENT_INTEGRITY_VERSION = 3;
 
     ModelRouteDecision buildDecision(
             ModelRouteRequest request,
@@ -74,6 +75,8 @@ final class ModelRouteDecisionFactory {
                 policy == null ? null : policy.id(),
                 policy == null ? null : policy.version(),
                 request.requiredCapabilities(),
+                AiInputUnitEstimator.VERSION,
+                request.additionalInputUnitUpperBound(),
                 draft.estimatedInputTokens(),
                 draft.estimatedOutputTokens(),
                 estimatedCost,

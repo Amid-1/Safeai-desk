@@ -127,7 +127,7 @@ final class ModelRoutingSelectionPolicy {
                 runtimeKey(runtime),
                 runtime.provider(),
                 runtime.model(),
-                ModelRouteReason.LEGACY_RUNTIME_FALLBACK,
+                ModelRouteReason.RUNTIME_ONLY_MATCH,
                 null
         );
     }

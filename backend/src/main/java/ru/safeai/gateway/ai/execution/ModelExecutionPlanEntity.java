@@ -7,6 +7,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 @Getter
@@ -37,12 +38,68 @@ public class ModelExecutionPlanEntity {
     ) {
         ModelExecutionPlanEntity plan = new ModelExecutionPlanEntity();
         plan.id = UUID.randomUUID();
-        plan.providerOperationId = providerOperationId;
-        plan.chatTurnId = chatTurnId;
-        plan.organizationId = organizationId;
+        plan.providerOperationId = Objects.requireNonNull(
+                providerOperationId,
+                "providerOperationId не должен быть null"
+        );
+        plan.chatTurnId = Objects.requireNonNull(
+                chatTurnId,
+                "chatTurnId не должен быть null"
+        );
+        plan.organizationId = Objects.requireNonNull(
+                organizationId,
+                "organizationId не должен быть null"
+        );
         plan.modelRouteDecisionId = modelRouteDecisionId;
-        plan.requestedModel = requestedModel;
-        plan.createdAt = now;
+        plan.requestedModel = requireText(
+                requestedModel,
+                "requestedModel"
+        );
+        plan.createdAt = Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
         return plan;
+    }
+
+    public void requireMatches(AiExecutionRequest request) {
+        Objects.requireNonNull(
+                request,
+                "request не должен быть null"
+        );
+
+        boolean matches = providerOperationId.equals(
+                request.aiRequest().providerOperationId()
+        )
+                && chatTurnId.equals(request.chatTurnId())
+                && organizationId.equals(
+                request.aiRequest().organizationId()
+        )
+                && Objects.equals(
+                modelRouteDecisionId,
+                request.modelRouteDecisionId()
+        )
+                && requestedModel.equals(
+                request.target().requestedPhysicalModel()
+        );
+
+        if (!matches) {
+            throw new IllegalStateException(
+                    "Persisted execution plan does not match the execution request"
+            );
+        }
+    }
+
+    private static String requireText(
+            String value,
+            String name
+    ) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    name + " не должен быть пустым"
+            );
+        }
+
+        return value.trim();
     }
 }

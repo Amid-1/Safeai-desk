@@ -14,12 +14,15 @@ import ru.safeai.gateway.ai.metadata.UsageStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 @Getter
 @Entity
 @Table(name = "model_execution_attempts")
 public class ModelExecutionAttemptEntity {
+    private static final int MAX_FAILURE_TYPE_LENGTH = 64;
+
     @Id private UUID id;
     @Column(name = "execution_plan_id", nullable = false) private UUID executionPlanId;
     @Column(name = "attempt_number", nullable = false) private int attemptNumber;
@@ -57,9 +60,32 @@ public class ModelExecutionAttemptEntity {
 
     public static ModelExecutionAttemptEntity started(UUID planId, UUID providerAttemptId, int number,
                                                        ProviderExecutionTarget target, Instant now) {
+        if (number < 1) {
+            throw new IllegalArgumentException(
+                    "number должен быть положительным"
+            );
+        }
+
         ModelExecutionAttemptEntity value = new ModelExecutionAttemptEntity();
-        value.id = UUID.randomUUID(); value.executionPlanId = planId; value.providerAttemptId = providerAttemptId;
-        value.attemptNumber = number; value.providerType = target.providerType();
+        value.id = UUID.randomUUID();
+        value.executionPlanId = Objects.requireNonNull(
+                planId,
+                "planId не должен быть null"
+        );
+        value.providerAttemptId = Objects.requireNonNull(
+                providerAttemptId,
+                "providerAttemptId не должен быть null"
+        );
+        value.attemptNumber = number;
+        target = Objects.requireNonNull(
+                target,
+                "target не должен быть null"
+        );
+        now = Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
+        value.providerType = target.providerType();
         value.providerConfigurationRef = target.providerConfigurationRef(); value.providerConfigurationVersion = target.providerConfigurationVersion();
         value.deploymentRef = target.deploymentRef(); value.deploymentVersion = target.deploymentVersion();
         value.requestedPhysicalModel = target.requestedPhysicalModel(); value.startedAt = now; value.createdAt = now;
@@ -69,6 +95,12 @@ public class ModelExecutionAttemptEntity {
     }
 
     public void succeeded(AiChatResponse response, Instant now) {
+        requireStarted();
+        Objects.requireNonNull(
+                response,
+                "response не должен быть null"
+        );
+        now = requireFinishTime(now);
         ProviderUsageEvidence usage = ProviderUsageEvidence.from(response);
         ProviderPricingEvidence pricing = ProviderPricingEvidence.from(response);
         outcome = ExecutionAttemptOutcome.SUCCEEDED; outcomeCertainty = OutcomeCertainty.KNOWN_EXECUTED;
@@ -81,16 +113,83 @@ public class ModelExecutionAttemptEntity {
     }
 
     public void failed(AiProviderException exception, Instant now) {
-        outcome = exception.isOutcomeAmbiguous() ? ExecutionAttemptOutcome.AMBIGUOUS : ExecutionAttemptOutcome.FAILED;
-        outcomeCertainty = exception.isOutcomeAmbiguous() ? OutcomeCertainty.AMBIGUOUS : OutcomeCertainty.KNOWN_REJECTED;
-        retrySafety = exception.isRetryable() ? RetrySafety.SAME_TARGET_RETRY_ALLOWED : RetrySafety.SAME_TARGET_RETRY_FORBIDDEN;
-        fallbackSafety = exception.isOutcomeAmbiguous() ? FallbackSafety.FALLBACK_FORBIDDEN : FallbackSafety.FALLBACK_ALLOWED;
+        requireStarted();
+        Objects.requireNonNull(
+                exception,
+                "exception не должен быть null"
+        );
+        now = requireFinishTime(now);
+        boolean outcomeAmbiguous = exception.isOutcomeAmbiguous();
+        outcome = outcomeAmbiguous ? ExecutionAttemptOutcome.AMBIGUOUS : ExecutionAttemptOutcome.FAILED;
+        outcomeCertainty = outcomeCertainty(exception);
+        retrySafety = !outcomeAmbiguous && exception.isRetryable()
+                ? RetrySafety.SAME_TARGET_RETRY_ALLOWED
+                : RetrySafety.SAME_TARGET_RETRY_FORBIDDEN;
+        fallbackSafety = FallbackSafety.FALLBACK_FORBIDDEN;
         providerRequestId = exception.getProviderRequestId(); failureType = exception.getErrorType().name(); finishedAt = now;
     }
 
     public void ambiguous(String failure, Instant now) {
+        requireStarted();
+        now = requireFinishTime(now);
         outcome = ExecutionAttemptOutcome.AMBIGUOUS; outcomeCertainty = OutcomeCertainty.AMBIGUOUS;
         retrySafety = RetrySafety.SAME_TARGET_RETRY_FORBIDDEN; fallbackSafety = FallbackSafety.FALLBACK_FORBIDDEN;
-        failureType = failure; finishedAt = now;
+        failureType = requireFailureType(failure); finishedAt = now;
+    }
+
+    private OutcomeCertainty outcomeCertainty(
+            AiProviderException exception
+    ) {
+        if (exception.isOutcomeAmbiguous()) {
+            return OutcomeCertainty.AMBIGUOUS;
+        }
+
+        return exception.getErrorType()
+                == ru.safeai.gateway.ai.exception.AiProviderErrorType.CONNECT_FAILURE
+                ? OutcomeCertainty.KNOWN_NOT_EXECUTED
+                : OutcomeCertainty.KNOWN_REJECTED;
+    }
+
+    private Instant requireFinishTime(Instant now) {
+        Instant normalized = Objects.requireNonNull(
+                now,
+                "now не должен быть null"
+        );
+
+        if (normalized.isBefore(startedAt)) {
+            throw new IllegalArgumentException(
+                    "finishedAt не может быть раньше startedAt"
+            );
+        }
+
+        return normalized;
+    }
+
+    private String requireFailureType(String failure) {
+        if (failure == null || failure.isBlank()) {
+            throw new IllegalArgumentException(
+                    "failure не должен быть пустым"
+            );
+        }
+
+        String normalized = failure.trim();
+
+        if (normalized.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException(
+                    "failure содержит управляющие символы"
+            );
+        }
+
+        return normalized.length() <= MAX_FAILURE_TYPE_LENGTH
+                ? normalized
+                : normalized.substring(0, MAX_FAILURE_TYPE_LENGTH);
+    }
+
+    private void requireStarted() {
+        if (outcome != ExecutionAttemptOutcome.STARTED) {
+            throw new IllegalStateException(
+                    "Execution attempt is already terminal"
+            );
+        }
     }
 }

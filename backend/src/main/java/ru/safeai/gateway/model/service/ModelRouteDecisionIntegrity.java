@@ -19,6 +19,7 @@ final class ModelRouteDecisionIntegrity {
 
     private static final short V1 = 1;
     private static final short V2 = 2;
+    private static final short V3 = 3;
 
     private ModelRouteDecisionIntegrity() {
     }
@@ -30,9 +31,9 @@ final class ModelRouteDecisionIntegrity {
 
     static ModelRouteDecision seal(ModelRouteDecision decision) {
         Objects.requireNonNull(decision, "decision не должен быть null");
-        if (decision.decisionIntegrityVersion() != V2) {
+        if (decision.decisionIntegrityVersion() != V3) {
             throw new IllegalArgumentException(
-                    "New route decision must use integrity version 2"
+                    "New route decision must use integrity version 3"
             );
         }
         return copyWithHash(decision, calculateSha256(decision));
@@ -56,6 +57,11 @@ final class ModelRouteDecisionIntegrity {
                     throw integrityFailure(decision);
                 }
             }
+            case V3 -> {
+                if (!hashMatches(persisted, calculateV3Sha256(decision))) {
+                    throw integrityFailure(decision);
+                }
+            }
             default -> throw new IllegalStateException(
                     "Unsupported model route decision integrity version: "
                             + decision.decisionIntegrityVersion()
@@ -68,6 +74,7 @@ final class ModelRouteDecisionIntegrity {
         return switch (decision.decisionIntegrityVersion()) {
             case V1 -> calculateV1Sha256(decision, false);
             case V2 -> calculateV2Sha256(decision);
+            case V3 -> calculateV3Sha256(decision);
             default -> throw new IllegalArgumentException(
                     "Unsupported integrity version: " + decision.decisionIntegrityVersion()
             );
@@ -106,10 +113,26 @@ final class ModelRouteDecisionIntegrity {
      * can collide with another field distribution.
      */
     private static String calculateV2Sha256(ModelRouteDecision decision) {
+        return calculateLengthPrefixedSha256(decision, V2);
+    }
+
+    /**
+     * V3 extends the collision-safe V2 representation with the exact
+     * governance input-accounting implementation and reserved expansion
+     * envelope. Historical V2 bytes are intentionally unchanged.
+     */
+    private static String calculateV3Sha256(ModelRouteDecision decision) {
+        return calculateLengthPrefixedSha256(decision, V3);
+    }
+
+    private static String calculateLengthPrefixedSha256(
+            ModelRouteDecision decision,
+            short integrityVersion
+    ) {
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(1024);
             try (DataOutputStream out = new DataOutputStream(bytes)) {
-                out.writeShort(V2);
+                out.writeShort(integrityVersion);
                 writeValue(out, decision.id());
                 writeValue(out, decision.organizationId());
                 writeValue(out, decision.userId());
@@ -133,6 +156,11 @@ final class ModelRouteDecisionIntegrity {
                 out.writeInt(capabilities.length);
                 for (String capability : capabilities) {
                     writeUtf8(out, capability);
+                }
+
+                if (integrityVersion >= V3) {
+                    writeValue(out, decision.inputAccountingVersion());
+                    writeValue(out, decision.additionalInputUnitUpperBound());
                 }
 
                 writeValue(out, decision.estimatedInputTokens());
@@ -298,6 +326,8 @@ final class ModelRouteDecisionIntegrity {
                 decision.policyId(),
                 decision.policyVersion(),
                 decision.requiredCapabilities(),
+                decision.inputAccountingVersion(),
+                decision.additionalInputUnitUpperBound(),
                 decision.estimatedInputTokens(),
                 decision.estimatedOutputTokens(),
                 decision.estimatedMaxCostUsd(),
@@ -337,6 +367,8 @@ final class ModelRouteDecisionIntegrity {
                 decision.policyId(),
                 decision.policyVersion(),
                 decision.requiredCapabilities(),
+                decision.inputAccountingVersion(),
+                decision.additionalInputUnitUpperBound(),
                 decision.estimatedInputTokens(),
                 decision.estimatedOutputTokens(),
                 decision.estimatedMaxCostUsd(),

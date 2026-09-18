@@ -21,6 +21,7 @@ import {
 } from '../api/http'
 import {
     getKnowledgeBase,
+    getKnowledgeBaseAccess,
 } from '../api/knowledgeApi'
 import type {
     KnowledgeBase,
@@ -43,6 +44,8 @@ vi.mock(
     '../api/knowledgeApi',
     () => ({
         getKnowledgeBase:
+            vi.fn(),
+        getKnowledgeBaseAccess:
             vi.fn(),
     }),
 )
@@ -138,6 +141,11 @@ const DOCUMENT:
 const getKnowledgeBaseMock =
     vi.mocked(
         getKnowledgeBase,
+    )
+
+const getKnowledgeBaseAccessMock =
+    vi.mocked(
+        getKnowledgeBaseAccess,
     )
 
 const getKnowledgeDocumentsMock =
@@ -251,6 +259,22 @@ describe(
                 .mockResolvedValue(
                     KNOWLEDGE_BASE,
                 )
+
+            getKnowledgeBaseAccessMock
+                .mockResolvedValue({
+                    knowledgeBaseId:
+                        KNOWLEDGE_BASE_ID,
+                    accessLevel:
+                        'OWNER',
+                    administrator:
+                        true,
+                    canEditDocuments:
+                        true,
+                    canManageBase:
+                        true,
+                    canManageMembers:
+                        true,
+                })
 
             getKnowledgeDocumentsMock
                 .mockResolvedValue({

@@ -11,6 +11,7 @@ import type { PageResponse } from '../../../utils/page'
 import { EmptyState, ErrorState, LoadingState } from '../../StateBlock'
 import ResizableScrollRegion from '../../ResizableScrollRegion'
 import KnowledgePagination from '../KnowledgePagination'
+import { formatBytes } from './knowledgeDocumentFormat'
 
 const STATUS_LABEL:
     Record<KnowledgeIngestionStatus, string> = {
@@ -665,25 +666,5 @@ function documentTypeLabel(
     }
 
     return ''
-}
-
-export function formatBytes(
-    value: number,
-): string {
-    if (value < 1024) {
-        return `${value} Б`
-    }
-
-    if (
-        value < 1024 * 1024
-    ) {
-        return `${(
-            value / 1024
-        ).toFixed(1)} КБ`
-    }
-
-    return `${(
-        value / 1024 / 1024
-    ).toFixed(1)} МБ`
 }
 

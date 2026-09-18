@@ -12,6 +12,8 @@ import ru.safeai.gateway.ai.metadata.UsageStatus;
 import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
 import ru.safeai.gateway.ai.pricing.ModelPricingService;
 import ru.safeai.gateway.ai.provider.mock.MockAiProvider;
+import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
+import ru.safeai.gateway.ai.provider.AiRetryProperties;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -177,6 +179,16 @@ class MockAiProviderTest {
                         Clock.fixed(
                                 NOW,
                                 ZoneOffset.UTC
+                        )
+                ),
+                new AiProviderRetryExecutor(
+                        new AiRetryProperties(
+                                false,
+                                1,
+                                null,
+                                null,
+                                null,
+                                null
                         )
                 )
         );

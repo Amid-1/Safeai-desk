@@ -95,7 +95,35 @@ type LayoutMetrics = {
     protectedUpperHeight: number
 }
 
+type BodyDragStyle = {
+    cursor: string
+    userSelect: string
+}
+
 const KEYBOARD_STEP = 32
+
+function beginBodyResizeStyle(): BodyDragStyle {
+    const body = document.body
+
+    const previous = {
+        cursor: body.style.cursor,
+        userSelect: body.style.userSelect,
+    }
+
+    body.style.cursor = 'row-resize'
+    body.style.userSelect = 'none'
+
+    return previous
+}
+
+function restoreBodyResizeStyle(
+    previous: BodyDragStyle,
+) {
+    const body = document.body
+
+    body.style.cursor = previous.cursor
+    body.style.userSelect = previous.userSelect
+}
 
 function clamp(
     value: number,
@@ -483,8 +511,12 @@ function ResizableScrollRegion({
             effectiveMaxHeight,
         )
 
-    renderedHeightRef.current =
-        renderedHeight
+    useLayoutEffect(() => {
+        renderedHeightRef.current =
+            renderedHeight
+    }, [
+        renderedHeight,
+    ])
 
     const setUserHeight =
         useCallback((
@@ -532,11 +564,12 @@ function ResizableScrollRegion({
                 return
             }
 
-            document.body.style.cursor =
-                drag.previousBodyCursor
-
-            document.body.style.userSelect =
-                drag.previousBodyUserSelect
+            restoreBodyResizeStyle({
+                cursor:
+                    drag.previousBodyCursor,
+                userSelect:
+                    drag.previousBodyUserSelect,
+            })
 
             dragRef.current =
                 null
@@ -574,6 +607,9 @@ function ResizableScrollRegion({
              */
         }
 
+        const previousBodyStyle =
+            beginBodyResizeStyle()
+
         dragRef.current = {
             pointerId:
                 event.pointerId,
@@ -585,17 +621,11 @@ function ResizableScrollRegion({
                 renderedHeightRef.current,
 
             previousBodyCursor:
-                document.body.style.cursor,
+                previousBodyStyle.cursor,
 
             previousBodyUserSelect:
-                document.body.style.userSelect,
+                previousBodyStyle.userSelect,
         }
-
-        document.body.style.cursor =
-            'row-resize'
-
-        document.body.style.userSelect =
-            'none'
     }
 
     function moveResize(

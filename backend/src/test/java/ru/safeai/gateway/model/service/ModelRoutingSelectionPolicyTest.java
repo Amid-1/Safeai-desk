@@ -244,7 +244,7 @@ class ModelRoutingSelectionPolicyTest {
         assertThat(selection.modelKey())
                 .isEqualTo("runtime:openai:gpt-test");
         assertThat(selection.allowedReason())
-                .isEqualTo(ModelRouteReason.LEGACY_RUNTIME_FALLBACK);
+                .isEqualTo(ModelRouteReason.RUNTIME_ONLY_MATCH);
     }
 
     @Test

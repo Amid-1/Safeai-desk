@@ -46,6 +46,8 @@ public class ModelRouteDecisionRepository {
             policy_id,
             policy_version,
             required_capabilities,
+            input_accounting_version,
+            additional_input_unit_upper_bound,
             estimated_input_tokens,
             estimated_output_tokens,
             estimated_max_cost_usd,
@@ -218,6 +220,7 @@ public class ModelRouteDecisionRepository {
                     selected_catalog_entry_id, selected_catalog_version,
                     selected_model_key, selected_provider, selected_provider_model_id,
                     policy_id, policy_version, required_capabilities,
+                    input_accounting_version, additional_input_unit_upper_bound,
                     estimated_input_tokens, estimated_output_tokens,
                     estimated_max_cost_usd, monthly_budget_usd,
                     monthly_spent_usd, monthly_projected_usd,
@@ -226,7 +229,7 @@ public class ModelRouteDecisionRepository {
                     decision_integrity_version, decision_sha256, created_at
                 ) values (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """
         );
@@ -248,6 +251,8 @@ public class ModelRouteDecisionRepository {
         statement.setObject(index++, decision.policyId());
         setNullableInteger(statement, index++, decision.policyVersion());
         statement.setArray(index++, capabilityArray(connection, decision.requiredCapabilities()));
+        statement.setString(index++, decision.inputAccountingVersion());
+        setNullableLong(statement, index++, decision.additionalInputUnitUpperBound());
         setNullableLong(statement, index++, decision.estimatedInputTokens());
         setNullableLong(statement, index++, decision.estimatedOutputTokens());
         statement.setBigDecimal(index++, decision.estimatedMaxCostUsd());
@@ -289,6 +294,8 @@ public class ModelRouteDecisionRepository {
                 rs.getObject("policy_id", UUID.class),
                 rs.getObject("policy_version", Integer.class),
                 capabilities(rs.getArray("required_capabilities")),
+                rs.getString("input_accounting_version"),
+                rs.getObject("additional_input_unit_upper_bound", Long.class),
                 rs.getObject("estimated_input_tokens", Long.class),
                 rs.getObject("estimated_output_tokens", Long.class),
                 rs.getBigDecimal("estimated_max_cost_usd"),

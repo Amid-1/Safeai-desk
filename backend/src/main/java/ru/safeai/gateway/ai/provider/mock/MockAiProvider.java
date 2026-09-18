@@ -16,6 +16,8 @@ import ru.safeai.gateway.ai.dto.AiChatResponse;
 
 import ru.safeai.gateway.ai.dto.AiMessage;
 
+import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
+
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 
 import ru.safeai.gateway.ai.metadata.UsageStatus;
@@ -25,6 +27,10 @@ import ru.safeai.gateway.ai.pricing.ModelPricingService;
 import ru.safeai.gateway.ai.pricing.PricingResult;
 
 import ru.safeai.gateway.ai.provider.AiProvider;
+
+import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
+
+import java.time.Duration;
 
 @Slf4j
 
@@ -50,8 +56,33 @@ public class MockAiProvider implements AiProvider {
 
     private final ModelPricingService pricingService;
 
+    private final AiProviderRetryExecutor retryExecutor;
+
+    @Override
+    public ProviderExecutionTarget executionTarget() {
+        return ProviderExecutionTarget.staticTarget(
+                "mock",
+                MODEL
+        );
+    }
+
+    @Override
+    public boolean recordsPhysicalAttempts() {
+        return true;
+    }
+
     @Override
     public AiChatResponse sendMessage(AiChatRequest request) {
+        return retryExecutor.execute(
+                "mock",
+                MODEL,
+                request.providerOperationId(),
+                Duration.ZERO,
+                ignored -> sendAttempt(request)
+        );
+    }
+
+    private AiChatResponse sendAttempt(AiChatRequest request) {
         String content =
                 "Mock AI provider response: "
                         + request.userMessage();

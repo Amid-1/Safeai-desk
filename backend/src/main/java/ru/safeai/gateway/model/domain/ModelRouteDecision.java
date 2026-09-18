@@ -10,8 +10,9 @@ import java.util.UUID;
 /**
  * Immutable model-routing governance evidence.
  *
- * <p>Integrity version {@code 1} is retained for persisted V45 evidence.
- * New V46 decisions are created and sealed as integrity version {@code 2}.</p>
+ * <p>Integrity versions 1 and 2 remain readable for historical V45/V46
+ * evidence. New decisions use version 3 with explicit input-accounting
+ * provenance.</p>
  */
 public record ModelRouteDecision(
         UUID id,
@@ -30,6 +31,8 @@ public record ModelRouteDecision(
         UUID policyId,
         Integer policyVersion,
         Set<ModelCapability> requiredCapabilities,
+        String inputAccountingVersion,
+        Long additionalInputUnitUpperBound,
         Long estimatedInputTokens,
         Long estimatedOutputTokens,
         BigDecimal estimatedMaxCostUsd,
@@ -61,11 +64,37 @@ public record ModelRouteDecision(
                     Collections.unmodifiableSet(copy);
         }
 
-        if (decisionIntegrityVersion != 1
-                && decisionIntegrityVersion != 2) {
+        if (decisionIntegrityVersion < 1
+                || decisionIntegrityVersion > 3) {
             throw new IllegalArgumentException(
-                    "decisionIntegrityVersion должен быть 1 или 2"
+                    "decisionIntegrityVersion должен быть 1, 2 или 3"
             );
+        }
+
+        if (decisionIntegrityVersion < 3) {
+            if (inputAccountingVersion != null
+                    || additionalInputUnitUpperBound != null) {
+                throw new IllegalArgumentException(
+                        "V1/V2 evidence не должно содержать V3 accounting provenance"
+                );
+            }
+        } else {
+            if (inputAccountingVersion == null
+                    || inputAccountingVersion.isBlank()
+                    || !inputAccountingVersion.equals(inputAccountingVersion.trim())
+                    || inputAccountingVersion.length() > 64
+                    || inputAccountingVersion.codePoints()
+                    .anyMatch(Character::isISOControl)) {
+                throw new IllegalArgumentException(
+                        "V3 inputAccountingVersion должен быть непустым безопасным идентификатором"
+                );
+            }
+            if (additionalInputUnitUpperBound == null
+                    || additionalInputUnitUpperBound < 0L) {
+                throw new IllegalArgumentException(
+                        "V3 additionalInputUnitUpperBound обязателен и не может быть отрицательным"
+                );
+            }
         }
     }
 

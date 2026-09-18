@@ -23,7 +23,7 @@ public class ModelRoutingEnvelopeService {
         );
     }
 
-    public long additionalInputTokenUpperBound(
+    public long additionalInputUnitUpperBound(
             boolean usesKnowledge,
             Set<ModelCapability> requiredCapabilities
     ) {
@@ -33,12 +33,12 @@ public class ModelRoutingEnvelopeService {
                         : requiredCapabilities;
 
         long result =
-                properties.systemAndDeveloperTokens();
+                properties.systemAndDeveloperInputUnits();
 
         if (usesKnowledge) {
             result = Math.addExact(
                     result,
-                    properties.ragContextTokens()
+                    properties.ragContextInputUnits()
             );
         }
 
@@ -47,10 +47,24 @@ public class ModelRoutingEnvelopeService {
         )) {
             result = Math.addExact(
                     result,
-                    properties.toolSchemaTokens()
+                    properties.toolSchemaInputUnits()
             );
         }
 
         return result;
+    }
+
+    /**
+     * Compatibility alias for configuration/tests using the pre-V48 name.
+     */
+    @Deprecated(forRemoval = false)
+    public long additionalInputTokenUpperBound(
+            boolean usesKnowledge,
+            Set<ModelCapability> requiredCapabilities
+    ) {
+        return additionalInputUnitUpperBound(
+                usesKnowledge,
+                requiredCapabilities
+        );
     }
 }

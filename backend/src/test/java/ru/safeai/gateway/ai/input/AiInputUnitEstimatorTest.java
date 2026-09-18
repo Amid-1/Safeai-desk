@@ -45,7 +45,7 @@ class AiInputUnitEstimatorTest {
     void versionIsStableProvenanceIdentifier() {
         assertThat(AiInputUnitEstimator.VERSION)
                 .isEqualTo(
-                        "UTF8_MESSAGE_FRAMING_UNITS_V3"
+                        "UTF8_STRUCTURAL_UNITS_V2"
                 );
     }
 }

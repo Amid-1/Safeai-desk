@@ -21,7 +21,7 @@ public record ModelRouteRequest(
         String userMessage,
         List<AiMessage> history,
         Set<ModelCapability> requiredCapabilities,
-        long additionalInputTokenUpperBound
+        long additionalInputUnitUpperBound
 ) {
 
     public ModelRouteRequest {
@@ -60,9 +60,9 @@ public record ModelRouteRequest(
                 "userMessage не должен быть null"
         );
 
-        if (additionalInputTokenUpperBound < 0L) {
+        if (additionalInputUnitUpperBound < 0L) {
             throw new IllegalArgumentException(
-                    "additionalInputTokenUpperBound не может быть отрицательным"
+                    "additionalInputUnitUpperBound не может быть отрицательным"
             );
         }
 
@@ -90,5 +90,15 @@ public record ModelRouteRequest(
                             copy
                     );
         }
+    }
+
+    /**
+     * Temporary source-compatible alias for callers compiled against the
+     * pre-V48 terminology. The value is a governance input unit count, not a
+     * provider token count.
+     */
+    @Deprecated(forRemoval = false)
+    public long additionalInputTokenUpperBound() {
+        return additionalInputUnitUpperBound;
     }
 }

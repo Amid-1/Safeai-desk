@@ -177,7 +177,7 @@ class ModelRoutingServiceTest {
         );
 
         assertThat(result.reason())
-                .isEqualTo(ModelRouteReason.LEGACY_RUNTIME_FALLBACK);
+                .isEqualTo(ModelRouteReason.RUNTIME_ONLY_MATCH);
         assertThat(result.modelKey())
                 .isEqualTo("runtime:openai:gpt-test");
     }
@@ -655,6 +655,8 @@ class ModelRoutingServiceTest {
                 base.policyId(),
                 base.policyVersion(),
                 base.requiredCapabilities(),
+                base.inputAccountingVersion(),
+                base.additionalInputUnitUpperBound(),
                 base.estimatedInputTokens(),
                 base.estimatedOutputTokens(),
                 base.estimatedMaxCostUsd(),
@@ -695,6 +697,8 @@ class ModelRoutingServiceTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
+                source.inputAccountingVersion(),
+                source.additionalInputUnitUpperBound(),
                 source.estimatedInputTokens(),
                 source.estimatedOutputTokens(),
                 source.estimatedMaxCostUsd(),

@@ -17,11 +17,17 @@ public class AiExecutionPlanService {
     }
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ModelExecutionPlanEntity createOrRead(AiExecutionRequest request) {
-        return plans.findByProviderOperationId(request.aiRequest().providerOperationId())
+        ModelExecutionPlanEntity plan = plans
+                .findByProviderOperationId(
+                        request.aiRequest().providerOperationId()
+                )
                 .orElseGet(() -> plans.saveAndFlush(ModelExecutionPlanEntity.create(
                         request.aiRequest().providerOperationId(), request.chatTurnId(),
                         request.aiRequest().organizationId(), request.modelRouteDecisionId(),
                         request.target().requestedPhysicalModel(), clock.instant()
                 )));
+
+        plan.requireMatches(request);
+        return plan;
     }
 }

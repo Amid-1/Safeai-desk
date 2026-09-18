@@ -39,7 +39,12 @@ class ModelRouteDecisionFactoryTest {
                 .matches("[0-9a-f]{64}");
 
         assertThat(decision.decisionIntegrityVersion())
-                .isEqualTo((short) 2);
+                .isEqualTo((short) 3);
+
+        assertThat(decision.inputAccountingVersion())
+                .isEqualTo("UTF8_STRUCTURAL_UNITS_V2");
+        assertThat(decision.additionalInputUnitUpperBound())
+                .isZero();
 
         assertThatCode(() ->
                 ModelRouteDecisionIntegrity.requireValid(decision)
@@ -366,6 +371,8 @@ class ModelRouteDecisionFactoryTest {
                         ModelCapability.TOOLS,
                         ModelCapability.VISION
                 ),
+                null,
+                null,
                 123L,
                 4_096L,
                 new BigDecimal("0.020000000000"),
@@ -404,6 +411,8 @@ class ModelRouteDecisionFactoryTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
+                source.inputAccountingVersion(),
+                source.additionalInputUnitUpperBound(),
                 source.estimatedInputTokens(),
                 source.estimatedOutputTokens(),
                 source.estimatedMaxCostUsd(),
@@ -444,6 +453,8 @@ class ModelRouteDecisionFactoryTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
+                source.inputAccountingVersion(),
+                source.additionalInputUnitUpperBound(),
                 source.estimatedInputTokens(),
                 source.estimatedOutputTokens(),
                 estimatedCost,
@@ -484,6 +495,8 @@ class ModelRouteDecisionFactoryTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
+                source.inputAccountingVersion(),
+                source.additionalInputUnitUpperBound(),
                 source.estimatedInputTokens(),
                 source.estimatedOutputTokens(),
                 source.estimatedMaxCostUsd(),
@@ -522,6 +535,8 @@ class ModelRouteDecisionFactoryTest {
                 source.policyId(),
                 source.policyVersion(),
                 source.requiredCapabilities(),
+                source.inputAccountingVersion(),
+                source.additionalInputUnitUpperBound(),
                 null,
                 null,
                 source.estimatedMaxCostUsd(),

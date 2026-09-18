@@ -105,7 +105,7 @@ public class AiProviderRetryExecutor {
                 }
                 return response;
             } catch (AiProviderException exception) {
-                if (attemptScope.active()) {
+                if (attemptScope.hasActiveAttempt(context)) {
                     attemptScope.failed(context, exception);
                 }
                 if (!shouldRetry(
@@ -160,8 +160,17 @@ public class AiProviderRetryExecutor {
                 sleep(delay, provider, model, exception);
                 backoff = nextBackoff(backoff);
             } catch (RuntimeException exception) {
-                if (attemptScope.active()) {
-                    attemptScope.ambiguous(context, exception);
+                if (attemptScope.hasActiveAttempt(context)) {
+                    try {
+                        attemptScope.ambiguous(
+                                context,
+                                exception
+                        );
+                    } catch (RuntimeException recordingFailure) {
+                        exception.addSuppressed(
+                                recordingFailure
+                        );
+                    }
                 }
                 throw exception;
             }

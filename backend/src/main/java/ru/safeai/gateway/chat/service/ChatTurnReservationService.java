@@ -263,8 +263,8 @@ public class ChatTurnReservationService {
         Set<ModelCapability> requiredCapabilities =
                 Set.of();
 
-        long additionalInputTokenUpperBound =
-                routingEnvelopeService.additionalInputTokenUpperBound(
+        long additionalInputUnitUpperBound =
+                routingEnvelopeService.additionalInputUnitUpperBound(
                         request.knowledgeMode()
                                 .usesKnowledge(),
                         requiredCapabilities
@@ -287,7 +287,7 @@ public class ChatTurnReservationService {
                                 content,
                                 history,
                                 requiredCapabilities,
-                                additionalInputTokenUpperBound
+                                additionalInputUnitUpperBound
                         ),
                         currentUser
                 );

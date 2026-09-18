@@ -582,7 +582,7 @@ class ChatTurnReservationServiceTest {
 
         order.verify(
                 routingEnvelopeService
-        ).additionalInputTokenUpperBound(
+        ).additionalInputUnitUpperBound(
                 eq(false),
                 any()
         );
@@ -890,7 +890,7 @@ class ChatTurnReservationServiceTest {
         );
 
         when(
-                routingEnvelopeService.additionalInputTokenUpperBound(
+                routingEnvelopeService.additionalInputUnitUpperBound(
                         anyBoolean(),
                         any()
                 )

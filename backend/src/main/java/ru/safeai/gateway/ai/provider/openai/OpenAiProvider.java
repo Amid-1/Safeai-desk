@@ -47,6 +47,19 @@ import static ru.safeai.gateway.ai.provider.AiProviderExceptionFactory.unknownFa
 )
 public class OpenAiProvider implements AiProvider {
 
+    @Override
+    public ProviderExecutionTarget executionTarget() {
+        return ProviderExecutionTarget.staticTarget(
+                PROVIDER_NAME,
+                properties.model()
+        );
+    }
+
+    @Override
+    public boolean recordsPhysicalAttempts() {
+        return true;
+    }
+
     private static final String PROVIDER_NAME =
             "openai";
 
