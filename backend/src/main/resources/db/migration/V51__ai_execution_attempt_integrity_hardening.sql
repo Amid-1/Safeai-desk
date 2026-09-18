@@ -1,3 +1,4 @@
+/* Safeai-desk/backend/src/main/resources/db/migration/V51__ai_execution_attempt_integrity_hardening.sql */
 /*
  * V51 — harden immutable physical AI execution evidence.
  *

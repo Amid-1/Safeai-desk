@@ -542,6 +542,8 @@ backend/
 │   │       │       ├── V47__knowledge_chunk_generation_uniqueness.sql
 │   │       │       ├── V48__model_input_accounting_provenance.sql
 │   │       │       ├── V49__model_control_plane_strict_routing_and_generic_pricing.sql
+│   │       │       ├── V50__ai_execution_attempt_usage_evidence.sql
+│   │       │       ├── V49__model_control_plane_strict_routing_and_generic_pricing.sql
 │   │       │       └── README_DB.md
 │   │       ├── META-INF/
 │   │       ├── application.yml
