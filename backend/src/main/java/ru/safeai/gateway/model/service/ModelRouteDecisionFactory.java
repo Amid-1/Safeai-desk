@@ -37,6 +37,16 @@ final class ModelRouteDecisionFactory {
                         "draft.budget не должен быть null"
                 );
 
+        if (draft.outcome() == ModelRouteOutcome.ALLOWED
+                && (draft.entry() == null
+                || draft.selectedModelKey() == null
+                || draft.provider() == null
+                || draft.providerModelId() == null)) {
+            throw new IllegalStateException(
+                    "New ALLOWED route decision requires an effective catalog snapshot"
+            );
+        }
+
         BigDecimal estimatedCost = normalizeMoney(
                 draft.estimatedCost(),
                 "estimatedMaxCostUsd"
@@ -54,7 +64,7 @@ final class ModelRouteDecisionFactory {
                 "monthlyProjectedUsd"
         );
         Instant createdAt =
-                ModelRouteDecisionIntegrity.normalizeDatabaseTimestamp(now);
+                DatabaseTimestampNormalizer.normalize(now);
 
         ModelRouteDecision unsealed = new ModelRouteDecision(
                 UUID.randomUUID(),
@@ -122,7 +132,11 @@ final class ModelRouteDecisionFactory {
                         )
                         && decision.requiredCapabilities().equals(
                                 request.requiredCapabilities()
-                        );
+                        )
+                        && (decision.decisionIntegrityVersion() < 3
+                            || Objects.equals(
+                                decision.additionalInputUnitUpperBound(),
+                                request.additionalInputUnitUpperBound()));
 
         if (!sameRequestIdentity) {
             throw new ConflictException(
@@ -155,6 +169,17 @@ final class ModelRouteDecisionFactory {
         if (decision.outcome() != ModelRouteOutcome.ALLOWED) {
             throw new IllegalArgumentException(
                     "ModelRouteResult можно построить только из ALLOWED decision"
+            );
+        }
+
+        if (decision.decisionIntegrityVersion() >= 3
+                && (decision.selectedCatalogEntryId() == null
+                || decision.selectedCatalogVersion() == null
+                || decision.selectedModelKey() == null
+                || decision.selectedProvider() == null
+                || decision.selectedProviderModelId() == null)) {
+            throw new IllegalStateException(
+                    "Strict route decision has no immutable catalog snapshot: " + decision.id()
             );
         }
 

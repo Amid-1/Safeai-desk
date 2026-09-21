@@ -74,8 +74,6 @@ class OpenAiKnowledgeEmbeddingProviderTest {
     }
 
     private static String vectorJson(float value) {
-        return "[" + java.util.Collections.nCopies(384, Float.toString(value))
-                .stream()
-                .collect(java.util.stream.Collectors.joining(",")) + "]";
+        return "[" + String.join(",", java.util.Collections.nCopies(384, Float.toString(value))) + "]";
     }
 }

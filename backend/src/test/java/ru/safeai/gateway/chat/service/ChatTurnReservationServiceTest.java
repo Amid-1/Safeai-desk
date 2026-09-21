@@ -25,12 +25,14 @@ import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnMutexRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
+import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.common.exception.ChatBusyException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.model.domain.ModelRouteReason;
 import ru.safeai.gateway.model.domain.ModelRouteRequest;
 import ru.safeai.gateway.model.domain.ModelRouteResult;
+import ru.safeai.gateway.model.service.ModelRouteReservedRequestService;
 import ru.safeai.gateway.model.service.ModelRoutingEnvelopeService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
 import ru.safeai.gateway.ratelimit.RedisRateLimitService;
@@ -47,6 +49,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -102,6 +106,9 @@ class ChatTurnReservationServiceTest {
     ModelRoutingEnvelopeService routingEnvelopeService;
 
     @Mock
+    ModelRouteReservedRequestService reservedRequestService;
+
+    @Mock
     ChatMetrics metrics;
 
     private ChatTurnReservationService service;
@@ -141,6 +148,7 @@ class ChatTurnReservationServiceTest {
                         auditEventService,
                         modelRoutingService,
                         routingEnvelopeService,
+                        reservedRequestService,
                         properties,
                         metrics,
                         ChatTestFixtures.CLOCK
@@ -184,7 +192,8 @@ class ChatTurnReservationServiceTest {
                 quotaService,
                 historyRepository,
                 routingEnvelopeService,
-                modelRoutingService
+                modelRoutingService,
+                reservedRequestService
         );
 
         verify(metrics)
@@ -509,6 +518,23 @@ class ChatTurnReservationServiceTest {
                 "Hello\nworld"
         );
 
+        // The exact pre-RAG request must be sealed against the persisted
+        // decision and turn, before any external rate-limit reservation.
+        ArgumentCaptor<AiChatRequest> sealedRequestCaptor =
+                ArgumentCaptor.forClass(AiChatRequest.class);
+
+        verify(reservedRequestService).seal(
+                eq(MODEL_ROUTE_DECISION_ID),
+                eq(result.turnId()),
+                eq(ChatTestFixtures.CLIENT_REQUEST_ID),
+                sealedRequestCaptor.capture(),
+                isNull(),
+                eq(KnowledgeMode.GENERAL)
+        );
+
+        assertThat(sealedRequestCaptor.getValue())
+                .isSameAs(result.aiRequest());
+
         assertThat(
                 result.processingToken()
         ).isNotNull();
@@ -571,6 +597,7 @@ class ChatTurnReservationServiceTest {
                         messageRepository,
                         turnRepository,
                         quotaService,
+                        reservedRequestService,
                         rateLimitService
                 );
 
@@ -630,6 +657,15 @@ class ChatTurnReservationServiceTest {
                 modelRoutingService
         ).validateAllowedTurnLinkBeforeExternalSideEffects();
 
+        order.verify(reservedRequestService).seal(
+                eq(MODEL_ROUTE_DECISION_ID),
+                eq(result.turnId()),
+                eq(ChatTestFixtures.CLIENT_REQUEST_ID),
+                any(AiChatRequest.class),
+                isNull(),
+                eq(KnowledgeMode.GENERAL)
+        );
+
         order.verify(
                 rateLimitService
         ).checkAiMessageAllowed(
@@ -637,6 +673,34 @@ class ChatTurnReservationServiceTest {
                         SafeAiUserPrincipal.class
                 )
         );
+    }
+
+    @Test
+    void failedBaseRequestSealCannotConsumeRateLimitOrReportSuccessfulReservation() {
+        stubNewTurn();
+
+        doThrow(new IllegalStateException("Cannot seal a base request different from routed evidence"))
+                .when(reservedRequestService).seal(
+                        eq(MODEL_ROUTE_DECISION_ID),
+                        any(UUID.class),
+                        eq(ChatTestFixtures.CLIENT_REQUEST_ID),
+                        any(AiChatRequest.class),
+                        isNull(),
+                        eq(KnowledgeMode.GENERAL)
+                );
+
+        assertThatThrownBy(() -> service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Cannot seal a base request");
+
+        verify(modelRoutingService)
+                .validateAllowedTurnLinkBeforeExternalSideEffects();
+        verifyNoInteractions(rateLimitService);
+        verify(metrics, never()).recordReservedAfterCommit();
     }
 
     @Test

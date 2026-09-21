@@ -295,12 +295,86 @@ class ModelCatalogServiceTest {
     }
 
     @Test
-    void configuredRejectsCachedPriceAboveOrdinaryInputPrice() {
+    void configuredAcceptsCachedPriceAboveOrdinaryInputPrice() {
+        // V49: cached input and ordinary input are independent tariff dimensions.
+        when(repository.findLatest("openai:gpt-test"))
+                .thenReturn(Optional.empty());
+
+        service.createVersion(
+                pricingRequest(
+                        ModelPricingStatus.CONFIGURED,
+                        true,
+                        new BigDecimal("1.00"),
+                        new BigDecimal("1.01"),
+                        null,
+                        new BigDecimal("4.00"),
+                        "{}",
+                        "pricing-2026-08"
+                ),
+                ModelTestFixtures.superAdminPrincipal()
+        );
+
+        ArgumentCaptor<ModelCatalogEntry> captor =
+                ArgumentCaptor.forClass(ModelCatalogEntry.class);
+        verify(repository).insert(captor.capture());
+
+        ModelCatalogEntry saved = captor.getValue();
+        assertThat(saved.pricingStatus())
+                .isEqualTo(ModelPricingStatus.CONFIGURED);
+        assertThat(saved.pricingComplete()).isTrue();
+        assertThat(saved.inputUsdPer1mTokens())
+                .isEqualByComparingTo("1.00");
+        assertThat(saved.cachedInputUsdPer1mTokens())
+                .isEqualByComparingTo("1.01");
+        assertThat(saved.cacheWriteInputUsdPer1mTokens()).isNull();
+        assertThat(saved.outputUsdPer1mTokens())
+                .isEqualByComparingTo("4.00");
+    }
+
+    @Test
+    void configuredAcceptsCacheWritePriceAboveOrdinaryInputPrice() {
+        // V49: a cache write may cost more than ordinary input.
+        when(repository.findLatest("openai:gpt-test"))
+                .thenReturn(Optional.empty());
+
+        service.createVersion(
+                pricingRequest(
+                        ModelPricingStatus.CONFIGURED,
+                        true,
+                        new BigDecimal("1.00"),
+                        null,
+                        new BigDecimal("1.01"),
+                        new BigDecimal("4.00"),
+                        "{}",
+                        "pricing-2026-08"
+                ),
+                ModelTestFixtures.superAdminPrincipal()
+        );
+
+        ArgumentCaptor<ModelCatalogEntry> captor =
+                ArgumentCaptor.forClass(ModelCatalogEntry.class);
+        verify(repository).insert(captor.capture());
+
+        ModelCatalogEntry saved = captor.getValue();
+        assertThat(saved.pricingStatus())
+                .isEqualTo(ModelPricingStatus.CONFIGURED);
+        assertThat(saved.pricingComplete()).isTrue();
+        assertThat(saved.inputUsdPer1mTokens())
+                .isEqualByComparingTo("1.00");
+        assertThat(saved.cachedInputUsdPer1mTokens()).isNull();
+        assertThat(saved.cacheWriteInputUsdPer1mTokens())
+                .isEqualByComparingTo("1.01");
+        assertThat(saved.outputUsdPer1mTokens())
+                .isEqualByComparingTo("4.00");
+    }
+
+    @Test
+    void configuredRejectsNegativeCachedInputPriceBeforeDatabaseWrite() {
         assertRejectedBeforeInsert(pricingRequest(
                 ModelPricingStatus.CONFIGURED,
                 true,
-                new BigDecimal("1.00"),
-                new BigDecimal("1.01"),
+                BigDecimal.ONE,
+                new BigDecimal("-0.01"),
                 null,
                 new BigDecimal("4.00"),
                 "{}",
@@ -309,13 +383,13 @@ class ModelCatalogServiceTest {
     }
 
     @Test
-    void configuredRejectsCacheWritePriceAboveOrdinaryInputPrice() {
+    void configuredRejectsNegativeCacheWritePriceBeforeDatabaseWrite() {
         assertRejectedBeforeInsert(pricingRequest(
                 ModelPricingStatus.CONFIGURED,
                 true,
-                new BigDecimal("1.00"),
+                BigDecimal.ONE,
                 null,
-                new BigDecimal("1.01"),
+                new BigDecimal("-0.01"),
                 new BigDecimal("4.00"),
                 "{}",
                 "pricing-2026-08"
@@ -734,3 +808,4 @@ class ModelCatalogServiceTest {
         );
     }
 }
+

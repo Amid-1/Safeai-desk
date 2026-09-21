@@ -485,21 +485,28 @@ public final class AiProviderSupport {
     }
 
     public static String resolvedModel(
-            JsonNode response,
-            String requestedModel
+            JsonNode response
     ) {
-        String actualModel =
-                response == null
-                        ? null
-                        : textOrNull(
-                                response.get(
-                                        "model"
-                                )
-                        );
+        JsonNode modelNode = response == null
+                ? null
+                : response.get("model");
 
-        return actualModel == null
-                ? requestedModel
-                : actualModel;
+        String actualModel = modelNode == null || !modelNode.isString()
+                ? null
+                : textOrNull(modelNode);
+
+        // Never manufacture physical execution provenance.
+        // Callers MUST classify a missing model as an ambiguous
+        // provider protocol failure.
+        if (actualModel == null
+                || actualModel.length() > 100
+                || actualModel.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalStateException(
+                    "Provider did not report a valid resolved physical model"
+            );
+        }
+
+        return actualModel;
     }
 
     private static Duration parseRetryAfterSeconds(

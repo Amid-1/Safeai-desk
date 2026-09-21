@@ -102,6 +102,14 @@ public class ModelCatalogRepository {
         );
     }
 
+    /** Exact immutable catalogue version (NEVER latest/effective re-selection). */
+    public Optional<ModelCatalogEntry> findById(UUID id) {
+        List<ModelCatalogEntry> rows = jdbc.query(
+                "select " + SELECT_COLUMNS + " from model_catalog_entries where id = ?",
+                this::map, id);
+        return rows.stream().findFirst();
+    }
+
     public void lockModelKey(String modelKey) {
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             try (PreparedStatement statement = connection.prepareStatement(

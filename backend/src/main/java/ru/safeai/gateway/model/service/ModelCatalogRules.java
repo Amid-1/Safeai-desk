@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.service;
 
 import ru.safeai.gateway.common.exception.BadRequestException;
+import ru.safeai.gateway.model.domain.ModelCapability;
 import ru.safeai.gateway.model.domain.ModelLifecycle;
 import ru.safeai.gateway.model.domain.ModelModality;
 import ru.safeai.gateway.model.domain.ModelPricingStatus;
@@ -34,6 +35,7 @@ final class ModelCatalogRules {
             ModelLifecycle lifecycle,
             int maxInputTokens,
             int maxOutputTokens,
+            Set<ModelCapability> capabilities,
             Set<ModelModality> inputModalities,
             Set<ModelModality> outputModalities,
             ModelRetentionStatus retentionStatus,
@@ -58,6 +60,17 @@ final class ModelCatalogRules {
                     "Model token limits должны быть положительными"
             );
         }
+        Objects.requireNonNull(capabilities, "capabilities не должен быть null");
+        Objects.requireNonNull(inputModalities, "inputModalities не должен быть null");
+        Objects.requireNonNull(outputModalities, "outputModalities не должен быть null");
+
+        if (capabilities.contains(ModelCapability.VISION)
+                != inputModalities.contains(ModelModality.IMAGE)) {
+            throw new BadRequestException(
+                    "VISION capability и IMAGE input modality должны совпадать"
+            );
+        }
+
         if (inputModalities.isEmpty() || outputModalities.isEmpty()) {
             throw new BadRequestException(
                     "Model modalities не должны быть пустыми"
@@ -139,16 +152,9 @@ final class ModelCatalogRules {
                                     + "pricingVersion и пустой extraPricingJson"
                     );
                 }
-                if (cachedInput != null && cachedInput.compareTo(input) > 0) {
-                    throw new BadRequestException(
-                            "cachedInputUsdPer1mTokens не может превышать inputUsdPer1mTokens"
-                    );
-                }
-                if (cacheWrite != null && cacheWrite.compareTo(input) > 0) {
-                    throw new BadRequestException(
-                            "cacheWriteInputUsdPer1mTokens не может превышать inputUsdPer1mTokens"
-                    );
-                }
+                // V49 deliberately treats cache prices as independent dimensions.
+                // Full schema support for extraPricingJson requires a later
+                // versioned tariff contract, not a Java-only relaxation.
             }
             case INCOMPLETE -> {
                 if (pricingComplete) {

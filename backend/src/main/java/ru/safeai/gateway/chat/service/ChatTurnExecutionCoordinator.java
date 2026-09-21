@@ -19,6 +19,7 @@ import ru.safeai.gateway.knowledge.rag.RagCompletion;
 import ru.safeai.gateway.knowledge.rag.RagPreparation;
 import ru.safeai.gateway.model.exception.ModelRouteEnvelopeExceededException;
 import ru.safeai.gateway.model.service.ModelRouteExecutionGuard;
+import ru.safeai.gateway.model.service.ModelRouteExecutionIdentity;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -137,12 +138,13 @@ final class ChatTurnExecutionCoordinator {
                             "ragPreparation.aiRequest не должен быть null"
                     );
 
-            enforceReservedRouteEnvelope(
-                    context,
-                    reservedAiRequest,
-                    preparedAiRequest,
-                    currentUser
-            );
+            ModelRouteExecutionIdentity executionIdentity =
+                    enforceReservedRouteEnvelope(
+                            context,
+                            reservedAiRequest,
+                            preparedAiRequest,
+                            currentUser
+                    );
 
             context =
                     context.withAiRequest(
@@ -170,6 +172,8 @@ final class ChatTurnExecutionCoordinator {
             AiChatResponse providerResponse =
                     invokeProvider(
                             context,
+                            reservedAiRequest,
+                            executionIdentity,
                             currentUser
                     );
 
@@ -273,34 +277,48 @@ final class ChatTurnExecutionCoordinator {
         }
     }
 
-    private void enforceReservedRouteEnvelope(
+    private ModelRouteExecutionIdentity enforceReservedRouteEnvelope(
             ChatProcessingContext context,
             AiChatRequest reservedRequest,
             AiChatRequest preparedRequest,
             SafeAiUserPrincipal currentUser
     ) {
         try {
-            UUID decisionId =
-                    context.modelRouteDecisionId();
-
+            UUID decisionId = context.modelRouteDecisionId();
             if (decisionId == null) {
-                /*
-                 * Compatibility for legacy/direct coordinator tests. Real V46
-                 * reserved turns carry a persisted model-route decision id.
-                 */
-                ModelRouteExecutionGuard
-                        .assertWithinReservedInputEnvelope(
-                                reservedRequest,
-                                preparedRequest
-                        );
-            } else {
-                ModelRouteExecutionGuard
-                        .assertWithinReservedInputEnvelope(
-                                decisionId,
-                                reservedRequest,
-                                preparedRequest
-                        );
+                // Legacy/replay state cannot authorize a new physical call.
+                throw new IllegalStateException(
+                        "Execution requires a persisted model-route decision"
+                );
             }
+
+            // Issue an identity only from the DB-sealed, immutable pre-RAG
+            // reservation. Never bind to preparedRequest: it contains RAG text.
+            ModelRouteExecutionIdentity identity =
+                    aiExecutionService.bindExecution(
+                            decisionId,
+                            context.turnId(),
+                            context.clientRequestId(),
+                            context.providerOperationId(),
+                            reservedRequest,
+                            context.knowledgeBaseId(),
+                            context.knowledgeMode()
+                    );
+
+            // A missing DB-backed binding is an integrity failure, not a
+            // raw NullPointerException leaking out of the input guard.
+            if (identity == null) {
+                throw new IllegalStateException(
+                        "Execution binding did not issue an identity"
+                );
+            }
+
+            ModelRouteExecutionGuard.assertWithinReservedInputEnvelope(
+                    identity,
+                    reservedRequest,
+                    preparedRequest
+            );
+            return identity;
         } catch (ModelRouteEnvelopeExceededException exception) {
             log.warn(
                     "Model route input envelope exceeded before provider call: "
@@ -313,7 +331,7 @@ final class ChatTurnExecutionCoordinator {
                     exception.actualEstimatedInputTokens()
             );
 
-            failRouteEnvelope(
+            throw failRouteEnvelope(
                     context,
                     currentUser,
                     exception
@@ -328,7 +346,7 @@ final class ChatTurnExecutionCoordinator {
                     exception.getMessage()
             );
 
-            failRouteEnvelope(
+            throw failRouteEnvelope(
                     context,
                     "MODEL_ROUTE_ENVELOPE_INTEGRITY",
                     "MODEL_ROUTE_INPUT_ENVELOPE_INVALID",
@@ -338,12 +356,12 @@ final class ChatTurnExecutionCoordinator {
         }
     }
 
-    private void failRouteEnvelope(
+    private ChatTurnFailedException failRouteEnvelope(
             ChatProcessingContext context,
             SafeAiUserPrincipal currentUser,
             ModelRouteEnvelopeExceededException exception
     ) {
-        failRouteEnvelope(
+        return failRouteEnvelope(
                 context,
                 "MODEL_ROUTE_ENVELOPE_EXCEEDED",
                 "MODEL_ROUTE_INPUT_ENVELOPE_EXCEEDED",
@@ -352,7 +370,7 @@ final class ChatTurnExecutionCoordinator {
         );
     }
 
-    private void failRouteEnvelope(
+    private ChatTurnFailedException failRouteEnvelope(
             ChatProcessingContext context,
             String providerErrorType,
             String failureCode,
@@ -367,7 +385,7 @@ final class ChatTurnExecutionCoordinator {
                 exception
         );
 
-        throw new ChatTurnFailedException(
+        return new ChatTurnFailedException(
                 context.chatId(),
                 context.turnId(),
                 context.clientRequestId(),
@@ -466,6 +484,8 @@ final class ChatTurnExecutionCoordinator {
 
     private AiChatResponse invokeProvider(
             ChatProcessingContext context,
+            AiChatRequest reservedAiRequest,
+            ModelRouteExecutionIdentity executionIdentity,
             SafeAiUserPrincipal currentUser
     ) {
         AiChatResponse response;
@@ -480,7 +500,9 @@ final class ChatTurnExecutionCoordinator {
                             context.turnId(),
                             context.modelRouteDecisionId(),
                             context.aiRequest(),
-                            aiExecutionService.targetFor(model)
+                            aiExecutionService.targetFor(model),
+                            executionIdentity,
+                            reservedAiRequest
                         )
             ).response();
         } catch (AiProviderException exception) {

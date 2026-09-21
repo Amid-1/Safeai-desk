@@ -158,7 +158,7 @@ class ModelRoutingServiceTest {
     }
 
     @Test
-    void futureOnlyCatalogHistoryDoesNotDisableBootstrapFallbackEarly() {
+    void futureOnlyCatalogHistoryCannotAuthorizeRuntimeBeforeActivation() {
         stubNewDecisionNoPolicy();
         when(catalogRepository.findEffectiveByRuntime(
                 "openai",
@@ -171,15 +171,33 @@ class ModelRoutingServiceTest {
                 ModelTestFixtures.NOW
         )).thenReturn(false);
 
-        var result = service.decide(
-                request(null, Set.of()),
-                ModelTestFixtures.userPrincipal()
+        // A scheduled future catalog entry is not yet an effective executable
+        // snapshot. Current strict routing cannot authorize a catalog-less turn.
+        ModelRouteDeniedException exception =
+                catchDenial(request(null, Set.of()));
+
+        assertThat(exception.getReason())
+                .isEqualTo(ModelRouteReason.MODEL_NOT_FOUND);
+
+        verify(catalogRepository).hasEffectiveHistoryByRuntime(
+                "openai",
+                "gpt-test",
+                ModelTestFixtures.NOW
         );
 
-        assertThat(result.reason())
-                .isEqualTo(ModelRouteReason.RUNTIME_ONLY_MATCH);
-        assertThat(result.modelKey())
-                .isEqualTo("runtime:openai:gpt-test");
+        ArgumentCaptor<ModelRouteDecision> captor =
+                ArgumentCaptor.forClass(ModelRouteDecision.class);
+        verify(decisionRepository).insert(captor.capture());
+        ModelRouteDecision decision = captor.getValue();
+
+        assertThat(decision.outcome())
+                .isEqualTo(ModelRouteOutcome.DENIED);
+        assertThat(decision.reason())
+                .isEqualTo(ModelRouteReason.MODEL_NOT_FOUND);
+        assertThat(decision.selectedCatalogEntryId())
+                .isNull();
+        assertThat(decision.chatTurnId())
+                .isNull();
     }
 
     @Test

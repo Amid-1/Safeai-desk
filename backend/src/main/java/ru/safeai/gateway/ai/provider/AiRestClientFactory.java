@@ -11,6 +11,7 @@ import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.io.ByteArrayInputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -154,10 +155,33 @@ public final class AiRestClientFactory {
                             body
                     );
 
-            return new LimitedClientHttpResponse(
-                    response,
-                    maxBytes
-            );
+            return limitedResponse(response);
+        }
+
+        private LimitedClientHttpResponse limitedResponse(
+                ClientHttpResponse response
+        ) throws IOException {
+            try {
+                LimitedClientHttpResponse limitedResponse =
+                        new LimitedClientHttpResponse(
+                                response,
+                                maxBytes
+                        );
+
+                // Enforce a known Content-Length before Spring's default
+                // 4xx/5xx handler can swallow an IOException from getBody().
+                limitedResponse.validateDeclaredContentLength();
+
+                // The default error handler can also swallow an IOException
+                // while reading a chunked error body. Read and bound error
+                // bodies here, then make the verified bytes available to it.
+                limitedResponse.bufferErrorBodyIfNeeded();
+
+                return limitedResponse;
+            } catch (IOException | RuntimeException exception) {
+                response.close();
+                throw exception;
+            }
         }
     }
 
@@ -168,6 +192,7 @@ public final class AiRestClientFactory {
         private final long maxBytes;
 
         private @Nullable InputStream limitedBody;
+        private byte @Nullable [] bufferedErrorBody;
 
         private LimitedClientHttpResponse(
                 ClientHttpResponse delegate,
@@ -210,8 +235,13 @@ public final class AiRestClientFactory {
                 throws IOException {
             validateDeclaredContentLength();
 
-            InputStream currentBody =
-                    limitedBody;
+            byte[] errorBody = bufferedErrorBody;
+
+            if (errorBody != null) {
+                return new ByteArrayInputStream(errorBody);
+            }
+
+            InputStream currentBody = limitedBody;
 
             if (currentBody == null) {
                 currentBody =
@@ -220,8 +250,7 @@ public final class AiRestClientFactory {
                                 maxBytes
                         );
 
-                limitedBody =
-                        currentBody;
+                limitedBody = currentBody;
             }
 
             return currentBody;
@@ -242,6 +271,19 @@ public final class AiRestClientFactory {
                 throw new AiResponseTooLargeIOException(
                         maxBytes
                 );
+            }
+        }
+
+        private void bufferErrorBodyIfNeeded()
+                throws IOException {
+            if (!delegate.getStatusCode().isError()) {
+                return;
+            }
+
+            // Reading is bounded by LimitedInputStream even when the server
+            // omits Content-Length or advertises a smaller length than sent.
+            try (InputStream input = getBody()) {
+                bufferedErrorBody = input.readAllBytes();
             }
         }
     }

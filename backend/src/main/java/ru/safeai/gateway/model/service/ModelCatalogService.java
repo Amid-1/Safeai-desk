@@ -212,6 +212,7 @@ public class ModelCatalogService {
                 request.lifecycle(),
                 request.maxInputTokens(),
                 request.maxOutputTokens(),
+                capabilities,
                 inputModalities,
                 outputModalities,
                 request.retentionStatus(),
@@ -251,7 +252,7 @@ public class ModelCatalogService {
         }
 
         Instant now =
-                clock.instant();
+                DatabaseTimestampNormalizer.normalize(clock.instant());
 
         ModelCatalogEntry entry =
                 new ModelCatalogEntry(
@@ -280,7 +281,7 @@ public class ModelCatalogService {
                         pricingVersion,
                         request.effectiveFrom() == null
                                 ? now
-                                : request.effectiveFrom(),
+                                : DatabaseTimestampNormalizer.normalize(request.effectiveFrom()),
                         ModelCatalogSource.MANUAL,
                         currentUser.getId(),
                         now
@@ -445,6 +446,7 @@ public class ModelCatalogService {
                 ModelLifecycle.ACTIVE,
                 runtime.maxInputTokens(),
                 runtime.maxOutputTokens(),
+                capabilities,
                 inputModalities,
                 outputModalities,
                 ModelRetentionStatus.NOT_DECLARED,
@@ -509,7 +511,7 @@ public class ModelCatalogService {
                         : latest.version();
 
         Instant now =
-                clock.instant();
+                DatabaseTimestampNormalizer.normalize(clock.instant());
 
         ModelCatalogEntry entry =
                 new ModelCatalogEntry(

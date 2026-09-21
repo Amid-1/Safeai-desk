@@ -20,8 +20,8 @@ public class AiProviderOverloadedException
                 statusCode,
                 providerRequestId,
                 AiProviderErrorType.OVERLOADED,
-                true,
                 false,
+                true,
                 retryAfter,
                 message,
                 cause

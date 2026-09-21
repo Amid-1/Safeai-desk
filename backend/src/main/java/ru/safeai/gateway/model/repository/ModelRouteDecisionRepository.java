@@ -116,14 +116,20 @@ public class ModelRouteDecisionRepository {
     }
 
     /**
-     * Conservative committed-cost snapshot.
-     *
-     * <p>For SUCCEEDED turns an assistant cost is exact only when V17 pricing
-     * metadata proves PRICED/FREE with AVAILABLE usage. Otherwise we may use
-     * the route estimate. Incomplete estimates are retained as a lower-bound
-     * estimate but still increment unknownCommittedCostCount; HARD enforcement
-     * therefore fails closed. For PROCESSING/AMBIGUOUS, only a complete route
-     * estimate makes the cost fully knowable.</p>
+     * V50/V51 physical-attempt ledger + still-in-flight request reservations.
+     * <p>
+     * A plan with attempts is NEVER charged through assistant.cost_usd. Pre-V50
+     * turns without an execution plan retain an explicit legacy fallback.
+     * <p>
+     * Known physical costs are the sum of billable attempt evidence, including
+     * attempts belonging to a FAILED logical turn. STARTED/AMBIGUOUS or
+     * unpriced successful attempts mark the monthly cost unverifiable. HARD
+     * enforcement then rejects instead of treating an estimate as exact.
+     * <p>
+     * A PROCESSING turn reserves one future/current physical attempt until a
+     * successful physical attempt completes, even between failed retries.
+     * Reservations are deliberately conservative, not actual provider spend.
+     * Accounting month follows the existing route-decision created_at contract.
      */
     public MonthlyCostSnapshot loadCommittedMonthlyCostSnapshot(
             UUID organizationId,
@@ -132,56 +138,134 @@ public class ModelRouteDecisionRepository {
     ) {
         MonthlyCostSnapshot snapshot = jdbc.queryForObject(
                 """
-                with committed as (
+                with selected_turns as (
                     select
-                        turn_row.state,
-                        decision.pricing_complete as decision_pricing_complete,
-                        decision.estimated_max_cost_usd,
-                        assistant.cost_usd as assistant_cost_usd,
-                        assistant.usage_status as assistant_usage_status,
-                        assistant.pricing_status as assistant_pricing_status,
-                        case
-                            when turn_row.state = 'SUCCEEDED'
-                                 and assistant.usage_status = 'AVAILABLE'
-                                 and assistant.pricing_status in ('PRICED', 'FREE')
-                                 and assistant.cost_usd is not null
-                                then true
-                            else false
-                        end as exact_success_cost_known,
-                        case
-                            when decision.pricing_complete = true
-                                 and decision.estimated_max_cost_usd is not null
-                                then true
-                            else false
-                        end as route_estimate_known
-                    from model_route_decisions decision
-                    join chat_turns turn_row
-                      on turn_row.model_route_decision_id = decision.id
+                        d.id as decision_id,
+                        d.estimated_max_cost_usd,
+                        d.pricing_complete,
+                        t.state,
+                        plan.id as plan_id,
+                        assistant.cost_usd as legacy_assistant_cost,
+                        assistant.usage_status as legacy_usage_status,
+                        assistant.pricing_status as legacy_pricing_status
+                    from model_route_decisions d
+                    join chat_turns t on t.model_route_decision_id = d.id
+                    left join model_execution_plans plan
+                           on plan.chat_turn_id = t.id
+                          and plan.model_route_decision_id = d.id
                     left join chat_messages assistant
-                      on assistant.id = turn_row.assistant_message_id
-                    where decision.organization_id = ?
-                      and decision.outcome = 'ALLOWED'
-                      and decision.created_at >= ?
-                      and decision.created_at < ?
-                      and turn_row.state in ('PROCESSING', 'AMBIGUOUS', 'SUCCEEDED')
+                           on assistant.id = t.assistant_message_id
+                          and plan.id is null
+                    where d.organization_id = ?
+                      and d.outcome = 'ALLOWED'
+                      and d.created_at >= ?
+                      and d.created_at < ?
+                      and t.state in ('PROCESSING', 'AMBIGUOUS', 'SUCCEEDED', 'FAILED')
+                ),
+                attempt_totals as (
+                    select
+                        s.decision_id,
+                        count(a.id)::bigint as attempt_count,
+                        count(a.id) filter (
+                            where a.outcome = 'STARTED'
+                        )::bigint as started_count,
+                        count(a.id) filter (
+                            where a.outcome = 'SUCCEEDED'
+                        )::bigint as succeeded_count,
+                        coalesce(sum(
+                            case
+                                when a.outcome <> 'STARTED'
+                                 and a.pricing_status in ('PRICED', 'FREE')
+                                 and a.cost_usd is not null
+                                    then a.cost_usd
+                                else 0
+                            end
+                        ), 0) as evidenced_cost_usd,
+                        count(a.id) filter (
+                            where a.outcome in ('STARTED', 'AMBIGUOUS')
+                               or (a.outcome = 'SUCCEEDED'
+                                   and coalesce((
+                                       a.usage_status = 'AVAILABLE'
+                                       and a.specialized_dimensions_valid = true
+                                       and a.pricing_status in ('PRICED', 'FREE')
+                                       and a.cost_usd is not null
+                                   ), false) = false)
+                               or (a.outcome = 'FAILED'
+                                   and a.outcome_certainty <> 'KNOWN_NOT_EXECUTED'
+                                   and coalesce((
+                                       a.usage_status = 'AVAILABLE'
+                                       and a.specialized_dimensions_valid = true
+                                       and a.pricing_status in ('PRICED', 'FREE')
+                                       and a.cost_usd is not null
+                                   ), false) = false)
+                        )::bigint as uncertain_count
+                    from selected_turns s
+                    join model_execution_attempts a
+                      on a.execution_plan_id = s.plan_id
+                    group by s.decision_id
+                ),
+                ledger as (
+                    select
+                        s.*,
+                        coalesce(a.attempt_count, 0) as attempt_count,
+                        coalesce(a.started_count, 0) as started_count,
+                        coalesce(a.succeeded_count, 0) as succeeded_count,
+                        coalesce(a.evidenced_cost_usd, 0) as evidenced_cost_usd,
+                        coalesce(a.uncertain_count, 0) as uncertain_count,
+                        (s.state = 'SUCCEEDED'
+                            and s.legacy_usage_status = 'AVAILABLE'
+                            and s.legacy_pricing_status in ('PRICED', 'FREE')
+                            and s.legacy_assistant_cost is not null
+                        ) as legacy_exact
+                    from selected_turns s
+                    left join attempt_totals a on a.decision_id = s.decision_id
                 )
                 select
                     coalesce(sum(
                         case
-                            when state = 'SUCCEEDED' and exact_success_cost_known
-                                then assistant_cost_usd
-                            when estimated_max_cost_usd is not null
-                                then estimated_max_cost_usd
-                            else 0
+                            when plan_id is null and legacy_exact
+                                then legacy_assistant_cost
+                            when plan_id is null
+                                then coalesce(estimated_max_cost_usd, 0)
+                            else evidenced_cost_usd
+                                 + case
+                                     when state = 'PROCESSING'
+                                          and (started_count > 0
+                                               or succeeded_count = 0)
+                                         then coalesce(estimated_max_cost_usd, 0)
+                                     else 0
+                                   end
                         end
                     ), 0) as committed_cost_usd,
-                    count(*) filter (
-                        where not (
-                            (state = 'SUCCEEDED' and exact_success_cost_known)
-                            or route_estimate_known
-                        )
-                    )::bigint as unknown_committed_cost_count
-                from committed
+                    coalesce(sum(
+                        case
+                            when plan_id is null
+                                then case
+                                    when legacy_exact then 0
+                                    when state = 'FAILED'
+                                         or state = 'AMBIGUOUS'
+                                         or pricing_complete = false
+                                         or estimated_max_cost_usd is null
+                                        then 1
+                                    else 0
+                                end
+                            else uncertain_count
+                                 + case
+                                     when state in ('SUCCEEDED', 'AMBIGUOUS')
+                                          and attempt_count = 0 then 1
+                                     when state = 'SUCCEEDED'
+                                          and succeeded_count = 0 then 1
+                                     when state = 'PROCESSING'
+                                          and (started_count > 0
+                                               or succeeded_count = 0)
+                                          and (pricing_complete = false
+                                               or estimated_max_cost_usd is null)
+                                         then 1
+                                     else 0
+                                   end
+                        end
+                    ), 0)::bigint as unknown_committed_cost_count
+                from ledger
                 """,
                 (rs, ignoredRowNumber) -> new MonthlyCostSnapshot(
                         rs.getBigDecimal("committed_cost_usd"),

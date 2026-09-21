@@ -219,7 +219,7 @@ class ModelRoutingSelectionPolicyTest {
     }
 
     @Test
-    void futureOnlyHistoryKeepsBootstrapCompatibilityUntilActivation() {
+    void futureOnlyHistoryCannotAuthorizeRuntimeBeforeActivation() {
         when(catalogRepository.findEffectiveByRuntime(
                 "openai",
                 "gpt-test",
@@ -231,6 +231,8 @@ class ModelRoutingSelectionPolicyTest {
                 ModelTestFixtures.NOW
         )).thenReturn(false);
 
+        // The future version is not an effective executable snapshot yet.
+        // Strict routing must not synthesize a catalog-less ALLOWED route.
         var selection = policy.selectCatalog(
                 ModelTestFixtures.routeRequest(null, Set.of(), 0L),
                 ModelTestFixtures.freeRuntime(),
@@ -242,9 +244,22 @@ class ModelRoutingSelectionPolicyTest {
         assertThat(selection.entry())
                 .isNull();
         assertThat(selection.modelKey())
-                .isEqualTo("runtime:openai:gpt-test");
+                .isNull();
         assertThat(selection.allowedReason())
-                .isEqualTo(ModelRouteReason.RUNTIME_ONLY_MATCH);
+                .isNull();
+        assertThat(selection.denialReason())
+                .isEqualTo(ModelRouteReason.MODEL_NOT_FOUND);
+
+        verify(catalogRepository).findEffectiveByRuntime(
+                "openai",
+                "gpt-test",
+                ModelTestFixtures.NOW
+        );
+        verify(catalogRepository).hasEffectiveHistoryByRuntime(
+                "openai",
+                "gpt-test",
+                ModelTestFixtures.NOW
+        );
     }
 
     @Test
@@ -397,3 +412,4 @@ class ModelRoutingSelectionPolicyTest {
         );
     }
 }
+

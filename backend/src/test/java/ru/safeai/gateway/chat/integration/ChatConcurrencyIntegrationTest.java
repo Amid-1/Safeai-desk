@@ -1,5 +1,6 @@
 package ru.safeai.gateway.chat.integration;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +49,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ChatConcurrencyIntegrationTest
         extends AbstractChatPostgresIntegrationTest {
 
+    private static final String MOCK_MODEL_KEY = "mock-safeai";
+
     private static final long READY_TIMEOUT_SECONDS = 10;
     private static final long RESULT_TIMEOUT_SECONDS = 20;
 
@@ -59,7 +62,82 @@ class ChatConcurrencyIntegrationTest
 
     @BeforeEach
     void alignPrimaryChatWithTestClock() {
+        // Superclass DB cleanup does not truncate the append-only model catalog.
+        // Reset test-owned catalog rows so all three races start independently.
+        jdbcTemplate.execute("truncate table public.model_catalog_entries cascade");
         alignChatTimestamps(CHAT_ID);
+        seedEffectiveMockModelCatalog();
+    }
+
+    @AfterEach
+    void removeRaceCatalogFixture() {
+        jdbcTemplate.execute("truncate table public.model_catalog_entries cascade");
+    }
+
+    /**
+     * V52+ requires every new ALLOWED route to bind an effective immutable
+     * catalog snapshot. Each test starts with a freshly truncated database,
+     * so the mock runtime needs an explicit catalog fixture before racing.
+     */
+    private void seedEffectiveMockModelCatalog() {
+        Instant effectiveFrom = clock.instant().minusSeconds(1);
+
+        int inserted = jdbcTemplate.update(
+                """
+                insert into public.model_catalog_entries (
+                    id,
+                    model_key,
+                    version,
+                    provider,
+                    provider_model_id,
+                    display_name,
+                    lifecycle,
+                    max_input_tokens,
+                    max_output_tokens,
+                    retention_status,
+                    training_use_status,
+                    pricing_status,
+                    pricing_complete,
+                    input_usd_per_1m_tokens,
+                    output_usd_per_1m_tokens,
+                    pricing_version,
+                    effective_from,
+                    source,
+                    created_by_user_id,
+                    created_at
+                ) values (
+                    ?,
+                    ?,
+                    1,
+                    'mock',
+                    'mock-safeai',
+                    'Mock SafeAI',
+                    'ACTIVE',
+                    64000,
+                    2048,
+                    'NOT_DECLARED',
+                    'NOT_DECLARED',
+                    'FREE',
+                    true,
+                    0,
+                    0,
+                    'mock-2026-01',
+                    ?,
+                    'RUNTIME_IMPORT',
+                    ?,
+                    ?
+                )
+                """,
+                UUID.randomUUID(),
+                MOCK_MODEL_KEY,
+                Timestamp.from(effectiveFrom),
+                USER_ID,
+                Timestamp.from(effectiveFrom)
+        );
+
+        assertThat(inserted)
+                .as("Тестовый mock runtime должен иметь эффективную модель в каталоге")
+                .isEqualTo(1);
     }
 
     @Test
@@ -100,6 +178,8 @@ class ChatConcurrencyIntegrationTest
 
         assertThat(countRows(Table.CHAT_QUOTA_RESERVATIONS))
                 .isEqualTo(1);
+
+        assertSingleAllowedRouteBoundToMockCatalog();
     }
 
     @Test
@@ -141,6 +221,8 @@ class ChatConcurrencyIntegrationTest
 
         assertThat(countRows(Table.CHAT_QUOTA_RESERVATIONS))
                 .isEqualTo(1);
+
+        assertSingleAllowedRouteBoundToMockCatalog();
     }
 
     @Test
@@ -215,6 +297,8 @@ class ChatConcurrencyIntegrationTest
 
         assertThat(countRows(Table.CHAT_QUOTA_RESERVATIONS))
                 .isEqualTo(1);
+
+        assertSingleAllowedRouteBoundToMockCatalog();
     }
 
     private ChatProcessingContext reserve(
@@ -544,6 +628,35 @@ class ChatConcurrencyIntegrationTest
         );
     }
 
+    private void assertSingleAllowedRouteBoundToMockCatalog() {
+        Long linked = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                  from public.chat_turns turn_row
+                  join public.model_route_decisions route
+                    on route.id = turn_row.model_route_decision_id
+                  join public.model_catalog_entries catalog
+                    on catalog.id = route.selected_catalog_entry_id
+                   and catalog.version = route.selected_catalog_version
+                 where route.outcome = 'ALLOWED'
+                   and route.selected_model_key = ?
+                   and route.selected_provider = 'mock'
+                   and route.selected_provider_model_id = 'mock-safeai'
+                   and catalog.model_key = ?
+                   and catalog.provider = 'mock'
+                   and catalog.provider_model_id = 'mock-safeai'
+                   and catalog.lifecycle = 'ACTIVE'
+                """,
+                Long.class,
+                MOCK_MODEL_KEY,
+                MOCK_MODEL_KEY
+        );
+
+        assertThat(linked)
+                .as("Ровно один ChatTurn должен ссылаться на ALLOWED route и immutable catalog snapshot")
+                .isEqualTo(1L);
+    }
+
     private long countRows(
             Table table
     ) {
@@ -591,3 +704,4 @@ class ChatConcurrencyIntegrationTest
     ) implements RaceOutcome {
     }
 }
+

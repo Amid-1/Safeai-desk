@@ -13,11 +13,9 @@ import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
 import ru.safeai.gateway.model.dto.OrganizationModelPolicyResponse;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -106,51 +104,12 @@ public class OrganizationModelPolicyService {
             );
         }
 
-        Set<String> allow = OrganizationModelPolicyRules
-                .normalizeModelKeys(request.allowModelKeys());
-        Set<String> deny = OrganizationModelPolicyRules
-                .normalizeModelKeys(request.denyModelKeys());
-        String defaultModelKey = OrganizationModelPolicyRules
-                .normalizeNullableModelKey(request.defaultModelKey());
-        BigDecimal maxRequestCostUsd = OrganizationModelPolicyRules
-                .normalizeMoney(
-                        request.maxRequestCostUsd(),
-                        "maxRequestCostUsd"
-                );
-        BigDecimal monthlyBudgetUsd = OrganizationModelPolicyRules
-                .normalizeMoney(
-                        request.monthlyBudgetUsd(),
-                        "monthlyBudgetUsd"
-                );
-
-        OrganizationModelPolicyRules.validate(
-                allow,
-                deny,
-                defaultModelKey,
-                request.maxInputTokens(),
-                request.maxOutputTokens(),
-                maxRequestCostUsd,
-                monthlyBudgetUsd,
-                request.budgetEnforcement()
-        );
-
-        Instant now = clock.instant();
-        OrganizationModelPolicy policy = new OrganizationModelPolicy(
+        Instant now = DatabaseTimestampNormalizer.normalize(clock.instant());
+        OrganizationModelPolicy policy = OrganizationModelPolicyRules.buildPolicy(
                 UUID.randomUUID(),
                 target,
                 previousVersion + 1,
-                request.enabled(),
-                allow,
-                deny,
-                defaultModelKey,
-                request.maxInputTokens(),
-                request.maxOutputTokens(),
-                maxRequestCostUsd,
-                monthlyBudgetUsd,
-                request.budgetEnforcement(),
-                request.requireCompletePricing(),
-                request.requireNoTraining(),
-                request.requireZeroDataRetention(),
+                request,
                 currentUser.getId(),
                 now
         );

@@ -43,43 +43,43 @@ class AiProviderRetryExecutorTest {
             Duration.ofSeconds(2);
 
     @Test
-    void connectFailureCanBeRetried() {
+    void connectFailureWithoutPreSubmissionEvidenceIsNotRetried() {
         AiProviderRetryExecutor executor =
                 retryExecutor(2);
 
         AtomicInteger attempts =
                 new AtomicInteger();
 
-        AiChatResponse result =
-                executor.execute(
+        AiProviderUnavailableException connectFailure =
+                new AiProviderUnavailableException(
+                        PROVIDER,
+                        MODEL,
+                        true,
+                        false,
+                        "connect failure",
+                        null
+                );
+
+        // The adapter has no proof that zero request bytes reached the provider.
+        // Constructor retry flags cannot override conservative outcome certainty.
+        assertThat(connectFailure.isRetryable())
+                .isTrue();
+
+        assertThatThrownBy(
+                () -> executor.execute(
                         PROVIDER,
                         MODEL,
                         OPERATION_ID,
                         Duration.ZERO,
                         context -> {
-                            int currentAttempt =
-                                    attempts.incrementAndGet();
-
-                            if (currentAttempt == 1) {
-                                throw new AiProviderUnavailableException(
-                                        PROVIDER,
-                                        MODEL,
-                                        true,
-                                        false,
-                                        "connect failure",
-                                        null
-                                );
-                            }
-
-                            return freeResponse();
+                            attempts.incrementAndGet();
+                            throw connectFailure;
                         }
-                );
-
-        assertThat(result.content())
-                .isEqualTo("Ответ");
+                )
+        ).isSameAs(connectFailure);
 
         assertThat(attempts)
-                .hasValue(2);
+                .hasValue(1);
     }
 
     @Test

@@ -24,6 +24,21 @@ public class AiExecutionAttemptScope {
             AiExecutionAttemptObserver observer,
             Supplier<T> action
     ) {
+        return execute(operationId, observer, Integer.MAX_VALUE, action);
+    }
+
+    /**
+     * maxCalls=1 disables retries for HARD financial reservations.
+     */
+    public <T extends AiChatResponse> T execute(
+            UUID operationId,
+            AiExecutionAttemptObserver observer,
+            int maxCalls,
+            Supplier<T> action
+    ) {
+        if (maxCalls < 1) {
+            throw new IllegalArgumentException("maxCalls must be positive");
+        }
         Objects.requireNonNull(
                 operationId,
                 "operationId не должен быть null"
@@ -45,7 +60,8 @@ public class AiExecutionAttemptScope {
 
         State state = new State(
                 operationId,
-                observer
+                observer,
+                maxCalls
         );
         current.set(state);
 
@@ -125,7 +141,18 @@ public class AiExecutionAttemptScope {
 
         try {
             state.observer.succeeded(attempt, response);
+        } catch (AiProviderException governanceRejection) {
+            // Observer already stored the physical success before evaluating
+            // resolved-model approval; this is not a failed HTTP attempt.
+            throw governanceRejection;
+        } catch (RuntimeException terminalPersistenceFailure) {
+            // The provider definitely returned, but an interrupted/failed
+            // DB acknowledgement cannot prove whether the SUCCEEDED commit
+            // happened. Never retry or overwrite terminal V51 evidence.
+            throw new PhysicalAttemptReconciliationRequiredException(
+                    attempt.attemptId(), terminalPersistenceFailure);
         } finally {
+            // No further physical call can be made in this execution scope.
             state.activeAttempt = null;
         }
     }
@@ -152,13 +179,17 @@ public class AiExecutionAttemptScope {
         return current.get() != null;
     }
 
+    public int permittedMaxAttempts(int requested) {
+        State state = current.get();
+        return state == null ? requested : Math.min(requested, state.maxCalls);
+    }
+
     public boolean hasActiveAttempt(
             AiProviderAttemptContext attempt
     ) {
         State state = current.get();
 
         return state != null
-                && attempt != null
                 && state.activeAttempt != null
                 && state.activeAttempt.equals(attempt);
     }
@@ -219,16 +250,19 @@ public class AiExecutionAttemptScope {
     private static final class State {
         private final UUID operationId;
         private final AiExecutionAttemptObserver observer;
+        private final int maxCalls;
         private boolean eventSeen;
         private int lastAttemptNumber;
         private AiProviderAttemptContext activeAttempt;
 
         private State(
                 UUID operationId,
-                AiExecutionAttemptObserver observer
+                AiExecutionAttemptObserver observer,
+                int maxCalls
         ) {
             this.operationId = operationId;
             this.observer = observer;
+            this.maxCalls = maxCalls;
         }
     }
 }

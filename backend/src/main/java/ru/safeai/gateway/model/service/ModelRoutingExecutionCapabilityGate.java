@@ -20,10 +20,10 @@ final class ModelRoutingExecutionCapabilityGate {
     private ModelRoutingExecutionCapabilityGate() {
     }
 
-    static boolean supportsAll(
+    static boolean hasUnsupported(
             Set<ModelCapability> required
     ) {
-        return required == null
-                || EXECUTABLE_CAPABILITIES.containsAll(required);
+        return required != null
+                && !EXECUTABLE_CAPABILITIES.containsAll(required);
     }
 }

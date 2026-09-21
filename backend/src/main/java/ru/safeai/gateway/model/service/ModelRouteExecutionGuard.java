@@ -1,108 +1,32 @@
 package ru.safeai.gateway.model.service;
 
 import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
 import ru.safeai.gateway.model.exception.ModelRouteEnvelopeExceededException;
 
 import java.util.Objects;
-import java.util.UUID;
 
-/**
- * Final fail-closed guard between prompt/RAG materialization and provider I/O.
- */
+/** Final identity + exact-reservation + physical input-envelope guard. */
 public final class ModelRouteExecutionGuard {
-
-    private ModelRouteExecutionGuard() {
-    }
+    private ModelRouteExecutionGuard() { }
 
     public static void assertWithinReservedInputEnvelope(
-            UUID decisionId,
-            AiChatRequest reservedRequest,
-            AiChatRequest preparedRequest
+            ModelRouteExecutionIdentity identity,
+            AiChatRequest reserved,
+            AiChatRequest prepared
     ) {
-        Objects.requireNonNull(
-                decisionId,
-                "decisionId не должен быть null"
-        );
-
-        assertWithinReservedInputEnvelopeInternal(
-                decisionId,
-                reservedRequest,
-                preparedRequest
-        );
-    }
-
-    /**
-     * Compatibility entry point for direct/legacy tests that do not have a
-     * model-route decision id.
-     */
-    public static void assertWithinReservedInputEnvelope(
-            AiChatRequest reservedRequest,
-            AiChatRequest preparedRequest
-    ) {
-        assertWithinReservedInputEnvelopeInternal(
-                null,
-                reservedRequest,
-                preparedRequest
-        );
-    }
-
-    private static void assertWithinReservedInputEnvelopeInternal(
-            UUID decisionId,
-            AiChatRequest reservedRequest,
-            AiChatRequest preparedRequest
-    ) {
-        Objects.requireNonNull(
-                reservedRequest,
-                "reservedRequest не должен быть null"
-        );
-        Objects.requireNonNull(
-                preparedRequest,
-                "preparedRequest не должен быть null"
-        );
-
-        Long reserved =
-                reservedRequest.reservedInputTokens();
-
-        if (reserved == null) {
-            if (decisionId != null) {
-                throw new IllegalStateException(
-                        "Governed AI request has no reservedInputTokens: "
-                                + decisionId
-                );
-            }
-
-            return;
+        Objects.requireNonNull(identity, "identity");
+        Objects.requireNonNull(reserved, "reserved");
+        Objects.requireNonNull(prepared, "prepared");
+        identity.requireSameBase(reserved);
+        identity.requirePreparedBase(reserved, prepared);
+        if (!AiInputUnitEstimator.VERSION.equals(identity.inputAccountingVersion())) {
+            throw new IllegalStateException("Unknown input accounting version");
         }
-
-        if (!Objects.equals(
-                preparedRequest.reservedInputTokens(),
-                reserved
-        )) {
-            throw new IllegalStateException(
-                    "RAG/context transformation changed reservedInputTokens"
-            );
-        }
-
-        if (!Objects.equals(
-                preparedRequest.maxOutputTokens(),
-                reservedRequest.maxOutputTokens()
-        )) {
-            throw new IllegalStateException(
-                    "RAG/context transformation changed maxOutputTokens"
-            );
-        }
-
-        long prepared =
-                ModelInputTokenEstimator.estimatePreparedRequest(
-                        preparedRequest
-                );
-
-        if (prepared > reserved) {
+        long estimate = AiInputUnitEstimator.estimatePreparedRequest(prepared);
+        if (estimate > identity.reservedInputUnits()) {
             throw new ModelRouteEnvelopeExceededException(
-                    decisionId,
-                    reserved,
-                    prepared
-            );
+                    identity.decisionId(), identity.reservedInputUnits(), estimate);
         }
     }
 }

@@ -57,23 +57,18 @@ final class RuntimeModelProbeHttpSupport {
                 "clock не должен быть null"
         );
 
-        HttpRequest request =
-                buildRequest(
-                        modelUri(
-                                baseUrl,
-                                model
-                        ),
-                        headers,
-                        boundedTimeout(
-                                readTimeout
-                        )
-                );
+        long startedNanos = System.nanoTime();
 
-        long startedNanos =
-                System.nanoTime();
+        try {
+            // URI parsing, header validation and request construction are part
+            // of the controlled probe outcome boundary too.
+            HttpRequest request = buildRequest(
+                    modelUri(baseUrl, model),
+                    headers,
+                    boundedTimeout(readTimeout)
+            );
 
-        try (
-                HttpClient client =
+            try (HttpClient client =
                         HttpClient.newBuilder()
                                 .connectTimeout(
                                         boundedTimeout(
@@ -85,14 +80,10 @@ final class RuntimeModelProbeHttpSupport {
                                 )
                                 .build()
         ) {
-            return executeProbe(
-                    client,
-                    request,
-                    provider,
-                    model,
-                    clock,
-                    startedNanos
-            );
+                return executeProbe(
+                        client, request, provider, model, clock, startedNanos
+                );
+            }
         } catch (InterruptedException exception) {
             Thread.currentThread()
                     .interrupt();

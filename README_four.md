@@ -543,7 +543,7 @@ backend/
 │   │       │       ├── V48__model_input_accounting_provenance.sql
 │   │       │       ├── V49__model_control_plane_strict_routing_and_generic_pricing.sql
 │   │       │       ├── V50__ai_execution_attempt_usage_evidence.sql
-│   │       │       ├── V49__model_control_plane_strict_routing_and_generic_pricing.sql
+│   │       │       ├── V51__ai_execution_attempt_integrity_hardening.sql
 │   │       │       └── README_DB.md
 │   │       ├── META-INF/
 │   │       ├── application.yml
@@ -581,6 +581,29 @@ ai/
 │   ├── AiProviderResponseTooLargeException
 │   ├── AiProviderTimeoutException
 │   └── AiProviderUnavailableException
+│
+├── execution/
+│   ├── AiExecutionAttemptObserver
+│   ├── AiExecutionAttemptRecorder
+│   ├── AiExecutionAttemptScope
+│   ├── AiExecutionPlanService
+│   ├── AiExecutionRequest
+│   ├── AiExecutionResult
+│   ├── AiExecutionService
+│   ├── ExecutionAttemptOutcome
+│   ├── FallbackSafety
+│   ├── ModelExecutionAttemptEntity
+│   ├── ModelExecutionAttemptRepository
+│   ├── ModelExecutionPlanEntity
+│   ├── ModelExecutionPlanRepository
+│   ├── OutcomeCertainty
+│   ├── ProviderExecutionTarget
+│   ├── ProviderPricingEvidence
+│   ├── ProviderUsageEvidence
+│   ├── ResolvedModelMismatchException
+│   └── RetrySafety
+│
+│
 ├── input/
 │   ├── AiInputUnitEstimator
 ├── metadata/
@@ -592,6 +615,7 @@ ai/
 │   ├── ModelPricingProperties
 │   ├── ModelPricingService
 │   └── PricingResult
+│
 ├── provider/
 │   ├── anthropic/
 │   │   ├── AnthropicProperties
@@ -615,6 +639,7 @@ ai/
 │   ├── AiRestClientFactory
 │   ├── AiRetryProperties
 │   └── ProviderPropertyValidator
+│
 └── web/
     └── AiExceptionHandler
     
@@ -628,15 +653,18 @@ audit/
 │   ├── AuditOutboxProperties
 │   ├── AuditRetentionConfiguration
 │   └── AuditRetentionProperties
+│
 ├── controller/
 │   ├── AuditController
 │   └── AuditDirectoryController
+│
 ├── details/
 │   ├── AiResponseAuditDetails
 │   ├── AuditDetails
 │   ├── ChatTurnAuditDetails
 │   ├── RateLimitAuditDetails
 │   └── SecurityRefreshReuseAuditDetails
+│
 ├── dto/
 │   ├── AuditActorDirectoryResponse
 │   ├── AuditEventCursorResponse
@@ -644,13 +672,17 @@ audit/
 │   ├── AuditEventPageResponse
 │   ├── AuditEventResponse
 │   └── AuditTargetOrganizationDirectoryResponse
+│
 ├── entity/
 │   ├── AuditEventEntity
 │   └── AuditOutboxEntity
+│
 ├── listener/
 │   └── RateLimitAuditListener
+│
 ├── model/
 │   └── AuditActor
+│
 ├── repository/
 │   ├── AuditDirectoryQueryRepository
 │   ├── AuditEventCriteria
@@ -658,6 +690,7 @@ audit/
 │   ├── AuditEventCursorRepositoryImpl
 │   ├── AuditEventRepository
 │   └── AuditOutboxRepository
+│
 ├── service/
 │   ├── AuditCommand
 │   ├── AuditCommandFactory
@@ -677,8 +710,10 @@ audit/
 │   ├── AuditRetentionLockService
 │   ├── AuditRetentionService
 │   └── BestEffortStandaloneAuditService
+│
 ├── spi/
 │   └── AuditTargetOrganizationSnapshotProvider
+│
 └── AuditEventType
 
 
@@ -686,18 +721,23 @@ auth/
 ├── config/
 │   ├── ProductionAuthCookieInvariantValidator
 │   └── RefreshTokenCleanupConfiguration
+│
 ├── controller/
 │   ├── AuthController
 │   └── CsrfController
+│
 ├── dto/
 │   ├── CsrfTokenResponse
 │   ├── CurrentUserResponse
 │   └── LoginRequest
+│
 ├── entity/
 │   ├── RefreshTokenEntity
 │   └── RefreshTokenRevocationReason
+│
 ├── repository/
 │   └── RefreshTokenRepository
+│
 ├── security/
 │   ├── AccessCookieAuthenticationFilter
 │   ├── CsrfCookieFilter
@@ -707,6 +747,7 @@ auth/
 │   ├── SecurityConfig
 │   ├── SpaCsrfTokenRequestHandler
 │   └── UserStatusFilter
+│
 ├── service/
 │   ├── AuthCookieConfigurationValidator
 │   ├── AuthCookieProperties
@@ -721,6 +762,7 @@ auth/
 │   ├── RefreshTokenCleanupProperties
 │   ├── RefreshTokenService
 │   └── UserSessionRevocationService
+│
 └── validation/
     ├── Utf8ByteLength
     └── Utf8ByteLengthValidator
@@ -733,8 +775,10 @@ chat/
 │   ├── ChatProperties
 │   ├── ChatQuotaProperties
 │   └── ChatRecoveryProperties
+│
 ├── controller/
 │   └── ChatController
+│
 ├── dto/
 │   ├── ChatCapabilitiesResponse
 │   ├── ChatDetailsResponse
@@ -748,6 +792,7 @@ chat/
 │   ├── MessageResponse
 │   ├── SendMessageRequest
 │   └── SendMessageResponse
+│
 ├── entity/
 │   ├── ChatMessageEntity
 │   ├── ChatMessageRole
@@ -756,6 +801,7 @@ chat/
 │   ├── ChatSessionEntity
 │   ├── ChatTurnEntity
 │   └── ChatTurnState
+│
 ├── exception/
 │   ├── AiOutcomeAmbiguousException
 │   ├── ChatAccessRevokedException
@@ -767,11 +813,14 @@ chat/
 │   ├── ChatTurnFailedException
 │   ├── ChatTurnInProgressException
 │   └── IdempotencyKeyReusedException
+│
 ├── observability/
 │   └── ChatMetrics
+│
 ├── quota/
 │   ├── ChatQuotaConsumption
 │   └── ChatQuotaPolicy
+│
 ├── repository/
 │   ├── ChatHistoryRepository
 │   ├── ChatHistoryTurn
@@ -783,6 +832,7 @@ chat/
 │   ├── ChatTurnRecoveryRepository
 │   ├── ChatTurnRepository
 │   └── RecoveredChatTurn
+│
 └── service/
     ├── AiHistoryBuilder
     ├── ChatContentNormalizer

@@ -122,9 +122,21 @@ public class ModelRoutingService {
             );
         }
 
-        ModelCatalogEntry entry = selection.entry();
-        if (entry != null) {
-            ModelRouteReason catalogPolicyDenial = selectionPolicy.validateCatalogAndPolicy(
+        // Hard stop: catalog/runtime flags cannot make the text-only data plane
+        // execute TOOLS, VISION or STRUCTURED_OUTPUT.
+        if (ModelRoutingExecutionCapabilityGate.hasUnsupported(request.requiredCapabilities())) {
+            throw persistDenied(
+                    request, currentUser, now, runtime, policy, selection,
+                    ModelRouteReason.CAPABILITY_UNSUPPORTED,
+                    null, null, null, null
+            );
+        }
+
+        ModelCatalogEntry entry = Objects.requireNonNull(
+                selection.entry(),
+                "An ALLOWED route must have an effective catalog snapshot"
+        );
+        ModelRouteReason catalogPolicyDenial = selectionPolicy.validateCatalogAndPolicy(
                     entry,
                     selection.modelKey(),
                     runtime,
@@ -147,7 +159,6 @@ public class ModelRoutingService {
                         null
                 );
             }
-        }
 
         long estimatedInputTokens = costPolicy.estimateInputTokens(request);
         long estimatedOutputTokens = costPolicy.effectiveOutputLimit(

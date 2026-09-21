@@ -3,6 +3,7 @@ package ru.safeai.gateway.chat.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -12,6 +13,7 @@ import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.execution.AiExecutionRequest;
 import ru.safeai.gateway.ai.execution.AiExecutionResult;
 import ru.safeai.gateway.ai.execution.AiExecutionService;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
@@ -32,9 +34,12 @@ import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.common.exception.ChatLockUnavailableException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.knowledge.rag.KnowledgeRagService;
 import ru.safeai.gateway.knowledge.rag.RagCompletion;
 import ru.safeai.gateway.knowledge.rag.RagPreparation;
+import ru.safeai.gateway.model.service.ModelRouteExecutionIdentity;
+import ru.safeai.gateway.model.service.ModelRouteExecutionIdentityTestFixtures;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 import java.time.Duration;
@@ -49,6 +54,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -82,6 +89,7 @@ class ChatServiceTest {
     private ChatLockService.ChatLock redisLock;
     private ChatTurnLeaseService.LeaseWatch leaseWatch;
     private ChatProcessingContext processing;
+    private ModelRouteExecutionIdentity executionIdentity;
 
     @BeforeEach
     void setUp() {
@@ -125,6 +133,28 @@ class ChatServiceTest {
                 new AtomicBoolean(false)
         );
         processing = processingContext();
+
+        // V54: the physical execution guard must receive a genuine immutable
+        // identity for the exact, pre-RAG reserved request. Only the DB issuer
+        // is mocked; base hashing and envelope verification are real.
+        executionIdentity = ModelRouteExecutionIdentityTestFixtures.general(
+                processing.modelRouteDecisionId(),
+                processing.turnId(),
+                processing.clientRequestId(),
+                processing.aiRequest()
+        );
+        org.mockito.Mockito.lenient()
+                .when(aiExecutionService.bindExecution(
+                        eq(processing.modelRouteDecisionId()),
+                        eq(processing.turnId()),
+                        eq(processing.clientRequestId()),
+                        eq(processing.providerOperationId()),
+                        same(processing.aiRequest()),
+                        isNull(),
+                        eq(KnowledgeMode.GENERAL)
+                ))
+                .thenReturn(executionIdentity);
+
         org.mockito.Mockito.lenient()
                 .when(aiExecutionService.targetFor(any()))
                 .thenReturn(ProviderExecutionTarget.staticTarget(
@@ -202,6 +232,25 @@ class ChatServiceTest {
         order.verify(lockService).ensureValid(redisLock);
         order.verify(leaseService).ensureValid(leaseWatch);
 
+        verify(aiExecutionService).bindExecution(
+                eq(processing.modelRouteDecisionId()),
+                eq(processing.turnId()),
+                eq(processing.clientRequestId()),
+                eq(processing.providerOperationId()),
+                same(processing.aiRequest()),
+                isNull(),
+                eq(KnowledgeMode.GENERAL)
+        );
+        ArgumentCaptor<AiExecutionRequest> executionCaptor =
+                ArgumentCaptor.forClass(AiExecutionRequest.class);
+        verify(aiExecutionService).execute(executionCaptor.capture());
+        AiExecutionRequest physicalCall = executionCaptor.getValue();
+        assertThat(physicalCall.executionIdentity()).isSameAs(executionIdentity);
+        assertThat(physicalCall.reservedAiRequest()).isSameAs(processing.aiRequest());
+        assertThat(physicalCall.modelRouteDecisionId())
+                .isEqualTo(processing.modelRouteDecisionId());
+        assertThat(physicalCall.chatTurnId()).isEqualTo(processing.turnId());
+
         verify(securityStateService).assertStillActive(
                 eq(ChatTestFixtures.CHAT_ID),
                 eq(ChatTestFixtures.TURN_ID),
@@ -210,6 +259,90 @@ class ChatServiceTest {
         );
         verify(leaseService).close(leaseWatch);
         verify(lockService).unlockQuietly(redisLock);
+    }
+
+    @Test
+    void alteredReservedBaseIsRejectedBeforePhysicalProviderCall() {
+        stubOwnedChatAndProcessing();
+
+        // The issuer allegedly bound a different pre-RAG payload. The real
+        // ModelRouteExecutionGuard must reject its SHA-256; no provider I/O.
+        AiChatRequest alteredBase = processing.aiRequest().withHistory(
+                List.of(
+                        new ru.safeai.gateway.ai.dto.AiMessage(
+                                ru.safeai.gateway.ai.dto.AiMessageRole.USER,
+                                "not the reserved history"
+                        ),
+                        new ru.safeai.gateway.ai.dto.AiMessage(
+                                ru.safeai.gateway.ai.dto.AiMessageRole.ASSISTANT,
+                                "unexpected reply"
+                        )
+                )
+        );
+        ModelRouteExecutionIdentity unrelated =
+                ModelRouteExecutionIdentityTestFixtures.general(
+                        processing.modelRouteDecisionId(),
+                        processing.turnId(),
+                        processing.clientRequestId(),
+                        alteredBase
+                );
+        when(aiExecutionService.bindExecution(
+                eq(processing.modelRouteDecisionId()),
+                eq(processing.turnId()),
+                eq(processing.clientRequestId()),
+                eq(processing.providerOperationId()),
+                same(processing.aiRequest()),
+                isNull(),
+                eq(KnowledgeMode.GENERAL)
+        )).thenReturn(unrelated);
+
+        assertThatThrownBy(() -> service.sendMessage(
+                ChatTestFixtures.CHAT_ID,
+                request(),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(ChatTurnFailedException.class)
+                .extracting("code")
+                .isEqualTo("MODEL_ROUTE_INPUT_ENVELOPE_INVALID");
+
+        verify(finalizationService).failBeforeProviderCall(
+                eq(processing),
+                eq("MODEL_ROUTE_ENVELOPE_INTEGRITY"),
+                eq("MODEL_ROUTE_INPUT_ENVELOPE_INVALID"),
+                any(SafeAiUserPrincipal.class)
+        );
+        verify(finalizationService, never()).markProviderCallStarted(any());
+        verify(aiExecutionService, never()).execute(any());
+    }
+
+    @Test
+    void missingExecutionIdentityFailsClosedBeforePhysicalProviderCall() {
+        stubOwnedChatAndProcessing();
+        when(aiExecutionService.bindExecution(
+                eq(processing.modelRouteDecisionId()),
+                eq(processing.turnId()),
+                eq(processing.clientRequestId()),
+                eq(processing.providerOperationId()),
+                same(processing.aiRequest()),
+                isNull(),
+                eq(KnowledgeMode.GENERAL)
+        )).thenReturn(null);
+
+        assertThatThrownBy(() -> service.sendMessage(
+                ChatTestFixtures.CHAT_ID,
+                request(),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(ChatTurnFailedException.class)
+                .extracting("code")
+                .isEqualTo("MODEL_ROUTE_INPUT_ENVELOPE_INVALID");
+
+        verify(finalizationService).failBeforeProviderCall(
+                eq(processing),
+                eq("MODEL_ROUTE_ENVELOPE_INTEGRITY"),
+                eq("MODEL_ROUTE_INPUT_ENVELOPE_INVALID"),
+                any(SafeAiUserPrincipal.class)
+        );
+        verify(finalizationService, never()).markProviderCallStarted(any());
+        verify(aiExecutionService, never()).execute(any());
     }
 
     @Test

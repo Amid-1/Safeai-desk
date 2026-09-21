@@ -30,6 +30,7 @@ import ru.safeai.gateway.model.domain.ModelCapability;
 import ru.safeai.gateway.model.domain.ModelRouteRequest;
 import ru.safeai.gateway.model.domain.ModelRouteResult;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
+import ru.safeai.gateway.model.service.ModelRouteReservedRequestService;
 import ru.safeai.gateway.model.service.ModelRoutingEnvelopeService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
 
@@ -58,6 +59,7 @@ public class ChatTurnReservationService {
     private final AuditEventService auditEventService;
     private final ModelRoutingService modelRoutingService;
     private final ModelRoutingEnvelopeService routingEnvelopeService;
+    private final ModelRouteReservedRequestService reservedRequestService;
     private final ChatProperties chatProperties;
     private final ChatMetrics metrics;
     private final Clock clock;
@@ -77,6 +79,7 @@ public class ChatTurnReservationService {
             AuditEventService auditEventService,
             ModelRoutingService modelRoutingService,
             ModelRoutingEnvelopeService routingEnvelopeService,
+            ModelRouteReservedRequestService reservedRequestService,
             ChatProperties chatProperties,
             ChatMetrics metrics,
             Clock clock
@@ -132,6 +135,10 @@ public class ChatTurnReservationService {
         this.routingEnvelopeService = Objects.requireNonNull(
                 routingEnvelopeService,
                 "routingEnvelopeService не должен быть null"
+        );
+        this.reservedRequestService = Objects.requireNonNull(
+                reservedRequestService,
+                "reservedRequestService не должен быть null"
         );
         this.chatProperties = Objects.requireNonNull(
                 chatProperties,
@@ -377,17 +384,9 @@ public class ChatTurnReservationService {
         modelRoutingService
                 .validateAllowedTurnLinkBeforeExternalSideEffects();
 
-        /*
-         * Redis remains the only non-transactional reservation and still runs
-         * last. Rejection rolls back USER/turn/quota/audit rows, preserving the
-         * original rate-limit semantics and existing constructor wiring.
-         */
-        rateLimitService.checkAiMessageAllowed(
-                currentUser
-        );
-
-        metrics.recordReservedAfterCommit();
-
+        // Seal the exact pre-RAG request in the SAME DB transaction as the
+        // ChatTurn and route decision. A missing seal must never be repaired
+        // after committing the reservation or after the provider call.
         AiChatRequest aiRequest =
                 new AiChatRequest(
                         currentUser.getId(),
@@ -403,6 +402,26 @@ public class ChatTurnReservationService {
                                 route.estimatedOutputTokens()
                         )
                 );
+
+        reservedRequestService.seal(
+                route.decisionId(),
+                turnId,
+                clientRequestId,
+                aiRequest,
+                request.knowledgeBaseId(),
+                request.knowledgeMode()
+        );
+
+        /*
+         * Redis remains the only non-transactional reservation and still runs
+         * last. Rejection rolls back USER/turn/quota/audit rows, preserving the
+         * original rate-limit semantics and ordering.
+         */
+        rateLimitService.checkAiMessageAllowed(
+                currentUser
+        );
+
+        metrics.recordReservedAfterCommit();
 
         return new ChatProcessingContext(
                 chatId,

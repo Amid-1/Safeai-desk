@@ -191,7 +191,7 @@ class ModelRouteDecisionFactoryTest {
                 original.userMessage(),
                 original.history(),
                 original.requiredCapabilities(),
-                original.additionalInputTokenUpperBound()
+                original.additionalInputUnitUpperBound()
         );
 
         assertThatThrownBy(() ->
@@ -223,7 +223,7 @@ class ModelRouteDecisionFactoryTest {
                 original.userMessage(),
                 original.history(),
                 Set.of(ModelCapability.VISION),
-                original.additionalInputTokenUpperBound()
+                original.additionalInputUnitUpperBound()
         );
 
         assertThatThrownBy(() ->
@@ -255,7 +255,7 @@ class ModelRouteDecisionFactoryTest {
                 original.userMessage(),
                 original.history(),
                 original.requiredCapabilities(),
-                original.additionalInputTokenUpperBound()
+                original.additionalInputUnitUpperBound()
         );
 
         assertThatThrownBy(() ->
@@ -556,3 +556,4 @@ class ModelRouteDecisionFactoryTest {
     }
 
 }
+

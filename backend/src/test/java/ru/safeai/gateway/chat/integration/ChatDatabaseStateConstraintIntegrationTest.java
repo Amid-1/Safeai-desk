@@ -1,6 +1,24 @@
 package ru.safeai.gateway.chat.integration;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.transaction.support.TransactionTemplate;
+import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.audit.service.AuditEventService;
+import ru.safeai.gateway.chat.service.ChatContentNormalizer;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
+import ru.safeai.gateway.model.domain.ModelCatalogEntry;
+import ru.safeai.gateway.model.domain.ModelRouteRequest;
+import ru.safeai.gateway.model.domain.ModelRouteResult;
+import ru.safeai.gateway.model.repository.ModelCatalogRepository;
+import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
+import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
+import ru.safeai.gateway.model.service.ModelRouteReservedRequestService;
+import ru.safeai.gateway.model.service.ModelRoutingService;
+import ru.safeai.gateway.model.service.RuntimeModelStatusService;
+import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessException;
@@ -9,12 +27,17 @@ import org.springframework.test.context.ActiveProfiles;
 
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "safeai.chat.recovery.enabled=false",
@@ -29,6 +52,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 })
 class ChatDatabaseStateConstraintIntegrationTest
         extends AbstractChatPostgresIntegrationTest {
+
+    private static final Instant EXECUTION_AT = ModelTestFixtures.NOW;
+    private static final String EXECUTION_PROVIDER = "openai";
+    private static final String EXECUTION_MODEL = "gpt-test";
+    private static final String QUESTION = "Question";
+
+    @Autowired
+    private ChatContentNormalizer contentNormalizer;
+
+    @Autowired
+    private ModelRouteReservedRequestService reservedRequestService;
 
     @Test
     void succeededTurnWithoutRequestedAndResolvedModelIsRejected() {
@@ -216,7 +250,7 @@ class ChatDatabaseStateConstraintIntegrationTest
                     deployment_ref = 'tampered:deployment'
                 where id = ?
                 """,
-                Timestamp.from(NOW),
+                Timestamp.from(EXECUTION_AT.plusSeconds(2)),
                 execution.attemptId()
         )).isInstanceOf(DataAccessException.class);
 
@@ -232,7 +266,7 @@ class ChatDatabaseStateConstraintIntegrationTest
         assertThat(persisted.get("outcome"))
                 .isEqualTo("STARTED");
         assertThat(persisted.get("deployment_ref"))
-                .isEqualTo("static:mock:mock-safeai");
+                .isEqualTo("static:openai:gpt-test");
     }
 
     @Test
@@ -244,7 +278,7 @@ class ChatDatabaseStateConstraintIntegrationTest
                 update public.model_execution_attempts
                 set outcome = 'SUCCEEDED',
                     outcome_certainty = 'KNOWN_EXECUTED',
-                    resolved_physical_model = 'mock-safeai',
+                    resolved_physical_model = 'gpt-test',
                     provider_request_id = 'provider-request-1',
                     provider_message_id = 'provider-message-1',
                     usage_status = 'AVAILABLE',
@@ -261,7 +295,7 @@ class ChatDatabaseStateConstraintIntegrationTest
                     finished_at = ?
                 where id = ?
                 """,
-                Timestamp.from(NOW),
+                Timestamp.from(EXECUTION_AT.plusSeconds(2)),
                 execution.attemptId()
         );
 
@@ -294,62 +328,221 @@ class ChatDatabaseStateConstraintIntegrationTest
                 .isEqualTo("mock-2026-01");
     }
 
+    /**
+     * V53/V54 permit physical execution only for an exact catalog-backed v3
+     * ALLOWED route, committed ChatTurn and immutable pre-RAG request seal.
+     * Prepare all four records atomically; do not weaken DB constraints or
+     * create a legacy catalog-less plan for a physical-attempt test.
+     */
     private ExecutionIds insertStartedExecutionAttempt() {
-        UUID turnId = processingTurnWithUserMessage();
-        UUID providerOperationId = jdbcTemplate.queryForObject(
-                """
-                select provider_operation_id
-                from public.chat_turns
-                where id = ?
-                """,
-                UUID.class,
-                turnId
-        );
-        UUID planId = UUID.randomUUID();
-        UUID attemptId = UUID.randomUUID();
-
-        jdbcTemplate.update(
-                """
-                insert into public.model_execution_plans (
-                    id, provider_operation_id, chat_turn_id,
-                    organization_id, model_route_decision_id,
-                    requested_model, created_at
-                ) values (?, ?, ?, ?, null, 'mock-safeai', ?)
-                """,
-                planId,
-                providerOperationId,
-                turnId,
-                ORGANIZATION_ID,
-                Timestamp.from(NOW.minusSeconds(2))
-        );
-
-        jdbcTemplate.update(
-                """
-                insert into public.model_execution_attempts (
-                    id, execution_plan_id, attempt_number,
-                    provider_attempt_id, provider_type,
-                    provider_configuration_ref,
-                    provider_configuration_version,
-                    deployment_ref, deployment_version,
-                    requested_physical_model, started_at,
-                    outcome, outcome_certainty,
-                    retry_safety, fallback_safety, created_at
-                ) values (
-                    ?, ?, 1, ?, 'mock', 'static:mock', 'static-v1',
-                    'static:mock:mock-safeai', 'static-v1',
-                    'mock-safeai', ?, 'STARTED', 'AMBIGUOUS',
-                    'SAME_TARGET_RETRY_FORBIDDEN',
-                    'FALLBACK_FORBIDDEN', ?
-                )
-                """,
-                attemptId,
-                planId,
+        // Catalog is append-only and survives other methods in this test class.
+        // A new logical model key per fixture prevents (model_key, version=1)
+        // collisions while retaining the exact same physical provider/model.
+        String catalogModelKey =
+                "test:execution-integrity:" + UUID.randomUUID();
+        ModelCatalogEntry template = ModelTestFixtures.freeEntry();
+        ModelCatalogEntry entry = new ModelCatalogEntry(
                 UUID.randomUUID(),
-                Timestamp.from(NOW.minusSeconds(1)),
-                Timestamp.from(NOW.minusSeconds(1))
+                catalogModelKey,
+                1,
+                EXECUTION_PROVIDER,
+                EXECUTION_MODEL,
+                "Execution integrity test model",
+                template.lifecycle(),
+                template.maxInputTokens(),
+                template.maxOutputTokens(),
+                template.capabilities(),
+                template.inputModalities(),
+                template.outputModalities(),
+                template.retentionStatus(),
+                template.retentionDays(),
+                template.trainingUseStatus(),
+                template.pricingStatus(),
+                template.pricingComplete(),
+                template.inputUsdPer1mTokens(),
+                template.cachedInputUsdPer1mTokens(),
+                template.cacheWriteInputUsdPer1mTokens(),
+                template.outputUsdPer1mTokens(),
+                template.extraPricingJson(),
+                template.pricingVersion(),
+                EXECUTION_AT.minusSeconds(120),
+                template.source(),
+                USER_ID,
+                EXECUTION_AT.minusSeconds(180)
         );
 
-        return new ExecutionIds(planId, attemptId);
+        ModelCatalogRepository catalog =
+                new ModelCatalogRepository(jdbcTemplate);
+
+        RuntimeModelStatusService runtime =
+                mock(RuntimeModelStatusService.class);
+        when(runtime.current()).thenReturn(ModelTestFixtures.freeRuntime());
+
+        ModelRoutingService routing = new ModelRoutingService(
+                catalog,
+                new OrganizationModelPolicyRepository(jdbcTemplate),
+                new ModelRouteDecisionRepository(jdbcTemplate),
+                runtime,
+                mock(AuditEventService.class),
+                ModelTestFixtures.CLOCK
+        );
+
+        UUID turnId = UUID.randomUUID();
+        UUID clientRequestId = UUID.randomUUID();
+        UUID providerOperationId = UUID.randomUUID();
+        UUID userMessageId = insertUserMessage(
+                CHAT_ID,
+                ORGANIZATION_ID,
+                clientRequestId,
+                QUESTION,
+                EXECUTION_AT.minusSeconds(20)
+        );
+        String requestHash = contentNormalizer.requestHash(
+                QUESTION,
+                null,
+                KnowledgeMode.GENERAL
+        );
+        SafeAiUserPrincipal principal =
+                SafeAiUserPrincipal.accessTokenPrincipal(
+                        USER_ID,
+                        ORGANIZATION_ID,
+                        0L,
+                        0L,
+                        List.of(new SimpleGrantedAuthority("ROLE_USER"))
+                );
+
+        // The catalog, route->planned-turn FK, turn, seal, plan and attempt
+        // must commit atomically. No orphaned fixture rows on setup failure.
+        return new TransactionTemplate(transactionManager).execute(tx -> {
+            catalog.insert(entry);
+            ModelRouteResult route = routing.decide(
+                    new ModelRouteRequest(
+                            ORGANIZATION_ID,
+                            USER_ID,
+                            CHAT_ID,
+                            turnId,
+                            clientRequestId,
+                            requestHash,
+                            catalogModelKey,
+                            QUESTION,
+                            List.of(),
+                            Set.of(),
+                            0L
+                    ),
+                    principal
+            );
+
+            assertThat(route.catalogEntryId()).isEqualTo(entry.id());
+            assertThat(route.modelKey()).isEqualTo(catalogModelKey);
+            assertThat(route.catalogVersion()).isEqualTo(1);
+            assertThat(route.provider()).isEqualTo(EXECUTION_PROVIDER);
+            assertThat(route.providerModelId()).isEqualTo(EXECUTION_MODEL);
+
+            jdbcTemplate.update(
+                    """
+                    insert into public.chat_turns (
+                        id, session_id, organization_id, user_id,
+                        client_request_id, request_content_hash,
+                        provider_operation_id, user_message_id,
+                        state, processing_token, lease_until,
+                        provider_call_started_at, provider, requested_model,
+                        model_route_decision_id, outcome_ambiguous,
+                        created_at, updated_at, version
+                    ) values (
+                        ?, ?, ?, ?, ?, ?, ?, ?, 'PROCESSING', ?, ?,
+                        ?, ?, ?, ?, false, ?, ?, 0
+                    )
+                    """,
+                    turnId,
+                    CHAT_ID,
+                    ORGANIZATION_ID,
+                    USER_ID,
+                    clientRequestId,
+                    requestHash,
+                    providerOperationId,
+                    userMessageId,
+                    UUID.randomUUID(),
+                    Timestamp.from(EXECUTION_AT.plusSeconds(60)),
+                    Timestamp.from(EXECUTION_AT),
+                    EXECUTION_PROVIDER,
+                    EXECUTION_MODEL,
+                    route.decisionId(),
+                    Timestamp.from(EXECUTION_AT.minusSeconds(10)),
+                    Timestamp.from(EXECUTION_AT.minusSeconds(10))
+            );
+
+            AiChatRequest baseRequest = new AiChatRequest(
+                    USER_ID,
+                    ORGANIZATION_ID,
+                    CHAT_ID,
+                    providerOperationId,
+                    null,
+                    null,
+                    QUESTION,
+                    List.of(),
+                    route.estimatedInputTokens(),
+                    Math.toIntExact(route.estimatedOutputTokens())
+            );
+            reservedRequestService.seal(
+                    route.decisionId(),
+                    turnId,
+                    clientRequestId,
+                    baseRequest,
+                    null,
+                    KnowledgeMode.GENERAL
+            );
+
+            UUID planId = UUID.randomUUID();
+            UUID attemptId = UUID.randomUUID();
+
+            jdbcTemplate.update(
+                    """
+                    insert into public.model_execution_plans (
+                        id, provider_operation_id, chat_turn_id,
+                        organization_id, model_route_decision_id,
+                        requested_model, created_at
+                    ) values (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    planId,
+                    providerOperationId,
+                    turnId,
+                    ORGANIZATION_ID,
+                    route.decisionId(),
+                    EXECUTION_MODEL,
+                    Timestamp.from(EXECUTION_AT)
+            );
+
+            jdbcTemplate.update(
+                    """
+                    insert into public.model_execution_attempts (
+                        id, execution_plan_id, attempt_number,
+                        provider_attempt_id, provider_type,
+                        provider_configuration_ref,
+                        provider_configuration_version,
+                        deployment_ref, deployment_version,
+                        requested_physical_model, started_at,
+                        outcome, outcome_certainty,
+                        retry_safety, fallback_safety, created_at
+                    ) values (
+                        ?, ?, 1, ?, ?, ?, 'static-v1',
+                        ?, 'static-v1', ?, ?, 'STARTED', 'AMBIGUOUS',
+                        'SAME_TARGET_RETRY_FORBIDDEN',
+                        'FALLBACK_FORBIDDEN', ?
+                    )
+                    """,
+                    attemptId,
+                    planId,
+                    UUID.randomUUID(),
+                    EXECUTION_PROVIDER,
+                    "static:" + EXECUTION_PROVIDER,
+                    "static:" + EXECUTION_PROVIDER + ":" + EXECUTION_MODEL,
+                    EXECUTION_MODEL,
+                    Timestamp.from(EXECUTION_AT.plusSeconds(1)),
+                    Timestamp.from(EXECUTION_AT.plusSeconds(1))
+            );
+
+            return new ExecutionIds(planId, attemptId);
+        });
     }
 
     private UUID processingTurnWithUserMessage() {

@@ -1,5 +1,6 @@
 package ru.safeai.gateway.model.service;
 
+import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelPricingStatus;
@@ -18,17 +19,12 @@ import java.util.Objects;
 import java.util.UUID;
 
 final class ModelRoutingCostPolicy {
-
     private static final BigDecimal ONE_MILLION = new BigDecimal("1000000");
     private static final int MONEY_SCALE = 12;
-
     private final ModelRouteDecisionRepository decisionRepository;
 
     ModelRoutingCostPolicy(ModelRouteDecisionRepository decisionRepository) {
-        this.decisionRepository = Objects.requireNonNull(
-                decisionRepository,
-                "decisionRepository не должен быть null"
-        );
+        this.decisionRepository = Objects.requireNonNull(decisionRepository, "decisionRepository");
     }
 
     BudgetSnapshot evaluateBudget(
@@ -272,7 +268,11 @@ final class ModelRoutingCostPolicy {
     }
 
     long estimateInputTokens(ModelRouteRequest request) {
-        return ModelInputTokenEstimator.estimateRouteRequest(request);
+        Objects.requireNonNull(request, "request");
+        return Math.addExact(
+                AiInputUnitEstimator.estimateBaseRequest(
+                        request.userMessage(), request.history()),
+                request.additionalInputUnitUpperBound());
     }
 
     PricingEstimate estimateCost(
@@ -291,10 +291,20 @@ final class ModelRoutingCostPolicy {
                 return new PricingEstimate(null, entry.pricingComplete());
             }
 
+            // For a generic tariff the three supported input prices are
+            // independent: any token may be billed at the most expensive
+            // applicable rate. Do not assume cache-write <= ordinary input.
+            BigDecimal worstInputRate = entry.inputUsdPer1mTokens();
+            if (entry.cachedInputUsdPer1mTokens() != null) {
+                worstInputRate = worstInputRate.max(entry.cachedInputUsdPer1mTokens());
+            }
+            if (entry.cacheWriteInputUsdPer1mTokens() != null) {
+                worstInputRate = worstInputRate.max(entry.cacheWriteInputUsdPer1mTokens());
+            }
             BigDecimal estimatedCost = calculateWorstCaseCost(
                     inputTokens,
                     outputTokens,
-                    entry.inputUsdPer1mTokens(),
+                    worstInputRate,
                     entry.outputUsdPer1mTokens()
             );
             if (ModelControlPlaneNumericValidation.violatesNonNegativeNumeric30Scale12(estimatedCost)) {

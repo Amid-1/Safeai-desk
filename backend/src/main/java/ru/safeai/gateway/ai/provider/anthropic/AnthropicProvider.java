@@ -343,6 +343,7 @@ public final class AnthropicProvider implements AiProvider {
 
         AiResponseMetadataService.AiResponseMetadata metadata =
                 responseMetadataService.extract(
+                        attempt.operationId(),
                         response,
                         ProviderExecutionTarget.staticTarget(
                                 PROVIDER_NAME,
@@ -406,11 +407,17 @@ public final class AnthropicProvider implements AiProvider {
             );
         }
 
-        String actualModel =
-                AiProviderSupport.resolvedModel(
-                        response,
-                        properties.model()
-                );
+        // Successful physical response without a model cannot prove
+        // resolved_model == requested_model. Do not invent a substitute.
+        final String actualModel;
+        try {
+            actualModel = AiProviderSupport.resolvedModel(
+                    response);
+        } catch (IllegalStateException invalidModel) {
+            throw parsingFailure(
+                    PROVIDER_NAME, properties.model(),
+                    "Provider response is missing a valid physical model");
+        }
 
         validateResponseEnvelope(
                 response,

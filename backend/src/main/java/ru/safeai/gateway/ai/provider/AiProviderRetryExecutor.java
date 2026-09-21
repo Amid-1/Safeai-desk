@@ -79,7 +79,8 @@ public class AiProviderRetryExecutor {
             );
         }
 
-        int maxAttempts = properties.effectiveMaxAttempts();
+        int maxAttempts = attemptScope.permittedMaxAttempts(
+                properties.effectiveMaxAttempts());
         Duration backoff = properties.effectiveInitialBackoff();
         long deadlineNanos = safeAdd(
                 System.nanoTime(),
@@ -205,7 +206,9 @@ public class AiProviderRetryExecutor {
     ) {
         if (!properties.isEnabled()
                 || attempt >= maxAttempts
-                || !exception.isRetryable()) {
+                || !exception.isRetryable()
+                || ru.safeai.gateway.ai.execution.ProviderFailureCertainty.classify(exception)
+                   == ru.safeai.gateway.ai.execution.OutcomeCertainty.AMBIGUOUS) {
             return false;
         }
 

@@ -10,91 +10,38 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Tag("unit")
 class AiProductionConfigurationValidatorTest {
-
-    private static final String PRODUCTION_PROFILE =
-            "prod";
-
-    private static final String LOCAL_PROFILE =
-            "local";
-
     @Test
-    void productionRejectsMockProvider() {
-        AiProductionConfigurationValidator validator =
-                validator(
-                        PRODUCTION_PROFILE,
-                        "mock"
-                );
-
-        assertThatThrownBy(
-                validator::validate
-        )
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(
-                        "safeai.ai.provider"
-                )
-                .hasMessageContaining(
-                        "openai или anthropic"
-                )
-                .hasMessageContaining(
-                        "mock"
-                );
+    void prodAndProductionRejectMockIncludingDefault() {
+        for (String profile : new String[] {"prod", "production"}) {
+            for (String provider : new String[] {"mock", null}) {
+                assertThatThrownBy(() -> validator(profile, provider).validate())
+                        .as("%s / %s", profile, provider)
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("safeai.ai.provider")
+                        .hasMessageContaining("openai или anthropic");
+            }
+        }
     }
 
     @Test
-    void productionAcceptsOpenAiProvider() {
-        AiProductionConfigurationValidator validator =
-                validator(
-                        PRODUCTION_PROFILE,
-                        "openai"
-                );
-
-        assertThatCode(
-                validator::validate
-        ).doesNotThrowAnyException();
+    void productionAcceptsOnlyApprovedProviderImplementations() {
+        for (String profile : new String[] {"prod", "production"}) {
+            for (String provider : new String[] {"openai", "anthropic", " OpenAI "}) {
+                assertThatCode(() -> validator(profile, provider).validate())
+                        .as("%s / %s", profile, provider).doesNotThrowAnyException();
+            }
+        }
     }
 
     @Test
-    void productionAcceptsAnthropicProvider() {
-        AiProductionConfigurationValidator validator =
-                validator(
-                        PRODUCTION_PROFILE,
-                        "anthropic"
-                );
-
-        assertThatCode(
-                validator::validate
-        ).doesNotThrowAnyException();
+    void localProfileMayUseMock() {
+        assertThatCode(() -> validator("local", "mock").validate())
+                .doesNotThrowAnyException();
     }
 
-    @Test
-    void localProfileMayUseMockProvider() {
-        AiProductionConfigurationValidator validator =
-                validator(
-                        LOCAL_PROFILE,
-                        "mock"
-                );
-
-        assertThatCode(
-                validator::validate
-        ).doesNotThrowAnyException();
-    }
-
-    private static AiProductionConfigurationValidator validator(
-            String activeProfile,
-            String provider
-    ) {
-        MockEnvironment environment =
-                new MockEnvironment();
-
-        environment.setActiveProfiles(
-                activeProfile
-        );
-
-        return new AiProductionConfigurationValidator(
-                new AiProviderProperties(
-                        provider
-                ),
-                environment
-        );
+    private static AiProductionConfigurationValidator validator(String activeProfile, String provider) {
+        MockEnvironment environment = new MockEnvironment();
+        environment.setActiveProfiles(activeProfile);
+        return new AiProductionConfigurationValidator(new AiProviderProperties(provider), environment);
     }
 }

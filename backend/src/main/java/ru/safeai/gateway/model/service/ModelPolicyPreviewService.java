@@ -41,6 +41,7 @@ public class ModelPolicyPreviewService {
     private final RuntimeModelStatusService runtimeStatusService;
     private final ModelRoutingSelectionPolicy selectionPolicy;
     private final ModelRoutingCostPolicy costPolicy;
+    private final ModelRoutingEnvelopeService envelopeService;
     private final Clock clock;
 
     public ModelPolicyPreviewService(
@@ -48,6 +49,7 @@ public class ModelPolicyPreviewService {
             OrganizationModelPolicyRepository policyRepository,
             ModelRouteDecisionRepository decisionRepository,
             RuntimeModelStatusService runtimeStatusService,
+            ModelRoutingEnvelopeService envelopeService,
             Clock clock
     ) {
         this.catalogRepository = Objects.requireNonNull(
@@ -63,6 +65,9 @@ public class ModelPolicyPreviewService {
                 "runtimeStatusService не должен быть null"
         );
         this.clock = Objects.requireNonNull(clock, "clock не должен быть null");
+        this.envelopeService = Objects.requireNonNull(
+                envelopeService, "envelopeService не должен быть null"
+        );
         this.selectionPolicy = new ModelRoutingSelectionPolicy(catalogRepository);
         this.costPolicy = new ModelRoutingCostPolicy(
                 Objects.requireNonNull(
@@ -341,7 +346,7 @@ public class ModelPolicyPreviewService {
         );
     }
 
-    private static ModelRouteRequest syntheticRequest(
+    private ModelRouteRequest syntheticRequest(
             UUID organizationId,
             UUID userId
     ) {
@@ -353,10 +358,10 @@ public class ModelPolicyPreviewService {
                 PREVIEW_UUID,
                 PREVIEW_SHA256,
                 null,
-                "",
+                "x", // Smallest valid nonblank chat message.
                 List.of(),
                 Set.of(),
-                0L
+                envelopeService.additionalInputUnitUpperBound(false, Set.of())
         );
     }
 

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.core.GrantedAuthority;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.common.security.SystemRole;
+import ru.safeai.gateway.model.config.ModelRoutingEnvelopeProperties;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelCatalogSource;
@@ -203,6 +204,11 @@ class ModelPolicyPreviewServiceTest {
                         policyRepository,
                         decisionRepository,
                         runtimeService,
+                        new ModelRoutingEnvelopeService(
+                                new ModelRoutingEnvelopeProperties(
+                                        null, null, null, null, null, null
+                                )
+                        ),
                         Clock.fixed(NOW, ZoneOffset.UTC)
                 ),
                 user,
@@ -315,3 +321,4 @@ class ModelPolicyPreviewServiceTest {
     ) {
     }
 }
+

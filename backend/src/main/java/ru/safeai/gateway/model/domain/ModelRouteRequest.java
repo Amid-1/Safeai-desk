@@ -66,39 +66,16 @@ public record ModelRouteRequest(
             );
         }
 
-        history =
-                history == null
-                        ? List.of()
-                        : List.copyOf(history);
+        history = List.copyOf(
+                history == null ? List.of() : history
+        );
 
-        if (requiredCapabilities == null
-                || requiredCapabilities.isEmpty()) {
-            requiredCapabilities =
-                    Set.of();
-        } else {
-            EnumSet<ModelCapability> copy =
-                    EnumSet.noneOf(
-                            ModelCapability.class
-                    );
-
-            copy.addAll(
-                    requiredCapabilities
-            );
-
-            requiredCapabilities =
-                    Collections.unmodifiableSet(
-                            copy
-                    );
-        }
+        requiredCapabilities = requiredCapabilities == null
+                || requiredCapabilities.isEmpty()
+                ? Set.of()
+                : Collections.unmodifiableSet(
+                        EnumSet.copyOf(requiredCapabilities)
+                );
     }
 
-    /**
-     * Temporary source-compatible alias for callers compiled against the
-     * pre-V48 terminology. The value is a governance input unit count, not a
-     * provider token count.
-     */
-    @Deprecated(forRemoval = false)
-    public long additionalInputTokenUpperBound() {
-        return additionalInputUnitUpperBound;
-    }
 }

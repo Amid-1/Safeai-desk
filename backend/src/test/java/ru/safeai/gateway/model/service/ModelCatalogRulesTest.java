@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ModelCatalogRulesTest {
@@ -73,8 +74,20 @@ class ModelCatalogRulesTest {
     }
 
     @Test
-    void configuredPricingRejectsSpecializedPriceAboveInput() {
-        assertThatThrownBy(() ->
+    void configuredPricingAllowsIndependentSpecializedRatesAboveInput() {
+        // V49+: cache-read and cache-write prices are independent dimensions.
+        assertThatCode(() ->
+                validateCompletePricing(
+                        ModelPricingStatus.CONFIGURED,
+                        new BigDecimal("1"),
+                        new BigDecimal("1.01"),
+                        null,
+                        new BigDecimal("4"),
+                        "pricing-v1"
+                )
+        ).doesNotThrowAnyException();
+
+        assertThatCode(() ->
                 validateCompletePricing(
                         ModelPricingStatus.CONFIGURED,
                         new BigDecimal("1"),
@@ -83,9 +96,7 @@ class ModelCatalogRulesTest {
                         new BigDecimal("4"),
                         "pricing-v1"
                 )
-        )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("cacheWriteInputUsdPer1mTokens");
+        ).doesNotThrowAnyException();
     }
 
     @Test
@@ -95,6 +106,7 @@ class ModelCatalogRulesTest {
                         ModelLifecycle.ACTIVE,
                         32_000,
                         4_096,
+                        Set.of(), // V52+: required capabilities, not a modality set
                         Set.of(ModelModality.TEXT),
                         Set.of(ModelModality.IMAGE),
                         ModelRetentionStatus.NOT_DECLARED,
@@ -126,6 +138,7 @@ class ModelCatalogRulesTest {
                 ModelLifecycle.ACTIVE,
                 32_000,
                 4_096,
+                Set.of(), // capabilities
                 Set.of(ModelModality.TEXT),
                 Set.of(ModelModality.TEXT),
                 ModelRetentionStatus.NOT_DECLARED,

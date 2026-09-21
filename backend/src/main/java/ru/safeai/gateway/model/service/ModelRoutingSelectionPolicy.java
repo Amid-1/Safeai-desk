@@ -3,6 +3,7 @@ package ru.safeai.gateway.model.service;
 import ru.safeai.gateway.model.domain.ModelCapability;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelLifecycle;
+import ru.safeai.gateway.model.domain.ModelModality;
 import ru.safeai.gateway.model.domain.ModelRetentionStatus;
 import ru.safeai.gateway.model.domain.ModelRouteReason;
 import ru.safeai.gateway.model.domain.ModelRouteRequest;
@@ -101,12 +102,6 @@ final class ModelRoutingSelectionPolicy {
             );
         }
 
-        if (policyEnabled) {
-            return Selection.modelNotFound(
-                    null
-            );
-        }
-
         if (catalogRepository.hasEffectiveHistoryByRuntime(
                 runtime.provider(),
                 runtime.model(),
@@ -122,14 +117,7 @@ final class ModelRoutingSelectionPolicy {
             );
         }
 
-        return new Selection(
-                null,
-                runtimeKey(runtime),
-                runtime.provider(),
-                runtime.model(),
-                ModelRouteReason.RUNTIME_ONLY_MATCH,
-                null
-        );
+        return Selection.modelNotFound(null);
     }
 
     ModelRouteReason validateCatalogAndPolicy(
@@ -157,7 +145,12 @@ final class ModelRoutingSelectionPolicy {
             return ModelRouteReason.MODEL_NOT_ALLOWED;
         }
 
-        if (!entry.capabilities().containsAll(requiredCapabilities)
+        // Metadata may describe future adapters, but cannot enable an
+        // unimplemented provider data-plane feature.
+        if (ModelRoutingExecutionCapabilityGate.hasUnsupported(requiredCapabilities)
+                || !entry.inputModalities().contains(ModelModality.TEXT)
+                || !entry.outputModalities().contains(ModelModality.TEXT)
+                || !entry.capabilities().containsAll(requiredCapabilities)
                 || runtimeMissesCapability(runtime, requiredCapabilities)) {
             return ModelRouteReason.CAPABILITY_UNSUPPORTED;
         }

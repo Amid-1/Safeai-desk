@@ -1,5 +1,6 @@
 package ru.safeai.gateway.chat.integration;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,16 @@ import ru.safeai.gateway.chat.service.ChatTurnFinalizationService;
 import ru.safeai.gateway.chat.service.ChatTurnReservationService;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.model.domain.ModelCatalogEntry;
+import ru.safeai.gateway.model.domain.ModelCatalogSource;
+import ru.safeai.gateway.model.domain.ModelLifecycle;
+import ru.safeai.gateway.model.domain.ModelModality;
+import ru.safeai.gateway.model.domain.ModelPricingStatus;
+import ru.safeai.gateway.model.domain.ModelRetentionStatus;
+import ru.safeai.gateway.model.domain.ModelTrainingUseStatus;
+import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
+import ru.safeai.gateway.model.repository.ModelCatalogRepository;
+import ru.safeai.gateway.model.service.RuntimeModelStatusService;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -52,6 +63,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ChatTurnStateMachineIntegrationTest
         extends AbstractChatPostgresIntegrationTest {
 
+    private static final String TEST_MODEL_KEY =
+            "test:chat-state-machine:mock-safeai";
+
     @Autowired
     private ChatTurnReservationService reservationService;
 
@@ -62,6 +76,12 @@ class ChatTurnStateMachineIntegrationTest
     private ChatTurnRepository turnRepository;
 
     @Autowired
+    private ModelCatalogRepository modelCatalogRepository;
+
+    @Autowired
+    private RuntimeModelStatusService runtimeModelStatusService;
+
+    @Autowired
     private Clock clock;
 
     @Autowired
@@ -69,8 +89,86 @@ class ChatTurnStateMachineIntegrationTest
 
     @BeforeEach
     void preparePrimaryChat() {
+        resetCatalogFixture();
         alignChatTimestamps();
         assertOwnedChatVisible();
+        seedEffectiveMockRuntimeCatalog();
+    }
+
+    @AfterEach
+    void clearRuntimeCatalogFixture() {
+        resetCatalogFixture();
+    }
+
+    /**
+     * AbstractPostgresIntegrationTest shares one PostgreSQL container across
+     * test methods and does not clear the append-only model catalog. Keeping
+     * per-test model keys would accumulate multiple effective mappings for
+     * mock/mock-safeai and cause AMBIGUOUS_RUNTIME_MAPPING before these state
+     * machine scenarios execute.
+     * <p>
+     * This is strictly test-data cleanup. Production catalog immutability,
+     * routing decisions, foreign keys and DB constraints remain unchanged.
+     * CASCADE is needed because model route/turn evidence references catalog
+     * rows, even when the preceding base fixture has already been cleaned.
+     */
+    private void resetCatalogFixture() {
+        jdbcTemplate.execute(
+                "truncate table public.model_catalog_entries cascade"
+        );
+    }
+
+    /**
+     * The V49+ router must resolve an effective catalog snapshot for the
+     * configured mock physical runtime. Without one, these state-machine tests
+     * stop at MODEL_NOT_FOUND before reaching the behavior under test.
+     */
+    private void seedEffectiveMockRuntimeCatalog() {
+        RuntimeModelStatusResponse runtime = runtimeModelStatusService.current();
+
+        assertThat(runtime.provider()).isEqualTo("mock");
+        assertThat(runtime.model()).isEqualTo("mock-safeai");
+
+        Instant now = clock.instant();
+        ModelCatalogEntry catalogEntry = new ModelCatalogEntry(
+                UUID.randomUUID(),
+                TEST_MODEL_KEY,
+                1,
+                runtime.provider(),
+                runtime.model(),
+                "Chat state-machine mock runtime",
+                ModelLifecycle.ACTIVE,
+                runtime.maxInputTokens(),
+                runtime.maxOutputTokens(),
+                Set.of(),
+                Set.of(ModelModality.TEXT),
+                Set.of(ModelModality.TEXT),
+                ModelRetentionStatus.NOT_DECLARED,
+                null,
+                ModelTrainingUseStatus.NOT_DECLARED,
+                ModelPricingStatus.FREE,
+                true,
+                BigDecimal.ZERO,
+                null,
+                null,
+                BigDecimal.ZERO,
+                "{}",
+                null,
+                now.minusSeconds(60),
+                ModelCatalogSource.MANUAL,
+                USER_ID,
+                now.minusSeconds(120)
+        );
+
+        modelCatalogRepository.insert(catalogEntry);
+
+        assertThat(modelCatalogRepository.findEffectiveByRuntime(
+                runtime.provider(),
+                runtime.model(),
+                now
+        ))
+                .extracting(ModelCatalogEntry::id)
+                .containsExactly(catalogEntry.id());
     }
 
     @Test

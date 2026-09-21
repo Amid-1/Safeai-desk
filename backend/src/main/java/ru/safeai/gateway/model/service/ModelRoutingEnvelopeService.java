@@ -27,11 +27,6 @@ public class ModelRoutingEnvelopeService {
             boolean usesKnowledge,
             Set<ModelCapability> requiredCapabilities
     ) {
-        Set<ModelCapability> capabilities =
-                requiredCapabilities == null
-                        ? Set.of()
-                        : requiredCapabilities;
-
         long result =
                 properties.systemAndDeveloperInputUnits();
 
@@ -42,9 +37,8 @@ public class ModelRoutingEnvelopeService {
             );
         }
 
-        if (capabilities.contains(
-                ModelCapability.TOOLS
-        )) {
+        if (requiredCapabilities != null
+                && requiredCapabilities.contains(ModelCapability.TOOLS)) {
             result = Math.addExact(
                     result,
                     properties.toolSchemaInputUnits()
@@ -54,17 +48,4 @@ public class ModelRoutingEnvelopeService {
         return result;
     }
 
-    /**
-     * Compatibility alias for configuration/tests using the pre-V48 name.
-     */
-    @Deprecated(forRemoval = false)
-    public long additionalInputTokenUpperBound(
-            boolean usesKnowledge,
-            Set<ModelCapability> requiredCapabilities
-    ) {
-        return additionalInputUnitUpperBound(
-                usesKnowledge,
-                requiredCapabilities
-        );
-    }
 }

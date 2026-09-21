@@ -37,9 +37,9 @@ public static AiProviderException fromResourceAccess(
         return new AiProviderUnavailableException(
                 provider,
                 model,
-                true,
                 false,
-                providerDisplayName + " connect failure",
+                true,
+                providerDisplayName + " connect failure (execution unverified)",
                 exception
         );
     }

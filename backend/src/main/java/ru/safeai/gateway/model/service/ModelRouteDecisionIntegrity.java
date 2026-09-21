@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.Objects;
 
@@ -22,11 +21,6 @@ final class ModelRouteDecisionIntegrity {
     private static final short V3 = 3;
 
     private ModelRouteDecisionIntegrity() {
-    }
-
-    static Instant normalizeDatabaseTimestamp(Instant value) {
-        return Objects.requireNonNull(value, "timestamp не должен быть null")
-                .truncatedTo(ChronoUnit.MICROS);
     }
 
     static ModelRouteDecision seal(ModelRouteDecision decision) {
