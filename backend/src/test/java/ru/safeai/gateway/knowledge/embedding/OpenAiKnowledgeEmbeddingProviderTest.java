@@ -42,7 +42,7 @@ class OpenAiKnowledgeEmbeddingProviderTest {
                 )))
                 .andRespond(withSuccess(
                         """
-                        {"data":[
+                        {"model":"text-embedding-3-small","data":[
                           {"index":1,"embedding":%s},
                           {"index":0,"embedding":%s}
                         ]}

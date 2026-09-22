@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 @Service
 public class KnowledgeChunker {
 
-    public static final String VERSION = "safeai-char-boundary-v2";
+    public static final String VERSION = "safeai-structure-aware-v3";
 
     private static final int MAX_HEADING_CODE_POINTS = 500;
 
@@ -35,98 +35,143 @@ public class KnowledgeChunker {
         this.properties = properties;
     }
 
-    public List<KnowledgeChunkCandidate> chunk(
-            ExtractedDocument document
-    ) {
-        List<KnowledgeChunkCandidate> chunks =
-                new ArrayList<>();
-
-        int ordinal = 0;
-
+    /**
+     * Structure-aware deterministic chunking. Page/slide/sheet sections are
+     * always hard boundaries. Blank-line-separated paragraphs are preferred
+     * boundaries; Markdown headings start new groups and update provenance.
+     * Long paragraphs fall back to the original Unicode-safe character
+     * boundary/overlap algorithm. This does NOT claim embedding-semantic
+     * segmentation or model-specific token budgeting.
+     * <p>
+     * Upgrading v2 -> v3 requires explicitly reindexing current documents.
+     * Existing immutable chunk generations are never edited.
+     */
+    public List<KnowledgeChunkCandidate> chunk(ExtractedDocument document) {
+        List<KnowledgeChunkCandidate> chunks = new ArrayList<>();
         for (ExtractedSection section : document.sections()) {
-            String text =
-                    normalize(
-                            section.text()
-                    );
-
+            String text = normalize(section.text());
             if (text.isBlank()) {
                 continue;
             }
-
-            int start = 0;
-
-            while (start < text.length()) {
-                int end =
-                        chooseEnd(
-                                text,
-                                start
-                        );
-
-                String content =
-                        text.substring(
-                                start,
-                                end
-                        ).strip();
-
-                if (!content.isBlank()) {
-                    chunks.add(
-                            new KnowledgeChunkCandidate(
-                                    ordinal++,
-                                    content,
-                                    sha256(content),
-                                    estimateTokens(content),
-                                    section.pageNumber(),
-                                    section.pageNumber(),
-                                    truncateHeading(
-                                            section.heading()
-                                    )
-                            )
-                    );
+            StringBuilder pending = new StringBuilder();
+            String activeHeading = truncateHeading(section.heading());
+            for (StructuralUnit unit : structuralUnits(text, activeHeading)) {
+                if (unit.startsHeading()) {
+                    emit(chunks, section, pending.toString(), activeHeading);
+                    pending.setLength(0);
+                    activeHeading = truncateHeading(unit.heading());
                 }
-
-                if (end >= text.length()) {
-                    break;
+                String candidate = unit.text();
+                if (candidate.isBlank()) {
+                    continue;
                 }
-
-                int minimumNext =
-                        text.offsetByCodePoints(
-                                start,
-                                1
-                        );
-
-                int overlapStart =
-                        toCodePointBoundary(
-                                text,
-                                end
-                                        - properties
-                                        .chunkOverlapChars()
-                        );
-
-                int next =
-                        Math.max(
-                                minimumNext,
-                                overlapStart
-                        );
-
-                start =
-                        skipLeadingWhitespace(
-                                text,
-                                next
-                        );
+                if (!pending.isEmpty()
+                        && pending.length() + 2 + candidate.length()
+                        > properties.chunkSizeChars()) {
+                    emit(chunks, section, pending.toString(), activeHeading);
+                    pending.setLength(0);
+                }
+                if (candidate.length() > properties.chunkSizeChars()) {
+                    emit(chunks, section, pending.toString(), activeHeading);
+                    pending.setLength(0);
+                    emit(chunks, section, candidate, activeHeading);
+                } else {
+                    if (!pending.isEmpty()) {
+                        pending.append("\n\n");
+                    }
+                    pending.append(candidate);
+                }
             }
+            emit(chunks, section, pending.toString(), activeHeading);
         }
-
         if (chunks.isEmpty()) {
             throw new KnowledgeIngestionException(
-                    "EMPTY_DOCUMENT",
-                    "Документ не содержит извлекаемого текста",
-                    false
+                    "EMPTY_DOCUMENT", "Документ не содержит извлекаемого текста", false
             );
         }
+        return List.copyOf(chunks);
+    }
 
-        return List.copyOf(
-                chunks
-        );
+    private static final Pattern MARKDOWN_HEADING = Pattern.compile(
+            "^#{1,6}[ \t]+(.+?)\\s*#*\\s*$"
+    );
+
+    private static List<StructuralUnit> structuralUnits(
+            String text, String sectionHeading
+    ) {
+        List<StructuralUnit> units = new ArrayList<>();
+        String activeHeading = sectionHeading;
+        // Explicit blank-line paragraphs. They preserve table rows and
+        // deliberate paragraph boundaries, rather than slicing every line.
+        for (String paragraph : text.split("\\n{2,}")) {
+            if (paragraph.isBlank()) {
+                continue;
+            }
+            String[] lines = paragraph.split("\\n", -1);
+            StringBuilder current = new StringBuilder();
+            boolean pendingHeadingStart = false;
+            for (String line : lines) {
+                var matcher = MARKDOWN_HEADING.matcher(line.strip());
+                if (matcher.matches()) {
+                    if (!current.isEmpty()) {
+                        units.add(new StructuralUnit(
+                                current.toString().strip(), activeHeading,
+                                pendingHeadingStart));
+                        current.setLength(0);
+                    }
+                    activeHeading = matcher.group(1).strip();
+                    pendingHeadingStart = true;
+                }
+                if (!current.isEmpty()) {
+                    current.append('\n');
+                }
+                current.append(line);
+            }
+            if (!current.isEmpty()) {
+                units.add(new StructuralUnit(
+                        current.toString().strip(), activeHeading,
+                        pendingHeadingStart));
+            }
+        }
+        return units;
+    }
+
+    private void emit(
+            List<KnowledgeChunkCandidate> chunks,
+            ExtractedSection section,
+            String raw,
+            String heading
+    ) {
+        String text = raw.strip();
+        if (text.isEmpty()) {
+            return;
+        }
+        int start = 0;
+        while (start < text.length()) {
+            int end = chooseEnd(text, start);
+            String content = text.substring(start, end).strip();
+            if (!content.isEmpty()) {
+                chunks.add(new KnowledgeChunkCandidate(
+                        chunks.size(), content, sha256(content),
+                        estimateTokens(content), section.pageNumber(),
+                        section.pageNumber(), truncateHeading(heading)
+                ));
+            }
+            if (end >= text.length()) {
+                break;
+            }
+            int minimumNext = text.offsetByCodePoints(start, 1);
+            int overlapStart = toCodePointBoundary(
+                    text, end - properties.chunkOverlapChars()
+            );
+            start = skipLeadingWhitespace(
+                    text, Math.max(minimumNext, overlapStart)
+            );
+        }
+    }
+
+    private record StructuralUnit(String text, String heading,
+                                  boolean startsHeading) {
     }
 
     private int chooseEnd(

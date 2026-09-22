@@ -87,6 +87,10 @@ public class KnowledgeRetrievalRepository {
                             'simple',
                             :query
                         ) as text_query,
+                        websearch_to_tsquery(
+                            'russian',
+                            :query
+                        ) as russian_text_query,
                         cast(
                             :embedding as vector
                         ) as query_embedding
@@ -170,25 +174,34 @@ public class KnowledgeRetrievalRepository {
                         allowed.chunk_id,
                         row_number() over (
                             order by
-                                ts_rank_cd(
-                                    allowed.search_vector,
-                                    parameters.text_query,
-                                    32
+                                greatest(
+                                    ts_rank_cd(
+                                        allowed.search_vector,
+                                        parameters.text_query, 32
+                                    ),
+                                    ts_rank_cd(
+                                        to_tsvector('russian', allowed.content),
+                                        parameters.russian_text_query, 32
+                                    )
                                 ) desc,
                                 allowed.chunk_id
                         )::integer as lexical_rank,
-                        ts_rank_cd(
-                            allowed.search_vector,
-                            parameters.text_query,
-                            32
+                        greatest(
+                            ts_rank_cd(
+                                allowed.search_vector,
+                                parameters.text_query, 32
+                            ),
+                            ts_rank_cd(
+                                to_tsvector('russian', allowed.content),
+                                parameters.russian_text_query, 32
+                            )
                         )::real as lexical_score
                     from allowed_chunks allowed
                     cross join query_parameters parameters
-                    where allowed.search_vector
-                              @@ parameters.text_query
-                    order by
-                        lexical_score desc,
-                        allowed.chunk_id
+                    where allowed.search_vector @@ parameters.text_query
+                       or to_tsvector('russian', allowed.content)
+                          @@ parameters.russian_text_query
+                    order by lexical_score desc, allowed.chunk_id
                     limit :candidateLimit
                 ),
                 semantic_candidates as (

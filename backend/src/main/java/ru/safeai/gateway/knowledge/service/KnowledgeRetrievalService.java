@@ -354,12 +354,13 @@ public class KnowledgeRetrievalService {
                     query_text,
                     query_sha256,
                     embedding_model,
+                    lexical_profile,
                     top_k,
                     candidate_limit,
                     rrf_k,
                     started_at,
                     completed_at
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 runId,
                 user.getOrganizationId(),
@@ -369,6 +370,7 @@ public class KnowledgeRetrievalService {
                 query,
                 querySha256,
                 embeddingProvider.model(),
+                "simple+russian-v2",
                 topK,
                 properties.candidateLimit(),
                 properties.rrfK(),

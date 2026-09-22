@@ -1,22 +1,31 @@
 package ru.safeai.gateway.knowledge.service;
 
 import ru.safeai.gateway.common.exception.BadRequestException;
+import ru.safeai.gateway.knowledge.extraction.OoxmlPackageSupport;
+import ru.safeai.gateway.knowledge.ingestion.KnowledgeIngestionException;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.StringReader;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 final class KnowledgeOoxmlDetector {
 
-    private static final int MAX_ZIP_ENTRIES = 10_000;
-    private static final int MAX_CONTENT_TYPES_BYTES = 256 * 1024;
+    private static final long DEFAULT_MAX_UNCOMPRESSED_BYTES = 100L * 1024L * 1024L;
+
+    private final long maximumUncompressedBytes;
+
+    KnowledgeOoxmlDetector() {
+        this(DEFAULT_MAX_UNCOMPRESSED_BYTES);
+    }
+
+    KnowledgeOoxmlDetector(long maximumUncompressedBytes) {
+        if (maximumUncompressedBytes <= 0) {
+            throw new IllegalArgumentException("maximumUncompressedBytes must be positive");
+        }
+        this.maximumUncompressedBytes = maximumUncompressedBytes;
+    }
 
     private static final String DOCX_MAIN_CONTENT_TYPE =
             "application/vnd.openxmlformats-officedocument"
@@ -35,68 +44,31 @@ final class KnowledgeOoxmlDetector {
             return null;
         }
 
-        boolean wordDocumentFound = false;
-        boolean workbookFound = false;
-        boolean presentationFound = false;
-        byte[] contentTypesBytes = null;
-
-        try (ZipInputStream zip = new ZipInputStream(
-                new ByteArrayInputStream(bytes)
-        )) {
-            ZipEntry entry;
-            int entries = 0;
-
-            while ((entry = zip.getNextEntry()) != null) {
-                entries++;
-                if (entries > MAX_ZIP_ENTRIES) {
-                    return null;
-                }
-
-                String name = entry.getName();
-                if (isUnsafeZipEntryName(name)) {
-                    return null;
-                }
-
-                switch (name) {
-                    case "word/document.xml" -> {
-                        if (wordDocumentFound) {
-                            return null;
-                        }
-                        wordDocumentFound = true;
-                    }
-                    case "xl/workbook.xml" -> {
-                        if (workbookFound) {
-                            return null;
-                        }
-                        workbookFound = true;
-                    }
-                    case "ppt/presentation.xml" -> {
-                        if (presentationFound) {
-                            return null;
-                        }
-                        presentationFound = true;
-                    }
-                    case "[Content_Types].xml" -> {
-                        if (contentTypesBytes != null) {
-                            return null;
-                        }
-                        contentTypesBytes = readContentTypesEntry(zip);
-                    }
-                    default -> {
-                        // Structural upload validation only.
-                    }
-                }
-            }
-        } catch (IOException exception) {
+        final OoxmlPackageSupport.ArchiveIndex archive;
+        try {
+            archive = OoxmlPackageSupport.inspect(
+                    bytes, maximumUncompressedBytes, "OOXML");
+        } catch (KnowledgeIngestionException exception) {
+            // Upload validation preserves the established BadRequest/extension
+            // mismatch contract instead of leaking an ingestion error.
             return null;
         }
 
-        if (contentTypesBytes == null) {
+        if (archive.count("[Content_Types].xml") != 1
+                || archive.contentTypes() == null) {
+            return null;
+        }
+        boolean wordDocumentFound = archive.count("word/document.xml") == 1;
+        boolean workbookFound = archive.count("xl/workbook.xml") == 1;
+        boolean presentationFound = archive.count("ppt/presentation.xml") == 1;
+        if (archive.count("word/document.xml") > 1
+                || archive.count("xl/workbook.xml") > 1
+                || archive.count("ppt/presentation.xml") > 1) {
             return null;
         }
 
         OoxmlMainTypes mainTypes =
-                parseOoxmlMainTypes(contentTypesBytes);
+                parseOoxmlMainTypes(archive.contentTypes());
         if (mainTypes == null) {
             return null;
         }
@@ -121,17 +93,6 @@ final class KnowledgeOoxmlDetector {
         return KnowledgeDocumentMediaTypes.PPTX;
     }
 
-    private static boolean isUnsafeZipEntryName(
-            String name
-    ) {
-        return name.isBlank()
-                || name.startsWith("/")
-                || name.contains("\\")
-                || name.equals("..")
-                || name.startsWith("../")
-                || name.contains("/../");
-    }
-
     private static boolean hasZipLocalHeader(
             byte[] bytes
     ) {
@@ -140,27 +101,6 @@ final class KnowledgeOoxmlDetector {
                 && bytes[1] == 'K'
                 && bytes[2] == 3
                 && bytes[3] == 4;
-    }
-
-    private static byte[] readContentTypesEntry(
-            ZipInputStream zip
-    ) throws IOException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[4096];
-        int total = 0;
-        int read;
-
-        while ((read = zip.read(buffer)) != -1) {
-            total = Math.addExact(total, read);
-            if (total > MAX_CONTENT_TYPES_BYTES) {
-                throw new IOException(
-                        "OOXML [Content_Types].xml exceeds validation limit"
-                );
-            }
-            output.write(buffer, 0, read);
-        }
-
-        return output.toByteArray();
     }
 
     private static OoxmlMainTypes parseOoxmlMainTypes(

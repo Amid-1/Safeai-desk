@@ -64,10 +64,10 @@ class OpenAiKnowledgeEmbeddingProviderRegressionTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "{\"data\":[]}",
-            "{\"data\":[{\"index\":0,\"embedding\":[1]}]}",
-            "{\"data\":[{\"index\":2,\"embedding\":[1]}]}",
-            "{\"data\":[{\"index\":0,\"embedding\":null}]}",
+            "{\"model\":\"text-embedding-3-small\",\"data\":[]}",
+            "{\"model\":\"text-embedding-3-small\",\"data\":[{\"index\":0,\"embedding\":[1]}]}",
+            "{\"model\":\"text-embedding-3-small\",\"data\":[{\"index\":2,\"embedding\":[1]}]}",
+            "{\"model\":\"text-embedding-3-small\",\"data\":[{\"index\":0,\"embedding\":null}]}",
             "{}"
     })
     void malformedProviderResponseFailsClosed(String body) {
@@ -87,7 +87,7 @@ class OpenAiKnowledgeEmbeddingProviderRegressionTest {
     @Test
     void duplicateProviderIndexIsRejectedRatherThanOverwritten() {
         var setup = setup();
-        String body = "{\"data\":[{\"index\":0,\"embedding\":" + vector(.25f)
+        String body = "{\"model\":\"text-embedding-3-small\",\"data\":[{\"index\":0,\"embedding\":" + vector(.25f)
                 + "},{\"index\":0,\"embedding\":" + vector(.75f) + "}]}";
         setup.server().expect(once(), requestTo(URL))
                 .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
@@ -101,7 +101,7 @@ class OpenAiKnowledgeEmbeddingProviderRegressionTest {
     void zeroVectorAndNonNumericComponentCannotBePersisted() {
         var zero = setup();
         zero.server().expect(once(), requestTo(URL))
-                .andRespond(withSuccess("{\"data\":[{\"index\":0,\"embedding\":"
+                .andRespond(withSuccess("{\"model\":\"text-embedding-3-small\",\"data\":[{\"index\":0,\"embedding\":"
                         + vector(0f) + "}]}", MediaType.APPLICATION_JSON));
         assertInvalidResponse(() -> zero.provider().embed("alpha"));
         zero.server().verify();
@@ -109,7 +109,7 @@ class OpenAiKnowledgeEmbeddingProviderRegressionTest {
         String invalid = "[\"not-a-number\","
                 + String.join(",", java.util.Collections.nCopies(383, "1")) + "]";
         nonNumeric.server().expect(once(), requestTo(URL))
-                .andRespond(withSuccess("{\"data\":[{\"index\":0,\"embedding\":"
+                .andRespond(withSuccess("{\"model\":\"text-embedding-3-small\",\"data\":[{\"index\":0,\"embedding\":"
                         + invalid + "}]}", MediaType.APPLICATION_JSON));
         assertInvalidResponse(() -> nonNumeric.provider().embed("alpha"));
         nonNumeric.server().verify();
@@ -152,7 +152,7 @@ class OpenAiKnowledgeEmbeddingProviderRegressionTest {
     }
 
     private static String batch(int size, float component) {
-        return "{\"data\":[" + java.util.stream.IntStream.range(0, size)
+        return "{\"model\":\"text-embedding-3-small\",\"data\":[" + java.util.stream.IntStream.range(0, size)
                 .mapToObj(index -> "{\"index\":" + index + ",\"embedding\":" + vector(component) + "}")
                 .collect(Collectors.joining(",")) + "]}";
     }

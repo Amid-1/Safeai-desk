@@ -35,6 +35,13 @@ public class KnowledgeRagService {
         if (!context.knowledgeMode().usesKnowledge()) {
             return RagPreparation.general(context.aiRequest());
         }
+        if (context.modelRouteDecisionId() != null
+                && (context.aiRequest().reservedInputTokens() == null
+                    || context.aiRequest().maxOutputTokens() == null)) {
+            throw new IllegalStateException(
+                    "Governed Knowledge RAG requires an exact model-route input/output envelope"
+            );
+        }
         KnowledgeRetrievalExecution retrieval =
                 retrievalService.retrieveForChat(
                         context.knowledgeBaseId(),

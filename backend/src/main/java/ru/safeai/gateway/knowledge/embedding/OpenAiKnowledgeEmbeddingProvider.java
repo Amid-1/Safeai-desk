@@ -412,6 +412,14 @@ public class OpenAiKnowledgeEmbeddingProvider
             );
         }
 
+        JsonNode physicalModel = body.path("model");
+        if (!physicalModel.isString()
+                || !properties.model().equals(physicalModel.stringValue(""))) {
+            throw invalidResponse(
+                    "Embedding provider не подтвердил запрошенную физическую модель"
+            );
+        }
+
         Map<Integer, float[]> indexed =
                 new HashMap<>();
 

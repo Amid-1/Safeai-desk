@@ -1602,3 +1602,4 @@ fenced finalization
 
 новые governance, routing, RAG, FinOps и agent capabilities не должны ослаблять уже реализованные ChatTurn durability, 
 tenant isolation, idempotency, provider-ambiguity protection, provenance и database-enforced integrity invariants.
+

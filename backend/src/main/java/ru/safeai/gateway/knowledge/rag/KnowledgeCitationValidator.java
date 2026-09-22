@@ -16,27 +16,25 @@ public class KnowledgeCitationValidator {
     public static final String ABSTENTION =
             "Недостаточно данных в разрешённой базе знаний.";
 
-    /*
-     * Match every numeric application-looking citation marker first.
+    /**
+     * Application-looking marker, including malformed candidates. Cyrillic С
+     * is matched explicitly to prevent homoglyph citations from looking
+     * authoritative in the visible response.
      *
-     * Validation then decides whether the ordinal is syntactically legal
-     * and belongs to the exact source set materialized for this request.
+     * Valid citation syntax remains EXACTLY [C1]..[C999] (ASCII C, optional
+     * ASCII case folding, without spaces or leading zeroes). Invalid candidates
+     * are removed atomically with all valid citations on any invalidity.
      *
-     * Examples caught here:
-     *
-     * [C0]
-     * [C01]
-     * [C999]
-     * [C1000]
-     *
-     * Case-insensitive matching is intentional; accepted markers are
-     * canonicalized back to uppercase [C<n>].
+     * The bounded character class intentionally does not treat arbitrary
+     * bracketed prose (e.g. [Customer]) as an application citation.
      */
-    private static final Pattern NUMERIC_CITATION =
+    private static final Pattern APPLICATION_CITATION_CANDIDATE =
             Pattern.compile(
-                    "\\[C([0-9]+)]",
-                    Pattern.CASE_INSENSITIVE
+                    "\\[[ \t]*[Cc\u0421\u0441][ \t]*([0-9]*|[a-zA-Z\u0430-\u044f\u0410-\u042f]{1,3}[0-9]{0,3})[ \t]*]"
             );
+
+    private static final Pattern VALID_NUMERIC_CITATION =
+            Pattern.compile("\\[([Cc])([0-9]+)]");
 
     public RagCompletion validate(
             RagPreparation preparation,
@@ -78,7 +76,7 @@ public class KnowledgeCitationValidator {
                 );
 
         Matcher matcher =
-                NUMERIC_CITATION.matcher(
+                APPLICATION_CITATION_CANDIDATE.matcher(
                         response.content()
                 );
 
@@ -94,15 +92,10 @@ public class KnowledgeCitationValidator {
                 );
 
         while (matcher.find()) {
-            String rawOrdinal =
-                    matcher.group(
-                            1
-                    );
-
-            Integer ordinal =
-                    parseOrdinal(
-                            rawOrdinal
-                    );
+            Matcher canonical = VALID_NUMERIC_CITATION.matcher(matcher.group());
+            Integer ordinal = canonical.matches()
+                    ? parseOrdinal(canonical.group(2))
+                    : null;
 
             /*
              * Malformed numeric application citation.
@@ -209,7 +202,7 @@ public class KnowledgeCitationValidator {
             citations.clear();
 
             content =
-                    NUMERIC_CITATION
+                    APPLICATION_CITATION_CANDIDATE
                             .matcher(
                                     content
                             )

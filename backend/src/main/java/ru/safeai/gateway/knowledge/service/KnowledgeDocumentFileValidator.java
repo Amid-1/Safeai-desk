@@ -1,6 +1,8 @@
 package ru.safeai.gateway.knowledge.service;
 
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import ru.safeai.gateway.knowledge.config.KnowledgeIngestionProperties;
 import org.springframework.web.multipart.MultipartFile;
 import ru.safeai.gateway.knowledge.storage.KnowledgeStorageProperties;
 
@@ -35,15 +37,22 @@ public class KnowledgeDocumentFileValidator {
     private final KnowledgeStorageProperties properties;
     private final KnowledgeDocumentMediaTypeDetector mediaTypeDetector;
 
+    /** Backwards-compatible constructor for existing isolated unit tests. */
+    public KnowledgeDocumentFileValidator(KnowledgeStorageProperties properties) {
+        this(properties, null);
+    }
+
+    @Autowired
     public KnowledgeDocumentFileValidator(
-            KnowledgeStorageProperties properties
+            KnowledgeStorageProperties properties,
+            KnowledgeIngestionProperties ingestion
     ) {
         this.properties = Objects.requireNonNull(
-                properties,
-                "properties не должен быть null"
-        );
-        this.mediaTypeDetector =
-                new KnowledgeDocumentMediaTypeDetector();
+                properties, "properties не должен быть null");
+        this.mediaTypeDetector = ingestion == null
+                ? new KnowledgeDocumentMediaTypeDetector()
+                : new KnowledgeDocumentMediaTypeDetector(
+                        ingestion.maxDocxUncompressedBytes());
     }
 
     public ValidatedUpload validate(

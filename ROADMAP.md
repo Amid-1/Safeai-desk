@@ -2078,3 +2078,55 @@ AI Gateway
 
 новые routing, RAG, governance, FinOps, connector, tool и agent capabilities не должны ослаблять уже реализованные 
 durability, tenant isolation, idempotency, provider-ambiguity protection, provenance и database-enforced integrity.
+
+
+
+
+
+Structure-aware chunking
+
+Реализован во втором этапе, но это ещё не embedding-based semantic chunking
+
+Russian FTS
+
+Код и V55 подготовлены; применение V55 к твоей БД не подтверждено
+
+Независимая проверка фактической обоснованности каждого утверждения
+
+Не реализована
+
+Отдельный reranking stage
+
+Не реализован
+
+Изоляция PDFBox/POI отдельными процессами
+
+Не реализована
+
+Durable S3 orphan reconciliation
+
+Не реализована
+
+Агентный execution loop с инструментами
+
+Не реализован
+
+Управление жизненным циклом старых index generations
+
+Не завершено
+
+Раздельные лимиты extraction/OCR/embedding
+
+Не завершены
+
+Учёт расходов embeddings и OCR
+
+Не завершён
+
+Полный RAG Evaluation Harness
+
+Не реализован
+
+Сквозное подтверждение production-ready
+
+Не выполнено

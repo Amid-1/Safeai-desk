@@ -2,8 +2,15 @@ package ru.safeai.gateway.knowledge.service;
 
 final class KnowledgeDocumentMediaTypeDetector {
 
-    private final KnowledgeOoxmlDetector ooxmlDetector =
-            new KnowledgeOoxmlDetector();
+    private final KnowledgeOoxmlDetector ooxmlDetector;
+
+    KnowledgeDocumentMediaTypeDetector() {
+        this.ooxmlDetector = new KnowledgeOoxmlDetector();
+    }
+
+    KnowledgeDocumentMediaTypeDetector(long maximumUncompressedBytes) {
+        this.ooxmlDetector = new KnowledgeOoxmlDetector(maximumUncompressedBytes);
+    }
 
     String detect(
             byte[] bytes,
