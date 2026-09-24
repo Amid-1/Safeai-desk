@@ -2,6 +2,8 @@ package ru.safeai.gateway.knowledge.service;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import ru.safeai.gateway.knowledge.storage.reconciliation.KnowledgeStorageUploadJournal;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
@@ -36,6 +38,7 @@ public class KnowledgeDocumentWriteService {
     private final KnowledgeDocumentVersionRepository versions;
     private final KnowledgeIngestionJobRepository jobs;
     private final AuditEventService audit;
+    private final KnowledgeStorageUploadJournal uploadJournal;
 
     public KnowledgeDocumentWriteService(
             KnowledgeAccessService accessService,
@@ -44,6 +47,19 @@ public class KnowledgeDocumentWriteService {
             KnowledgeIngestionJobRepository jobs,
             AuditEventService audit
     ) {
+        this(accessService, documents, versions, jobs, audit, null);
+    }
+
+    @Autowired
+    public KnowledgeDocumentWriteService(
+            KnowledgeAccessService accessService,
+            KnowledgeDocumentRepository documents,
+            KnowledgeDocumentVersionRepository versions,
+            KnowledgeIngestionJobRepository jobs,
+            AuditEventService audit,
+            KnowledgeStorageUploadJournal uploadJournal
+    ) {
+        this.uploadJournal = uploadJournal;
         this.accessService = accessService;
         this.documents = documents;
         this.versions = versions;
@@ -119,30 +135,11 @@ public class KnowledgeDocumentWriteService {
                         user
                 );
 
-        KnowledgeIngestionJobEntity job =
-                createIngestionJob(
-                        document,
-                        versionId,
-                        user
-                );
-
-        document.setCurrentVersionId(
-                versionId
-        );
-        documents.saveAndFlush(
-                document
-        );
-
-        recordVersionUploaded(
+        return publishVersion(
                 document,
                 version,
+                storageKey,
                 user
-        );
-
-        return KnowledgeDocumentResponse.from(
-                document,
-                version,
-                job.getStatus()
         );
     }
 
@@ -210,33 +207,47 @@ public class KnowledgeDocumentWriteService {
             throw exception;
         }
 
-        KnowledgeIngestionJobEntity job =
-                createIngestionJob(
-                        document,
-                        versionId,
-                        user
-                );
-
-        document.setCurrentVersionId(
-                versionId
-        );
-        documents.saveAndFlush(
-                document
-        );
-
-        recordVersionUploaded(
+        return publishVersion(
                 document,
                 version,
+                storageKey,
                 user
-        );
-
-        return KnowledgeDocumentResponse.from(
-                document,
-                version,
-                job.getStatus()
         );
     }
 
+
+    /**
+     * Shared metadata-publication sequence for initial and subsequent versions.
+     * Called only from the public transactional entry points; all JPA writes,
+     * audit evidence and STORED -> LINKED stay in the SAME database transaction.
+     */
+    private KnowledgeDocumentResponse publishVersion(
+            KnowledgeDocumentEntity document,
+            KnowledgeDocumentVersionEntity version,
+            String storageKey,
+            SafeAiUserPrincipal user
+    ) {
+        KnowledgeIngestionJobEntity job = createIngestionJob(
+                document,
+                version.getId(),
+                user
+        );
+
+        document.setCurrentVersionId(version.getId());
+        documents.saveAndFlush(document);
+
+        recordVersionUploaded(document, version, user);
+        if (uploadJournal != null) {
+            // Atomic with the document version, job and audit records.
+            uploadJournal.linked(
+                    version.getId(), storageKey, user.getOrganizationId()
+            );
+        }
+
+        return KnowledgeDocumentResponse.from(
+                document, version, job.getStatus()
+        );
+    }
 
     @Transactional
     public KnowledgeDocumentResponse updateDocument(

@@ -1,0 +1,7 @@
+# Optional additive configuration snippet. Enable ONLY after Flyway V56
+# and recovery/chaos tests have passed on a production-like clone.
+safeai:
+  knowledge:
+    storage-reconciliation:
+      enabled: false
+      poll-delay: 5m

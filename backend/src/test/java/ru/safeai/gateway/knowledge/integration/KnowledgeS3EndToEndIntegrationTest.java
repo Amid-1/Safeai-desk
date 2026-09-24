@@ -1,7 +1,6 @@
 package ru.safeai.gateway.knowledge.integration;
 
 import io.minio.BucketExistsArgs;
-import io.minio.ListObjectsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import org.junit.jupiter.api.Test;
@@ -28,10 +27,16 @@ import ru.safeai.gateway.knowledge.service.KnowledgeBaseService;
 import ru.safeai.gateway.knowledge.service.KnowledgeDocumentService;
 import ru.safeai.gateway.knowledge.storage.ObjectStorage;
 import ru.safeai.gateway.knowledge.storage.S3ObjectStorage;
+import ru.safeai.gateway.knowledge.storage.reconciliation.KnowledgeStorageReconciliationScheduler;
+import ru.safeai.gateway.knowledge.storage.reconciliation.KnowledgeStorageUploadJournal;
 import ru.safeai.gateway.testsupport.AbstractPostgresIntegrationTest;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.NoSuchFileException;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Set;
 import java.util.UUID;
 
@@ -131,6 +136,13 @@ class KnowledgeS3EndToEndIntegrationTest
                 "safeai.knowledge.storage.bucket",
                 () -> BUCKET
         );
+
+        // Never run background S3 cleanup in this integration-test context.
+        // The test exercises reconciliation explicitly with a controlled clock.
+        registry.add(
+                "safeai.knowledge.storage-reconciliation.enabled",
+                () -> "false"
+        );
     }
 
     @Autowired
@@ -141,6 +153,9 @@ class KnowledgeS3EndToEndIntegrationTest
 
     @Autowired
     private ObjectStorage storage;
+
+    @Autowired
+    private KnowledgeStorageUploadJournal uploadJournal;
 
     @MockitoBean
     private AuditOutboxScheduler auditOutboxScheduler;
@@ -304,26 +319,29 @@ class KnowledgeS3EndToEndIntegrationTest
 
         assertThat(sha256)
                 .hasSize(64);
+
+        String journalState = jdbcTemplate.queryForObject(
+                """
+                select state
+                from public.knowledge_storage_upload_intents
+                where document_version_id = ?
+                """,
+                String.class,
+                uploaded.currentVersionId()
+        );
+        assertThat(journalState).isEqualTo("LINKED");
     }
 
     @Test
-    void transactionRollback_removesAlreadyUploadedMinioObject()
+    void transactionRollback_keepsConfirmedS3ObjectUntilFencedReconciliation()
             throws Exception {
-        long beforeObjects =
-                objectCount();
-
-        UUID organizationId =
-                UUID.randomUUID();
-
-        UUID adminId =
-                UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
 
         insertOrganization(
                 organizationId,
                 "Knowledge S3 Rollback "
-                        + UUID.randomUUID()
-                                .toString()
-                                .substring(0, 8),
+                        + UUID.randomUUID().toString().substring(0, 8),
                 true
         );
 
@@ -331,9 +349,7 @@ class KnowledgeS3EndToEndIntegrationTest
                 adminId,
                 organizationId,
                 "s3-rollback-"
-                        + UUID.randomUUID()
-                                .toString()
-                                .substring(0, 8)
+                        + UUID.randomUUID().toString().substring(0, 8)
                         + "@test.local",
                 true,
                 "ADMIN",
@@ -346,82 +362,138 @@ class KnowledgeS3EndToEndIntegrationTest
                         organizationId,
                         0L,
                         0L,
-                        Set.of(
-                                new SimpleGrantedAuthority(
-                                        "ROLE_ADMIN"
-                                )
-                        )
+                        Set.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
                 );
 
-        var kb =
-                knowledgeBaseService.create(
-                        new CreateKnowledgeBaseRequest(
-                                "Rollback KB",
-                                null,
-                                KnowledgeBaseVisibility.ORGANIZATION
-                        ),
-                        principal
-                );
+        var kb = knowledgeBaseService.create(
+                new CreateKnowledgeBaseRequest(
+                        "Rollback KB",
+                        null,
+                        KnowledgeBaseVisibility.ORGANIZATION
+                ),
+                principal
+        );
 
-        doThrow(
-                new IllegalStateException(
-                        "audit write failed"
-                )
-        )
+        // Force the *metadata transaction* to fail only after a successful PUT
+        // and the separately committed durable journal state STORED.
+        doThrow(new IllegalStateException("audit write failed"))
                 .when(auditEventService)
                 .record(
                         any(SafeAiUserPrincipal.class),
                         eq(organizationId),
-                        eq(
-                                AuditEventType
-                                        .KNOWLEDGE_DOCUMENT_VERSION_UPLOADED
-                        ),
+                        eq(AuditEventType.KNOWLEDGE_DOCUMENT_VERSION_UPLOADED),
                         anyMap()
                 );
 
-        assertThatThrownBy(
-                () -> knowledgeDocumentService.uploadNew(
-                        kb.id(),
-                        "Rollback object",
-                        new MockMultipartFile(
-                                "file",
-                                "rollback.txt",
-                                "text/plain",
-                                "rollback payload"
-                                        .getBytes(
-                                                StandardCharsets.UTF_8
-                                        )
-                        ),
-                        principal
-                )
-        )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "audit write failed"
-                );
+        byte[] payload = "rollback payload".getBytes(StandardCharsets.UTF_8);
 
-        Integer documentCount =
-                jdbcTemplate.queryForObject(
-                        """
-                        select count(*)
-                        from public.knowledge_documents
-                        where knowledge_base_id = ?
-                          and name = 'Rollback object'
-                        """,
-                        Integer.class,
-                        kb.id()
-                );
+        assertThatThrownBy(() -> knowledgeDocumentService.uploadNew(
+                kb.id(),
+                "Rollback object",
+                new MockMultipartFile(
+                        "file",
+                        "rollback.txt",
+                        "text/plain",
+                        payload
+                ),
+                principal
+        ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("audit write failed");
 
-        assertThat(documentCount)
-                .isZero();
+        Integer documentCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from public.knowledge_documents
+                where knowledge_base_id = ?
+                  and name = 'Rollback object'
+                """,
+                Integer.class,
+                kb.id()
+        );
+        assertThat(documentCount).isZero();
 
-        assertThat(objectCount())
-                .isEqualTo(
-                        beforeObjects
-                );
+        UploadIntent intent = jdbcTemplate.queryForObject(
+                """
+                select id, document_version_id, storage_key, state
+                from public.knowledge_storage_upload_intents
+                where organization_id = ? and knowledge_base_id = ?
+                """,
+                (rs, rowNum) -> new UploadIntent(
+                        rs.getObject("id", UUID.class),
+                        rs.getObject("document_version_id", UUID.class),
+                        rs.getString("storage_key"),
+                        rs.getString("state")
+                ),
+                organizationId,
+                kb.id()
+        );
+        assertThat(intent).isNotNull();
+        assertThat(intent.state()).isEqualTo("STORED");
+
+        Integer versionCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from public.knowledge_document_versions
+                where id = ?
+                """,
+                Integer.class,
+                intent.versionId()
+        );
+        assertThat(versionCount).isZero();
+
+        // V56 intentionally keeps this confirmed object, rather than
+        // immediately deleting it on a failed/possibly ambiguous DB commit.
+        try (var input = storage.get(intent.storageKey())
+                .resource().getInputStream()) {
+            assertThat(input.readAllBytes()).containsExactly(payload);
+        }
+
+        // The scheduler is disabled in the Spring context. Invoke it with a
+        // controlled clock to verify that a fresh STORED object is protected.
+        new KnowledgeStorageReconciliationScheduler(
+                uploadJournal,
+                storage,
+                Clock.fixed(Instant.now(), ZoneOffset.UTC)
+        ).poll();
+
+        assertThat(journalState(intent.id())).isEqualTo("STORED");
+        try (var input = storage.get(intent.storageKey())
+                .resource().getInputStream()) {
+            assertThat(input.readAllBytes()).containsExactly(payload);
+        }
+
+        // After the 24h grace period, the *same fenced reconciliation path*
+        // removes the unlinked S3 object and records durable CLEANED state.
+        new KnowledgeStorageReconciliationScheduler(
+                uploadJournal,
+                storage,
+                Clock.fixed(Instant.now().plus(Duration.ofHours(25)), ZoneOffset.UTC)
+        ).poll();
+
+        assertThat(journalState(intent.id())).isEqualTo("CLEANED");
+        assertThatThrownBy(() -> storage.get(intent.storageKey()))
+                .isInstanceOf(NoSuchFileException.class);
     }
+
+    private String journalState(UUID intentId) {
+        return jdbcTemplate.queryForObject(
+                """
+                select state
+                from public.knowledge_storage_upload_intents
+                where id = ?
+                """,
+                String.class,
+                intentId
+        );
+    }
+
+    private record UploadIntent(
+            UUID id,
+            UUID versionId,
+            String storageKey,
+            String state
+    ) { }
 
     /**
      * Создаёт test bucket до инициализации S3ObjectStorage.
@@ -463,43 +535,6 @@ class KnowledgeS3EndToEndIntegrationTest
                             + "' для S3 E2E test",
                     exception
             );
-        }
-    }
-
-    /**
-     * Считает реальные объекты в MinIO.
-     */
-    private static long objectCount()
-            throws Exception {
-        try (
-                MinioClient client =
-                        MinioClient.builder()
-                                .endpoint(
-                                        minioEndpoint()
-                                )
-                                .credentials(
-                                        ACCESS_KEY,
-                                        SECRET_KEY
-                                )
-                                .build()
-        ) {
-            long count =
-                    0L;
-
-            for (
-                    var result :
-                    client.listObjects(
-                            ListObjectsArgs.builder()
-                                    .bucket(BUCKET)
-                                    .recursive(true)
-                                    .build()
-                    )
-            ) {
-                result.get();
-                count++;
-            }
-
-            return count;
         }
     }
 

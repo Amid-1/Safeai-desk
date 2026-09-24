@@ -3,6 +3,8 @@ package ru.safeai.gateway.knowledge.service;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import ru.safeai.gateway.knowledge.storage.reconciliation.KnowledgeStorageUploadJournal;
 import org.springframework.web.multipart.MultipartFile;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.model.AuditActor;
@@ -47,6 +49,7 @@ public class KnowledgeDocumentService {
     private final ObjectStorage storage;
     private final KnowledgeDocumentFileValidator fileValidator;
     private final BestEffortStandaloneAuditService audit;
+    private final KnowledgeStorageUploadJournal uploadJournal;
 
     public KnowledgeDocumentService(
             KnowledgeAccessService accessService,
@@ -57,6 +60,22 @@ public class KnowledgeDocumentService {
             ObjectStorage storage,
             KnowledgeDocumentFileValidator fileValidator,
             BestEffortStandaloneAuditService audit
+    ) {
+        this(accessService, documents, versions, queryRepository, writeService,
+                storage, fileValidator, audit, null);
+    }
+
+    @Autowired
+    public KnowledgeDocumentService(
+            KnowledgeAccessService accessService,
+            KnowledgeDocumentRepository documents,
+            KnowledgeDocumentVersionRepository versions,
+            KnowledgeDocumentQueryRepository queryRepository,
+            KnowledgeDocumentWriteService writeService,
+            ObjectStorage storage,
+            KnowledgeDocumentFileValidator fileValidator,
+            BestEffortStandaloneAuditService audit,
+            KnowledgeStorageUploadJournal uploadJournal
     ) {
         this.accessService =
                 Objects.requireNonNull(
@@ -105,6 +124,7 @@ public class KnowledgeDocumentService {
                         audit,
                         "audit не должен быть null"
                 );
+        this.uploadJournal = uploadJournal;
     }
 
     public KnowledgeDocumentPageResponse list(
@@ -255,17 +275,12 @@ public class KnowledgeDocumentService {
         UUID versionId =
                 UUID.randomUUID();
 
-        String storageKey =
-                storageKey(
-                        user.getOrganizationId(),
-                        knowledgeBaseId,
-                        documentId,
-                        versionId
-                );
-
-        putObject(
-                storageKey,
-                upload
+        String storageKey = storeUploadedContent(
+                knowledgeBaseId,
+                documentId,
+                versionId,
+                upload,
+                user
         );
 
         try {
@@ -280,13 +295,11 @@ public class KnowledgeDocumentService {
             );
         } catch (RuntimeException exception) {
             /*
-             * Best-effort compensation for DB/auth failure after a successful
-             * object PUT.
-             *
-             * This does not replace durable orphan reconciliation for
-             * SIGKILL/OOM/node-crash windows.
+             * V56: when the journal is present the confirmed STORED object
+             * is left for fenced, grace-period-gated reconciliation. Only
+             * legacy, journal-less instances use best-effort compensation.
              */
-            deleteObjectQuietly(
+            compensateFailedMetadataPublication(
                     storageKey,
                     exception
             );
@@ -321,17 +334,12 @@ public class KnowledgeDocumentService {
         UUID versionId =
                 UUID.randomUUID();
 
-        String storageKey =
-                storageKey(
-                        user.getOrganizationId(),
-                        knowledgeBaseId,
-                        documentId,
-                        versionId
-                );
-
-        putObject(
-                storageKey,
-                upload
+        String storageKey = storeUploadedContent(
+                knowledgeBaseId,
+                documentId,
+                versionId,
+                upload,
+                user
         );
 
         try {
@@ -344,7 +352,7 @@ public class KnowledgeDocumentService {
                     user
             );
         } catch (RuntimeException exception) {
-            deleteObjectQuietly(
+            compensateFailedMetadataPublication(
                     storageKey,
                     exception
             );
@@ -473,6 +481,46 @@ public class KnowledgeDocumentService {
                 );
     }
 
+    /**
+     * One upload path for the first document version and all later versions.
+     * Persist the intent before the physical PUT; record STORED only after
+     * the storage provider has acknowledged completion. The caller performs
+     * metadata publication in its own transaction after this method returns.
+     * <p>
+     * Do not catch or blindly repeat ambiguous PUT/stored() failures here:
+     * the pre-committed intent is the durable recovery signal.
+     */
+    private String storeUploadedContent(
+            UUID knowledgeBaseId,
+            UUID documentId,
+            UUID versionId,
+            KnowledgeDocumentFileValidator.ValidatedUpload upload,
+            SafeAiUserPrincipal user
+    ) {
+        String key = storageKey(
+                user.getOrganizationId(),
+                knowledgeBaseId,
+                documentId,
+                versionId
+        );
+
+        UUID intentId = uploadJournal == null ? null : uploadJournal.begin(
+                knowledgeBaseId,
+                documentId,
+                versionId,
+                key,
+                upload.sha256(),
+                upload.sizeBytes(),
+                user
+        );
+
+        putObject(key, upload);
+        if (intentId != null) {
+            uploadJournal.stored(intentId, versionId);
+        }
+        return key;
+    }
+
     private void putObject(
             String storageKey,
             KnowledgeDocumentFileValidator.ValidatedUpload upload
@@ -491,6 +539,28 @@ public class KnowledgeDocumentService {
                     "Knowledge object storage PUT failed",
                     exception
             );
+        }
+    }
+
+    /**
+     * Journaled uploads must not be deleted outside the durable cleanup claim.
+     * <p>
+     * The final metadata transaction may have failed or its commit outcome may
+     * be ambiguous to this caller.  A direct compensating DELETE here would
+     * bypass the STORED -> CLEANING fence and could delete a just-published
+     * document.  The journal retains the STORED object; reconciliation is a
+     * separate, explicitly enabled, grace-period-gated operation.
+     * <p>
+     * Keep the legacy best-effort compensation only for installations without
+     * the V56 journal (and for existing isolated service tests using its
+     * backwards-compatible constructor).
+     */
+    private void compensateFailedMetadataPublication(
+            String storageKey,
+            RuntimeException original
+    ) {
+        if (uploadJournal == null) {
+            deleteObjectQuietly(storageKey, original);
         }
     }
 
