@@ -230,8 +230,15 @@ export function trimDecimal(
 }
 
 export function formatIsoDate(
-    value: string,
+    value: string | null | undefined,
 ): string {
+    if (
+        typeof value !== 'string'
+        || !/^\d{4}-\d{2}-\d{2}$/.test(value)
+    ) {
+        return '—'
+    }
+
     const [
         year,
         month,
@@ -239,8 +246,6 @@ export function formatIsoDate(
     ] = value.split(
         '-',
     )
-
-    void year
 
     return `${day}.${month}.${year}`
 }

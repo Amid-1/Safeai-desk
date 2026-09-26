@@ -16,6 +16,12 @@ import {
     getUsageDaily,
     getUsageSummary,
 } from '../api/usageApi'
+import type {
+    UsageDailySummary,
+    UsageModelSummary,
+    UsageSummary,
+    UsageUserSummary,
+} from '../api/usageApi'
 import {
     getApiErrorMessage,
 } from '../api/http'
@@ -29,9 +35,6 @@ import {
 import {
     useAuth,
 } from '../auth/useAuth'
-import type {
-    UsageRowsType,
-} from '../components/admin/usage/UsageReportView'
 import {
     defaultUtcRange,
     isAbortError,
@@ -44,6 +47,39 @@ import type {
 } from './adminUsagePageSupport'
 
 const PAGE_SIZE = 50
+
+type UsageReportRows =
+    | UsageSummary[]
+    | UsageUserSummary[]
+    | UsageModelSummary[]
+    | UsageDailySummary[]
+
+type UsageQueryState = {
+    key: string
+    loading: boolean
+    error: string
+    rows: UsageReportRows
+    hasNext: boolean
+    hasPrevious: boolean
+}
+
+function createQueryKey(
+    tab: UsageReportTab,
+    page: number,
+    dateFrom: string,
+    dateTo: string,
+    model: string,
+    organizationId: string | null,
+): string {
+    return JSON.stringify([
+        tab,
+        page,
+        dateFrom,
+        dateTo,
+        model,
+        organizationId ?? '',
+    ])
+}
 
 export function useAdminUsageReport() {
     const {
@@ -78,16 +114,6 @@ export function useAdminUsageReport() {
         ),
     )
 
-    const [hasNext, setHasNext] =
-        useState(false)
-    const [hasPrevious, setHasPrevious] =
-        useState(false)
-    const [rows, setRows] =
-        useState<UsageRowsType>([])
-    const [loading, setLoading] =
-        useState(true)
-    const [error, setError] =
-        useState('')
     const [filterError, setFilterError] =
         useState('')
 
@@ -140,13 +166,66 @@ export function useAdminUsageReport() {
             ? appliedOrganizationId || null
             : currentUser?.organizationId ?? null
 
+    const queryKey = useMemo(
+        () => createQueryKey(
+            tab,
+            page,
+            appliedDateFrom,
+            appliedDateTo,
+            appliedModel,
+            effectiveOrganizationId,
+        ),
+        [
+            tab,
+            page,
+            appliedDateFrom,
+            appliedDateTo,
+            appliedModel,
+            effectiveOrganizationId,
+        ],
+    )
+
+    const [queryState, setQueryState] =
+        useState<UsageQueryState>(() => ({
+            key: queryKey,
+            loading: true,
+            error: '',
+            rows: [],
+            hasNext: false,
+            hasPrevious: false,
+        }))
+
+    const queryStateIsCurrent =
+        queryState.key === queryKey
+
+    const rows = queryStateIsCurrent
+        ? queryState.rows
+        : []
+    const loading = !queryStateIsCurrent
+        || queryState.loading
+    const error = queryStateIsCurrent
+        ? queryState.error
+        : ''
+    const hasNext = queryStateIsCurrent
+        ? queryState.hasNext
+        : false
+    const hasPrevious = queryStateIsCurrent
+        ? queryState.hasPrevious
+        : false
+
     useEffect(() => {
         const controller =
             new AbortController()
 
         async function load() {
-            setLoading(true)
-            setError('')
+            setQueryState({
+                key: queryKey,
+                loading: true,
+                error: '',
+                rows: [],
+                hasNext: false,
+                hasPrevious: false,
+            })
 
             try {
                 const dateFilter = {
@@ -196,12 +275,18 @@ export function useAdminUsageReport() {
                             response,
                         )
 
-                    setRows(normalized.content)
-                    setHasNext(
-                        page + 1
-                        < normalized.totalPages,
-                    )
-                    setHasPrevious(page > 0)
+                    if (!controller.signal.aborted) {
+                        setQueryState({
+                            key: queryKey,
+                            loading: false,
+                            error: '',
+                            rows: normalized.content,
+                            hasNext:
+                                page + 1
+                                < normalized.totalPages,
+                            hasPrevious: page > 0,
+                        })
+                    }
                     return
                 }
 
@@ -234,12 +319,18 @@ export function useAdminUsageReport() {
                             response,
                         )
 
-                    setRows(normalized.content)
-                    setHasNext(
-                        page + 1
-                        < normalized.totalPages,
-                    )
-                    setHasPrevious(page > 0)
+                    if (!controller.signal.aborted) {
+                        setQueryState({
+                            key: queryKey,
+                            loading: false,
+                            error: '',
+                            rows: normalized.content,
+                            hasNext:
+                                page + 1
+                                < normalized.totalPages,
+                            hasPrevious: page > 0,
+                        })
+                    }
                     return
                 }
 
@@ -263,9 +354,16 @@ export function useAdminUsageReport() {
                                 },
                             )
 
-                    setRows(data)
-                    setHasNext(false)
-                    setHasPrevious(false)
+                    if (!controller.signal.aborted) {
+                        setQueryState({
+                            key: queryKey,
+                            loading: false,
+                            error: '',
+                            rows: data,
+                            hasNext: false,
+                            hasPrevious: false,
+                        })
+                    }
                     return
                 }
 
@@ -288,27 +386,35 @@ export function useAdminUsageReport() {
                             },
                         )
 
-                setRows(data)
-                setHasNext(false)
-                setHasPrevious(false)
+                if (!controller.signal.aborted) {
+                    setQueryState({
+                        key: queryKey,
+                        loading: false,
+                        error: '',
+                        rows: data,
+                        hasNext: false,
+                        hasPrevious: false,
+                    })
+                }
             } catch (loadError) {
-                if (isAbortError(loadError)) {
+                if (
+                    controller.signal.aborted
+                    || isAbortError(loadError)
+                ) {
                     return
                 }
 
-                setRows([])
-                setHasNext(false)
-                setHasPrevious(false)
-                setError(
-                    getApiErrorMessage(
+                setQueryState({
+                    key: queryKey,
+                    loading: false,
+                    error: getApiErrorMessage(
                         loadError,
                         'Не удалось загрузить статистику использования.',
                     ),
-                )
-            } finally {
-                if (!controller.signal.aborted) {
-                    setLoading(false)
-                }
+                    rows: [],
+                    hasNext: false,
+                    hasPrevious: false,
+                })
             }
         }
 
@@ -326,6 +432,7 @@ export function useAdminUsageReport() {
         effectiveOrganizationId,
         isSuperAdmin,
         reloadToken,
+        queryKey,
     ])
 
     function updateUrl(
@@ -351,10 +458,10 @@ export function useAdminUsageReport() {
             )
         }
 
-        if (
-            values.tab === 'summary'
-            && values.model
-        ) {
+        // Preserve the summary-only model filter while the user inspects
+        // another report tab. This keeps URL state reproducible after refresh
+        // and when a link to the current report is copied.
+        if (values.model) {
             next.set('model', values.model)
         }
 
