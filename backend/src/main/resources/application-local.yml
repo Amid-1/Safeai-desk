@@ -1,4 +1,5 @@
-# D:\Java projects\Safeai-desk\backend\src\main\resources\application-local.yml
+# SafeAI-Desk/backend/src/main/resources/application-local.yml
+
 app:
   security:
     jwt:
@@ -43,7 +44,6 @@ management:
 safeai:
   ai:
     provider: ${SAFEAI_AI_PROVIDER:mock}
-
     retry:
       enabled: ${SAFEAI_AI_RETRY_ENABLED:false}
       max-attempts: ${SAFEAI_AI_RETRY_MAX_ATTEMPTS:1}
@@ -66,7 +66,6 @@ safeai:
       key-prefix: safeai:local
       hmac-secret: ${SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET:safeai-local-rate-limit-hmac-secret-change-before-production-2026}
       key-version: v1
-
     login:
       audit-organization-id: ${SAFEAI_RATE_LIMIT_LOGIN_AUDIT_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}
 
@@ -75,12 +74,10 @@ safeai:
       trusted-proxy-cidrs:
         - 127.0.0.1/32
         - ::1/128
-
     user-status-cache:
       enabled: true
       ttl: 60s
       key-prefix: safeai:local:user-status
-
     hsts:
       enabled: false
 
@@ -89,26 +86,11 @@ safeai:
       enabled: false
 
   usage:
-    default-range: 30d
-    max-range: 366d
-    max-live-range: 31d
-    max-page-size: 200
-    query-timeout: 10s
-    slow-query-threshold: 2s
-    fetch-size: 200
-    max-concurrent-reports: 4
-
     rollup:
       enabled: ${SAFEAI_USAGE_ROLLUP_ENABLED:false}
-      cron: "0 */10 * * * *"
-      lookback-days: 3
-      backfill-days-per-run: 31
-      advisory-lock-key: 8026001
-      statement-timeout: 2m
 
   chat:
     lock:
       key-prefix: ${SAFEAI_CHAT_LOCK_KEY_PREFIX:safeai:local:chat-lock}
-
     recovery:
       enabled: ${SAFEAI_CHAT_RECOVERY_ENABLED:false}

@@ -1,4 +1,5 @@
-# D:\Java projects\Safeai-desk\backend\src\test\resources\application-test.yml
+# SafeAI-Desk/backend/src/test/resources/application-test.yml
+
 app:
   security:
     jwt:
@@ -76,15 +77,11 @@ safeai:
     organization-id: 00000000-0000-0000-0000-000000000001
 
   ai:
-    # Общие интеграционные тесты не обращаются
-    # к внешним AI-провайдерам.
     provider: mock
-
     retry:
       enabled: false
       max-attempts: 1
       total-timeout: 5s
-
     pricing:
       models:
         - model: mock-safeai
@@ -97,19 +94,13 @@ safeai:
     cookies:
       secure: false
       same-site: Lax
-
-      # Должно совпадать с
-      # app.security.jwt.expiration-minutes: 15
       access-token-max-age: PT15M
-
       refresh-token-max-age: P30D
       refresh-token-absolute-max-age: P90D
       reuse-detection-retention: P7D
-
       domain: ""
       access-token-name: safeai-access
       refresh-token-name: safeai-refresh
-
     refresh-cleanup:
       cron: "0 0 3 * * *"
       batch-size: 200
@@ -120,14 +111,12 @@ safeai:
       key-prefix: safeai:test
       hmac-secret: safeai-test-rate-limit-hmac-secret-for-integration-tests-2026
       key-version: v1
-
     login:
       enabled: true
       email-limit: 10
       ip-limit: 100
       window: 10m
       audit-organization-id: 00000000-0000-0000-0000-000000000001
-
     ai-messages:
       enabled: true
       user-limit-per-hour: 20
@@ -139,23 +128,17 @@ safeai:
       trusted-proxy-cidrs:
         - 127.0.0.1/32
         - ::1/128
-
     user-status-cache:
       enabled: false
       ttl: 60s
       key-prefix: safeai:test:user-status
-
     hsts:
       enabled: false
 
   audit:
     outbox:
       batch-size: 100
-
-      # Практически отключает автоматический polling
-      # во время тестов.
       poll-delay-ms: 3600000
-
     retention:
       enabled: false
 
@@ -163,22 +146,8 @@ safeai:
     permanent-deletion-retention: 0s
 
   usage:
-    default-range: 30d
-    max-range: 366d
-    max-live-range: 31d
-    max-page-size: 200
-    query-timeout: 10s
-    slow-query-threshold: 2s
-    fetch-size: 200
-    max-concurrent-reports: 4
-
     rollup:
       enabled: true
-      cron: "0 */10 * * * *"
-      lookback-days: 3
-      backfill-days-per-run: 31
-      advisory-lock-key: 8026001
-      statement-timeout: 2m
 
   chat:
     lock:
@@ -187,19 +156,15 @@ safeai:
       renewal-threads: 2
       max-active-locks: 100
       shutdown-timeout: 2s
-
     processing-lease: 90s
     lease-renewal-threads: 2
     max-active-lease-watchdogs: 100
-
     quota:
       enabled: true
       reservation-input-tokens: 16000
       reservation-output-tokens: 2048
       reservation-cost-usd: 1.000000000000
       period-zone: UTC
-
-    # Integration tests enable it explicitly when required.
     recovery:
       enabled: false
       batch-size: 100

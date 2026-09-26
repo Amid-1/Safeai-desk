@@ -1,17 +1,18 @@
-# D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod-knowledge.example.yml
+# "D:\Java projects\Safeai-desk\backend\docs\config\application-prod-knowledge.example.yml"
+# Documentation example only. Do not place this file in src/main/resources.
 safeai:
   knowledge:
     storage:
       type: s3
-      endpoint: ${KNOWLEDGE_S3_ENDPOINT}
-      access-key: ${KNOWLEDGE_S3_ACCESS_KEY}
-      secret-key: ${KNOWLEDGE_S3_SECRET_KEY}
-      bucket: ${KNOWLEDGE_S3_BUCKET:safeai-knowledge}
-      max-upload-bytes: ${KNOWLEDGE_MAX_UPLOAD_BYTES:26214400}
+      endpoint: ${SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT}
+      access-key: ${SAFEAI_KNOWLEDGE_STORAGE_ACCESS_KEY}
+      secret-key: ${SAFEAI_KNOWLEDGE_STORAGE_SECRET_KEY}
+      bucket: ${SAFEAI_KNOWLEDGE_STORAGE_BUCKET:safeai-knowledge}
+      max-upload-bytes: ${SAFEAI_KNOWLEDGE_MAX_UPLOAD_BYTES:26214400}
 
     embedding:
       provider: openai
-      base-url: https://api.openai.com/v1
+      base-url: "https://api.openai.com/v1"
       api-key: ${OPENAI_EMBEDDING_API_KEY}
       model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
       dimensions: 384
@@ -56,3 +57,4 @@ safeai:
       connect-timeout: 5s
       read-timeout: 90s
       max-response-bytes: 16777216
+

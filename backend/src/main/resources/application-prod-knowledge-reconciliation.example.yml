@@ -1,3 +1,4 @@
+# D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod-knowledge-reconciliation.example.yml
 # Optional additive configuration snippet. Enable ONLY after Flyway V56
 # and recovery/chaos tests have passed on a production-like clone.
 safeai:

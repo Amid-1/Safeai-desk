@@ -1,26 +1,20 @@
+# SafeAI-Desk/.gitignore
+
 ### Build ###
 HELP.md
 target/
 build/
 out/
-
-!**/src/main/**/target/
-!**/src/test/**/target/
-!**/src/main/**/build/
-!**/src/test/**/build/
-!**/src/main/**/out/
-!**/src/test/**/out/
-
 backend/target/
 
-### Maven / Gradle wrappers ###
-.mvn/wrapper/maven-wrapper.jar
-!.mvn/wrapper/maven-wrapper.jar
-
-!gradle/wrapper/gradle-wrapper.jar
-
-### Compiled files ###
 *.class
+
+### Maven / Gradle wrappers ###
+# Wrapper JARs are intentionally versioned.
+!.mvn/wrapper/maven-wrapper.jar
+!**/.mvn/wrapper/maven-wrapper.jar
+!gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
 
 ### IntelliJ IDEA ###
 .idea/
@@ -29,20 +23,20 @@ backend/target/
 *.ipr
 
 ### STS / Eclipse ###
-.apt_generated
+.apt_generated/
 .classpath
 .factorypath
 .project
 .settings/
 .springBeans
-.sts4-cache
+.sts4-cache/
 
 ### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
+nbproject/private/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
 
 ### VS Code ###
 .vscode/
@@ -56,6 +50,8 @@ Thumbs.db
 
 ### Temporary files ###
 *~
+*.swp
+*.swo
 
 ### Allure ###
 .allure/
@@ -67,7 +63,10 @@ logs/
 *.log.*
 **/archived/
 
-### Docker runtime logs ###
+### Local/runtime data ###
+.local-test-data/
+backend/var/
+backend/.local-test-data/
 docker-compose/docker-logs/
 
 ### Environment files ###
@@ -76,7 +75,7 @@ docker-compose/docker-logs/
 **/.env
 **/.env.*
 
-# Безопасные шаблоны должны попадать в Git
+# Safe templates are versioned.
 !**/.env.example
 !**/.env.*.example
 
@@ -84,12 +83,28 @@ docker-compose/docker-logs/
 .local-secrets/
 **/.local-secrets/
 
-# Настоящий JWT key ring никогда не коммитим
+# Never commit a real JWT key ring.
 jwt-keys.yml
 **/jwt-keys.yml
 
-# Шаблон JWT key ring должен попадать в Git
+# Version the template only.
 !**/jwt-keys.yml.example
+
+### Production deployment secrets/config ###
+# Real file-backed secrets must live outside the repository.
+infra/secrets/*
+!infra/secrets/*.example
+!infra/secrets/.gitkeep
+
+# Real production pricing is host-managed:
+#   /etc/safeai/config/pricing.yml
+# If a local copy is created under infra/config, do not commit it.
+infra/config/pricing.yml
+!infra/config/pricing.yml.example
+
+# Host-specific enabled Nginx config should be installed outside the repo.
+infra/host-nginx/safeai.conf
+!infra/host-nginx/safeai.conf.example
 
 ### Local helper files ###
 commit-message.txt
@@ -97,11 +112,12 @@ commit-message.txt
 ### Application-specific ###
 **/src/main/resources/twitter4j.properties
 
+### Local/unmanaged libraries ###
 lib/
 
-/.com
-/.company
-/.udemy
+.com/
+.company/
+.udemy/
 
 ### Documentation ###
 !docs/.gitkeep
@@ -112,3 +128,4 @@ frontend/dist/
 frontend/.vite/
 frontend/.env
 frontend/.env.local
+frontend/.env.*.local

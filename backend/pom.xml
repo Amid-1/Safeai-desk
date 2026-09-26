@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- SafeAI-Desk/backend/pom.xml -->
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -11,7 +12,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
 
@@ -40,24 +41,18 @@
         <pdfbox.version>3.0.8</pdfbox.version>
         <poi.version>5.5.1</poi.version>
         <jsoup.version>1.23.1</jsoup.version>
-        <logstash-logback-encoder.version>
-            9.0
-        </logstash-logback-encoder.version>
-        <maven-failsafe-plugin.version>
-            3.5.6
-        </maven-failsafe-plugin.version>
+        <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
+        <maven-failsafe-plugin.version>3.5.6</maven-failsafe-plugin.version>
 
         <!--
-            Используется в maven-surefire-plugin.
-            Пустое значение позволяет другим Maven-плагинам
-            дополнять argLine.
+            Used by maven-surefire-plugin. An empty base value lets
+            other Maven plugins contribute to argLine safely.
         -->
         <argLine/>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-
             <!-- Testcontainers versions -->
             <dependency>
                 <groupId>org.testcontainers</groupId>
@@ -67,10 +62,7 @@
                 <scope>import</scope>
             </dependency>
 
-            <!--
-                Override vulnerable transitive dependency
-                from Testcontainers/docker-java.
-            -->
+            <!-- Security override for transitive Testcontainers/docker-java dependency. -->
             <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-compress</artifactId>
@@ -89,12 +81,10 @@
                 <artifactId>commons-io</artifactId>
                 <version>${commons-io.version}</version>
             </dependency>
-
         </dependencies>
     </dependencyManagement>
 
     <dependencies>
-
         <dependency>
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
@@ -129,9 +119,7 @@
         <!-- OAuth2 Resource Server and JWT infrastructure -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>
-                spring-boot-starter-security-oauth2-resource-server
-            </artifactId>
+            <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
         </dependency>
 
         <!-- Jakarta Bean Validation -->
@@ -215,15 +203,10 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!--
-            Generates META-INF/spring-configuration-metadata.json
-            from @ConfigurationProperties classes.
-        -->
+        <!-- Generates META-INF/spring-configuration-metadata.json. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>
-                spring-boot-configuration-processor
-            </artifactId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
         </dependency>
 
@@ -286,27 +269,18 @@
         <!-- Native DNS resolver for Apple Silicon macOS -->
         <dependency>
             <groupId>io.netty</groupId>
-            <artifactId>
-                netty-resolver-dns-native-macos
-            </artifactId>
+            <artifactId>netty-resolver-dns-native-macos</artifactId>
             <classifier>osx-aarch_64</classifier>
             <scope>runtime</scope>
         </dependency>
-
     </dependencies>
 
     <build>
         <plugins>
-
-            <!--
-                Spring Boot packaging and executable application support.
-            -->
+            <!-- Spring Boot packaging and executable application support. -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
-                <artifactId>
-                    spring-boot-maven-plugin
-                </artifactId>
-
+                <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <excludes>
                         <exclude>
@@ -317,44 +291,21 @@
                 </configuration>
             </plugin>
 
-            <!--
-                Java compilation and annotation processors.
-
-                Это отдельный Maven plugin.
-                annotationProcessorPaths нельзя помещать внутрь
-                spring-boot-maven-plugin.
-            -->
+            <!-- Java compilation and annotation processors. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>
-                    maven-compiler-plugin
-                </artifactId>
-
+                <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
                     <parameters>true</parameters>
-
                     <annotationProcessorPaths>
-
-                        <!--
-                            Lombok должен быть доступен компилятору
-                            как annotation processor.
-                        -->
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
                         </path>
-
-                        <!--
-                            Генерирует Spring Boot configuration metadata
-                            для @ConfigurationProperties.
-                        -->
                         <path>
                             <groupId>org.springframework.boot</groupId>
-                            <artifactId>
-                                spring-boot-configuration-processor
-                            </artifactId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
                         </path>
-
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
@@ -362,10 +313,7 @@
             <!-- Unit and regular integration tests -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>
-                    maven-surefire-plugin
-                </artifactId>
-
+                <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <argLine>
                         @{argLine}
@@ -377,74 +325,50 @@
             <!-- Build environment validation -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>
-                    maven-enforcer-plugin
-                </artifactId>
-
+                <artifactId>maven-enforcer-plugin</artifactId>
                 <executions>
                     <execution>
                         <id>enforce-build-environment</id>
-
                         <goals>
                             <goal>enforce</goal>
                         </goals>
-
                         <configuration>
                             <rules>
-
                                 <requireJavaVersion>
                                     <version>[21,22)</version>
                                 </requireJavaVersion>
-
                                 <requireMavenVersion>
                                     <version>[3.9,)</version>
                                 </requireMavenVersion>
-
                                 <dependencyConvergence/>
-
                             </rules>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
-
         </plugins>
     </build>
 
     <profiles>
-
         <!--
             External Redis Sentinel and Redis Cluster topology tests.
-
-            Run:
-            ./mvnw verify -Prate-limit-topology-it
+            Run: ./mvnw verify -Prate-limit-topology-it
         -->
         <profile>
             <id>rate-limit-topology-it</id>
-
             <build>
                 <plugins>
-
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>
-                            maven-failsafe-plugin
-                        </artifactId>
-                        <version>
-                            ${maven-failsafe-plugin.version}
-                        </version>
-
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <version>${maven-failsafe-plugin.version}</version>
                         <executions>
                             <execution>
-                                <id>
-                                    run-rate-limit-topology-tests
-                                </id>
-
+                                <id>run-rate-limit-topology-tests</id>
                                 <goals>
                                     <goal>integration-test</goal>
                                     <goal>verify</goal>
                                 </goals>
-
                                 <configuration>
                                     <includes>
                                         <include>**/*IT.java</include>
@@ -453,11 +377,9 @@
                             </execution>
                         </executions>
                     </plugin>
-
                 </plugins>
             </build>
         </profile>
-
     </profiles>
 
 </project>

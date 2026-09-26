@@ -468,6 +468,36 @@ RestAuthenticationEntryPoint / RestAccessDeniedHandler
 
 ```text
 
+
+backend/
+├── docs/
+│   └── config/
+│       ├── application-security-example.yaml
+│       ├── application-prod-knowledge.example.yml
+│       └── application-prod-knowledge-reconciliation.example.yml
+│
+├── src/
+│   ├── main/
+│   │   └── resources/
+│   │       ├── application.yml
+│   │       ├── application-local.yml
+│   │       ├── application-local-nginx.yml
+│   │       ├── application-prod.yml
+│   │       └── logback-spring.xml
+│   │
+│   └── test/
+│       └── resources/
+│           ├── application-test.yml
+│           └── application-auth-postgres-it.yml
+│
+deploy/
+└── prometheus/
+    ├── prometheus.yml
+    └── rules/
+        └── safeai-audit-outbox.yml
+
+
+
 backend/
 ├── src/
 │   ├── main/

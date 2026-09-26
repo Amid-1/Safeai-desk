@@ -1,4 +1,4 @@
-# D:\Java projects\Safeai-desk\backend\src\test\resources\application-auth-postgres-it.yml
+# SafeAI-Desk/backend/src/test/resources/application-auth-postgres-it.yml
 
 app:
   security:

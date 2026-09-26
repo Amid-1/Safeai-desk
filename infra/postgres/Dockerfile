@@ -1,3 +1,4 @@
+# SafeAi-Desk/infra/postgres/Dockerfile
 # syntax=docker/dockerfile:1.7
 
 ARG POSTGRES_BASE_IMAGE=pgvector/pgvector:pg16

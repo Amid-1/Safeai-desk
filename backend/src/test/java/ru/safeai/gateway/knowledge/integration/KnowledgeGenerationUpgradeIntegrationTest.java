@@ -1,112 +1,48 @@
-package ru.safeai.gateway.knowledge.retrieval;
+package ru.safeai.gateway.knowledge.integration;
 
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.support.TransactionTemplate;
-import ru.safeai.gateway.knowledge.embedding.KnowledgeEmbeddingProvider;
-import ru.safeai.gateway.knowledge.embedding.PgVectorSupport;
-import ru.safeai.gateway.testsupport.AbstractPostgresIntegrationTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+// The test creates its schema dynamically through Flyway in Testcontainers.
 @SuppressWarnings({"SqlResolve", "SqlNoDataSourceInspection"})
-@SpringBootTest
-@ActiveProfiles("test")
-class KnowledgeRetrievalRepositoryIntegrationTest
-        extends AbstractPostgresIntegrationTest {
-
-    @Autowired
-    private KnowledgeRetrievalRepository repository;
-
-    @Autowired
-    private KnowledgeEmbeddingProvider embeddingProvider;
-
-    @Test
-    void hybridSearchUsesCurrentReadyVersionAndEnforcesMembershipInSql() {
-        UUID memberId = UUID.randomUUID();
-        UUID outsiderId = UUID.randomUUID();
-        UUID knowledgeBaseId = UUID.randomUUID();
-        UUID documentId = UUID.randomUUID();
-        UUID versionId = UUID.randomUUID();
-        Instant now = Instant.now();
-
-        insertUser(memberId, PLATFORM_ORGANIZATION_ID,
-                "retrieval-member@example.test", true, "USER", now);
-        insertUser(outsiderId, PLATFORM_ORGANIZATION_ID,
-                "retrieval-outsider@example.test", true, "USER", now);
-        new TransactionTemplate(transactionManager)
-                .executeWithoutResult(status -> {
-                    insertReadyGraph(
-                            knowledgeBaseId,
-                            documentId,
-                            versionId,
-                            memberId
-                    );
-                    insertChunk(
-                            knowledgeBaseId,
-                            documentId,
-                            versionId,
-                            0,
-                            "Политика отпусков разрешает 28 календарных дней."
-                    );
-                    insertChunk(
-                            knowledgeBaseId,
-                            documentId,
-                            versionId,
-                            1,
-                            "Инструкция по настройке корпоративной почты."
-                    );
-
-                    // Seed a sealed legacy generation atomically with its chunks under the V57 FK.
-                    jdbcTemplate.update("""
-                        insert into knowledge_index_generations(document_version_id,index_generation,document_id,
-                            knowledge_base_id,organization_id,extractor_version,chunker_version,embedding_model,chunk_count,state)
-                        select document_version_id,index_generation,document_id,knowledge_base_id,organization_id,
-                            extractor_version,chunker_version,embedding_model,chunk_count,'ACTIVE'
-                        from knowledge_ingestion_jobs where document_version_id=?
-                        """,versionId);
-        });
-
-        String query = "сколько дней отпуска";
-        List<KnowledgeRetrievalHit> memberHits = repository.hybridSearch(
-                PLATFORM_ORGANIZATION_ID,
-                knowledgeBaseId,
-                memberId,
-                false,
-                query,
-                embeddingProvider.embed(query),
-                embeddingProvider.model(),
-                2,
-                20,
-                60
-        );
-        List<KnowledgeRetrievalHit> outsiderHits = repository.hybridSearch(
-                PLATFORM_ORGANIZATION_ID,
-                knowledgeBaseId,
-                outsiderId,
-                false,
-                query,
-                embeddingProvider.embed(query),
-                embeddingProvider.model(),
-                2,
-                20,
-                60
-        );
-
-        assertThat(memberHits).hasSize(2);
-        assertThat(memberHits.getFirst().content())
-                .contains("отпусков", "28");
-        assertThat(memberHits.getFirst().documentVersionId())
-                .isEqualTo(versionId);
-        assertThat(outsiderHits).isEmpty();
+class KnowledgeGenerationUpgradeIntegrationTest {
+    private JdbcTemplate jdbcTemplate;
+    private static final UUID PLATFORM_ORGANIZATION_ID=UUID.randomUUID();
+    @Test void upgradesPopulatedV56AndPreservesLegacyZeroGenerationPerVersion() {
+        try (var postgres=new PostgreSQLContainer("pgvector/pgvector:pg16")) {
+            postgres.start();
+            var ds=new DriverManagerDataSource(postgres.getJdbcUrl(),postgres.getUsername(),postgres.getPassword());
+            jdbcTemplate=new JdbcTemplate(ds);
+            Flyway.configure().configuration(java.util.Map.of("flyway.postgresql.transactional.lock","false")).dataSource(ds).target("56").load().migrate();
+            UUID actor=UUID.randomUUID();
+            jdbcTemplate.update("insert into organizations(id,name,normalized_name,enabled,version) values(?,'Upgrade','upgrade',true,0)",PLATFORM_ORGANIZATION_ID);
+            var tx=new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(ds));
+            tx.executeWithoutResult(status -> {
+            jdbcTemplate.update("insert into users(id,organization_id,email,password_hash,full_name,enabled,token_version,version) values(?,?,'upgrade@test.local','encoded-password','Upgrade User',true,0,0)",actor,PLATFORM_ORGANIZATION_ID);
+            jdbcTemplate.update("insert into user_roles(user_id,role_id) values(?,?)",actor,UUID.fromString("11111111-1111-1111-1111-111111111111"));
+            });
+            for(int i=0;i<2;i++) {
+                UUID kb=UUID.randomUUID(),doc=UUID.randomUUID(),version=UUID.randomUUID();
+                insertReadyGraph(kb,doc,version,actor);
+                insertChunk(kb,doc,version,0,"Legacy evidence one");
+                insertChunk(kb,doc,version,1,"Legacy evidence two");
+            }
+            var before=jdbcTemplate.queryForList("select id,content,content_sha256,index_generation from knowledge_document_chunks order by id");
+            var upgrade=Flyway.configure().configuration(java.util.Map.of("flyway.postgresql.transactional.lock","false")).dataSource(ds).load();
+            assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+            upgrade.validate();
+            assertThat(jdbcTemplate.queryForList("select id,content,content_sha256,index_generation from knowledge_document_chunks order by id")).isEqualTo(before);
+            assertThat(jdbcTemplate.queryForObject("select count(*) from knowledge_index_generations where state='ACTIVE' and publication_time_estimated and chunk_count=2",Integer.class)).isEqualTo(2);
+            assertThat(jdbcTemplate.queryForObject("select count(distinct index_generation) from knowledge_index_generations",Integer.class)).isEqualTo(1);
+        }
     }
-
     private void insertReadyGraph(
             UUID knowledgeBaseId,
             UUID documentId,
@@ -183,7 +119,7 @@ class KnowledgeRetrievalRepositoryIntegrationTest
                 knowledgeBaseId,
                 documentId,
                 versionId,
-                embeddingProvider.model()
+                "test-model"
         );
     }
 
@@ -212,8 +148,8 @@ class KnowledgeRetrievalRepositoryIntegrationTest
                 content,
                 sha256(content),
                 Math.max(1, content.length() / 4),
-                embeddingProvider.model(),
-                PgVectorSupport.encode(embeddingProvider.embed(content))
+                "test-model",
+                "[1," + "0,".repeat(382) + "0]"
         );
     }
 

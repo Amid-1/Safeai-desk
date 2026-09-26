@@ -68,6 +68,7 @@ public class KnowledgeRetrievalService {
                 new TransactionTemplate(
                         transactionManager
                 );
+        this.persistenceTransaction.setTimeout(30);
     }
 
     public KnowledgeRetrievalResponse retrieve(
@@ -176,20 +177,6 @@ public class KnowledgeRetrievalService {
                 queryEmbedding
         );
 
-        List<KnowledgeRetrievalHit> hits =
-                retrievalRepository.hybridSearch(
-                        user.getOrganizationId(),
-                        knowledgeBaseId,
-                        user.getId(),
-                        access.administrator(),
-                        query,
-                        queryEmbedding,
-                        embeddingProvider.model(),
-                        topK,
-                        properties.candidateLimit(),
-                        properties.rrfK()
-                );
-
         UUID runId =
                 UUID.randomUUID();
 
@@ -198,61 +185,25 @@ public class KnowledgeRetrievalService {
                         query
                 );
 
-        Instant completedAt =
-                clock.instant();
-
-        persistenceTransaction.executeWithoutResult(
-                status -> {
-                    persistRun(
-                            runId,
-                            knowledgeBaseId,
-                            user,
-                            query,
-                            querySha256,
-                            topK,
-                            startedAt,
-                            completedAt,
-                            chatTurnId
-                    );
-
-                    persistHits(
-                            runId,
-                            knowledgeBaseId,
-                            user.getOrganizationId(),
-                            hits
-                    );
-
-                    audit.record(
-                            user,
-                            user.getOrganizationId(),
-                            AuditEventType.KNOWLEDGE_RETRIEVAL_COMPLETED,
-                            Map.of(
-                                    "knowledgeBaseId",
-                                    knowledgeBaseId.toString(),
-                                    "retrievalRunId",
-                                    runId.toString(),
-                                    "querySha256",
-                                    querySha256,
-                                    "embeddingModel",
-                                    embeddingProvider.model(),
-                                    "topK",
-                                    topK,
-                                    "hitCount",
-                                    hits.size()
-                            )
-                    );
-                }
-        );
-
-        return new KnowledgeRetrievalExecution(
-                runId,
-                knowledgeBaseId,
-                chatTurnId,
-                querySha256,
-                embeddingProvider.model(),
-                completedAt,
-                hits
-        );
+        // The repository holds generation row locks through immutable evidence persistence.
+        // Embedding network work has already finished before opening this transaction.
+        return persistenceTransaction.execute(status -> {
+            List<KnowledgeRetrievalHit> hits = retrievalRepository.hybridSearch(
+                    user.getOrganizationId(), knowledgeBaseId, user.getId(),
+                    access.administrator(), query, queryEmbedding, embeddingProvider.model(),
+                    topK, properties.candidateLimit(), properties.rrfK());
+            Instant completedAt = clock.instant();
+            persistRun(runId, knowledgeBaseId, user, query, querySha256, topK,
+                    startedAt, completedAt, chatTurnId);
+            persistHits(runId, knowledgeBaseId, user.getOrganizationId(), hits);
+            audit.record(user, user.getOrganizationId(), AuditEventType.KNOWLEDGE_RETRIEVAL_COMPLETED,
+                    Map.of("knowledgeBaseId", knowledgeBaseId.toString(),
+                            "retrievalRunId", runId.toString(), "querySha256", querySha256,
+                            "embeddingModel", embeddingProvider.model(), "topK", topK,
+                            "hitCount", hits.size()));
+            return new KnowledgeRetrievalExecution(runId, knowledgeBaseId, chatTurnId,
+                    querySha256, embeddingProvider.model(), completedAt, hits);
+        });
     }
 
     private String normalizeQuery(

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SafeAI-Desk/infra/postgres/init/10-create-app-roles.sh
 set -Eeuo pipefail
 
 read_secret() {
@@ -21,6 +22,15 @@ validate_role_name() {
     }
 }
 
+require_distinct_roles() {
+    if [[ "$POSTGRES_USER" == "$SAFEAI_DB_MIGRATOR_USER" \
+       || "$POSTGRES_USER" == "$SAFEAI_DB_APP_USER" \
+       || "$SAFEAI_DB_MIGRATOR_USER" == "$SAFEAI_DB_APP_USER" ]]; then
+        echo "POSTGRES_USER, SAFEAI_DB_MIGRATOR_USER and SAFEAI_DB_APP_USER must be distinct" >&2
+        exit 1
+    fi
+}
+
 : "${POSTGRES_DB:?POSTGRES_DB is required}"
 : "${POSTGRES_USER:?POSTGRES_USER is required}"
 : "${SAFEAI_DB_MIGRATOR_USER:?SAFEAI_DB_MIGRATOR_USER is required}"
@@ -29,13 +39,10 @@ validate_role_name() {
 validate_role_name "$POSTGRES_USER"
 validate_role_name "$SAFEAI_DB_MIGRATOR_USER"
 validate_role_name "$SAFEAI_DB_APP_USER"
+require_distinct_roles
 
-migrator_password="$(
-    read_secret /run/secrets/db_migrator_password
-)"
-app_password="$(
-    read_secret /run/secrets/db_app_password
-)"
+migrator_password="$(read_secret /run/secrets/db_migrator_password)"
+app_password="$(read_secret /run/secrets/db_app_password)"
 
 [[ -n "$migrator_password" && -n "$app_password" ]] || {
     echo "Database role passwords must not be empty" >&2
@@ -52,9 +59,12 @@ psql_command=(
 )
 
 if [[ -n "${POSTGRES_HOST:-}" ]]; then
-    bootstrap_password="$(
-        read_secret /run/secrets/postgres_bootstrap_password
-    )"
+    bootstrap_password="$(read_secret /run/secrets/postgres_bootstrap_password)"
+    [[ -n "$bootstrap_password" ]] || {
+        echo "PostgreSQL bootstrap password must not be empty" >&2
+        exit 1
+    }
+
     export PGPASSWORD="$bootstrap_password"
 
     psql_command+=(
@@ -70,6 +80,11 @@ export SAFEAI_APP_PASSWORD="$app_password"
 \getenv migrator_password SAFEAI_MIGRATOR_PASSWORD
 \getenv app_password SAFEAI_APP_PASSWORD
 
+-- V41+ uses vector(384). Install the extension while connected as the
+-- bootstrap/superuser role. Flyway's later CREATE EXTENSION IF NOT EXISTS
+-- then becomes an idempotent no-op for the non-superuser migrator.
+CREATE EXTENSION IF NOT EXISTS vector;
+
 SELECT format(
     'CREATE ROLE %I LOGIN PASSWORD %L',
     :'migrator_user',
@@ -84,7 +99,7 @@ WHERE NOT EXISTS (
 
 SELECT format(
     'ALTER ROLE %I LOGIN PASSWORD %L '
-    'NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION',
+    'NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS',
     :'migrator_user',
     :'migrator_password'
 )
@@ -104,12 +119,14 @@ WHERE NOT EXISTS (
 
 SELECT format(
     'ALTER ROLE %I LOGIN PASSWORD %L '
-    'NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION',
+    'NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS',
     :'app_user',
     :'app_password'
 )
 \gexec
 
+-- The migration role owns the application database/schema. The runtime role
+-- receives only explicit data-plane privileges below.
 SELECT format(
     'ALTER DATABASE %I OWNER TO %I',
     current_database(),
@@ -117,7 +134,7 @@ SELECT format(
 )
 \gexec
 
-REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
 
 SELECT format(
     'ALTER SCHEMA public OWNER TO %I',
@@ -125,9 +142,8 @@ SELECT format(
 )
 \gexec
 
--- Existing installations may contain objects created by the former
--- bootstrap/superuser role. Transfer ownership of public-schema objects so
--- future Flyway migrations can alter them without retaining superuser access.
+-- Existing installations can contain objects created by the former bootstrap
+-- role. Transfer non-extension application objects to the Flyway migrator.
 SELECT format(
     'ALTER TABLE %I.%I OWNER TO %I',
     namespace.nspname,
@@ -302,8 +318,17 @@ WHERE namespace.nspname = 'public'
 ORDER BY type_entry.typname
 \gexec
 
+-- Remove implicit database access and restore only the capabilities used by
+-- SafeAI. Migrator may use TEMPORARY for future controlled migrations; runtime
+-- gets CONNECT only.
 SELECT format(
-    'GRANT CONNECT ON DATABASE %I TO %I',
+    'REVOKE CONNECT, TEMPORARY ON DATABASE %I FROM PUBLIC',
+    current_database()
+)
+\gexec
+
+SELECT format(
+    'GRANT CONNECT, TEMPORARY ON DATABASE %I TO %I',
     current_database(),
     :'migrator_user'
 )
@@ -334,6 +359,8 @@ SELECT format(
 )
 \gexec
 
+-- Runtime DML is broad at schema level because the current application uses a
+-- single DB role. RLS/tenant isolation remains an application/schema invariant.
 SELECT format(
     'GRANT SELECT, INSERT, UPDATE, DELETE '
     'ON ALL TABLES IN SCHEMA public TO %I',
@@ -348,9 +375,18 @@ SELECT format(
 )
 \gexec
 
+-- PostgreSQL grants EXECUTE on functions to PUBLIC by default. Remove that
+-- implicit surface, then grant only the application role explicitly.
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+
 SELECT format(
-    'GRANT EXECUTE '
-    'ON ALL FUNCTIONS IN SCHEMA public TO %I',
+    'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO %I',
+    :'migrator_user'
+)
+\gexec
+
+SELECT format(
+    'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO %I',
     :'app_user'
 )
 \gexec
@@ -368,6 +404,13 @@ SELECT format(
     'GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I',
     :'migrator_user',
     :'app_user'
+)
+\gexec
+
+SELECT format(
+    'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public '
+    'REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC',
+    :'migrator_user'
 )
 \gexec
 
@@ -392,8 +435,4 @@ SELECT format(
 \gexec
 SQL
 
-unset \
-    SAFEAI_MIGRATOR_PASSWORD \
-    SAFEAI_APP_PASSWORD \
-    PGPASSWORD \
-    bootstrap_password
+unset SAFEAI_MIGRATOR_PASSWORD SAFEAI_APP_PASSWORD PGPASSWORD bootstrap_password

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- SafeAI-Desk/backend/src/main/resources/logback-spring.xml -->
+
 <configuration>
 
     <springProfile name="prod">
@@ -6,6 +8,7 @@
             <encoder class="net.logstash.logback.encoder.LogstashEncoder">
                 <includeContext>false</includeContext>
                 <includeMdcKeyName>requestId</includeMdcKeyName>
+                <includeMdcKeyName>clientRequestId</includeMdcKeyName>
                 <customFields>{"service":"safeai-backend"}</customFields>
             </encoder>
         </appender>

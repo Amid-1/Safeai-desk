@@ -22,6 +22,7 @@ public class KnowledgeRetrievalRepository {
         this.jdbc = jdbc;
     }
 
+    @org.springframework.transaction.annotation.Transactional(timeout = 30)
     public List<KnowledgeRetrievalHit> hybridSearch(
             UUID organizationId,
             UUID knowledgeBaseId,
@@ -81,7 +82,27 @@ public class KnowledgeRetrievalRepository {
 
         return jdbc.query(
                 """
-                with query_parameters as (
+                with pinned_generations as materialized (
+                    select g.document_version_id, g.index_generation, g.document_id,
+                           g.knowledge_base_id, g.organization_id
+                    from knowledge_index_generations g
+                    join knowledge_ingestion_jobs j
+                      on j.document_version_id=g.document_version_id
+                     and j.index_generation=g.index_generation
+                    join knowledge_documents d
+                      on d.id=g.document_id and d.current_version_id=g.document_version_id
+                    join knowledge_bases b on b.id=g.knowledge_base_id
+                    where g.organization_id=:organizationId
+                      and g.knowledge_base_id=:knowledgeBaseId
+                      and g.embedding_model=:embeddingModel
+                      and g.state='ACTIVE' and d.enabled and b.enabled
+                      and (:administrator or b.visibility='ORGANIZATION' or exists (
+                          select 1 from knowledge_base_memberships m
+                          where m.knowledge_base_id=b.id and m.organization_id=b.organization_id
+                            and m.user_id=:userId))
+                    order by g.document_version_id, g.index_generation
+                    for share of g
+                ), query_parameters as (
                     select
                         websearch_to_tsquery(
                             'simple',
@@ -134,7 +155,7 @@ public class KnowledgeRetrievalRepository {
                              chunk.knowledge_base_id
                      and version.organization_id =
                              chunk.organization_id
-                    join knowledge_ingestion_jobs job
+                    join pinned_generations job
                       on job.document_version_id =
                              chunk.document_version_id
                      and job.document_id =

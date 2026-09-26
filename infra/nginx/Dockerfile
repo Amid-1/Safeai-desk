@@ -1,5 +1,5 @@
-# SafeAi-Desk/infra/nginx/Dockerfile
 # syntax=docker/dockerfile:1.7
+# SafeAI-Desk/infra/nginx/Dockerfile
 
 ARG NODE_IMAGE=node:24.19.0-alpine
 ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:stable-alpine
@@ -15,8 +15,8 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY frontend/ ./
 
+# package.json: check = lint + tests + production build.
 RUN npm run check
-
 
 FROM ${NGINX_IMAGE} AS runtime
 
@@ -34,6 +34,9 @@ LABEL org.opencontainers.image.title="SafeAI Frontend" \
 
 COPY infra/nginx/nginx.conf \
     /etc/nginx/conf.d/default.conf
+
+COPY infra/nginx/security-headers.conf \
+    /etc/nginx/snippets/safeai-security-headers.conf
 
 COPY --from=build \
     /workspace/frontend/dist/ \

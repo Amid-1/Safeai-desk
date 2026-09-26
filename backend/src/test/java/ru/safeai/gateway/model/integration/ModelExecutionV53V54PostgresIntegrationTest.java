@@ -286,8 +286,8 @@ class ModelExecutionV53V54PostgresIntegrationTest extends AbstractChatPostgresIn
                         while (root.getCause() != null) {
                             root = root.getCause();
                         }
-                        assertThat(root).isInstanceOf(java.sql.SQLException.class);
-                        assertThat(((java.sql.SQLException) root).getSQLState())
+                        assertThat(root).isInstanceOf(SQLException.class);
+                        assertThat(((SQLException) root).getSQLState())
                                 .isEqualTo("23514");
                     });
         }

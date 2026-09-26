@@ -1,4 +1,5 @@
-# SafeAi-Desk/infra/prometheus/rules/safeai-audit-outbox.yml
+# SafeAI-Desk/infra/prometheus/rules/safeai-audit-outbox.yml
+
 groups:
   - name: safeai-audit-outbox
     rules:

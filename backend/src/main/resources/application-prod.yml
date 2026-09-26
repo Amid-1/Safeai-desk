@@ -1,4 +1,5 @@
-# D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod.yml
+# SafeAI-Desk/backend/src/main/resources/application-prod.yml
+
 spring:
   datasource:
     username: ${SAFEAI_DB_APP_USER}
@@ -20,21 +21,13 @@ spring:
 
 server:
   shutdown: graceful
-
-  # Forwarded headers намеренно не применяются Spring.
-  # ClientIpResolver валидирует X-Forwarded-For самостоятельно.
+  # Forwarded headers are intentionally not applied by Spring.
+  # ClientIpResolver validates X-Forwarded-For against trusted proxy CIDRs.
   forward-headers-strategy: none
 
 management:
-  # Production invariant:
-  # management server обязан слушать отдельный internal port/interface.
-  #
-  # В текущем infra/docker-compose.yml эти переменные передаются backend:
-  # SAFEAI_MANAGEMENT_PORT=9091
-  # SAFEAI_MANAGEMENT_ADDRESS=172.31.0.20
-  #
-  # Fallback намеренно отсутствует: при запуске prod вне корректного
-  # deployment environment приложение должно fail-fast.
+  # Production invariant: Actuator listens on a dedicated internal interface.
+  # No fallback is intentional: a misconfigured deployment must fail fast.
   server:
     port: ${SAFEAI_MANAGEMENT_PORT}
     address: ${SAFEAI_MANAGEMENT_ADDRESS}
@@ -52,12 +45,10 @@ management:
       probes:
         enabled: true
       show-details: never
-
       group:
         liveness:
           include:
             - livenessState
-
         readiness:
           include:
             - readinessState
@@ -70,197 +61,49 @@ logging:
     org.hibernate.orm.jdbc.bind: "OFF"
     org.springframework.web.filter.CommonsRequestLoggingFilter: "OFF"
 
-# RSA key ring здесь намеренно не объявляется.
-# В production он поступает из /run/secrets/jwt-keys.yml,
-# подключённого через SPRING_CONFIG_ADDITIONAL_LOCATION.
-#
-# Общие JWT-параметры expiration/issuer/audience
-# остаются в application.yml и приходят из .env.prod.
-
+# RSA key-ring material is intentionally not declared here.
+# Production supplies it through deployment secret configuration.
 safeai:
-  knowledge:
-    embedding:
-      # Production must explicitly select a real adapter. Use "openai" with
-      # OPENAI_EMBEDDING_API_KEY; deterministic hashing is for local/test only.
-      provider: ${SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER}
-    ocr:
-      # Use "http" for scanned PDFs. The endpoint host must be allow-listed.
-      provider: ${SAFEAI_KNOWLEDGE_OCR_PROVIDER}
-    storage:
-      # Production не должен молча откатываться на локальную FS.
-      # Backend-контейнер read-only, поэтому production storage
-      # принудительно использует S3-compatible backend.
-      type: s3
-
   ai:
+    # Required in production. AiProductionConfigurationValidator also rejects mock.
     provider: ${SAFEAI_AI_PROVIDER}
 
-    context:
-      max-user-message-chars: ${SAFEAI_AI_CONTEXT_MAX_USER_MESSAGE_CHARS:16000}
-      max-instruction-chars: ${SAFEAI_AI_CONTEXT_MAX_INSTRUCTION_CHARS:32000}
-      max-history-messages: ${SAFEAI_AI_CONTEXT_MAX_HISTORY_MESSAGES:100}
-      max-message-chars: ${SAFEAI_AI_CONTEXT_MAX_MESSAGE_CHARS:50000}
-      max-total-input-chars: ${SAFEAI_AI_CONTEXT_MAX_TOTAL_INPUT_CHARS:250000}
-      chars-per-estimated-token: ${SAFEAI_AI_CONTEXT_CHARS_PER_ESTIMATED_TOKEN:3}
-      message-overhead-tokens: ${SAFEAI_AI_CONTEXT_MESSAGE_OVERHEAD_TOKENS:8}
-      safety-margin-tokens: ${SAFEAI_AI_CONTEXT_SAFETY_MARGIN_TOKENS:1024}
+  knowledge:
+    embedding:
+      # Production must explicitly select a real adapter, normally openai.
+      provider: ${SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER}
 
-    retry:
-      enabled: ${SAFEAI_AI_RETRY_ENABLED:false}
-      max-attempts: ${SAFEAI_AI_RETRY_MAX_ATTEMPTS:1}
-      initial-backoff: ${SAFEAI_AI_RETRY_INITIAL_BACKOFF:250ms}
-      max-backoff: ${SAFEAI_AI_RETRY_MAX_BACKOFF:2s}
-      max-retry-after: ${SAFEAI_AI_RETRY_MAX_RETRY_AFTER:10s}
-      total-timeout: ${SAFEAI_AI_RETRY_TOTAL_TIMEOUT:75s}
+    ocr:
+      # Use http for scanned PDFs, otherwise disabled.
+      provider: ${SAFEAI_KNOWLEDGE_OCR_PROVIDER}
 
-    openai:
-      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
-      api-key: ${OPENAI_API_KEY:}
-      model: ${OPENAI_MODEL:}
-      max-input-tokens: ${OPENAI_MAX_INPUT_TOKENS:64000}
-      max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS:2048}
-      max-response-chars: ${OPENAI_MAX_RESPONSE_CHARS:100000}
-      max-response-body-bytes: ${OPENAI_MAX_RESPONSE_BODY_BYTES:2097152}
-      store: ${OPENAI_STORE:false}
-      connect-timeout: ${OPENAI_CONNECT_TIMEOUT:5s}
-      read-timeout: ${OPENAI_READ_TIMEOUT:60s}
-
-    anthropic:
-      base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/v1}
-      api-key: ${ANTHROPIC_API_KEY:}
-      model: ${ANTHROPIC_MODEL:}
-      version: ${ANTHROPIC_VERSION:2023-06-01}
-      max-input-tokens: ${ANTHROPIC_MAX_INPUT_TOKENS:64000}
-      max-tokens: ${ANTHROPIC_MAX_TOKENS:2048}
-      max-response-chars: ${ANTHROPIC_MAX_RESPONSE_CHARS:100000}
-      max-response-body-bytes: ${ANTHROPIC_MAX_RESPONSE_BODY_BYTES:2097152}
-      connect-timeout: ${ANTHROPIC_CONNECT_TIMEOUT:5s}
-      read-timeout: ${ANTHROPIC_READ_TIMEOUT:60s}
+    storage:
+      # Production must never silently fall back to local filesystem storage.
+      type: s3
 
   auth:
     cookies:
       secure: ${SAFEAI_AUTH_COOKIES_SECURE:true}
-      same-site: ${SAFEAI_AUTH_COOKIES_SAME_SITE:Lax}
-      access-token-max-age: ${SAFEAI_AUTH_ACCESS_TOKEN_MAX_AGE:15m}
-      refresh-token-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_MAX_AGE:30d}
-      refresh-token-absolute-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_ABSOLUTE_MAX_AGE:90d}
-      reuse-detection-retention: ${SAFEAI_AUTH_REUSE_DETECTION_RETENTION:7d}
-      domain: ${SAFEAI_AUTH_COOKIES_DOMAIN:}
-      access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:safeai-access}
-      refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:safeai-refresh}
-
-    refresh-cleanup:
-      cron: "${SAFEAI_AUTH_REFRESH_CLEANUP_CRON:0 0 3 * * *}"
-      batch-size: ${SAFEAI_AUTH_REFRESH_CLEANUP_BATCH_SIZE:200}
-      max-batches-per-run: ${SAFEAI_AUTH_REFRESH_CLEANUP_MAX_BATCHES_PER_RUN:100}
 
   rate-limit:
     redis:
+      # Do not inherit the local namespace in production.
       key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX}
-      hmac-secret: ${SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET}
-      key-version: ${SAFEAI_RATE_LIMIT_REDIS_KEY_VERSION:v1}
-
-    login:
-      enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}
-      email-limit: ${SAFEAI_RATE_LIMIT_LOGIN_EMAIL_LIMIT:10}
-      ip-limit: ${SAFEAI_RATE_LIMIT_LOGIN_IP_LIMIT:100}
-      window: ${SAFEAI_RATE_LIMIT_LOGIN_WINDOW:10m}
-      audit-organization-id: ${SAFEAI_RATE_LIMIT_LOGIN_AUDIT_ORGANIZATION_ID:${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}}
-
-    # Параметры также объявлены в application.yml.
-    # Здесь блок оставлен явно, чтобы production rate-limit policy
-    # была видна в одном месте с login/AI limits.
-    refresh:
-      enabled: ${SAFEAI_RATE_LIMIT_REFRESH_ENABLED:true}
-      ip-limit: ${SAFEAI_RATE_LIMIT_REFRESH_IP_LIMIT:600}
-      window: ${SAFEAI_RATE_LIMIT_REFRESH_WINDOW:1m}
-
-    ai-messages:
-      enabled: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ENABLED:true}
-      user-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_USER_LIMIT_PER_HOUR:20}
-      admin-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ADMIN_LIMIT_PER_HOUR:100}
-      organization-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ORGANIZATION_LIMIT_PER_HOUR:1000}
 
   security:
     client-ip:
       trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:172.28.0.10/32}
 
+    # PostgreSQL remains the security-state source of truth in production.
     user-status-cache:
       enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:false}
       ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:15s}
       key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status}
 
-    # HSTS должен устанавливаться внешним TLS terminator / Nginx.
+    # HSTS is emitted by the external TLS terminator / reverse proxy.
     hsts:
       enabled: ${SAFEAI_HSTS_ENABLED:false}
 
-  platform:
-    organization-id: ${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}
-
-  user-management:
-    permanent-deletion-retention: ${SAFEAI_USER_DELETION_RETENTION:7d}
-
   cors:
+    # Required in production; there is intentionally no localhost fallback.
     allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS}
-
-  audit:
-    outbox:
-      batch-size: ${SAFEAI_AUDIT_OUTBOX_BATCH_SIZE:100}
-      poll-delay-ms: ${SAFEAI_AUDIT_OUTBOX_POLL_DELAY_MS:1000}
-
-    retention:
-      enabled: ${SAFEAI_AUDIT_RETENTION_ENABLED:true}
-      period: ${SAFEAI_AUDIT_RETENTION_PERIOD:1095d}
-      batch-size: ${SAFEAI_AUDIT_RETENTION_BATCH_SIZE:10000}
-      max-batches-per-run: ${SAFEAI_AUDIT_RETENTION_MAX_BATCHES_PER_RUN:10}
-      cron: "${SAFEAI_AUDIT_RETENTION_CRON:0 30 3 * * *}"
-      zone: ${SAFEAI_AUDIT_RETENTION_ZONE:UTC}
-
-  usage:
-    default-range: ${SAFEAI_USAGE_DEFAULT_RANGE:30d}
-    max-range: ${SAFEAI_USAGE_MAX_RANGE:366d}
-    max-live-range: ${SAFEAI_USAGE_MAX_LIVE_RANGE:31d}
-    max-page-size: ${SAFEAI_USAGE_MAX_PAGE_SIZE:200}
-    query-timeout: ${SAFEAI_USAGE_QUERY_TIMEOUT:10s}
-    slow-query-threshold: ${SAFEAI_USAGE_SLOW_QUERY_THRESHOLD:2s}
-    fetch-size: ${SAFEAI_USAGE_FETCH_SIZE:200}
-    max-concurrent-reports: ${SAFEAI_USAGE_MAX_CONCURRENT_REPORTS:4}
-
-    rollup:
-      enabled: ${SAFEAI_USAGE_ROLLUP_ENABLED:true}
-      cron: "${SAFEAI_USAGE_ROLLUP_CRON:0 */10 * * * *}"
-      lookback-days: ${SAFEAI_USAGE_ROLLUP_LOOKBACK_DAYS:3}
-      backfill-days-per-run: ${SAFEAI_USAGE_ROLLUP_BACKFILL_DAYS_PER_RUN:31}
-      advisory-lock-key: ${SAFEAI_USAGE_ROLLUP_ADVISORY_LOCK_KEY:8026001}
-      statement-timeout: ${SAFEAI_USAGE_ROLLUP_STATEMENT_TIMEOUT:2m}
-
-  chat:
-    details-message-limit: ${SAFEAI_CHAT_DETAILS_MESSAGE_LIMIT:50}
-    history-turn-limit: ${SAFEAI_CHAT_HISTORY_TURN_LIMIT:50}
-    max-chat-page-size: ${SAFEAI_CHAT_MAX_CHAT_PAGE_SIZE:100}
-    max-message-page-size: ${SAFEAI_CHAT_MAX_MESSAGE_PAGE_SIZE:100}
-    max-message-chars: ${SAFEAI_CHAT_MAX_MESSAGE_CHARS:16000}
-
-    processing-lease: ${SAFEAI_CHAT_PROCESSING_LEASE:3m}
-    lease-renewal-threads: ${SAFEAI_CHAT_LEASE_RENEWAL_THREADS:4}
-    max-active-lease-watchdogs: ${SAFEAI_CHAT_MAX_ACTIVE_LEASE_WATCHDOGS:1000}
-
-    lock:
-      key-prefix: ${SAFEAI_CHAT_LOCK_KEY_PREFIX:safeai:prod:chat-lock}
-      ttl: ${SAFEAI_CHAT_LOCK_TTL:2m}
-      renewal-threads: ${SAFEAI_CHAT_LOCK_RENEWAL_THREADS:4}
-      max-active-locks: ${SAFEAI_CHAT_LOCK_MAX_ACTIVE_LOCKS:1000}
-      shutdown-timeout: ${SAFEAI_CHAT_LOCK_SHUTDOWN_TIMEOUT:5s}
-
-    quota:
-      enabled: ${SAFEAI_CHAT_QUOTA_ENABLED:true}
-      reservation-input-tokens: ${SAFEAI_CHAT_QUOTA_RESERVATION_INPUT_TOKENS:16000}
-      reservation-output-tokens: ${SAFEAI_CHAT_QUOTA_RESERVATION_OUTPUT_TOKENS:2048}
-      reservation-cost-usd: ${SAFEAI_CHAT_QUOTA_RESERVATION_COST_USD:1.000000000000}
-      period-zone: ${SAFEAI_CHAT_QUOTA_PERIOD_ZONE:UTC}
-
-    recovery:
-      enabled: ${SAFEAI_CHAT_RECOVERY_ENABLED:true}
-      batch-size: ${SAFEAI_CHAT_RECOVERY_BATCH_SIZE:100}
-      max-batches-per-run: ${SAFEAI_CHAT_RECOVERY_MAX_BATCHES_PER_RUN:20}
-      cron: "${SAFEAI_CHAT_RECOVERY_CRON:0 * * * * *}"

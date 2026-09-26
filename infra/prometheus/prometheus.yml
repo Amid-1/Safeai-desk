@@ -1,4 +1,5 @@
-# SafeAi-Desk/infra/prometheus/prometheus.yml
+# SafeAI-Desk/infra/prometheus/prometheus.yml
+
 global:
   scrape_interval: 15s
   scrape_timeout: 10s

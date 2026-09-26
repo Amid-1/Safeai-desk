@@ -17,41 +17,32 @@ services:
     profiles:
       - full
 
-    # Для ${...} interpolation запускать Compose с:
-    # --env-file backend/.env
-    #
-    # Если команда выполняется из infra/:
-    # --env-file ../backend/.env
+    # env_file paths are resolved relative to this Compose file.
+    # CLI --env-file is separate and is resolved relative to the current shell.
     env_file:
       - ../backend/.env
 
     environment:
       SPRING_PROFILES_ACTIVE: local
 
-      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
-      SPRING_DATASOURCE_USERNAME: "${POSTGRES_USER}"
-      SPRING_DATASOURCE_PASSWORD: "${POSTGRES_PASSWORD}"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:-safeai}"
+      SPRING_DATASOURCE_USERNAME: "${POSTGRES_USER:-safeai}"
+      SPRING_DATASOURCE_PASSWORD: "${POSTGRES_PASSWORD:-safeai_password}"
 
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-safeai_redis_password}"
 
-      # Separate actuator port for local Prometheus.
-      # Local network is not a production security boundary, so binding
-      # management to all container interfaces is acceptable here.
       SAFEAI_MANAGEMENT_PORT: "9091"
       SAFEAI_MANAGEMENT_ADDRESS: "0.0.0.0"
 
-      # Внутри Docker backend должен обращаться к MinIO
-      # по service name, а не через localhost.
       SAFEAI_KNOWLEDGE_STORAGE_TYPE: s3
       SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT: "http://minio:9000"
       SAFEAI_KNOWLEDGE_STORAGE_ACCESS_KEY: "${MINIO_ROOT_USER:-safeai}"
       SAFEAI_KNOWLEDGE_STORAGE_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-safeai-local-change-me}"
       SAFEAI_KNOWLEDGE_STORAGE_BUCKET: "${SAFEAI_KNOWLEDGE_STORAGE_BUCKET:-safeai-knowledge}"
 
-      # Для profile=full значения RSA PEM можно передать
-      # из shell перед docker compose up.
+      # For profile=full, provide real local RSA PEM values from the shell.
       SAFEAI_JWT_PUBLIC_KEY: "${SAFEAI_JWT_PUBLIC_KEY:-}"
       SAFEAI_JWT_PRIVATE_KEY: "${SAFEAI_JWT_PRIVATE_KEY:-}"
 
@@ -90,12 +81,13 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: "pgvector/pgvector:pg16"
+    # Match production major version and pgvector extension availability.
+    image: "${POSTGRES_IMAGE:-pgvector/pgvector:0.8.6-pg16-bookworm}"
 
     environment:
-      POSTGRES_DB: "${POSTGRES_DB}"
-      POSTGRES_USER: "${POSTGRES_USER}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB:-safeai}"
+      POSTGRES_USER: "${POSTGRES_USER:-safeai}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-safeai_password}"
 
     ports:
       - target: 5432
@@ -121,7 +113,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: "redis:7"
+    image: "${REDIS_IMAGE:-redis:7}"
 
     entrypoint:
       - /bin/sh
@@ -135,7 +127,7 @@ services:
           --appendonly no
 
     environment:
-      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-safeai_redis_password}"
 
     ports:
       - target: 6379
@@ -159,7 +151,7 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    image: "minio/minio:RELEASE.2025-07-23T15-54-02Z"
 
     command:
       - server
@@ -176,7 +168,6 @@ services:
         published: "9000"
         host_ip: 127.0.0.1
         protocol: tcp
-
       - target: 9001
         published: "9001"
         host_ip: 127.0.0.1
@@ -185,10 +176,11 @@ services:
     volumes:
       - safeai_minio_local_data:/data
 
+    # This is the healthcheck pattern used by MinIO's own Compose examples.
     healthcheck:
-      test: [ "CMD", "mc", "ready", "local" ]
+      test: ["CMD", "mc", "ready", "local"]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 10
       start_period: 5s
 
@@ -215,12 +207,10 @@ services:
         source: ./prometheus/prometheus.yml
         target: /etc/prometheus/prometheus.yml
         read_only: true
-
       - type: bind
         source: ./prometheus/rules
         target: /etc/prometheus/rules
         read_only: true
-
       - safeai_prometheus_local_data:/prometheus
 
     ports:
@@ -251,10 +241,8 @@ services:
 volumes:
   safeai_postgres_local_data:
     name: safeai_postgres_local_data
-
   safeai_minio_local_data:
     name: safeai_minio_local_data
-
   safeai_prometheus_local_data:
     name: safeai_prometheus_local_data
 

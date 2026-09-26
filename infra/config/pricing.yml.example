@@ -1,7 +1,21 @@
-## SafeAi-Desk/infra/config/pricing.yml.example
-# Copy to /etc/safeai/config/pricing.yml and replace every placeholder with
-# the exact, verified tariff for the resolved provider model used in production.
-# validate-prod.sh refuses to deploy while REPLACE_WITH remains.
+# SafeAI-Desk/infra/config/pricing.yml.example
+#
+# Production pricing TEMPLATE. This file MAY be committed to Git.
+#
+# Real production file:
+#   /etc/safeai/config/pricing.yml
+#
+# The real file is host-managed and MUST NOT be committed.
+#
+# Every price must correspond to the exact resolved provider model.
+# Do not guess prices and do not silently treat an unknown model as free.
+#
+# `version` is an immutable identifier of the tariff snapshot used for
+# accounting/audit, for example:
+#
+#   openai-gpt-4.1-2026-09-verified
+#
+# validate-prod.sh must reject deployment while REPLACE_WITH remains.
 
 safeai:
   ai:

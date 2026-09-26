@@ -1,9 +1,8 @@
 # syntax=docker/dockerfile:1.7
-# syntax=docker/dockerfile:1.7
+# SafeAI-Desk/backend/Dockerfile
 
 ARG BUILD_IMAGE=eclipse-temurin:21-jdk
 ARG RUNTIME_IMAGE=eclipse-temurin:21-jre
-
 
 FROM ${BUILD_IMAGE} AS build
 
@@ -20,16 +19,11 @@ COPY src src
 
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -q -DskipTests clean package \
-    && find target \
-        -maxdepth 1 \
-        -type f \
-        -name '*.jar' \
-        ! -name '*-sources.jar' \
-        ! -name '*-javadoc.jar' \
-        -exec cp '{}' /app/app.jar ';' \
-        -quit \
-    && test -s /app/app.jar
-
+    && JAR_FILE="$(find target -maxdepth 1 -type f -name '*.jar' \
+        ! -name '*-sources.jar' ! -name '*-javadoc.jar' -print -quit)" \
+    && test -n "$JAR_FILE" \
+    && test -s "$JAR_FILE" \
+    && cp "$JAR_FILE" /app/app.jar
 
 FROM ${RUNTIME_IMAGE} AS runtime
 
@@ -50,28 +44,22 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd \
-        --system \
-        --gid 10001 \
-        safeai \
-    && useradd \
-        --system \
-        --uid 10001 \
-        --gid safeai \
-        --home-dir /app \
-        --shell /usr/sbin/nologin \
-        safeai
+    && groupadd --system --gid 10001 safeai \
+    && useradd --system --uid 10001 --gid safeai \
+        --home-dir /app --shell /usr/sbin/nologin safeai
 
 COPY --from=build \
     --chown=safeai:safeai \
     /app/app.jar \
     /app/app.jar
 
-USER safeai
+USER 10001:10001
 
-EXPOSE 8080
+EXPOSE 8080 9091
 
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:InitialRAMPercentage=25 -XX:+ExitOnOutOfMemoryError"
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:InitialRAMPercentage=25 -XX:+ExitOnOutOfMemoryError" \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
 
 STOPSIGNAL SIGTERM
 

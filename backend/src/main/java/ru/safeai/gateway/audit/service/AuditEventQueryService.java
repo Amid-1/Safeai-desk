@@ -18,6 +18,7 @@ import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -75,11 +76,10 @@ public class AuditEventQueryService {
             SafeAiUserPrincipal currentUser,
             Pageable pageable
     ) {
-        if (userId == null) {
-            throw new NullPointerException(
-                    "userId не должен быть null"
-            );
-        }
+        Objects.requireNonNull(
+                userId,
+                "userId не должен быть null"
+        );
 
         return findAll(
                 currentUser,
@@ -116,23 +116,29 @@ public class AuditEventQueryService {
                         1,
                         MAX_PAGE_SIZE
                 ),
-                sanitizeSort(pageable.getSort())
+                sanitizeSort(
+                        pageable.getSort()
+                )
         );
     }
 
-    private Sort sanitizeSort(Sort sort) {
+    private Sort sanitizeSort(
+            Sort sort
+    ) {
         if (sort == null || sort.isUnsorted()) {
             return DEFAULT_SORT;
         }
 
-        List<String> unsupported = sort.stream()
-                .map(Sort.Order::getProperty)
-                .filter(property ->
-                        !ALLOWED_SORT_PROPERTIES
-                                .contains(property)
-                )
-                .distinct()
-                .toList();
+        List<String> unsupported =
+                sort.stream()
+                        .map(Sort.Order::getProperty)
+                        .filter(property ->
+                                !ALLOWED_SORT_PROPERTIES.contains(
+                                        property
+                                )
+                        )
+                        .distinct()
+                        .toList();
 
         if (!unsupported.isEmpty()) {
             throw new BadRequestException(
@@ -144,22 +150,24 @@ public class AuditEventQueryService {
             );
         }
 
-        List<Sort.Order> orders = sort.stream()
-                .map(order ->
-                        new Sort.Order(
-                                order.getDirection(),
-                                order.getProperty(),
-                                order.getNullHandling()
+        List<Sort.Order> orders =
+                sort.stream()
+                        .map(order ->
+                                new Sort.Order(
+                                        order.getDirection(),
+                                        order.getProperty(),
+                                        order.getNullHandling()
+                                )
                         )
-                )
-                .toList();
+                        .toList();
 
-        boolean containsId = orders.stream()
-                .anyMatch(order ->
-                        "id".equals(
-                                order.getProperty()
-                        )
-                );
+        boolean containsId =
+                orders.stream()
+                        .anyMatch(order ->
+                                "id".equals(
+                                        order.getProperty()
+                                )
+                        );
 
         if (containsId) {
             return Sort.by(orders);
@@ -175,9 +183,20 @@ public class AuditEventQueryService {
         return Sort.by(deterministic);
     }
 
-    AuditEventResponse toResponse(
+    /**
+     * Общий mapper для audit read-path.
+     * <p>
+     * Используется как обычной пагинацией, так и cursor-based выборкой,
+     * поэтому метод намеренно public.
+     */
+    public AuditEventResponse toResponse(
             AuditEventEntity entity
     ) {
+        Objects.requireNonNull(
+                entity,
+                "entity не должен быть null"
+        );
+
         return new AuditEventResponse(
                 entity.getId(),
                 entity.getActorUserId(),

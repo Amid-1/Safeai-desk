@@ -1,12 +1,13 @@
-# D:\Java projects\Safeai-desk\backend\src\main\resources\application.yml
+# SafeAI-Desk/backend/src/main/resources/application.yml
+
 spring:
+  application:
+    name: safeai-backend
+
   servlet:
     multipart:
       max-file-size: 25MB
       max-request-size: 26MB
-
-  application:
-    name: safeai-backend
 
   config:
     import: "optional:configtree:/run/secrets/"
@@ -21,7 +22,6 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
-
     hikari:
       maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
       minimum-idle: ${DB_POOL_MIN_IDLE:2}
@@ -101,44 +101,98 @@ app:
           private-key: ${SAFEAI_JWT_PRIVATE_KEY}
 
 safeai:
-  knowledge:
-    embedding:
-      provider: ${SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER:hashing}
-      base-url: ${OPENAI_EMBEDDING_BASE_URL:https://api.openai.com/v1}
-      api-key: ${OPENAI_EMBEDDING_API_KEY:}
-      model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
-      dimensions: 384
-      batch-size: ${SAFEAI_KNOWLEDGE_EMBEDDING_BATCH_SIZE:64}
-      max-input-chars: ${SAFEAI_KNOWLEDGE_EMBEDDING_MAX_INPUT_CHARS:20000}
-      connect-timeout: ${SAFEAI_KNOWLEDGE_EMBEDDING_CONNECT_TIMEOUT:5s}
-      read-timeout: ${SAFEAI_KNOWLEDGE_EMBEDDING_READ_TIMEOUT:30s}
-    ocr:
-      provider: ${SAFEAI_KNOWLEDGE_OCR_PROVIDER:disabled}
-      endpoint: ${SAFEAI_KNOWLEDGE_OCR_ENDPOINT:}
-      api-key: ${KNOWLEDGE_OCR_API_KEY:}
-      allowed-hosts: ${SAFEAI_KNOWLEDGE_OCR_ALLOWED_HOSTS:}
-      min-native-chars-per-page: ${SAFEAI_KNOWLEDGE_OCR_MIN_NATIVE_CHARS:20}
-      connect-timeout: ${SAFEAI_KNOWLEDGE_OCR_CONNECT_TIMEOUT:5s}
-      read-timeout: ${SAFEAI_KNOWLEDGE_OCR_READ_TIMEOUT:2m}
-      max-response-bytes: ${SAFEAI_KNOWLEDGE_OCR_MAX_RESPONSE_BYTES:16777216}
-    rag:
-      top-k: ${SAFEAI_KNOWLEDGE_RAG_TOP_K:8}
-      max-context-chars: ${SAFEAI_KNOWLEDGE_RAG_MAX_CONTEXT_CHARS:24000}
-      max-chunk-chars: ${SAFEAI_KNOWLEDGE_RAG_MAX_CHUNK_CHARS:6000}
-    storage:
-      type: ${SAFEAI_KNOWLEDGE_STORAGE_TYPE:local}
-      local-root: ${SAFEAI_KNOWLEDGE_STORAGE_ROOT:./var/knowledge-objects}
-      max-upload-bytes: ${SAFEAI_KNOWLEDGE_MAX_UPLOAD_BYTES:26214400}
-      endpoint: ${SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT:}
-      access-key: ${SAFEAI_KNOWLEDGE_STORAGE_ACCESS_KEY:}
-      secret-key: ${SAFEAI_KNOWLEDGE_STORAGE_SECRET_KEY:}
-      bucket: ${SAFEAI_KNOWLEDGE_STORAGE_BUCKET:safeai-knowledge}
-
   platform:
     organization-id: ${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}
 
   user-management:
     permanent-deletion-retention: ${SAFEAI_USER_DELETION_RETENTION:7d}
+
+  cors:
+    allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+  auth:
+    cookies:
+      secure: ${SAFEAI_AUTH_COOKIES_SECURE:false}
+      same-site: ${SAFEAI_AUTH_COOKIES_SAME_SITE:Lax}
+      access-token-max-age: ${SAFEAI_AUTH_ACCESS_TOKEN_MAX_AGE:15m}
+      refresh-token-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_MAX_AGE:30d}
+      refresh-token-absolute-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_ABSOLUTE_MAX_AGE:90d}
+      reuse-detection-retention: ${SAFEAI_AUTH_REUSE_DETECTION_RETENTION:7d}
+      domain: ${SAFEAI_AUTH_COOKIES_DOMAIN:}
+      access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:safeai-access}
+      refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:safeai-refresh}
+
+    refresh-cleanup:
+      cron: "${SAFEAI_AUTH_REFRESH_CLEANUP_CRON:0 0 3 * * *}"
+      batch-size: ${SAFEAI_AUTH_REFRESH_CLEANUP_BATCH_SIZE:200}
+      max-batches-per-run: ${SAFEAI_AUTH_REFRESH_CLEANUP_MAX_BATCHES_PER_RUN:100}
+
+  rate-limit:
+    redis:
+      key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX:safeai:local}
+      hmac-secret: ${SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET}
+      key-version: ${SAFEAI_RATE_LIMIT_REDIS_KEY_VERSION:v1}
+
+    login:
+      enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}
+      email-limit: ${SAFEAI_RATE_LIMIT_LOGIN_EMAIL_LIMIT:10}
+      ip-limit: ${SAFEAI_RATE_LIMIT_LOGIN_IP_LIMIT:100}
+      window: ${SAFEAI_RATE_LIMIT_LOGIN_WINDOW:10m}
+      audit-organization-id: ${SAFEAI_RATE_LIMIT_LOGIN_AUDIT_ORGANIZATION_ID:${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}}
+
+    refresh:
+      enabled: ${SAFEAI_RATE_LIMIT_REFRESH_ENABLED:true}
+      ip-limit: ${SAFEAI_RATE_LIMIT_REFRESH_IP_LIMIT:600}
+      window: ${SAFEAI_RATE_LIMIT_REFRESH_WINDOW:1m}
+
+    ai-messages:
+      enabled: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ENABLED:true}
+      user-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_USER_LIMIT_PER_HOUR:20}
+      admin-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ADMIN_LIMIT_PER_HOUR:100}
+      organization-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ORGANIZATION_LIMIT_PER_HOUR:1000}
+
+  security:
+    client-ip:
+      trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:}
+
+    user-status-cache:
+      enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:true}
+      ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
+      key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:local:user-status}
+
+    hsts:
+      enabled: ${SAFEAI_HSTS_ENABLED:false}
+
+  audit:
+    outbox:
+      batch-size: ${SAFEAI_AUDIT_OUTBOX_BATCH_SIZE:100}
+      poll-delay-ms: ${SAFEAI_AUDIT_OUTBOX_POLL_DELAY_MS:1000}
+
+    retention:
+      enabled: ${SAFEAI_AUDIT_RETENTION_ENABLED:true}
+      period: ${SAFEAI_AUDIT_RETENTION_PERIOD:1095d}
+      batch-size: ${SAFEAI_AUDIT_RETENTION_BATCH_SIZE:10000}
+      max-batches-per-run: ${SAFEAI_AUDIT_RETENTION_MAX_BATCHES_PER_RUN:10}
+      cron: "${SAFEAI_AUDIT_RETENTION_CRON:0 30 3 * * *}"
+      zone: ${SAFEAI_AUDIT_RETENTION_ZONE:UTC}
+
+  usage:
+    default-range: ${SAFEAI_USAGE_DEFAULT_RANGE:30d}
+    max-range: ${SAFEAI_USAGE_MAX_RANGE:366d}
+    max-live-range: ${SAFEAI_USAGE_MAX_LIVE_RANGE:31d}
+    max-page-size: ${SAFEAI_USAGE_MAX_PAGE_SIZE:200}
+    query-timeout: ${SAFEAI_USAGE_QUERY_TIMEOUT:10s}
+    slow-query-threshold: ${SAFEAI_USAGE_SLOW_QUERY_THRESHOLD:2s}
+    fetch-size: ${SAFEAI_USAGE_FETCH_SIZE:200}
+    max-concurrent-reports: ${SAFEAI_USAGE_MAX_CONCURRENT_REPORTS:4}
+
+    rollup:
+      enabled: ${SAFEAI_USAGE_ROLLUP_ENABLED:true}
+      cron: "${SAFEAI_USAGE_ROLLUP_CRON:0 */10 * * * *}"
+      lookback-days: ${SAFEAI_USAGE_ROLLUP_LOOKBACK_DAYS:3}
+      backfill-days-per-run: ${SAFEAI_USAGE_ROLLUP_BACKFILL_DAYS_PER_RUN:31}
+      advisory-lock-key: ${SAFEAI_USAGE_ROLLUP_ADVISORY_LOCK_KEY:8026001}
+      statement-timeout: ${SAFEAI_USAGE_ROLLUP_STATEMENT_TIMEOUT:2m}
 
   chat:
     details-message-limit: ${SAFEAI_CHAT_DETAILS_MESSAGE_LIMIT:50}
@@ -192,7 +246,7 @@ safeai:
       total-timeout: ${SAFEAI_AI_RETRY_TOTAL_TIMEOUT:75s}
 
     openai:
-      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      base-url: "${OPENAI_BASE_URL:https://api.openai.com/v1}"
       api-key: ${OPENAI_API_KEY:}
       model: ${OPENAI_MODEL:}
       max-input-tokens: ${OPENAI_MAX_INPUT_TOKENS:64000}
@@ -204,7 +258,7 @@ safeai:
       read-timeout: ${OPENAI_READ_TIMEOUT:60s}
 
     anthropic:
-      base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/v1}
+      base-url: "${ANTHROPIC_BASE_URL:https://api.anthropic.com/v1}"
       api-key: ${ANTHROPIC_API_KEY:}
       model: ${ANTHROPIC_MODEL:}
       version: ${ANTHROPIC_VERSION:2023-06-01}
@@ -235,83 +289,63 @@ safeai:
           currency: USD
           version: anthropic-2026-07
 
-  rate-limit:
-    redis:
-      key-prefix: ${SAFEAI_RATE_LIMIT_REDIS_KEY_PREFIX:safeai:local}
-      hmac-secret: ${SAFEAI_RATE_LIMIT_REDIS_HMAC_SECRET}
-      key-version: ${SAFEAI_RATE_LIMIT_REDIS_KEY_VERSION:v1}
+  knowledge:
+    embedding:
+      provider: ${SAFEAI_KNOWLEDGE_EMBEDDING_PROVIDER:hashing}
+      base-url: "${OPENAI_EMBEDDING_BASE_URL:https://api.openai.com/v1}"
+      api-key: ${OPENAI_EMBEDDING_API_KEY:}
+      model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+      dimensions: 384
+      batch-size: ${SAFEAI_KNOWLEDGE_EMBEDDING_BATCH_SIZE:64}
+      max-input-chars: ${SAFEAI_KNOWLEDGE_EMBEDDING_MAX_INPUT_CHARS:20000}
+      connect-timeout: ${SAFEAI_KNOWLEDGE_EMBEDDING_CONNECT_TIMEOUT:5s}
+      read-timeout: ${SAFEAI_KNOWLEDGE_EMBEDDING_READ_TIMEOUT:30s}
 
-    login:
-      enabled: ${SAFEAI_RATE_LIMIT_LOGIN_ENABLED:true}
-      email-limit: ${SAFEAI_RATE_LIMIT_LOGIN_EMAIL_LIMIT:10}
-      ip-limit: ${SAFEAI_RATE_LIMIT_LOGIN_IP_LIMIT:100}
-      window: ${SAFEAI_RATE_LIMIT_LOGIN_WINDOW:10m}
-      audit-organization-id: ${SAFEAI_RATE_LIMIT_LOGIN_AUDIT_ORGANIZATION_ID:${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}}
+    ocr:
+      provider: ${SAFEAI_KNOWLEDGE_OCR_PROVIDER:disabled}
+      endpoint: ${SAFEAI_KNOWLEDGE_OCR_ENDPOINT:}
+      api-key: ${KNOWLEDGE_OCR_API_KEY:}
+      allowed-hosts: ${SAFEAI_KNOWLEDGE_OCR_ALLOWED_HOSTS:}
+      min-native-chars-per-page: ${SAFEAI_KNOWLEDGE_OCR_MIN_NATIVE_CHARS:20}
+      connect-timeout: ${SAFEAI_KNOWLEDGE_OCR_CONNECT_TIMEOUT:5s}
+      read-timeout: ${SAFEAI_KNOWLEDGE_OCR_READ_TIMEOUT:2m}
+      max-response-bytes: ${SAFEAI_KNOWLEDGE_OCR_MAX_RESPONSE_BYTES:16777216}
 
-    refresh:
-      enabled: ${SAFEAI_RATE_LIMIT_REFRESH_ENABLED:true}
-      ip-limit: ${SAFEAI_RATE_LIMIT_REFRESH_IP_LIMIT:600}
-      window: ${SAFEAI_RATE_LIMIT_REFRESH_WINDOW:1m}
+    ingestion:
+      enabled: ${SAFEAI_KNOWLEDGE_INGESTION_ENABLED:true}
+      poll-delay: ${SAFEAI_KNOWLEDGE_INGESTION_POLL_DELAY:2s}
+      batch-size: ${SAFEAI_KNOWLEDGE_INGESTION_BATCH_SIZE:4}
+      processing-lease: ${SAFEAI_KNOWLEDGE_INGESTION_PROCESSING_LEASE:3m}
+      extraction-timeout: ${SAFEAI_KNOWLEDGE_INGESTION_EXTRACTION_TIMEOUT:60s}
+      extraction-threads: ${SAFEAI_KNOWLEDGE_INGESTION_EXTRACTION_THREADS:2}
+      max-attempts: ${SAFEAI_KNOWLEDGE_INGESTION_MAX_ATTEMPTS:5}
+      initial-backoff: ${SAFEAI_KNOWLEDGE_INGESTION_INITIAL_BACKOFF:10s}
+      max-backoff: ${SAFEAI_KNOWLEDGE_INGESTION_MAX_BACKOFF:10m}
+      max-extracted-chars: ${SAFEAI_KNOWLEDGE_INGESTION_MAX_EXTRACTED_CHARS:2000000}
+      max-docx-uncompressed-bytes: ${SAFEAI_KNOWLEDGE_INGESTION_MAX_DOCX_UNCOMPRESSED_BYTES:104857600}
+      chunk-size-chars: ${SAFEAI_KNOWLEDGE_INGESTION_CHUNK_SIZE_CHARS:1200}
+      chunk-overlap-chars: ${SAFEAI_KNOWLEDGE_INGESTION_CHUNK_OVERLAP_CHARS:150}
 
-    ai-messages:
-      enabled: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ENABLED:true}
-      user-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_USER_LIMIT_PER_HOUR:20}
-      admin-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ADMIN_LIMIT_PER_HOUR:100}
-      organization-limit-per-hour: ${SAFEAI_RATE_LIMIT_AI_MESSAGES_ORGANIZATION_LIMIT_PER_HOUR:1000}
+    retrieval:
+      max-query-chars: ${SAFEAI_KNOWLEDGE_RETRIEVAL_MAX_QUERY_CHARS:4000}
+      max-top-k: ${SAFEAI_KNOWLEDGE_RETRIEVAL_MAX_TOP_K:20}
+      candidate-limit: ${SAFEAI_KNOWLEDGE_RETRIEVAL_CANDIDATE_LIMIT:100}
+      rrf-k: ${SAFEAI_KNOWLEDGE_RETRIEVAL_RRF_K:60}
 
-  cors:
-    allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+    rag:
+      top-k: ${SAFEAI_KNOWLEDGE_RAG_TOP_K:8}
+      max-context-chars: ${SAFEAI_KNOWLEDGE_RAG_MAX_CONTEXT_CHARS:24000}
+      max-chunk-chars: ${SAFEAI_KNOWLEDGE_RAG_MAX_CHUNK_CHARS:6000}
 
-  auth:
-    cookies:
-      secure: ${SAFEAI_AUTH_COOKIES_SECURE:false}
-      same-site: ${SAFEAI_AUTH_COOKIES_SAME_SITE:Lax}
-      access-token-max-age: ${SAFEAI_AUTH_ACCESS_TOKEN_MAX_AGE:15m}
-      refresh-token-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_MAX_AGE:30d}
-      refresh-token-absolute-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_ABSOLUTE_MAX_AGE:90d}
-      reuse-detection-retention: ${SAFEAI_AUTH_REUSE_DETECTION_RETENTION:7d}
-      domain: ${SAFEAI_AUTH_COOKIES_DOMAIN:}
-      access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:}
-      refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:}
+    storage:
+      type: ${SAFEAI_KNOWLEDGE_STORAGE_TYPE:local}
+      local-root: ${SAFEAI_KNOWLEDGE_STORAGE_ROOT:./var/knowledge-objects}
+      max-upload-bytes: ${SAFEAI_KNOWLEDGE_MAX_UPLOAD_BYTES:26214400}
+      endpoint: ${SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT:}
+      access-key: ${SAFEAI_KNOWLEDGE_STORAGE_ACCESS_KEY:}
+      secret-key: ${SAFEAI_KNOWLEDGE_STORAGE_SECRET_KEY:}
+      bucket: ${SAFEAI_KNOWLEDGE_STORAGE_BUCKET:safeai-knowledge}
 
-    refresh-cleanup:
-      cron: "${SAFEAI_AUTH_REFRESH_CLEANUP_CRON:0 0 3 * * *}"
-      batch-size: ${SAFEAI_AUTH_REFRESH_CLEANUP_BATCH_SIZE:200}
-      max-batches-per-run: ${SAFEAI_AUTH_REFRESH_CLEANUP_MAX_BATCHES_PER_RUN:100}
-
-  security:
-    client-ip:
-      trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:}
-
-    user-status-cache:
-      enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:true}
-      ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:60s}
-      key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:local:user-status}
-
-    hsts:
-      enabled: ${SAFEAI_HSTS_ENABLED:false}
-
-  audit:
-    retention:
-      enabled: ${SAFEAI_AUDIT_RETENTION_ENABLED:true}
-      period: ${SAFEAI_AUDIT_RETENTION_PERIOD:1095d}
-      batch-size: ${SAFEAI_AUDIT_RETENTION_BATCH_SIZE:10000}
-      max-batches-per-run: ${SAFEAI_AUDIT_RETENTION_MAX_BATCHES_PER_RUN:10}
-
-  usage:
-    default-range: 30d
-    max-range: 366d
-    max-live-range: 31d
-    max-page-size: 200
-    query-timeout: 10s
-    slow-query-threshold: 2s
-    fetch-size: 200
-    max-concurrent-reports: 4
-
-    rollup:
-      enabled: true
-      cron: "0 */10 * * * *"
-      lookback-days: 3
-      backfill-days-per-run: 31
-      advisory-lock-key: 8026001
-      statement-timeout: 2m
+    storage-reconciliation:
+      enabled: ${SAFEAI_KNOWLEDGE_STORAGE_RECONCILIATION_ENABLED:false}
+      poll-delay: ${SAFEAI_KNOWLEDGE_STORAGE_RECONCILIATION_POLL_DELAY:5m}
