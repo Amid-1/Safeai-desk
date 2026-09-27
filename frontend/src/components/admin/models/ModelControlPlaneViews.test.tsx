@@ -1,97 +1,69 @@
 /* ============================================================
    frontend/src/components/admin/models/ModelControlPlaneViews.test.tsx
    ============================================================ */
-import {
-    render,
-    screen,
-} from '@testing-library/react'
-import {
-    describe,
-    expect,
-    it,
-    vi,
-} from 'vitest'
-import type {
-    ModelCatalogEntry,
-    OrganizationModelPolicy,
-    RuntimeModelStatus,
-} from '../../../api/modelApi'
+
+import {render, screen} from '@testing-library/react'
+import {describe, expect, it, vi} from 'vitest'
 import {
     CatalogTable,
     PolicyCard,
     RuntimeCard,
 } from './ModelControlPlaneViews'
+import {
+    createModelCatalogEntry,
+    createOrganizationModelPolicy,
+    createRuntimeModelStatus,
+} from './ModelControlPlaneTestFixtures'
 
-const runtime: RuntimeModelStatus = {
-    provider: 'mock',
-    model: 'mock-safeai',
-    enabled: true,
-    routingMode: 'SINGLE_PROVIDER_STATIC',
-    maxInputTokens: 64_000,
-    maxOutputTokens: 2_048,
-    toolsSupported: false,
-    visionSupported: false,
-    structuredOutputSupported: false,
-    dataRetentionStatus: 'NOT_DECLARED',
-    healthStatus: 'NOT_PROBED',
-    pricingStatus: 'FREE',
-    inputUsdPer1mTokens: '0',
-    outputUsdPer1mTokens: '0',
-    pricingVersion: 'mock-2026-01',
-}
-
-const baseEntry: ModelCatalogEntry = {
-    id: '00000000-0000-0000-0000-000000000101',
-    modelKey: 'mock:mock-safeai',
-    version: 1,
-    provider: 'mock',
-    providerModelId: 'mock-safeai',
-    displayName: 'mock-safeai',
-    lifecycle: 'ACTIVE',
-    maxInputTokens: 64_000,
-    maxOutputTokens: 2_048,
-    capabilities: [],
-    inputModalities: ['TEXT'],
-    outputModalities: ['TEXT'],
-    retentionStatus: 'NOT_DECLARED',
-    retentionDays: null,
-    trainingUseStatus: 'NOT_DECLARED',
-    pricingStatus: 'FREE',
-    pricingComplete: true,
-    inputUsdPer1mTokens: '0',
-    cachedInputUsdPer1mTokens: null,
-    cacheWriteInputUsdPer1mTokens: null,
-    outputUsdPer1mTokens: '0',
-    extraPricingJson: '{}',
-    pricingVersion: 'mock-2026-01',
-    effectiveFrom: '2026-09-05T17:45:24Z',
-    source: 'RUNTIME_IMPORT',
-    createdByUserId: '00000000-0000-0000-0000-000000000001',
-    createdAt: '2026-09-05T17:45:24Z',
-}
-
-const policy: OrganizationModelPolicy = {
-    configured: false,
-    id: null,
-    organizationId: '00000000-0000-0000-0000-000000000001',
-    version: 0,
-    enabled: false,
-    allowModelKeys: [],
-    denyModelKeys: [],
-    defaultModelKey: null,
-    maxInputTokens: null,
-    maxOutputTokens: null,
-    maxRequestCostUsd: null,
-    monthlyBudgetUsd: null,
-    budgetEnforcement: 'SOFT',
-    requireCompletePricing: false,
-    requireNoTraining: false,
-    requireZeroDataRetention: false,
-    createdByUserId: null,
-    createdAt: null,
-}
+const runtime = createRuntimeModelStatus()
+const baseEntry = createModelCatalogEntry()
+const policy = createOrganizationModelPolicy()
 
 describe('ModelControlPlaneViews semantics', () => {
+    it.each([
+        [true, 'NOT_DECLARED', true],
+        [false, 'NOT_DECLARED', false],
+        [true, 'NOT_USED', false],
+        [true, 'CONTRACTUAL_NO_TRAINING', false],
+    ] as const)(
+        'reports effective catalog training metadata (enabled=%s, status=%s)',
+        (enabled, trainingUseStatus, warning) => {
+            render(
+                <PolicyCard
+                    policy={{
+                        ...policy,
+                        configured: true,
+                        enabled,
+                        requireNoTraining: true,
+                    }}
+                    catalog={[createModelCatalogEntry({
+                        trainingUseStatus: 'NOT_USED',
+                    })]}
+                    effectiveCatalog={[createModelCatalogEntry({
+                        trainingUseStatus,
+                    })]}
+                    runtime={runtime}
+                    organizationId={policy.organizationId}
+                    organizationName="Demo"
+                    isSuperAdmin={false}
+                    organizationQuery=""
+                    organizationResults={[]}
+                    organizationSearchPending={false}
+                    onOrganizationQueryChange={vi.fn()}
+                    onOrganizationSearch={vi.fn()}
+                    onOrganizationSelect={vi.fn()}
+                    onEdit={vi.fn()}
+                />,
+            )
+
+            expect(
+                screen.queryByText(
+                    'Требование запрета обучения не подтверждено',
+                ) !== null,
+            ).toBe(warning)
+        },
+    )
+
     it('separates runtime configuration, health and executable capabilities', () => {
         render(
             <RuntimeCard
@@ -134,6 +106,7 @@ describe('ModelControlPlaneViews semantics', () => {
             <PolicyCard
                 policy={policy}
                 catalog={[baseEntry]}
+                effectiveCatalog={[baseEntry]}
                 runtime={runtime}
                 organizationId={policy.organizationId}
                 organizationName="SafeAI Demo Organization"
@@ -211,12 +184,11 @@ describe('ModelControlPlaneViews semantics', () => {
     })
 
     it('marks a latest non-effective snapshot as scheduled without browser-clock routing logic', () => {
-        const scheduled = {
-            ...baseEntry,
+        const scheduled = createModelCatalogEntry({
             id: '00000000-0000-0000-0000-000000000102',
             version: 2,
             effectiveFrom: '2099-01-01T00:00:00Z',
-        }
+        })
 
         render(
             <CatalogTable
@@ -262,5 +234,4 @@ describe('ModelControlPlaneViews semantics', () => {
             }),
         ).not.toBeInTheDocument()
     })
-
 })

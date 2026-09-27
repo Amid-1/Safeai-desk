@@ -1,3 +1,4 @@
+// backend/src/main/java/ru/safeai/gateway/audit/AuditEventType.java
 package ru.safeai.gateway.audit;
 
 public enum AuditEventType {
@@ -5,6 +6,7 @@ public enum AuditEventType {
     USER_LOGIN_FAILED,
 
     CHAT_CREATED,
+    CHAT_RENAMED,
     CHAT_ARCHIVED,
     CHAT_MESSAGE_SENT,
     AI_RESPONSE_RECEIVED,

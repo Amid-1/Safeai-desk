@@ -1,3 +1,5 @@
+// backend/src/main/java/ru/safeai/gateway/usage/repository/UsageQueryRepository.java
+
 package ru.safeai.gateway.usage.repository;
 
 import org.springframework.data.domain.Pageable;

@@ -1,11 +1,15 @@
+// frontend/src/utils/password.ts
 const MIN_PASSWORD_CHARACTERS = 12
 const MAX_PASSWORD_UTF8_BYTES = 72
 
-const ASCII_LOWERCASE = /[a-z]/
-const ASCII_UPPERCASE = /[A-Z]/
-const ASCII_DIGIT = /\d/
-const ASCII_SPECIAL =
-    /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/
+const UNICODE_LOWERCASE =
+    /\p{Lowercase}/u
+
+const UNICODE_UPPERCASE =
+    /\p{Uppercase}/u
+
+const UNICODE_DIGIT =
+    /\p{Decimal_Number}/u
 
 export function utf8ByteLength(
     value: string,
@@ -42,25 +46,81 @@ export function validatePassword(
         )
     }
 
-    if (!ASCII_LOWERCASE.test(password)) {
+    let hasLowercase = false
+    let hasUppercase = false
+    let hasDigit = false
+    let hasSpecial = false
+    let hasIsoControl = false
+
+    for (const character of password) {
+        const codePoint =
+            character.codePointAt(0)
+
+        if (
+            codePoint !== undefined
+            && isIsoControl(
+                codePoint,
+            )
+        ) {
+            hasIsoControl = true
+            continue
+        }
+
+        if (
+            UNICODE_LOWERCASE.test(
+                character,
+            )
+        ) {
+            hasLowercase = true
+        } else if (
+            UNICODE_UPPERCASE.test(
+                character,
+            )
+        ) {
+            hasUppercase = true
+        } else if (
+            UNICODE_DIGIT.test(
+                character,
+            )
+        ) {
+            hasDigit = true
+        } else {
+            /*
+             * Mirrors backend PasswordPolicy:
+             * any non-control code point that is not lower/upper/digit
+             * satisfies the "special" category.
+             */
+            hasSpecial = true
+        }
+    }
+
+    if (!hasLowercase) {
         missing.push(
-            'латинскую строчную букву',
+            'строчную букву',
         )
     }
 
-    if (!ASCII_UPPERCASE.test(password)) {
+    if (!hasUppercase) {
         missing.push(
-            'латинскую заглавную букву',
+            'заглавную букву',
         )
     }
 
-    if (!ASCII_DIGIT.test(password)) {
-        missing.push('цифру')
+    if (!hasDigit) {
+        missing.push(
+            'цифру',
+        )
     }
 
-    if (!ASCII_SPECIAL.test(password)) {
+    if (!hasSpecial) {
         missing.push(
-            'ASCII-спецсимвол',
+            'спецсимвол',
+        )
+    }
+
+    if (hasIsoControl) {
+        missing.push(
+            'не содержать управляющих символов',
         )
     }
 
@@ -70,4 +130,16 @@ export function validatePassword(
             + `${missing.join(', ')}.`
         )
         : null
+}
+
+function isIsoControl(
+    codePoint: number,
+): boolean {
+    return (
+        codePoint >= 0x0000
+        && codePoint <= 0x001f
+    ) || (
+        codePoint >= 0x007f
+        && codePoint <= 0x009f
+    )
 }

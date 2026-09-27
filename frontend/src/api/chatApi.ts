@@ -312,13 +312,33 @@ export async function getChatMessages(
 }
 
 export async function createChat(
-    title: string,
+    title: string | null = null,
     options: RequestOptions = {},
 ): Promise<Chat> {
     const response = await apiRequest<unknown>(
         '/api/chats',
         {
             method: 'POST',
+            json: {
+                title,
+            },
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parseChat(response)
+}
+
+export async function updateChatTitle(
+    chatId: string,
+    title: string,
+    options: RequestOptions = {},
+): Promise<Chat> {
+    const response = await apiRequest<unknown>(
+        `/api/chats/${uuidPathSegment(chatId)}`,
+        {
+            method: 'PATCH',
             json: {
                 title,
             },

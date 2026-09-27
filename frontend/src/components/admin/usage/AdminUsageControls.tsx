@@ -1,35 +1,61 @@
+// frontend/src/components/admin/usage/AdminUsageControls.tsx
+
+import type {
+    ChangeEvent,
+} from 'react'
 import {
     EmptyState,
     ErrorState,
     LoadingState,
 } from '../../StateBlock'
 import {
+    UsageFilterCombobox,
+} from './UsageFilterCombobox'
+import type {
+    UsageFilterOption,
+} from './UsageFilterCombobox'
+import {
     TabButton,
 } from './UsageReportView'
 import {
     reportDescription,
     reportTitle,
-} from '../../../pages/adminUsagePageSupport'
+} from '../../../pages/adminUsage.helpers'
 import type {
     UsageReportTab,
-} from '../../../pages/adminUsagePageSupport'
+} from '../../../pages/adminUsage.helpers'
 
 type AdminUsageControlsProps = {
     tab: UsageReportTab
     isSuperAdmin: boolean
-    effectiveOrganizationId: string | null
+    scopeLabel: string
+
     draftDateFrom: string
     draftDateTo: string
     draftModel: string
     draftOrganizationId: string
+    draftOrganizationName: string
+
+    organizationOptions: UsageFilterOption[]
+    organizationSearchPending: boolean
+    organizationSearchError: string
+    modelPickerOptions: UsageFilterOption[]
+    modelOptionsLoading: boolean
+    modelOptionsError: string
+
     filterError: string
     loading: boolean
     error: string
     showEmptyReport: boolean
+
     onDateFromChange: (value: string) => void
     onDateToChange: (value: string) => void
     onModelChange: (value: string) => void
-    onOrganizationIdChange: (value: string) => void
+    onOrganizationQueryChange: (value: string) => void
+    onOrganizationChange: (
+        value: string,
+        option: UsageFilterOption | null,
+    ) => void
     onApplyFilters: () => void
     onResetFilters: () => void
     onSelectTab: (tab: UsageReportTab) => void
@@ -39,11 +65,18 @@ type AdminUsageControlsProps = {
 export function AdminUsageControls({
     tab,
     isSuperAdmin,
-    effectiveOrganizationId,
+    scopeLabel,
     draftDateFrom,
     draftDateTo,
     draftModel,
     draftOrganizationId,
+    draftOrganizationName,
+    organizationOptions,
+    organizationSearchPending,
+    organizationSearchError,
+    modelPickerOptions,
+    modelOptionsLoading,
+    modelOptionsError,
     filterError,
     loading,
     error,
@@ -51,7 +84,8 @@ export function AdminUsageControls({
     onDateFromChange,
     onDateToChange,
     onModelChange,
-    onOrganizationIdChange,
+    onOrganizationQueryChange,
+    onOrganizationChange,
     onApplyFilters,
     onResetFilters,
     onSelectTab,
@@ -65,7 +99,9 @@ export function AdminUsageControls({
                         Стоимость и прозрачность
                     </span>
 
-                    <h1>Использование AI</h1>
+                    <h1>
+                        Использование AI
+                    </h1>
 
                     <p className="muted">
                         Контролируйте расход токенов, стоимость и качество данных.
@@ -81,13 +117,7 @@ export function AdminUsageControls({
                     </span>
 
                     <strong>
-                        {isSuperAdmin
-                            ? (
-                                effectiveOrganizationId
-                                    ? 'Выбранная организация'
-                                    : 'Все организации'
-                            )
-                            : 'Моя организация'}
+                        {scopeLabel}
                     </strong>
                 </div>
             </header>
@@ -115,7 +145,7 @@ export function AdminUsageControls({
                         <input
                             type="date"
                             value={draftDateFrom}
-                            onChange={(event) => {
+                            onChange={(event: ChangeEvent<HTMLInputElement>) => {
                                 onDateFromChange(
                                     event.target.value,
                                 )
@@ -129,7 +159,7 @@ export function AdminUsageControls({
                         <input
                             type="date"
                             value={draftDateTo}
-                            onChange={(event) => {
+                            onChange={(event: ChangeEvent<HTMLInputElement>) => {
                                 onDateToChange(
                                     event.target.value,
                                 )
@@ -138,43 +168,51 @@ export function AdminUsageControls({
                     </label>
 
                     {tab === 'summary' && (
-                        <label>
-                            Модель
-
-                            <input
-                                value={draftModel}
-                                onChange={(event) => {
-                                    onModelChange(
-                                        event.target.value,
-                                    )
-                                }}
-                                maxLength={100}
-                                placeholder="Все модели"
-                            />
-                        </label>
+                        <UsageFilterCombobox
+                            id="usage-model-filter"
+                            label="Модель"
+                            value={draftModel}
+                            options={modelPickerOptions}
+                            placeholder="Все модели"
+                            searchPlaceholder="Найти модель"
+                            emptyMessage="В выбранном периоде модели не найдены."
+                            maxQueryLength={100}
+                            loading={modelOptionsLoading}
+                            error={modelOptionsError}
+                            helperText="Показываются точные модели, встречавшиеся в выбранном периоде и области отчёта."
+                            onChange={(value) => {
+                                onModelChange(value)
+                            }}
+                        />
                     )}
 
                     {isSuperAdmin && (
-                        <label>
-                            Организация
-
-                            <input
-                                value={
-                                    draftOrganizationId
-                                }
-                                onChange={(event) => {
-                                    onOrganizationIdChange(
-                                        event.target.value,
-                                    )
-                                }}
-                                maxLength={36}
-                                placeholder="UUID или все организации"
-                            />
-
-                            <small className="muted">
-                                Оставьте пустым для общего отчёта.
-                            </small>
-                        </label>
+                        <UsageFilterCombobox
+                            id="usage-organization-filter"
+                            label="Организация"
+                            value={draftOrganizationId}
+                            selectedLabel={
+                                draftOrganizationId
+                                    ? draftOrganizationName
+                                        || draftOrganizationId
+                                    : 'Все организации'
+                            }
+                            options={organizationOptions}
+                            placeholder="Все организации"
+                            searchPlaceholder="Найти по названию или UUID"
+                            emptyMessage="Организации по запросу не найдены."
+                            maxQueryLength={255}
+                            loading={organizationSearchPending}
+                            error={organizationSearchError}
+                            filterLocally={false}
+                            helperText="Выберите организацию по названию или UUID. В запрос автоматически передаётся её UUID."
+                            onQueryChange={
+                                onOrganizationQueryChange
+                            }
+                            onChange={
+                                onOrganizationChange
+                            }
+                        />
                     )}
                 </div>
 
@@ -263,8 +301,16 @@ export function AdminUsageControls({
                     </p>
                 </div>
 
+                <span
+                    className="resizable-scroll-region__upper-boundary-marker"
+                    data-resizable-upper-boundary
+                    aria-hidden="true"
+                />
+
                 {loading && (
-                    <LoadingState message="Загрузка статистики использования..." />
+                    <LoadingState
+                        message="Загрузка статистики использования..."
+                    />
                 )}
 
                 {!loading && error && (

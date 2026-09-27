@@ -1,20 +1,19 @@
-// ============================================================
 // frontend/src/components/admin/UserActionsMenu.tsx
-// ============================================================
 import {
     useEffect,
+    useId,
     useRef,
     useState,
 } from 'react'
 
 type UserActionsMenuProps = {
+    userLabel?: string
     disabled?: boolean
     canManage: boolean
 
     /**
-     * Необязательный флаг для обратной совместимости.
-     * При отсутствии сохраняется прежнее поведение:
-     * управляемому пользователю доступно изменение роли.
+     * Role mutation is intentionally separated from generic user management.
+     * In the current backend contract only SUPER_ADMIN may switch USER/ADMIN.
      */
     canChangeRole?: boolean
 
@@ -29,9 +28,10 @@ type UserActionsMenuProps = {
 }
 
 function UserActionsMenu({
+    userLabel,
     disabled = false,
     canManage,
-    canChangeRole,
+    canChangeRole = false,
     canDelete,
     enabled,
     onDetails,
@@ -49,12 +49,24 @@ function UserActionsMenu({
             null,
         )
 
+    const triggerRef =
+        useRef<HTMLButtonElement | null>(
+            null,
+        )
+
+    const reactId =
+        useId()
+
+    const popupId =
+        `user-actions-${reactId.replace(/:/g, '')}`
+
     const roleActionAvailable =
         canManage
-        && (canChangeRole ?? true)
+        && canChangeRole
 
     const hasSecondaryActions =
-        canManage || canDelete
+        canManage
+        || canDelete
 
     useEffect(() => {
         if (!open) {
@@ -78,6 +90,10 @@ function UserActionsMenu({
         ) {
             if (event.key === 'Escape') {
                 setOpen(false)
+
+                queueMicrotask(() => {
+                    triggerRef.current?.focus()
+                })
             }
         }
 
@@ -85,6 +101,7 @@ function UserActionsMenu({
             'pointerdown',
             handlePointerDown,
         )
+
         document.addEventListener(
             'keydown',
             handleKeyDown,
@@ -95,6 +112,7 @@ function UserActionsMenu({
                 'pointerdown',
                 handlePointerDown,
             )
+
             document.removeEventListener(
                 'keydown',
                 handleKeyDown,
@@ -123,11 +141,23 @@ function UserActionsMenu({
         action()
     }
 
+    const additionalActionsLabel =
+        userLabel
+            ? (
+                'Дополнительные действия для '
+                + userLabel
+            )
+            : 'Дополнительные действия'
+
     return (
-        <div className="user-actions">
+        <div
+            className="user-actions"
+        >
             <button
                 type="button"
-                className="table-action-button"
+                className={
+                    'table-action-button'
+                }
                 disabled={disabled}
                 onClick={onDetails}
             >
@@ -137,35 +167,46 @@ function UserActionsMenu({
             {canManage && (
                 <button
                     type="button"
-                    className="table-action-button"
+                    className={
+                        'table-action-button'
+                    }
                     disabled={disabled}
+                    title={
+                        'Изменить email и полное имя'
+                    }
                     onClick={onEdit}
                 >
-                    Редактировать
+                    Email и имя
                 </button>
             )}
 
             {hasSecondaryActions && (
                 <div
-                    className="action-menu"
+                    className={
+                        'action-menu'
+                    }
                     ref={menuRef}
                 >
                     <button
+                        ref={triggerRef}
                         type="button"
-                        className="action-menu__trigger"
+                        className={
+                            'action-menu__trigger'
+                        }
                         aria-label={
-                            'Дополнительные действия'
+                            additionalActionsLabel
                         }
                         aria-expanded={open}
                         aria-controls={
                             open
-                                ? 'user-actions-popup'
+                                ? popupId
                                 : undefined
                         }
                         disabled={disabled}
                         onClick={() =>
                             setOpen(
-                                (value) => !value,
+                                (value) =>
+                                    !value,
                             )
                         }
                     >
@@ -174,19 +215,24 @@ function UserActionsMenu({
 
                     {open && (
                         <div
-                            id="user-actions-popup"
-                            className="action-menu__popup"
+                            id={popupId}
+                            className={
+                                'action-menu__popup'
+                            }
                         >
-                            {roleActionAvailable && (
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        run(onRoles)
-                                    }
-                                >
-                                    Управление ролями
-                                </button>
-                            )}
+                            {roleActionAvailable
+                                && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            run(
+                                                onRoles,
+                                            )
+                                        }
+                                    >
+                                        Изменить роль
+                                    </button>
+                                )}
 
                             {canManage && (
                                 <>
@@ -223,7 +269,9 @@ function UserActionsMenu({
                                         'action-menu__danger'
                                     }
                                     onClick={() =>
-                                        run(onDelete)
+                                        run(
+                                            onDelete,
+                                        )
                                     }
                                 >
                                     Удалить навсегда

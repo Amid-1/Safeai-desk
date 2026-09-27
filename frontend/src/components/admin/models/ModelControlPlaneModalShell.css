@@ -121,7 +121,7 @@ body.modal-dragging {
     display: block;
     width: calc(13px * var(--modal-resize-scale, 1));
     height: calc(11px * var(--modal-resize-scale, 1));
-    border: max(1px, calc(1.5px * var(--modal-resize-scale, 1))) solid currentcolor;
+    border: 1px solid currentcolor;
     border-radius: calc(2px * var(--modal-resize-scale, 1));
 }
 
@@ -364,7 +364,7 @@ body.modal-dragging {
 
 .modal-card.models-policy-modal.modal-card--resizable.modal-card--maximized .modal-body,
 .modal-card.models-catalog-modal.modal-card--resizable.modal-card--maximized .modal-body {
-    overflow-y: hidden;
+    overflow-y: auto;
 }
 
 /*

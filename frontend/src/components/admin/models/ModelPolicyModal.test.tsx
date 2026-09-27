@@ -326,6 +326,41 @@ describe('ModelPolicyModal', () => {
         ).toHaveFocus()
     })
 
+    it('highlights every controlled block and scrolls the data fieldset with reduced motion', () => {
+        const scroll = vi.fn()
+        const originalScroll = HTMLElement.prototype.scrollIntoView
+        const originalMatchMedia = window.matchMedia
+        HTMLElement.prototype.scrollIntoView = scroll
+        window.matchMedia = vi.fn().mockReturnValue({matches: true})
+        try {
+            renderPolicyModal()
+            for (const name of ['Доступ', 'Лимиты', 'Бюджет', 'Требования к данным']) {
+                const button = screen.getByRole('button', {name})
+                fireEvent.click(button)
+                expect(button).toHaveAttribute('aria-pressed', 'true')
+                const ids = button.getAttribute('aria-controls')!.split(' ')
+                for (const id of ids) {
+                    const block = document.getElementById(id)!
+                    expect(block).toBeInTheDocument()
+                    expect(block.closest('form')).toHaveAttribute(
+                        'data-active-section', block.dataset.policyBlock,
+                    )
+                }
+            }
+            expect(scroll).toHaveBeenLastCalledWith({
+                behavior: 'instant', block: 'center', inline: 'nearest',
+            })
+            expect(scroll.mock.instances.at(-1)).toBe(
+                screen.getByRole('group', {name: 'Дополнительные требования'}),
+            )
+            expect(screen.getByRole('button', {name: 'Доступ'}))
+                .toHaveAttribute('aria-pressed', 'false')
+        } finally {
+            HTMLElement.prototype.scrollIntoView = originalScroll
+            window.matchMedia = originalMatchMedia
+        }
+    })
+
     it('сохраняет первую версию правил с optimistic version 0', async () => {
         const onSubmit = vi.fn<PolicySubmit>()
             .mockResolvedValue(undefined)

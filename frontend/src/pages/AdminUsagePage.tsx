@@ -1,4 +1,5 @@
 // frontend/src/pages/AdminUsagePage.tsx
+
 import PageErrorBoundary
     from '../components/PageErrorBoundary'
 import ResizableScrollRegion
@@ -39,16 +40,17 @@ function AdminUsagePageContent() {
     return (
         <div className="page usage-page">
             <ResizableScrollRegion
-                storageKey="safeai:usage-report-height"
+                storageKey="safeai:usage-report-height:v2"
                 label="таблица использования"
+                preserveUpperContent
                 upper={(
                     <AdminUsageControls
                         tab={report.tab}
                         isSuperAdmin={
                             report.isSuperAdmin
                         }
-                        effectiveOrganizationId={
-                            report.effectiveOrganizationId
+                        scopeLabel={
+                            report.scopeLabel
                         }
                         draftDateFrom={
                             report.draftDateFrom
@@ -62,6 +64,27 @@ function AdminUsagePageContent() {
                         draftOrganizationId={
                             report.draftOrganizationId
                         }
+                        draftOrganizationName={
+                            report.draftOrganizationName
+                        }
+                        organizationOptions={
+                            report.organizationOptions
+                        }
+                        organizationSearchPending={
+                            report.organizationSearchPending
+                        }
+                        organizationSearchError={
+                            report.organizationSearchError
+                        }
+                        modelPickerOptions={
+                            report.modelPickerOptions
+                        }
+                        modelOptionsLoading={
+                            report.modelOptionsLoading
+                        }
+                        modelOptionsError={
+                            report.modelOptionsError
+                        }
                         filterError={
                             report.filterError
                         }
@@ -71,16 +94,19 @@ function AdminUsagePageContent() {
                             showEmptyReport
                         }
                         onDateFromChange={
-                            report.setDraftDateFrom
+                            report.changeDraftDateFrom
                         }
                         onDateToChange={
-                            report.setDraftDateTo
+                            report.changeDraftDateTo
                         }
                         onModelChange={
-                            report.setDraftModel
+                            report.changeDraftModel
                         }
-                        onOrganizationIdChange={
-                            report.setDraftOrganizationId
+                        onOrganizationQueryChange={
+                            report.setOrganizationQuery
+                        }
+                        onOrganizationChange={
+                            report.changeDraftOrganization
                         }
                         onApplyFilters={
                             report.applyFilters

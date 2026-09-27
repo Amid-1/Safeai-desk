@@ -109,6 +109,113 @@ const UNCONFIGURED: OrganizationModelPolicy = {
 }
 
 describe('ModelPolicyModal production safety', () => {
+    it('explains NOT_DECLARED and displays the server training rejection without changing the draft', async () => {
+        const onPreview = vi.fn<PolicyPreviewFn>().mockResolvedValue({
+            organizationId: ORGANIZATION_ID,
+            basePolicyVersion: 0,
+            enabled: true,
+            evaluatedAt: '2026-09-27T12:00:00Z',
+            runtimeProvider: 'mock',
+            runtimeModel: 'mock-safeai',
+            automaticOutcome: 'DENIED',
+            automaticReason: 'TRAINING_POLICY_UNSATISFIED',
+            automaticModelKey: ENTRY.modelKey,
+            executableModelCount: 0,
+            wouldLockOutOrganization: true,
+            models: [{
+                modelKey: ENTRY.modelKey,
+                catalogVersion: 1,
+                provider: ENTRY.provider,
+                providerModelId: ENTRY.providerModelId,
+                lifecycle: ENTRY.lifecycle,
+                effectiveInputLimit: 64000,
+                effectiveOutputLimit: 2048,
+                pricingComplete: true,
+                estimatedMaxCostUsd: '0',
+                monthlyBudgetUsd: null,
+                monthlyProjectedUsd: null,
+                monthlyCostKnown: true,
+                budgetExceeded: false,
+                outcome: 'DENIED',
+                reason: 'TRAINING_POLICY_UNSATISFIED',
+            }],
+        })
+        render(<ModelPolicyModal
+            policy={{...UNCONFIGURED, enabled: true, requireNoTraining: true}}
+            catalog={[{...ENTRY, version: 2, trainingUseStatus: 'NOT_USED'}]}
+            effectiveCatalog={[ENTRY]}
+            runtime={RUNTIME}
+            organizationId={ORGANIZATION_ID}
+            organizationName="Demo Company"
+            pending={false}
+            onClose={vi.fn()}
+            onPreview={onPreview}
+            onSubmit={vi.fn<PolicySubmit>()}
+        />)
+        const localTrainingWarning = screen.getByRole('status')
+        expect(localTrainingWarning).toHaveTextContent(
+            'Несовместимость с требованием запрета обучения',
+        )
+        expect(localTrainingWarning).toHaveTextContent(
+            'Проверьте черновик на сервере',
+        )
+        expect(localTrainingWarning)
+            .not.toHaveClass('models-policy-form__warning--danger')
+
+        fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
+
+        expect(await screen.findByText(/Исполняемых моделей: 0/)).toBeInTheDocument()
+        expect(screen.getAllByText(/Запрет обучения не подтверждён/)).toHaveLength(2)
+
+        const confirmedTrainingLockout = screen.getByRole('alert')
+        expect(confirmedTrainingLockout).toHaveClass(
+            'models-policy-form__warning--danger',
+        )
+        expect(confirmedTrainingLockout).toHaveTextContent(
+            'Правила блокируют доступные модели',
+        )
+        expect(confirmedTrainingLockout).toHaveTextContent(
+            'Серверная проверка подтвердила блокировку',
+        )
+        expect(confirmedTrainingLockout).toHaveTextContent(ENTRY.modelKey)
+        expect(confirmedTrainingLockout).toHaveTextContent(
+            'Исполняемых моделей: 0',
+        )
+        expect(confirmedTrainingLockout).not.toHaveTextContent(
+            'Проверьте черновик на сервере',
+        )
+
+        expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({
+            enabled: true, requireNoTraining: true, budgetEnforcement: 'SOFT',
+        }))
+        fireEvent.click(screen.getByRole('checkbox', {name: 'Правила включены'}))
+        expect(screen.getByText('При включении правил возникнет несовместимость'))
+            .toBeInTheDocument()
+        expect(screen.queryByText(/Исполняемых моделей: 0/)).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('checkbox', {name: /Не использовать данные для обучения/}))
+        expect(screen.queryByText('При включении правил возникнет несовместимость'))
+            .not.toBeInTheDocument()
+    })
+
+    it.each(['NOT_USED', 'CONTRACTUAL_NO_TRAINING'] as const)(
+        'uses effective %s metadata instead of the latest catalog version', (trainingUseStatus) => {
+            render(<ModelPolicyModal
+                policy={{...UNCONFIGURED, enabled: true, requireNoTraining: true}}
+                catalog={[ENTRY]}
+                effectiveCatalog={[{...ENTRY, trainingUseStatus}]}
+                runtime={RUNTIME}
+                organizationId={ORGANIZATION_ID}
+                organizationName="Demo Company"
+                pending={false}
+                onClose={vi.fn()}
+                onPreview={unusedPreview}
+                onSubmit={vi.fn<PolicySubmit>()}
+            />)
+            expect(screen.queryByText('Несовместимость с требованием запрета обучения'))
+                .not.toBeInTheDocument()
+        },
+    )
+
     it('first policy opens disabled and shows organization name first', () => {
         render(
             <ModelPolicyModal
@@ -296,3 +403,4 @@ describe('ModelPolicyModal production safety', () => {
     })
 
 })
+

@@ -31,8 +31,8 @@
 
 .models-catalog-form {
     min-height: 0;
-    height: 100%;
-    grid-template-rows: auto minmax(0, 1fr);
+    height: auto;
+    grid-template-rows: auto;
     gap: var(--modal-resize-gap, 10px);
 }
 
@@ -82,9 +82,11 @@
     display: grid;
     min-width: 0;
     min-height: 0;
-    height: 100%;
+    height: auto;
     grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
     grid-template-areas: "identity limits" "data capabilities" "pricing pricing";
+    grid-auto-rows: min-content;
+    align-content: start;
     gap: var(--modal-resize-gap, 10px);
 }
 
@@ -102,13 +104,13 @@
 .models-catalog-form__panel--identity,
 .models-catalog-form__panel--limits,
 .models-catalog-form__panel--data {
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
 }
 
 .models-catalog-form__panel--identity .models-form__grid,
 .models-catalog-form__panel--limits .models-form__grid,
 .models-catalog-form__panel--data .models-form__grid {
-    align-content: center;
+    align-content: start;
 }
 
 .models-catalog-form__panel--capabilities {
@@ -356,7 +358,7 @@
             "identity limits data capabilities"
             "pricing pricing pricing pricing";
         align-items: stretch;
-        grid-template-rows: minmax(0, 1fr) auto;
+        grid-template-rows: auto auto;
     }
 
     .models-catalog-form__panel--identity,
@@ -383,7 +385,7 @@
 
 @container model-catalog-modal (min-width: 981px) and (max-width: 1399px) {
     .models-catalog-form__layout {
-        grid-template-rows: repeat(2, minmax(0, 1fr)) auto;
+        grid-template-rows: repeat(3, auto);
     }
 }
 
@@ -530,4 +532,12 @@
 
 .models-catalog-form__panel fieldset {
     background: rgb(255 255 255 / 62%);
+}
+
+/* Panels keep their intrinsic height; the modal body owns vertical scrolling. */
+.modal-card.models-catalog-modal.modal-card--resizable .modal-body > .models-catalog-form {
+    height: auto;
+    min-height: min-content;
+    align-self: flex-start;
+    align-content: start;
 }

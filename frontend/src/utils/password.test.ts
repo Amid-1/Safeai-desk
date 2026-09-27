@@ -1,3 +1,4 @@
+// frontend/src/utils/password.test.ts
 import {
     describe,
     expect,
@@ -15,10 +16,18 @@ describe('password policy', () => {
         ).toBe(2)
     })
 
-    it('принимает валидный пароль', () => {
+    it('принимает валидный ASCII-пароль', () => {
         expect(
             validatePassword(
                 'SafeAI-Password1!',
+            ),
+        ).toBeNull()
+    })
+
+    it('принимает Unicode-регистр как backend PasswordPolicy', () => {
+        expect(
+            validatePassword(
+                'ПарольДляSafeAI1!',
             ),
         ).toBeNull()
     })
@@ -33,13 +42,23 @@ describe('password policy', () => {
         )
     })
 
-    it('кириллица не считается ASCII спецсимволом', () => {
+    it('не считает обычную букву спецсимволом', () => {
         expect(
             validatePassword(
                 'Password123я',
             ),
         ).toContain(
-            'ASCII-спецсимвол',
+            'спецсимвол',
+        )
+    })
+
+    it('отклоняет управляющие символы как backend PasswordPolicy', () => {
+        expect(
+            validatePassword(
+                'Password123!\n',
+            ),
+        ).toContain(
+            'управляющих символов',
         )
     })
 })

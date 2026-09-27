@@ -810,6 +810,7 @@ function AdminModelsPage() {
                 <PolicyCard
                     policy={policy}
                     catalog={catalog}
+                    effectiveCatalog={effectiveCatalog}
                     runtime={runtime}
                     organizationId={targetOrganizationId}
                     organizationName={selectedOrganizationName}

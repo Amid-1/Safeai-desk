@@ -1,3 +1,4 @@
+// frontend/src/pages/AdminUsersPage.tsx
 import type {
     AuthUser,
 } from '../api/authApi'
@@ -22,6 +23,7 @@ import {
     useAdminUserMutations,
 } from './useAdminUserMutations'
 import './AdminUsersPage.css'
+import './AdminUsersProductionControls.css'
 
 type AdminUsersPageProps = {
     currentUser: AuthUser
@@ -50,38 +52,53 @@ function AdminUsersPageContent({
     const currentUserIsSuperAdmin =
         rolePolicy.canChooseRole
 
-    const directory = useAdminUsersDirectory(
-        currentUser,
-        currentUserIsSuperAdmin,
-    )
+    const directory =
+        useAdminUsersDirectory(
+            currentUser,
+            currentUserIsSuperAdmin,
+        )
 
-    const create = useAdminUserCreate({
-        currentUser,
-        currentUserIsSuperAdmin,
-        organizations: directory.organizations,
-        organizationsError:
-            directory.organizationsError,
-        requestReloadFromFirstPage:
-            directory.requestReloadFromFirstPage,
-    })
+    const create =
+        useAdminUserCreate({
+            currentUser,
+            currentUserIsSuperAdmin,
+            organizations:
+                directory.organizations,
+            organizationsError:
+                directory.organizationsError,
+            requestReloadFromFirstPage:
+                directory.requestReloadFromFirstPage,
+        })
 
-    const mutations = useAdminUserMutations({
-        currentUser,
-        currentUserIsSuperAdmin,
-        organizations: directory.organizations,
-        requestReloadFromFirstPage:
-            directory.requestReloadFromFirstPage,
-    })
+    const mutations =
+        useAdminUserMutations({
+            currentUser,
+            currentUserIsSuperAdmin,
+            organizations:
+                directory.organizations,
+            requestReloadFromFirstPage:
+                directory.requestReloadFromFirstPage,
+        })
 
     return (
-        <div className="page users-page">
+        <div
+            className={
+                'page users-page'
+            }
+        >
             <AdminUsersView
-                users={directory.users}
-                statistics={directory.statistics}
+                users={
+                    directory.users
+                }
+                statistics={
+                    directory.statistics
+                }
                 organizations={
                     directory.organizations
                 }
-                loadError={directory.loadError}
+                loadError={
+                    directory.loadError
+                }
                 mutationError={
                     mutations.mutationError
                 }
@@ -89,39 +106,63 @@ function AdminUsersPageContent({
                     mutations.success
                     || create.success
                 }
-                loading={directory.loading}
-                creating={create.creating}
+                loading={
+                    directory.loading
+                }
+                creating={
+                    create.creating
+                }
                 hasPendingMutation={
                     mutations.hasPendingMutation
                 }
-                page={directory.page}
-                totalPages={directory.totalPages}
-                filter={directory.filter}
+                page={
+                    directory.page
+                }
+                totalPages={
+                    directory.totalPages
+                }
+                filter={
+                    directory.filter
+                }
                 detailsLoadingUserId={
                     directory.detailsLoadingUserId
                 }
-                currentUser={currentUser}
+                currentUser={
+                    currentUser
+                }
                 currentUserIsSuperAdmin={
                     currentUserIsSuperAdmin
                 }
-                onCreate={create.openCreateModal}
+                onCreate={
+                    create.openCreateModal
+                }
                 onFilterChange={
                     directory.changeFilter
                 }
-                onPageChange={directory.setPage}
-                onReload={directory.reload}
+                onPageChange={
+                    directory.setPage
+                }
+                onReload={
+                    directory.reload
+                }
                 onDetails={
                     directory.openDetailsModal
                 }
-                onEdit={mutations.openEditModal}
-                onRoles={mutations.openRolesModal}
+                onEdit={
+                    mutations.openEditModal
+                }
+                onRoles={
+                    mutations.openRolesModal
+                }
                 onResetPassword={
                     mutations.openResetPasswordModal
                 }
                 onEnabledChange={
                     mutations.setConfirmState
                 }
-                onDelete={mutations.openDeleteModal}
+                onDelete={
+                    mutations.openDeleteModal
+                }
                 canManageUser={
                     mutations.canManageUser
                 }
@@ -134,14 +175,24 @@ function AdminUsersPageContent({
                 createModalOpen={
                     create.createModalOpen
                 }
-                createError={create.createError}
-                email={create.email}
-                password={create.password}
+                createError={
+                    create.createError
+                }
+                email={
+                    create.email
+                }
+                password={
+                    create.password
+                }
                 passwordConfirm={
                     create.passwordConfirm
                 }
-                fullName={create.fullName}
-                createRole={create.createRole}
+                fullName={
+                    create.fullName
+                }
+                createRole={
+                    create.createRole
+                }
                 currentUserIsSuperAdmin={
                     currentUserIsSuperAdmin
                 }
@@ -154,14 +205,30 @@ function AdminUsersPageContent({
                 selectedOrganizationId={
                     create.selectedOrganizationId
                 }
-                creating={create.creating}
-                detailsUser={directory.detailsUser}
-                detailsError={directory.detailsError}
-                editUser={mutations.editUser}
-                editEmail={mutations.editEmail}
-                editFullName={mutations.editFullName}
-                rolesUser={mutations.rolesUser}
-                selectedRole={mutations.selectedRole}
+                creating={
+                    create.creating
+                }
+                detailsUser={
+                    directory.detailsUser
+                }
+                detailsError={
+                    directory.detailsError
+                }
+                editUser={
+                    mutations.editUser
+                }
+                editEmail={
+                    mutations.editEmail
+                }
+                editFullName={
+                    mutations.editFullName
+                }
+                rolesUser={
+                    mutations.rolesUser
+                }
+                selectedRole={
+                    mutations.selectedRole
+                }
                 adminElevationConfirmed={
                     mutations.adminElevationConfirmed
                 }
@@ -174,30 +241,48 @@ function AdminUsersPageContent({
                 resetPasswordConfirm={
                     mutations.resetPasswordConfirm
                 }
-                deleteUser={mutations.deleteUser}
+                deleteUser={
+                    mutations.deleteUser
+                }
                 deleteConfirmationEmail={
                     mutations.deleteConfirmationEmail
                 }
-                modalError={mutations.modalError}
+                modalError={
+                    mutations.modalError
+                }
                 hasPendingMutation={
                     mutations.hasPendingMutation
                 }
-                confirmState={mutations.confirmState}
-                setEmail={create.setEmail}
-                setPassword={create.setPassword}
+                confirmState={
+                    mutations.confirmState
+                }
+                setEmail={
+                    create.setEmail
+                }
+                setPassword={
+                    create.setPassword
+                }
                 setPasswordConfirm={
                     create.setPasswordConfirm
                 }
-                setFullName={create.setFullName}
-                setCreateRole={create.setCreateRole}
+                setFullName={
+                    create.setFullName
+                }
+                setCreateRole={
+                    create.setCreateRole
+                }
                 setSelectedOrganizationId={
                     create.setSelectedOrganizationId
                 }
-                setEditEmail={mutations.setEditEmail}
+                setEditEmail={
+                    mutations.setEditEmail
+                }
                 setEditFullName={
                     mutations.setEditFullName
                 }
-                setSelectedRole={mutations.setSelectedRole}
+                setSelectedRole={
+                    mutations.setSelectedRole
+                }
                 setAdminElevationConfirmed={
                     mutations.setAdminElevationConfirmed
                 }
@@ -228,7 +313,9 @@ function AdminUsersPageContent({
                 submitEditUser={
                     mutations.submitEditUser
                 }
-                submitRoles={mutations.submitRoles}
+                submitRoles={
+                    mutations.submitRoles
+                }
                 submitResetPassword={
                     mutations.submitResetPassword
                 }

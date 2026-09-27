@@ -152,7 +152,7 @@ function previewReasonLabel(
         INPUT_LIMIT_EXCEEDED: 'Превышен входной лимит',
         OUTPUT_LIMIT_EXCEEDED: 'Превышен выходной лимит',
         PRICING_INCOMPLETE: 'Недостаточно данных о стоимости',
-        TRAINING_POLICY_UNSATISFIED: 'Не выполнено требование по обучению',
+        TRAINING_POLICY_UNSATISFIED: 'Запрет обучения не подтверждён: требуется «Не используются» (NOT_USED) или договорный запрет (CONTRACTUAL_NO_TRAINING). Статус «Не заявлено» (NOT_DECLARED) не подходит',
         RETENTION_POLICY_UNSATISFIED: 'Не выполнено требование по хранению данных',
         REQUEST_COST_LIMIT_EXCEEDED: 'Превышен лимит стоимости запроса',
         MONTHLY_BUDGET_EXCEEDED: 'Превышен месячный бюджет',
@@ -270,6 +270,17 @@ export function ModelPolicyModal({
             null,
         )
 
+    const [activeSection, setActiveSection] =
+        useState<'access' | 'limits' | 'budget' | 'data' | null>(null)
+
+    // Explain catalog metadata only; routing and lockout decisions remain server-owned.
+    const undeclaredTrainingModels = effectiveCatalog.filter((entry) =>
+        entry.trainingUseStatus === 'NOT_DECLARED'
+        && (entry.lifecycle === 'ACTIVE'
+            || entry.lifecycle === 'DEPRECATED'
+            || entry.modelKey === draft.defaultModelKey.trim().toLowerCase()),
+    )
+
     const hasExecutableRuntimeCatalogEntry =
         useMemo(
             () =>
@@ -310,6 +321,42 @@ export function ModelPolicyModal({
             ? policyPreview
             : null
 
+    const serverTrainingRejections =
+        currentPreview?.models.filter(
+            (item) =>
+                item.outcome === 'DENIED'
+                && item.reason === 'TRAINING_POLICY_UNSATISFIED',
+        ) ?? []
+
+    const serverConfirmedTrainingLockout =
+        draft.enabled
+        && draft.requireNoTraining
+        && currentPreview !== null
+        && currentPreview.wouldLockOutOrganization
+        && currentPreview.executableModelCount === 0
+        && (
+            currentPreview.automaticReason
+                === 'TRAINING_POLICY_UNSATISFIED'
+            || serverTrainingRejections.length > 0
+        )
+
+    const serverTrainingRejectedModelKeys =
+        serverTrainingRejections.length > 0
+            ? Array.from(
+                new Set(
+                    serverTrainingRejections.map(
+                        (item) => item.modelKey,
+                    ),
+                ),
+            )
+            : currentPreview?.automaticReason
+                === 'TRAINING_POLICY_UNSATISFIED'
+                && currentPreview.automaticModelKey
+                ? [currentPreview.automaticModelKey]
+                : undeclaredTrainingModels.map(
+                    (entry) => entry.modelKey,
+                )
+
     useEffect(() => {
         setPreviewError('')
         setLockoutAcknowledged(false)
@@ -336,6 +383,7 @@ export function ModelPolicyModal({
     }
 
     const focusShortcut = (
+        section: NonNullable<typeof activeSection>,
         target:
             HTMLElement | null,
     ) => {
@@ -345,19 +393,19 @@ export function ModelPolicyModal({
             return
         }
 
+        setActiveSection(section)
+
         target.focus({
             preventScroll:
                 true,
         })
 
-        if (
-            typeof target
-                .scrollIntoView
-                === 'function'
-        ) {
-            target.scrollIntoView({
-                behavior:
-                    'smooth',
+        const block = target.closest<HTMLElement>('[data-policy-block]') ?? target
+        if (typeof block.scrollIntoView === 'function') {
+            block.scrollIntoView({
+                behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+                    ? 'instant'
+                    : 'smooth',
                 block:
                     'center',
                 inline:
@@ -569,6 +617,7 @@ export function ModelPolicyModal({
             }
         >
             <form
+                data-active-section={activeSection ?? undefined}
                 id={
                     formId
                 }
@@ -679,8 +728,11 @@ export function ModelPolicyModal({
                             className={
                                 'models-policy-form__scope-tag models-policy-form__scope-tag--access'
                             }
+                            aria-pressed={activeSection === 'access'}
+                            aria-controls={`${formId}-access ${formId}-default`}
                             onClick={() => {
                                 focusShortcut(
+                                    'access',
                                     accessControlRef.current,
                                 )
                             }}
@@ -693,8 +745,11 @@ export function ModelPolicyModal({
                             className={
                                 'models-policy-form__scope-tag models-policy-form__scope-tag--limits'
                             }
+                            aria-pressed={activeSection === 'limits'}
+                            aria-controls={`${formId}-input ${formId}-output`}
                             onClick={() => {
                                 focusShortcut(
+                                    'limits',
                                     limitsControlRef.current,
                                 )
                             }}
@@ -707,8 +762,11 @@ export function ModelPolicyModal({
                             className={
                                 'models-policy-form__scope-tag models-policy-form__scope-tag--budget'
                             }
+                            aria-pressed={activeSection === 'budget'}
+                            aria-controls={`${formId}-budget ${formId}-request-cost ${formId}-monthly-budget`}
                             onClick={() => {
                                 focusShortcut(
+                                    'budget',
                                     budgetControlRef.current,
                                 )
                             }}
@@ -721,8 +779,11 @@ export function ModelPolicyModal({
                             className={
                                 'models-policy-form__scope-tag models-policy-form__scope-tag--data'
                             }
+                            aria-pressed={activeSection === 'data'}
+                            aria-controls={`${formId}-data`}
                             onClick={() => {
                                 focusShortcut(
+                                    'data',
                                     dataControlRef.current,
                                 )
                             }}
@@ -926,6 +987,8 @@ export function ModelPolicyModal({
                 )}
 
                 <div
+                    id={`${formId}-access`}
+                    data-policy-block="access"
                     className={
                         'models-policy-form__access-grid'
                     }
@@ -1026,6 +1089,8 @@ export function ModelPolicyModal({
                     }
                 >
                     <div
+                        id={`${formId}-default`}
+                        data-policy-block="access"
                         className={
                             'models-policy-form__setting-field models-policy-form__setting-field--access'
                         }
@@ -1084,7 +1149,7 @@ export function ModelPolicyModal({
                         />
                     </div>
 
-                    <label className="models-policy-form__setting-field models-policy-form__setting-field--budget">
+                    <label id={`${formId}-budget`} data-policy-block="budget" className="models-policy-form__setting-field models-policy-form__setting-field--budget">
                         <span
                             className={
                                 'models-label-row'
@@ -1142,7 +1207,7 @@ export function ModelPolicyModal({
                         </select>
                     </label>
 
-                    <label className="models-policy-form__setting-field models-policy-form__setting-field--limits">
+                    <label id={`${formId}-input`} data-policy-block="limits" className="models-policy-form__setting-field models-policy-form__setting-field--limits">
                         Входные токены, максимум
 
                         <input
@@ -1172,7 +1237,7 @@ export function ModelPolicyModal({
                         />
                     </label>
 
-                    <label className="models-policy-form__setting-field models-policy-form__setting-field--limits">
+                    <label id={`${formId}-output`} data-policy-block="limits" className="models-policy-form__setting-field models-policy-form__setting-field--limits">
                         Выходные токены, максимум
 
                         <input
@@ -1199,7 +1264,7 @@ export function ModelPolicyModal({
                         />
                     </label>
 
-                    <div className="models-policy-form__setting-field models-policy-form__setting-field--budget">
+                    <div id={`${formId}-request-cost`} data-policy-block="budget" className="models-policy-form__setting-field models-policy-form__setting-field--budget">
                         <DecimalInput
                             label="Стоимость запроса, USD"
                             placeholder="Без лимита"
@@ -1222,7 +1287,7 @@ export function ModelPolicyModal({
                         />
                     </div>
 
-                    <div className="models-policy-form__setting-field models-policy-form__setting-field--budget">
+                    <div id={`${formId}-monthly-budget`} data-policy-block="budget" className="models-policy-form__setting-field models-policy-form__setting-field--budget">
                         <DecimalInput
                             label="Бюджет на месяц, USD"
                             placeholder="Не задан"
@@ -1247,6 +1312,8 @@ export function ModelPolicyModal({
                 </div>
 
                 <fieldset
+                    id={`${formId}-data`}
+                    data-policy-block="data"
                     className={
                         'models-policy-form__requirements'
                     }
@@ -1254,6 +1321,60 @@ export function ModelPolicyModal({
                     <legend>
                         Дополнительные требования
                     </legend>
+
+                    <p id={`${formId}-training-hint`} className="models-form__hint">
+                        Запрет обучения требует подтверждения в действующей версии каталога:
+                        «Не используются» (NOT_USED) или договорного запрета
+                        (CONTRACTUAL_NO_TRAINING). «Не заявлено» (NOT_DECLARED)
+                        не подтверждает запрет, даже для бесплатной модели.
+                    </p>
+                    <div aria-live="polite" aria-atomic="true">
+                        {draft.requireNoTraining && undeclaredTrainingModels.length > 0 && (
+                            <div
+                                className={
+                                    'models-policy-form__warning'
+                                    + (serverConfirmedTrainingLockout
+                                        ? ' models-policy-form__warning--danger'
+                                        : '')
+                                }
+                                role={
+                                    serverConfirmedTrainingLockout
+                                        ? 'alert'
+                                        : 'status'
+                                }
+                            >
+                                <strong>
+                                    {serverConfirmedTrainingLockout
+                                        ? 'Правила блокируют доступные модели'
+                                        : draft.enabled
+                                            ? 'Несовместимость с требованием запрета обучения'
+                                            : 'При включении правил возникнет несовместимость'}
+                                </strong>
+
+                                {serverConfirmedTrainingLockout
+                                    ? (
+                                        <p>
+                                            Серверная проверка подтвердила блокировку:
+                                            {' '}требованию «Не использовать данные для обучения»
+                                            {' '}не соответствуют модели:
+                                            {' '}{serverTrainingRejectedModelKeys.join(', ')}.
+                                            {' '}Исполняемых моделей:
+                                            {' '}{currentPreview?.executableModelCount ?? 0}.
+                                        </p>
+                                    )
+                                    : (
+                                        <p>
+                                            В действующем каталоге использование данных для обучения
+                                            не заявлено (NOT_DECLARED):
+                                            {' '}{undeclaredTrainingModels.map((entry) => entry.modelKey).join(', ')}.
+                                            {' '}Эти модели не соответствуют выбранному требованию.
+                                            {' '}Проверьте черновик на сервере, чтобы увидеть итоговую
+                                            доступность с учётом всех правил и текущей модели сервера.
+                                        </p>
+                                    )}
+                            </div>
+                        )}
+                    </div>
 
                     <div
                         className={
@@ -1295,6 +1416,7 @@ export function ModelPolicyModal({
                                 checked={
                                     draft.requireNoTraining
                                 }
+                                aria-describedby={`${formId}-training-hint`}
                                 onChange={(
                                     event,
                                 ) => {
@@ -1350,3 +1472,4 @@ export function ModelPolicyModal({
         </Modal>
     )
 }
+

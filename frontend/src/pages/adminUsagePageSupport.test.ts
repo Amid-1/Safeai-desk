@@ -1,3 +1,5 @@
+// frontend/src/pages/adminUsagePageSupport.test.ts
+
 import {
     describe,
     expect,
@@ -10,13 +12,13 @@ import {
     validateFilters,
 } from './adminUsagePageSupport'
 
-describe('admin usage page support', () => {
+describe('admin usage page support compatibility facade', () => {
     it('formats an ISO LocalDate for the Russian UI', () => {
         expect(formatIsoDate('2026-09-26'))
             .toBe('26.09.2026')
     })
 
-    it('does not crash the page when a non-daily row reaches the date formatter during a transitional render', () => {
+    it('does not crash on an invalid date value during transitional render', () => {
         expect(formatIsoDate(undefined))
             .toBe('—')
         expect(formatIsoDate(null))

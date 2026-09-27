@@ -299,8 +299,8 @@ export function ModelCatalogVersionModal({
     return (
         <Modal
             title={
-                base
-                    ? `Новая версия: ${base.displayName}`
+                expectedPreviousVersion > 0
+                    ? `Новая версия: ${draft.displayName.trim() || draft.modelKey.trim()}`
                     : 'Добавление модели в каталог'
             }
             footer={modalFooter}
@@ -341,13 +341,13 @@ export function ModelCatalogVersionModal({
 
                     <div>
                         <strong>
-                            {base
+                            {expectedPreviousVersion > 0
                                 ? 'Новая неизменяемая версия модели'
                                 : 'Новая модель в каталоге управления'}
                         </strong>
 
                         <p className="models-form__hint">
-                            {base
+                            {expectedPreviousVersion > 0
                                 ? `После сохранения появится версия ${expectedPreviousVersion + 1}. Предыдущая версия останется неизменной и доступной в истории.`
                                 : 'После сохранения появится первая версия модели в каталоге. Физическое подключение провайдера выполняется отдельно в Runtime.'}
                         </p>

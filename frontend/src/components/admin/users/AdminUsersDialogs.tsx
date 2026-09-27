@@ -1,10 +1,25 @@
-import type { User, UserDetails } from '../../../api/userApi'
-import type { OrganizationDirectoryItem } from '../../../api/organizationApi'
-import type { AssignableRole } from '../../../pages/adminUsersSupport'
-import { formatDateTime } from '../../../utils/format'
-import Modal from '../../Modal'
-import ConfirmDialog from '../../ConfirmDialog'
-import { FixedUserRole, UserRoleSelector } from '../UserRoleSelector'
+// frontend/src/components/admin/users/AdminUsersDialogs.tsx
+import type {
+    User,
+    UserDetails,
+} from '../../../api/userApi'
+import type {
+    OrganizationDirectoryItem,
+} from '../../../api/organizationApi'
+import type {
+    AssignableRole,
+} from '../../../pages/adminUsersSupport'
+import {
+    formatDateTime,
+} from '../../../utils/format'
+import Modal
+    from '../../Modal'
+import ConfirmDialog
+    from '../../ConfirmDialog'
+import {
+    FixedUserRole,
+    UserRoleSelector,
+} from '../UserRoleSelector'
 import {
     Detail,
     ModalActions,
@@ -52,62 +67,137 @@ export type AdminUsersDialogsProps = {
     modalError: string
     hasPendingMutation: boolean
     confirmState: ConfirmState
-    setEmail: (value: string) => void
-    setPassword: (value: string) => void
-    setPasswordConfirm: (value: string) => void
-    setFullName: (value: string) => void
-    setCreateRole: (value: AssignableRole) => void
-    setSelectedOrganizationId: (value: string) => void
-    setEditEmail: (value: string) => void
-    setEditFullName: (value: string) => void
-    setSelectedRole: (value: AssignableRole) => void
-    setAdminElevationConfirmed: (value: boolean) => void
-    setResetPasswordValue: (value: string) => void
-    setResetPasswordConfirm: (value: string) => void
-    setDeleteConfirmationEmail: (value: string) => void
-    setConfirmState: (value: ConfirmState) => void
-    handleCreateUser: () => void | Promise<void>
+    setEmail:
+        (value: string) => void
+    setPassword:
+        (value: string) => void
+    setPasswordConfirm:
+        (value: string) => void
+    setFullName:
+        (value: string) => void
+    setCreateRole:
+        (value: AssignableRole) => void
+    setSelectedOrganizationId:
+        (value: string) => void
+    setEditEmail:
+        (value: string) => void
+    setEditFullName:
+        (value: string) => void
+    setSelectedRole:
+        (value: AssignableRole) => void
+    setAdminElevationConfirmed:
+        (value: boolean) => void
+    setResetPasswordValue:
+        (value: string) => void
+    setResetPasswordConfirm:
+        (value: string) => void
+    setDeleteConfirmationEmail:
+        (value: string) => void
+    setConfirmState:
+        (value: ConfirmState) => void
+    handleCreateUser:
+        () => void | Promise<void>
     closeCreateModal: () => void
     closeDetailsModal: () => void
     closeMutationModals: () => void
-    submitEditUser: () => void | Promise<void>
-    submitRoles: () => void | Promise<void>
-    submitResetPassword: () => void | Promise<void>
-    submitPermanentDelete: () => void | Promise<void>
-    confirmEnabledChange: () => void | Promise<void>
+    submitEditUser:
+        () => void | Promise<void>
+    submitRoles:
+        () => void | Promise<void>
+    submitResetPassword:
+        () => void | Promise<void>
+    submitPermanentDelete:
+        () => void | Promise<void>
+    confirmEnabledChange:
+        () => void | Promise<void>
 }
 
-export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
+export function AdminUsersDialogs(
+    props: AdminUsersDialogsProps,
+) {
     const {
-        createModalOpen, createError, email, password, passwordConfirm, fullName, createRole,
-        currentUserIsSuperAdmin, organizationsLoading, organizations, selectedOrganizationId, creating,
-        detailsUser, detailsError, editUser, editEmail, editFullName, rolesUser, selectedRole,
-        adminElevationConfirmed, resetPasswordUser, resetPasswordValue, resetPasswordConfirm,
-        deleteUser, deleteConfirmationEmail, modalError, hasPendingMutation, confirmState,
-        setEmail, setPassword, setPasswordConfirm, setFullName, setCreateRole, setSelectedOrganizationId,
-        setEditEmail, setEditFullName, setSelectedRole, setAdminElevationConfirmed, setResetPasswordValue,
-        setResetPasswordConfirm, setDeleteConfirmationEmail, setConfirmState, handleCreateUser, closeCreateModal,
-        closeDetailsModal, closeMutationModals, submitEditUser, submitRoles, submitResetPassword,
-        submitPermanentDelete, confirmEnabledChange,
+        createModalOpen,
+        createError,
+        email,
+        password,
+        passwordConfirm,
+        fullName,
+        createRole,
+        currentUserIsSuperAdmin,
+        organizationsLoading,
+        organizations,
+        selectedOrganizationId,
+        creating,
+        detailsUser,
+        detailsError,
+        editUser,
+        editEmail,
+        editFullName,
+        rolesUser,
+        selectedRole,
+        adminElevationConfirmed,
+        resetPasswordUser,
+        resetPasswordValue,
+        resetPasswordConfirm,
+        deleteUser,
+        deleteConfirmationEmail,
+        modalError,
+        hasPendingMutation,
+        confirmState,
+        setEmail,
+        setPassword,
+        setPasswordConfirm,
+        setFullName,
+        setCreateRole,
+        setSelectedOrganizationId,
+        setEditEmail,
+        setEditFullName,
+        setSelectedRole,
+        setAdminElevationConfirmed,
+        setResetPasswordValue,
+        setResetPasswordConfirm,
+        setDeleteConfirmationEmail,
+        setConfirmState,
+        handleCreateUser,
+        closeCreateModal,
+        closeDetailsModal,
+        closeMutationModals,
+        submitEditUser,
+        submitRoles,
+        submitResetPassword,
+        submitPermanentDelete,
+        confirmEnabledChange,
     } = props
 
     return (
         <>
             {createModalOpen && (
                 <Modal
-                    title="Создать пользователя"
-                    onClose={closeCreateModal}
-                    closeDisabled={creating}
+                    title={
+                        'Создать пользователя'
+                    }
+                    onClose={
+                        closeCreateModal
+                    }
+                    closeDisabled={
+                        creating
+                    }
                     size="md"
                 >
                     <form
-                        className="form users-create-form"
+                        className={
+                            'form users-create-form'
+                        }
                         onSubmit={(event) => {
                             event.preventDefault()
                             void handleCreateUser()
                         }}
                     >
-                        <div className="users-create-form__grid">
+                        <div
+                            className={
+                                'users-create-form__grid'
+                            }
+                        >
                             <label>
                                 Email
                                 <input
@@ -120,29 +210,41 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                                     type="email"
                                     autoComplete="username"
                                     maxLength={255}
-                                    placeholder="user@company.ru"
+                                    placeholder={
+                                        'user@company.ru'
+                                    }
                                     required
-                                    disabled={creating}
+                                    disabled={
+                                        creating
+                                    }
                                 />
                             </label>
 
                             <label>
                                 Полное имя
                                 <input
-                                    value={fullName}
+                                    value={
+                                        fullName
+                                    }
                                     onChange={(event) =>
                                         setFullName(
                                             event.target.value,
                                         )
                                     }
                                     maxLength={255}
-                                    placeholder="Иван Иванов"
-                                    disabled={creating}
+                                    placeholder={
+                                        'Иван Иванов'
+                                    }
+                                    disabled={
+                                        creating
+                                    }
                                 />
                             </label>
 
                             <PasswordFields
-                                password={password}
+                                password={
+                                    password
+                                }
                                 passwordConfirm={
                                     passwordConfirm
                                 }
@@ -152,85 +254,112 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                                 onPasswordConfirmChange={
                                     setPasswordConfirm
                                 }
-                                disabled={creating}
+                                disabled={
+                                    creating
+                                }
                             />
 
-                            {currentUserIsSuperAdmin && (
-                                <label className="users-create-form__wide">
-                                    Организация
-                                    <select
-                                        value={
-                                            selectedOrganizationId
+                            {currentUserIsSuperAdmin
+                                && (
+                                    <label
+                                        className={
+                                            'users-create-form__wide'
                                         }
-                                        onChange={(event) =>
-                                            setSelectedOrganizationId(
-                                                event.target.value,
-                                            )
-                                        }
-                                        disabled={
-                                            creating
-                                            || organizationsLoading
-                                        }
-                                        required
                                     >
-                                        <option value="">
-                                            {organizationsLoading
-                                                ? 'Загрузка организаций...'
-                                                : 'Выберите организацию'}
-                                        </option>
-                                        {organizations.map(
-                                            (
-                                                organization,
-                                            ) => (
-                                                <option
-                                                    key={
-                                                        organization.id
-                                                    }
-                                                    value={
-                                                        organization.id
-                                                    }
-                                                >
-                                                    {
-                                                        organization.name
-                                                    }
-                                                </option>
-                                            ),
-                                        )}
-                                    </select>
-                                </label>
-                            )}
+                                        Организация
+
+                                        <select
+                                            value={
+                                                selectedOrganizationId
+                                            }
+                                            onChange={(event) =>
+                                                setSelectedOrganizationId(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            disabled={
+                                                creating
+                                                || organizationsLoading
+                                            }
+                                            required
+                                        >
+                                            <option
+                                                value=""
+                                            >
+                                                {organizationsLoading
+                                                    ? 'Загрузка организаций...'
+                                                    : 'Выберите организацию'}
+                                            </option>
+
+                                            {organizations.map(
+                                                (
+                                                    organization,
+                                                ) => (
+                                                    <option
+                                                        key={
+                                                            organization.id
+                                                        }
+                                                        value={
+                                                            organization.id
+                                                        }
+                                                    >
+                                                        {
+                                                            organization.name
+                                                        }
+                                                    </option>
+                                                ),
+                                            )}
+                                        </select>
+                                    </label>
+                                )}
                         </div>
 
                         {currentUserIsSuperAdmin
                             ? (
                                 <>
                                     <UserRoleSelector
-                                        name="create-user-role"
-                                        value={createRole}
-                                        disabled={creating}
+                                        name={
+                                            'create-user-role'
+                                        }
+                                        value={
+                                            createRole
+                                        }
+                                        disabled={
+                                            creating
+                                        }
                                         onChange={
                                             setCreateRole
                                         }
-                                        legend="Роль пользователя"
+                                        legend={
+                                            'Роль пользователя'
+                                        }
                                     />
 
-                                    {createRole === 'ADMIN' && (
-                                        <div
-                                            className="users-privilege-notice"
-                                            role="note"
-                                        >
-                                            Администратор сможет управлять
-                                            пользователями выбранной организации,
-                                            но не сможет создавать других
-                                            администраторов.
-                                        </div>
-                                    )}
+                                    {createRole
+                                        === 'ADMIN'
+                                        && (
+                                            <div
+                                                className={
+                                                    'users-privilege-notice'
+                                                }
+                                                role="note"
+                                            >
+                                                Администратор сможет
+                                                управлять пользователями
+                                                выбранной организации,
+                                                но не сможет создавать
+                                                или управлять другими
+                                                администраторами.
+                                            </div>
+                                        )}
                                 </>
                             )
                             : (
                                 <FixedUserRole
                                     userRole="USER"
-                                    title="Роль пользователя"
+                                    title={
+                                        'Роль пользователя'
+                                    }
                                     description={
                                         'Пользователь будет создан '
                                         + 'в вашей организации.'
@@ -248,19 +377,26 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                             </div>
                         )}
 
-                        <div className="modal-actions">
+                        <div
+                            className={
+                                'modal-actions'
+                            }
+                        >
                             <button
                                 type="button"
                                 className={
                                     'secondary-button'
                                 }
-                                disabled={creating}
+                                disabled={
+                                    creating
+                                }
                                 onClick={
                                     closeCreateModal
                                 }
                             >
                                 Отмена
                             </button>
+
                             <button
                                 type="submit"
                                 disabled={
@@ -270,10 +406,7 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                             >
                                 {creating
                                     ? 'Создание...'
-                                    : (
-                                        'Создать '
-                                        + 'пользователя'
-                                    )}
+                                    : 'Создать пользователя'}
                             </button>
                         </div>
                     </form>
@@ -282,7 +415,7 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
 
             {detailsUser && (
                 <Modal
-                    title="Подробнее о пользователе"
+                    title="Данные пользователя"
                     onClose={
                         closeDetailsModal
                     }
@@ -297,13 +430,18 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                         </div>
                     )}
 
-                    <dl className="user-details">
+                    <dl
+                        className={
+                            'user-details'
+                        }
+                    >
                         <Detail
                             term="Email"
                             value={
                                 detailsUser.email
                             }
                         />
+
                         <Detail
                             term="Полное имя"
                             value={
@@ -311,11 +449,20 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                                 ?? '—'
                             }
                         />
+
                         <Detail
                             term="Организация"
                             value={
-                                <div className="user-details__organization">
-                                    <strong className="user-details__organization-name">
+                                <div
+                                    className={
+                                        'user-details__organization'
+                                    }
+                                >
+                                    <strong
+                                        className={
+                                            'user-details__organization-name'
+                                        }
+                                    >
                                         {
                                             detailsUser.organizationName
                                             ?? findOrganizationName(
@@ -326,14 +473,24 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                                         }
                                     </strong>
 
-                                    <span className="user-details__organization-id">
-                                        {detailsUser.organizationId}
-                                    </span>
+                                    {currentUserIsSuperAdmin
+                                        && (
+                                            <span
+                                                className={
+                                                    'user-details__organization-id'
+                                                }
+                                            >
+                                                {
+                                                    detailsUser.organizationId
+                                                }
+                                            </span>
+                                        )}
                                 </div>
                             }
                         />
+
                         <Detail
-                            term="Роли"
+                            term="Роль"
                             value={
                                 detailsUser.roles
                                     .map(
@@ -342,6 +499,7 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                                     .join(', ')
                             }
                         />
+
                         <Detail
                             term="Статус"
                             value={
@@ -352,14 +510,7 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                                 />
                             }
                         />
-                        <Detail
-                            term="Версия"
-                            value={
-                                detailsUser.version
-                                    ?.toString()
-                                ?? 'не предоставлена'
-                            }
-                        />
+
                         <Detail
                             term="Дата создания"
                             value={
@@ -368,14 +519,18 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                                 )
                             }
                         />
+
                         <Detail
-                            term="Последнее изменение"
+                            term={
+                                'Последнее обновление записи'
+                            }
                             value={
                                 formatDateTime(
                                     detailsUser.updatedAt,
                                 )
                             }
                         />
+
                         <Detail
                             term="Последний вход"
                             value={
@@ -392,7 +547,9 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
 
             {editUser && (
                 <Modal
-                    title="Редактирование пользователя"
+                    title={
+                        'Изменить email и имя'
+                    }
                     size="sm"
                     onClose={
                         closeMutationModals
@@ -401,6 +558,16 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                         hasPendingMutation
                     }
                 >
+                    <p
+                        className={
+                            'modal-subtitle'
+                        }
+                    >
+                        Учётная запись:
+                        {' '}
+                        {editUser.email}
+                    </p>
+
                     <form
                         className="form"
                         onSubmit={(event) => {
@@ -411,13 +578,16 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                         <label>
                             Email
                             <input
-                                value={editEmail}
+                                value={
+                                    editEmail
+                                }
                                 onChange={(event) =>
                                     setEditEmail(
                                         event.target.value,
                                     )
                                 }
                                 type="email"
+                                autoComplete="username"
                                 maxLength={255}
                                 required
                                 disabled={
@@ -429,12 +599,15 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                         <label>
                             Полное имя
                             <input
-                                value={editFullName}
+                                value={
+                                    editFullName
+                                }
                                 onChange={(event) =>
                                     setEditFullName(
                                         event.target.value,
                                     )
                                 }
+                                autoComplete="name"
                                 maxLength={255}
                                 disabled={
                                     hasPendingMutation
@@ -443,7 +616,9 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                         </label>
 
                         <ModalError
-                            message={modalError}
+                            message={
+                                modalError
+                            }
                         />
 
                         <ModalActions
@@ -454,101 +629,129 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                                 closeMutationModals
                             }
                             submitLabel={
-                                'Сохранить изменения'
+                                'Сохранить email и имя'
                             }
                         />
                     </form>
                 </Modal>
             )}
 
-            {rolesUser && currentUserIsSuperAdmin && (
-                <Modal
-                    title="Роли и доступ"
-                    size="sm"
-                    onClose={
-                        closeMutationModals
-                    }
-                    closeDisabled={
-                        hasPendingMutation
-                    }
-                >
-                    <form
-                        className="form"
-                        onSubmit={(event) => {
-                            event.preventDefault()
-                            void submitRoles()
-                        }}
+            {rolesUser
+                && currentUserIsSuperAdmin
+                && (
+                    <Modal
+                        title={
+                            'Изменить роль пользователя'
+                        }
+                        size="sm"
+                        onClose={
+                            closeMutationModals
+                        }
+                        closeDisabled={
+                            hasPendingMutation
+                        }
                     >
-                        <p className="modal-subtitle">
+                        <p
+                            className={
+                                'modal-subtitle'
+                            }
+                        >
                             {rolesUser.email}
                         </p>
 
-                        <UserRoleSelector
-                            name="edit-user-role"
-                            value={selectedRole}
-                            disabled={
-                                hasPendingMutation
-                            }
-                            onChange={(role) => {
-                                setSelectedRole(role)
-                                setAdminElevationConfirmed(
-                                    false,
-                                )
+                        <form
+                            className="form"
+                            onSubmit={(event) => {
+                                event.preventDefault()
+                                void submitRoles()
                             }}
-                            legend="Системная роль"
-                        />
+                        >
+                            <UserRoleSelector
+                                name={
+                                    'edit-user-role'
+                                }
+                                value={
+                                    selectedRole
+                                }
+                                disabled={
+                                    hasPendingMutation
+                                }
+                                onChange={(role) => {
+                                    setSelectedRole(
+                                        role,
+                                    )
 
-                        {selectedRole === 'ADMIN'
-                            && !rolesUser.roles.includes(
-                                'ADMIN',
-                            )
-                            && (
-                                <label className="danger-notice">
-                                    <input
-                                        type="checkbox"
-                                        checked={
-                                            adminElevationConfirmed
-                                        }
-                                        onChange={(
-                                            event,
-                                        ) =>
-                                            setAdminElevationConfirmed(
-                                                event.target.checked,
-                                            )
-                                        }
-                                        disabled={
-                                            hasPendingMutation
-                                        }
-                                    />
-                                    Подтверждаю повышение
-                                    привилегий до ADMIN.
-                                    Пользователь получит
-                                    административный доступ.
-                                </label>
-                            )}
+                                    setAdminElevationConfirmed(
+                                        false,
+                                    )
+                                }}
+                                legend={
+                                    'Системная роль'
+                                }
+                            />
 
-                        <ModalError
-                            message={modalError}
-                        />
+                            {selectedRole === 'ADMIN'
+                                && !rolesUser.roles.includes(
+                                    'ADMIN',
+                                )
+                                && (
+                                    <label
+                                        className={
+                                            'danger-notice'
+                                        }
+                                    >
+                                        <input
+                                            type={
+                                                'checkbox'
+                                            }
+                                            checked={
+                                                adminElevationConfirmed
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                setAdminElevationConfirmed(
+                                                    event.target.checked,
+                                                )
+                                            }
+                                            disabled={
+                                                hasPendingMutation
+                                            }
+                                        />
 
-                        <ModalActions
-                            busy={
-                                hasPendingMutation
-                            }
-                            onCancel={
-                                closeMutationModals
-                            }
-                            submitLabel={
-                                'Сохранить изменения'
-                            }
-                        />
-                    </form>
-                </Modal>
-            )}
+                                        Подтверждаю повышение
+                                        привилегий до ADMIN.
+                                        Пользователь получит
+                                        административный доступ.
+                                    </label>
+                                )}
+
+                            <ModalError
+                                message={
+                                    modalError
+                                }
+                            />
+
+                            <ModalActions
+                                busy={
+                                    hasPendingMutation
+                                }
+                                onCancel={
+                                    closeMutationModals
+                                }
+                                submitLabel={
+                                    'Сохранить роль'
+                                }
+                            />
+                        </form>
+                    </Modal>
+                )}
 
             {resetPasswordUser && (
                 <Modal
-                    title="Установить новый пароль"
+                    title={
+                        'Установить новый пароль'
+                    }
                     size="sm"
                     onClose={
                         closeMutationModals
@@ -557,6 +760,14 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                         hasPendingMutation
                     }
                 >
+                    <p
+                        className={
+                            'modal-subtitle'
+                        }
+                    >
+                        {resetPasswordUser.email}
+                    </p>
+
                     <form
                         className="form"
                         onSubmit={(event) => {
@@ -585,8 +796,20 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                             }
                         />
 
+                        <p
+                            className={
+                                'users-security-note'
+                            }
+                        >
+                            После смены пароля активные
+                            сессии пользователя будут
+                            отозваны.
+                        </p>
+
                         <ModalError
-                            message={modalError}
+                            message={
+                                modalError
+                            }
                         />
 
                         <ModalActions
@@ -606,7 +829,9 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
 
             {deleteUser && (
                 <Modal
-                    title="Удалить пользователя навсегда?"
+                    title={
+                        'Удалить пользователя навсегда?'
+                    }
                     size="sm"
                     onClose={
                         closeMutationModals
@@ -615,7 +840,11 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                         hasPendingMutation
                     }
                 >
-                    <div className="danger-notice">
+                    <div
+                        className={
+                            'danger-notice'
+                        }
+                    >
                         Пользователь должен быть
                         предварительно отключён.
                         Backend дополнительно проверяет
@@ -633,6 +862,7 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                     >
                         <label>
                             Введите email пользователя
+
                             <input
                                 type="email"
                                 value={
@@ -652,7 +882,9 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                         </label>
 
                         <ModalError
-                            message={modalError}
+                            message={
+                                modalError
+                            }
                         />
 
                         <ModalActions
@@ -689,14 +921,13 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                     message={
                         confirmState.nextEnabled
                             ? (
-                                'Включить пользователя '
-                                + `${confirmState.user.email}?`
+                                `Включить ${confirmState.user.email}? `
+                                + 'Пользователь снова сможет входить в систему.'
                             )
                             : (
-                                'Отключить пользователя '
-                                + `${confirmState.user.email}? `
-                                + 'Будет запущен отзыв '
-                                + 'активных сессий.'
+                                `Отключить ${confirmState.user.email}? `
+                                + 'Пользователь потеряет доступ, '
+                                + 'а его активные сессии будут отозваны.'
                             )
                     }
                     confirmText={
@@ -712,7 +943,9 @@ export function AdminUsersDialogs(props: AdminUsersDialogsProps) {
                     }
                     onCancel={() => {
                         if (!hasPendingMutation) {
-                            setConfirmState(null)
+                            setConfirmState(
+                                null,
+                            )
                         }
                     }}
                     onConfirm={

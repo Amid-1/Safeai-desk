@@ -537,6 +537,7 @@ export function RuntimeCard({
 export function PolicyCard({
     policy,
     catalog,
+    effectiveCatalog,
     runtime,
     organizationId,
     organizationName,
@@ -551,6 +552,7 @@ export function PolicyCard({
 }: {
     policy: OrganizationModelPolicy
     catalog: ModelCatalogEntry[]
+    effectiveCatalog: ModelCatalogEntry[]
     runtime: RuntimeModelStatus
     organizationId: string
     organizationName: string | null
@@ -569,6 +571,15 @@ export function PolicyCard({
                 (entry) => entry.modelKey === policy.defaultModelKey,
             ) ?? null
             : null
+
+    const undeclaredRuntimeModels = policy.enabled && policy.requireNoTraining
+        ? effectiveCatalog.filter((entry) =>
+            entry.provider === runtime.provider
+            && entry.providerModelId === runtime.model
+            && (entry.lifecycle === 'ACTIVE' || entry.lifecycle === 'DEPRECATED')
+            && entry.trainingUseStatus === 'NOT_DECLARED',
+        )
+        : []
 
     return (
         <section className="models-card models-card--policy">
@@ -731,6 +742,20 @@ export function PolicyCard({
                     </small>
                 </div>
             </dl>
+
+            {undeclaredRuntimeModels.length > 0 && (
+                <div className="models-policy-form__warning" role="status">
+                    <strong>Требование запрета обучения не подтверждено</strong>
+                    <p>
+                        В действующем каталоге для подключённой модели
+                        {' '}{undeclaredRuntimeModels.map((entry) => entry.modelKey).join(', ')}
+                        {' '}использование данных для обучения не заявлено (NOT_DECLARED).
+                        Это несовместимо с включённым требованием «Не использовать данные
+                        для обучения». Откройте «Изменить правила» и выполните
+                        «Проверить правила», чтобы получить серверный результат.
+                    </p>
+                </div>
+            )}
 
             <div className="models-policy-card__footer">
                 <p className="models-policy-card__note">

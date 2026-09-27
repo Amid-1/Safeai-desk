@@ -33,6 +33,13 @@ export type DisplayMessage = ChatMessage & {
     uiStatus?: PendingTurnStatus
 }
 
+export type ComposerKeyInput = {
+    key: string
+    shiftKey: boolean
+    isComposing: boolean
+    repeat: boolean
+}
+
 export function normalizeMessageContent(
     value: string,
 ): string {
@@ -45,6 +52,15 @@ export function hasMeaningfulContent(
     value: string,
 ): boolean {
     return value.trim().length > 0
+}
+
+export function shouldSubmitComposerKey(
+    input: ComposerKeyInput,
+): boolean {
+    return input.key === 'Enter'
+        && !input.shiftKey
+        && !input.isComposing
+        && !input.repeat
 }
 
 export function createPendingTurn(

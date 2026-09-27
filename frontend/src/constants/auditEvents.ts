@@ -1,36 +1,49 @@
+// frontend/src/constants/auditEvents.ts
+
 export const AUDIT_EVENT_TYPES = [
     'USER_LOGIN_SUCCESS',
     'USER_LOGIN_FAILED',
+
     'CHAT_CREATED',
+    'CHAT_RENAMED',
     'CHAT_ARCHIVED',
     'CHAT_MESSAGE_SENT',
     'AI_RESPONSE_RECEIVED',
     'AI_RESPONSE_FAILED',
+
     'USER_CREATED',
-    'ORGANIZATION_CREATED',
+    'USER_UPDATED',
     'USER_ENABLED_CHANGED',
     'USER_ROLES_CHANGED',
     'USER_PASSWORD_RESET',
     'USER_PERMANENTLY_DELETED',
+
+    'ORGANIZATION_CREATED',
+    'ORGANIZATION_NAME_CHANGED',
+    'ORGANIZATION_ENABLED_CHANGED',
+
     'RATE_LIMIT_EXCEEDED',
     'SECURITY_REFRESH_REUSE_DETECTED',
     'USER_LOGOUT',
-    'ORGANIZATION_NAME_CHANGED',
-    'ORGANIZATION_ENABLED_CHANGED',
-    'USER_UPDATED',
+
     'KNOWLEDGE_BASE_CREATED',
     'KNOWLEDGE_BASE_UPDATED',
     'KNOWLEDGE_BASE_MEMBER_ADDED',
     'KNOWLEDGE_BASE_MEMBER_UPDATED',
     'KNOWLEDGE_BASE_MEMBER_REMOVED',
+
     'KNOWLEDGE_DOCUMENT_CREATED',
+    'KNOWLEDGE_DOCUMENT_UPDATED',
     'KNOWLEDGE_DOCUMENT_VERSION_UPLOADED',
     'KNOWLEDGE_DOCUMENT_DOWNLOADED',
+
+    'KNOWLEDGE_REINDEX_REQUESTED',
     'KNOWLEDGE_INGESTION_READY',
     'KNOWLEDGE_INGESTION_FAILED',
     'KNOWLEDGE_RETRIEVAL_COMPLETED',
+    'KNOWLEDGE_EVALUATION_COMPLETED',
     'KNOWLEDGE_ANSWER_GENERATED',
-    'KNOWLEDGE_REINDEX_REQUESTED',
+
     'MODEL_CATALOG_VERSION_CREATED',
     'MODEL_POLICY_VERSION_CREATED',
     'MODEL_ROUTE_DECIDED',
@@ -51,6 +64,9 @@ const AUDIT_EVENT_TYPE_LABELS:
     CHAT_CREATED:
         'Создан чат',
 
+    CHAT_RENAMED:
+        'Переименован чат',
+
     CHAT_ARCHIVED:
         'Чат убран из списка',
 
@@ -66,8 +82,8 @@ const AUDIT_EVENT_TYPE_LABELS:
     USER_CREATED:
         'Создан пользователь',
 
-    ORGANIZATION_CREATED:
-        'Создана организация',
+    USER_UPDATED:
+        'Изменён профиль пользователя',
 
     USER_ENABLED_CHANGED:
         'Изменён статус пользователя',
@@ -81,6 +97,15 @@ const AUDIT_EVENT_TYPE_LABELS:
     USER_PERMANENTLY_DELETED:
         'Пользователь удалён навсегда',
 
+    ORGANIZATION_CREATED:
+        'Создана организация',
+
+    ORGANIZATION_NAME_CHANGED:
+        'Изменено название организации',
+
+    ORGANIZATION_ENABLED_CHANGED:
+        'Изменён статус организации',
+
     RATE_LIMIT_EXCEEDED:
         'Превышено ограничение запросов',
 
@@ -89,15 +114,6 @@ const AUDIT_EVENT_TYPE_LABELS:
 
     USER_LOGOUT:
         'Выход пользователя',
-
-    ORGANIZATION_NAME_CHANGED:
-        'Изменено название организации',
-
-    ORGANIZATION_ENABLED_CHANGED:
-        'Изменён статус организации',
-
-    USER_UPDATED:
-        'Изменён профиль пользователя',
 
     KNOWLEDGE_BASE_CREATED:
         'Создана база знаний',
@@ -117,11 +133,17 @@ const AUDIT_EVENT_TYPE_LABELS:
     KNOWLEDGE_DOCUMENT_CREATED:
         'Загружен документ',
 
+    KNOWLEDGE_DOCUMENT_UPDATED:
+        'Изменён документ',
+
     KNOWLEDGE_DOCUMENT_VERSION_UPLOADED:
         'Загружена версия документа',
 
     KNOWLEDGE_DOCUMENT_DOWNLOADED:
         'Скачан документ',
+
+    KNOWLEDGE_REINDEX_REQUESTED:
+        'Запущена повторная индексация',
 
     KNOWLEDGE_INGESTION_READY:
         'Документ готов для поиска',
@@ -132,11 +154,11 @@ const AUDIT_EVENT_TYPE_LABELS:
     KNOWLEDGE_RETRIEVAL_COMPLETED:
         'Выполнен поиск по знаниям',
 
+    KNOWLEDGE_EVALUATION_COMPLETED:
+        'Завершена оценка поиска по знаниям',
+
     KNOWLEDGE_ANSWER_GENERATED:
         'Сформирован ответ по знаниям',
-
-    KNOWLEDGE_REINDEX_REQUESTED:
-        'Запущена повторная индексация',
 
     MODEL_CATALOG_VERSION_CREATED:
         'Создана версия каталога модели',

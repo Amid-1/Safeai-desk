@@ -11,6 +11,8 @@ import type {
 } from '../../../api/modelApi'
 import {
     buildCatalogRequest,
+    buildPolicyRequest,
+    normalizeDraftForPricingStatus,
     createCatalogDraft,
     parseModelKeyList,
 } from './modelControlPlaneSupport'
@@ -34,6 +36,47 @@ const RUNTIME: RuntimeModelStatus = {
 }
 
 describe('modelControlPlaneSupport', () => {
+    it('normalizes FREE pricing without inventing a no-training declaration', () => {
+        const draft = createCatalogDraft(null, RUNTIME)
+        const request = buildCatalogRequest(normalizeDraftForPricingStatus({
+            ...draft,
+            pricingStatus: 'FREE',
+            pricingComplete: false,
+            inputUsdPer1mTokens: '10',
+            cachedInputUsdPer1mTokens: '5',
+            cacheWriteInputUsdPer1mTokens: '12',
+            outputUsdPer1mTokens: '20',
+            extraPricingJson: '{"image": 2}',
+        }), 3)
+        expect(request).toEqual({
+            modelKey: 'mock:mock-safeai', provider: 'mock', providerModelId: 'mock-safeai',
+            displayName: draft.displayName, lifecycle: draft.lifecycle,
+            maxInputTokens: 64000, maxOutputTokens: 2048,
+            capabilities: [], inputModalities: ['TEXT'], outputModalities: ['TEXT'],
+            retentionStatus: 'NOT_DECLARED', retentionDays: null,
+            trainingUseStatus: 'NOT_DECLARED', pricingStatus: 'FREE', pricingComplete: true,
+            inputUsdPer1mTokens: '0', cachedInputUsdPer1mTokens: '0',
+            cacheWriteInputUsdPer1mTokens: '0', outputUsdPer1mTokens: '0',
+            extraPricingJson: '{}', pricingVersion: 'mock-2026-01',
+            effectiveFrom: null, expectedPreviousVersion: 3,
+        })
+    })
+
+    it.each(['SOFT', 'HARD'] as const)('preserves the complete %s policy payload', (budgetEnforcement) => {
+        expect(buildPolicyRequest({
+            enabled: true, allowModelKeys: ' MOCK:MOCK-SAFEAI ', denyModelKeys: 'other:model',
+            defaultModelKey: 'Mock:Mock-Safeai', maxInputTokens: '1000', maxOutputTokens: '200',
+            maxRequestCostUsd: '0.01', monthlyBudgetUsd: '10', budgetEnforcement,
+            requireCompletePricing: true, requireNoTraining: true, requireZeroDataRetention: true,
+        }, 4)).toEqual({
+            expectedPreviousVersion: 4, enabled: true,
+            allowModelKeys: ['mock:mock-safeai'], denyModelKeys: ['other:model'],
+            defaultModelKey: 'mock:mock-safeai', maxInputTokens: 1000, maxOutputTokens: 200,
+            maxRequestCostUsd: '0.01', monthlyBudgetUsd: '10', budgetEnforcement,
+            requireCompletePricing: true, requireNoTraining: true, requireZeroDataRetention: true,
+        })
+    })
+
     it('не позволяет отправить IMAGE как выходной формат, которого нет в схеме каталога', () => {
         const draft = createCatalogDraft(
             null,

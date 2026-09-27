@@ -1,4 +1,7 @@
-import type { ReactNode } from 'react'
+// frontend/src/components/admin/users/AdminUsersUi.tsx
+import type {
+    ReactNode,
+} from 'react'
 
 type FilterButtonProps = {
     active: boolean
@@ -32,7 +35,12 @@ export function FilterButton({
         >
             {label}
             {' '}
-            <span className="users-filter-count">
+
+            <span
+                className={
+                    'users-filter-count'
+                }
+            >
                 {count}
             </span>
         </button>
@@ -55,14 +63,21 @@ export function Pagination({
     onNext,
 }: PaginationProps) {
     return (
-        <div className="pagination">
+        <div
+            className="pagination"
+        >
             <button
                 type="button"
-                className="secondary-button"
-                disabled={
-                    disabled || page === 0
+                className={
+                    'secondary-button'
                 }
-                onClick={onPrevious}
+                disabled={
+                    disabled
+                    || page === 0
+                }
+                onClick={
+                    onPrevious
+                }
             >
                 Назад
             </button>
@@ -74,17 +89,25 @@ export function Pagination({
                 {' '}
                 из
                 {' '}
-                {Math.max(totalPages, 1)}
+                {Math.max(
+                    totalPages,
+                    1,
+                )}
             </span>
 
             <button
                 type="button"
-                className="secondary-button"
+                className={
+                    'secondary-button'
+                }
                 disabled={
                     disabled
-                    || page + 1 >= totalPages
+                    || page + 1
+                        >= totalPages
                 }
-                onClick={onNext}
+                onClick={
+                    onNext
+                }
             >
                 Вперёд
             </button>
@@ -115,8 +138,11 @@ export function PasswordFields({
         <>
             <label>
                 {passwordLabel}
+
                 <input
-                    value={password}
+                    value={
+                        password
+                    }
                     onChange={(event) =>
                         onPasswordChange(
                             event.target.value,
@@ -124,16 +150,23 @@ export function PasswordFields({
                     }
                     type="password"
                     minLength={12}
-                    autoComplete="new-password"
+                    autoComplete={
+                        'new-password'
+                    }
                     required
-                    disabled={disabled}
+                    disabled={
+                        disabled
+                    }
                 />
             </label>
 
             <label>
                 Повторите пароль
+
                 <input
-                    value={passwordConfirm}
+                    value={
+                        passwordConfirm
+                    }
                     onChange={(event) =>
                         onPasswordConfirmChange(
                             event.target.value,
@@ -141,16 +174,24 @@ export function PasswordFields({
                     }
                     type="password"
                     minLength={12}
-                    autoComplete="new-password"
+                    autoComplete={
+                        'new-password'
+                    }
                     required
-                    disabled={disabled}
+                    disabled={
+                        disabled
+                    }
                 />
             </label>
 
-            <small className="muted">
-                Максимум 72 байта UTF-8.
-                Требуются ASCII: a-z, A-Z,
+            <small
+                className="muted"
+            >
+                Минимум 12 символов:
+                строчная и заглавная буква,
                 цифра и спецсимвол.
+                Не более 72 байт UTF-8;
+                управляющие символы запрещены.
             </small>
         </>
     )
@@ -172,12 +213,22 @@ export function ModalActions({
     submitDisabled = false,
 }: ModalActionsProps) {
     return (
-        <div className="modal-actions">
+        <div
+            className={
+                'modal-actions'
+            }
+        >
             <button
                 type="button"
-                className="secondary-button"
-                disabled={busy}
-                onClick={onCancel}
+                className={
+                    'secondary-button'
+                }
+                disabled={
+                    busy
+                }
+                onClick={
+                    onCancel
+                }
             >
                 Отмена
             </button>
@@ -190,7 +241,8 @@ export function ModalActions({
                         : undefined
                 }
                 disabled={
-                    busy || submitDisabled
+                    busy
+                    || submitDisabled
                 }
             >
                 {busy
@@ -206,15 +258,17 @@ export function ModalError({
 }: {
     message: string
 }) {
-    return message ? (
-        <div
-            className="error"
-            role="alert"
-            aria-live="assertive"
-        >
-            {message}
-        </div>
-    ) : null
+    return message
+        ? (
+            <div
+                className="error"
+                role="alert"
+                aria-live="assertive"
+            >
+                {message}
+            </div>
+        )
+        : null
 }
 
 export function UserStatusBadge({
@@ -237,7 +291,9 @@ export function UserStatusBadge({
             }
         >
             <span
-                className="status-chip__dot"
+                className={
+                    'status-chip__dot'
+                }
                 aria-hidden="true"
             />
 
@@ -256,10 +312,18 @@ export function Detail({
     value: ReactNode
 }) {
     return (
-        <div className="user-details__row">
-            <dt>{term}</dt>
-            <dd>{value}</dd>
+        <div
+            className={
+                'user-details__row'
+            }
+        >
+            <dt>
+                {term}
+            </dt>
+
+            <dd>
+                {value}
+            </dd>
         </div>
     )
 }
-
