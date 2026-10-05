@@ -1,2132 +1,4963 @@
-SafeAI Desk — Roadmap развития
+# SafeAI Desk — Master Production Roadmap 2026–2027
 
-Актуальность: 6 сентября 2026
-Горизонт: сентябрь 2026 → конец 2027
-Проект: SafeAI Desk
-Позиционирование: production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного и управляемого 
-использования внешних и локальных AI-моделей внутри организаций.
+> **Актуальность:** 04 октября 2026  
+> **Горизонт:** октябрь 2026 → декабрь 2027  
+> **Текущий backend baseline:** Flyway `V1–V61`, modular monolith, `common / auth / user / organization / ratelimit / audit / usage / chat / model / ai / knowledge`  
+> **Позиционирование:** production-oriented корпоративная AI-платформа / AI Gateway, которая объединяет безопасный доступ к моделям, корпоративным знаниям, governance, FinOps, DLP, инструменты и в дальнейшем — durable agent runtime.
 
-Этот roadmap синхронизирован с текущим baseline проекта до Flyway V48 включительно.
+---
 
-Knowledge/RAG, Answer Passport и первый Model Control Plane уже реализованы и больше не считаются полностью будущими эпиками. 
-V45–V48 перевели проект от «просто AI Gateway с RAG» к платформе с versioned model governance, immutable route evidence 
-и input-accounting provenance.
+## Как читать этот roadmap
 
-Будущие номера Flyway-миграций намеренно не резервируются заранее. Перед merge всегда использовать реально свободный version.
+Этот документ описывает **целевое развитие**, а не уже реализованный функционал.
 
-1. Текущее состояние проекта
+Статусы:
 
-SafeAI Desk уже существенно выходит за рамки интерфейса над LLM API.
-
-На 6 сентября 2026 реализован следующий фундамент.
-
-Identity / Security
-
-organization-based multi-tenancy;
-
-RBAC SUPER_ADMIN / ADMIN / USER;
-
-ровно одна системная роль на пользователя;
-
-HttpOnly cookie JWT authentication;
-
-CSRF-защита;
-
-строгая JWT validation;
-
-user.tokenVersion;
-
-organization.authVersion;
-
-refresh-token rotation;
-
-refresh-token reuse detection;
-
-tenant-safe user/organization management;
-
-production security invariant validators;
-
-trusted-proxy/client-IP handling;
-
-canonical server request IDs;
-
-fail-closed security state lookup;
-
-BCrypt/DelegatingPasswordEncoder hardening.
-
-Durable AI execution
-
-OpenAI / Anthropic / Mock provider abstraction;
-
-durable ChatTurn state machine;
-
-idempotency;
-
-semantic replay identity;
-
-lease + fencing;
-
-providerOperationId;
-
-provider-call boundary;
-
-provider_call_started_at;
-
-recovery;
-
-AMBIGUOUS outcome protection;
-
-Redis rate limiting;
-
-quota reservation semantics;
-
-provider I/O вне долгой DB transaction;
-
-no blind retry после неопределённого external I/O.
-
-Audit / Usage
-
-transactional audit outbox;
-
-immutable actor snapshots;
-
-immutable target organization snapshots;
-
-audit retention/retry/dead-letter;
-
-usage analytics;
-
-pricing/data-quality semantics без подмены unknown нулём;
-
-UTC rollups/reconciliation;
-
-controlled unknown/unpriced/calculation-failed states.
-
-Knowledge / RAG — реализован baseline
-
-tenant/ACL-aware Knowledge Bases;
-
-KB memberships/visibility;
-
-immutable document versions;
-
-durable ingestion;
-
-S3-compatible object storage;
-
-bounded document extraction;
-
-optional OCR boundary;
-
-embeddings;
-
-pgvector + FTS hybrid retrieval;
-
-RAG context assembly;
-
-inline citations;
-
-GENERAL / KNOWLEDGE_ASSISTED / KNOWLEDGE_ONLY;
-
-controlled abstention;
-
-retrieval provenance;
-
-Answer Passport;
-
-Knowledge health/reindex/evaluation backend;
-
-frontend для KB/documents/memberships/ingestion/citations/passport baseline.
-
-Model Control Plane — реализован V45→V48 baseline
-
-append-only versioned Model Catalog;
-
-lifecycle/capabilities/modalities;
-
-retention/training metadata;
-
-pricing semantics;
-
-scheduled effectiveFrom;
-
-separate latest-created и effective-at-route snapshots;
-
-organization model policies;
-
-allow/deny/default model rules;
-
-max input/output limits;
-
-max-request-cost preflight;
-
-monthly budget preflight SOFT/HARD;
-
-requireCompletePricing;
-
-requireNoTraining;
-
-requireZeroDataRetention;
-
-immutable model-route decisions;
-
-decision integrity digest;
-
-exact binding route decision → ChatTurn;
-
-Answer Passport → exact model-route evidence;
-
-frontend Model Control Plane;
-
-runtime status/probe separation;
-
-V48 input-accounting provenance;
-
-V48 decision integrity v3;
-
-prepared-request execution envelope;
-
-fail-closed specialized capability gate;
-
-deterministic envelope failure до provider I/O.
-
-Infrastructure
-
-PostgreSQL/Flyway integrity constraints;
-
-Redis;
-
-S3-compatible storage;
-
-Docker/Docker Compose;
-
-Nginx;
-
-Prometheus;
-
-production validation/deploy scripts;
-
-PostgreSQL backup/restore scripts;
-
-systemd backup timer/service;
-
-production secret bootstrap examples.
-
-Текущий главный фокус
-
-Следующий этап — не «добавить ещё один чат» и не начинать agents.
-
-Приоритет:
-
-V48 release-candidate stabilization
-        ↓
-Knowledge UX + RAG quality measurement
-        ↓
-Executable multi-provider/model data plane
-        ↓
-FinOps + DLP + enterprise identity/data controls
-        ↓
-Assistants / Tools / Agents
-
-2. Целевое направление
-
-                        SafeAI Desk
-                             │
-        ┌────────────────────┼────────────────────┐
-        │                    │                    │
-   AI Workspace        AI Control Plane      Governance
-        │                    │                    │
- Chat / RAG / Agents     Models / Routing     Policies / Risk
- Knowledge / Search      Budgets / Limits     Audit / Approvals
- Tools / MCP             Providers            Compliance
-        │                    │                    │
-        └────────────────────┼────────────────────┘
-                             │
-                      Enterprise Data
-                             │
-       Confluence / Drive / SharePoint / Jira /
-       DB / CRM / Git / Slack / internal APIs
-
-Эволюция проекта:
-
-2026
-
-Безопасно пользоваться AI
-        ↓
-Безопасно использовать корпоративные знания
-        ↓
-Контролировать разрешённые модели
-        ↓
-Доказывать, какое route decision реально применялось
-        ↓
-Контролировать input accounting / budget preflight
-
-2027
-
-Безопасно подключать enterprise data
-        ↓
-Управлять DLP / identity / budgets / policy
-        ↓
-Создавать управляемых Assistants
-        ↓
-Безопасно давать AI инструменты
-        ↓
-Разрешать durable agent actions
-
-3. Этап 0 — V48 production stabilization
-
-Приоритет: максимальный
-Период: сентябрь 2026
-Статус: текущий активный этап
-
-V45–V48 уже реализованы. Ближайшая задача — не расширять control plane, а доказать корректность текущего baseline.
-
-3.1. Обязательная release-candidate проверка
-
-Flyway
-
-fresh migration V1 → V48;
-
-representative populated upgrade pre-V48 → V48;
-
-Flyway checksum consistency;
-
-отсутствие редактирования applied migrations;
-
-проверка rolling-sensitive compatibility для V46/V47/V48;
-
-validation всех NOT VALID constraints после data inspection, где это предусмотрено rollout-планом.
-
-Backend
-
-./mvnw clean test;
-
-targeted Model Control Plane integration tests;
-
-Knowledge/RAG integration tests;
-
-Testcontainers PostgreSQL;
-
-Testcontainers MinIO/S3 where applicable;
-
-authorization regression;
-
-tenant isolation;
-
-idempotency;
-
-lease/fencing;
-
-ambiguity/recovery;
-
-audit outbox;
-
-usage quality;
-
-startup production invariants.
-
-Frontend
-
-npm ci;
-
-npm run check;
-
-npm run audit:prod;
-
-production build;
-
-production preview;
-
-auth route guards;
-
-runtime response parsers;
-
-ErrorBoundary/PageErrorBoundary;
-
-Model Control Plane ADMIN/SUPER_ADMIN paths;
-
-responsive administrative layouts;
-
-modal focus/scroll/resize behavior.
-
-Infrastructure
-
-container build/start;
-
-prod-like startup;
-
-Nginx/proxy headers;
-
-trusted proxy allowlist;
-
-CORS;
-
-secret validation;
-
-Prometheus exposure;
-
-PostgreSQL backup;
-
-PostgreSQL restore;
-
-object-storage backup/recovery expectations;
-
-log secret review.
-
-3.2. V48 semantic regression matrix
-
-Обязательно проверить:
-
-Catalog / effective time
-
-future-scheduled catalog version не executable до effectiveFrom;
-
-latest view показывает будущую snapshot отдельно от effective;
-
-route time берётся с server-controlled Clock;
-
-старая effective version не проходит runtime matching после физической смены provider/model, если уже не соответствует 
-runtime.
-
-Pricing
-
-UNPRICED / FREE / CONFIGURED / INCOMPLETE соответствуют DB/domain constraints;
-
-exact money fields не теряют precision;
-
-unknown cost не становится zero;
-
-HARD budget fail-closed при unverifiable cost.
-
-Policy
-
-unconfigured policy:
-
-configured=false;
-
-version=0;
-
-enabled=false;
-
-первая сохранённая policy не включается случайно;
-
-optimistic expectedPreviousVersion;
-
-два concurrent writes к одной policy version:
-
-один success;
-
-один controlled conflict;
-
-ADMIN не управляет policy чужой организации;
-
-SUPER_ADMIN может работать в platform scope.
-
-Route decision
-
-ALLOWED route создаётся до provider I/O;
-
-exact ChatTurn binding;
-
-denied route evidence сохраняется корректно;
-
-route-decision tenant isolation;
-
-historical integrity v1/v2 остаётся валидным;
-
-новые decisions получают integrity v3.
-
-V48 input accounting
-
-Проверить для новых route decisions:
-
-decision_integrity_version = 3
-input_accounting_version = UTF8_STRUCTURAL_UNITS_V2
-additional_input_unit_upper_bound >= 0
-decision_sha256 = 64 lowercase hex
-
-Execution envelope
-
-base request reservation;
-
-RAG context добавляется только внутри envelope;
-
-KnowledgeContextAssembler сохраняет reservation/output cap;
-
-ModelRouteExecutionGuard проверяет exact identity;
-
-prepared request > reservation:
-
-deterministic fail;
-
-provider call не начинается;
-
-mismatch user/org/chat/providerOperationId/history:
-
-integrity failure;
-
-provider call не начинается.
-
-Replay
-
-same clientRequestId + same semantic request = replay;
-
-same id + different semantic request = conflict;
-
-изменение текущего envelope/config после первоначального request не ломает replay исходной durable operation.
-
-Capability gate
-
-Пока data plane не реализован полностью:
-
-TEXT               -> разрешён по существующим правилам
-TOOLS              -> fail closed
-VISION             -> fail closed
-STRUCTURED_OUTPUT  -> fail closed
-
-Никакой capability metadata не должна автоматически включать unsupported execution path.
-
-3.3. Frontend Model Control Plane hardening
-
-До выхода из stabilization:
-
-runtime wording не должен путать enabled и реальную network availability;
-
-probe state показывается отдельно;
-
-policy modal предупреждает о runtime/effective mismatch;
-
-ADMIN не видит global catalog mutations;
-
-SUPER_ADMIN видит import/create actions;
-
-latest/effective/scheduled visual state различим;
-
-route-decision diagnostics корректно parses integrity v1/v2/v3;
-
-exact decimal money остаётся string-safe;
-
-narrow viewport остаётся рабочим.
-
-3.4. Exit criteria этапа 0
-
-Этап считается закрытым только если:
-
-fresh migration проходит;
-
-representative upgrade проходит;
-
-backend test suite зелёный;
-
-frontend check зелёный;
-
-critical integration suites зелёные;
-
-backup/restore проверен;
-
-V48 integrity/provenance matrix доказана тестами;
-
-README/ROADMAP соответствуют реальному baseline;
-
-нет P0/P1 известных дефектов в auth/tenant/idempotency/routing/provenance.
-
-4. Этап 1 — Knowledge UX + RAG Evaluations
-
-Период: сентябрь–октябрь 2026
-Приоритет: высокий
-
-Knowledge backend/frontend baseline уже существует. Следующая задача — закрыть качественный vertical slice и сделать 
-качество измеримым.
-
-4.1. Knowledge UX hardening
-
-ADMIN flow
-
-Create Knowledge Base
-→ visibility / memberships
-→ upload document
-→ immutable version
-→ ingestion status
-→ READY / FAILED + reason
-→ retry / reindex
-→ health
-
-USER flow
-
-Chat
-→ Knowledge mode / KB scope
-→ question
-→ grounded answer
-→ citations
-→ source drawer
-→ exact document version/page
-→ Answer Passport
-
-4.2. Source Drawer
-
-Показывать:
-
-citation number;
-
-Knowledge Base;
-
-document;
-
-immutable document version;
-
-page/section;
-
-bounded evidence excerpt;
-
-retrieval score/provenance where appropriate;
-
-retrieval run identity;
-
-source status.
-
-Не показывать неограниченные raw chunks.
-
-4.3. Answer Passport UI
-
-Показывать:
-
-provider;
-
-requested model;
-
-resolved model;
-
-exact Model Catalog snapshot;
-
-ModelRouteDecision;
-
-organization policy snapshot;
-
-input-accounting version;
-
-reservation/envelope metadata;
-
-embedding model;
-
-Knowledge Bases;
-
-retrieval run;
-
-retrieved chunks;
-
-source document/version/page;
-
-citations/evidence status;
-
-usage;
-
-pricing/cost quality;
-
-request ID;
-
-timestamps.
-
-4.4. Evaluation Dataset
+| Статус | Значение |
+|---|---|
+| `DONE` | уже существует в текущем baseline |
+| `HARDEN` | реализовано, но требует production hardening |
+| `NEXT` | ближайший обязательный этап |
+| `PLANNED` | запланированное развитие |
+| `OPTIONAL` | полезно, но не блокирует основную продуктовую линию |
+| `FUTURE` | архитектурное направление после базовых safeguards |
+
+Приоритеты:
+
+| Приоритет | Значение |
+|---|---|
+| `P0` | production blocker / нарушение ключевого invariant |
+| `P1` | необходимо закрыть до серьёзного production |
+| `P2` | желательно до 1.0 |
+| `P3` | улучшение / зрелость / оптимизация |
+
+Будущие номера Flyway-миграций **не резервируются заранее**.  
+Перед merge новой migration используется реально свободный version.
+
+> **Source-of-truth rule для этой редакции:** README snapshot местами всё ещё содержит старые подписи `V1–V58`, но предоставленные и уже добавленные migrations `V59`, `V60`, `V61` считаются более новым baseline. Roadmap поэтому ведётся от `V1–V61`. Applied migrations не переименовываются и не переписываются.
+
+---
+
+# 1. Конечная идея SafeAI Desk
+
+SafeAI Desk должен стать не «чатом с несколькими моделями», а корпоративным AI control layer.
+
+```text
+                           SafeAI Desk
+                                │
+          ┌─────────────────────┼─────────────────────┐
+          │                     │                     │
+     AI Workspace          AI Control Plane       Governance
+          │                     │                     │
+ Chat / Search / RAG       Models / Providers     Policies / Risk
+ Assistants / Agents       Routing / Budgets      DLP / Approvals
+ Files / Artifacts         Pricing / Health       Audit / Compliance
+          │                     │                     │
+          └─────────────────────┼─────────────────────┘
+                                │
+                         Enterprise Data
+                                │
+       Drive / SharePoint / Confluence / Jira / Git /
+       Slack / DB / CRM / internal APIs / MCP / A2A
+```
+
+Платформа должна уметь отвечать на вопросы:
+
+```text
+WHO
+Кто использовал AI?
+
+WHAT DATA
+Какие данные, документы и Knowledge Bases были доступны?
+
+WHICH MODEL
+Какая модель, provider и configuration version были выбраны?
+
+WHY
+Почему именно эта route/policy decision была разрешена?
+
+HOW MUCH
+Сколько было зарезервировано, фактически использовано и потрачено?
+
+WHAT HAPPENED
+Какой physical provider attempt реально был начат?
+
+WHAT EVIDENCE
+На каких документах и версиях основан ответ?
+
+WHAT ACTION
+Какое действие модель хотела выполнить?
+
+WHO APPROVED
+Кто одобрил side effect?
+
+WHAT SECURITY STATE
+Какие DLP/policy/risk решения применились?
+
+CAN WE REPRODUCE THE CONTROL PATH
+Можно ли доказать весь governance/execution path даже при недетерминированном LLM?
+```
+
+---
+
+# 2. Архитектурные invariants, которые нельзя ломать
+
+Вне зависимости от количества новых features должны сохраняться:
+
+```text
+tenant isolation
+security fail-closed
+exactly-one-role
+security epochs
+idempotency
+semantic replay identity
+lease + fencing
+no blind retry after ambiguous external I/O
+provider I/O outside long DB transaction
+immutable governance evidence
+immutable physical execution evidence
+unknown != zero
+prompt content != authorization
+retrieved content != authorization
+audit/provenance
+database-enforced integrity
+versioned configuration
+explicit failure semantics
+```
+
+Для Model Control Plane:
+
+```text
+latest != effective
+catalog != runtime
+policy != runtime
+governance decision != physical execution
+provider health != immutable catalog fact
+pricing estimate != actual settlement
+```
+
+Для Knowledge:
+
+```text
+uploaded version != searchable published version
+retrieval evidence must remain attributable
+ACL filtering happens before ranking
+document text is untrusted input
+citation != factual truth
+```
+
+Для Agents/Tools:
+
+```text
+LLM suggestion != permission
+approval applies to exact payload
+tool call != ordinary text generation
+external side effect must be idempotent/fenced
+agent memory != authorization source
+```
+
+---
+
+# 3. Текущий baseline на 04.10.2026
+
+## 3.1. Identity / Security — `DONE / HARDEN`
+
+Уже есть:
+
+- organization-based multi-tenancy;
+- `SUPER_ADMIN / ADMIN / USER`;
+- exactly-one-role;
+- HttpOnly cookie JWT;
+- CSRF;
+- RSA JWT key ring;
+- strict issuer/audience/type/identity validation;
+- `user.tokenVersion`;
+- `organization.authVersion`;
+- refresh-token rotation;
+- refresh reuse detection;
+- refresh family termination;
+- password UTF-8/BCrypt hardening;
+- trusted proxy / client IP handling;
+- canonical server request ID;
+- fail-closed security-state lookup;
+- production invariant validators.
+
+## 3.2. Chat durability — `DONE / HARDEN`
+
+Уже есть:
+
+- durable `ChatTurn`;
+- idempotency;
+- semantic replay identity;
+- lease;
+- fencing;
+- `processingToken`;
+- `providerOperationId`;
+- quota reservation;
+- recovery;
+- `AMBIGUOUS`;
+- no blind retry;
+- provider I/O вне долгой DB transaction;
+- deterministic title lifecycle `DEFAULT / AUTO / USER`.
+
+## 3.3. AI physical execution — `DONE / HARDEN`
+
+Уже есть:
+
+- OpenAI adapter;
+- Anthropic adapter;
+- Mock adapter;
+- durable `ModelExecutionPlan`;
+- durable `ModelExecutionAttempt`;
+- outcome certainty;
+- retry/fallback safety;
+- provider target identity;
+- usage evidence;
+- pricing evidence;
+- response size bounds;
+- HTTPS/redirect hardening;
+- governed resolved-model validation.
+
+## 3.4. Model Control Plane — `DONE / HARDEN`
+
+Уже есть:
+
+- versioned Model Catalog;
+- latest/effective semantics;
+- immutable organization model policies;
+- allow/deny/default model;
+- request/output limits;
+- pricing requirements;
+- retention/training requirements;
+- budget preflight;
+- immutable route decisions;
+- integrity hash;
+- input-accounting provenance;
+- capability fail-closed;
+- runtime probe.
+
+## 3.5. Knowledge / RAG — `DONE / HARDEN`
+
+Уже есть:
+
+- Knowledge Bases;
+- memberships;
+- document versions;
+- S3-compatible storage;
+- durable upload intent journal;
+- ingestion;
+- extraction;
+- optional OCR;
+- embeddings;
+- pgvector;
+- FTS;
+- Russian lexical profile;
+- RRF hybrid retrieval;
+- deterministic chunking;
+- citations;
+- Answer Passport;
+- retrieval evaluation;
+- generation lifecycle/GC;
+- storage reconciliation.
+
+## 3.6. Audit / Usage / Rate Limit — `DONE / HARDEN`
+
+Уже есть:
+
+- transactional audit outbox;
+- immutable snapshots;
+- dead-letter;
+- retention;
+- cursor pagination;
+- Redis rate limits;
+- fail-closed infrastructure semantics;
+- usage/pricing quality;
+- rollups/reconciliation;
+- UTC reporting.
+
+## 3.7. Governance / accounting hardening V59–V61 — `DONE / HARDEN`
+
+После V58 baseline усилен тремя additive migrations. Они **не заменяют** старые migrations и не означают, что весь FinOps/governance roadmap завершён.
+
+### `V59__governance_integrity_hardening.sql`
+
+Реализовано:
+
+- DB-level validation каждого `allow_model_keys` / `deny_model_keys` элемента по canonical model-key syntax;
+- numeric upper-bound guard для catalog cost envelope, чтобы экстремальные значения не приводили к небезопасной арифметике;
+- запрет control characters в `pricing_version`;
+- усиление `enforce_model_execution_attempt_transition_v53()`:
+  - physical target обязан соответствовать governed route decision;
+  - attempt numbers остаются contiguous;
+  - retry разрешён только после доказанно retry-safe предыдущего attempt;
+  - same-target retry не может незаметно изменить provider/config/deployment/model;
+  - для route с `HARD` monthly budget либо policy `max_request_cost_usd` текущий DB invariant разрешает **ровно один physical attempt**, пока aggregate multi-attempt reservation не моделируется корректно;
+- read-only reconciliation view для unresolved/ambiguous/provider-success-but-chat-not-success/cost-unknown physical executions;
+- новый Knowledge index generation обязан вставляться только как `ACTIVE` без retirement/collection timestamps;
+- retirement chronology защищена DB constraint;
+- chat title provenance больше не может двигаться назад (`USER → AUTO/DEFAULT`, `AUTO → DEFAULT`);
+- legacy node, меняющий title без `title_source`, автоматически переводит provenance в `USER`, чтобы auto-title не перезаписал ручную правку.
+
+### `V60__monthly_cost_commitment_ledger.sql`
+
+Добавлен versioned accounting read model:
+
+```text
+model_cost_commitment_ledger_v60
+```
+
+Он разделяет:
+
+```text
+actual_cost_usd
+reserved_cost_usd
+unknown_cost_count
+carry_forward
+```
+
+и явно различает источники:
+
+```text
+PHYSICAL_ATTEMPT
+PENDING_RESERVATION
+MISSING_PHYSICAL_EVIDENCE
+LEGACY_ROUTE_TIMESTAMP
+```
+
+Ключевая семантика:
+
+- `actual` означает provider-evidenced cost, **не invoice settlement**;
+- STARTED attempt может удерживать pricing-complete upper-bound reservation;
+- pending reservation сохраняется до physical I/O;
+- missing physical evidence не превращается в `$0`;
+- legacy history помечается честно и не получает выдуманный provider timestamp;
+- активные commitments могут переноситься через границу UTC-месяца;
+- добавлен индекс для monthly cost read path.
+
+### `V61__model_policy_array_uniqueness.sql`
+
+Добавлен DB invariant, запрещающий duplicate normalized model keys внутри каждого policy array:
+
+```text
+allow_model_keys
+ deny_model_keys
+```
+
+Historical append-only rows не переписываются автоматически: `VALIDATE CONSTRAINT` должен выявить старые некорректные данные для явного audit/reconciliation.
+
+В Java model repository также появился `JdbcTextArrayReader`, который читает SQL `text[]` через JDBC API без зависимости от конкретного Java array class PostgreSQL driver и гарантированно освобождает `java.sql.Array`.
+
+### Что V59–V61 **не закрывают полностью**
+
+- P0 budget-state representability между domain и историческими V45 constraints;
+- billing-grade provider invoice settlement;
+- отдельный physical-vs-application outcome model;
+- governed provider entry-point enforcement на каждом adapter call-site;
+- safe multi-target fallback для bounded-cost routes;
+- Knowledge `latest uploaded` vs `published searchable` pointer;
+- audit `MANDATORY` contract;
+- OCR/embedding durable physical-attempt ledger;
+- dynamic multi-provider registry/router.
+
+---
+
+# 4. Сначала production blockers: этап 0
+
+> **Период:** октябрь–ноябрь 2026  
+> **Статус:** `NEXT`  
+> **Цель:** не расширять платформу, пока известные P0/P1 не закрыты.
+
+---
+
+## 4.1. P0 — Model budget-state representability — `NEXT`
+
+> **V60 status:** monthly commitment read model уже появился и корректно различает actual/reserved/unknown liability, но он не меняет несовместимую historical route-decision representation. Поэтому P0 остаётся открытым.
+
+Текущая проблема:
+
+```text
+historical cost partially unknown
++
+known lower bound already exceeds monthly budget
+```
+
+Domain способен доказать:
+
+```text
+budgetExceeded = true
+monthlyCostKnown = false
+```
+
+но существующая DB model требует несовместимые значения для `monthly_projected_usd`.
+
+### Что сделать
+
+Ввести явную budget state model, например:
+
+```text
+KNOWN_WITHIN
+KNOWN_EXCEEDED
+UNKNOWN_WITHIN_LOWER_BOUND
+UNKNOWN_EXCEEDED_LOWER_BOUND
+UNVERIFIABLE
+```
+
+или эквивалентную нормализованную модель.
+
+### Требования
+
+- Java/domain и PostgreSQL constraints должны представлять одинаковые состояния;
+- historical unknown commitments не теряются;
+- `HARD` budget fail closed;
+- lower-bound exceed считается exceeded;
+- API различает:
+  - known actual;
+  - reserved;
+  - lower bound;
+  - unknown amount.
+
+### Exit criteria
+
+- integration tests на все budget states;
+- migration с backward-compatible backfill;
+- ни одно валидное domain state не нарушает DB constraint.
+
+---
+
+## 4.2. P1 — Physical outcome отдельно от application outcome — `NEXT`
+
+> **V59 status:** reconciliation queue уже лучше обнаруживает расхождение physical/provider и Chat outcome, но persisted attempt schema всё ещё должна отдельно выражать physical truth и application acceptance.
+
+Нужно разделить:
+
+```text
+transport/provider execution truth
+```
+
+и:
+
+```text
+application semantic acceptance
+```
 
 Пример:
 
-Question:
-"Какой срок хранения договора?"
+```text
+HTTP 200 получен
+provider request выполнен
+usage известен
+но JSON/schema/protocol validation провалилась
+```
 
-Expected evidence:
-documentVersion = 7
-page = 14
+Это не должно автоматически превращаться в потерю billable evidence.
 
-Expected concepts:
-"5 лет"
+### Целевая модель
 
-Dataset должен поддерживать:
+```text
+PhysicalOutcome
+  STARTED
+  KNOWN_REJECTED
+  KNOWN_EXECUTED
+  AMBIGUOUS
 
-expected source;
+ApplicationOutcome
+  ACCEPTED
+  RESPONSE_INVALID
+  GOVERNANCE_REJECTED
+  PARSING_FAILED
+  UNSUPPORTED_CONTENT
+```
 
-expected document version;
+### Persist evidence
 
-expected page/section;
+Если доступно:
 
-expected concepts;
+- HTTP status;
+- provider request ID;
+- provider message/response ID;
+- resolved model;
+- usage;
+- pricing;
+- response validation status;
+- bounded protocol failure code.
 
-answerable/unanswerable;
+---
 
-expected abstention;
+## 4.3. P1 — запрет provider bypass — `NEXT`
 
-tenant/KB scope.
+> **V59 status:** DB transition guard усиливает корректность attempt insert/retry, но не может запретить Java call-site физически вызвать adapter вне `AiExecutionService`. Этот invariant остаётся application-boundary задачей.
 
-4.5. Метрики
+Production provider нельзя вызывать напрямую в обход durable execution boundary.
 
-retrieval recall;
+Целевой invariant:
 
-retrieval precision;
+```text
+OpenAI / Anthropic physical I/O
+    only inside active governed attempt scope
+```
 
-groundedness;
+### Реализация
 
-citation correctness;
+Предпочтительно:
 
-answer relevance;
+```text
+AiExecutionService
+   ↓
+internal ProviderAdapter
+```
 
-abstention correctness;
+а не публичный application-level `AiProvider.sendMessage()` для произвольного call-site.
 
-latency;
+Тестовый ungoverned path допустим только явно:
 
-input units;
+```text
+test-only / package-private
+```
 
-provider usage;
+---
 
-cost/data-quality;
+## 4.4. P1 — ExecutionPlan recovery
 
-model/provider comparison.
+Crash window:
 
-4.6. Regression gates
+```text
+ExecutionPlan committed
+↓
+process crash
+↓
+Attempt #1 не создан
+```
 
-При изменении:
+БД доказывает, что physical call не стартовал.
 
-system prompt/config;
+### Целевой recovery state
 
-embedding model;
+```text
+CREATED_NO_ATTEMPT
+IN_FLIGHT
+SUCCEEDED
+FAILED_RETRYABLE
+FAILED_FINAL
+AMBIGUOUS
+RECONCILIATION_REQUIRED
+```
 
-chunking;
+### Правило
 
-extraction;
+```text
+existing matching plan + zero attempts
+→ safe resume
+```
 
-retrieval parameters;
+а не generic conflict.
 
-RRF;
+---
 
-model/provider;
+## 4.5. P1 — Final request binding
 
-Knowledge ingestion;
+Целевой pipeline:
 
-model-routing policy;
+```text
+history
++
+RAG
++
+context-window fitting
++
+truncation
+↓
+FINAL AiChatRequest
+↓
+execution hash/binding
+↓
+execution guard
+↓
+provider adapter serialization
+```
 
-accounting/envelope logic;
+После binding provider adapter не должен семантически менять request.
 
-запускать regression suite.
+---
 
-Release должен блокироваться при существенной деградации заранее определённых quality thresholds.
+## 4.6. P1 — Provider token/context estimation
 
-4.7. Exit criteria
+Разделить два понятия.
 
-есть versioned evaluation dataset;
+### Governance input units
 
-baseline metrics зафиксированы;
+```text
+UTF8_STRUCTURAL_UNITS_V2
+```
 
-regression можно запускать автоматически;
+Это deterministic internal accounting.
 
-source/citation/passport UX закрывает end-to-end flow;
+### Provider tokens
 
-KNOWLEDGE_ONLY abstention тестируется;
+Это реальное ограничение context window конкретной модели.
 
-retrieval quality перестаёт оцениваться только вручную.
+Нужен:
 
-5. Этап 2 — Multi-provider / multi-model data plane
+- model-specific tokenizer, где доступен;
+- conservative upper-bound strategy;
+- versioned token estimator;
+- `contextWindowTokens`;
+- `maxInputTokens`;
+- `maxOutputTokens`;
+- effective input formula.
 
-Период: октябрь–ноябрь 2026
-Приоритет: высокий
+---
 
-Текущий Model Control Plane умеет принимать governance decision, но deployment пока имеет один физически активный 
-provider/model adapter.
+## 4.7. P1 — Pricing scheme v2 — `NEXT`
 
-Следующий архитектурный шаг — исполняемый provider/model multiplexer.
+> **V59/V60 status:** `pricing_version` и numeric envelope стали строже, а commitment ledger честно сохраняет unknown liability. Но сложные provider-specific pricing tiers/service modes/context bands ещё не моделируются полноценно.
 
-5.1. Целевая схема
+Текущий flat pricing не должен молча представлять сложные pricing models как точный.
 
-ModelRouteDecision
-        ↓
-exact provider/model selection
-        ↓
-Provider Configuration Registry
-        ↓
-Provider Adapter Registry
-        ↓
-Execution
+Создать versioned pricing scheme:
 
-5.2. Требования
+```text
+PricingSchemeVersion
+PricingDimension
+PricingTier
+ServiceMode
+Region
+ContextBand
+CacheRead
+CacheWrite
+Input
+Output
+Reasoning
+Image
+Audio
+Tool
+Batch
+```
 
-immutable selected provider/model;
+Если pricing schema не умеет выразить provider product:
 
-exact provider configuration identity/version;
+```text
+UNPRICED
+```
 
-provider credential reference, но не secret snapshot;
+а не approximation, выдаваемый за actual.
 
-capability-aware execution;
+---
 
-timeout budget per provider;
+## 4.8. P1 — Knowledge searchable publication — `NEXT`
 
-retry budget per provider;
+> **V59 status:** generation insert/retirement lifecycle стал строже, но это **не** решает проблему раннего переключения `current_version_id`. Нужен отдельный searchable/published pointer либо atomic publication swap.
 
-provider-specific retry classification;
+Разделить:
 
-no blind retry after ambiguous I/O;
+```text
+latestUploadedVersionId
+publishedSearchableVersionId
+```
 
-provider-specific idempotency where available;
+или сделать atomic publication pointer swap.
 
-deterministic failure taxonomy;
+Цель:
 
-controlled fallback policy;
+- v1 остаётся searchable, пока v2 не READY;
+- failed v2 не скрывает v1;
+- publication происходит только после successful ACTIVE generation.
 
-audit/provenance;
+---
 
-exact usage/pricing mapping;
+## 4.9. P1 — Knowledge generation retention
 
-runtime health as signal, не immutable catalog field.
+Нужен explicit policy:
 
-5.3. Routing invariant
+- evidence retention;
+- legal hold;
+- privacy deletion;
+- Answer Passport retention;
+- retrieval hit retention;
+- bounded evidence excerpt;
+- generation GC after expiry.
 
-Control Plane принимает governance decision.
-Data Plane исполняет уже разрешённый exact route.
+Нельзя бесконечно держать все chunks только потому, что когда-то был retrieval hit.
 
-Не делать:
+---
 
-if provider == "openai" ...
-else if provider == "anthropic" ...
+## 4.10. P1 — Mixed scanned PDF
 
-внутри ChatService.
+Если отдельные страницы требуют OCR:
 
-Provider selection должен быть самостоятельной boundary.
+```text
+OCR unavailable
+→ document must not silently become READY as complete
+```
 
-5.4. Fallback
+Ввести состояние:
 
-Fallback допустим только если:
+```text
+PARTIAL
+OCR_REQUIRED
+```
 
-policy явно разрешает;
+или fail ingestion в strict mode.
 
-alternative model/provider заранее входит в разрешённый decision space;
+`KNOWLEDGE_ONLY` не должен использовать partial source как полностью индексированный.
 
-новая попытка имеет отдельное immutable evidence;
+---
 
-ambiguous first call не маскируется retry;
+## 4.11. P1 — Parser isolation
 
-budget/data-residency/capability ограничения выполняются повторно.
+PDF/OOXML — untrusted input.
 
-5.5. Exit criteria
+Текущий timeout в JVM полезен, но не является sandbox.
 
-минимум два реальных provider adapters исполнимы внутри одного deployment;
+### Цель
 
-route decision однозначно приводит к выбранному adapter/config;
+Отдельный ingestion worker/container:
 
-provider-specific failure mapping покрыт тестами;
+```text
+backend
+  ↓ durable job
+parser worker
+  ↓ bounded result
+backend/index pipeline
+```
 
-fallback не нарушает ambiguity invariant;
+Ограничения worker:
 
-usage привязан к exact resolved model/provider.
+- CPU;
+- RAM;
+- disk;
+- timeout;
+- no network by default;
+- read-only base image;
+- ephemeral filesystem.
 
-6. Этап 3 — Model Registry / Runtime expansion
+---
 
-Период: ноябрь 2026
+## 4.12. P1 — OCR/Embedding physical ledger
 
-Базовый Model Catalog уже существует. Расширять его, не создавать параллельный registry.
+External OCR/embedding calls могут быть billable.
 
-Добавить
+Нужен общий durable attempt pattern:
 
-provider configuration identity/version;
+```text
+KnowledgeProviderOperation
+KnowledgeProviderAttempt
+```
 
-richer capabilities;
+для:
 
-reasoning modes;
+- embeddings;
+- OCR;
+- reranker;
+- external document intelligence.
 
-structured output capability metadata;
+### Должно храниться
 
-multimodal limits;
+- operation ID;
+- exact provider/config;
+- batch identity;
+- request hash;
+- STARTED;
+- outcome certainty;
+- usage;
+- cost;
+- retry safety.
 
-data residency;
+---
 
-provider region;
+## 4.13. P1 — Audit REQUIRED semantics
 
-cache-read/cache-write pricing dimensions;
+`Propagation.REQUIRED` не доказывает наличие outer business transaction.
 
-batch pricing;
+Production target:
 
-deprecation dates;
+```text
+recordRequiredInCurrentTransaction
+→ Propagation.MANDATORY
+```
 
-production approval workflow;
+Отдельный API:
 
-provider health/circuit state как runtime signal;
+```text
+recordStandalone
+tryRecordStandalone
+```
 
-provider/model compatibility metadata.
+чтобы transactional semantics были видны из имени метода.
 
-Важный принцип
+---
 
-Immutable catalog fact:
+## 4.14. P1 — Physical spend ledger — `HARDEN`
 
-что заявлено/разрешено/версионировано
+> **V60 status:** первый корректный physical cost commitment read model уже реализован. Поэтому задача больше не «создать ledger с нуля», а довести его до FinOps/billing-grade слоя.
 
-Runtime signal:
+Уже есть `model_cost_commitment_ledger_v60`, который различает provider-evidenced actual cost, upper-bound reservations, unknown liability и legacy/missing-evidence cases.
 
-что сейчас доступно/здорово/деградирует
+Остаётся добавить:
 
-Не смешивать эти сущности.
+- durable settlement entries, а не только view;
+- invoice/billing export reconciliation;
+- adjustment/credit/refund entries без переписывания historical attempt evidence;
+- OCR/embedding/reranker/tool/agent spend;
+- stable FinOps APIs/rollups;
+- budget enforcement, использующий согласованную commitment semantics;
+- operator reconciliation workflow.
 
-Frontend не должен хардкодить доступные модели.
+Usage UI отвечает на:
 
-7. Этап 4 — Organization Model Policies expansion
+```text
+что получил пользователь
+```
 
-Период: ноябрь–декабрь 2026
+FinOps должен также отвечать:
 
-Текущий policy уже покрывает organization-level allow/deny/default, limits, cost/budget и некоторые provider-data требования.
+```text
+что реально стоило денег у provider
+```
 
-Расширить scope до:
+Источником actual provider spend должен быть physical attempt ledger, включая:
 
-role;
+- application rejected;
+- ambiguous;
+- partial;
+- retries;
+- embeddings;
+- OCR;
+- tools;
+- agents.
 
-group/department;
+---
 
-assistant/use case;
+## 4.15. P1 — Production mode
 
-data classification;
+Не завязывать security solely на точные profile names.
 
-provider region/residency;
+Добавить explicit:
 
-model capabilities;
+```text
+safeai.environment.production=true
+```
 
-fallback permissions;
+или canonical environment mode.
 
-approved reasoning modes;
+Все production validators используют одну abstraction.
 
-provider-specific restrictions;
+---
 
-local-model-only policy;
+## 4.16. Закрытый hardening — Model policy canonicality V59/V61 — `DONE`
 
-tool/structured-output permission boundaries.
+Теперь DB проверяет два разных свойства model-policy arrays:
 
-Не превращать текущий record в универсальный mega-policy.
+```text
+V59 → каждый key syntactically canonical
+V61 → каждый key встречается внутри массива не более одного раза
+```
 
-Этот этап должен подготовить переход к General Policy Engine.
+Это важно для deterministic policy evaluation, stable integrity hashing и понятного audit diff.
 
-8. Этап 5 — AI FinOps / Budgets
+Остаётся не смешивать это с отдельным вопросом **allow/deny conflict semantics**: precedence между двумя списками определяется domain policy и должна тестироваться отдельно.
 
-Период: декабрь 2026
+---
 
-Текущий monthly budget — conservative governance preflight.
+## 4.17. Закрытый/частичный hardening — Reconciliation visibility V59 — `DONE / HARDEN`
 
-Следующий этап — полноценный FinOps control plane.
+`model_execution_reconciliation_queue_v54` теперь явно выделяет как минимум:
 
-8.1. Budget hierarchy
+```text
+PHYSICAL_STARTED_UNRESOLVED
+PHYSICAL_OUTCOME_UNKNOWN
+PROVIDER_SUCCEEDED_CHAT_NOT_SUCCEEDED
+PROVIDER_SUCCEEDED_COST_UNKNOWN
+FAILED_CALL_COST_NOT_PROVEN
+```
 
-Organization
-→ Department
-→ User
-→ Assistant
-→ Agent
-→ Model
+View остаётся **read-only** и не является автоматическим retry engine.
 
-8.2. Возможности
+Следующий этап — Reconciliation Center с operator actions, evidence attachments и разрешённым retry только после доказанной safety.
 
-monthly organization budget;
+---
 
-department budget;
+# 5. Release 0.8 — Hardened Core
 
-user quota;
+> **Период:** ноябрь–декабрь 2026  
+> **Цель:** production-capable single-runtime baseline без новых рискованных agent features.
 
-model budget;
+## Обязательные результаты
 
-input/output unit quota;
+- закрыты P0/P1 этапа 0;
+- fresh `V1 → V61+` migration;
+- representative populated upgrade;
+- full backend test suite;
+- migration integrity suite;
+- backup + restore drill;
+- S3 recovery drill;
+- Redis outage behavior;
+- provider timeout/reconciliation tests;
+- load baseline;
+- security log review;
+- operational runbooks.
 
-request quota;
+## Новые platform capabilities
 
-daily limit;
+### Resumable streaming
 
-hard/soft budget;
+Добавить потоковый ответ без потери durable semantics.
 
-reservation;
+```text
+provider stream
+↓
+server event stream
+↓
+client
+```
 
-reconciliation;
+Но persisted `ChatTurn` остаётся source of truth.
 
-provider invoice reconciliation;
+Нужны:
 
-versioned pricing;
+- `SSE` — Server-Sent Events, односторонний поток событий от backend к browser;
+- sequence number;
+- reconnect cursor;
+- terminal persisted result;
+- bounded buffering;
+- disconnect handling;
+- no duplicate finalization.
 
-currency semantics;
+### Cancel request
 
-unpriced/unknown quality;
+Пользователь может отменить logical operation.
 
-forecast.
+Важно различать:
 
-8.3. Реакции
+```text
+client stopped waiting
+```
 
-Пример:
+и:
 
-80%   -> warning
-100%  -> restrict/downgrade according to policy
->100% -> controlled block where HARD requires it
+```text
+provider definitely cancelled
+```
 
-8.4. Dashboard
+Если provider cancellation certainty unknown:
 
-Cost/usage:
+```text
+do not claim KNOWN_NOT_EXECUTED
+```
 
-organization;
+### Chat search
 
-department;
+- full-text search;
+- by date;
+- by model;
+- by Knowledge Base;
+- archived chats;
+- title/source filters.
 
-user;
+### Projects / Workspaces
 
-model;
+Над `Chat` добавить managed workspace:
 
-provider;
+```text
+Project
+  ├─ members
+  ├─ default Knowledge Bases
+  ├─ default Assistant later
+  ├─ model policy
+  ├─ tags
+  └─ retention policy
+```
 
-use case;
+Project не должен ломать organization tenant boundary.
 
-assistant;
+---
 
-agent;
+# 6. Release 0.9 — Dynamic Multi-Provider Data Plane
 
-Knowledge/RAG;
+> **Период:** декабрь 2026 → Q1 2027  
+> **Приоритет:** `P1`
 
-embeddings;
+Сейчас Control Plane развит сильнее physical runtime.
 
-cached-token savings;
+Цель — route decision должен реально выбирать execution target внутри одного deployment.
 
-forecast;
+---
 
-budget utilization;
+## 6.1. Provider Configuration Registry
 
-unknown/unpriced/pricing-failed quality.
+Создать versioned configuration identity:
 
-Unknown cost никогда не считать нулём.
-
-8.5. Exit criteria
-
-preflight и actual reconciled usage разделены;
-
-reservations корректно release/reconcile;
-
-ambiguous operations учитываются консервативно;
-
-pricing version фиксируется;
-
-budget decisions auditable.
-
-9. Этап 6 — Data Classification + DLP
-
-Период: конец 2026 → начало 2027
-
-Целевая цепочка
-
-User input / retrieved context
-        ↓
-Data Classification
-        ↓
-DLP / PII / Secrets
-        ↓
-Policy Engine
-        ↓
-Model Routing
-        ↓
+```text
 Provider
-
-Классы
-
-PUBLIC
-INTERNAL
-CONFIDENTIAL
-RESTRICTED
-
-Detection
-
-email/phone;
-
-passport/ID;
-
-card/payment data;
-
-API keys;
-
-tokens;
-
-passwords;
-
-private keys;
-
-access credentials;
-
-internal identifiers;
-
-company-specific secret dictionaries.
-
-Actions
-
-ALLOW
-WARN
-REDACT
-BLOCK
-REQUIRE_APPROVAL
-ROUTE_TO_LOCAL_MODEL
-
-DLP decision должен иметь immutable provenance/audit.
-
-Prompt instructions не являются DLP authorization.
-
-10. Этап 7 — Groups / Departments
-
-Период: начало 2027
-
-Текущая модель:
-
-Organization
-→ Users
-
-Целевая:
-
-Organization
-→ Groups / Departments
-→ Users
-
-На group назначаются:
-
-Knowledge access;
-
-Assistant access;
-
-Model access;
-
-budget;
-
-DLP policy;
-
-tool access;
-
-data classification rules;
-
-connector ACL mapping.
-
-Group membership должен учитываться tenant-safe и versioned/auditable там, где влияет на execution.
-
-11. Этап 8 — General Policy Engine
-
-Период: начало 2027
-
-OrganizationModelPolicy остаётся model-governance policy.
-
-Более широкий enterprise policy не должен превращать его в mega-object.
-
-Создать централизованный policy evaluation layer.
+ProviderConfiguration
+ProviderDeployment
+CredentialReference
+```
 
 Пример:
 
-WHEN
-  organization = ACME
-  AND department = FINANCE
-  AND classification >= CONFIDENTIAL
-THEN
-  deny external providers
-  allow approved local models
-  audit = HIGH
+```text
+OpenAI
+ ├─ prod-eu
+ └─ prod-us
 
-Decision space:
+Anthropic
+ └─ prod
 
+Azure OpenAI
+ ├─ germany
+ └─ sweden
+
+Local
+ └─ gpu-cluster-a
+```
+
+Secret не сохраняется snapshot-ом в route decision.
+
+Хранится:
+
+```text
+credentialReferenceId
+credentialVersion
+```
+
+---
+
+## 6.2. Adapter Registry
+
+```text
+ProviderAdapterRegistry
+    ├─ OpenAIAdapter
+    ├─ AnthropicAdapter
+    ├─ AzureOpenAIAdapter
+    ├─ AWSBedrockAdapter
+    ├─ GoogleVertexAdapter
+    └─ OpenAICompatibleAdapter
+```
+
+Не делать giant `if provider == ...` внутри ChatService.
+
+---
+
+## 6.3. Dynamic routing
+
+Input:
+
+- organization policy;
+- requested logical model;
+- required capabilities;
+- region;
+- classification;
+- budget;
+- health;
+- latency tier.
+
+Output:
+
+```text
+exact ProviderExecutionTarget
+```
+
+Target immutable для конкретного attempt.
+
+---
+
+## 6.4. Circuit Breaker
+
+**Circuit breaker** — механизм временного отключения provider/deployment после серии ошибок.
+
+States:
+
+```text
+CLOSED
+OPEN
+HALF_OPEN
+```
+
+Но circuit state — runtime signal, а не catalog fact.
+
+---
+
+## 6.5. Health-aware routing
+
+Health signal:
+
+- success rate;
+- timeout rate;
+- latency;
+- rate-limit pressure;
+- provider outage;
+- deployment availability.
+
+Нельзя использовать transient health как immutable provenance field.
+
+Decision сохраняет:
+
+```text
+какой signal snapshot повлиял
+```
+
+но не переписывает catalog.
+
+---
+
+## 6.6. Controlled fallback
+
+Fallback разрешён только если:
+
+- policy его разрешила заранее;
+- alternate target входит в approved route space;
+- capability requirements совпадают;
+- data-residency requirements совпадают;
+- budget повторно проверен;
+- previous outcome retry/fallback-safe;
+- создаётся новый physical attempt.
+
+После `AMBIGUOUS` fallback запрещён без reconciliation.
+
+Дополнительный текущий invariant V59:
+
+```text
+HARD monthly budget OR max_request_cost_usd configured
+→ exactly one physical attempt
+```
+
+До снятия этого ограничения multi-provider fallback для bounded-cost routes требует **aggregate multi-attempt reservation model**: budget должен резервировать не один request envelope, а максимально допустимую стоимость всей заранее разрешённой цепочки attempts/fallbacks.
+
+---
+
+## 6.7. Provider-specific idempotency
+
+Использовать provider idempotency/client-request mechanism только если он документирован.
+
+Не считать наличие собственного UUID гарантией provider-side exactly-once.
+
+---
+
+## 6.8. Canary / Champion-Challenger
+
+**Canary** — небольшой процент production traffic идёт новой модели.
+
+**Champion/Challenger** — текущая основная модель сравнивается с кандидатом.
+
+Modes:
+
+```text
+LIVE
+SHADOW
+EVAL_ONLY
+```
+
+`SHADOW` не должен отправлять confidential data без отдельной policy.
+
+---
+
+# 7. Model Platform 2027
+
+> **Период:** Q1 2027
+
+---
+
+## 7.1. Расширенный Model Registry
+
+Не создавать второй registry параллельно существующему Model Catalog.
+
+Расширить Catalog:
+
+- reasoning capability;
+- reasoning effort modes;
+- structured outputs;
+- tools;
+- image input;
+- image generation;
+- audio input;
+- audio output;
+- streaming;
+- JSON Schema support;
+- max image size;
+- file support;
+- context window;
+- output limit;
+- region;
+- residency;
+- provider lifecycle;
+- deprecation date;
+- replacement model;
+- safety profile;
+- latency class;
+- pricing scheme;
+- cache capability;
+- batch capability.
+
+---
+
+## 7.2. Model lifecycle
+
+```text
+DRAFT
+APPROVED
+ACTIVE
+DEPRECATED
+BLOCKED
+RETIRED
+```
+
+Scheduled transitions.
+
+Нельзя удалять historical version, которая уже использовалась route decision.
+
+---
+
+## 7.3. Model approval workflow
+
+Перед production activation:
+
+```text
+catalog version
+↓
+technical evaluation
+↓
+security evaluation
+↓
+cost evaluation
+↓
+human approval
+↓
+effectiveFrom
+```
+
+---
+
+## 7.4. Local / private models
+
+Поддержать OpenAI-compatible локальные inference endpoints.
+
+Use cases:
+
+- confidential data;
+- offline environment;
+- predictable cost;
+- data residency;
+- customer-managed GPU.
+
+Платформа должна одинаково применять:
+
+- tenant;
+- DLP;
+- policy;
+- audit;
+- budget;
+- usage;
+- route evidence.
+
+---
+
+# 8. Structured Output / Vision / Multimodal
+
+> **Период:** Q1 2027  
+> До реализации capability flags остаются fail-closed.
+
+---
+
+## 8.1. Structured Output
+
+**Structured Output** — ответ модели, валидируемый по JSON Schema.
+
+Pipeline:
+
+```text
+JSON Schema
+↓
+provider request
+↓
+response
+↓
+strict schema validation
+↓
+domain mapping
+```
+
+Нужны:
+
+- schema version;
+- schema hash;
+- provider capability;
+- strict server-side validation;
+- retry policy только для safe generation failure;
+- audit provenance.
+
+---
+
+## 8.2. Vision
+
+Image input:
+
+- PNG/JPEG/WebP;
+- bounded dimensions;
+- byte limit;
+- media-type verification;
+- malware/image parser boundary;
+- EXIF privacy stripping where policy requires;
+- DLP before external provider.
+
+---
+
+## 8.3. Audio
+
+Optional 2027:
+
+- speech-to-text;
+- meeting transcription;
+- audio summarization;
+- text-to-speech.
+
+Требования:
+
+- explicit consent/use-case;
+- retention;
+- storage policy;
+- speaker metadata policy;
+- cost accounting;
+- language support.
+
+---
+
+## 8.4. Files
+
+Model file input не должен обходить Knowledge ingestion safeguards.
+
+Предпочтительно:
+
+```text
+file
+↓
+SafeAI upload/validation
+↓
+policy/DLP
+↓
+controlled provider file API
+```
+
+---
+
+# 9. Knowledge Platform 1.0
+
+> **Период:** Q1 2027
+
+---
+
+## 9.1. Reranker
+
+**Reranker** — второй ranking stage после initial vector/lexical retrieval.
+
+Pipeline:
+
+```text
+100 candidates
+↓
+hybrid retrieval
+↓
+20 candidates
+↓
+reranker
+↓
+top 5
+```
+
+Provider может быть:
+
+- local cross-encoder;
+- external rerank API;
+- LLM-based scorer.
+
+Каждый external rerank call получает cost/provenance attempt.
+
+---
+
+## 9.2. Semantic chunking
+
+Current chunking deterministic/structure-aware.
+
+Добавить optional semantic strategy:
+
+```text
+STRUCTURE_V1
+SEMANTIC_V1
+HYBRID_V1
+```
+
+Version strategy обязательно сохраняется в chunk provenance.
+
+---
+
+## 9.3. Query rewriting
+
+Для сложных вопросов:
+
+```text
+user query
+↓
+query analyzer
+├─ lexical form
+├─ semantic form
+├─ synonyms
+└─ optional subqueries
+```
+
+Нужен guard против query drift.
+
+---
+
+## 9.4. Multi-query retrieval
+
+Один вопрос может порождать несколько retrieval queries.
+
+Результаты объединяются и дедуплицируются.
+
+Evaluation должна доказать, что это реально повышает recall.
+
+---
+
+## 9.5. Metadata filters
+
+Фильтры:
+
+- document type;
+- date;
+- department;
+- owner;
+- tags;
+- region;
+- confidentiality;
+- lifecycle;
+- source connector.
+
+ACL применяется отдельно и раньше.
+
+---
+
+## 9.6. Citation entailment verifier
+
+Текущая citation validation доказывает structural source validity.
+
+Добавить отдельный optional verifier:
+
+```text
+claim
++
+evidence excerpt
+↓
+SUPPORTED
+PARTIAL
+UNSUPPORTED
+UNKNOWN
+```
+
+Это не абсолютная «проверка истины», а groundedness/evidence consistency signal.
+
+---
+
+## 9.7. Knowledge graph — `OPTIONAL`
+
+Для domains с явными сущностями:
+
+```text
+Person
+Organization
+Contract
+Product
+System
+Policy
+```
+
+Можно добавить graph extraction и graph-assisted retrieval.
+
+Не делать graph обязательным для обычного RAG.
+
+---
+
+## 9.8. Duplicate / near-duplicate detection
+
+Content SHA ловит exact duplicate.
+
+Добавить near-duplicate:
+
+- MinHash/SimHash;
+- embedding similarity;
+- source identity.
+
+---
+
+## 9.9. Knowledge freshness
+
+Показывать:
+
+```text
+last source update
+last sync
+indexed version
+stale reason
+```
+
+Policy может запрещать source старше N дней.
+
+---
+
+# 10. RAG Evaluation Platform
+
+> **Период:** Q1 2027  
+> **Приоритет:** высокий
+
+---
+
+## 10.1. Evaluation Dataset
+
+Versioned dataset:
+
+```text
+EvaluationSuite
+EvaluationSuiteVersion
+EvaluationCase
+```
+
+Case:
+
+- question;
+- tenant/KB scope;
+- expected evidence;
+- expected concepts;
+- expected abstention;
+- risk class;
+- language;
+- tags.
+
+---
+
+## 10.2. Retrieval metrics
+
+- Recall@K;
+- Precision@K;
+- MRR;
+- nDCG;
+- source coverage.
+
+Пояснение:
+
+**Recall@K** — попал ли нужный источник в первые K результатов.  
+**MRR** — насколько высоко расположен первый правильный результат.  
+**nDCG** — качество порядка нескольких релевантных результатов.
+
+---
+
+## 10.3. Answer metrics
+
+- groundedness;
+- citation correctness;
+- answer relevance;
+- abstention correctness;
+- completeness;
+- unsupported-claim rate.
+
+---
+
+## 10.4. Human labels
+
+LLM-as-judge нельзя считать единственным «истинным» evaluator.
+
+Нужны:
+
+- human review sample;
+- reviewer disagreement;
+- adjudication;
+- versioned rubric.
+
+---
+
+## 10.5. Regression gates
+
+CI/release gate после изменения:
+
+- model;
+- prompt;
+- chunking;
+- embedding;
+- reranker;
+- query rewriting;
+- extraction;
+- OCR;
+- retrieval weights;
+- policy;
+- context builder.
+
+---
+
+## 10.6. Offline / online evaluation
+
+Offline:
+
+```text
+fixed dataset
+```
+
+Online:
+
+```text
+user feedback
+thumbs up/down
+citation opened
+answer copied
+follow-up rate
+abandonment
+```
+
+Online signals не должны автоматически заменять explicit quality labels.
+
+---
+
+# 11. Enterprise Knowledge Connectors
+
+> **Период:** Q1–Q2 2027
+
+Manual upload остаётся.
+
+Добавить connectors:
+
+- Microsoft SharePoint;
+- OneDrive;
+- Google Drive;
+- Confluence;
+- Notion;
+- Jira;
+- GitHub/GitLab repositories;
+- Slack;
+- web crawler;
+- S3 bucket;
+- internal REST API;
+- SQL read-only source;
+- CRM/Service Desk — по реальным customer use cases.
+
+---
+
+## 11.1. Connector model
+
+```text
+ConnectorDefinition
+ConnectorInstance
+ConnectorCredentialReference
+ConnectorSyncRun
+ConnectorCursor
+ConnectorSourceItem
+```
+
+---
+
+## 11.2. Incremental sync
+
+```text
+source cursor
+↓
+changed items only
+↓
+immutable SafeAI version
+↓
+extract
+↓
+chunk
+↓
+embed
+↓
+publish
+```
+
+---
+
+## 11.3. ACL mirroring
+
+Если source имеет permissions, SafeAI должен переносить их.
+
+Пример:
+
+```text
+SharePoint document ACL
+↓
+source principal mapping
+↓
+SafeAI group/user ACL
+```
+
+Нельзя индексировать документ globally, а фильтровать permission только в UI.
+
+---
+
+## 11.4. Deletion / tombstone
+
+Source delete:
+
+```text
+source item deleted
+↓
+SafeAI tombstone
+↓
+stop serving new retrieval
+↓
+retention/legal-hold policy
+↓
+eventual physical cleanup
+```
+
+---
+
+## 11.5. Sync observability
+
+- last success;
+- last partial;
+- last failure;
+- changed count;
+- deleted count;
+- skipped count;
+- rate limited;
+- credential expired;
+- next retry.
+
+---
+
+# 12. Identity 2.0 — OIDC / SCIM / Enterprise SSO
+
+> **Период:** Q1–Q2 2027
+
+---
+
+## 12.1. OIDC
+
+**OIDC (OpenID Connect)** — стандарт входа через корпоративный Identity Provider.
+
+Поддержать:
+
+- Microsoft Entra ID;
+- Okta;
+- Google Workspace;
+- generic OIDC.
+
+---
+
+## 12.2. SAML — только по необходимости
+
+SAML поддерживать при customer requirement.
+
+Не делать основным новым integration path, если OIDC закрывает use case.
+
+---
+
+## 12.3. SCIM
+
+**SCIM** — стандарт автоматического управления пользователями и группами.
+
+```text
+IdP
+↓
+create / update / disable
+↓
+SafeAI
+```
+
+При disable:
+
+```text
+user disabled
+↓
+tokenVersion/security epoch
+↓
+refresh revoke
+↓
+active access disappears
+```
+
+---
+
+## 12.4. Group sync
+
+```text
+IdP group
+↓
+SafeAI Group
+↓
+KB / Assistant / Policy / Tool access
+```
+
+---
+
+## 12.5. Just-in-Time provisioning
+
+Optional:
+
+первый OIDC login может создать SafeAI user по approved mapping.
+
+Нужны:
+
+- domain allowlist;
+- role mapping policy;
+- organization mapping;
+- audit.
+
+---
+
+## 12.6. Step-up authentication
+
+Для рискованных действий требовать повторное подтверждение identity.
+
+Примеры:
+
+- tool writes;
+- production DB action;
+- policy change;
+- export sensitive data;
+- destructive operation.
+
+---
+
+## 12.7. Passkeys / WebAuthn — `OPTIONAL`
+
+Для local-admin or high-risk approval flow.
+
+**Passkey** — phishing-resistant credential, использующий public-key authentication.
+
+---
+
+## 12.8. Continuous Access Evaluation
+
+2027 extension:
+
+получать security-state changes от IdP не только при следующем login.
+
+Пример:
+
+```text
+user terminated in IdP
+↓
+security signal
+↓
+SafeAI session revoked quickly
+```
+
+Можно ориентироваться на OpenID Shared Signals / CAEP после повторной проверки актуальной спецификации перед реализацией.
+
+---
+
+# 13. Groups / Departments / Teams
+
+> **Период:** Q1 2027
+
+Current:
+
+```text
+Organization
+  └─ Users
+```
+
+Target:
+
+```text
+Organization
+  ├─ Department
+  │   ├─ Group
+  │   └─ Users
+  └─ Team
+```
+
+На group/team назначаются:
+
+- Knowledge access;
+- Assistants;
+- models;
+- budget;
+- DLP policy;
+- tool permission;
+- connectors;
+- data classification;
+- retention;
+- evaluation scope.
+
+Group membership изменения auditable.
+
+---
+
+# 14. General Policy Engine
+
+> **Период:** Q2 2027
+
+`OrganizationModelPolicy` остаётся model-governance object.
+
+Не превращать его в mega-policy.
+
+---
+
+## 14.1. Policy input
+
+```text
+subject
+organization
+group
+role
+assistant
+use case
+data classification
+knowledge source
+model
+provider
+region
+tool
+action
+risk
+time
+```
+
+---
+
+## 14.2. Policy outcomes
+
+```text
 ALLOW
 DENY
 WARN
 REDACT
 REQUIRE_APPROVAL
 ROUTE
+LIMIT
+LOCAL_ONLY
+```
 
-Policy decision должен быть:
+---
 
-versioned;
+## 14.3. Example
 
-auditable;
+```text
+WHEN
+  department = FINANCE
+  AND data.classification >= CONFIDENTIAL
+THEN
+  external_provider = DENY
+  allowed_model_group = LOCAL_APPROVED
+  audit_level = HIGH
+```
 
-immutable per execution;
+---
 
-связан с model route / DLP / tool execution provenance.
+## 14.4. Policy decision provenance
 
-12. Этап 9 — Enterprise Knowledge Connectors
+Каждый важный execution сохраняет:
 
-Период: Q1 2027
+- policy set version;
+- matched rules;
+- decision;
+- reason codes;
+- input facts hash;
+- evaluator version.
 
-Manual upload сохранить.
+---
 
-Добавить:
+## 14.5. Policy simulator
 
-Confluence;
+Admin UI:
 
-SharePoint;
+```text
+"If user X asks assistant Y with CONFIDENTIAL data,
+what happens?"
+```
 
-OneDrive;
+Результат без реального provider call.
 
-Google Drive;
+---
 
-Notion;
+# 15. Data Classification + DLP
 
-Jira;
+> **Период:** Q2 2027  
+> **DLP = Data Loss Prevention, защита от утечки данных.**
 
-Git;
+---
 
-Web site;
+## 15.1. Classification
 
-internal API.
+Базовые классы:
 
-Connector pipeline
+```text
+PUBLIC
+INTERNAL
+CONFIDENTIAL
+RESTRICTED
+```
 
-Source
-→ sync cursor
-→ incremental sync
-→ immutable version
-→ extraction
-→ chunks
-→ embeddings
-→ index
+Organization может создать свои labels.
 
-Обязательно
+---
 
-ACL mirroring;
+## 15.2. Detectors
 
-source deletion handling;
+- email;
+- phone;
+- passport/ID;
+- payment/card data;
+- bank account;
+- tax identifiers;
+- API keys;
+- bearer tokens;
+- passwords;
+- private keys;
+- connection strings;
+- source code secrets;
+- customer-specific dictionaries.
 
-sync health;
+---
 
-retry;
+## 15.3. Inspection points
 
-last/next sync;
+DLP применяется к:
 
-partial failure;
+```text
+user prompt
+uploaded files
+retrieved chunks
+connector content
+model output
+tool arguments
+tool result
+agent memory
+export
+```
 
-credential rotation;
+---
 
-connector-specific rate limits;
+## 15.4. Actions
 
-source provenance;
+```text
+ALLOW
+WARN
+REDACT
+BLOCK
+REQUIRE_APPROVAL
+ROUTE_TO_LOCAL
+```
 
-tenant isolation;
+---
 
-tombstone/deletion semantics.
+## 15.5. Redaction provenance
 
-13. Этап 10 — SSO / SCIM
+Нужно сохранять:
 
-Период: Q1 2027
+- detector version;
+- number/type detections;
+- redaction ranges/hash;
+- action;
+- policy version.
 
-Authentication
+Не хранить secret в audit details.
 
-OIDC;
+---
 
-Microsoft Entra ID;
+## 15.6. Data egress policy
 
-Okta;
+Пример:
 
-Google Workspace;
+```text
+RESTRICTED
+→ local provider only
 
-SAML только при реальной customer requirement.
+CONFIDENTIAL
+→ approved EU region only
 
-Provisioning
+INTERNAL
+→ approved providers
 
-SCIM;
+PUBLIC
+→ all allowed
+```
 
-automatic user create/disable;
+---
 
-group sync;
+# 16. AI FinOps
 
-department sync.
+> **Период:** Q2 2027  
+> **FinOps** — управление затратами: кто потратил, на что, сколько и почему.
 
-Ключевой invariant:
+---
 
-Employee disabled in IdP
-→ SafeAI user disabled
-→ security epoch/session invalidation
-→ AI access disappears
+## 16.1. Physical spend ledger
 
-14. Этап 11 — AI Governance / Use Case Registry
+### Current baseline после V60
 
-Период: Q1–Q2 2027
+Уже существует read model `model_cost_commitment_ledger_v60` с отдельными evidenced actual costs, reservations и unknown liability. Он является **accounting commitment view**, но ещё не billing-grade settlement ledger.
 
-Добавить AI Use Case Registry:
+### Target source of truth
 
-Use case
+```text
+PhysicalSpendEntry
+```
+
+`PhysicalSpendEntry` должен стать durable immutable ledger entry, а V60 view может использоваться как migration/read-model foundation и reconciliation input.
+
+Создаётся из provider attempts:
+
+- chat generation;
+- embeddings;
+- OCR;
+- rerank;
+- image;
+- audio;
+- tools;
+- agent runs.
+
+---
+
+## 16.2. Cost states
+
+```text
+KNOWN
+FREE
+UNPRICED
+PARTIAL
+ESTIMATED
+RECONCILIATION_PENDING
+INVOICE_ADJUSTED
+```
+
+Unknown никогда не становится zero.
+
+---
+
+## 16.3. Budget hierarchy
+
+```text
+Organization
+  ↓
+Department
+  ↓
+Project
+  ↓
+Assistant
+  ↓
+User
+  ↓
+Agent
+  ↓
+Model
+```
+
+---
+
+## 16.4. Budget actions
+
+Threshold example:
+
+```text
+70%  informational
+80%  warning
+90%  downgrade/route
+100% block for HARD policy
+```
+
+---
+
+## 16.5. Reservations
+
+До external call:
+
+```text
+reserve worst-case cost
+```
+
+После:
+
+```text
+settle actual
+```
+
+Если outcome ambiguous:
+
+```text
+retain conservative commitment
+```
+
+---
+
+## 16.6. Provider invoice reconciliation
+
+Импорт provider billing export/invoice:
+
+```text
+provider invoice
+↓
+match request/usage/time
+↓
+reconcile
+↓
+adjustment entry
+```
+
+Не переписывать historical attempt evidence.
+
+---
+
+## 16.7. Showback / Chargeback
+
+**Showback** — показать подразделению его расходы.  
+**Chargeback** — реально распределить стоимость по внутренним cost center.
+
+Dimensions:
+
+- organization;
+- department;
+- project;
+- user;
+- assistant;
+- model;
+- provider;
+- Knowledge;
+- agent;
+- tool.
+
+---
+
+## 16.8. Forecasting
+
+Forecast:
+
+- daily burn rate;
+- end-of-month estimate;
+- seasonality;
+- committed reservations;
+- unknown risk.
+
+Forecast не является accounting truth.
+
+---
+
+# 17. Prompt / Configuration Registry
+
+> **Период:** Q2 2027
+
+System prompt не должен существовать только как строка в Java/Git.
+
+---
+
+## 17.1. Entities
+
+```text
+PromptTemplate
+PromptVersion
+ConfigurationBundle
+ConfigurationVersion
+```
+
+---
+
+## 17.2. Lifecycle
+
+```text
+DRAFT
+IN_REVIEW
+APPROVED
+ACTIVE
+RETIRED
+```
+
+---
+
+## 17.3. Promotion
+
+```text
+DEV
+↓
+STAGE
+↓
+PROD
+```
+
+С exact version, approval и rollback.
+
+---
+
+## 17.4. Provenance
+
+ChatTurn/AgentRun хранит:
+
+```text
+promptVersionId
+configurationVersionId
+```
+
+---
+
+## 17.5. Prompt experiments
+
+Controlled A/B:
+
+```text
+variant A
+variant B
+```
+
+Evaluation first.
+
+Нельзя менять prompt для 50% production пользователей без audit/experiment identity.
+
+---
+
+# 18. AI Use Case Registry / Governance
+
+> **Период:** Q2 2027
+
+Создать register:
+
+```text
+UseCase
 Owner
-Purpose
-Models
-Data classes
-Human oversight
-Risk
-Approval state
+BusinessPurpose
+AllowedModels
+DataClasses
+HumanOversight
+RiskLevel
+AllowedTools
+Retention
+ApprovalState
+```
 
-Risk profile может учитывать:
+---
 
-personal/confidential data;
+## Risk levels
 
-autonomous actions;
+Например:
 
-external provider;
+```text
+LOW
+MEDIUM
+HIGH
+CRITICAL
+```
 
-employment/financial/legal/customer impact;
+Risk — organization governance construct, не юридическое заключение платформы.
 
-human oversight.
+---
 
-SafeAI Desk обеспечивает technical governance workflow, а не юридическое заключение.
+## Use-case approval
 
-15. Этап 12 — AI Literacy / Acceptable Use
+```text
+DRAFT
+REVIEW
+APPROVED
+SUSPENDED
+RETIRED
+```
 
-Период: Q1–Q2 2027
+Execution может требовать active approved use case.
 
-При первом входе пользователь принимает organization AI policy.
+---
 
-Хранить:
+# 19. AI Literacy / Acceptable Use
 
+> **Период:** Q2 2027
+
+Organization AI policy acceptance:
+
+```text
 policyVersion
 userId
 organizationId
 acceptedAt
+```
 
-При новой policy version можно требовать re-acceptance.
+При новой version:
 
-Добавить:
+```text
+forced re-acceptance
+```
 
-version history;
+Admin dashboard:
 
-forced reacceptance;
+- accepted;
+- pending;
+- expired;
+- exempted by policy.
 
-audit;
+---
 
-admin compliance view.
+# 20. Observability 2.0
 
-16. Этап 13 — Prompt / Configuration Registry
+> **Период:** Q2 2027
 
-Период: Q2 2027
+---
 
-System prompts/configuration не должны существовать только в Git/source code.
+## 20.1. OpenTelemetry
 
-Создать:
+**OpenTelemetry** — стандарт traces, metrics и logs.
 
-PromptTemplate
-PromptVersion
-ConfigurationVersion
+Trace:
 
-ChatTurn / Answer Passport должны сохранять exact configuration provenance.
-
-Нужны:
-
-immutable versions;
-
-draft/approved lifecycle;
-
-environment promotion;
-
-rollback;
-
-owner;
-
-changelog;
-
-evaluation binding;
-
-route/use-case binding.
-
-17. Этап 14 — AI Observability
-
-Период: Q2 2027
-
-Целевой trace:
-
+```text
 HTTP request
-  ↓
+↓
 ChatTurn
-  ↓
-Policy / Model Route
-  ↓
-Retrieval
-  ↓
-Embedding
-  ↓
-Provider
-  ↓
-Tool calls
+↓
+Policy
+↓
+Model Route
+↓
+Knowledge Retrieval
+↓
+Embedding / Rerank
+↓
+Provider Attempt
+↓
+Tool Call
+```
 
-Использовать OpenTelemetry и актуальные GenAI semantic conventions после проверки действующего стандарта на момент реализации.
+Использовать актуальные на момент implementation GenAI semantic conventions; не копировать экспериментальные attribute names навечно.
 
-Не логировать raw secrets/prompts по умолчанию.
+---
 
-Observability должна дополнять, а не заменять durable audit/provenance.
+## 20.2. Correlation IDs
 
-18. Этап 15 — Enterprise Assistants
+Связать:
 
-Период: Q2 2027
+- request ID;
+- client request ID;
+- chat turn;
+- provider operation;
+- execution plan;
+- attempt;
+- retrieval run;
+- answer passport;
+- agent run;
+- tool execution.
 
-ADMIN создаёт Assistant:
+---
 
-Name
-Prompt/config version
-Knowledge scope
-Allowed models/policy
-Tools
-Available groups
-Budget
-Use case
+## 20.3. SLO
 
-Пользователь выбирает управляемый Assistant, а не вручную собирает model/KB/prompt policy.
-
-Assistant должен быть versioned configuration object, а не только frontend preset.
-
-19. Этап 16 — MCP Gateway
-
-Период: Q2–Q3 2027
-
-Модель не получает прямой доступ к произвольным MCP servers.
-
-AI runtime
-   ↓
-SafeAI Tool Gateway
-   ├─ authentication
-   ├─ authorization
-   ├─ tenant isolation
-   ├─ policy
-   ├─ approval
-   ├─ audit
-   ├─ secrets
-   ├─ DLP
-   └─ rate limits
-   ↓
-MCP Servers / internal tools
-
-20. Этап 17 — Tool Registry
-
-Период: Q2–Q3 2027
-
-Tool metadata:
-
-name
-capabilities
-riskLevel
-organization/groups
-read/write
-credential binding
-requiredRole
-approvalPolicy
-rateLimit
-dataClassification
+**SLO** — измеримая цель качества сервиса.
 
 Примеры:
 
-Jira.search        LOW       approval=false
-Jira.createTicket  MEDIUM    approval=policy
-ProdDB.execute     CRITICAL  approval=required
+- auth availability;
+- chat API availability;
+- p95 route latency;
+- provider-start latency;
+- ingestion freshness;
+- connector lag;
+- retrieval latency.
 
-21. Этап 18 — Human-in-the-loop approvals
+---
 
-Период: Q3 2027
+## 20.4. Error budget
 
-Перед side effect:
+**Error budget** — допустимый объём нарушения SLO за период.
 
-agent proposed
-→ approval requested
-→ authorized approver approves/denies
-→ tool invoked exactly once
-→ result/provenance stored
+Использовать для release discipline, а не как marketing metric.
 
-Для high-risk actions:
+---
 
-multi-party approval;
+## 20.5. Privacy-aware telemetry
 
-expiry;
+По умолчанию не отправлять в telemetry:
 
-exact payload hash;
+- raw prompts;
+- full model responses;
+- raw chunks;
+- secrets;
+- tokens;
+- credentials.
 
-approver role requirements;
+---
 
-post-approval mutation protection.
+# 21. Enterprise Assistants
 
-Approval должен относиться к exact action payload, а не к абстрактному «разрешить агенту».
+> **Период:** Q2–Q3 2027
 
-22. Этап 19 — Durable Agent Runtime
+Assistant — versioned configuration object.
 
-Период: Q3 2027
+---
 
-Перенести принципы ChatTurn на agents.
+## 21.1. Assistant definition
 
-Сущности:
+```text
+Assistant
+AssistantVersion
+```
 
-AgentRun
-AgentStep
-ToolExecution
-Approval
+Поля:
+
+- name;
+- description;
+- owner;
+- use case;
+- prompt version;
+- Knowledge scope;
+- allowed model policy;
+- tools;
+- groups;
+- budget;
+- retention;
+- DLP policy;
+- response format;
+- starter prompts.
+
+---
+
+## 21.2. Versioning
+
+Изменение assistant config создаёт новую version.
+
+Historical ChatTurn хранит exact assistant version.
+
+---
+
+## 21.3. Assistant directory
+
+User видит только assistants, разрешённые:
+
+- organization;
+- group;
+- role;
+- use case.
+
+---
+
+## 21.4. Assistant analytics
+
+- active users;
+- requests;
+- success;
+- cost;
+- latency;
+- citation rate;
+- user feedback;
+- tool calls;
+- policy blocks.
+
+---
+
+# 22. Enterprise API + Service Accounts
+
+> **Период:** Q2–Q3 2027
+
+SafeAI становится infrastructure layer не только для собственного UI.
+
+---
+
+## 22.1. Service Account
+
+Отдельная machine identity:
+
+```text
+ServiceAccount
+organization
+scopes
+budget
+rate limit
+allowed models
+allowed assistants
+allowed tools
+credential
+expiry
+```
+
+Не маскировать machine identity под обычного user.
+
+---
+
+## 22.2. API credential
+
+Хранить hash, а не raw token.
+
+Поддержать:
+
+- rotation;
+- expiry;
+- last used;
+- scopes;
+- revocation.
+
+---
+
+## 22.3. API v1
+
+Пример:
+
+```http
+POST /api/v1/responses
+POST /api/v1/retrieval/search
+POST /api/v1/assistants/{id}/runs
+GET  /api/v1/operations/{id}
+```
+
+---
+
+## 22.4. API contract
+
+Нужны:
+
+- OpenAPI;
+- versioning;
+- idempotency;
+- pagination;
+- stable errors;
+- request limits;
+- async operation model;
+- SDK generation;
+- deprecation policy.
+
+---
+
+# 23. Secure Tool Gateway
+
+> **Период:** Q3 2027
+
+LLM не получает прямой arbitrary network access.
+
+```text
+LLM / Agent
+    ↓
+SafeAI Tool Gateway
+    ├─ authentication
+    ├─ authorization
+    ├─ tenant
+    ├─ policy
+    ├─ DLP
+    ├─ approval
+    ├─ rate limit
+    ├─ credential binding
+    ├─ audit
+    └─ idempotency
+    ↓
+Internal APIs / MCP / SaaS
+```
+
+---
+
+# 24. Tool Registry
+
+> **Период:** Q3 2027
+
+Metadata:
+
+```text
+Tool
+ToolVersion
+ToolOperation
+```
+
+Fields:
+
+- name;
+- description;
+- input schema;
+- output schema;
+- owner;
+- risk;
+- read/write;
+- side-effect class;
+- allowed groups;
+- required scopes;
+- credential binding;
+- timeout;
+- rate limit;
+- approval policy;
+- data classification;
+- idempotency support.
+
+---
+
+## Risk examples
+
+```text
+Jira.search            LOW
+Jira.createIssue       MEDIUM
+Slack.postMessage      MEDIUM
+CRM.updateCustomer     HIGH
+ProdDB.execute         CRITICAL
+```
+
+---
+
+# 25. MCP Gateway
+
+> **Период:** Q3 2027
+
+**MCP (Model Context Protocol)** — открытый протокол, через который AI-приложение может обнаруживать и вызывать tools/resources внешних систем.
+
+SafeAI должен работать как controlled MCP gateway, а не как unrestricted proxy.
+
+---
+
+## 25.1. MCP security
+
+- OAuth-based auth where applicable;
+- exact token audience/resource validation;
+- credential isolation;
+- scope enforcement;
+- tenant isolation;
+- tool allowlist;
+- policy;
+- DLP;
+- egress allowlist.
+
+Перед implementation проверять актуальную released MCP specification и SDK conformance.
+
+---
+
+## 25.2. MCP version pinning
+
+Каждое connection/session сохраняет:
+
+```text
+protocolVersion
+server identity
+capabilities
+```
+
+Не использовать «latest» как silent production behavior.
+
+---
+
+## 25.3. MCP tasks
+
+Для long-running tools использовать durable task abstraction, если выбранная актуальная MCP specification поддерживает соответствующий extension.
+
+SafeAI всё равно сохраняет собственный durable ToolExecution state.
+
+External protocol task ID не заменяет internal security/idempotency identity.
+
+---
+
+# 26. Human-in-the-loop approvals
+
+> **Период:** Q3 2027
+
+**Human-in-the-loop** — человек подтверждает рискованное действие до side effect.
+
+Flow:
+
+```text
+Agent proposes exact action
+↓
+payload canonicalization + hash
+↓
+ApprovalRequest
+↓
+authorized approver
+↓
+APPROVE / DENY
+↓
+execute exactly approved payload
+```
+
+---
+
+## 26.1. Approval requirements
+
+- exact tool version;
+- exact arguments hash;
+- requester;
+- approver;
+- expiry;
+- required role/group;
+- reason;
+- immutable audit.
+
+---
+
+## 26.2. Payload mutation protection
+
+После approval:
+
+```text
+arguments changed
+→ approval invalid
+```
+
+---
+
+## 26.3. Multi-party approval
+
+Для CRITICAL actions:
+
+```text
+2-person rule
+```
+
+Например:
+
+- production DB write;
+- financial action;
+- mass customer communication.
+
+---
+
+# 27. Durable Tool Execution
+
+> **Период:** Q3 2027
+
+Перенести lessons из AI attempts.
 
 State machine:
 
+```text
 CREATED
-RUNNING
-WAITING_FOR_APPROVAL
-WAITING_FOR_TOOL
+STARTED
 SUCCEEDED
 FAILED
 AMBIGUOUS
 CANCELLED
-
-Каждый external side effect:
-
-idempotency;
-
-lease;
-
-fencing;
-
-timeout;
-
-retry classification;
-
-audit;
-
-provenance.
-
-Не использовать бесконечный volatile loop:
-
-LLM → tool → LLM → tool
-
-без durable semantics.
-
-23. Этап 20 — Agent Security
-
-Период: одновременно с Agent Runtime
-
-Capability-based access:
-
-Agent
-→ exact tools
-→ exact scopes
-→ exact organization
-→ exact credentials
-
-Главный invariant:
-
-prompt content != authorization
-
-Retrieved document, website или tool output не может расширить permissions инструкцией в тексте.
-
-Добавить:
-
-prompt-injection resistant tool boundary;
-
-capability tokens/scopes;
-
-credential isolation;
-
-data egress control;
-
-high-risk tool policy;
-
-agent-specific rate limits;
-
-max-step/max-cost limits.
-
-24. Этап 21 — Sandboxed Code Interpreter
-
-Период: Q3–Q4 2027
-
-Для CSV/Excel/PDF/data analysis/charts/Python использовать ephemeral sandbox:
-
-CPU limit;
-
-RAM limit;
-
-disk limit;
-
-timeout;
-
-network disabled by default;
-
-ephemeral filesystem;
-
-per-run isolation;
-
-artifact export controls;
-
-package allowlist/policy.
-
-Не исполнять пользовательский Python внутри backend JVM.
-
-25. Этап 22 — Service Accounts
-
-Период: Q3–Q4 2027
-
-Machine identity:
-
-ServiceAccount
-organization
-scopes
-allowed models
-budget
-rate limit
-credential/expiry
-audit actor
-allowed tools
-
-Use cases:
-
-CI/CD reviewer;
-
-CRM summarizer;
-
-ticket classifier;
-
-scheduled analysis;
-
-internal automation.
-
-Service Account не должен маскироваться под обычного пользователя.
-
-26. Этап 23 — Enterprise API
-
-Период: Q4 2027
-
-SafeAI становится infrastructure layer не только для собственного UI.
-
-Пример будущего API:
-
-POST /api/v1/ai/responses
-POST /api/v1/retrieval/search
-POST /api/v1/assistants/{id}/runs
-POST /api/v1/agents/{id}/runs
-
-На вызовы продолжают применяться:
-
-identity;
-
-tenant isolation;
-
-routing;
-
-budget;
-
-DLP;
-
-policy;
-
-audit;
-
-usage;
-
-governance;
-
-rate limits.
+RECONCILIATION_REQUIRED
+```
 
 Нужны:
 
-service-account auth;
+- idempotency key;
+- tool request hash;
+- credential reference;
+- STARTED evidence;
+- outcome certainty;
+- retry safety;
+- response hash;
+- side-effect evidence.
 
-API versioning;
+---
 
-idempotency;
+# 28. Durable Agent Runtime
 
-quota;
+> **Период:** Q3–Q4 2027
 
-observability;
+Не делать volatile loop:
 
-stable public error contract.
+```text
+while(true) {
+  llm();
+  tool();
+}
+```
 
-27. Этап 24 — A2A / Agent interoperability
+---
 
-Период: конец 2027
+## 28.1. Entities
 
-Только после identity/tool/policy layer:
+```text
+AgentDefinition
+AgentVersion
+AgentRun
+AgentStep
+ToolExecution
+ApprovalRequest
+AgentCheckpoint
+```
 
-SafeAI Agent
-    ↓
-controlled A2A gateway
-    ↓
-External enterprise agent
+---
 
-Обязательны:
+## 28.2. State machine
 
-identity/trust;
+```text
+CREATED
+RUNNING
+WAITING_FOR_MODEL
+WAITING_FOR_TOOL
+WAITING_FOR_APPROVAL
+WAITING_FOR_TIMER
+PAUSED
+SUCCEEDED
+FAILED
+AMBIGUOUS
+CANCELLED
+```
 
-tenant isolation;
+---
 
-policy;
+## 28.3. Durable step
 
-audit;
+Каждый step:
 
-budget;
+- ID;
+- attempt;
+- input hash;
+- model route;
+- prompt/config version;
+- tool proposal;
+- usage;
+- cost;
+- start/end;
+- outcome;
+- provenance.
 
-tool/capability boundary;
+---
 
-provenance;
+## 28.4. Limits
 
-replay/idempotency;
+Per run:
 
-external-agent trust profile.
+- max steps;
+- max wall-clock duration;
+- max model calls;
+- max tool calls;
+- max cost;
+- max tokens/units;
+- max retries.
 
-28. Этап 25 — Data Retention / Legal Hold / Privacy
+---
 
-Период: 2027
+## 28.5. Pause / resume
 
-Добавить policy-driven:
+Agent можно:
 
-retention;
+- pause;
+- resume;
+- cancel;
+- wait for approval;
+- wait until scheduled time.
 
-deletion jobs;
+State persisted.
 
-legal hold;
+---
 
-export;
+## 28.6. Durable timers
 
-pseudonymization;
+```text
+WAIT_UNTIL 2027-...
+```
 
-personal-data deletion workflow.
+не держит JVM thread.
 
-Не смешивать retention periods для:
+Использовать persisted timer job/scheduler.
 
-chat;
+---
 
-audit;
+# 29. Agent Memory
 
-usage;
+> **Период:** Q4 2027
 
-Knowledge source;
+Разделить:
 
-embeddings/indexes;
+```text
+Conversation memory
+Working memory
+Long-term user memory
+Organization knowledge
+Agent state
+```
 
-Answer Passport;
+Memory никогда не является authorization source.
 
-route decisions;
+---
 
-tool execution;
+## 29.1. Memory policy
 
-agent runs.
+- opt-in/organization policy;
+- TTL;
+- data classification;
+- user visibility;
+- deletion;
+- export;
+- source/provenance.
 
-29. Этап 26 — AI Security Center
+---
 
-Период: 2027
+## 29.2. Memory poisoning protection
 
-Отдельная сущность SecurityEvent, а не только AuditEvent.
+Retrieved or tool-provided content не должно автоматически записываться в trusted long-term memory.
 
-Dashboard:
+Нужны:
 
-prompt injection attempts;
+- source label;
+- sanitization;
+- confidence;
+- approval rules.
 
-DLP blocks;
+---
 
-secret detections;
+# 30. Agent Security
 
-blocked tool calls;
+> **Период:** одновременно с Agents
 
-policy violations;
+Основной invariant:
 
-suspicious agent activity;
-
-cross-tenant anomaly attempts;
-
-unusual provider/tool behavior.
-
-Security events должны быть tenant-safe, severity-aware и correlation-friendly.
-
-30. Этап 27 — Continuous Red Team / Security Evals
-
-Период: конец 2027
-
-Автоматически тестировать:
-
-prompt injection;
-
-jailbreak;
-
-cross-tenant leakage;
-
-source poisoning;
-
-secret exfiltration;
-
-system prompt extraction;
-
-unsafe tool usage;
-
-privilege escalation;
-
-malicious MCP server;
-
-malicious retrieved documents;
-
-policy bypass;
-
-approval bypass;
-
-replay/idempotency abuse.
-
-После изменения:
-
-model
-prompt/config
-knowledge
-retrieval
-tool
-agent
-policy
-provider
-
-запускать security evaluation suite.
-
-31. Product versions — обновлённый ориентир
-
-Версии ниже — planning targets, а не утверждение о существующих release tags.
-
-Pre-1.0 baseline — текущее состояние, сентябрь 2026
-
-Уже есть:
-
-Security / multi-tenancy;
-
-Durable ChatTurn;
-
-Audit / usage quality;
-
-Knowledge/RAG backend + frontend baseline;
-
-Answer Passport;
-
-V45–V48 Model Control Plane;
-
-V48 input-accounting provenance;
-
-production-oriented infra baseline.
-
-SafeAI Desk 0.8 candidate — осень 2026
-
-Цель:
-
-V48 release-candidate verification;
-
-Knowledge UX polish;
-
-Source Drawer / Passport UX completion;
-
-RAG evaluation framework;
-
-regression gates;
-
-runtime/control-plane UX hardening;
-
-multi-provider data-plane implementation/prototype.
-
-SafeAI Desk 0.9 candidate — конец 2026
-
-Цель:
-
-multi-provider/model execution;
-
-provider configuration registry;
-
-Model Registry expansion;
-
-Organization Model Policy expansion;
-
-FinOps/budget reconciliation;
-
-DLP v1;
-
-Groups/Departments baseline;
-
-Connector v1.
-
-SafeAI Desk 1.0 candidate — 2027
-
-Цель:
-
-OIDC / SCIM;
-
-production multi-provider control/data plane;
-
-Knowledge connectors;
-
-DLP;
-
-Policy Engine;
-
-Use Case Registry;
-
-Prompt Registry;
-
-Evaluations;
-
-OpenTelemetry traces;
-
-production deployment drills;
-
-backup/restore;
-
-HA/SLO evidence.
-
-SafeAI Desk 1.5 candidate — середина 2027
-
-Цель:
-
-Enterprise Assistants;
-
-MCP Gateway;
-
-Tool Registry;
-
-Human approvals;
-
-Service Accounts;
-
-Enterprise API;
-
-Sandboxed Code Interpreter.
-
-SafeAI Desk 2.0 candidate — конец 2027
-
-Цель:
-
-Durable Agents;
-
-Agent workflows;
-
-A2A;
-
-multi-agent collaboration;
-
-Agent Security Center;
-
-continuous AI red teaming;
-
-advanced policy/governance automation.
-
-32. Практический порядок разработки с текущего момента
-
-1. V48 production stabilization
-        ↓
-2. Fresh/upgrade migrations + RC verification
-        ↓
-3. Knowledge UX + citations/passport polish
-        ↓
-4. Retrieval/RAG evaluations + regression gates
-        ↓
-5. Multi-provider/model data plane
-        ↓
-6. Model Registry / policy expansion
-        ↓
-7. FinOps / budget reconciliation
-        ↓
-8. Data Classification / DLP
-        ↓
-9. Groups / Departments
-        ↓
-10. Enterprise Knowledge Connectors
-        ↓
-11. OIDC / SCIM
-        ↓
-12. General Policy Engine / Governance
-        ↓
-13. Prompt / Configuration Registry
-        ↓
-14. Enterprise Assistants
-        ↓
-15. MCP Gateway / Tool Registry
-        ↓
-16. Human approvals
-        ↓
-17. Durable Agents
-        ↓
-18. Enterprise API / Service Accounts
-        ↓
-19. A2A
-
-Не начинать production agents, пока отдельно не доказаны:
-
-tool authorization;
-
-approval;
-
-idempotency;
-
-durable execution;
-
-DLP;
-
-budget;
-
-credential isolation;
-
-audit/provenance.
-
-33. Главные продуктовые приоритеты
-
-Если выбирать три крупных направления после V48 stabilization:
-
-1. Knowledge quality + Evaluations
-
-Не просто:
-
-RAG работает
-
-а:
-
-качество измеряется
-источники доказуемы
-регрессия обнаруживается автоматически
-
-2. Executable Model Control Plane + FinOps + DLP
-
-V45–V48 governance должен получить полноценный multi-provider data plane и финансово/security-контролируемое исполнение.
-
-3. Enterprise Assistants + MCP Gateway
-
-Только после identity/policy/data controls давать управляемую автоматизацию и готовить платформу к agents.
-
-34. Что не нужно делать сейчас
-
-Чтобы не размыть архитектуру, до завершения текущих этапов не стоит:
-
-строить второй Model Registry параллельно существующему Catalog;
-
-добавлять agent loop непосредственно в ChatService;
-
-включать TOOLS/VISION только потому, что появились capability flags;
-
-считать budget billing ledger;
-
-хранить provider secrets в route decisions;
-
-разрешать frontend выбирать физический provider в обход policy;
-
-использовать prompt text как authorization;
-
-делать fallback после ambiguous provider call;
-
-превращать OrganizationModelPolicy в универсальный policy mega-object;
-
-добавлять новый infrastructure layer без чёткой failure semantics;
-
-усложнять систему микросервисами до появления реальной operational необходимости.
-
-35. Архитектурные invariants, которые нельзя ломать
-
-Вне зависимости от новых features должны сохраняться:
-
-tenant isolation
-security fail-closed
-exactly-one-role
-append-only governance snapshots
-idempotency
-semantic replay identity
-lease/fencing
-provider-call ambiguity safety
-no blind retry
-audit/provenance
-database-enforced integrity
-unknown != zero
+```text
 prompt content != authorization
-provider I/O outside long DB transaction
-exact route evidence before execution
-exact request identity across preparation/execution
+```
 
-Для Model Control Plane дополнительно:
+---
 
-latest != effective
-policy != runtime
-catalog != runtime health
-governance decision != provider execution
-historical integrity versions are immutable
-new accounting provenance must be explicit
-unsupported capabilities fail closed
+## Добавить
 
-36. Конечная идея SafeAI Desk
+- capability scopes;
+- short-lived tool credentials;
+- per-run credential isolation;
+- network egress control;
+- prompt injection detection;
+- data exfiltration checks;
+- max-step/max-cost;
+- dangerous-tool deny;
+- approval;
+- sandboxing;
+- audit.
 
-SafeAI Desk должен контролировать:
+---
 
-WHO
+# 31. Sandboxed Code Interpreter
 
-Кто использует AI.
+> **Период:** Q3–Q4 2027
 
-WHAT
+Для Python/data analysis нельзя выполнять untrusted code внутри backend JVM.
 
-Какие данные и знания доступны.
+Architecture:
 
-WHICH MODEL
+```text
+Agent
+↓
+CodeExecutionRequest
+↓
+Sandbox Orchestrator
+↓
+ephemeral container/microVM
+```
 
-Какая model/policy/catalog version реально применена.
+Limits:
 
-HOW
+- CPU;
+- RAM;
+- disk;
+- process count;
+- timeout;
+- no network by default;
+- package policy;
+- ephemeral filesystem;
+- artifact size;
+- malware scan.
 
-Какая execution configuration и accounting model применялась.
+---
 
-HOW MUCH
+## Supported use cases
 
-Сколько разрешено и сколько реально потрачено.
+- CSV analysis;
+- Excel analysis;
+- chart creation;
+- PDF tabular analysis;
+- safe Python calculations;
+- generated artifacts.
 
-WHY
+---
 
-Для какого use case используется AI.
+# 32. Artifact Workspace
 
-WHAT HAPPENED
+> **Период:** Q3–Q4 2027
 
-Что реально произошло.
+AI может создавать managed artifacts:
 
-WHAT EVIDENCE
+- Markdown;
+- PDF;
+- DOCX;
+- XLSX;
+- PPTX;
+- charts;
+- JSON/CSV;
+- code patches.
 
-На каких данных основан ответ.
+Каждый artifact:
 
-WHAT ACTION
+```text
+Artifact
+ArtifactVersion
+producer Run/Turn
+content hash
+classification
+owner
+retention
+```
 
-Какое действие хочет выполнить AI.
+---
 
-WHO APPROVED
+# 33. Async / Batch AI Jobs
 
-Кто разрешил side effect.
+> **Период:** Q3 2027
 
-Конечная архитектура:
+Для large workloads:
 
-AI Gateway
-+ Knowledge Platform
-+ Model Control Plane
-+ Governance
-+ FinOps
-+ Secure Tool Gateway
-+ Durable Agent Runtime
+```text
+BatchJob
+BatchItem
+```
 
-Главный принцип развития:
+Use cases:
 
-новые routing, RAG, governance, FinOps, connector, tool и agent capabilities не должны ослаблять уже реализованные 
-durability, tenant isolation, idempotency, provider-ambiguity protection, provenance и database-enforced integrity.
+- summarize 10k tickets;
+- classify documents;
+- regenerate embeddings;
+- offline evaluation;
+- nightly report.
 
+Нужны:
 
+- durable state;
+- checkpoint;
+- concurrency;
+- budget;
+- cancellation;
+- partial result;
+- retry policy.
 
+---
 
+# 34. Scheduled Automations
 
-Structure-aware chunking
+> **Период:** Q3–Q4 2027
 
-Реализован во втором этапе, но это ещё не embedding-based semantic chunking
+Examples:
 
-Russian FTS
+```text
+Every morning:
+summarize new Jira incidents
 
-Код и V55 подготовлены; применение V55 к твоей БД не подтверждено
+When connector sync completes:
+run compliance review
 
-Независимая проверка фактической обоснованности каждого утверждения
+Every Monday:
+generate department AI usage report
+```
 
-Не реализована
+Scheduler хранит:
 
-Отдельный reranking stage
+- definition version;
+- next run;
+- timezone;
+- owner;
+- budget;
+- permissions;
+- audit.
 
-Не реализован
+---
 
-Изоляция PDFBox/POI отдельными процессами
+# 35. Workflow / DAG Engine
 
-Не реализована
+> **Период:** Q4 2027  
+> **DAG** — направленный ациклический граф шагов.
 
-Durable S3 orphan reconciliation
+Пример:
 
-Не реализована
+```text
+Retrieve
+  ↓
+Classify
+  ↓
+Generate draft
+  ↓
+Human approval
+  ↓
+Publish
+```
 
-Агентный execution loop с инструментами
+Поддержать:
 
-Не реализован
+- conditional branches;
+- parallel steps;
+- retries;
+- timers;
+- approvals;
+- compensation.
 
-Управление жизненным циклом старых index generations
+Не превращать ChatService в workflow engine.
 
-Не завершено
+---
 
-Раздельные лимиты extraction/OCR/embedding
+# 36. A2A Gateway
 
-Не завершены
+> **Период:** Q4 2027
 
-Учёт расходов embeddings и OCR
+**A2A (Agent-to-Agent)** — протокол взаимодействия независимых AI agents.
 
-Не завершён
+На 2026 существует released A2A 1.0; перед production implementation всё равно необходимо проверить актуальную версию стандарта и conformance.
 
-Полный RAG Evaluation Harness
+SafeAI:
 
-Не реализован
+```text
+Internal Agent
+↓
+SafeAI A2A Gateway
+↓
+trusted external agent
+```
 
-Сквозное подтверждение production-ready
+---
 
-Не выполнено
+## 36.1. Trust profile
+
+External agent registry:
+
+- identity;
+- owner;
+- endpoint;
+- certificate/key;
+- allowed capabilities;
+- tenant;
+- data classes;
+- max budget;
+- allowed tasks;
+- risk rating.
+
+---
+
+## 36.2. Do not delegate authorization
+
+External agent не получает permissions внутреннего user автоматически.
+
+Каждый cross-agent action заново проходит:
+
+- policy;
+- DLP;
+- tool authorization;
+- budget.
+
+---
+
+# 37. Multi-Agent Collaboration
+
+> **Период:** Q4 2027  
+> После single-agent durability.
+
+Roles:
+
+```text
+Coordinator
+Researcher
+Retriever
+Reviewer
+Executor
+```
+
+Но multi-agent orchestration должна иметь:
+
+- bounded participants;
+- bounded turns;
+- budget;
+- run graph;
+- provenance;
+- loop detection;
+- cancellation.
+
+---
+
+# 38. Security Center
+
+> **Период:** Q3–Q4 2027
+
+AuditEvent и SecurityEvent — разные concepts.
+
+---
+
+## SecurityEvent examples
+
+- prompt injection detected;
+- DLP blocked;
+- secret detected;
+- model policy bypass attempt;
+- cross-tenant access attempt;
+- suspicious connector behavior;
+- anomalous tool call;
+- repeated approval denials;
+- agent loop;
+- data exfiltration signal.
+
+---
+
+## Dashboard
+
+- severity;
+- tenant;
+- user/service account;
+- assistant/agent;
+- source;
+- correlated request/run;
+- status;
+- assignee;
+- resolution.
+
+---
+
+# 39. Continuous AI Security Evaluations
+
+> **Период:** Q4 2027
+
+Regression suite:
+
+- prompt injection;
+- indirect prompt injection;
+- jailbreak;
+- system prompt extraction;
+- cross-tenant leakage;
+- malicious document;
+- malicious MCP server;
+- secret exfiltration;
+- unsafe tool calls;
+- approval bypass;
+- privilege escalation;
+- memory poisoning;
+- policy bypass;
+- idempotency abuse;
+- agent runaway loop.
+
+Run after changes to:
+
+- model;
+- prompt;
+- provider;
+- RAG;
+- connector;
+- DLP;
+- policy;
+- tool;
+- agent.
+
+---
+
+# 40. Supply Chain Security
+
+> **Период:** 2027
+
+---
+
+## SBOM
+
+**SBOM** — Software Bill of Materials, список библиотек и компонентов build.
+
+Generate per release.
+
+---
+
+## Dependency scanning
+
+- Maven dependencies;
+- npm dependencies;
+- container images;
+- OS packages.
+
+---
+
+## Image signing
+
+Подписывать production container artifacts.
+
+---
+
+## Build provenance
+
+Хранить:
+
+- source commit;
+- build ID;
+- dependency lock;
+- image digest;
+- migration version.
+
+---
+
+## Secret scanning
+
+Git/pre-commit/CI:
+
+- API key patterns;
+- private keys;
+- credentials.
+
+---
+
+# 41. Secrets / KMS / BYOK
+
+> **Период:** Q2–Q3 2027
+
+**KMS** — Key Management Service, система безопасного хранения/управления ключами.
+
+---
+
+## Secret Manager integration
+
+Не хранить provider secrets в application.yml.
+
+Adapters:
+
+- Vault;
+- cloud secret manager;
+- KMS-encrypted DB reference where justified.
+
+---
+
+## BYOK
+
+**BYOK — Bring Your Own Key.**
+
+Tenant может использовать собственный provider credential.
+
+Требования:
+
+- encrypted storage;
+- tenant isolation;
+- KMS envelope encryption;
+- rotation;
+- last-used metadata;
+- no plaintext logging;
+- audit.
+
+---
+
+## Customer-managed encryption key
+
+Optional enterprise tier:
+
+customer controls encryption key for selected stored data.
+
+---
+
+# 42. Data Retention / Legal Hold / Privacy
+
+> **Период:** Q2–Q4 2027
+
+Разные retention policies:
+
+- chat;
+- audit;
+- usage;
+- provider execution evidence;
+- Knowledge source;
+- chunks;
+- embeddings;
+- Answer Passport;
+- DLP events;
+- tool executions;
+- agent runs;
+- artifacts.
+
+---
+
+## Legal Hold
+
+**Legal hold** — запрет удаления данных, попавших под юридическое/внутреннее расследование.
+
+Hold должен иметь:
+
+- scope;
+- owner;
+- reason;
+- created/removed audit.
+
+---
+
+## Privacy deletion
+
+Удаление пользователя не означает naïve cascade delete.
+
+Нужны стратегии:
+
+- delete;
+- pseudonymize;
+- detach identity;
+- preserve legally required audit evidence.
+
+---
+
+# 43. Data Residency / Sovereignty
+
+> **Период:** Q2–Q3 2027
+
+Policy:
+
+```text
+EU_ONLY
+US_ONLY
+LOCAL_ONLY
+CUSTOM_REGION_SET
+```
+
+Применяется к:
+
+- provider;
+- object storage;
+- embeddings;
+- OCR;
+- reranker;
+- connector;
+- logs.
+
+---
+
+# 44. High Availability / Disaster Recovery
+
+> **Период:** 2027
+
+Нельзя писать `HA ready` без drills.
+
+---
+
+## PostgreSQL
+
+- managed HA or tested replication;
+- PITR;
+- backups;
+- restore;
+- migration rollback strategy at application level.
+
+**PITR** — Point-In-Time Recovery, восстановление БД к конкретному моменту.
+
+---
+
+## Redis
+
+- Sentinel/Cluster/managed HA;
+- failover tests;
+- rate-limit semantics during failure.
+
+---
+
+## Object storage
+
+- versioning where needed;
+- replication;
+- restore;
+- lifecycle;
+- integrity checks.
+
+---
+
+## RTO / RPO
+
+**RTO** — сколько времени допустимо восстанавливать сервис.  
+**RPO** — сколько данных допустимо потерять по времени.
+
+Установить и проверить drill-ом.
+
+---
+
+# 45. Performance / Capacity Engineering
+
+> **Период:** весь 2027
+
+Load profiles:
+
+- auth burst;
+- chat burst;
+- long streaming connections;
+- high RAG QPS;
+- large ingestion batch;
+- connector sync;
+- usage report;
+- audit query;
+- agent workloads.
+
+---
+
+## Performance budgets
+
+Определить:
+
+- p50/p95/p99 latency;
+- connection pool utilization;
+- DB query budget;
+- Redis ops;
+- provider concurrency;
+- JVM heap;
+- GC pause;
+- thread/virtual-thread count.
+
+---
+
+## Backpressure
+
+Если downstream перегружен:
+
+```text
+queue / reject / defer
+```
+
+а не бесконечно создавать work.
+
+---
+
+# 46. Semantic Cache — `OPTIONAL`
+
+> **Период:** 2027
+
+**Semantic cache** — повторное использование ответа на семантически похожий запрос.
+
+Рискованно для enterprise data.
+
+Разрешать только при exact policy:
+
+- same tenant;
+- same assistant/config;
+- same model policy;
+- same Knowledge version set;
+- compatible security context;
+- bounded similarity;
+- expiry.
+
+По умолчанию выключено.
+
+---
+
+# 47. Response Cache — `OPTIONAL`
+
+Exact request cache возможен для deterministic utility calls, но не должен обходить:
+
+- auth;
+- DLP;
+- policy;
+- retention;
+- current access.
+
+---
+
+# 48. Search / Discovery UX
+
+> **Период:** 2027
+
+Unified search:
+
+- chats;
+- projects;
+- Knowledge;
+- assistants;
+- artifacts;
+- audit for admins;
+- model catalog.
+
+Tenant-safe permission filtering до выдачи результатов.
+
+---
+
+# 49. Collaboration UX
+
+> **Период:** Q2–Q4 2027
+
+- share chat внутри tenant;
+- shared project;
+- comments;
+- mention users;
+- pin source;
+- save answer to Knowledge draft;
+- assistant favorites;
+- activity feed.
+
+Sharing не должен повышать permission на source documents автоматически.
+
+---
+
+# 50. Feedback / Quality Loop
+
+User feedback:
+
+```text
+helpful
+not helpful
+wrong citation
+outdated source
+unsafe
+too expensive
+```
+
+Feedback связывается с exact:
+
+- ChatTurn;
+- model;
+- route;
+- retrieval;
+- assistant version.
+
+Используется в evaluation dataset c human review.
+
+---
+
+# 51. Admin Policy Simulator
+
+Admin вводит hypothetical facts:
+
+```text
+role=USER
+department=FINANCE
+classification=CONFIDENTIAL
+assistant=ContractReview
+```
+
+Получает:
+
+- allowed model;
+- provider;
+- DLP action;
+- tool permissions;
+- budget;
+- reasons.
+
+Без provider call.
+
+---
+
+# 52. Explainability / Decision Inspector
+
+Для support/admin:
+
+```text
+Why was this request blocked?
+```
+
+Ответ:
+
+- matched policy;
+- model rule;
+- budget state;
+- DLP;
+- capability;
+- provider health;
+- tenant restriction.
+
+Не показывать secrets/internal stack.
+
+---
+
+# 53. Reconciliation Center
+
+Unified operational UI:
+
+- ambiguous AI attempt;
+- unknown provider outcome;
+- failed Knowledge upload intent;
+- orphan cleanup review;
+- connector partial sync;
+- unknown pricing;
+- invoice mismatch;
+- agent/tool ambiguous side effect.
+
+Operator может:
+
+- inspect;
+- mark reconciled;
+- attach evidence;
+- retry only when safe.
+
+---
+
+# 54. Feature Flags / Progressive Delivery
+
+> **Период:** 2027
+
+Versioned feature flags:
+
+- organization;
+- group;
+- environment;
+- percentage.
+
+Использовать для:
+
+- provider rollout;
+- reranker;
+- new retrieval;
+- streaming;
+- assistant beta.
+
+Flag state, влияющий на execution, должен попадать в provenance.
+
+---
+
+# 55. Release Engineering
+
+---
+
+## 55.1. Environments
+
+```text
+local
+test
+stage
+production
+```
+
+Production mode определяется explicit invariant, а не случайным profile naming.
+
+---
+
+## 55.2. Promotion
+
+```text
+commit
+↓
+tests
+↓
+image
+↓
+stage
+↓
+integration/evals
+↓
+approval
+↓
+prod
+```
+
+---
+
+## 55.3. Migration gate
+
+Перед production:
+
+- Flyway validate;
+- fresh migration CI;
+- upgrade migration CI;
+- catalog index validity;
+- long-running migration review;
+- lock impact review.
+
+---
+
+## 55.4. Zero/low-downtime migrations
+
+Patterns:
+
+```text
+expand
+backfill
+switch
+contract
+```
+
+Не делать destructive schema change одновременно с code switch.
+
+---
+
+# 56. Production Readiness Checklist 1.0
+
+Release 1.0 нельзя считать production-ready только по feature completion.
+
+Нужно доказать:
+
+```text
+Security
+✓ tenant isolation
+✓ auth/session revocation
+✓ secrets
+✓ DLP baseline
+✓ vulnerability management
+
+Data
+✓ backup
+✓ restore
+✓ retention
+✓ object storage recovery
+
+Reliability
+✓ multi-instance
+✓ failure tests
+✓ provider outage handling
+✓ reconciliation
+
+Database
+✓ fresh migrations
+✓ upgrade migrations
+✓ index validity
+✓ constraints
+
+AI
+✓ attempt evidence
+✓ no blind retry
+✓ pricing quality
+✓ model registry
+✓ eval gates
+
+Knowledge
+✓ publication atomicity
+✓ ACL
+✓ OCR partial handling
+✓ parser isolation
+✓ generation GC
+
+Operations
+✓ dashboards
+✓ alerts
+✓ runbooks
+✓ on-call procedures
+
+Governance
+✓ audit
+✓ policy provenance
+✓ model approval
+✓ use-case ownership
+```
+
+---
+
+# 57. Product Release Targets
+
+Названия ниже — planning targets, не утверждение о существующих release tags.
+
+---
+
+## SafeAI Desk 0.8 — Core Hardening
+
+**Target:** Q4 2026
+
+- P0/P1 fixes;
+- AI execution recovery;
+- physical/application outcome split;
+- Knowledge publication fix;
+- parser/OCR hardening;
+- audit transaction semantics;
+- production-mode unification;
+- RC verification.
+
+---
+
+## SafeAI Desk 0.9 — Dynamic AI Gateway
+
+**Target:** Q1 2027
+
+- multi-provider runtime;
+- provider configuration registry;
+- pricing v2;
+- fallback safety;
+- streaming;
+- cancel;
+- model lifecycle/approval;
+- physical spend ledger.
+
+---
+
+## SafeAI Desk 1.0 — Enterprise AI Gateway
+
+**Target:** Q2 2027
+
+- OIDC;
+- SCIM;
+- groups;
+- DLP;
+- General Policy Engine;
+- enterprise connectors;
+- FinOps;
+- Prompt Registry;
+- RAG evaluation gates;
+- observability/SLO;
+- retention baseline;
+- HA/restore evidence.
+
+---
+
+## SafeAI Desk 1.2 — Enterprise Assistants
+
+**Target:** Q2–Q3 2027
+
+- Assistants;
+- assistant versioning;
+- Use Case Registry;
+- service accounts;
+- Enterprise API;
+- structured outputs;
+- vision;
+- collaboration;
+- policy simulator.
+
+---
+
+## SafeAI Desk 1.5 — Tools Platform
+
+**Target:** Q3 2027
+
+- Tool Registry;
+- Secure Tool Gateway;
+- MCP Gateway;
+- approvals;
+- durable ToolExecution;
+- sandboxed code interpreter;
+- artifacts;
+- scheduled automations.
+
+---
+
+## SafeAI Desk 2.0 — Governed Agent Platform
+
+**Target:** Q4 2027
+
+- durable Agent Runtime;
+- agent memory;
+- workflow/DAG;
+- A2A gateway;
+- controlled multi-agent;
+- Security Center;
+- continuous red-team evals;
+- advanced governance.
+
+---
+
+# 58. Quarterly plan
+
+## Q4 2026
+
+```text
+P0/P1 core fixes
+↓
+release-candidate stabilization
+↓
+Knowledge hardening
+↓
+AI execution recovery
+↓
+pricing v2 design
+↓
+multi-provider registry foundation
+```
+
+---
+
+## Q1 2027
+
+```text
+dynamic provider dispatch
+↓
+streaming
+↓
+structured outputs
+↓
+Knowledge reranker/evals
+↓
+enterprise connectors
+↓
+OIDC/SCIM foundation
+```
+
+---
+
+## Q2 2027
+
+```text
+DLP
+↓
+General Policy Engine
+↓
+FinOps
+↓
+Prompt Registry
+↓
+Assistants
+↓
+OpenTelemetry/SLO
+↓
+Enterprise API
+```
+
+---
+
+## Q3 2027
+
+```text
+Tool Registry
+↓
+MCP Gateway
+↓
+Human approvals
+↓
+Durable ToolExecution
+↓
+Sandbox
+↓
+Artifacts
+↓
+Agent Runtime v1
+```
+
+---
+
+## Q4 2027
+
+```text
+Agent Runtime hardening
+↓
+Agent memory/workflows
+↓
+A2A
+↓
+multi-agent
+↓
+Security Center
+↓
+continuous AI security evals
+↓
+HA/DR maturity
+```
+
+---
+
+# 59. Dependency graph
+
+```text
+Core P0/P1
+    │
+    ├────────────► Multi-provider
+    │                   │
+    │                   ├────► FinOps
+    │                   ├────► Structured Output
+    │                   └────► Vision/Audio
+    │
+    ├────────────► Knowledge hardening
+    │                   │
+    │                   ├────► Connectors
+    │                   └────► RAG Evaluations
+    │
+    └────────────► Identity 2.0
+                        │
+                        ├────► Groups
+                        └────► Policy Engine
+                                     │
+              ┌──────────────────────┼───────────────────────┐
+              │                      │                       │
+             DLP                 Assistants             Tool Gateway
+                                                           │
+                                                           ├─ MCP
+                                                           ├─ Approvals
+                                                           └─ ToolExecution
+                                                                │
+                                                                ▼
+                                                          Agent Runtime
+                                                                │
+                                                          ┌─────┴─────┐
+                                                          │           │
+                                                         A2A       Multi-Agent
+```
+
+---
+
+# 60. Что не делать раньше времени
+
+Пока предыдущая dependency не закрыта, не стоит:
+
+- строить agents до durable ToolExecution;
+- давать tools без authorization/approval;
+- включать vision только потому, что catalog содержит capability;
+- делать semantic cache без security identity;
+- считать model budget billing-grade;
+- делать fallback после ambiguous provider call;
+- позволять frontend выбирать physical provider в обход policy;
+- хранить secrets в route decision;
+- использовать prompt как permission;
+- делать KB ACL только после retrieval;
+- создавать второй model registry;
+- превращать OrganizationModelPolicy в универсальный mega-object;
+- добавлять микросервисы только «для enterprise вида»;
+- использовать LLM-as-judge как единственный quality truth;
+- называть систему HA без restore/failover drills.
+
+---
+
+# 61. Definition of Done для каждого крупного feature
+
+Feature не считается production-ready, пока нет:
+
+```text
+1. Domain semantics
+2. Authorization
+3. Tenant isolation
+4. Persistence/integrity
+5. Idempotency where needed
+6. Failure semantics
+7. Audit
+8. Metrics
+9. Public error contract
+10. Migration
+11. Tests
+12. Operational runbook
+13. Security review
+14. Data retention behavior
+15. Frontend contract
+16. Documentation
+```
+
+Для external side effect дополнительно:
+
+```text
+17. STARTED evidence
+18. Outcome certainty
+19. Retry safety
+20. Reconciliation path
+```
+
+---
+
+# 62. Термины
+
+## AI Gateway
+
+Контролируемый слой между корпоративным приложением и AI providers.
+
+Он применяет identity, policy, routing, budget, DLP, audit и observability.
+
+## Control Plane
+
+Слой, который хранит и принимает governance decisions:
+
+- какие модели существуют;
+- что разрешено;
+- какие policies активны;
+- какие budgets действуют.
+
+## Data Plane
+
+Слой, который реально выполняет provider/tool operations.
+
+## RAG
+
+**Retrieval-Augmented Generation** — перед генерацией ответа система находит релевантные корпоративные источники и передаёт их модели как context.
+
+## Embedding
+
+Числовой вектор смысла текста, используемый для semantic search.
+
+## Reranker
+
+Модель второго этапа, которая более точно переупорядочивает найденные документы.
+
+## DLP
+
+**Data Loss Prevention** — обнаружение и блокировка/редактирование чувствительных данных.
+
+## FinOps
+
+Практика управления cloud/AI затратами, бюджетами и распределением расходов.
+
+## OIDC
+
+**OpenID Connect** — стандарт federated login поверх OAuth.
+
+## SCIM
+
+Стандарт provisioning пользователей и групп между Identity Provider и приложением.
+
+## MCP
+
+**Model Context Protocol** — протокол подключения AI application к tools/resources внешних систем.
+
+## A2A
+
+**Agent-to-Agent** — протокол взаимодействия независимых AI agents.
+
+## Tool
+
+Внешняя операция, которую AI может предложить выполнить.
+
+## Side effect
+
+Изменение внешнего мира: создать ticket, отправить письмо, изменить запись DB и т.д.
+
+## Human-in-the-loop
+
+Обязательное участие человека в принятии/подтверждении решения.
+
+## Idempotency
+
+Повтор одного и того же operation ID не создаёт второй логический side effect.
+
+## Fencing
+
+Механизм, запрещающий старому worker завершить работу после того, как ownership перешёл новому worker.
+
+## Reconciliation
+
+Разбор ситуации, когда система не может автоматически доказать финальный outcome external call.
+
+## SLO
+
+**Service Level Objective** — измеримая цель качества/доступности.
+
+## RTO
+
+Максимально допустимое время восстановления после аварии.
+
+## RPO
+
+Максимально допустимая потеря данных по времени.
+
+## SBOM
+
+Список компонентов и библиотек, вошедших в build.
+
+## KMS
+
+Сервис управления криптографическими ключами.
+
+## BYOK
+
+Клиент использует собственный provider/encryption key.
+
+## Legal Hold
+
+Запрет удаления выбранных данных на период расследования/обязательного хранения.
+
+## Canary
+
+Новая версия получает небольшой процент production traffic для контролируемой проверки.
+
+## Shadow Traffic
+
+Запрос копируется в экспериментальный path без влияния его ответа на пользователя.
+
+## Circuit Breaker
+
+Автоматически временно отключает проблемный downstream.
+
+## Backpressure
+
+Ограничение скорости/очереди, когда downstream не успевает обрабатывать поток.
+
+## DAG
+
+Граф workflow, в котором шаги и зависимости задаются явно.
+
+## SLI
+
+**Service Level Indicator** — фактически измеряемая метрика надежности, на основании которой проверяется SLO.
+
+## ABAC
+
+**Attribute-Based Access Control** — доступ по атрибутам subject/resource/context, а не только по фиксированной системной роли.
+
+## Blue/Green deployment
+
+Две параллельные production-среды; трафик переключается между ними после проверки новой версии.
+
+## Chaos testing
+
+Контролируемое внесение отказов, чтобы доказать recovery/failover semantics до реального инцидента.
+
+---
+
+# 63. Standards watch на 2027
+
+Стандарты быстро меняются. Их нельзя вшивать в архитектуру без version pinning.
+
+Перед implementation повторно проверить актуальные released specifications для:
+
+- MCP;
+- A2A;
+- OpenTelemetry GenAI conventions;
+- OpenID Connect;
+- SCIM;
+- OpenID Shared Signals / CAEP;
+- WebAuthn;
+- OAuth security best practices.
+
+Принцип:
+
+```text
+spec version is configuration/provenance
+```
+
+а не скрытое «latest».
+
+---
+
+# 64. Главные продуктовые направления 2027
+
+Если выделить пять наиболее ценных направлений:
+
+## 1. Executable AI Control Plane
+
+Не только хранить policy/catalog, а безопасно исполнять multi-provider routing.
+
+## 2. Enterprise Knowledge
+
+Не просто upload + RAG, а connectors, ACL sync, evaluation, freshness и provenance.
+
+## 3. Governance + DLP + FinOps
+
+Понимать:
+
+```text
+кому можно
+что можно
+куда можно отправлять
+сколько можно тратить
+```
+
+## 4. Enterprise Assistants + Tools
+
+Создавать управляемые AI applications поверх общей platform security.
+
+## 5. Durable Agents
+
+Только после того, как side effects, approvals, identity, budget и reconciliation уже production-grade.
+
+---
+
+# 65. Конечная целевая архитектура на конец 2027
+
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│                           SafeAI Desk                                │
+├──────────────────────────────────────────────────────────────────────┤
+│ Identity                                                             │
+│ OIDC / SCIM / Groups / Service Accounts / Security Epochs            │
+├──────────────────────────────────────────────────────────────────────┤
+│ Governance                                                           │
+│ Policy Engine / DLP / Use Cases / Approvals / Retention              │
+├──────────────────────────────────────────────────────────────────────┤
+│ AI Control Plane                                                     │
+│ Model Catalog / Provider Registry / Routing / Pricing / FinOps       │
+├──────────────────────────────────────────────────────────────────────┤
+│ Knowledge                                                            │
+│ Connectors / ACL / Extraction / OCR / Embeddings / Rerank / RAG     │
+├──────────────────────────────────────────────────────────────────────┤
+│ AI Workspace                                                         │
+│ Projects / Chat / Assistants / Artifacts / Search                    │
+├──────────────────────────────────────────────────────────────────────┤
+│ Tool Platform                                                        │
+│ Tool Registry / MCP Gateway / DLP / Approval / ToolExecution         │
+├──────────────────────────────────────────────────────────────────────┤
+│ Agent Runtime                                                        │
+│ Durable Runs / Steps / Timers / Memory / Workflows / A2A            │
+├──────────────────────────────────────────────────────────────────────┤
+│ Operations                                                           │
+│ Audit / Security Center / OpenTelemetry / SLO / Reconciliation       │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+# 66. Финальный принцип развития
+
+SafeAI Desk должен расти не за счёт добавления всё большего количества «AI magic», а за счёт управляемости.
+
+Каждая новая возможность должна отвечать на вопросы:
+
+```text
+Кто это сделал?
+Почему ему было разрешено?
+Какая версия policy действовала?
+Какая модель/provider использовались?
+Какие данные были переданы?
+Какие внешние side effects произошли?
+Сколько это стоило?
+Можно ли доказать outcome?
+Можно ли безопасно повторить?
+Как это удалить/удержать по retention policy?
+Как это расследовать при инциденте?
+```
+
+Только после этого capability считается частью production-платформы.
+
+---
+
+# 67. Release Gates — обязательные точки допуска
+
+Release target сам по себе не является разрешением двигаться дальше. Для крупных capabilities вводятся dependency gates.
+
+## Gate A — Production Core
+
+Нельзя считать core hardened, пока не закрыты или формально приняты как controlled risk:
+
+- P0 budget-state representability;
+- physical/application outcome separation;
+- provider bypass protection;
+- ExecutionPlan orphan recovery;
+- final request binding;
+- searchable Knowledge publication;
+- strict audit transaction semantics;
+- production-mode unification;
+- critical-index release validation;
+- FinOps commitment semantics поверх V60.
+
+## Gate B — Enterprise Identity
+
+Перед массовым enterprise rollout:
+
+- OIDC;
+- SCIM;
+- service accounts;
+- group/department model;
+- fine-grained permissions;
+- session revocation;
+- security audit/events;
+- identity lifecycle tests.
+
+## Gate C — Dynamic Multi-provider
+
+Перед включением adaptive routing/fallback:
+
+- versioned provider registry;
+- credential references/BYOK;
+- immutable target identity;
+- residency rules;
+- health signal model;
+- pricing v2;
+- aggregate multi-attempt budget reservation для bounded-cost routes либо сохранение V59 single-attempt restriction;
+- retry/fallback safety tests.
+
+## Gate D — Agent Runtime
+
+До autonomous side effects обязательны:
+
+- Tool Registry;
+- Secure Tool Gateway;
+- risk classes;
+- exact-payload approvals;
+- durable ToolExecution;
+- ambiguous side-effect reconciliation;
+- cost/step limits;
+- pause/stop;
+- sandboxing для code execution;
+- security evaluations.
+
+---
+
+# 68. KPI / Engineering Health
+
+Не использовать количество моделей, tools или agents как основной показатель зрелости.
+
+## Reliability
+
+- ambiguous attempt rate;
+- orphan/recovery count;
+- successful recovery percentage;
+- audit outbox lag;
+- connector/ingestion lag;
+- failed generation publication;
+- reconciliation queue age;
+- SLO/error-budget consumption.
+
+## Security
+
+- rejected cross-tenant attempts;
+- stale-session rejection;
+- DLP block/warn rate;
+- secret detections;
+- tool approval bypass attempts;
+- connector ACL drift;
+- unresolved high-severity SecurityEvents.
+
+## Governance
+
+- route-denial reasons;
+- policy simulation drift vs production decision;
+- unpriced/unknown-cost share;
+- noncompliant residency requests prevented;
+- model/use-case approval coverage.
+
+## FinOps
+
+Показывать отдельно:
+
+```text
+known actual
+reserved commitment
+unknown liability
+estimated/projected
+invoice-adjusted
+```
+
+Основные показатели:
+
+- known vs unknown spend share;
+- budget overrun prevention;
+- forecast accuracy;
+- cost per assistant/project/department;
+- retry/fallback cost amplification;
+- unpriced provider product share.
+
+## Knowledge
+
+- source freshness;
+- Recall@K / MRR / nDCG;
+- no-hit rate;
+- citation coverage;
+- unsupported-claim rate;
+- ingestion/publication delay;
+- stale ACL/source count.
+
+---
+
+# 69. Non-goals 2027
+
+Чтобы roadmap оставался выполнимым, следующие направления **не являются обязательными целями** 2027:
+
+- обучение собственной foundation model с нуля;
+- собственная hyperscale vector database;
+- собственный universal workflow engine уровня Temporal «с нуля»;
+- Kubernetes только ради enterprise-имиджа;
+- микросервисный split без доказанной scaling/ownership причины;
+- custom cryptography;
+- обещание compliance certification без реального внешнего audit/certification process;
+- marketing SLA без измеренных SLI/SLO и drills;
+- autonomous agent с неограниченными permissions/budget/network access;
+- semantic cache по умолчанию для confidential enterprise traffic;
+- автоматическое «исправление» ambiguous external side effect повторным вызовом.
+
+---
+
+# 70. Month-by-month execution sequence
+
+Квартальный roadmap остаётся главным. Этот раздел даёт более практичную последовательность и не является жестким контрактом по датам.
+
+```text
+OCT 2026
+- V59/V60/V61 verification и migration upgrade matrix
+- P0 budget-state design
+- physical/application outcome design
+- audit MANDATORY API design
+
+NOV 2026
+- Core P0/P1 fixes
+- ExecutionPlan recovery
+- final request binding
+- searchable Knowledge publication
+
+DEC 2026
+- RC hardening / restore drills
+- V60 commitment integration
+- provider registry foundation
+- streaming foundation
+
+JAN 2027
+- dynamic provider registry/adapter registry
+- pricing v2
+- provider-aware token/context estimation
+
+FEB 2027
+- routing + health + circuit breaker
+- safe fallback/budget envelope
+- structured output
+
+MAR 2027
+- streaming/cancel production path
+- RAG eval gates
+- reranker/query improvements
+
+APR 2027
+- groups/departments
+- service accounts
+- OIDC
+
+MAY 2027
+- SCIM/JIT/group sync
+- DLP classification/detectors
+- retention/legal hold
+
+JUN 2027
+- General Policy Engine
+- FinOps durable ledger/reconciliation
+- Prompt/Config Registry
+
+JUL 2027
+- enterprise connectors + ACL mirroring
+- Assistants
+- Enterprise API/webhooks
+
+AUG 2027
+- Tool Registry
+- Secure Tool Gateway
+- MCP gateway
+
+SEP 2027
+- approvals
+- durable ToolExecution
+- reconciliation workflows
+
+OCT 2027
+- sandboxed code interpreter
+- artifact workspace
+- batch/scheduled jobs
+
+NOV 2027
+- durable Agent Runtime
+- checkpoint/timers/memory policy
+
+DEC 2027
+- agent hardening
+- A2A/multi-agent optional rollout
+- Security Center / DR / 2028 readiness review
+```
+
+---
+
+# 71. Testing strategy extensions
+
+Текущие unit/integration/Testcontainers suites остаются базой. Для production 1.0+ добавить следующие классы tests.
+
+## Property-based testing
+
+Особенно для:
+
+- budget state transitions;
+- pricing calculations;
+- policy evaluation;
+- cursor codecs;
+- state machines;
+- idempotency/replay identity;
+- tool/agent limits.
+
+## Fault injection / crash matrix
+
+Автоматически рвать flow в точках:
+
+```text
+before reservation commit
+after reservation commit
+before ExecutionPlan commit
+after ExecutionPlan commit / before Attempt
+immediately after Attempt STARTED commit
+during provider I/O
+after provider response / before terminal evidence
+after terminal evidence / before Chat finalization
+```
+
+Для каждой точки система обязана доказать, что:
+
+- retry разрешён либо запрещён однозначно;
+- unknown side effect не становится `FAILED_RETRYABLE` автоматически;
+- reservation/cost liability не исчезает;
+- stale worker не может finalize operation.
+
+## Migration matrix
+
+```text
+fresh V1 → latest
+representative V45/V50/V58 → latest
+V58 → V59 → V60 → V61
+large populated upgrade
+historical invalid policy-array validation case
+interrupted concurrent-index case
+```
+
+## Security regression
+
+Обязательные классы:
+
+- tenant escape / IDOR;
+- CSRF/CORS/JWT confusion;
+- OIDC/SCIM scope violations;
+- SSRF/egress bypass;
+- connector ACL leakage;
+- indirect prompt injection;
+- malicious MCP/tool server;
+- approval payload mutation;
+- memory poisoning;
+- agent runaway loop.
+
+## Load/capacity
+
+Отдельные profiles:
+
+- auth burst;
+- chat/stream burst;
+- long-lived SSE;
+- high-RAG QPS;
+- connector sync;
+- ingestion workers;
+- usage/FinOps reports;
+- agents/tools.
+
+---
+
+# 72. Frontend operating consoles
+
+Frontend должен визуализировать governance/evidence, а не скрывать его за «магией AI».
+
+## Model Governance Console
+
+- effective/latest catalog;
+- organization policy;
+- policy preview;
+- provider/deployment eligibility;
+- lifecycle/deprecation;
+- pricing/residency/retention/training status;
+- route simulator.
+
+## Execution Inspector
+
+Для exact `ChatTurn` показывать связанный граф:
+
+```text
+ChatTurn
+→ ModelRouteDecision
+→ ExecutionPlan
+→ Attempt(s)
+→ physical/application outcomes
+→ usage/pricing/commitment
+→ RetrievalRun
+→ AnswerPassport
+→ Audit
+```
+
+Raw secrets/prompt bodies по умолчанию не раскрывать.
+
+## Reconciliation Center
+
+Единая очередь:
+
+- V59 physical reconciliation view;
+- unknown cost;
+- missing physical evidence;
+- connector partial sync;
+- storage cleanup review;
+- tool/agent ambiguous side effect;
+- invoice mismatch.
+
+Operator actions должны быть auditable и не давать unsafe retry.
+
+## Knowledge Operations
+
+- source freshness;
+- latest uploaded version;
+- published searchable version;
+- generation state;
+- connector cursor;
+- ACL sync status;
+- OCR/partial state;
+- reindex/publication health.
+
+## FinOps Dashboard
+
+Показывать раздельно V60-style:
+
+```text
+actual
+reserved
+unknown
+```
+
+и позже:
+
+```text
+settled/invoice adjusted
+forecast
+```
+
+## Security / Agent Operations
+
+- sessions;
+- service accounts;
+- DLP/security events;
+- approvals;
+- active AgentRuns;
+- step timeline;
+- tool calls;
+- pause/cancel;
+- cost/budget;
+- ambiguous state.
+
+---
+
+# 73. API & Integration Platform additions
+
+## Versioned public API
+
+После stabilization внутренних contracts установить explicit compatibility policy:
+
+- `/api/v1/...` или эквивалентная versioning strategy;
+- stable error envelope;
+- idempotency semantics;
+- async operation resource;
+- deprecation window;
+- OpenAPI contract tests.
+
+## Webhooks
+
+Tenant-scoped signed webhooks для:
+
+- security events;
+- budget threshold;
+- connector/ingestion completion;
+- approval request;
+- agent completion/failure;
+- reconciliation incident.
+
+Требования:
+
+- signature;
+- timestamp/replay protection;
+- secret rotation;
+- retry/backoff;
+- dead letter;
+- tenant isolation;
+- bounded payload.
+
+## SDKs
+
+После стабилизации API:
+
+- TypeScript;
+- Java;
+- generated clients там, где OpenAPI достаточно стабилен.
+
+---
+
+# 74. Architecture evolution rules
+
+## Modular monolith остаётся default
+
+Не разносить transactional invariants по сервисам без реальной необходимости.
+
+Особенно тесно связаны:
+
+- security state;
+- reservation/idempotency;
+- model route decision;
+- execution evidence;
+- audit intent;
+- Knowledge provenance;
+- cost commitment.
+
+## Первые кандидаты на isolated workers
+
+Изоляция оправдана security/resource boundaries:
+
+- PDF/OOXML parsing;
+- OCR;
+- embeddings/reranker batches;
+- connector sync;
+- code interpreter;
+- agent/tool execution с недоверенным кодом.
+
+Это **не обязательно отдельные базы/микросервисы**.
+
+## Если появится service split
+
+Обязательные cross-service invariants:
+
+- global operation identity;
+- tenant scope;
+- idempotent inbox/outbox;
+- fencing;
+- durable STARTED evidence;
+- immutable provenance;
+- retry safety;
+- reconciliation.
+
+---
+
+# 75. Roadmap completion criteria
+
+Roadmap нельзя считать выполненным только по количеству feature flags или UI screens.
+
+К концу 2027 целевой SafeAI Desk должен иметь:
+
+- production-safe core execution;
+- согласованную budget/commitment semantics после V60 foundation;
+- explicit physical vs application outcomes;
+- governed provider boundary;
+- recoverable ExecutionPlan lifecycle;
+- final request binding;
+- dynamic multi-provider runtime;
+- enterprise identity/provisioning;
+- data classification + DLP;
+- governed Knowledge connectors + ACL mirroring;
+- durable provider spend/settlement/reconciliation layer;
+- structured/streaming/multimodal paths;
+- Tools/MCP с approvals;
+- durable ToolExecution;
+- bounded durable Agent Runtime;
+- mature observability/SRE;
+- tested backup/restore/DR;
+- release/security/evaluation gates;
+- отсутствие production path, который может выполнить external AI/tool side effect без durable evidence и policy scope.
+
+Финальное архитектурное правило:
+
+> **Недетерминированной может быть модель. Недоказуемой не должна быть инфраструктура вокруг неё.**
+
+---
+
+**SafeAI Desk Master Roadmap — актуализирован относительно backend baseline `V1–V61` по состоянию на 04 октября 2026 года.**

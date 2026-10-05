@@ -164,4 +164,40 @@ class ModelDomainContractTest {
         assertThat(response.createdAt())
                 .isEqualTo(entry.createdAt());
     }
+    @Test
+    void routeResultPreservesTheExactExecutableSnapshotWithoutNumericCoercion() {
+        java.math.BigDecimal cost = new java.math.BigDecimal("0.123456789012");
+        ModelRouteResult result = new ModelRouteResult(
+                ModelTestFixtures.CLIENT_REQUEST_ID,
+                ModelTestFixtures.CATALOG_ENTRY_ID,
+                2,
+                ModelTestFixtures.POLICY_ID,
+                3,
+                "openai:gpt-test",
+                "openai",
+                "gpt-test",
+                12_345L,
+                4_096L,
+                cost,
+                true,
+                false,
+                ModelRouteReason.REQUESTED_MODEL
+        );
+
+        assertThat(result.decisionId()).isEqualTo(ModelTestFixtures.CLIENT_REQUEST_ID);
+        assertThat(result.catalogEntryId()).isEqualTo(ModelTestFixtures.CATALOG_ENTRY_ID);
+        assertThat(result.catalogVersion()).isEqualTo(2);
+        assertThat(result.policyId()).isEqualTo(ModelTestFixtures.POLICY_ID);
+        assertThat(result.policyVersion()).isEqualTo(3);
+        assertThat(result.modelKey()).isEqualTo("openai:gpt-test");
+        assertThat(result.provider()).isEqualTo("openai");
+        assertThat(result.providerModelId()).isEqualTo("gpt-test");
+        assertThat(result.estimatedInputTokens()).isEqualTo(12_345L);
+        assertThat(result.estimatedOutputTokens()).isEqualTo(4_096L);
+        assertThat(result.estimatedMaxCostUsd()).isSameAs(cost);
+        assertThat(result.pricingComplete()).isTrue();
+        assertThat(result.budgetExceeded()).isFalse();
+        assertThat(result.reason()).isEqualTo(ModelRouteReason.REQUESTED_MODEL);
+    }
+
 }

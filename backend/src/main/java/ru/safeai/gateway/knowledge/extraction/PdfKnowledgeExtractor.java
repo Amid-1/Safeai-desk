@@ -151,6 +151,21 @@ public class PdfKnowledgeExtractor
                             nativePages
                     );
 
+            /*
+             * Never publish a mixed scanned/native PDF as complete when OCR is
+             * required but unavailable. Silent page loss is worse than a
+             * controlled ingestion failure because retrieval would otherwise
+             * treat an incomplete source as authoritative.
+             */
+            if (!requiredOcrPages.isEmpty()
+                    && !ocrProvider.enabled()) {
+                throw new KnowledgeIngestionException(
+                        "SCANNED_PDF_OCR_REQUIRED",
+                        "PDF содержит страницы, требующие OCR; настройте OCR provider",
+                        false
+                );
+            }
+
             OcrDocument ocr =
                     !requiredOcrPages.isEmpty()
                             && ocrProvider.enabled()
@@ -367,6 +382,13 @@ public class PdfKnowledgeExtractor
 
             throw invalidOcrResponse(
                     "OCR provider пропустил обязательные страницы"
+            );
+        }
+
+        if (requiredOcrPages.stream()
+                .anyMatch(pageNumber -> pages.get(pageNumber).isBlank())) {
+            throw invalidOcrResponse(
+                    "OCR provider вернул пустой текст для обязательной страницы"
             );
         }
 

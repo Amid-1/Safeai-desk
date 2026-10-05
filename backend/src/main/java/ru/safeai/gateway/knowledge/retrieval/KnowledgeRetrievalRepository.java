@@ -90,7 +90,7 @@ public class KnowledgeRetrievalRepository {
                       on j.document_version_id=g.document_version_id
                      and j.index_generation=g.index_generation
                     join knowledge_documents d
-                      on d.id=g.document_id and d.current_version_id=g.document_version_id
+                      on d.id=g.document_id and d.searchable_version_id=g.document_version_id
                     join knowledge_bases b on b.id=g.knowledge_base_id
                     where g.organization_id=:organizationId
                       and g.knowledge_base_id=:knowledgeBaseId
@@ -144,7 +144,7 @@ public class KnowledgeRetrievalRepository {
                              chunk.knowledge_base_id
                      and document.organization_id =
                              chunk.organization_id
-                     and document.current_version_id =
+                     and document.searchable_version_id =
                              chunk.document_version_id
                     join knowledge_document_versions version
                       on version.id =

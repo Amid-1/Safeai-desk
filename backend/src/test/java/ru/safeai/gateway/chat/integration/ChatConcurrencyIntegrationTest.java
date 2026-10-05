@@ -17,6 +17,9 @@ import ru.safeai.gateway.chat.service.ChatProcessingContext;
 import ru.safeai.gateway.chat.service.ChatTurnReservationService;
 import ru.safeai.gateway.common.exception.ChatBusyException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.model.domain.BudgetEnforcement;
+import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
+import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 
 import java.sql.Timestamp;
 import java.time.Clock;
@@ -49,7 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ChatConcurrencyIntegrationTest
         extends AbstractChatPostgresIntegrationTest {
 
-    private static final String MOCK_MODEL_KEY = "mock-safeai";
+    private static final String MOCK_MODEL_KEY = "mock:mock-safeai";
 
     private static final long READY_TIMEOUT_SECONDS = 10;
     private static final long RESULT_TIMEOUT_SECONDS = 20;
@@ -58,26 +61,57 @@ class ChatConcurrencyIntegrationTest
     private ChatTurnReservationService reservationService;
 
     @Autowired
+    private OrganizationModelPolicyRepository policyRepository;
+
+    @Autowired
     private Clock clock;
 
     @BeforeEach
-    void alignPrimaryChatWithTestClock() {
-        // Superclass DB cleanup does not truncate the append-only model catalog.
-        // Reset test-owned catalog rows so all three races start independently.
-        jdbcTemplate.execute("truncate table public.model_catalog_entries cascade");
+    void prepareGovernedMockRuntime() {
+        /*
+         * V65 fail-closes new integrity-v3 ALLOWED routes without an exact
+         * organization policy binding. The superclass fixture owns the tenant,
+         * user and chat, while this class owns only its Model Control Plane
+         * catalog/policy data.
+         *
+         * Reset both append-only fixtures so every race starts from the same
+         * deterministic governance state and cannot inherit a policy created by
+         * another integration test sharing the PostgreSQL container.
+         */
+        resetModelControlPlaneFixtures();
+
         alignChatTimestamps(CHAT_ID);
         seedEffectiveMockModelCatalog();
+        seedAllowingMockModelPolicy();
+        assertGovernedMockRouteFixture();
     }
 
     @AfterEach
-    void removeRaceCatalogFixture() {
-        jdbcTemplate.execute("truncate table public.model_catalog_entries cascade");
+    void removeRaceModelControlPlaneFixtures() {
+        resetModelControlPlaneFixtures();
+    }
+
+    private void resetModelControlPlaneFixtures() {
+        jdbcTemplate.execute(
+                """
+                truncate table
+                    public.organization_model_policies,
+                    public.model_catalog_entries
+                cascade
+                """
+        );
     }
 
     /**
      * V52+ requires every new ALLOWED route to bind an effective immutable
-     * catalog snapshot. Each test starts with a freshly truncated database,
-     * so the mock runtime needs an explicit catalog fixture before racing.
+     * catalog snapshot. The logical model key is intentionally different from
+     * the provider model id:
+     *
+     * <pre>
+     * logical key       = mock:mock-safeai
+     * provider          = mock
+     * provider model id = mock-safeai
+     * </pre>
      */
     private void seedEffectiveMockModelCatalog() {
         Instant effectiveFrom = clock.instant().minusSeconds(1);
@@ -138,6 +172,101 @@ class ChatConcurrencyIntegrationTest
         assertThat(inserted)
                 .as("Тестовый mock runtime должен иметь эффективную модель в каталоге")
                 .isEqualTo(1);
+    }
+
+    /**
+     * V65 requires every new executable integrity-v3 decision to bind an exact
+     * append-only organization policy. An absent policy is intentionally
+     * fail-closed as MODEL_NOT_ALLOWED, so concurrency tests must seed the
+     * policy explicitly rather than relying on legacy policy-less routing.
+     * <p>
+     * The policy allows only this test's logical model key. No budget,
+     * retention, training or pricing bypasses are introduced.
+     */
+    private void seedAllowingMockModelPolicy() {
+        OrganizationModelPolicy policy =
+                new OrganizationModelPolicy(
+                        UUID.randomUUID(),
+                        ORGANIZATION_ID,
+                        1,
+                        true,
+                        Set.of(MOCK_MODEL_KEY),
+                        Set.of(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        BudgetEnforcement.SOFT,
+                        false,
+                        false,
+                        false,
+                        USER_ID,
+                        clock.instant().minusSeconds(1)
+                );
+
+        policyRepository.insert(policy);
+
+        OrganizationModelPolicy persisted =
+                policyRepository.findLatest(ORGANIZATION_ID)
+                        .orElseThrow(
+                                () -> new AssertionError(
+                                        "Тестовая Model Policy должна быть сохранена"
+                                )
+                        );
+
+        assertThat(persisted.id())
+                .isEqualTo(policy.id());
+
+        assertThat(persisted.enabled())
+                .isTrue();
+
+        assertThat(persisted.allowModelKeys())
+                .containsExactly(MOCK_MODEL_KEY);
+
+        assertThat(persisted.denyModelKeys())
+                .isEmpty();
+    }
+
+    private void assertGovernedMockRouteFixture() {
+        Long catalogCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                  from public.model_catalog_entries catalog
+                 where catalog.model_key = ?
+                   and catalog.provider = 'mock'
+                   and catalog.provider_model_id = 'mock-safeai'
+                   and catalog.lifecycle = 'ACTIVE'
+                   and catalog.effective_from <= ?
+                """,
+                Long.class,
+                MOCK_MODEL_KEY,
+                Timestamp.from(clock.instant())
+        );
+
+        assertThat(catalogCount)
+                .as("Должен существовать ровно один effective mock catalog snapshot")
+                .isEqualTo(1L);
+
+        Long policyCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                  from public.organization_model_policies policy
+                 where policy.organization_id = ?
+                   and policy.version = 1
+                   and policy.enabled
+                   and ? = any(policy.allow_model_keys)
+                   and not (? = any(policy.deny_model_keys))
+                """,
+                Long.class,
+                ORGANIZATION_ID,
+                MOCK_MODEL_KEY,
+                MOCK_MODEL_KEY
+        );
+
+        assertThat(policyCount)
+                .as("V65 route fixture должен иметь ровно одну policy, разрешающую mock model")
+                .isEqualTo(1L);
     }
 
     @Test
@@ -638,22 +767,34 @@ class ChatConcurrencyIntegrationTest
                   join public.model_catalog_entries catalog
                     on catalog.id = route.selected_catalog_entry_id
                    and catalog.version = route.selected_catalog_version
+                   and catalog.model_key = route.selected_model_key
+                   and catalog.provider = route.selected_provider
+                   and catalog.provider_model_id = route.selected_provider_model_id
+                  join public.organization_model_policies policy
+                    on policy.id = route.policy_id
+                   and policy.organization_id = route.organization_id
+                   and policy.version = route.policy_version
                  where route.outcome = 'ALLOWED'
+                   and route.decision_integrity_version >= 3
                    and route.selected_model_key = ?
                    and route.selected_provider = 'mock'
                    and route.selected_provider_model_id = 'mock-safeai'
-                   and catalog.model_key = ?
-                   and catalog.provider = 'mock'
-                   and catalog.provider_model_id = 'mock-safeai'
                    and catalog.lifecycle = 'ACTIVE'
+                   and policy.enabled
+                   and ? = any(policy.allow_model_keys)
+                   and not (? = any(policy.deny_model_keys))
                 """,
                 Long.class,
+                MOCK_MODEL_KEY,
                 MOCK_MODEL_KEY,
                 MOCK_MODEL_KEY
         );
 
         assertThat(linked)
-                .as("Ровно один ChatTurn должен ссылаться на ALLOWED route и immutable catalog snapshot")
+                .as(
+                        "Ровно один ChatTurn должен ссылаться на ALLOWED route, "
+                                + "immutable catalog snapshot и exact V65 policy binding"
+                )
                 .isEqualTo(1L);
     }
 
@@ -704,4 +845,3 @@ class ChatConcurrencyIntegrationTest
     ) implements RaceOutcome {
     }
 }
-

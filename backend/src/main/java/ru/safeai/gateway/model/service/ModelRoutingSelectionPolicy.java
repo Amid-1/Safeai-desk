@@ -237,6 +237,17 @@ final class ModelRoutingSelectionPolicy {
             );
         }
 
+        static Selection policyUnconfigured() {
+            return new Selection(
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    ModelRouteReason.MODEL_NOT_ALLOWED
+            );
+        }
+
         static Selection modelNotFound(
                 String modelKey
         ) {

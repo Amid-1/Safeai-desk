@@ -17,6 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class PdfKnowledgeExtractorOcrTest {
 
+    private static final long OCR_MAX_RESPONSE_BYTES = 65_536L;
+    private static final long OCR_MAX_INPUT_BYTES = 25L * 1024L * 1024L;
+
     @Test
     void usesOcrForScannedPageAndPreservesPageNumber() throws Exception {
         byte[] pdf;
@@ -26,20 +29,34 @@ class PdfKnowledgeExtractorOcrTest {
             document.save(output);
             pdf = output.toByteArray();
         }
+
         KnowledgeOcrProvider ocr = new KnowledgeOcrProvider() {
-            @Override public boolean enabled() { return true; }
-            @Override public OcrDocument extractPdf(byte[] content) {
+            @Override
+            public boolean enabled() {
+                return true;
+            }
+
+            @Override
+            public OcrDocument extractPdf(byte[] content) {
                 return new OcrDocument(
                         "test-v1",
                         List.of(new OcrPage(1, "Scanned corporate policy"))
                 );
             }
         };
+
         PdfKnowledgeExtractor extractor = new PdfKnowledgeExtractor(
                 ingestionProperties(),
                 new KnowledgeOcrProperties(
-                        "disabled", null, null, List.of(), 20,
-                        Duration.ofSeconds(1), Duration.ofSeconds(1), 65_536L
+                        "disabled",
+                        null,
+                        null,
+                        List.of(),
+                        20,
+                        Duration.ofSeconds(1),
+                        Duration.ofSeconds(1),
+                        OCR_MAX_RESPONSE_BYTES,
+                        OCR_MAX_INPUT_BYTES
                 ),
                 ocr
         );
@@ -55,10 +72,19 @@ class PdfKnowledgeExtractorOcrTest {
 
     private static KnowledgeIngestionProperties ingestionProperties() {
         return new KnowledgeIngestionProperties(
-                true, Duration.ofSeconds(1), 1, Duration.ofMinutes(2),
-                Duration.ofSeconds(30), 1, 3, Duration.ofSeconds(1),
-                Duration.ofSeconds(5), 100_000, 10_000_000L,
-                1_200, 150
+                true,
+                Duration.ofSeconds(1),
+                1,
+                Duration.ofMinutes(2),
+                Duration.ofSeconds(30),
+                1,
+                3,
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(5),
+                100_000,
+                10_000_000L,
+                1_200,
+                150
         );
     }
 }

@@ -17,8 +17,7 @@ import java.util.regex.Pattern;
  * therefore explicitly overridden and must never expose secret values.</p>
  */
 @ConfigurationProperties(
-        prefix = "safeai.knowledge.storage"
-)
+        prefix = "safeai.knowledge.storage", ignoreUnknownFields = false)
 public record KnowledgeStorageProperties(
         KnowledgeStorageType type,
         Path localRoot,

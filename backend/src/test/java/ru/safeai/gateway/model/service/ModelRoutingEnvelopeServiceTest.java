@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.service;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import ru.safeai.gateway.model.config.ModelRoutingEnvelopeProperties;
 import ru.safeai.gateway.model.domain.ModelCapability;
 
@@ -42,6 +43,16 @@ class ModelRoutingEnvelopeServiceTest {
                 100L, 200L, 300L, 100L, 200L, 300L);
         assertThat(same.systemAndDeveloperTokens()).isEqualTo(100L);
         assertThat(same.ragContextInputUnits()).isEqualTo(200L);
+    }
+
+    @Test
+    void governanceConfigurationFailsFastOnUnknownProperties() {
+        ConfigurationProperties annotation =
+                ModelRoutingEnvelopeProperties.class.getAnnotation(ConfigurationProperties.class);
+
+        assertThat(annotation).isNotNull();
+        assertThat(annotation.prefix()).isEqualTo("safeai.model-routing.envelope");
+        assertThat(annotation.ignoreUnknownFields()).isFalse();
     }
 
     @Test

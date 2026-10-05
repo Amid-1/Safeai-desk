@@ -24,13 +24,8 @@ public class OrganizationModelPolicyController {
 
     private final OrganizationModelPolicyService service;
 
-    public OrganizationModelPolicyController(
-            OrganizationModelPolicyService service
-    ) {
-        this.service = Objects.requireNonNull(
-                service,
-                "service не должен быть null"
-        );
+    public OrganizationModelPolicyController(OrganizationModelPolicyService service) {
+        this.service = Objects.requireNonNull(service, "service не должен быть null");
     }
 
     @GetMapping("/{organizationId}")

@@ -3,7 +3,7 @@ package ru.safeai.gateway.model.domain;
 import java.math.BigDecimal;
 import java.util.UUID;
 
-/** Executable V45 route. The provider/model must equal the active runtime. */
+/** Executable governed route bound to one immutable catalog/policy decision. */
 public record ModelRouteResult(
         UUID decisionId,
         UUID catalogEntryId,

@@ -6,8 +6,13 @@ import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
 import ru.safeai.gateway.ai.provider.AiProviderProperties;
 import ru.safeai.gateway.ai.provider.anthropic.AnthropicProperties;
 import ru.safeai.gateway.ai.provider.openai.OpenAiProperties;
+import ru.safeai.gateway.model.domain.RuntimeModelProbeResult;
+import ru.safeai.gateway.model.domain.RuntimeModelProbeStatus;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -218,29 +223,117 @@ class RuntimeModelStatusServiceTest {
                 .hasMessageContaining("Anthropic provider properties");
     }
 
+    @Test
+    void freshMatchingProbeIsExposedOnlyWithinTheLocalTtl() {
+        Instant now = Instant.parse("2026-10-03T12:00:00Z");
+        RuntimeModelStatusService service = service(
+                "mock",
+                List.of(),
+                null,
+                null,
+                Clock.fixed(now, ZoneOffset.UTC)
+        );
+
+        service.recordProbe(new RuntimeModelProbeResult(
+                "mock",
+                "mock-safeai",
+                RuntimeModelProbeStatus.AVAILABLE,
+                now.minusSeconds(59),
+                10L,
+                200,
+                "ok"
+        ));
+
+        assertThat(service.current().healthStatus()).isEqualTo("AVAILABLE");
+    }
+
+    @Test
+    void probeAtExactTtlBoundaryIsNotReportedAsCurrentHealth() {
+        Instant now = Instant.parse("2026-10-03T12:00:00Z");
+        RuntimeModelStatusService service = service(
+                "mock", List.of(), null, null,
+                Clock.fixed(now, ZoneOffset.UTC)
+        );
+
+        service.recordProbe(new RuntimeModelProbeResult(
+                "mock", "mock-safeai", RuntimeModelProbeStatus.AVAILABLE,
+                now.minusSeconds(60), 10L, 200, "ok"
+        ));
+
+        assertThat(service.current().healthStatus()).isEqualTo("NOT_PROBED");
+    }
+
+    @Test
+    void futureOrDifferentRuntimeProbeIsNeverReused() {
+        Instant now = Instant.parse("2026-10-03T12:00:00Z");
+        RuntimeModelStatusService service = service(
+                "mock", List.of(), null, null,
+                Clock.fixed(now, ZoneOffset.UTC)
+        );
+
+        service.recordProbe(new RuntimeModelProbeResult(
+                "mock", "another-model", RuntimeModelProbeStatus.AVAILABLE,
+                now, 10L, 200, "ok"
+        ));
+        assertThat(service.current().healthStatus()).isEqualTo("NOT_PROBED");
+
+        service.recordProbe(new RuntimeModelProbeResult(
+                "mock", "mock-safeai", RuntimeModelProbeStatus.AVAILABLE,
+                now.plusSeconds(1), 10L, 200, "ok"
+        ));
+        assertThat(service.current().healthStatus()).isEqualTo("NOT_PROBED");
+    }
+
+    @Test
+    void olderObservationCannotOverwriteANewerProbe() {
+        Instant now = Instant.parse("2026-10-03T12:00:00Z");
+        RuntimeModelStatusService service = service(
+                "mock", List.of(), null, null,
+                Clock.fixed(now, ZoneOffset.UTC)
+        );
+
+        service.recordProbe(new RuntimeModelProbeResult(
+                "mock", "mock-safeai", RuntimeModelProbeStatus.RATE_LIMITED,
+                now.minusSeconds(1), 10L, 429, "limited"
+        ));
+        service.recordProbe(new RuntimeModelProbeResult(
+                "mock", "mock-safeai", RuntimeModelProbeStatus.AVAILABLE,
+                now.minusSeconds(10), 10L, 200, "older"
+        ));
+
+        assertThat(service.current().healthStatus()).isEqualTo("RATE_LIMITED");
+    }
+
     private static RuntimeModelStatusService service(
             String provider,
             List<ModelPricingProperties.ModelPrice> prices,
             OpenAiProperties openAi,
             AnthropicProperties anthropic
     ) {
-        @SuppressWarnings("unchecked")
-        ObjectProvider<OpenAiProperties> openAiProvider =
-                mock(ObjectProvider.class);
-        @SuppressWarnings("unchecked")
-        ObjectProvider<AnthropicProperties> anthropicProvider =
-                mock(ObjectProvider.class);
+        return service(provider, prices, openAi, anthropic, Clock.systemUTC());
+    }
 
-        when(openAiProvider.getIfAvailable())
-                .thenReturn(openAi);
-        when(anthropicProvider.getIfAvailable())
-                .thenReturn(anthropic);
+    private static RuntimeModelStatusService service(
+            String provider,
+            List<ModelPricingProperties.ModelPrice> prices,
+            OpenAiProperties openAi,
+            AnthropicProperties anthropic,
+            Clock clock
+    ) {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<OpenAiProperties> openAiProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<AnthropicProperties> anthropicProvider = mock(ObjectProvider.class);
+
+        when(openAiProvider.getIfAvailable()).thenReturn(openAi);
+        when(anthropicProvider.getIfAvailable()).thenReturn(anthropic);
 
         return new RuntimeModelStatusService(
                 new AiProviderProperties(provider),
                 new ModelPricingProperties(prices),
                 openAiProvider,
-                anthropicProvider
+                anthropicProvider,
+                clock
         );
     }
 

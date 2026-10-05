@@ -94,7 +94,7 @@ public class KnowledgeOperationsService {
 
                             count(*) filter (
                                 where document.enabled
-                                  and document.current_version_id is not null
+                                  and document.searchable_version_id is not null
                                   and exists (
                                       select 1
                                       from knowledge_document_chunks chunk
@@ -116,7 +116,7 @@ public class KnowledgeOperationsService {
                                         and chunk.document_id =
                                                 document.id
                                         and chunk.document_version_id =
-                                                document.current_version_id
+                                                document.searchable_version_id
                                         and chunk.embedding_model = ?
                                   )
                             ) as searchable_documents,
@@ -139,7 +139,7 @@ public class KnowledgeOperationsService {
 
                             count(*) filter (
                                 where document.enabled
-                                  and document.current_version_id is not null
+                                  and document.searchable_version_id is not null
                                   and exists (
                                       select 1
                                       from knowledge_document_chunks stale_chunk
@@ -161,7 +161,7 @@ public class KnowledgeOperationsService {
                                         and stale_chunk.document_id =
                                                 document.id
                                         and stale_chunk.document_version_id =
-                                                document.current_version_id
+                                                document.searchable_version_id
                                         and stale_chunk.embedding_model <> ?
                                   )
                                   and not exists (
@@ -185,7 +185,7 @@ public class KnowledgeOperationsService {
                                         and current_chunk.document_id =
                                                 document.id
                                         and current_chunk.document_version_id =
-                                                document.current_version_id
+                                                document.searchable_version_id
                                         and current_chunk.embedding_model = ?
                                   )
                             ) as stale_embedding_documents,
@@ -201,7 +201,7 @@ public class KnowledgeOperationsService {
                                              chunk.knowledge_base_id
                                      and active_document.organization_id =
                                              chunk.organization_id
-                                     and active_document.current_version_id =
+                                     and active_document.searchable_version_id =
                                              chunk.document_version_id
                                     join knowledge_ingestion_jobs active_job
                                       on active_job.document_version_id =

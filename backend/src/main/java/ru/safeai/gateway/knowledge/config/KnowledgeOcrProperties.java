@@ -9,7 +9,8 @@ import java.util.Locale;
 import java.util.Set;
 
 @ConfigurationProperties(
-        prefix = "safeai.knowledge.ocr"
+        prefix = "safeai.knowledge.ocr",
+        ignoreUnknownFields = false
 )
 public record KnowledgeOcrProperties(
         String provider,
@@ -19,7 +20,8 @@ public record KnowledgeOcrProperties(
         Integer minNativeCharsPerPage,
         Duration connectTimeout,
         Duration readTimeout,
-        Long maxResponseBytes
+        Long maxResponseBytes,
+        Long maxInputBytes
 ) {
 
     private static final String PROVIDER_DISABLED =
@@ -37,11 +39,17 @@ public record KnowledgeOcrProperties(
     private static final long DEFAULT_MAX_RESPONSE_BYTES =
             16L * 1024L * 1024L;
 
+    private static final long DEFAULT_MAX_INPUT_BYTES =
+            25L * 1024L * 1024L;
+
     private static final long MIN_MAX_RESPONSE_BYTES =
             65_536L;
 
     private static final long MAX_MAX_RESPONSE_BYTES =
             128L * 1024L * 1024L;
+
+    private static final long MIN_MAX_INPUT_BYTES = 1024L * 1024L;
+    private static final long MAX_MAX_INPUT_BYTES = 100L * 1024L * 1024L;
 
     public KnowledgeOcrProperties {
         provider =
@@ -120,6 +128,18 @@ public record KnowledgeOcrProperties(
                 > MAX_MAX_RESPONSE_BYTES) {
             throw invalid(
                     "max-response-bytes"
+            );
+        }
+
+        maxInputBytes =
+                maxInputBytes == null
+                        ? DEFAULT_MAX_INPUT_BYTES
+                        : maxInputBytes;
+
+        if (maxInputBytes < MIN_MAX_INPUT_BYTES
+                || maxInputBytes > MAX_MAX_INPUT_BYTES) {
+            throw invalid(
+                    "max-input-bytes"
             );
         }
 
@@ -222,6 +242,7 @@ public record KnowledgeOcrProperties(
                 + ", connectTimeout=" + connectTimeout
                 + ", readTimeout=" + readTimeout
                 + ", maxResponseBytes=" + maxResponseBytes
+                + ", maxInputBytes=" + maxInputBytes
                 + "]";
     }
 

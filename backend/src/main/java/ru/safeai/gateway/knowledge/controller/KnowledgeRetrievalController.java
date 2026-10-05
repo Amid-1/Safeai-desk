@@ -22,16 +22,25 @@ public class KnowledgeRetrievalController {
 
     private final KnowledgeRetrievalService service;
 
-    public KnowledgeRetrievalController(KnowledgeRetrievalService service) {
+    public KnowledgeRetrievalController(
+            KnowledgeRetrievalService service
+    ) {
         this.service = service;
     }
 
     @PostMapping
     public KnowledgeRetrievalResponse retrieve(
             @PathVariable UUID knowledgeBaseId,
-            @Valid @RequestBody KnowledgeRetrievalRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal user
+            @Valid
+            @RequestBody
+            KnowledgeRetrievalRequest request,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal user
     ) {
-        return service.retrieve(knowledgeBaseId, request, user);
+        return service.retrieve(
+                knowledgeBaseId,
+                request,
+                user
+        );
     }
 }

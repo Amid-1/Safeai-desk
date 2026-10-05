@@ -3,6 +3,8 @@ package ru.safeai.gateway.model.repository;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.PreparedStatement;
 import java.util.Objects;
@@ -23,6 +25,7 @@ public class ModelRouteRequestMutexRepository {
         );
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
     public void lock(
             UUID chatId,
             UUID clientRequestId

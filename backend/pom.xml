@@ -31,24 +31,43 @@
 
     <properties>
         <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- Security updates for entire families managed by Spring Boot 4.1.1. -->
+        <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
+        <jackson-bom.version>3.1.7</jackson-bom.version>
+        <tomcat.version>11.0.26</tomcat.version>
+        <netty.version>4.2.18.Final</netty.version>
+        <logback.version>1.6.5</logback.version>
+        <slf4j.version>2.0.19</slf4j.version>
 
         <testcontainers.version>2.0.5</testcontainers.version>
         <minio.version>8.6.0</minio.version>
         <okhttp.version>5.1.0</okhttp.version>
-        <bouncycastle.version>1.84</bouncycastle.version>
+        <bouncycastle.version>1.86</bouncycastle.version>
         <commons-compress.version>1.28.0</commons-compress.version>
         <commons-io.version>2.21.0</commons-io.version>
         <pdfbox.version>3.0.8</pdfbox.version>
         <poi.version>5.5.1</poi.version>
-        <jsoup.version>1.23.1</jsoup.version>
+        <jsoup.version>1.23.2</jsoup.version>
         <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
         <maven-failsafe-plugin.version>3.5.6</maven-failsafe-plugin.version>
 
         <!--
-            Used by maven-surefire-plugin. An empty base value lets
+            snappy-java 1.1.10.9 fixes CVE-2026-90559.
+            Keep the version pinned centrally because MinIO depends on Snappy
+            and SafeAI requires the class at runtime when MinioClient is built.
+        -->
+        <snappy-java.version>1.1.10.9</snappy-java.version>
+
+        <!--
+            Used by Surefire and Failsafe. An empty base value lets
             other Maven plugins contribute to argLine safely.
         -->
         <argLine/>
+        <!-- Additional options for both test JVMs: -Dtest.jvm.args="-Xmx1g ...". -->
+        <test.jvm.args/>
     </properties>
 
     <dependencyManagement>
@@ -69,11 +88,28 @@
                 <version>${commons-compress.version}</version>
             </dependency>
 
-            <!-- Security override for MinIO's transitive crypto provider. -->
+            <!-- Align provider, ASN.1 utilities and PKIX if present transitively. -->
             <dependency>
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcprov-jdk18on</artifactId>
                 <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcutil-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpkix-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+
+            <!-- Keep all transitive Snappy consumers on the same published release. -->
+            <dependency>
+                <groupId>org.xerial.snappy</groupId>
+                <artifactId>snappy-java</artifactId>
+                <version>${snappy-java.version}</version>
             </dependency>
 
             <dependency>
@@ -89,6 +125,16 @@
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
             <version>${minio.version}</version>
+        </dependency>
+
+        <!--
+            MinIO 8.6 references Snappy classes while constructing the client.
+            dependencyManagement pins the version but does not place the JAR on
+            Maven/IDE classpaths, so keep it as an explicit direct dependency.
+        -->
+        <dependency>
+            <groupId>org.xerial.snappy</groupId>
+            <artifactId>snappy-java</artifactId>
         </dependency>
 
         <!-- MinIO 8.6 uses the OkHttp multiplatform facade; Java needs its JVM implementation. -->
@@ -296,15 +342,18 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
+                    <release>${java.version}</release>
                     <parameters>true</parameters>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
                         </path>
                         <path>
                             <groupId>org.springframework.boot</groupId>
                             <artifactId>spring-boot-configuration-processor</artifactId>
+                            <version>${project.parent.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
@@ -317,7 +366,8 @@
                 <configuration>
                     <argLine>
                         @{argLine}
-                        -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
+                        ${test.jvm.args}
+                        -javaagent:"${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar"
                     </argLine>
                 </configuration>
             </plugin>
@@ -341,6 +391,7 @@
                                     <version>[3.9,)</version>
                                 </requireMavenVersion>
                                 <dependencyConvergence/>
+                                <banDuplicatePomDependencyVersions/>
                             </rules>
                         </configuration>
                     </execution>
@@ -362,20 +413,17 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-failsafe-plugin</artifactId>
                         <version>${maven-failsafe-plugin.version}</version>
-                        <executions>
-                            <execution>
-                                <id>run-rate-limit-topology-tests</id>
-                                <goals>
-                                    <goal>integration-test</goal>
-                                    <goal>verify</goal>
-                                </goals>
-                                <configuration>
-                                    <includes>
-                                        <include>**/*IT.java</include>
-                                    </includes>
-                                </configuration>
-                            </execution>
-                        </executions>
+                        <!-- Boot's inherited execution runs integration-test and verify once. -->
+                        <configuration>
+                            <argLine>
+                                @{argLine}
+                                ${test.jvm.args}
+                                -javaagent:"${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar"
+                            </argLine>
+                            <includes>
+                                <include>**/*IT.java</include>
+                            </includes>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

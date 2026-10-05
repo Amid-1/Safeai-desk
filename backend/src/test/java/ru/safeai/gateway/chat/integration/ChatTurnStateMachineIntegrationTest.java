@@ -27,6 +27,7 @@ import ru.safeai.gateway.chat.service.ChatTurnFinalizationService;
 import ru.safeai.gateway.chat.service.ChatTurnReservationService;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelCatalogSource;
 import ru.safeai.gateway.model.domain.ModelLifecycle;
@@ -34,8 +35,10 @@ import ru.safeai.gateway.model.domain.ModelModality;
 import ru.safeai.gateway.model.domain.ModelPricingStatus;
 import ru.safeai.gateway.model.domain.ModelRetentionStatus;
 import ru.safeai.gateway.model.domain.ModelTrainingUseStatus;
+import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
+import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 import ru.safeai.gateway.model.service.RuntimeModelStatusService;
 
 import java.math.BigDecimal;
@@ -66,6 +69,13 @@ class ChatTurnStateMachineIntegrationTest
     private static final String TEST_MODEL_KEY =
             "test:chat-state-machine:mock-safeai";
 
+    private static final UUID TEST_POLICY_ID =
+            UUID.fromString(
+                    "93939393-9393-4939-8939-939393939393"
+            );
+
+    private static final int TEST_POLICY_VERSION = 1;
+
     @Autowired
     private ChatTurnReservationService reservationService;
 
@@ -79,6 +89,9 @@ class ChatTurnStateMachineIntegrationTest
     private ModelCatalogRepository modelCatalogRepository;
 
     @Autowired
+    private OrganizationModelPolicyRepository policyRepository;
+
+    @Autowired
     private RuntimeModelStatusService runtimeModelStatusService;
 
     @Autowired
@@ -89,39 +102,48 @@ class ChatTurnStateMachineIntegrationTest
 
     @BeforeEach
     void preparePrimaryChat() {
-        resetCatalogFixture();
+        resetModelControlPlaneFixture();
         alignChatTimestamps();
         assertOwnedChatVisible();
         seedEffectiveMockRuntimeCatalog();
+        seedEnabledOrganizationPolicy();
+        assertGovernedRuntimeReady();
     }
 
     @AfterEach
-    void clearRuntimeCatalogFixture() {
-        resetCatalogFixture();
+    void clearModelControlPlaneFixture() {
+        resetModelControlPlaneFixture();
     }
 
     /**
-     * AbstractPostgresIntegrationTest shares one PostgreSQL container across
-     * test methods and does not clear the append-only model catalog. Keeping
-     * per-test model keys would accumulate multiple effective mappings for
-     * mock/mock-safeai and cause AMBIGUOUS_RUNTIME_MAPPING before these state
-     * machine scenarios execute.
-     * <p>
-     * This is strictly test-data cleanup. Production catalog immutability,
-     * routing decisions, foreign keys and DB constraints remain unchanged.
-     * CASCADE is needed because model route/turn evidence references catalog
-     * rows, even when the preceding base fixture has already been cleaned.
+     * The PostgreSQL container is shared by the integration-test JVM, while
+     * model catalog and policy rows are append-only production evidence.
+     *
+     * <p>These state-machine tests are not routing-policy tests, therefore each
+     * method gets one isolated governed runtime snapshot and one exact tenant
+     * policy. V65 intentionally rejects a new integrity-v3 executable route
+     * when policy_id is absent, so clearing only model_catalog_entries is no
+     * longer sufficient.</p>
+     *
+     * <p>TRUNCATE is used only against the isolated Testcontainers database.
+     * No production immutability, FK, trigger or V65 execution fence is
+     * weakened.</p>
      */
-    private void resetCatalogFixture() {
+    private void resetModelControlPlaneFixture() {
         jdbcTemplate.execute(
-                "truncate table public.model_catalog_entries cascade"
+                """
+                truncate table
+                    public.model_route_decisions,
+                    public.organization_model_policies,
+                    public.model_catalog_entries
+                cascade
+                """
         );
     }
 
     /**
-     * The V49+ router must resolve an effective catalog snapshot for the
-     * configured mock physical runtime. Without one, these state-machine tests
-     * stop at MODEL_NOT_FOUND before reaching the behavior under test.
+     * The strict router must resolve exactly one effective logical catalog
+     * snapshot for the configured mock/mock-safeai physical runtime.
      */
     private void seedEffectiveMockRuntimeCatalog() {
         RuntimeModelStatusResponse runtime = runtimeModelStatusService.current();
@@ -171,6 +193,97 @@ class ChatTurnStateMachineIntegrationTest
                 .containsExactly(catalogEntry.id());
     }
 
+    /**
+     * V65 requires every new executable integrity-v3 route to bind an exact
+     * immutable organization policy. The policy intentionally allows only the
+     * logical model owned by this test and makes it the deterministic default.
+     */
+    private void seedEnabledOrganizationPolicy() {
+        Instant now = clock.instant();
+
+        OrganizationModelPolicy policy =
+                new OrganizationModelPolicy(
+                        TEST_POLICY_ID,
+                        ORGANIZATION_ID,
+                        TEST_POLICY_VERSION,
+                        true,
+                        Set.of(TEST_MODEL_KEY),
+                        Set.of(),
+                        TEST_MODEL_KEY,
+                        null,
+                        null,
+                        null,
+                        null,
+                        BudgetEnforcement.SOFT,
+                        false,
+                        false,
+                        false,
+                        USER_ID,
+                        now.minusSeconds(30)
+                );
+
+        policyRepository.insert(policy);
+    }
+
+    /**
+     * Fail in fixture setup, rather than later as MODEL_NOT_ALLOWED inside an
+     * unrelated state-machine assertion, if Model Control Plane prerequisites
+     * drift again.
+     */
+    private void assertGovernedRuntimeReady() {
+        RuntimeModelStatusResponse runtime =
+                runtimeModelStatusService.current();
+
+        assertThat(
+                modelCatalogRepository.findEffectiveByRuntime(
+                        runtime.provider(),
+                        runtime.model(),
+                        clock.instant()
+                )
+        )
+                .as(
+                        "State-machine tests require exactly one effective "
+                                + "catalog mapping for the mock Runtime"
+                )
+                .singleElement()
+                .satisfies(entry -> {
+                    assertThat(entry.modelKey())
+                            .isEqualTo(TEST_MODEL_KEY);
+
+                    assertThat(entry.lifecycle())
+                            .isEqualTo(ModelLifecycle.ACTIVE);
+                });
+
+        assertThat(
+                policyRepository.findLatest(
+                        ORGANIZATION_ID
+                )
+        )
+                .as(
+                        "V65 requires an enabled immutable organization policy "
+                                + "before a new executable route can be created"
+                )
+                .hasValueSatisfying(policy -> {
+                    assertThat(policy.id())
+                            .isEqualTo(TEST_POLICY_ID);
+
+                    assertThat(policy.version())
+                            .isEqualTo(TEST_POLICY_VERSION);
+
+                    assertThat(policy.enabled())
+                            .isTrue();
+
+                    assertThat(policy.allowModelKeys())
+                            .containsExactly(TEST_MODEL_KEY);
+
+                    assertThat(policy.denyModelKeys())
+                            .isEmpty();
+
+                    assertThat(policy.defaultModelKey())
+                            .isEqualTo(TEST_MODEL_KEY);
+                });
+    }
+
     @Test
     void newTurnCommitsProviderOperationIdAndQuotaBeforeProviderCall() {
         ChatProcessingContext context = reserve(
@@ -193,6 +306,10 @@ class ChatTurnStateMachineIntegrationTest
 
         assertThat(turn.getProviderCallStartedAt())
                 .isNull();
+
+        assertAllowedRouteBoundToTestPolicy(
+                context
+        );
 
         assertThat(countChatTurns())
                 .isEqualTo(1);
@@ -751,6 +868,75 @@ class ChatTurnStateMachineIntegrationTest
                 .isTrue();
     }
 
+    /**
+     * Guards the V65 invariant inside the state-machine suite: the successful
+     * ChatTurn must be backed by one ALLOWED decision bound to the exact
+     * immutable catalog snapshot and organization policy seeded above.
+     */
+    private void assertAllowedRouteBoundToTestPolicy(
+            ChatProcessingContext context
+    ) {
+        RouteGovernanceBinding binding =
+                jdbcTemplate.queryForObject(
+                        """
+                        select
+                            outcome,
+                            policy_id,
+                            policy_version,
+                            selected_model_key,
+                            selected_provider,
+                            selected_provider_model_id
+                        from public.model_route_decisions
+                        where id = ?
+                        """,
+                        (resultSet, ignoredRowNumber) ->
+                                new RouteGovernanceBinding(
+                                        resultSet.getString(
+                                                "outcome"
+                                        ),
+                                        resultSet.getObject(
+                                                "policy_id",
+                                                UUID.class
+                                        ),
+                                        resultSet.getObject(
+                                                "policy_version",
+                                                Integer.class
+                                        ),
+                                        resultSet.getString(
+                                                "selected_model_key"
+                                        ),
+                                        resultSet.getString(
+                                                "selected_provider"
+                                        ),
+                                        resultSet.getString(
+                                                "selected_provider_model_id"
+                                        )
+                                ),
+                        context.modelRouteDecisionId()
+                );
+
+        assertThat(binding)
+                .isNotNull();
+
+        assertThat(binding.outcome())
+                .isEqualTo("ALLOWED");
+
+        assertThat(binding.policyId())
+                .isEqualTo(TEST_POLICY_ID);
+
+        assertThat(binding.policyVersion())
+                .isEqualTo(TEST_POLICY_VERSION);
+
+        assertThat(binding.selectedModelKey())
+                .isEqualTo(TEST_MODEL_KEY);
+
+        assertThat(binding.selectedProvider())
+                .isEqualTo("mock");
+
+        assertThat(binding.selectedProviderModelId())
+                .isEqualTo("mock-safeai");
+    }
+
     private long countChatTurns() {
         return requireCount(
                 jdbcTemplate.queryForObject(
@@ -983,6 +1169,16 @@ class ChatTurnStateMachineIntegrationTest
             UUID modelRouteDecisionId,
             String provider,
             String requestedModel
+    ) {
+    }
+
+    private record RouteGovernanceBinding(
+            String outcome,
+            UUID policyId,
+            Integer policyVersion,
+            String selectedModelKey,
+            String selectedProvider,
+            String selectedProviderModelId
     ) {
     }
 

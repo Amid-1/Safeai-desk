@@ -106,8 +106,11 @@ final class ModelCatalogRules {
         ModelControlPlaneNumericValidation.requireNonNegativeNumeric30Scale12(
                 output, "outputUsdPer1mTokens"
         );
+        BigDecimal worstInputRate = input;
+        if (cachedInput != null) worstInputRate = worstInputRate == null ? cachedInput : worstInputRate.max(cachedInput);
+        if (cacheWrite != null) worstInputRate = worstInputRate == null ? cacheWrite : worstInputRate.max(cacheWrite);
         ModelControlPlaneNumericValidation.requireWorstCaseCostFitsNumeric30Scale12(
-                input, maxInputTokens, output, maxOutputTokens
+                worstInputRate, maxInputTokens, output, maxOutputTokens
         );
 
         boolean emptyExtraPricing = "{}".equals(extraPricingJson);
@@ -278,6 +281,7 @@ final class ModelCatalogRules {
         }
 
         String normalized = value.trim();
+        rejectControlCharacters(normalized, "pricingVersion");
         if (normalized.length() > 64) {
             throw new BadRequestException(
                     "pricingVersion превышает 64 символа"

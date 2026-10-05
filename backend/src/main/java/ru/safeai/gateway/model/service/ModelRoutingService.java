@@ -4,11 +4,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
-import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
+import ru.safeai.gateway.model.domain.ModelBudgetCommitmentSnapshot;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
@@ -21,13 +21,12 @@ import ru.safeai.gateway.model.dto.ModelRouteDecisionResponse;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
+import ru.safeai.gateway.model.repository.ModelRouteRequestMutexRepository;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,6 +36,7 @@ public class ModelRoutingService {
 
     private final OrganizationModelPolicyRepository policyRepository;
     private final ModelRouteDecisionRepository decisionRepository;
+    private final ModelRouteRequestMutexRepository requestMutexRepository;
     private final RuntimeModelStatusService runtimeStatusService;
     private final AuditEventService audit;
     private final ModelRoutingSelectionPolicy selectionPolicy;
@@ -48,6 +48,7 @@ public class ModelRoutingService {
             ModelCatalogRepository catalogRepository,
             OrganizationModelPolicyRepository policyRepository,
             ModelRouteDecisionRepository decisionRepository,
+            ModelRouteRequestMutexRepository requestMutexRepository,
             RuntimeModelStatusService runtimeStatusService,
             AuditEventService audit,
             Clock clock
@@ -58,6 +59,7 @@ public class ModelRoutingService {
         );
         this.policyRepository = Objects.requireNonNull(policyRepository, "policyRepository не должен быть null");
         this.decisionRepository = Objects.requireNonNull(decisionRepository, "decisionRepository не должен быть null");
+        this.requestMutexRepository = Objects.requireNonNull(requestMutexRepository, "requestMutexRepository не должен быть null");
         this.runtimeStatusService = Objects.requireNonNull(runtimeStatusService, "runtimeStatusService не должен быть null");
         this.audit = Objects.requireNonNull(audit, "audit не должен быть null");
         this.clock = Objects.requireNonNull(clock, "clock не должен быть null");
@@ -79,7 +81,16 @@ public class ModelRoutingService {
             SafeAiUserPrincipal currentUser
     ) {
         validateIdentity(request, currentUser);
-        Instant now = clock.instant();
+
+        // Serialize one semantic idempotency identity before replay lookup.
+        // Without this lock two first-time requests can both observe "no decision"
+        // and race into the unique (chat_id, client_request_id) constraint.
+        requestMutexRepository.lock(
+                request.chatId(),
+                request.clientRequestId()
+        );
+
+        Instant now = DatabaseTimestampNormalizer.normalize(clock.instant());
 
         Optional<ModelRouteDecision> replay = decisionRepository.findByRequest(
                 request.chatId(),
@@ -89,14 +100,35 @@ public class ModelRoutingService {
             return decisionFactory.replayDecision(replay.get(), request);
         }
 
+        OrganizationModelPolicy policy = policyRepository
+                .findLatest(request.organizationId())
+                .orElse(null);
+
+        // An organization without any policy version is explicitly UNCONFIGURED.
+        // Do not silently turn absence of governance into allow-all semantics.
+        if (policy == null) {
+            ModelRoutingSelectionPolicy.Selection unconfigured =
+                    ModelRoutingSelectionPolicy.Selection.policyUnconfigured();
+            throw persistDenied(
+                    request,
+                    currentUser,
+                    now,
+                    null,
+                    null,
+                    unconfigured,
+                    ModelRouteReason.MODEL_NOT_ALLOWED,
+                    null,
+                    null,
+                    null,
+                    null
+            );
+        }
+
         RuntimeModelStatusResponse runtime = Objects.requireNonNull(
                 runtimeStatusService.current(),
                 "Runtime model status не должен быть null"
         );
-        OrganizationModelPolicy policy = policyRepository
-                .findLatest(request.organizationId())
-                .orElse(null);
-        boolean policyEnabled = policy != null && policy.enabled();
+        boolean policyEnabled = policy.enabled();
 
         ModelRoutingSelectionPolicy.Selection selection = selectionPolicy.selectCatalog(
                 request,
@@ -261,7 +293,8 @@ public class ModelRoutingService {
                 now
         );
         decisionRepository.insert(decision);
-        recordDecisionAudit(currentUser, decision, AuditEventType.MODEL_ROUTE_DECIDED);
+        persistBudgetCommitment(decision, budget);
+        recordDecisionAudit(currentUser, decision, budget, AuditEventType.MODEL_ROUTE_DECIDED);
         return decisionFactory.toResult(decision);
     }
 
@@ -297,7 +330,10 @@ public class ModelRoutingService {
         }
 
         ModelRouteDecisionIntegrity.requireValid(decision);
-        return ModelRouteDecisionResponse.from(decision);
+        return ModelRouteDecisionResponse.from(
+                decision,
+                decisionRepository.findBudgetCommitmentSnapshot(decision.id()).orElse(null)
+        );
     }
 
     private void enforceRequestPricingPolicy(
@@ -390,7 +426,8 @@ public class ModelRoutingService {
         } else if (selection.entry() != null) {
             pricingComplete = selection.entry().pricingComplete();
             estimatedCost = null;
-        } else if (selection.selectedProvider() != null
+        } else if (runtime != null
+                && selection.selectedProvider() != null
                 && selection.selectedProviderModelId() != null
                 && "FREE".equals(runtime.pricingStatus())) {
             pricingComplete = true;
@@ -423,7 +460,8 @@ public class ModelRoutingService {
                 now
         );
         decisionRepository.insert(decision);
-        recordDecisionAudit(currentUser, decision, AuditEventType.MODEL_ROUTE_DENIED);
+        persistBudgetCommitment(decision, budget);
+        recordDecisionAudit(currentUser, decision, budget, AuditEventType.MODEL_ROUTE_DENIED);
 
         return new ModelRouteDeniedException(
                 decision.id(),
@@ -432,40 +470,36 @@ public class ModelRoutingService {
         );
     }
 
+    private void persistBudgetCommitment(
+            ModelRouteDecision decision,
+            ModelRoutingCostPolicy.BudgetSnapshot budget
+    ) {
+        if (budget.monthlyBudgetUsd() == null) {
+            return;
+        }
+        decisionRepository.insertBudgetCommitmentSnapshot(
+                decision.id(),
+                new ModelBudgetCommitmentSnapshot(
+                        budget.monthlyActualCostUsd(),
+                        budget.monthlyReservedCostUsd(),
+                        budget.monthlyUnknownCostCount(),
+                        budget.monthlyCommitmentState()
+                ),
+                decision.createdAt()
+        );
+    }
+
     private void recordDecisionAudit(
             SafeAiUserPrincipal currentUser,
             ModelRouteDecision decision,
+            ModelRoutingCostPolicy.BudgetSnapshot budget,
             AuditEventType eventType
     ) {
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("decisionId", decision.id());
-        details.put("chatId", decision.chatId());
-        details.put("clientRequestId", decision.clientRequestId());
-        details.put("outcome", decision.outcome());
-        details.put("reason", decision.reason());
-        details.put("decisionIntegrityVersion", decision.decisionIntegrityVersion());
-        details.put("decisionSha256", decision.decisionSha256());
-
-        if (decision.chatTurnId() != null) details.put("chatTurnId", decision.chatTurnId());
-        if (decision.selectedModelKey() != null) details.put("modelKey", decision.selectedModelKey());
-        if (decision.selectedProvider() != null) details.put("provider", decision.selectedProvider());
-        if (decision.selectedProviderModelId() != null) details.put("providerModel", decision.selectedProviderModelId());
-        if (decision.selectedCatalogVersion() != null) details.put("catalogVersion", decision.selectedCatalogVersion());
-        if (decision.policyVersion() != null) details.put("policyVersion", decision.policyVersion());
-        if (decision.estimatedMaxCostUsd() != null) details.put("estimatedMaxCostUsd", decision.estimatedMaxCostUsd().toPlainString());
-
-        details.put("budgetExceeded", decision.budgetExceeded());
-        details.put("monthlyCostKnown", decision.monthlyCostKnown());
-        details.put("monthlyCostState", decision.monthlyCostState());
-
-        Map<String, Object> immutableDetails = Map.copyOf(details);
-        AuditDetails auditDetails = () -> immutableDetails;
-
         audit.record(
                 currentUser,
                 decision.organizationId(),
                 eventType,
-                auditDetails
+                new ModelRouteDecisionAuditDetails(decision, budget)
         );
     }
 

@@ -1,68 +1,102 @@
 package ru.safeai.gateway.model.exception;
 
 import java.io.Serial;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
  * Raised before provider I/O when the fully materialized AI request exceeds
- * the input-token envelope approved by model governance.
+ * the input-unit envelope approved by Model Control Plane governance.
  *
- * <p>The structured values are intentionally retained separately from the
- * message so observability code can consume them without parsing text.</p>
+ * <p>This is a deterministic pre-provider rejection: after it is raised,
+ * no physical provider request may be started for the rejected execution.</p>
+ *
+ * <p>Input accounting is deliberately expressed in versioned input units,
+ * not provider-specific tokenizer tokens. Structured values are retained
+ * separately so orchestration, audit and observability code never need
+ * to parse the exception message.</p>
  */
-public final class ModelRouteEnvelopeExceededException
-        extends RuntimeException {
+public final class ModelRouteEnvelopeExceededException extends RuntimeException {
 
     @Serial
     private static final long serialVersionUID = 1L;
 
     private final UUID decisionId;
-    private final long reservedInputTokens;
-    private final long actualEstimatedInputTokens;
+    private final long reservedInputUnits;
+    private final long actualEstimatedInputUnits;
 
     public ModelRouteEnvelopeExceededException(
             UUID decisionId,
-            long reservedInputTokens,
-            long actualEstimatedInputTokens
+            long reservedInputUnits,
+            long actualEstimatedInputUnits
     ) {
-        super(
-                "Prepared AI request exceeds reserved model-route input envelope: "
-                        + "decisionId=" + decisionId
-                        + ", reserved=" + reservedInputTokens
-                        + ", prepared=" + actualEstimatedInputTokens
+        super(message(
+                decisionId,
+                reservedInputUnits,
+                actualEstimatedInputUnits
+        ));
+
+        this.decisionId = Objects.requireNonNull(
+                decisionId,
+                "decisionId не должен быть null"
         );
-
-        if (reservedInputTokens < 0L) {
-            throw new IllegalArgumentException(
-                    "reservedInputTokens не может быть отрицательным"
-            );
-        }
-
-        if (actualEstimatedInputTokens <= reservedInputTokens) {
-            throw new IllegalArgumentException(
-                    "actualEstimatedInputTokens должен превышать "
-                            + "reservedInputTokens"
-            );
-        }
-
-        this.decisionId = decisionId;
-        this.reservedInputTokens = reservedInputTokens;
-        this.actualEstimatedInputTokens = actualEstimatedInputTokens;
+        this.reservedInputUnits = reservedInputUnits;
+        this.actualEstimatedInputUnits = actualEstimatedInputUnits;
     }
 
     /**
-     * Persisted model-route decision. Null is allowed only for compatibility
-     * callers that execute the guard without ChatTurn governance context.
+     * Immutable persisted model-route decision that approved the execution
+     * envelope.
      */
     public UUID decisionId() {
         return decisionId;
     }
 
-    public long reservedInputTokens() {
-        return reservedInputTokens;
+    /**
+     * Maximum number of versioned input-accounting units approved by governance.
+     */
+    public long reservedInputUnits() {
+        return reservedInputUnits;
     }
 
-    public long actualEstimatedInputTokens() {
-        return actualEstimatedInputTokens;
+    /**
+     * Number of input-accounting units required by the fully materialized request.
+     */
+    public long actualEstimatedInputUnits() {
+        return actualEstimatedInputUnits;
+    }
+
+    private static String message(
+            UUID decisionId,
+            long reservedInputUnits,
+            long actualEstimatedInputUnits
+    ) {
+        Objects.requireNonNull(
+                decisionId,
+                "decisionId не должен быть null"
+        );
+
+        if (reservedInputUnits < 0L) {
+            throw new IllegalArgumentException(
+                    "reservedInputUnits не может быть отрицательным"
+            );
+        }
+
+        if (actualEstimatedInputUnits < 0L) {
+            throw new IllegalArgumentException(
+                    "actualEstimatedInputUnits не может быть отрицательным"
+            );
+        }
+
+        if (actualEstimatedInputUnits <= reservedInputUnits) {
+            throw new IllegalArgumentException(
+                    "actualEstimatedInputUnits должен превышать reservedInputUnits"
+            );
+        }
+
+        return "Prepared AI request exceeds reserved model-route input envelope: "
+                + "decisionId=" + decisionId
+                + ", reservedInputUnits=" + reservedInputUnits
+                + ", actualEstimatedInputUnits=" + actualEstimatedInputUnits;
     }
 }

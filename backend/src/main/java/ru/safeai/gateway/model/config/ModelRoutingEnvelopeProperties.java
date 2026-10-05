@@ -13,7 +13,7 @@ import java.util.Objects;
  * <p>Legacy {@code *-tokens} configuration properties remain accepted as
  * aliases during the controlled rollout.</p>
  */
-@ConfigurationProperties(prefix = "safeai.model-routing.envelope")
+@ConfigurationProperties(prefix = "safeai.model-routing.envelope", ignoreUnknownFields = false)
 public record ModelRoutingEnvelopeProperties(
         Long systemAndDeveloperInputUnits,
         Long ragContextInputUnits,

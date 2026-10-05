@@ -2,6 +2,8 @@ package ru.safeai.gateway.model.repository;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 
@@ -11,7 +13,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -51,6 +52,7 @@ public class OrganizationModelPolicyRepository {
     }
 
     /** Row lock gives deterministic version allocation and policy updates. */
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean lockOrganization(
             UUID organizationId
     ) {
@@ -200,27 +202,9 @@ public class OrganizationModelPolicyRepository {
     private static Set<String> stringSet(
             Array array
     ) throws SQLException {
-        if (array == null) {
-            return Set.of();
-        }
-
-        try {
-            Object raw = array.getArray();
-            if (!(raw instanceof String[] strings)) {
-                throw new SQLException(
-                        "Expected PostgreSQL text[]"
-                );
-            }
-
-            LinkedHashSet<String> values =
-                    new LinkedHashSet<>(
-                            Arrays.asList(strings)
-                    );
-
-            return Collections.unmodifiableSet(values);
-        } finally {
-            array.free();
-        }
+        return Collections.unmodifiableSet(new LinkedHashSet<>(
+                JdbcTextArrayReader.read(array, "organization model policy keys")
+        ));
     }
 
     private static void setNullableInteger(

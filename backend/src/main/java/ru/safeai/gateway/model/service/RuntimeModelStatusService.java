@@ -9,6 +9,12 @@ import ru.safeai.gateway.ai.provider.openai.OpenAiProperties;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 
 import java.util.Objects;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.beans.factory.annotation.Autowired;
+import ru.safeai.gateway.model.domain.RuntimeModelProbeResult;
 
 /**
  * Transitional Model Control Plane read model.
@@ -28,6 +34,9 @@ public class RuntimeModelStatusService {
     private static final String STATIC_SINGLE_PROVIDER =
             "SINGLE_PROVIDER_STATIC";
 
+    private static final Duration PROBE_TTL = Duration.ofSeconds(60);
+    private final AtomicReference<RuntimeModelProbeResult> lastProbe = new AtomicReference<>();
+    private final Clock clock;
     private final AiProviderProperties providerProperties;
     private final ModelPricingProperties pricingProperties;
     private final ObjectProvider<OpenAiProperties> openAiProperties;
@@ -39,6 +48,18 @@ public class RuntimeModelStatusService {
             ObjectProvider<OpenAiProperties> openAiProperties,
             ObjectProvider<AnthropicProperties> anthropicProperties
     ) {
+        this(providerProperties, pricingProperties, openAiProperties, anthropicProperties, Clock.systemUTC());
+    }
+
+    @Autowired
+    public RuntimeModelStatusService(
+            AiProviderProperties providerProperties,
+            ModelPricingProperties pricingProperties,
+            ObjectProvider<OpenAiProperties> openAiProperties,
+            ObjectProvider<AnthropicProperties> anthropicProperties,
+            Clock clock
+    ) {
+        this.clock = Objects.requireNonNull(clock, "clock");
         this.providerProperties = Objects.requireNonNull(
                 providerProperties,
                 "providerProperties не должен быть null"
@@ -114,7 +135,7 @@ public class RuntimeModelStatusService {
             );
         }
 
-        String normalizedModel = model.trim();
+        String normalizedModel = normalizeRuntimeModel(model, provider);
         ModelPricingProperties.ModelPrice price =
                 pricingProperties.find(normalizedModel);
 
@@ -129,7 +150,7 @@ public class RuntimeModelStatusService {
                 false,
                 false,
                 "NOT_DECLARED",
-                "NOT_PROBED",
+                healthStatus(provider, normalizedModel),
                 price == null
                         ? "UNPRICED"
                         : price.free()
@@ -145,6 +166,44 @@ public class RuntimeModelStatusService {
                         ? null
                         : price.version()
         );
+    }
+
+    private static String normalizeRuntimeModel(
+            String model,
+            String provider
+    ) {
+        String normalized = model.trim();
+        if (normalized.length() > 100) {
+            throw new IllegalStateException(
+                    "Configured runtime model превышает 100 символов для provider=" + provider
+            );
+        }
+        for (int index = 0; index < normalized.length(); index++) {
+            if (Character.isISOControl(normalized.charAt(index))) {
+                throw new IllegalStateException(
+                        "Configured runtime model содержит control characters для provider=" + provider
+                );
+            }
+        }
+        return normalized;
+    }
+
+    /** Local point-in-time observation; never used as routing authorization or SLA evidence. */
+    void recordProbe(RuntimeModelProbeResult result) {
+        Objects.requireNonNull(result, "result");
+        lastProbe.accumulateAndGet(result, (previous, next) ->
+                previous == null || !next.checkedAt().isBefore(previous.checkedAt()) ? next : previous);
+    }
+
+    private String healthStatus(String provider, String model) {
+        RuntimeModelProbeResult result = lastProbe.get();
+        Instant now = clock.instant();
+        if (result == null || !provider.equals(result.provider()) || !model.equals(result.model())
+                || result.checkedAt().isAfter(now)
+                || !result.checkedAt().plus(PROBE_TTL).isAfter(now)) {
+            return "NOT_PROBED";
+        }
+        return result.status().name();
     }
 
     private OpenAiProperties requiredOpenAi() {

@@ -1,7 +1,6 @@
 package ru.safeai.gateway.model.service;
 
 import ru.safeai.gateway.common.exception.ConflictException;
-import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
@@ -56,8 +55,8 @@ final class ModelRouteDecisionFactory {
                 "monthlyBudgetUsd"
         );
         BigDecimal monthlySpentUsd = normalizeMoney(
-                budget.monthlySpentUsd(),
-                "monthlySpentUsd"
+                budget.monthlyCommittedUsd(),
+                "monthlyCommittedUsd"
         );
         BigDecimal monthlyProjectedUsd = normalizeMoney(
                 budget.monthlyProjectedUsd(),
@@ -85,7 +84,7 @@ final class ModelRouteDecisionFactory {
                 policy == null ? null : policy.id(),
                 policy == null ? null : policy.version(),
                 request.requiredCapabilities(),
-                AiInputUnitEstimator.VERSION,
+                ModelInputTokenEstimator.version(),
                 request.additionalInputUnitUpperBound(),
                 draft.estimatedInputTokens(),
                 draft.estimatedOutputTokens(),
@@ -134,9 +133,9 @@ final class ModelRouteDecisionFactory {
                                 request.requiredCapabilities()
                         )
                         && (decision.decisionIntegrityVersion() < 3
-                            || Objects.equals(
-                                decision.additionalInputUnitUpperBound(),
-                                request.additionalInputUnitUpperBound()));
+                           || (decision.additionalInputUnitUpperBound() != null
+                               && decision.additionalInputUnitUpperBound()
+                                   == request.additionalInputUnitUpperBound()));
 
         if (!sameRequestIdentity) {
             throw new ConflictException(

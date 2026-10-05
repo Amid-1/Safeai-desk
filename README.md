@@ -1,476 +1,488 @@
-SafeAI Desk
-
-SafeAI Desk — production-oriented full-stack корпоративная AI-платформа / AI Gateway для безопасного и управляемого 
-использования внешних AI-моделей внутри организаций.
-
-Актуальность: 6 сентября 2026.
-
-README описывает фактически реализованный baseline текущего проекта: backend, frontend и Flyway-эволюцию схемы до V48 
-включительно. Будущее развитие и крупные продуктовые этапы должны оставаться в ROADMAP.md.
-
-SafeAI Desk — не UI-обёртка над LLM и не «чат с API-ключом». Проект строит управляемый корпоративный слой вокруг AI:
-
-organization-based multi-tenancy;
-
-RBAC SUPER_ADMIN / ADMIN / USER;
-
-HttpOnly-cookie JWT authentication + CSRF;
-
-строгую JWT validation и security revocation epochs;
-
-refresh-token rotation/reuse detection;
-
-tenant-safe user/organization management;
-
-durable ChatTurn state machine с idempotency, lease и fencing;
-
-защиту от повторного provider call при неопределённом исходе;
-
-Redis rate limiting;
-
-transactional audit outbox;
-
-immutable actor/target audit snapshots;
-
-usage/pricing quality model без подмены неизвестных данных нулём;
-
-Mock / OpenAI / Anthropic provider abstraction;
-
-Knowledge/RAG: Knowledge Bases, immutable document versions, ingestion, object storage, extraction, embeddings, hybrid 
-retrieval, citations и Answer Passport;
-
-Model Control Plane: versioned Model Catalog, organization model policies и immutable model-route evidence;
-
-V48 input-accounting provenance и integrity v3 для новых route decisions;
-
-fail-closed capability enforcement для ещё не реализованного specialized data plane;
-
-runtime configuration/probe UI, отдельно от organization policy;
-
-PostgreSQL/Flyway constraints как часть integrity model;
-
-React frontend с runtime validation API contracts, abortable requests, production error handling и адаптивными 
-административными workspace.
-
-Текущий статус: production-oriented pre-1.0 / portfolio-ready baseline.
-
-Это серьёзная база B2B AI-platform / AI Gateway, но не заявление о compliance certification, billing-grade accounting, 
-формально доказанной HA/SLA, полноценном dynamic multi-provider data plane или автономной agent platform.
-
-Содержание
-
-Что решает проект
-
-Архитектура
-
-Стек
-
-Роли и границы доступа
-
-Multi-tenancy и database integrity
-
-Security architecture
-
-Backend-модули
-
-Durable ChatTurn
-
-AI providers и runtime
-
-Knowledge / RAG
-
-Model Control Plane — V45→V48
-
-Input accounting и V48 route evidence
-
-Rate limiting
-
-Audit
-
-Usage / pricing quality
-
-User management
-
-Organization management
-
-Frontend
-
-API
-
-Database / Flyway
-
-Local development
-
-Проверка
-
-Production notes
-
-Текущие границы
-
-Positioning
-
-Следующий этап
-
-Что решает проект
-
-Корпоративный AI требует отвечать не только на вопрос «что ответила модель».
-
-Нужно уметь установить:
-
-кто сделал запрос;
-
-из какой организации;
-
-какие права были у пользователя;
-
-был ли user и tenant активен;
-
-не устарела ли access-сессия;
-
-какие Knowledge Bases разрешено использовать;
-
-какая версия документа участвовала в retrieval;
-
-какой model policy был действующим;
-
-какая версия model catalog была effective в момент routing;
-
-какая физическая runtime model реально могла выполнить запрос;
-
-какой input accounting использовался;
-
-какой объём был зарезервирован до provider I/O;
-
-можно ли безопасно повторить AI operation;
-
-был ли provider call фактически начат;
-
-сколько usage/cost данных известно и какого они качества;
-
-кто изменил governance/security state;
-
-что произошло при crash во время provider I/O;
-
-какое immutable evidence осталось после решения маршрутизации.
-
-SafeAI Desk объединяет:
-
+# SafeAI Desk
+
+**SafeAI Desk** — production-oriented корпоративная AI-платформа / AI Gateway для безопасного и управляемого использования внешних AI-моделей внутри организаций.
+
+> **Актуальность:** 02 октября 2026  
+> **Backend baseline:** фактически просмотренные модули `common`, `auth`, `user`, `organization`, `ratelimit`, `audit`, 
+> `usage`, `chat`, `model`, `ai`, `knowledge` и Flyway-эволюция схемы `V1–V58`.  
+> **Статус:** production-oriented **pre-1.0**. Проект уже содержит серьёзные security/durability/governance механизмы, 
+> но README не заявляет compliance certification, billing-grade settlement, формально доказанную HA/SLA или полностью 
+> динамический multi-provider runtime.
+
+---
+
+## Содержание
+
+1. [Что решает проект](#что-решает-проект)
+2. [Текущее состояние](#текущее-состояние)
+3. [Архитектура](#архитектура)
+4. [Технологический стек](#технологический-стек)
+5. [Структура backend](#структура-backend)
+6. [Роли и границы доступа](#роли-и-границы-доступа)
+7. [Multi-tenancy и database integrity](#multi-tenancy-и-database-integrity)
+8. [Security architecture](#security-architecture)
+9. [Конфигурация](#конфигурация)
+10. [Модуль `common`](#модуль-common)
+11. [Модуль `auth`](#модуль-auth)
+12. [Модуль `user`](#модуль-user)
+13. [Модуль `organization`](#модуль-organization)
+14. [Модуль `ratelimit`](#модуль-ratelimit)
+15. [Модуль `audit`](#модуль-audit)
+16. [Модуль `usage`](#модуль-usage)
+17. [Модуль `chat`](#модуль-chat)
+18. [Модуль `model`](#модуль-model)
+19. [Модуль `ai`](#модуль-ai)
+20. [Модуль `knowledge`](#модуль-knowledge)
+21. [Ключевые backend contracts](#ключевые-backend-contracts)
+22. [Database / Flyway V1–V58](#database--flyway-v1v58)
+23. [Observability и operational jobs](#observability-и-operational-jobs)
+24. [Тестирование](#тестирование)
+25. [Local development](#local-development)
+26. [Production deployment notes](#production-deployment-notes)
+27. [Текущие ограничения и production-readiness gaps](#текущие-ограничения-и-production-readiness-gaps)
+28. [Позиционирование проекта](#позиционирование-проекта)
+29. [Frontend](#frontend)
+
+---
+
+# Что решает проект
+
+Корпоративная работа с AI требует отвечать не только на вопрос «что ответила модель».
+
+SafeAI Desk проектируется так, чтобы после выполнения запроса можно было установить:
+
+- кто инициировал запрос;
+- из какой организации пришёл запрос;
+- какая системная роль и security state были у пользователя;
+- был ли user и tenant активен;
+- не устарела ли access-сессия после security mutation;
+- какой `clientRequestId` использовался для idempotency;
+- какой `ChatTurn` представлял логическую операцию;
+- какая версия Model Catalog была effective;
+- какая organization model policy была применена;
+- почему route был `ALLOWED` или `DENIED`;
+- какой input-accounting contract использовался;
+- какой объём input/output был зарезервирован до внешнего I/O;
+- какие Knowledge Bases и document versions участвовали в retrieval;
+- какие chunks попали в RAG context;
+- какой immutable Answer Passport остался после ответа;
+- был ли физический provider attempt фактически начат;
+- какой provider/config/deployment/model target был разрешён;
+- можно ли безопасно повторить физический вызов;
+- известен ли provider outcome или он `AMBIGUOUS`;
+- какие usage/pricing данные известны и какого они качества;
+- кто изменил governance/security state;
+- что произошло при crash между commit, provider I/O и finalization.
+
+Высокоуровнево проект объединяет:
+
+```text
 Identity
 + Tenant isolation
 + Session security
 + Durable chat operations
-+ Knowledge / Retrieval provenance
 + Model governance
-+ Input accounting provenance
++ Physical AI execution evidence
++ Knowledge / Retrieval provenance
 + Rate limits / quotas
-+ Provider abstraction
 + Usage / pricing quality
 + Audit trail
++ PostgreSQL-enforced integrity
+```
 
-Архитектура
+---
 
-Проект построен как модульный монолит.
+# Текущее состояние
 
-Это сознательный выбор: текущие tenant/security/durability/governance invariants выгодно держать внутри одной 
-transactional boundary, не добавляя преждевременную микросервисную сложность.
+На 02.10.2026 реализован следующий backend baseline.
 
+## Identity / Security
+
+- organization-based multi-tenancy;
+- `SUPER_ADMIN / ADMIN / USER`;
+- exactly-one-role policy;
+- HttpOnly access/refresh cookies;
+- CSRF для browser flow;
+- строгая JWT validation;
+- RSA key ring / active key id;
+- `users.token_version`;
+- `organizations.auth_version`;
+- refresh-token rotation;
+- refresh reuse detection;
+- refresh family termination;
+- tenant-safe user/organization management;
+- trusted-proxy-aware client IP resolution;
+- server-generated request correlation ID;
+- fail-closed security-state lookup;
+- BCrypt UTF-8 boundary hardening;
+- production startup invariant validators.
+
+## Durable chat / AI execution
+
+- durable `ChatTurn`;
+- idempotency + semantic replay identity;
+- short reservation transaction;
+- lease + fencing;
+- `processingToken`;
+- `providerOperationId`;
+- quota reservation;
+- route-decision binding;
+- `provider_call_started_at`;
+- crash recovery;
+- `AMBIGUOUS` protection;
+- no blind retry после неопределённого external I/O;
+- V50+ durable `ModelExecutionPlan`;
+- durable physical `ModelExecutionAttempt`;
+- outcome certainty;
+- retry/fallback safety;
+- immutable physical target identity;
+- provider usage/pricing evidence.
+
+## Model governance
+
+- append-only versioned Model Catalog;
+- latest/effective distinction;
+- scheduled `effectiveFrom`;
+- organization model policies;
+- allow/deny/default model rules;
+- max input/output envelope;
+- max request cost preflight;
+- monthly budget preflight;
+- pricing/data requirements;
+- retention/training requirements;
+- immutable route decisions;
+- integrity digest;
+- exact route decision ↔ `ChatTurn` binding;
+- input-accounting provenance;
+- fail-closed capability gate для ещё не реализованного specialized data plane.
+
+## Knowledge / RAG
+
+- tenant/ACL-aware Knowledge Bases;
+- organization/member visibility;
+- immutable document versions;
+- durable ingestion jobs;
+- S3-compatible object storage;
+- upload intent journal;
+- fenced orphan cleanup/reconciliation;
+- bounded extraction;
+- PDF/DOCX/PPTX/XLSX/HTML/Markdown/JSON/XML/CSV/plain text extractors;
+- optional OCR boundary;
+- embeddings;
+- pgvector + lexical retrieval;
+- Russian lexical profile;
+- Reciprocal Rank Fusion;
+- deterministic chunking;
+- RAG context assembly;
+- `GENERAL / KNOWLEDGE_ASSISTED / KNOWLEDGE_ONLY`;
+- inline citations;
+- citation validation;
+- retrieval provenance;
+- Answer Passport;
+- retrieval evaluation;
+- explicit index-generation lifecycle;
+- fenced generation publication/GC.
+
+## Audit / Usage / Rate limits
+
+- transactional audit outbox;
+- immutable actor snapshots;
+- immutable target organization snapshots;
+- retry/dead-letter;
+- cursor pagination;
+- retention jobs;
+- Redis fixed-window rate limits;
+- HMAC-derived Redis keys;
+- fail-closed infrastructure semantics;
+- live + rollup usage analytics;
+- pricing/usage quality states;
+- UTC aggregation;
+- rollup reconciliation.
+
+---
+
+# Архитектура
+
+Проект построен как **модульный монолит**.
+
+Это сознательный выбор: security, tenant, durability, model-governance и provenance invariants выгодно держать в одной PostgreSQL transactional boundary, не добавляя преждевременную распределённую согласованность.
+
+```text
 ┌──────────────────────────────┐
-│ React + TypeScript Frontend  │
+│ React + TypeScript frontend  │
 └──────────────┬───────────────┘
                │ HTTPS / JSON
-               │ Cookie auth + CSRF
+               │ HttpOnly cookies + CSRF
                ▼
 ┌──────────────────────────────┐
 │ Edge / Nginx                 │
 └──────────────┬───────────────┘
                ▼
-┌─────────────────────────────────────────────────────────┐
-│ Spring Boot Backend                                     │
-│ auth / common / organization / user / model / chat / ai │
-│ knowledge / audit / usage / ratelimit                   │
-└─────────────┬────────────────┬──────────────────────────┘
-              │                │
-              ▼                ▼
-      ┌─────────────┐    ┌──────────────┐
-      │ PostgreSQL  │    │ Redis        │
-      │ + Flyway    │    │ rate limits  │
-      │ source of   │    │ coordination │
-      │ truth       │    │ optional     │
-      └──────┬──────┘    └──────────────┘
-             │
-             ├──────────────► S3-compatible object storage
-             │                 Knowledge documents
-             │
-             │ provider call outside long DB transaction
-             ▼
-      ┌──────────────────────────────┐
-      │ Mock / OpenAI / Anthropic    │
-      └──────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│ Spring Boot backend                                           │
+│                                                               │
+│ common / auth / user / organization / ratelimit / audit       │
+│ usage / chat / model / ai / knowledge                         │
+└───────────┬──────────────────┬──────────────────┬──────────────┘
+            │                  │                  │
+            ▼                  ▼                  ▼
+     ┌─────────────┐     ┌─────────────┐   ┌──────────────┐
+     │ PostgreSQL  │     │ Redis       │   │ S3-compatible│
+     │ + Flyway    │     │ rate limit  │   │ object store │
+     │ source of   │     │ coordination│   │ Knowledge    │
+     │ truth       │     │ cache       │   │ documents    │
+     └──────┬──────┘     └─────────────┘   └──────────────┘
+            │
+            │ provider I/O outside long DB transaction
+            ▼
+     ┌──────────────────────────────┐
+     │ Mock / OpenAI / Anthropic    │
+     └──────────────────────────────┘
+```
 
-PostgreSQL — source of truth для durable/security/governance state.
-Redis — coordination/rate-limit/cache layer. Security correctness не должна зависеть только от Redis cache.
-S3-compatible storage — содержимое Knowledge documents.
-Provider I/O выполняется вне долгой database transaction.
+## Control plane vs execution plane
 
-Control plane и data plane
+SafeAI Desk разделяет два принципиально разных слоя.
 
-Model Control Plane уже умеет хранить versioned Model Catalog, определять latest/effective версии, применять organization 
-policy, проверять pricing/data requirements, делать budget preflight и фиксировать immutable route decision.
+```text
+Model Control Plane
+    │
+    ├─ Model Catalog
+    ├─ Organization Policy
+    ├─ budget / pricing / retention checks
+    └─ immutable ModelRouteDecision
+            │
+            ▼
+AI Physical Execution Plane
+    │
+    ├─ ModelExecutionPlan
+    ├─ ModelExecutionAttempt #1..N
+    ├─ exact provider/config/deployment/model target
+    ├─ outcome certainty
+    ├─ retry/fallback safety
+    └─ usage/pricing evidence
+```
 
-Но текущий runtime всё ещё представляет один физически активный provider/model adapter на deployment. Governance plane 
-может разрешить logical model только если её effective snapshot исполним текущим runtime.
+`ModelRouteDecision` отвечает на вопрос **что governance разрешил**.
 
-Стек
+`ModelExecutionAttempt` отвечает на вопрос **что физически пытались выполнить и что удалось доказать о результате**.
 
-Backend
+---
 
-Java 21;
+# Технологический стек
 
-Spring Boot 4.1.0-M1;
+## Backend
 
-Spring Web MVC;
+- Java 21 baseline;
+- Spring Boot;
+- Spring Web MVC;
+- Spring Security;
+- Spring Data JPA / Hibernate;
+- Spring JDBC;
+- Bean Validation;
+- PostgreSQL 16 family;
+- Flyway;
+- Redis;
+- Maven Wrapper;
+- Lombok;
+- JUnit 5;
+- Mockito / Spring Test;
+- Testcontainers;
+- AWS SDK v2 / S3-compatible storage;
+- pgvector;
+- Apache PDFBox;
+- Apache POI;
+- jsoup;
+- document-format-specific extractors;
+- Micrometer / Prometheus;
+- structured logging;
+- Docker / Docker Compose.
 
-Spring Security;
+Точные dependency versions определяет `backend/pom.xml`; README не дублирует их как источник истины.
 
-Spring Data JPA / Hibernate;
+## Persistence philosophy
 
-Spring JDBC;
+- `spring.jpa.hibernate.ddl-auto=validate`;
+- application не создаёт production schema через Hibernate;
+- schema evolution — только Flyway;
+- критические tenant/security/durability invariants, где практично, подкреплены PostgreSQL FK/UNIQUE/CHECK/trigger;
+- applied migrations не редактируются задним числом;
+- local seed отделён от production migrations.
 
-PostgreSQL;
+---
 
-Flyway;
+# Структура backend
 
-Redis;
+```text
+backend/
+├── src/main/java/ru/safeai/gateway/
+│   ├── ai/
+│   ├── audit/
+│   ├── auth/
+│   ├── chat/
+│   ├── common/
+│   ├── knowledge/
+│   ├── model/
+│   ├── organization/
+│   ├── ratelimit/
+│   ├── usage/
+│   ├── user/
+│   └── SafeaiBackendApplication.java
+│
+├── src/main/resources/
+│   ├── db/
+│   │   ├── migration/         # V1 ... V58
+│   │   └── local-migration/   # local-only seed
+│   ├── application.yml
+│   ├── application-local.yml
+│   ├── application-local-nginx.yml
+│   ├── application-prod.yml
+│   └── logback-spring.xml
+│
+└── src/test/
+    ├── java/
+    └── resources/
+```
 
-Maven Wrapper;
+Основные зависимости модулей:
 
-Bean Validation;
+```text
+common
+ ├─ auth
+ ├─ user
+ ├─ organization
+ ├─ ratelimit
+ ├─ audit
+ ├─ usage
+ ├─ chat
+ ├─ model
+ ├─ ai
+ └─ knowledge
 
-Lombok;
+auth ──────────────► user / organization security state
+chat ──────────────► model route decision
+chat ──────────────► knowledge RAG preparation
+model ─────────────► ai execution binding
+ai ────────────────► provider
+chat finalization ─► usage metadata / audit
+knowledge ─────────► Answer Passport + route evidence
+```
 
-MapStruct;
+---
 
-JUnit 5 / Mockito / Spring Test;
+# Роли и границы доступа
 
-Testcontainers;
+У пользователя должна быть ровно одна системная роль:
 
-MinIO / S3-compatible storage;
-
-AWS SDK v2;
-
-Apache Tika;
-
-PDFBox;
-
-Apache POI;
-
-jsoup;
-
-Micrometer / Prometheus;
-
-structured logging;
-
-Docker / Docker Compose.
-
-Точные версии определяет backend/pom.xml.
-
-Frontend
-
-По текущему frontend/package.json:
-
-React 19.1.1;
-
-React DOM 19.1.1;
-
-React Router DOM 7.8.2;
-
-TypeScript 6.0.0-dev.20250826;
-
-Vite 8.0.0-beta.13;
-
-Vitest 3.2.4;
-
-Testing Library;
-
-ESLint 9 + TypeScript ESLint;
-
-eslint-plugin-jsx-a11y;
-
-Recharts 3.1.2;
-
-Node.js >=24.6.0;
-
-npm >=11.5.1.
-
-Frontend работает в strict TypeScript mode и имеет scripts для typecheck, lint, tests, coverage, production build, combined check, CI и production dependency audit.
-
-Роли и границы доступа
-
-У пользователя ровно одна системная роль:
-
+```text
 SUPER_ADMIN
 ADMIN
 USER
+```
 
-SUPER_ADMIN
+## SUPER_ADMIN
 
 Platform/control-plane administrator:
 
-создаёт и просматривает tenant organizations;
+- управляет tenant organizations;
+- создаёт/управляет обычными `ADMIN` и `USER`;
+- читает global audit;
+- читает global usage;
+- управляет глобальным Model Catalog;
+- импортирует runtime model в catalog;
+- создаёт immutable catalog versions;
+- читает и изменяет organization model policies;
+- читает route evidence разных tenants;
+- выполняет administrative runtime probe.
 
-управляет обычными ADMIN/USER;
+Ordinary user-management flow не должен использоваться для создания нового `SUPER_ADMIN`.
 
-видит global audit и usage;
-
-читает runtime model status;
-
-управляет глобальным Model Catalog;
-
-импортирует текущую runtime model в catalog;
-
-создаёт новые immutable catalog versions;
-
-читает/изменяет organization model policies;
-
-выбирает tenant для model-governance administration;
-
-читает immutable route decisions разных организаций;
-
-может запускать административную проверку runtime model availability.
-
-Через ordinary user-management flow не должен создавать/превращать пользователя в SUPER_ADMIN.
-
-Текущий frontend рассматривает SUPER_ADMIN как platform/control-plane роль и не выдаёт ей обычный Chat route.
-
-ADMIN
+## ADMIN
 
 Tenant administrator:
 
-работает с Chat;
+- работает с Chat;
+- управляет `USER` своей организации;
+- работает с Knowledge Bases;
+- управляет KB memberships;
+- читает tenant audit;
+- читает tenant usage;
+- читает runtime model status;
+- читает global/effective Model Catalog;
+- создаёт новые версии model policy своей организации;
+- читает route evidence своей организации.
 
-управляет USER своей организации;
+ADMIN не должен:
 
-работает с Knowledge Bases в tenant scope;
+- управлять чужим tenant;
+- мутировать глобальный catalog;
+- управлять чужой policy;
+- читать чужой route evidence;
+- превращать пользователя в `SUPER_ADMIN`.
 
-видит tenant audit/usage;
+## USER
 
-читает runtime status;
+- работает со своими chats;
+- использует доступные Knowledge Bases;
+- получает AI responses в пределах policy организации;
+- не имеет administrative routes.
 
-читает глобальный Model Catalog/effective catalog;
+## Model Control Plane RBAC
 
-создаёт новую version model policy своей организации;
+| Возможность | USER | ADMIN | SUPER_ADMIN |
+|---|---:|---:|---:|
+| Runtime status | — | read | read |
+| Global catalog | — | read | read/write |
+| Import runtime → catalog | — | — | write |
+| Own organization policy | — | read/write | read/write |
+| Other organization policy | — | — | read/write |
+| Own route evidence | — | read | read |
+| Other tenant route evidence | — | — | read |
 
-читает route-decision evidence своей организации.
+Frontend guards являются UX-слоем. Security boundary находится на backend.
 
-Не может мутировать глобальный catalog, импортировать runtime, управлять policy чужого tenant или читать чужой route evidence.
+---
 
-USER
+# Multi-tenancy и database integrity
 
-работает со своими чатами;
+Tenant key:
 
-использует разрешённые Knowledge Bases;
+```text
+organization_id
+```
 
-получает AI responses в рамках organization policy;
+Scope model:
 
-не имеет administrative routes.
-
-Model Control Plane RBAC
-
-Возможность
-
-USER
-
-ADMIN
-
-SUPER_ADMIN
-
-Страница «Модели»
-
-нет
-
-да
-
-да
-
-Runtime status
-
-нет
-
-read
-
-read
-
-Global catalog
-
-нет
-
-read-only
-
-read/write
-
-Import runtime → catalog
-
-нет
-
-нет
-
-да
-
-New catalog version
-
-нет
-
-нет
-
-да
-
-Policy своей организации
-
-нет
-
-read/write
-
-read/write
-
-Policy другой организации
-
-нет
-
-нет
-
-read/write
-
-Route decision своей организации
-
-нет
-
-read
-
-read
-
-Route decision другой организации
-
-нет
-
-нет
-
-read
-
-Frontend guards — UX. Security boundary — backend.
-
-Multi-tenancy и database integrity
-
-Tenant key — organization_id.
-
+```text
 SUPER_ADMIN -> platform/global scope
 ADMIN       -> organization scope
-USER        -> own-resource scope
+USER        -> own-resource / ACL scope
+```
 
-Tenant isolation применяется к users, organizations, sessions/messages/turns, Knowledge Bases/memberships/documents, 
-quota reservations, audit, usage, model policies, model-route decisions, rate limiting и security-state lookup.
+Tenant isolation применяется к:
 
-Composite tenant-safe relationships включают:
+- users;
+- organizations;
+- chat sessions;
+- chat messages;
+- chat turns;
+- quota reservations;
+- model policies;
+- model-route decisions;
+- execution plans/attempts через route provenance;
+- Knowledge Bases;
+- Knowledge memberships;
+- documents/versions/chunks;
+- retrieval runs/hits;
+- Answer Passports;
+- audit;
+- usage;
+- rate-limit keys;
+- security-state lookup.
 
+Типовые composite integrity relations:
+
+```text
 chat_session(user_id, organization_id)
     -> user(id, organization_id)
 
@@ -480,650 +492,2366 @@ chat_message(session_id, organization_id)
 chat_turn(session_id, organization_id, user_id)
     -> chat_session(id, organization_id, user_id)
 
-Model governance продолжает ту же модель:
-
 model_route_decision
-    -> exact model_catalog snapshot
-    -> exact organization_model_policy snapshot
+    -> exact catalog snapshot
+    -> exact organization policy snapshot
     -> exact chat/user/organization context
 
 chat_turn.model_route_decision_id
     -> exact ALLOWED route decision
 
 answer_passport.model_route_decision_id
-    -> exact governance evidence
+    -> exact route evidence
+```
 
-Цель — не допустить cross-tenant/provenance mismatch даже при application bug.
+Цель — не полагаться только на service-layer checks и не допустить cross-tenant/provenance mismatch даже при application bug или race.
 
-Security architecture
+---
 
-Browser auth
+# Security architecture
 
+## Browser authentication
+
+```text
 access token  -> HttpOnly cookie
 refresh token -> HttpOnly cookie
 XSRF-TOKEN    -> readable cookie
+```
 
-JWT не хранится в localStorage. Unsafe methods передают X-XSRF-TOKEN. После login CSRF token ротируется.
+JWT не должен храниться в `localStorage`.
 
-JWT validation
+Unsafe browser methods передают CSRF header:
 
-Access token валидируется по signature и contract claims: identity, userId, organizationId, role, token/org security 
-versions, jti, iat, exp, iss, aud, token type.
+```text
+X-XSRF-TOKEN
+```
 
-Security epochs
+После login CSRF state ротируется.
 
-users.token_version меняется при user-specific security mutation.
-organizations.auth_version — tenant-level epoch.
+## JWT contract
 
-Failure security-state lookup должен fail closed.
+Access token содержит/валидирует identity и security epoch data:
 
-Refresh rotation/reuse
+- subject;
+- email/identity;
+- user ID;
+- organization ID;
+- role;
+- user `tokenVersion`;
+- organization `authVersion`;
+- token type;
+- `jti`;
+- `iat`;
+- `exp`;
+- issuer;
+- audience;
+- signing key identity.
 
-Refresh token хранится как hash. Rotation/reuse flow использует locked token state, predecessor/successor family 
-integrity, reuse detection и family termination.
+JWT validity не ограничивается проверкой криптографической подписи: runtime также проверяет текущий user/org security state.
 
-Passwords
+## Security epochs
 
-BCrypt limit — 72 UTF-8 bytes, не 72 символа. Baseline использует DelegatingPasswordEncoder, {bcrypt}, BCrypt strength 
-12 и legacy unprefixed BCrypt fallback только на migration period.
+```text
+users.token_version
+```
 
-Request ID
+изменяется при user-specific security mutation.
 
-Backend генерирует canonical UUID request ID. Incoming X-Request-Id не становится автоматически server correlation ID.
+```text
+organizations.auth_version
+```
 
-Client IP / trusted proxy
+— organization-level epoch.
 
-Forwarded headers доверяются только когда direct peer принадлежит configured trustedProxyCidrs.
+Это позволяет инвалидировать tenant access state без обязательного массового переписывания всех JWT.
 
-empty proxy allowlist = trust nobody
+## Refresh token rotation / reuse detection
+
+Refresh token хранится как hash.
+
+```text
+cookie
+  ↓
+hash
+  ↓
+locked token row
+  ↓
+validate token + family + epochs
+  ↓
+revoke predecessor
+  ↓
+create successor
+```
+
+Reuse path:
+
+```text
+reused predecessor
+  ↓
+terminate refresh family
+  ↓
+security audit
+  ↓
+clear cookies
+  ↓
+401
+```
+
+DB-инварианты защищают replacement chain/family consistency.
+
+## Passwords
+
+BCrypt ограничение учитывается как **72 UTF-8 bytes**, а не «72 символа».
+
+Baseline включает:
+
+- `DelegatingPasswordEncoder`;
+- `{bcrypt}`;
+- BCrypt strength 12;
+- migration compatibility для legacy BCrypt;
+- current create/reset password policy;
+- UTF-8 byte-length validation;
+- запрет control characters.
+
+## Request ID
+
+Backend генерирует собственный canonical UUID request ID.
+
+Incoming `X-Request-Id` не считается автоматически доверенным server correlation ID.
+
+Server request ID используется в:
+
+- request attributes;
+- MDC;
+- response header;
+- API error envelope.
+
+## Trusted proxy / client IP
+
+Forwarded headers учитываются только если direct peer принадлежит configured trusted proxy CIDR.
+
+Security model:
+
+```text
+empty trustedProxyCidrs = trust nobody
+```
 
 Production не должен использовать trust-all CIDR.
 
-CORS
+## CORS
 
-Production — explicit HTTPS allowlist.
+Production policy — explicit HTTPS allowlist.
 
-Public errors
+Не допускаются wildcard origins и неоднозначные URL forms с userinfo/query/fragment/path.
 
-MVC и Spring Security используют безопасный public error contract. Internal stack traces/secrets/provider diagnostics 
-не должны попадать клиенту.
+## Public error contract
 
-Runtime health probe safety
+MVC:
 
-Runtime probe отделён от Chat flow и не должен передавать user prompt, history, RAG context или document content. HTTP 
-hardening включает HTTPS-only URL, disabled redirects, bounded timeouts, discarded response body и controlled status mapping.
+```text
+Exception
+  ↓
+GlobalExceptionHandler
+  ↓
+ApiErrorResponseFactory
+  ↓
+ApiErrorResponse
+```
 
-Backend-модули
+Spring Security:
 
-Модуль
+```text
+authentication / authorization failure
+  ↓
+RestAuthenticationEntryPoint / RestAccessDeniedHandler
+  ↓
+ApiErrorResponseWriter
+  ↓
+ApiErrorResponse
+```
 
-Назначение
+Public response не должен содержать:
 
-auth
+- stack traces;
+- raw provider body;
+- credentials;
+- cookies;
+- raw JWT;
+- secret configuration.
 
-login/logout/refresh, cookies, token rotation/revocation
+---
+# Конфигурация
 
-common
+Ниже перечислены ключевые configuration groups, подтверждённые в просмотренном backend. Конкретный production secret/value задаётся deployment environment, а не README.
 
-shared security/error/platform/time/persistence
+## Core
 
-organization
+```yaml
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
 
-tenant lifecycle, platform invariants, org security epoch
+  flyway:
+    enabled: true
+    locations:
+      - classpath:db/migration
+    validate-migration-naming: true
+    clean-disabled: true
+    postgresql:
+      transactional-lock: false
 
-user
+server:
+  port: 8080
+  forward-headers-strategy: none
+```
 
-users, exactly-one-role policy, optimistic versions, password/security mutations
+`transactional-lock=false` важен для migrations с PostgreSQL concurrent index operations.
 
-model
+## JWT / platform
 
-runtime status/probe, catalog, organization policy, immutable route decisions, V48 accounting provenance
+```text
+app.security.jwt.*
+safeai.platform.organization-id
+```
 
-chat
+Canonical platform organization baseline:
 
-sessions/messages/turns, quotas, idempotency, lease/fencing/recovery, route binding
+```text
+00000000-0000-0000-0000-000000000001
+```
 
-ai
+## Auth cookies
 
-provider abstraction, retry/errors, input accounting, provider metadata
+Prefix:
 
-knowledge
+```text
+safeai.auth.cookies.*
+```
 
-KB/ACL, documents/versions, storage, extraction, ingestion, embeddings, retrieval, RAG, Answer Passport
+Ключевые параметры:
 
-ratelimit
+- `secure`;
+- `same-site`;
+- `access-token-max-age`;
+- `refresh-token-max-age`;
+- `refresh-token-absolute-max-age`;
+- `reuse-detection-retention`;
+- `domain`;
+- access cookie name;
+- refresh cookie name.
 
-Redis rate limiting/metrics
+Refresh cleanup:
 
+```text
+safeai.auth.refresh-cleanup.*
+```
+
+- cron;
+- batch size;
+- max batches per run.
+
+## User status cache
+
+```text
+safeai.security.user-status-cache.*
+```
+
+- enabled;
+- TTL;
+- key prefix.
+
+Security correctness не должна зависеть только от cached value; invalidation/fallback semantics должны оставаться fail-safe.
+
+## Rate limiting
+
+```text
+safeai.rate-limit.redis.*
+safeai.rate-limit.login.*
+safeai.rate-limit.refresh.*
+safeai.rate-limit.ai-messages.*
+```
+
+Ключевые настройки:
+
+- HMAC secret;
+- key version;
+- login email/IP limits;
+- refresh IP limit;
+- user/admin/org AI-message limits;
+- fixed windows.
+
+## Audit
+
+```text
+safeai.audit.outbox.*
+safeai.audit.retention.*
+```
+
+Baseline включает:
+
+- outbox batch size;
+- poll delay;
+- retention enable;
+- retention period;
+- batch size;
+- max batches/run;
+- cron;
+- timezone.
+
+## Usage
+
+```text
+safeai.usage.*
+safeai.usage.rollup.*
+```
+
+Baseline properties:
+
+- default range;
+- max range;
+- max live range;
+- max page size;
+- query timeout;
+- slow-query threshold;
+- JDBC fetch size;
+- max concurrent reports;
+- rollup cron;
+- lookback;
+- backfill per run;
+- advisory lock key;
+- statement timeout.
+
+## Chat
+
+```text
+safeai.chat.*
+safeai.chat.lock.*
+safeai.chat.quota.*
+safeai.chat.recovery.*
+```
+
+Ключевые настройки:
+
+- list/details limits;
+- message length;
+- processing lease;
+- lease-renewal pool;
+- distributed chat-lock TTL;
+- max active locks/watchdogs;
+- quota reservation input/output/cost;
+- quota period zone;
+- recovery scheduler batch limits/cron.
+
+## AI
+
+```text
+safeai.ai.provider
+safeai.ai.context.*
+safeai.ai.retry.*
+safeai.ai.openai.*
+safeai.ai.anthropic.*
+```
+
+Context configuration контролирует:
+
+- max user message chars;
+- instruction/history limits;
+- total input chars;
+- model context safety margin.
+
+Retry configuration контролирует:
+
+- enabled;
+- max attempts;
+- initial/max backoff;
+- max `Retry-After`;
+- total timeout.
+
+OpenAI/Anthropic configuration включает:
+
+- API key;
+- exact base URL;
+- model;
+- input/output limits;
+- response chars/body bytes;
+- connect/read timeout;
+- provider-specific flags/version.
+
+Production provider URLs проходят strict HTTPS/host validation.
+
+## Knowledge
+
+Main prefixes:
+
+```text
+safeai.knowledge.ingestion.*
+safeai.knowledge.retrieval.*
+safeai.knowledge.rag.*
+safeai.knowledge.embedding.*
+safeai.knowledge.ocr.*
+```
+
+### Ingestion baseline
+
+- enabled;
+- poll delay;
+- batch size;
+- processing lease;
+- extraction timeout;
+- extraction worker count;
+- max attempts;
+- retry backoff;
+- max extracted chars;
+- max OOXML uncompressed size;
+- chunk size;
+- chunk overlap.
+
+### Retrieval baseline
+
+- max query chars;
+- max `topK`;
+- candidate limit;
+- RRF `k`.
+
+### RAG baseline
+
+- `topK`;
+- max context chars;
+- max chunk chars.
+
+### Embeddings
+
+Providers:
+
+```text
+hashing
+openai
+```
+
+Baseline embedding dimension фиксирован текущей реализацией; OpenAI production configuration pins allowed endpoint вместо произвольного outbound host.
+
+### OCR
+
+OCR provider configuration включает:
+
+- provider;
+- endpoint;
+- API key;
+- explicit allowed hosts;
+- minimum native chars/page threshold;
+- connect/read timeout;
+- maximum response size.
+
+Credential-bearing property records редактируют `toString()` так, чтобы API keys не утекали в logs/diagnostics.
+
+---
+
+# Модуль `common`
+
+Package:
+
+```text
+ru.safeai.gateway.common
+```
+
+`common` — cross-cutting infrastructure layer. В нём не должна жить business-логика конкретного tenant domain.
+
+## Структура
+
+```text
+common/
+├── config/
+│   ├── SchedulingConfiguration
+│   └── TimeConfiguration
+├── exception/
+│   ├── ApiErrorCode
+│   ├── ApiErrorResponse
+│   ├── ApiErrorResponseFactory
+│   ├── ApiErrorResponseWriter
+│   ├── ApiException
+│   ├── ApiExceptionResponseSupport
+│   ├── AuthServiceUnavailableException
+│   ├── BadRequestException
+│   ├── ChatBusyException
+│   ├── ChatLockUnavailableException
+│   ├── ConflictException
+│   ├── ExpiredRefreshTokenException
+│   ├── ForbiddenOperationException
+│   ├── GlobalExceptionHandler
+│   ├── InvalidRefreshTokenException
+│   ├── OrganizationVersionConflictException
+│   ├── RateLimitExceededException
+│   ├── RateLimitUnavailableException
+│   ├── RateLimitUnavailableLogger
+│   ├── README.md
+│   ├── RefreshTokenReuseDetectedException
+│   ├── ResourceNotFoundException
+│   ├── UserVersionConflictException
+│   └── ValidationErrorExtractor
+├── pagination/
+│   └── StablePageableNormalizer
+├── persistence/
+│   ├── DatabaseConstraintClassifier
+│   └── PostgresAdvisoryLockExecutor
+├── platform/
+│   ├── PlatformProperties
+│   └── PlatformPropertiesConfiguration
+└── security/
+    ├── AccessTokenSubject
+    ├── BearerAuthenticationEntryPoint
+    ├── ClientIpProperties
+    ├── ClientIpResolver
+    ├── CorsProperties
+    ├── JwtCodecConfiguration
+    ├── JwtProperties
+    ├── JwtRsaKeyRing
+    ├── JwtService
+    ├── ManagementSecurityConfig
+    ├── package-info.java
+    ├── PasswordEncodingConfiguration
+    ├── ProductionSecurityInvariantValidator
+    ├── RequestIdFilter
+    ├── RestAccessDeniedHandler
+    ├── RestAuthenticationEntryPoint
+    ├── RoleAuthorityMapper
+    ├── SafeAiJwtAuthenticationConverter
+    ├── SafeAiUserPrincipal
+    ├── SecurityIdentityValidator
+    ├── SecurityPropertiesConfiguration
+    └── SystemRole
+```
+
+## Основные контракты
+
+### `TimeConfiguration`
+
+Предоставляет injectable UTC `Clock`, чтобы business timestamps и lease/retry/retention tests были воспроизводимыми.
+
+### `StablePageableNormalizer`
+
+Централизует bounded pagination/sort normalization и снижает риск расхождения paging semantics между controllers.
+
+### `DatabaseConstraintClassifier`
+
+Преобразует ожидаемые PostgreSQL constraint failures в domain-level conflict semantics вместо случайного generic 500.
+
+### `PostgresAdvisoryLockExecutor`
+
+Централизует session-level PostgreSQL advisory lock:
+
+- acquire;
+- action;
+- unlock;
+- best-effort abort/close небезопасного pooled connection при unlock failure.
+
+Используется jobs, которым нужна кластерная singleton-coordination без отдельного lock service.
+
+### `SafeAiUserPrincipal`
+
+Security principal хранит минимально необходимую identity/security информацию и не должен содержать password credentials.
+
+### `ProductionSecurityInvariantValidator`
+
+Fail-fast startup boundary для явно небезопасных production settings.
+
+---
+
+# Модуль `auth`
+
+Package:
+
+```text
+ru.safeai.gateway.auth
+```
+
+## Структура
+
+```text
+auth/
+├── config/
+│   ├── ProductionAuthCookieInvariantValidator
+│   └── RefreshTokenCleanupConfiguration
+│
+├── controller/
+│   ├── AuthController
+│   └── CsrfController
+│
+├── dto/
+│   ├── CsrfTokenResponse
+│   ├── CurrentUserResponse
+│   └── LoginRequest
+│
+├── entity/
+│   ├── RefreshTokenEntity
+│   └── RefreshTokenRevocationReason
+│
+├── repository/
+│   └── RefreshTokenRepository
+│
+├── security/
+│   ├── AccessCookieAuthenticationFilter
+│   ├── CsrfCookieFilter
+│   ├── CustomUserDetailsService
+│   ├── HstsProperties
+│   ├── package-info.java
+│   ├── SecurityConfig
+│   ├── SpaCsrfTokenRequestHandler
+│   └── UserStatusFilter
+│
+├── service/
+│   ├── AuthCookieConfigurationValidator
+│   ├── AuthCookieProperties
+│   ├── AuthCookieService
+│   ├── AuthEventService
+│   ├── AuthService
+│   ├── LoginSessionResult
+│   ├── LoginSessionTransactionService
+│   ├── LogoutAuditSubject
+│   ├── RefreshTokenCleanupBatchService
+│   ├── RefreshTokenCleanupJob
+│   ├── RefreshTokenCleanupProperties
+│   ├── RefreshTokenService
+│   └── UserSessionRevocationService
+│
+└── validation/
+    ├── Utf8ByteLength
+    └── Utf8ByteLengthValidator
+```
+
+## Login flow
+
+```text
+POST /api/auth/login
+  ↓
+login rate limit
+  ↓
+credentials validation
+  ↓
+user + organization security checks
+  ↓
+transactional refresh-session creation
+  ↓
+access JWT
+  ↓
+HttpOnly access + refresh cookies
+  ↓
+CSRF state
+  ↓
 audit
+```
 
-snapshots, outbox, cursor queries, retention
+## Access-token validation
 
-usage
+`AccessCookieAuthenticationFilter` извлекает token из cookie.
 
-live/rollup analytics + pricing/data-quality state
+JWT converter/identity validator формирует principal только после проверки contract claims.
 
-Durable ChatTurn
+`UserStatusFilter` дополнительно проверяет текущие persisted/cache-backed:
 
-State machine:
+- user enabled;
+- organization enabled;
+- token organization ID;
+- user token version;
+- organization auth version.
 
+Security-state infrastructure failure должен fail closed.
+
+## Refresh flow
+
+```text
+refresh cookie
+  ↓
+hash
+  ↓
+SELECT/lock refresh row
+  ↓
+validate expiry / revocation / family / security epochs
+  ↓
+rotate token
+  ↓
+write successor
+  ↓
+set new cookies
+```
+
+Reuse detection прекращает token family.
+
+## Logout
+
+Logout отзывает server-side refresh state и очищает browser cookies; audit subject snapshot должен быть получен до потери необходимого identity context.
+
+## Cleanup
+
+Expired/revoked refresh records удаляются bounded batch job-ом, а не одним неограниченным delete.
+
+---
+
+# Модуль `user`
+
+Package:
+
+```text
+ru.safeai.gateway.user
+```
+
+## Структура
+
+```text
+user/
+├── controller/
+│   └── UserController
+├── dto/
+│   ├── CreateUserRequest
+│   ├── PermanentDeleteUserRequest
+│   ├── ResetUserPasswordRequest
+│   ├── UpdateUserEnabledRequest
+│   ├── UpdateUserRequest
+│   ├── UpdateUserRolesRequest
+│   ├── UserDetailsResponse
+│   ├── UserResponse
+│   └── UserStatisticsResponse
+├── entity/
+│   ├── RoleEntity
+│   └── UserEntity
+├── event/
+│   └── UserSecurityStateChangedEvent
+├── mapper/
+│   └── UserRoleMapper
+├── repository/
+│   ├── RoleRepository
+│   └── UserRepository
+├── service/
+│   ├── UserManagementProperties
+│   ├── UserSecurityStatus
+│   ├── UserService
+│   ├── UserStatusCacheInvalidationListener
+│   ├── UserStatusCacheProductionInvariantVerifier
+│   ├── UserStatusCacheProperties
+│   └── UserStatusCacheService
+└── validation/
+    ├── BcryptUtf8Length
+    ├── BcryptUtf8LengthValidator
+    ├── PasswordPolicy
+    ├── PasswordValidator
+    ├── UserEmailNormalizer
+    └── ValidPassword
+```
+
+## Основные invariants
+
+- user принадлежит одной organization;
+- ровно одна системная role;
+- role mutation контролируется application policy и БД;
+- canonical email сохраняется как storage invariant;
+- security-significant mutation увеличивает `token_version`;
+- optimistic concurrency использует entity `version`;
+- stale update не должен молча перетирать новое состояние.
+
+## User status cache
+
+Cache является optimization layer, а не единственным security source of truth.
+
+Security mutation публикует `UserSecurityStateChangedEvent`, после чего cache инвалидируется listener-ом.
+
+## Permanent deletion
+
+Permanent deletion — restricted flow:
+
+- eligibility;
+- retention period;
+- confirmation;
+- expected version;
+- dependency checks;
+- audit;
+- защита historical records от случайного cascade disappearance.
+
+---
+
+# Модуль `organization`
+
+Package:
+
+```text
+ru.safeai.gateway.organization
+```
+
+## Структура
+
+```text
+organization/
+├── audit/
+│   └── OrganizationAuditSnapshotProvider
+├── controller/
+│   └── OrganizationController
+├── dto/
+│   ├── CreateOrganizationRequest
+│   ├── DisableOrganizationRequest
+│   ├── EnableOrganizationRequest
+│   ├── OrganizationDirectoryResponse
+│   ├── OrganizationDisableImpactResponse
+│   ├── OrganizationPageResponse
+│   ├── OrganizationResponse
+│   ├── OrganizationType
+│   ├── UpdateOrganizationEnabledRequest
+│   └── UpdateOrganizationRequest
+├── entity/
+│   └── OrganizationEntity
+├── event/
+│   └── OrganizationSecurityStateChangedEvent
+├── repository/
+│   ├── OrganizationImpactQueryRepository
+│   └── OrganizationRepository
+└── service/
+    ├── OrganizationAccessPolicy
+    ├── OrganizationCommandOperations
+    ├── OrganizationNameNormalizer
+    ├── OrganizationQueryOperations
+    ├── OrganizationResponseMapper
+    ├── OrganizationService
+    ├── OrganizationStatusCacheInvalidationListener
+    └── PlatformOrganizationInvariantVerifier
+```
+
+## Platform organization
+
+Canonical platform organization имеет отдельную semantic role и не должна обрабатываться как обычный tenant.
+
+`PlatformOrganizationInvariantVerifier` проверяет startup/runtime assumptions о protected platform organization.
+
+## Organization naming
+
+`OrganizationNameNormalizer` отвечает за canonical/normalized name policy.
+
+DB хранит уникальный normalized organization-name invariant.
+
+## Enable / disable
+
+Disable/enable используют optimistic versioning.
+
+Security-significant organization mutation увеличивает:
+
+```text
+organization.auth_version
+```
+
+и публикует `OrganizationSecurityStateChangedEvent`.
+
+Это инвалидирует старые auth epochs. Re-enable не должен «оживлять» старые refresh sessions.
+
+---
+# Модуль `ratelimit`
+
+Package:
+
+```text
+ru.safeai.gateway.ratelimit
+```
+
+## Структура
+
+```text
+ratelimit/
+├── AiMessageRateLimitProperties
+├── DualRateLimitResult
+├── LoginRateLimitProperties
+├── LoginRateLimitService
+├── RateLimitDecision
+├── RateLimitExceededEvent
+├── RateLimitKeyFactory
+├── RateLimitMetrics
+├── RateLimitProductionConfigurationValidator
+├── RateLimitProductionProperties
+├── RateLimitRedisKeyProperties
+├── RateLimitResult
+├── RedisFixedWindowRateLimiter
+├── RedisRateLimitService
+├── RefreshRateLimitProperties
+└── RefreshRateLimitService
+```
+
+## Модель
+
+Redis используется как distributed rate-limit state.
+
+Atomic fixed-window operation выполняется Lua script-ом:
+
+```text
+INCR
++
+TTL initialization
++
+limit decision
+```
+
+## Keys
+
+Raw email/IP/user identity не обязана попадать в Redis key.
+
+`RateLimitKeyFactory` использует versioned/HMAC-based key derivation.
+
+## Policies
+
+### Login
+
+Комбинирует identity/email и IP boundary.
+
+### Refresh
+
+Имеет отдельный IP-oriented policy.
+
+### AI messages
+
+Контролирует:
+
+- user bucket;
+- organization bucket;
+- role-dependent limits.
+
+## Failure semantics
+
+Redis outage не должен превращаться в silent allow-all.
+
+Infrastructure unavailable имеет отдельный controlled error path и observability.
+
+`RateLimitExceededEvent` используется для audit/metrics integration.
+
+---
+
+# Модуль `audit`
+
+Package:
+
+```text
+ru.safeai.gateway.audit
+```
+
+## Структура
+
+```text
+audit/
+├── config/
+│   ├── AuditDetailsProperties
+│   ├── AuditOutboxConfiguration
+│   ├── AuditOutboxProperties
+│   ├── AuditRetentionConfiguration
+│   └── AuditRetentionProperties
+│
+├── controller/
+│   ├── AuditController
+│   └── AuditDirectoryController
+│
+├── details/
+│   ├── AiResponseAuditDetails
+│   ├── AuditDetails
+│   ├── ChatTurnAuditDetails
+│   ├── RateLimitAuditDetails
+│   └── SecurityRefreshReuseAuditDetails
+│
+├── dto/
+│   ├── AuditActorDirectoryResponse
+│   ├── AuditEventCursorResponse
+│   ├── AuditEventFilter
+│   ├── AuditEventPageResponse
+│   ├── AuditEventResponse
+│   └── AuditTargetOrganizationDirectoryResponse
+│
+├── entity/
+│   ├── AuditEventEntity
+│   └── AuditOutboxEntity
+│
+├── listener/
+│   └── RateLimitAuditListener
+│
+├── model/
+│   └── AuditActor
+│
+├── repository/
+│   ├── AuditDirectoryQueryRepository
+│   ├── AuditEventCriteria
+│   ├── AuditEventCursorRepository
+│   ├── AuditEventCursorRepositoryImpl
+│   ├── AuditEventRepository
+│   └── AuditOutboxRepository
+│
+├── service/
+│   ├── AuditCommand
+│   ├── AuditCommandFactory
+│   ├── AuditCursorCodec
+│   ├── AuditDetailsSanitizer
+│   ├── AuditDirectoryService
+│   ├── AuditEventCursorService
+│   ├── AuditEventQueryPolicy
+│   ├── AuditEventQueryService
+│   ├── AuditEventService
+│   ├── AuditOutboxFailureService
+│   ├── AuditOutboxMetrics
+│   ├── AuditOutboxProcessor
+│   ├── AuditOutboxScheduler
+│   ├── AuditOutboxWriter
+│   ├── AuditRetentionBatchService
+│   ├── AuditRetentionLockService
+│   ├── AuditRetentionService
+│   └── BestEffortStandaloneAuditService
+│
+├── spi/
+│   └── AuditTargetOrganizationSnapshotProvider
+│
+└── AuditEventType
+```
+
+## Transactional outbox
+
+Основной flow:
+
+```text
+business transaction
+  ├─ domain mutation
+  └─ audit_outbox
+         ↓ commit
+background processor
+         ↓
+audit_events
+```
+
+Преимущества:
+
+- audit intent фиксируется рядом с business mutation;
+- provider/network side effects не нужны для записи event;
+- delivery retry безопасно повторяется;
+- `audit_events.id = audit_outbox.id` поддерживает idempotent delivery;
+- uncertain DB commit не приводит автоматически к duplicate audit event.
+
+## Immutable snapshots
+
+Actor snapshot:
+
+```text
+actor_user_id
+actor_organization_id
+actor_email
+actor_display_name
+```
+
+Target snapshot:
+
+```text
+target_organization_id
+target_organization_name
+```
+
+Snapshot нужен потому, что пользователь/организация могут быть переименованы или удалены позже.
+
+## Delivery
+
+Outbox processor использует:
+
+```text
+FOR UPDATE SKIP LOCKED
+```
+
+что позволяет нескольким backend instances безопасно обрабатывать очередь.
+
+Failure state включает:
+
+- attempt count;
+- next attempt time;
+- bounded/sanitized last error;
+- dead-letter timestamp.
+
+## Query
+
+ADMIN scope повторно ограничивается tenant policy на service/query layer.
+
+SUPER_ADMIN получает global/platform scope.
+
+Cursor pagination использует стабильную пару:
+
+```text
+(createdAt, id)
+```
+
+## Retention
+
+Retention выполняется bounded batches.
+
+Для межинстансовой координации используется PostgreSQL advisory lock.
+
+## Важная текущая семантика
+
+`AuditOutboxWriter.writeRequired()` в просмотренном baseline использует `Propagation.REQUIRED`.
+
+Это означает:
+
+- при существующей business transaction audit join-ится в неё;
+- без outer transaction Spring создаст отдельную transaction.
+
+Следовательно гарантированная атомарность required audit path сегодня зависит от корректного transactional call-site. Для абсолютного API-инварианта production hardening логично перейти к `MANDATORY` или явно разделить API `recordRequiredInCurrentTransaction` / `recordStandalone`.
+
+---
+
+# Модуль `usage`
+
+Package:
+
+```text
+ru.safeai.gateway.usage
+```
+
+## Структура
+
+```text
+usage/
+├── config/
+│   ├── UsageConfiguration
+│   ├── UsageJdbcClients
+│   └── UsageProperties
+├── controller/
+│   └── UsageController
+├── dto/
+│   ├── PagedResponse
+│   ├── UsageCostSummary
+│   ├── UsageDailySummaryResponse
+│   ├── UsageDataQualityResponse
+│   ├── UsageDateFilter
+│   ├── UsageDateModelFilter
+│   ├── UsageModelSummaryResponse
+│   ├── UsagePageRequest
+│   ├── UsageProblemModelResponse
+│   ├── UsageResponseSummary
+│   ├── UsageSummaryInvariants
+│   ├── UsageSummaryResponse
+│   ├── UsageTokenSummary
+│   └── UsageUserSummaryResponse
+├── repository/
+│   ├── JdbcUsageQueryRepository
+│   ├── UsageFactQueryBuilder
+│   ├── UsageFactSql
+│   ├── UsageInstantRange
+│   ├── UsageQueryCriteria
+│   ├── UsageQueryPlan
+│   ├── UsageQueryRepository
+│   ├── UsageRollupStateRepository
+│   ├── UsageRowMapperSupport
+│   └── UsageSqlFragments
+└── service/
+    ├── UsageQueryService
+    ├── UsageReportExecutor
+    ├── UsageRollupDayProcessor
+    └── UsageRollupScheduler
+```
+
+## Usage quality model
+
+Usage:
+
+```text
+NOT_APPLICABLE
+AVAILABLE
+MISSING
+PARTIAL
+```
+
+Pricing:
+
+```text
+NOT_APPLICABLE
+PRICED
+FREE
+UNPRICED
+CALCULATION_FAILED
+```
+
+Ключевой принцип:
+
+> Unknown pricing не превращается в `$0`.
+
+`FREE` означает подтверждённый нулевой cost.
+
+`UNPRICED` означает, что корректная price identity отсутствует.
+
+`CALCULATION_FAILED` означает, что pricing должен был быть рассчитан, но расчёт завершился ошибкой.
+
+## Live + rollup
+
+- source-of-truth факты читаются из persisted chat/AI completion metadata;
+- daily aggregation работает в UTC;
+- rollup ускоряет длинные отчёты;
+- rollup имеет watermark/reconciliation;
+- recent/incomplete range может дочитываться live;
+- max live range защищает DB от неограниченного тяжёлого запроса.
+
+## Concurrency / performance
+
+`UsageReportExecutor` ограничивает количество конкурентных тяжёлых reports.
+
+SQL paths имеют:
+
+- query timeout;
+- fetch size;
+- performance/integration tests;
+- EXPLAIN/EXPLAIN ANALYZE coverage в тестовой базе.
+
+## Важная граница
+
+Текущий Usage subsystem является product/chat usage analytics.
+
+Он **не является полным provider-spend ledger**, потому что V50+ physical attempt может быть billable даже если соответствующий ChatTurn не завершился пользовательским success. Для FinOps нужен отдельный physical-spend view/ledger по `model_execution_attempts`.
+
+---
+
+# Модуль `chat`
+
+Package:
+
+```text
+ru.safeai.gateway.chat
+```
+
+## Структура
+
+```text
+chat/
+├── config/
+│   ├── ChatConfiguration
+│   ├── ChatLockProperties
+│   ├── ChatProperties
+│   ├── ChatQuotaProperties
+│   └── ChatRecoveryProperties
+│
+├── controller/
+│   ├── ChatController
+│   └── ChatTitleController
+│
+├── dto/
+│   ├── ChatCapabilitiesResponse
+│   ├── ChatDetailsResponse
+│   ├── ChatErrorResponse
+│   ├── ChatPageRequest
+│   ├── ChatPageResponse
+│   ├── ChatResponse
+│   ├── ChatTurnStatusResponse
+│   ├── CreateChatRequest
+│   ├── MessagePageRequest
+│   ├── MessageResponse
+│   ├── SendMessageRequest
+│   ├── SendMessageResponse
+│   └── UpdateChatTitleRequest
+│
+├── entity/
+│   ├── ChatMessageEntity
+│   ├── ChatMessageRole
+│   ├── ChatMessageStatus
+│   ├── ChatQuotaReservationState
+│   ├── ChatSessionEntity
+│   ├── ChatTurnEntity
+│   └── ChatTurnState
+│
+├── exception/
+│   ├── AiOutcomeAmbiguousException
+│   ├── ChatAccessRevokedException
+│   ├── ChatApiException
+│   ├── ChatApiExceptionHandler
+│   ├── ChatLeaseUnavailableException
+│   ├── ChatQuotaExceededException
+│   ├── ChatStaleProcessorException
+│   ├── ChatTurnFailedException
+│   ├── ChatTurnInProgressException
+│   └── IdempotencyKeyReusedException
+│
+├── observability/
+│   └── ChatMetrics
+│
+├── quota/
+│   ├── ChatQuotaConsumption
+│   └── ChatQuotaPolicy
+│
+├── repository/
+│   ├── ChatHistoryRepository
+│   ├── ChatHistoryTurn
+│   ├── ChatMessageRepository
+│   ├── ChatQuotaRepository
+│   ├── ChatSecurityStateRepository
+│   ├── ChatSessionRepository
+│   ├── ChatTurnMutexRepository
+│   ├── ChatTurnRecoveryRepository
+│   ├── ChatTurnRepository
+│   └── RecoveredChatTurn
+│
+└── service/
+│   ├── AiHistoryBuilder
+│   ├── ChatContentNormalizer
+│   ├── ChatLockService
+│   ├── ChatMapper
+│   ├── ChatProcessingContext
+│   ├── ChatQuotaService
+│   ├── ChatSecurityStateService
+│   ├── ChatService
+│   ├── ChatTurnAuditDetailsFactory
+│   ├── ChatTurnExecutionCoordinator
+│   ├── ChatTurnFinalizationService
+│   ├── ChatTurnLeaseService
+│   ├── ChatTurnReadSupport
+│   ├── ChatTurnRecoveryCoordinator
+│   ├── ChatTurnRecoveryScheduler
+│   ├── ChatTurnRecoveryService
+│   └── ChatTurnReservationService
+│
+└── title/
+    ├── ChatTitlePolicy
+    ├── ChatTitleService
+    └── ChatTitleSource
+```
+
+## `ChatTurn` state machine
+
+```text
 NEW
+  ↓
 PROCESSING
-SUCCEEDED
-FAILED
-AMBIGUOUS
+  ├─→ SUCCEEDED
+  ├─→ FAILED
+  └─→ AMBIGUOUS
+```
 
-Frontend дополнительно различает transport/UI states вроде SENDING, SEND_UNKNOWN, RATE_LIMITED, QUOTA_BLOCKED, 
-ACCESS_REVOKED, IDEMPOTENCY_CONFLICT.
+`AMBIGUOUS` — отдельное operationally-sensitive состояние, а не alias для `FAILED`.
 
-Idempotency
+## Idempotency
 
+Ключ:
+
+```text
+clientRequestId
+```
+
+Semantics:
+
+```text
 same clientRequestId + same semantic request
-→ replay
+    → replay
 
 same clientRequestId + different semantic request
-→ IDEMPOTENCY_CONFLICT
+    → IDEMPOTENCY_CONFLICT
+```
 
-V48 replay identity учитывает semantic request, включая knowledge selection, а не текущую mutable routing envelope 
-configuration.
+Replay identity не должен зависеть от mutable policy/catalog state, изменившегося уже после принятия оригинальной операции.
 
-External-I/O boundary
+## Reservation flow
 
-До provider I/O фиксируются:
+До external provider I/O сохраняются:
 
+```text
 ChatTurn
 processingToken
 providerOperationId
 leaseUntil
 quota reservation
 ModelRouteDecision
-route/input reservation
+reserved execution envelope
+```
 
-Provider call выполняется вне долгой DB transaction.
+Provider call не выполняется внутри долгой business transaction.
 
-Fencing
+## Lease / fencing
 
-Finalization проверяет processingToken. Stale worker не может завершить turn после lease takeover.
+`processingToken` является fencing token.
 
-Provider ambiguity
+Finalization должна доказать, что worker всё ещё владеет текущим processing generation.
 
+Stale worker не может завершить turn после lease takeover.
+
+## Provider-call ambiguity
+
+Legacy/logical boundary:
+
+```text
 provider_call_started_at = null
-→ provider точно не начинался
-→ safe recovery possible
+    → provider ещё не был начат
+    → recovery может быть безопасным
 
 provider_call_started_at != null
-→ provider мог выполнить operation
-→ blind retry запрещён
-→ uncertainty => AMBIGUOUS
+    → provider мог выполнить operation
+    → blind retry запрещён
+```
 
-Frontend не запускает автоматический новый provider request из AMBIGUOUS.
+V50+ physical attempt ledger дополняет этот coarse-grained marker более точными attempt states.
 
-AI providers и runtime
+## Quota reservation
 
-Provider abstraction:
+Quota резервируется до provider call и затем settlement/finalization корректирует результат согласно persisted usage/cost quality.
 
-public interface AiProvider {
-    AiChatResponse sendMessage(AiChatRequest request);
-}
+## Recovery
 
-Реализации:
+Recovery scheduler:
 
-MockAiProvider;
+- выбирает expired PROCESSING turns;
+- различает safe recoverability;
+- использует fencing/lease state;
+- не повторяет blindly unknown provider side effect.
 
-OpenAiProvider;
+## Chat title lifecycle — V58
 
-AnthropicProvider.
+Title provenance:
 
-Provider error taxonomy различает timeout, rate limit, overload, quota/billing, context limit, too-large, unavailable и 
-generic provider error.
+```text
+DEFAULT
+AUTO
+USER
+```
 
-Runtime ≠ organization policy
+Semantics:
 
-Физическая configured model определяется backend runtime.
+- `DEFAULT` — новый пустой chat с canonical title `Новый чат`;
+- `AUTO` — deterministic title из первого accepted USER message;
+- `USER` — explicit title при create/rename.
 
-safeai.ai.provider=mock
-        ↓
-MockAiProvider
-        ↓
-mock-safeai
+Automatic naming:
 
-Organization policy не переключает provider adapter.
+- не вызывает LLM;
+- выполняется детерминированно;
+- не должен перезаписывать user-owned title;
+- manual rename фиксируется audit event `CHAT_RENAMED`;
+- audit не должен копировать сам текст title без необходимости.
 
-Runtime health
+---
+# Модуль `model`
 
-UI разделяет:
+Package:
 
-Конфигурация: включена
+```text
+ru.safeai.gateway.model
+```
 
-и:
+## Логическая структура
 
-Проверка доступности: NOT_PROBED / ...
+```text
+model/
+├── config/
+│   └── ModelRoutingEnvelopeProperties
+│
+├── controller/
+│   ├── ModelCatalogController
+│   ├── ModelPolicyPreviewController
+│   ├── ModelRouteDecisionController
+│   ├── ModelRuntimeController
+│   └── OrganizationModelPolicyController
+│
+├── domain/
+│   ├── BudgetEnforcement
+│   ├── ModelBudgetCommitmentSnapshot
+│   ├── ModelCapability
+│   ├── ModelCatalogEntry
+│   ├── ModelCatalogSource
+│   ├── ModelLifecycle
+│   ├── ModelModality
+│   ├── ModelPricingStatus
+│   ├── ModelRetentionStatus
+│   ├── ModelRouteDecision
+│   ├── ModelRouteOutcome
+│   ├── ModelRouteReason
+│   ├── ModelRouteRequest
+│   ├── ModelRouteResult
+│   ├── ModelTrainingUseStatus
+│   ├── MonthlyCommitmentState
+│   ├── MonthlyCostState
+│   ├── OrganizationModelPolicy
+│   ├── RuntimeModelProbeResult
+│   └── RuntimeModelProbeStatus
+│
+├── dto/
+│   ├── CreateModelCatalogVersionRequest
+│   ├── CreateOrganizationModelPolicyVersionRequest
+│   ├── ModelCatalogEntryResponse
+│   ├── ModelPolicyPreviewItemResponse
+│   ├── ModelPolicyPreviewResponse
+│   ├── ModelRouteDecisionResponse
+│   ├── OrganizationModelPolicyResponse
+│   ├── RuntimeModelProbeResponse
+│   ├── RuntimeModelStatusResponse
+│   └── RuntimeModelStatusWireResponse
+│
+├── exception/
+│   ├── ModelRouteDeniedException
+│   └── ModelRouteEnvelopeExceededException
+│
+├── repository/
+│   ├── JdbcTextArrayReader
+│   ├── ModelCatalogRepository
+│   ├── ModelRouteDecisionRepository
+│   ├── ModelRouteRequestBindingRepository
+│   ├── ModelRouteRequestMutexRepository
+│   └── OrganizationModelPolicyRepository
+│
+├── service/
+    ├── AnthropicRuntimeModelHealthProbe
+    ├── DatabaseTimestampNormalizer
+    ├── MockRuntimeModelHealthProbe
+    ├── ModelCatalogAuditDetails
+    ├── ModelCatalogAuditDetailsFactory
+    ├── ModelCatalogRules
+    ├── ModelCatalogService
+    ├── ModelControlPlaneAccess
+    ├── ModelControlPlaneNumericValidation
+    ├── ModelControlPlaneSchemaVerifier
+    ├── ModelInputTokenEstimator
+    ├── ModelPolicyPreviewService
+    ├── ModelRouteDecisionAuditDetails
+    ├── ModelRouteDecisionFactory
+    ├── ModelRouteDecisionIntegrity
+    ├── ModelRouteExecutionBindingService
+    ├── ModelRouteExecutionGuard
+    ├── ModelRouteExecutionIdentity
+    ├── ModelRouteReservedRequestService
+    ├── ModelRoutingCostPolicy
+    ├── ModelRoutingEnvelopeService
+    ├── ModelRoutingExecutionCapabilityGate
+    ├── ModelRoutingSelectionPolicy
+    ├── ModelRoutingService
+    ├── OpenAiRuntimeModelHealthProbe
+    ├── OrganizationModelPolicyAuditDetailsFactory
+    ├── OrganizationModelPolicyRules
+    ├── OrganizationModelPolicyService
+    ├── RuntimeModelHealthProbe
+    ├── RuntimeModelProbeHttpSupport
+    ├── RuntimeModelProbeService
+    └── RuntimeModelStatusService
+```
 
-enabled=true не означает, что provider уже проверен по сети.
+## Runtime model
 
-Типовые probe states:
+Runtime — это то, что физически настроено в deployment.
 
+Control Plane не равен dynamic provider router.
+
+На текущем этапе backend runtime всё ещё представляет один активный configured provider/model target на deployment, а catalog/policy определяют, разрешён ли logical model и совместим ли он с этим target.
+
+## Versioned Model Catalog
+
+Catalog entry — immutable/append-only snapshot.
+
+Основные поля/семантика:
+
+- `modelKey`;
+- version;
+- provider;
+- provider model ID;
+- display name;
+- lifecycle;
+- limits;
+- capabilities;
+- modalities;
+- retention status;
+- training-use status;
+- pricing status;
+- pricing dimensions/version;
+- `effectiveFrom`;
+- source;
+- creator/time.
+
+### Latest vs effective
+
+```text
+latest
+    = последняя созданная version
+    = может быть scheduled
+
+effective
+    = версия, вступившая в силу к decision time
+    = участвует в routing
+```
+
+Старая version не редактируется.
+
+## Organization model policy
+
+Policy append-only/versioned.
+
+Поддерживает:
+
+- enabled;
+- allow model keys;
+- deny model keys;
+- default model key;
+- max input envelope;
+- max output envelope;
+- max request cost;
+- monthly budget;
+- `SOFT / HARD`;
+- require complete pricing;
+- require no training;
+- require zero data retention.
+
+Первое отсутствие policy представляется fail-closed/unconfigured state, а не неявным «разрешить всё».
+
+## Route decision
+
+До provider I/O сохраняется immutable evidence:
+
+- requested model;
+- selected model;
+- exact catalog version;
+- exact policy version;
+- provider/model identity;
+- capabilities/modalities;
+- input accounting version;
+- additional input upper bound;
+- output cap;
+- pricing/budget state;
+- route outcome;
+- reason;
+- integrity version;
+- SHA-256 digest.
+
+DB deferred trigger связывает `ALLOWED` decision с exact `ChatTurn`.
+
+## Input accounting
+
+Governance accounting использует deterministic input units.
+
+Текущий accounting contract:
+
+```text
+UTF8_STRUCTURAL_UNITS_V2
+```
+
+Это **не** заявляется как exact provider tokenizer.
+
+Исторические DB column names могут содержать `*_tokens`, но новые semantics в коде трактуются как versioned deterministic accounting units.
+
+## Capability gate
+
+Catalog metadata может описывать:
+
+```text
+TEXT
+TOOLS
+VISION
+STRUCTURED_OUTPUT
+```
+
+Но metadata не означает автоматически реализованный data plane.
+
+Нереализованные specialized capabilities должны fail closed.
+
+## Runtime probe
+
+Runtime probe:
+
+- отделён от user Chat;
+- не отправляет user prompt/history/RAG content;
+- использует strict HTTPS/host policy;
+- redirects disabled;
+- bounded connect/read/body limits;
+- возвращает controlled status.
+
+Типовые states:
+
+```text
+NOT_PROBED
 AVAILABLE
 AUTH_ERROR
 MODEL_NOT_FOUND
 RATE_LIMITED
 UNAVAILABLE
 ERROR
-NOT_PROBED
+```
 
-Probe — point-in-time metadata-only check, не SLA/HA monitoring.
+Probe — point-in-time check, а не SLA monitoring.
 
-Knowledge / RAG
+---
 
-Knowledge/RAG уже реализован.
+# Модуль `ai`
 
-Возможности:
+Package:
 
-tenant/ACL-aware Knowledge Bases;
+```text
+ru.safeai.gateway.ai
+```
 
-ORGANIZATION / MEMBERS access model;
+## Структура
 
-memberships;
+```text
+ai/
+├── config/
+│   ├── AiConfiguration
+│   ├── AiProductionConfigurationValidator
+│   ├── AiRetryTimeoutBudgetValidator
+│   ├── AnthropicProviderConfiguration
+│   └── OpenAiProviderConfiguration
+├── dto/
+│   ├── AiChatRequest
+│   ├── AiChatResponse
+│   ├── AiMessage
+│   └── AiMessageRole
+├── exception/
+│   ├── AiContextLimitException
+│   ├── AiProviderBillingException
+│   ├── AiProviderErrorType
+│   ├── AiProviderException
+│   ├── AiProviderOverloadedException
+│   ├── AiProviderQuotaExceededException
+│   ├── AiProviderRateLimitedException
+│   ├── AiProviderResponseTooLargeException
+│   ├── AiProviderTimeoutException
+│   └── AiProviderUnavailableException
+│
+├── execution/
+│   ├── AiExecutionAttemptObserver
+│   ├── AiExecutionAttemptRecorder
+│   ├── AiExecutionAttemptScope
+│   ├── AiExecutionPlanService
+│   ├── AiExecutionRequest
+│   ├── AiExecutionResult
+│   ├── AiExecutionService
+│   ├── ExecutionAttemptOutcome
+│   ├── FallbackSafety
+│   ├── ModelExecutionAttemptEntity
+│   ├── ModelExecutionAttemptRepository
+│   ├── ModelExecutionPlanEntity
+│   ├── ModelExecutionPlanRepository
+│   ├── OutcomeCertainty
+│   ├── PhysicalAttemptReconciliationRequiredException
+│   ├── ProviderExecutionTarget
+│   ├── ProviderFailureCertainty
+│   ├── ProviderPricingEvidence
+│   ├── ProviderUsageEvidence
+│   ├── ResolvedModelMismatchException
+│   └── RetrySafety
+│
+│
+├── input/
+│   ├── AiInputUnitEstimator
+├── metadata/
+│   ├── AiResponseStatus
+│   ├── AiTokenUsage
+│   ├── PricingStatus
+│   └── UsageStatus
+├── pricing/
+│   ├── ModelPricingProperties
+│   ├── ModelPricingService
+│   ├── PricingResolver
+│   ├── PricingResult
+│   ├── StaticConfigurationPricingResolver
+│   └── VersionedCatalogPricingResolver
+│
+├── provider/
+│   ├── anthropic/
+│   │   ├── AnthropicProperties
+│   │   └── AnthropicProvider
+│   ├── mock/
+│   │   └── MockAiProvider
+│   ├── openai/
+│   │   ├── OpenAiProperties
+│   │   └── OpenAiProvider
+│   ├── AiContextWindowProperties
+│   ├── AiContextWindowService
+│   ├── AiJsonNodeSupport
+│   ├── AiProvider
+│   ├── AiProviderAttemptContext
+│   ├── AiProviderExceptionFactory
+│   ├── AiProviderProperties
+│   ├── AiProviderRetryExecutor
+│   ├── AiProviderSupport
+│   ├── AiResponseMetadataService
+│   ├── AiResponseTooLargeIOException
+│   ├── AiRestClientFactory
+│   ├── AiRetryProperties
+│   └── ProviderPropertyValidator
+│
+└── web/
+    └── AiExceptionHandler
+```
 
-immutable document versions;
+## Provider abstraction
 
-durable ingestion jobs;
+```java
+public interface AiProvider {
+    AiChatResponse sendMessage(AiChatRequest request);
+}
+```
 
-S3-compatible object storage;
+Реализации:
 
-bounded extraction;
+```text
+MockAiProvider
+OpenAiProvider
+AnthropicProvider
+```
 
-optional OCR boundary;
+## Durable physical execution
 
-embeddings;
+Начиная с V50 AI execution имеет отдельную durable evidence layer.
 
-PostgreSQL pgvector + FTS hybrid retrieval;
+```text
+ModelRouteDecision
+      ↓
+ModelExecutionPlan
+      ↓
+ModelExecutionAttempt #1
+      ↓
+provider I/O
+      ↓
+terminal attempt evidence
+      ↓
+Chat finalization
+```
 
-context assembly;
+Ключевой порядок:
 
-GENERAL / KNOWLEDGE_ASSISTED / KNOWLEDGE_ONLY modes;
+```text
+validate route/binding
+  ↓
+commit ExecutionPlan
+  ↓
+commit Attempt STARTED
+  ↓
+external provider I/O
+  ↓
+persist terminal physical evidence
+  ↓
+application/chat finalization
+```
 
-controlled abstention/fail-closed behavior;
+Это позволяет переживать crash boundaries без ложного предположения «если Chat не ответил, provider точно ничего не сделал».
 
-inline citations;
+## Physical target identity
 
-retrieval provenance;
+Attempt фиксирует target:
 
-Answer Passport;
+- provider;
+- provider configuration reference/version;
+- deployment reference/version;
+- requested physical model;
+- allowed resolved models.
 
-health/reindex/evaluation backend;
+Текущий runtime использует transitional static target identity; полноценный versioned provider registry ещё не реализован.
 
-frontend для KB/documents/memberships/status/reindex/sources/passport.
+## Outcome certainty
 
-Extraction baseline включает PDF, DOCX, PPTX, XLSX, HTML, Markdown, JSON, XML, CSV и plain text.
+Система различает:
 
-V48 envelope
+```text
+KNOWN_NOT_EXECUTED
+KNOWN_REJECTED
+KNOWN_EXECUTED
+AMBIGUOUS
+```
 
-RAG context не может обходить route reservation. KnowledgeContextAssembler сохраняет reserved input units/output cap 
-и route identity. Prepared request проверяется execution guard. Если actual prepared input превышает reservation, 
-operation завершается детерминированно до provider I/O.
+Outcome certainty не эквивалентен HTTP status и не эквивалентен business success.
 
-Model Control Plane — V45→V48
+## Retry / fallback safety
 
-Архитектура разделяет:
+Следующий physical attempt допускается только если предыдущий terminal state доказан как retry-safe.
 
-Runtime
-= что физически настроено deployment
+V53 DB boundary сериализует attempt insert и требует:
 
-Catalog
-= какие immutable model snapshots знает governance
+```text
+previous outcome = FAILED
+AND certainty ∈ {KNOWN_NOT_EXECUTED, KNOWN_REJECTED}
+AND retrySafety = SAME_TARGET_RETRY_ALLOWED
+AND exact same physical target
+```
 
-Organization Policy
-= что разрешено tenant
+Blind fallback/retry после `AMBIGUOUS` запрещён.
 
-Route Decision
-= какое immutable решение принято для конкретного request
+## Resolved model validation
 
-Versioned Model Catalog
+Provider response model сверяется с approved target.
 
-model_catalog_entries — append-only snapshots:
+Если provider фактически выполнил запрос, но вернул неразрешённый resolved model, физическое evidence сохраняется до governance rejection.
 
-modelKey
-version
+## HTTP hardening
+
+`AiRestClientFactory` обеспечивает:
+
+- connect timeout;
+- read timeout;
+- redirects disabled;
+- response-body byte limits;
+- bounded error-body read;
+- controlled exception conversion.
+
+Provider base URL:
+
+- HTTPS;
+- allowlisted exact host/base URL;
+- без userinfo/query/fragment;
+- без произвольного custom endpoint в production baseline.
+
+## Pricing
+
+`VersionedCatalogPricingResolver` привязывает settlement к:
+
+```text
+provider operation
+  ↓
+execution plan
+  ↓
+route decision
+  ↓
+exact catalog entry/version
+  ↓
+pricing version
+```
+
+Unknown pricing не становится zero.
+
+`StaticConfigurationPricingResolver` остаётся compatibility/dev path, а governed resolution должен использовать versioned catalog evidence.
+
+## Usage evidence
+
+Provider usage поддерживает quality states и specialized billing dimensions.
+
+Pricing/usage evidence сохраняется на physical attempt для дальнейшего reconciliation.
+
+---
+
+# Модуль `knowledge`
+
+Package:
+
+```text
+ru.safeai.gateway.knowledge
+```
+
+## Структура
+
+```text
+knowledge/
+├── chunking/
+│   ├── KnowledgeChunkCandidate
+│   └── KnowledgeChunker
+├── config/
+│   ├── KnowledgeEmbeddingConfigurationInvariantVerifier
+│   ├── KnowledgeEmbeddingProperties
+│   ├── KnowledgeIngestionProperties
+│   ├── KnowledgeOcrConfigurationInvariantVerifier
+│   ├── KnowledgeOcrProperties
+│   ├── KnowledgeProcessingConfiguration
+│   ├── KnowledgeRagProperties
+│   └── KnowledgeRetrievalProperties
+├── controller/
+│   ├── AnswerPassportController
+│   ├── KnowledgeBaseController
+│   ├── KnowledgeDocumentController
+│   ├── KnowledgeEvaluationController
+│   └── KnowledgeRetrievalController
+├── dto/
+│   ├── AnswerCitationResponse
+│   ├── AnswerPassportResponse
+│   ├── CreateKnowledgeBaseMemberRequest
+│   ├── CreateKnowledgeBaseRequest
+│   ├── KnowledgeBaseAccessResponse
+│   ├── KnowledgeBaseMemberPageResponse
+│   ├── KnowledgeBaseMemberResponse
+│   ├── KnowledgeBasePageResponse
+│   ├── KnowledgeBaseResponse
+│   ├── KnowledgeDocumentPageResponse
+│   ├── KnowledgeDocumentResponse
+│   ├── KnowledgeDocumentVersionPageResponse
+│   ├── KnowledgeDocumentVersionResponse
+│   ├── KnowledgeEvaluationCaseRequest
+│   ├── KnowledgeEvaluationCaseResponse
+│   ├── KnowledgeEvaluationRequest
+│   ├── KnowledgeEvaluationResponse
+│   ├── KnowledgeHealthResponse
+│   ├── KnowledgeMemberCandidateResponse
+│   ├── KnowledgeReindexResponse
+│   ├── KnowledgeRetrievalHitResponse
+│   ├── KnowledgeRetrievalRequest
+│   ├── KnowledgeRetrievalResponse
+│   ├── UpdateKnowledgeBaseMemberRequest
+│   ├── UpdateKnowledgeBaseRequest
+│   └── UpdateKnowledgeDocumentRequest
+├── embedding/
+│   ├── HashingKnowledgeEmbeddingProvider
+│   ├── KnowledgeEmbeddingException
+│   ├── KnowledgeEmbeddingProductionInvariantVerifier
+│   ├── KnowledgeEmbeddingProvider
+│   ├── OpenAiKnowledgeEmbeddingProvider
+│   └── PgVectorSupport
+│
+├── entity/
+│   ├── KnowledgeBaseEntity
+│   ├── KnowledgeBaseMembershipEntity
+│   ├── KnowledgeDocumentEntity
+│   ├── KnowledgeDocumentVersionEntity
+│   └── KnowledgeIngestionJobEntity
+│
+├── evaluation/
+│   └── KnowledgeRetrievalMetrics
+│
+├── exception/
+│   └── KnowledgeStorageUnavailableException
+│
+├── extraction/
+│   ├── CsvKnowledgeExtractor
+│   ├── DocxKnowledgeExtractor
+│   ├── ExtractedDocument
+│   ├── ExtractedSection
+│   ├── ExtractionTextSupport
+│   ├── HtmlKnowledgeExtractor
+│   ├── JsonKnowledgeExtractor
+│   ├── KnowledgeDocumentExtractor
+│   ├── KnowledgeExtractionService
+│   ├── MarkdownKnowledgeExtractor
+│   ├── OoxmlPackageSupport
+│   ├── PdfKnowledgeExtractor
+│   ├── PlainTextKnowledgeExtractor
+│   ├── PptxKnowledgeExtractor
+│   ├── XlsxKnowledgeExtractor
+│   └── XmlKnowledgeExtractor
+│
+├── generation/
+│   ├── KnowledgeGenerationGc
+│   └── KnowledgeGenerationGcScheduler
+│
+│
+│
+│
+├── ingestion/
+│   ├── EmbeddedKnowledgeChunk
+│   ├── ExpiredKnowledgeIngestionJob
+│   ├── KnowledgeChunkPersistenceService
+│   ├── KnowledgeIngestionClaim
+│   ├── KnowledgeIngestionException
+│   ├── KnowledgeIngestionFailureService
+│   ├── KnowledgeIngestionMaintenanceService
+│   ├── KnowledgeIngestionProcessor
+│   ├── KnowledgeIngestionQueueRepository
+│   ├── KnowledgeIngestionScheduler
+│   └── StaleIngestionOwnershipException
+│
+├── model/
+│   ├── KnowledgeBaseAccessLevel
+│   ├── KnowledgeBaseVisibility
+│   ├── KnowledgeHealthState
+│   └── KnowledgeIngestionStatus
+│
+├── ocr/
+│   ├── DisabledKnowledgeOcrProvider
+│   ├── HttpKnowledgeOcrProvider
+│   ├── KnowledgeOcrProvider
+│   ├── OcrDocument
+│   └── OcrPage
+│
+├── rag/
+│   ├── AnswerPassportService
+│   ├── KnowledgeCitationValidator
+│   ├── KnowledgeContextAssembler
+│   ├── KnowledgeContextSource
+│   ├── KnowledgeHashing
+│   ├── KnowledgeMode
+│   ├── KnowledgeRagContextReceiptRepository
+│   ├── KnowledgeRagContextReceiptService
+│   ├── KnowledgeRagService
+│   ├── RagCitation
+│   ├── RagCompletion
+│   └── RagPreparation
+│
+├── repository/
+│   ├── KnowledgeBaseMembershipRepository
+│   ├── KnowledgeBaseRepository
+│   ├── KnowledgeDocumentQueryRepository
+│   ├── KnowledgeDocumentRepository
+│   ├── KnowledgeDocumentVersionRepository
+│   ├── KnowledgeIngestionJobRepository
+│   └── KnowledgeMemberDirectoryRepository
+│
+├── retrieval/
+│   ├── KnowledgeRetrievalExecution
+│   ├── KnowledgeRetrievalHit
+│   └── KnowledgeRetrievalRepository
+│
+├── service/
+│   ├── KnowledgeAccessService
+│   ├── KnowledgeBaseNameNormalizer
+│   ├── KnowledgeBaseService
+│   ├── KnowledgeDocumentFileValidator
+│   ├── KnowledgeDocumentMediaTypeDetector
+│   ├── KnowledgeDocumentMediaType
+│   ├── KnowledgeDocumentNameNormalizer
+│   ├── KnowledgeDocumentService
+│   ├── KnowledgeDocumentWriteService
+│   ├── KnowledgeEvaluationService
+│   ├── KnowledgeNameNormalizerSupport
+│   ├── KnowledgeOoxmlDetector
+│   ├── KnowledgeOperationsService
+│   ├── KnowledgeRetrievalService
+│   ├── KnowledgeStructuredTextValidator
+│   ├── KnowledgeUploadFileSupport
+│   └── KnowledgeValidationErrors
+│
+└── storage/
+    ├── reconciliation/
+    │   ├── KnowledgeStorageReconciliationConfiguration
+    │   ├── KnowledgeStorageReconciliationProperties
+    │   ├── KnowledgeStorageReconciliationScheduler
+    │   └── KnowledgeStorageUploadJournal
+    │   
+    ├── KnowledgeStorageConfiguration
+    ├── KnowledgeStorageProductionInvariantVerifier
+    ├── KnowledgeStorageProperties
+    ├── KnowledgeStorageType
+    ├── LocalObjectStorage
+    ├── ObjectStorage
+    ├── S3ObjectStorage
+    └── StoredObject  
+```
+
+## Knowledge Base access
+
+Visibility model включает organization/member semantics.
+
+`KnowledgeAccessService` является backend security boundary.
+
+ACL/filtering применяется **до ranking**, а не после retrieval.
+
+## Document/version model
+
+Document metadata отделено от immutable uploaded versions.
+
+Версия хранит provenance:
+
+- storage key;
+- content SHA;
+- size;
+- media type;
+- version number;
+- uploader/time;
+- ingestion identity.
+
+## Upload journal — V56
+
+Новый upload создаёт durable intent.
+
+Lifecycle:
+
+```text
+INTENT
+  ├─→ STORED
+  │     ├─→ LINKED
+  │     └─→ CLEANING → CLEANED
+  └─→ NEEDS_REVIEW
+
+CLEANING
+  └─→ NEEDS_REVIEW   # ambiguous cleanup
+```
+
+Принцип:
+
+> Нельзя автоматически считать historical/uncertain S3 object orphan-ом только потому, что SQL row не найден.
+
+Cleanup разрешён только для positively known `STORED` unlinked object с fencing.
+
+## Ingestion
+
+Job state хранится durable.
+
+Queue path использует:
+
+- bounded claims;
+- `FOR UPDATE SKIP LOCKED`;
+- processing lease;
+- processing token/generation fencing;
+- retry/backoff;
+- stale ownership detection;
+- failure service.
+
+## Extraction
+
+Поддержанные baseline formats:
+
+```text
+PDF
+DOCX
+PPTX
+XLSX
+HTML
+Markdown
+JSON
+XML
+CSV
+plain text
+```
+
+Extractors имеют format-specific safety/validation.
+
+OOXML path защищается от unbounded decompression.
+
+Extraction выполняется с timeout и bounded worker pool.
+
+## OCR
+
+OCR — optional provider boundary.
+
+HTTP OCR configuration:
+
+- HTTPS only;
+- explicit allowed hosts;
+- credential redaction;
+- connect/read timeout;
+- response byte limit.
+
+PDF extraction определяет страницы, которым требуется OCR.
+
+## Embeddings
+
+Provider abstraction:
+
+```text
+KnowledgeEmbeddingProvider
+  ├─ HashingKnowledgeEmbeddingProvider
+  └─ OpenAiKnowledgeEmbeddingProvider
+```
+
+Hashing provider — deterministic/local baseline.
+
+Production OpenAI embedding path использует explicit endpoint restrictions.
+
+## Chunking
+
+`KnowledgeChunker` выполняет deterministic structure-aware chunking.
+
+Это не semantic chunking и README не заявляет обратное.
+
+Chunk provenance включает:
+
+- document/version;
+- generation;
+- ordinal;
+- heading/page metadata;
+- extractor/chunker/embedding identity;
+- content hash;
+- vector;
+- lexical content.
+
+## Retrieval
+
+Pipeline:
+
+```text
+query
+  ↓
+tenant + KB + membership + enabled filters
+  ↓
+vector candidates
+  +
+lexical candidates
+  ↓
+RRF
+  ↓
+topK
+  ↓
+persist retrieval run/hits
+```
+
+V55 добавляет Russian lexical profile:
+
+```text
+simple+russian-v2
+```
+
+Historical retrieval runs сохраняют legacy provenance.
+
+## RAG modes
+
+```text
+GENERAL
+KNOWLEDGE_ASSISTED
+KNOWLEDGE_ONLY
+```
+
+`KNOWLEDGE_ONLY` должен abstain/fail closed при недостаточном evidence.
+
+## Prompt-injection boundary
+
+Retrieved document content считается **untrusted source data**.
+
+RAG context формируется так, чтобы документ не получал authority system instruction.
+
+## Citations
+
+`KnowledgeCitationValidator` проверяет structural/source validity citation markers.
+
+Citation evidence содержит exact chunk/document/version identity.
+
+## Answer Passport
+
+Answer Passport связывает:
+
+```text
+ChatTurn
+RetrievalRun
+KnowledgeBase
+ModelRouteDecision
+knowledge mode
 provider
-providerModelId
-displayName
-lifecycle
-limits
-capabilities/modalities
-retention/training metadata
-pricing status/dimensions/version
-effectiveFrom
-source
-createdBy
-createdAt
-
-Latest vs effective
-
-latest
-→ последняя созданная version
-→ может быть scheduled
-
-effective
-→ уже вступила в силу на server decision time
-→ участвует в routing
-
-Старая version не редактируется.
-
-Pricing integrity
-
-Catalog различает UNPRICED, FREE, CONFIGURED, INCOMPLETE. Unknown pricing не превращается в zero. Money wire contract 
-использует exact decimal strings.
-
-Organization Model Policies
-
-Policy поддерживает:
-
-enabled
-allowModelKeys
-denyModelKeys
-defaultModelKey
-maxInputTokens
-maxOutputTokens
-maxRequestCostUsd
-monthlyBudgetUsd
-budgetEnforcement = SOFT | HARD
-requireCompletePricing
-requireNoTraining
-requireZeroDataRetention
-
-Policies append-only и используют expectedPreviousVersion + locking/version allocation.
-
-Safe unconfigured state
-
-Для отсутствующей policy:
-
-configured = false
-version = 0
-enabled = false
-
-Это предотвращает случайное включение fail-closed policy при первом сохранении.
-
-UI предупреждает, если enabled policy не имеет исполнимой effective catalog entry, совпадающей с runtime. Save не 
-блокируется полностью, потому что administrator может сознательно подготовить fail-closed/staged policy.
-
-Runtime compatibility
-
-policy allows
-+
-effective catalog exists
-+
-governance checks pass
-+
-catalog provider/model matches active runtime
-→ executable
-
-Иначе controlled denial/mismatch.
-
-Immutable ModelRouteDecision
-
-Перед provider I/O фиксируются requested/selected model, exact catalog/policy snapshots, provider/model, capabilities, 
-accounting/output reservation, budget/pricing state, outcome/reason, integrity version и SHA-256.
-
-Historical integrity versions v1/v2 сохраняются. Новые V48 decisions используют integrity v3.
-
-Frontend умеет читать immutable route evidence по decisionId.
-
-Input accounting и V48 route evidence
-
-Старый отдельный ModelInputTokenEstimator удалён. Используется единый:
-
-ru.safeai.gateway.ai.input.AiInputUnitEstimator
-
-Accounting version:
-
-UTF8_STRUCTURAL_UNITS_V2
-
-Новые governance API используют термин input units: internal deterministic estimator не выдаётся за точный tokenizer 
-provider. Исторические DB fields *_tokens сохраняются.
-
-V48 provenance
-
-Новые route decisions сохраняют:
-
-input_accounting_version
-additional_input_unit_upper_bound
-
-Для integrity v3:
-
-input_accounting_version != null
-additional_input_unit_upper_bound >= 0
-decision_sha256 = 64 lowercase hex
-
-Для historical v1/v2 provenance fields остаются NULL.
-
-Execution guard
-
-До проверки размера guard подтверждает exact request identity:
-
-user;
-
-organization;
-
-chat/session;
-
-providerOperationId;
-
-user message;
-
-history;
-
-reservation;
-
-output cap.
-
-Затем:
-
-prepared estimated input units
-<=
-reserved input units
-
-Иначе deterministic failure до provider I/O.
-
-Route reservation path сериализуется по (chatId, clientRequestId).
-
-Capability enforcement
-
-Catalog может описывать capabilities/modalities, но metadata ещё не означает реализованный data plane.
-
-На текущем этапе специализированные возможности:
-
-TOOLS
-VISION
-STRUCTURED_OUTPUT
-
-должны fail closed, пока соответствующий end-to-end provider flow не реализован. TEXT flow остаётся рабочим.
-
-V48 также нормализует integrity между vision/image-input metadata.
-
-Budget semantics
-
-Budget — governance preflight, не billing ledger.
-
-estimate conservative;
-
-processing/ambiguous operations не должны оптимистично игнорироваться;
-
-unknown cost делает HARD budget unverifiable;
-
-HARD может fail closed;
-
-final usage/cost остаётся отдельной usage quality model.
-
-Rate limiting
-
-Redis-backed limits:
-
-login   -> identity/email + IP
-AI      -> user + organization
-refresh -> dedicated policy
-
-Atomic counter/TTL выполняется Lua. Infrastructure outage не должен превращаться в silent allow-all.
-
-Audit
-
-business transaction
- ├─ domain mutation
- └─ audit_outbox
-       ↓ commit
- processor
-       ↓
- audit_events
-
-Outbox поддерживает retry/dead-letter. Actor/target snapshots immutable. Audit покрывает security/governance mutations, 
-включая catalog, organization policy и route-decision related events.
-
-Usage / pricing quality
-
-Usage states:
-
-NOT_APPLICABLE
-AVAILABLE
-MISSING
-PARTIAL
-
-Pricing states:
-
-NOT_APPLICABLE
-PRICED
-FREE
-UNPRICED
-CALCULATION_FAILED
-
-Unknown pricing не превращается в 0. Daily aggregation — UTC. Большие counters/decimal money сохраняются string-safe и 
-не должны терять точность через JS number.
-
-User management
-
-Основные contracts:
-
-GET   /api/users
-GET   /api/users/statistics
-GET   /api/users/{id}
-POST  /api/users
-PATCH /api/users/{id}
-PATCH /api/users/{id}/enabled
-PATCH /api/users/{id}/roles
-POST  /api/users/{id}/reset-password
-POST  /api/users/{id}/permanent-deletion
-
-Mutations используют expectedVersion. Exactly-one-role invariant сохраняется.
-
-Frontend Users использует адаптивный resizable workspace: control area отдельно, table viewport отдельно, 
-pagination/footer не перекрываются таблицей.
-
-Organization management
-
-POST  /api/organizations
-GET   /api/organizations
-GET   /api/organizations/{id}
-PATCH /api/organizations/{id}
-POST  /api/organizations/{id}/disable
-POST  /api/organizations/{id}/enable
-
-Disable/enable используют version checks и organization.authVersion.
-
-Frontend отделяет tenant creation controls от resizable organization table viewport.
-
-Frontend
-
-Frontend — defensive client.
-
-Runtime parsers
-
-Валидируются UUID, Instant/date, enums, non-negative values, nullable/page contracts, exact decimal strings, 
-ModelRouteDecision integrity 1/2/3 и V48 provenance invariants.
-
-Malformed backend response превращается в controlled client contract error.
-
-Chat
-
-secure client UUID;
-
-optimistic USER message;
-
-idempotency reconciliation;
-
-durable turn polling;
-
-no blind retry after AMBIGUOUS;
-
-knowledge mode;
-
-citations/sources;
-
-Answer Passport;
-
-route/model metadata.
-
-Models
-
-AdminModelsPage разделяет три слоя:
-
-Подключённая модель / Runtime — физическая backend configuration + health/probe state.
-
-Catalog — latest/effective/scheduled immutable snapshots.
-
-Organization Policy — allow/deny/default/limits/budget/data requirements.
-
-SUPER_ADMIN видит catalog mutation actions; ADMIN получает read-only catalog и own-tenant policy.
-
-Policy modal:
-
-первая policy открывается disabled;
-
-предупреждает о runtime/effective mismatch;
-
-создаёт immutable policy versions;
-
-resizable;
-
-адаптируется к ширине/высоте;
-
-не закрывается случайным backdrop click;
-
-не закрывается по Escape;
-
-закрывается крестиком или после successful Save;
-
-использует fixed header + scrollable body + fixed action footer.
-
-Administrative pages используют resizable/fixed workspace там, где это оправдано, без overlay таблиц поверх control area.
-
-Error/accessibility hardening
-
-Есть ErrorBoundary, PageErrorBoundary, loading/error/empty states, modal focus management, inert background, focus trap, 
-live regions, focus-visible и reduced motion support.
-
-Это не заявление о формальной WCAG certification.
-
-API
-
-Ниже — основные contracts; дополнительные routes определяются текущими controllers/frontend clients.
-
-Auth
-
+requested/resolved model
+embedding model
+context hash
+answer hash
+citations
+evidence flags
+```
+
+Это provenance document, а не обещание семантической истинности ответа.
+
+## Index generations — V57
+
+Введена отдельная generation-level lifecycle:
+
+```text
+ACTIVE
+  ↓
+RETIRED
+  ↓
+COLLECTING
+  ↓
+COLLECTED
+```
+
+Инварианты:
+
+- максимум одна `ACTIVE` generation для document version;
+- publication проверяет exact chunk count/provenance;
+- stale publication блокируется;
+- chunk deletion разрешён только fenced GC;
+- retrieval evidence защищает referenced chunks;
+- retired/collected generation нельзя «воскресить» сменой current version;
+- incomplete GC transaction блокируется deferred guard.
+
+---
+# Ключевые backend contracts
+
+Ниже — основные публичные API groups. Controllers остаются source of truth для exact query/body shape.
+
+## Auth
+
+```http
 GET  /api/auth/csrf
 POST /api/auth/login
 POST /api/auth/refresh
 POST /api/auth/logout
 GET  /api/auth/me
+```
 
-Chat
+## Chat
 
+```http
 POST /api/chats
 GET  /api/chats
 GET  /api/chats/{id}
 POST /api/chats/{id}/messages
 GET  /api/chats/{chatId}/turns/by-client-request/{clientRequestId}
+```
 
-Users
+Дополнительно существует отдельный title-management controller для manual rename lifecycle.
 
+## Users
+
+```http
 GET   /api/users
 GET   /api/users/statistics
 GET   /api/users/{id}
@@ -1133,18 +2861,47 @@ PATCH /api/users/{id}/enabled
 PATCH /api/users/{id}/roles
 POST  /api/users/{id}/reset-password
 POST  /api/users/{id}/permanent-deletion
+```
 
-Organizations
+Mutation contracts используют optimistic `expectedVersion`.
 
+## Organizations
+
+```http
 POST  /api/organizations
 GET   /api/organizations
 GET   /api/organizations/{id}
 PATCH /api/organizations/{id}
 POST  /api/organizations/{id}/disable
 POST  /api/organizations/{id}/enable
+```
 
-Model Control Plane
+## Audit
 
+```http
+GET /api/admin/audit-events
+```
+
+Также есть directory/filter endpoints для UI.
+
+## Usage
+
+```http
+GET /api/admin/usage/summary
+GET /api/admin/usage/users
+GET /api/admin/usage/models
+GET /api/admin/usage/daily
+GET /api/admin/usage/by-user/{userId}
+GET /api/admin/usage/by-organization/{organizationId}
+GET /api/admin/usage/by-organization/{organizationId}/users
+GET /api/admin/usage/by-organization/{organizationId}/models
+GET /api/admin/usage/by-organization/{organizationId}/daily
+GET /api/admin/usage/data-quality
+```
+
+## Model Control Plane
+
+```http
 GET  /api/admin/models/runtime
 
 GET  /api/admin/models/catalog
@@ -1156,450 +2913,779 @@ GET  /api/admin/models/policies/{organizationId}
 POST /api/admin/models/policies/{organizationId}
 
 GET  /api/admin/models/route-decisions/{decisionId}
+```
 
-Runtime availability probe существует как отдельная administrative operation в runtime model control path; exact route 
-определяется текущим ModelRuntimeController.
+Runtime availability probe — отдельная administrative operation в `ModelRuntimeController`.
 
-Authorization:
+## Knowledge Bases
 
-catalog read   -> ADMIN / SUPER_ADMIN
-catalog mutate -> SUPER_ADMIN
+```http
+GET   /api/knowledge-bases
+GET   /api/knowledge-bases/{knowledgeBaseId}
+GET   /api/knowledge-bases/{knowledgeBaseId}/access
+POST  /api/knowledge-bases
+PATCH /api/knowledge-bases/{knowledgeBaseId}
+```
 
-policy         -> ADMIN own tenant / SUPER_ADMIN platform
-route evidence -> ADMIN own tenant / SUPER_ADMIN platform
+Membership administration существует под `/api/knowledge-bases/{knowledgeBaseId}/members`.
 
-Knowledge
+## Knowledge documents
 
-Knowledge module предоставляет API для Knowledge Bases, memberships, documents/versions, upload/ingestion, reindex, 
-health, retrieval/evaluation и Answer Passport.
+Base path:
 
-Audit
+```http
+/api/knowledge-bases/{knowledgeBaseId}/documents
+```
 
-GET /api/admin/audit-events
+Поддерживаются:
 
-Плюс directory/filter API, используемые текущим UI.
+- list;
+- upload/version creation;
+- metadata update;
+- list versions;
+- current version download;
+- historical version download;
+- health;
+- reindex.
 
-Usage
+Подтверждённые routes:
 
-GET /api/admin/usage/summary
-GET /api/admin/usage/users
-GET /api/admin/usage/models
-GET /api/admin/usage/daily
-GET /api/admin/usage/by-user/{userId}
-GET /api/admin/usage/by-organization/{organizationId}
-GET /api/admin/usage/by-organization/{organizationId}/users
-GET /api/admin/usage/by-organization/{organizationId}/models
-GET /api/admin/usage/by-organization/{organizationId}/daily
-GET /api/admin/usage/data-quality
+```http
+GET  /api/knowledge-bases/{knowledgeBaseId}/documents/health
+POST /api/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/reindex
+GET  /api/knowledge-bases/{knowledgeBaseId}/documents
+GET  /api/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions
+GET  /api/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/download
+GET  /api/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{versionId}/download
+```
 
-Database / Flyway
+## Knowledge retrieval / evaluation
+
+```http
+POST /api/knowledge-bases/{knowledgeBaseId}/retrieval
+POST /api/knowledge-bases/{knowledgeBaseId}/evaluations
+```
+
+Answer Passport читается по chat/turn identity через `AnswerPassportController`.
+
+---
+
+# Database / Flyway V1–V58
 
 Production migrations:
 
+```text
 backend/src/main/resources/db/migration
+```
 
-Local-only seed:
+Local-only:
 
-backend/src/main/resources/db/local-migration/R__seed_local_demo_data.sql
+```text
+backend/src/main/resources/db/local-migration
+```
 
-Правила:
+## Правила
 
-never edit applied migration
+```text
+never edit an applied migration
 new schema change => new migration
-Hibernate ddl-auto=validate
+ddl-auto=validate
 critical invariants in PostgreSQL where practical
 local seed != production reference data
+```
 
-Текущая история — до V48.
+## Evolution map
 
-Версии
+| Version   | Назначение |
+|-----------|--|
+| `V1–V10`  | base schema, tenant denormalization, timestamps, quotas/rollups, indexes |
+| `V11–V19` | audit/user/chat identity and integrity evolution |
+| `V20–V23` | production integrity, canonical identity/name hardening, concurrent indexes |
+| `V24`     | exactly-one-role, user security hardening, audit outbox |
+| `V25`     | organization `auth_version` + refresh organization epoch |
+| `V26–V27` | audit retry/dead-letter/details bounds/query indexes |
+| `V28–V31` | usage/pricing quality model and query indexes |
+| `V32`     | durable `ChatTurn` state machine |
+| `V33–V36` | ChatTurn indexes, ambiguity quality, composite tenant integrity |
+| `V37`     | immutable target organization audit snapshots |
+| `V38–V42` | Knowledge Base, versions, ingestion, retrieval, RAG, Answer Passport |
+| `V43`     | chat archive lifecycle |
+| `V44`     | Knowledge production integrity hardening |
+| `V45`     | Model Control Plane baseline |
+| `V46`     | Model Control Plane hardening |
+| `V47`     | Knowledge chunk-generation uniqueness |
+| `V48`     | input-accounting provenance / route integrity v3 |
+| `V49`     | strict routing + generic pricing semantics |
+| `V50`     | AI execution plans/attempts + usage evidence |
+| `V51`     | execution attempt integrity hardening |
+| `V52`     | strict execution + modality integrity |
+| `V53`     | physical attempt transition + pricing integrity |
+| `V54`     | provider identity + reconciliation safety |
+| `V55`     | Knowledge Russian lexical profile |
+| `V56`     | durable Knowledge storage upload intents |
+| `V57`     | Knowledge index generations + fenced publication/GC |
+| `V58`     | deterministic chat title lifecycle |
+| `V59`     |  |
+| `V60`     |  |
+| `V61`     |  |
+| `V62`     |  |
+| `V63`     |  |
+| `V64`     |  |
+| `V65`     |  |
 
-Содержание
+## Важные DB boundaries
 
-V1–V10
+Финальная схема включает:
 
-base schema, tenant denormalization, hardening, quotas/rollups
+- canonical user email uniqueness;
+- normalized organization-name uniqueness;
+- exactly-one-role;
+- composite tenant FK;
+- refresh family integrity;
+- audit state checks;
+- usage quality checks;
+- one reply per user message;
+- ChatTurn lifecycle constraints;
+- route-decision immutability;
+- deferred exact route-decision ↔ ChatTurn validation;
+- execution-plan immutability;
+- physical attempt sequence;
+- physical retry safety;
+- provider target identity;
+- reconciliation safety;
+- Knowledge chunk/generation provenance;
+- one active Knowledge generation;
+- fenced generation GC;
+- deterministic chat title provenance.
 
-V11–V19
+## Concurrent indexes
 
-audit/user/chat identity/integrity evolution
+Часть migrations использует `CREATE INDEX CONCURRENTLY`.
 
-V20–V23
+Production Flyway должен сохранять совместимую PostgreSQL transactional-lock configuration.
 
-production integrity, cleanup/index/name hardening
+Release runbook также должен проверять `pg_index.indisvalid/indisready` для critical unique/business indexes после аварийного interrupted migration.
 
-V24
+---
 
-exactly-one-role, disabled retention, audit outbox
+# Observability и operational jobs
 
-V25
+## Logging
 
-organization auth_version
+Structured log context включает server request ID и, где применимо, client request ID.
 
-V26–V27
+Не логировать по умолчанию:
 
-audit retry/dead-letter/snapshots/indexes
+- passwords;
+- raw JWT;
+- raw refresh token;
+- cookies;
+- Authorization;
+- provider API keys;
+- full user prompts;
+- full provider responses;
+- raw document chunks;
+- OCR/embedding credentials.
 
-V28–V31
+## Metrics
 
-usage/pricing quality + indexes
+Проект содержит module-level metrics, включая:
 
-V32
+- chat processing;
+- rate limiting;
+- audit outbox.
 
-durable ChatTurn state machine
+Prometheus endpoint должен быть internal/network-protected.
 
-V33–V36
+## Scheduled jobs
 
-turn indexes, ambiguity quality, composite integrity
+В текущем baseline существуют scheduled/maintenance paths для:
 
-V37
+- refresh-token cleanup;
+- audit outbox processing;
+- audit retention;
+- usage rollups/backfill;
+- ChatTurn recovery;
+- Knowledge ingestion;
+- Knowledge storage reconciliation;
+- Knowledge generation GC.
 
-target organization snapshots
+Multi-instance job должен иметь DB/distributed coordination там, где duplicate work нарушит semantics.
 
-V38–V42
+---
 
-Knowledge Base, immutable document versions, ingestion, hybrid retrieval, RAG Answer Passport
+# Тестирование
 
-V43
+README не утверждает `BUILD SUCCESS` без фактического запуска конкретного commit.
 
-archive chat sessions
+## Backend
 
-V44
-
-Knowledge production integrity hardening
-
-V45
-
-Model Control Plane baseline
-
-V46–V47
-
-follow-up Model Control Plane / integrity / rolling-compatibility hardening
-
-V48
-
-input-accounting provenance, decision integrity v3 semantics, accounting envelope provenance, vision/image capability 
-integrity normalization
-
-V48 schema hardening
-
-Добавлены:
-
-model_route_decisions.input_accounting_version
-model_route_decisions.additional_input_unit_upper_bound
-
-Integrity versions:
-
-1 / 2 / 3
-
-V1/V2 сохраняют provenance fields NULL. V3 требует non-blank accounting version, non-negative upper bound и 64-char 
-lowercase hex SHA.
-
-Applied migrations не редактируются задним числом. Новое schema изменение получает новый Flyway version.
-
-Local development
-
-Infra
+```bash
+cd backend
+./mvnw clean test
+```
 
 Windows:
 
-cd /d "D:\Java projects\Safeai-desk\infra"
-docker compose -f docker-compose.local.yml up -d postgres redis
+```bat
+cd backend
+mvnw.cmd clean test
+```
+
+## Фактически присутствующие test categories
+
+### Security / Auth
+
+- JWT contracts;
+- auth cookie configuration;
+- refresh rotation/reuse;
+- CSRF;
+- request ID;
+- trusted proxy/client IP;
+- production startup invariants;
+- security error responses;
+- PostgreSQL auth concurrency.
+
+### User / Organization
+
+- authorization boundaries;
+- request validation;
+- role mapping;
+- optimistic concurrency;
+- security epoch integration;
+- platform organization invariant;
+- cache invalidation.
+
+### Chat
+
+- controller contract/security;
+- entity invariants;
+- tenant isolation;
+- state machine;
+- recovery;
+- concurrency;
+- repository transaction behavior;
+- history;
+- usage-quality integration;
+- EXPLAIN plan coverage;
+- title behavior.
+
+### Audit
+
+- authorization boundary;
+- tenant isolation;
+- cursor pagination;
+- actor/target snapshots;
+- outbox;
+- uncertain commit behavior;
+- retry/dead-letter;
+- retention;
+- advisory lock;
+- required/best-effort policies.
+
+### Usage
+
+- controller contract/security;
+- query contracts;
+- pagination;
+- UTC aggregation;
+- pricing correctness;
+- rollup reconciliation;
+- performance/EXPLAIN;
+- tenant isolation.
+
+### AI / Model
+
+- provider contract tests;
+- retry behavior;
+- provider properties;
+- response size bounds;
+- context fitting;
+- pricing;
+- production configuration;
+- route/policy/catalog behavior;
+- runtime probe;
+- model frontend/API contract tests exist separately.
+
+### Knowledge
+
+- ACL;
+- KB concurrency;
+- document-version concurrency;
+- migration integrity;
+- ingestion queue;
+- retrieval repository;
+- extraction;
+- OCR behavior;
+- S3 end-to-end;
+- storage configuration;
+- citations;
+- context assembly;
+- retrieval metrics;
+- real fixture contracts.
+
+## Release candidate checks
+
+Перед серьёзным deployment:
+
+```text
+fresh V1 → V58
+representative populated upgrade → V58
+Flyway history validation
+critical index validity check
+backend clean test
+container build/start
+prod-like startup invariants
+tenant isolation
+auth epoch invalidation
+ChatTurn recovery
+AI physical attempt recovery/reconciliation
+Model route binding
+Knowledge generation publication/GC
+backup/restore drill
+```
+
+---
+
+# Local development
+
+## Infrastructure
 
 macOS/Linux:
 
+```bash
 cd infra
 docker compose -f docker-compose.local.yml up -d postgres redis
-
-Backend
+```
 
 Windows:
 
-cd /d "D:\Java projects\Safeai-deskackend"
-set SPRING_PROFILES_ACTIVE=local
-set SAFEAI_JWT_SECRET=safeai-local-development-secret-key-change-this-value-please-123456789
-set REDIS_PASSWORD=safeai_redis_password
-mvnw.cmd spring-boot:run
+```bat
+cd infra
+docker compose -f docker-compose.local.yml up -d postgres redis
+```
+
+Knowledge S3/MinIO requirements зависят от выбранного local profile/configuration.
+
+## Backend
 
 macOS/Linux:
 
+```bash
 cd backend
 export SPRING_PROFILES_ACTIVE=local
-export SAFEAI_JWT_SECRET='safeai-local-development-secret-key-change-this-value-please-123456789'
-export REDIS_PASSWORD='safeai_redis_password'
+export REDIS_PASSWORD='local-redis-password'
+
+# Текущий JWT contract использует RSA key ring.
+# Перед запуском задайте через environment/configtree:
+# SAFEAI_JWT_ISSUER
+# SAFEAI_JWT_ACTIVE_KEY_ID
+# SAFEAI_JWT_PUBLIC_KEY
+# SAFEAI_JWT_PRIVATE_KEY
+
 ./mvnw spring-boot:run
+```
 
-Frontend
+Windows CMD:
 
-cd frontend
-npm ci
-npm run dev
+```bat
+cd backend
+set SPRING_PROFILES_ACTIVE=local
+set REDIS_PASSWORD=local-redis-password
 
-Typical local URLs:
+REM Текущий JWT contract использует RSA key ring.
+REM Перед запуском задайте SAFEAI_JWT_ISSUER, SAFEAI_JWT_ACTIVE_KEY_ID,
+REM SAFEAI_JWT_PUBLIC_KEY и SAFEAI_JWT_PRIVATE_KEY через environment/configtree.
 
-Frontend: http://127.0.0.1:5173
+mvnw.cmd spring-boot:run
+```
+
+Typical local services:
+
+```text
 Backend:  http://127.0.0.1:8080
 Postgres: localhost:5432
 Redis:    localhost:6379
+```
 
-Demo credentials/local seed не использовать в production.
+Local/demo credentials никогда не должны использоваться в production.
 
-Проверка
+---
 
-README не утверждает BUILD SUCCESS без фактического запуска.
+# Production deployment notes
 
-Backend
+## TLS
 
-cd backend
-./mvnw clean test
-
-Windows:
-
-cd backend
-mvnw.cmd clean test
-
-Integration tests с Testcontainers требуют работающий Docker и доступность нужных images. Container startup failure 
-следует отличать от unit/domain assertion failure.
-
-Frontend
-
-cd frontend
-npm ci
-npm run check
-npm run audit:prod
-
-Текущий check объединяет lint, Vitest run и production TypeScript/Vite build.
-
-CI:
-
-npm run ci
-
-Flyway / release candidate
-
-select
-    installed_rank,
-    version,
-    description,
-    success
-from flyway_schema_history
-order by installed_rank;
-
-Release candidate должен дополнительно проходить:
-
-fresh V1→V48;
-
-representative pre-V48 → V48 upgrade;
-
-rolling/bridge compatibility verification where required;
-
-backend clean test;
-
-frontend check/CI;
-
-container build/start;
-
-prod-like startup invariants;
-
-latest/effective catalog scheduling;
-
-stale runtime/catalog mismatch;
-
-policy optimistic concurrency;
-
-tenant isolation;
-
-exact ChatTurn/route binding;
-
-Answer Passport/route evidence integrity;
-
-V48 integrity v3/provenance;
-
-prepared-request envelope enforcement;
-
-idempotent replay after mutable governance changes;
-
-capability fail-closed tests;
-
-backup/restore drill.
-
-Production notes
-
-TLS
-
+```text
 Internet
-→ TLS terminator / reverse proxy
-→ Nginx
-→ backend internal port
+  ↓
+TLS terminator / reverse proxy
+  ↓
+Nginx
+  ↓
+backend internal port
+```
 
 Backend не должен публиковаться напрямую без edge controls.
 
-Trusted proxy
+## Trusted proxy
 
-Только реальные trusted edge CIDR. Не использовать trust-all networks.
+Указывать только реальные trusted edge CIDRs.
 
-CORS
+Не использовать:
 
-Production — explicit HTTPS allowlist.
+```text
+0.0.0.0/0
+::/0
+```
 
-Secrets
+как доверенные proxy ranges.
+
+## Secrets
 
 Не хранить в Git:
 
-JWT secret/private material;
+- JWT private material;
+- DB credentials;
+- Redis credentials;
+- OpenAI key;
+- Anthropic key;
+- Knowledge embedding key;
+- OCR key;
+- S3 credentials;
+- future BYOK/KMS/service-account secrets.
 
-DB/Redis passwords;
+## S3-compatible object storage
 
-OpenAI/Anthropic keys;
+Production Knowledge требует:
 
-S3 credentials;
+- durable object store;
+- access policy;
+- lifecycle policy;
+- backup/restore strategy;
+- monitoring;
+- reconciliation job;
+- explicit storage endpoint hardening.
 
-future BYOK/KMS credentials.
+## Flyway
 
-Object storage
+- applied migrations immutable;
+- `clean` disabled;
+- concurrent-index migration behavior протестирован;
+- production role имеет необходимые extension/index privileges;
+- `pgvector` доступен до применения Knowledge vector migrations.
 
-Production Knowledge storage требует durable S3-compatible backend с lifecycle/backup/restore/access policy/monitoring.
+## PostgreSQL backup / restore
 
-Prometheus
+Backup не считается готовым только потому, что существует cron/script.
 
-/actuator/prometheus — internal/network-protected.
+Нужен периодический restore drill.
 
-Logs
+## Prometheus
 
-Не логировать passwords, raw JWT/refresh token, cookies, Authorization, API keys, full prompts/responses, raw document 
-chunks и secret connector credentials.
+`/actuator/prometheus` / management endpoints — internal-only.
 
-Runtime probe
+## Provider egress
 
-Probe не отправляет пользовательские данные, не должен follow redirects с credentials и не является заменой monitoring/SLA.
+Provider endpoints должны быть allowlisted/pinned.
 
-Текущие границы
+Redirect following с credentials запрещён.
 
-На 6 сентября 2026 SafeAI Desk уже содержит tenant/security baseline, durable ChatTurn, audit outbox, usage/pricing 
-quality, Knowledge/RAG, Answer Passport, Model Control Plane, V48 route-accounting provenance и administrative model 
-runtime/catalog/policy UI.
+---
 
-Но это ещё не enterprise 1.0.
+# Текущие ограничения и production-readiness gaps
 
-Ограничения:
+Этот раздел фиксирует **проверенные на 02.10.2026 ограничения**, чтобы README не создавал ложное впечатление полной enterprise-готовности.
 
-один физический provider/model adapter на deployment;
+## P0 — Model budget-state representability
 
-нет runtime provider/model multiplexer;
+Текущая Java budget semantics допускает состояние, при котором:
 
-нет полноценного provider fallback/data-residency router;
+```text
+historical cost partially unknown
++
+known lower bound already exceeds budget
+```
 
-runtime probe — point-in-time check, не HA monitoring;
+то есть budget уже доказанно exceeded, но full monthly projected amount остаётся unknown.
 
-TOOLS/VISION/STRUCTURED_OUTPUT fail closed до реализации data plane;
+V45 DB constraints одновременно требуют:
 
-budget — conservative preflight, не billing-grade ledger;
+```text
+budget_exceeded = true
+→ monthly_projected_usd != null
 
-нет DLP/data-classification plane;
+monthly_cost_known = false
+→ monthly_projected_usd = null
+```
 
-нет general-purpose Policy Engine;
+Такое состояние невозможно сохранить.
 
-нет Groups/Departments;
+До серьёзного `HARD` budget production это нужно исправить новой migration + согласованной domain model.
 
-нет enterprise connector sync/ACL mirroring baseline 1.0;
+## P1 — AI physical outcome vs application outcome
 
-нет OIDC/SCIM;
+Текущая attempt schema хорошо различает execution certainty, но не идеально выражает случай:
 
-нет Prompt/Configuration Registry уровня enterprise governance;
+```text
+provider HTTP response фактически получен
++
+вызов выполнен/принят на transport level
++
+response protocol/application validation не прошёл
+```
 
-нет завершённых regression/security evaluation gates;
+Нужно отделить physical execution truth от application response acceptance, не теряя billable evidence.
 
-нет MCP Tool Gateway/approvals;
+## P1 — Governed provider entry point
 
-нет durable Agent Runtime;
+Реальные provider adapters должны fail closed при вызове вне governed `AiExecutionService` / active attempt scope.
 
-HA/SLO/backup-restore должны подтверждаться deployment drills;
+Иначе invariant «каждый physical call имеет durable attempt evidence» остаётся частично дисциплиной call-site.
 
-compliance certification не заявляется.
+## P1 — ExecutionPlan recovery
 
-Не описывать текущую версию как:
+После crash:
 
-billing-grade
-compliance-certified
-fully HA
-formally verified
-fully dynamic multi-provider router
-deterministically reproducible LLM
-autonomous agent platform
+```text
+ExecutionPlan committed
++
+Attempt #1 ещё не создан
+```
 
-Positioning
+БД доказывает отсутствие physical attempt, поэтому операция безопасно recoverable.
 
-Для собеседования
+Current service semantics должны иметь explicit recovery path для такого состояния.
 
-SafeAI Desk — modular-monolith корпоративного AI Gateway: multi-tenancy, exactly-one-role RBAC, cookie JWT + CSRF, 
-refresh rotation/reuse detection, user/org security epochs, durable idempotent ChatTurn с lease/fencing/ambiguity 
-protection, Knowledge/RAG provenance + Answer Passport, transactional audit outbox, usage/pricing quality analytics, 
-versioned Model Catalog, organization policies, immutable route decisions и V48 input-accounting provenance/integrity v3.
+## P1 — Final request binding
 
-Для продукта
+Context-window fitting сейчас может происходить слишком поздно относительно route/execution binding.
 
-Управляемая корпоративная AI-платформа, где можно установить кто сделал запрос, из какой организации, какие права и 
-knowledge evidence использовались, какая policy/catalog version применялась, какая runtime model была исполнима, какой 
-accounting contract использовался, почему routing был ALLOWED/DENIED и сколько usage/cost данных известно с какой 
-степенью качества.
+Целевой invariant:
 
-Следующий этап
+```text
+RAG/history/context fitting
+  ↓
+FINAL provider request
+  ↓
+hash/bind/guard
+  ↓
+adapter serialization only
+```
 
-После V48 hardening логичный порядок:
+## P1 — Provider token/context estimation
 
-Release-candidate verification V1→V48 и representative upgrade path.
+Governance input units (`UTF8_STRUCTURAL_UNITS_V2`) и provider context tokens — разные величины.
 
-Knowledge UX + RAG evaluation/regression gates.
+Char-based context heuristic не должен выдаваться за строгий tokenizer upper bound.
 
-Dynamic multi-provider/model data-plane routing.
+## P1 — Pricing dimensions
 
-Provider fallback / residency-aware routing.
+Current versioned pricing поддерживает базовые input/cache/output dimensions, но полноценные provider-specific tier/service/context pricing schemes требуют отдельного versioned pricing model или fail-closed `UNPRICED`.
 
-AI FinOps / budget reconciliation / ledger-quality accounting.
+## P1 — Knowledge searchable-version publication
 
-Data Classification + DLP.
+Current `knowledge_documents.current_version_id` может переключиться на новую version до публикации её ACTIVE generation.
 
-Groups / Departments.
+Retrieval одновременно требует current version + active generation.
 
-Enterprise Knowledge Connectors.
+Следовательно новая ingestion может временно скрыть предыдущую searchable version; failed ingestion способна оставить document непоисковым.
 
-OIDC / SCIM.
+Нужно разделить:
 
-General Policy Engine / Governance.
+```text
+latest uploaded version
+searchable/published version
+```
 
-Prompt / Configuration Registry.
+или атомарно переключать searchable pointer при generation publication.
 
-Enterprise Assistants.
+## P1 — Knowledge evidence retention / GC
 
-MCP Tool Gateway + approvals.
+Retrieval hits правильно защищают cited chunks от GC, но без bounded retention/legal-hold policy historical retrieval evidence может держать generation бесконечно.
 
-Durable Agent Runtime.
+Нужен lifecycle:
 
-Routing evolution должна сохранять invariant:
+- retention;
+- legal hold;
+- privacy deletion/anonymization;
+- evidence compaction/hash/excerpt policy.
 
+## P1 — Mixed scanned PDF fail-closed
+
+Для mixed PDF OCR-required pages не должны тихо подменяться native-only extraction, если OCR disabled/unavailable.
+
+Strict `KNOWLEDGE_ONLY` не должен публиковать заведомо partial document как полностью готовый.
+
+## P1 — Parser isolation
+
+Extraction имеет timeout/thread bounds, но untrusted PDF/OOXML всё ещё парсится внутри application JVM.
+
+Для hardened enterprise deployment parsing стоит вынести в отдельный worker/container sandbox boundary.
+
+## P1 — Knowledge provider attempt/cost evidence
+
+OCR/embedding external calls не имеют такого же полного durable physical-attempt ledger, как chat AI execution.
+
+При partial batch success + process crash возможны повторные billable calls.
+
+## P1 — Audit required transaction semantics
+
+Required audit path использует `Propagation.REQUIRED`, поэтому без outer business transaction может открыть собственную transaction.
+
+Для строгого invariant нужен `MANDATORY` или явно разделённые APIs.
+
+## P1 — Provider spend vs product usage
+
+Usage отчёты по successful/persisted chat facts не равны полным расходам provider.
+
+Нужен отдельный FinOps physical spend layer по execution attempts.
+
+## P1 — Production mode detection
+
+Часть startup validators historically ориентирована на точные profile names `prod` / `production`.
+
+Deployment profile вроде `production-eu` не должен случайно обходить production safeguards.
+
+Предпочтительно иметь единый explicit production-mode property/profile group.
+
+## P1/P2 — Concurrent index recovery
+
+Interrupted `CREATE INDEX CONCURRENTLY` может оставить invalid index.
+
+Для critical business unique indexes нужен release assertion по PostgreSQL catalog, а не только `IF NOT EXISTS`.
+
+## P2 — V58 legacy title ambiguity
+
+До появления `title_source` невозможно доказать, был ли historical title `Новый чат` placeholder-ом или осознанным user title.
+
+V58 deterministic backfill принимает это как migration trade-off.
+
+## Текущие product boundaries
+
+Ещё не реализованы как полноценный end-to-end production layer:
+
+- dynamic multi-provider runtime dispatch;
+- versioned physical provider registry/credential reference;
+- provider fallback/residency router;
+- full billing-grade settlement ledger;
+- streaming end-to-end governance path;
+- TOOLS execution plane;
+- VISION execution plane;
+- STRUCTURED_OUTPUT execution plane;
+- OIDC/SCIM;
+- generalized Policy Engine;
+- DLP/data classification;
+- Groups/Departments;
+- enterprise connector sync + ACL mirroring;
+- MCP approval gateway;
+- durable autonomous Agent Runtime;
+- formal compliance certification;
+- formally proven HA/SLO.
+
+---
+
+# Позиционирование проекта
+
+## Короткое техническое описание
+
+> **SafeAI Desk — modular-monolith корпоративного AI Gateway с organization multi-tenancy, exactly-one-role RBAC, cookie JWT + CSRF, refresh rotation/reuse detection, user/org security epochs, durable idempotent ChatTurn с lease/fencing/ambiguity protection, versioned Model Control Plane, durable physical AI attempt evidence, Knowledge/RAG provenance + Answer Passport, transactional audit outbox и usage/pricing quality analytics.**
+
+## Архитектурная идея
+
+SafeAI Desk не пытается сделать LLM deterministic.
+
+Вместо этого платформа делает deterministic/auditable **обвязку вокруг недетерминированного provider**:
+
+```text
+кто запросил
+какие права были
+какие данные разрешены
+какая policy действовала
+какая catalog version выбрана
+какой execution target разрешён
+какие знания использованы
+какой external attempt начат
+что известно о его исходе
+что было сохранено как evidence
+```
+
+## Почему modular monolith
+
+Текущий modular-monolith подходит проекту, потому что:
+
+- tenant security state;
+- ChatTurn reservation;
+- quota;
+- model route decision;
+- audit intent;
+- Knowledge provenance;
+- execution evidence
+
+требуют сильных transactional boundaries.
+
+Переход к микросервисам имеет смысл только после появления реальной независимой scaling/ownership необходимости и должен сохранять эти invariants.
+
+---
+
+# Frontend
+
+Эта редакция README намеренно фиксирует **backend baseline на 02.10.2026**.
+
+По предоставленным скриншотам видно, что frontend уже содержит отдельные API clients, runtime parsers, auth context, admin audit/usage/users/organizations/model control plane UI, Chat title UI и Knowledge UI, а также значительный test layer.
+
+Полное описание frontend contracts, компонентов и актуального file tree лучше синхронизировать после отдельной передачи текущего frontend archive/source, чтобы не переносить в README устаревшие детали из более ранних версий.
+
+---
+
+# Главное правило дальнейшей эволюции
+
+Новые возможности не должны ослаблять уже существующие invariants:
+
+```text
+tenant isolation
+auth revocation
+idempotency
+ChatTurn durability
+provider ambiguity protection
+route-decision provenance
+physical-attempt evidence
+Knowledge provenance
+audit integrity
+unknown != zero
+database-enforced correctness
+```
+
+Целевой execution flow:
+
+```text
 reserveOrReplay()
-        │
-        ├─ idempotency lookup
-        ├─ immutable model governance decision
-        ├─ input-accounting provenance
-        ├─ ChatTurn reservation
-        ├─ quota/rate-limit state
-        ▼
+  │
+  ├─ auth / tenant / quota / rate-limit
+  ├─ semantic idempotency
+  ├─ immutable model route decision
+  ├─ accounting/output reservation
+  └─ ChatTurn PROCESSING
+  ↓
 commit short transaction
-
-Retrieval / context preparation
-        │
-        ├─ preserve route identity
-        ├─ preserve output cap
-        ├─ enforce reserved input envelope
-        ▼
-markProviderCallStarted()
-        ▼
+  ↓
+Knowledge retrieval / final context preparation
+  ↓
+FINAL request binding + execution guard
+  ↓
+ExecutionPlan
+  ↓
+Attempt STARTED committed
+  ↓
 provider I/O outside long DB transaction
-        ▼
-fenced finalization
+  ↓
+terminal physical evidence
+  ↓
+fenced ChatTurn finalization
+  ↓
+usage / Answer Passport / audit
+```
 
-Главное правило дальнейшей эволюции:
+---
 
-новые governance, routing, RAG, FinOps и agent capabilities не должны ослаблять уже реализованные ChatTurn durability, 
-tenant isolation, idempotency, provider-ambiguity protection, provenance и database-enforced integrity invariants.
-
+**Документ актуализирован по состоянию backend и Flyway `V1–V58`, рассмотренных к 02 октября 2026 года.**

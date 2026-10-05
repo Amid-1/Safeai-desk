@@ -12,7 +12,8 @@ import java.util.UUID;
  *
  * <p>Integrity versions 1 and 2 remain readable for historical V45/V46
  * evidence. New decisions use version 3 with explicit input-accounting
- * provenance.</p>
+ * provenance; V64 adds a separate immutable budget-breakdown receipt without
+ * changing the V3 canonical hash.</p>
  */
 public record ModelRouteDecision(
         UUID id,
@@ -99,19 +100,47 @@ public record ModelRouteDecision(
     }
 
     /**
-     * Monthly budget state exposed to audit/admin read models.
-     *
-     * <p>Budget enforcement mode can exist independently of an actual monthly
-     * budget. Therefore absence of {@code monthlyBudgetUsd} means that monthly
-     * budget evaluation was not applicable for this decision.</p>
+     * Backward-compatible exactness state exposed by the pre-V64 API.
      */
     public MonthlyCostState monthlyCostState() {
         if (monthlyBudgetUsd == null) {
             return MonthlyCostState.NOT_EVALUATED;
         }
-
-        return monthlyCostKnown
-                ? MonthlyCostState.KNOWN
-                : MonthlyCostState.UNKNOWN;
+        return monthlyCostKnown ? MonthlyCostState.KNOWN : MonthlyCostState.UNKNOWN;
     }
+
+    /**
+     * Precise V64 commitment/budget state. Exactness and proven overrun are
+     * independent; unknown liability can coexist with a lower bound that has
+     * already exceeded the configured budget.
+     */
+    public MonthlyCommitmentState monthlyCommitmentState() {
+        if (monthlyBudgetUsd == null) {
+            return MonthlyCommitmentState.NOT_EVALUATED;
+        }
+        if (monthlyCostKnown) {
+            return budgetExceeded
+                    ? MonthlyCommitmentState.KNOWN_EXCEEDED
+                    : MonthlyCommitmentState.KNOWN_WITHIN;
+        }
+        if (budgetExceeded) {
+            return MonthlyCommitmentState.UNKNOWN_EXCEEDED_LOWER_BOUND;
+        }
+        if (reason == ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE
+                || monthlySpentUsd == null) {
+            return MonthlyCommitmentState.UNVERIFIABLE;
+        }
+        return MonthlyCommitmentState.UNKNOWN_WITHIN_LOWER_BOUND;
+    }
+
+    /**
+     * Semantic alias for the historical {@code monthly_spent_usd} field. The
+     * persisted column/component name is retained for V1-V3 hash/schema
+     * compatibility, but its value is a commitment snapshot, not pure actual
+     * provider spend.
+     */
+    public BigDecimal monthlyCommittedUsd() {
+        return monthlySpentUsd;
+    }
+
 }

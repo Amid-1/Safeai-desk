@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ValueConstants;
+import org.springframework.web.bind.annotation.RequestParam;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.dto.CreateModelCatalogVersionRequest;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
@@ -35,6 +37,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -64,12 +67,16 @@ class ModelControllerContractTest {
         Method latest =
                 ModelCatalogController.class.getMethod(
                         "latest",
+                        String.class,
+                        int.class,
                         SafeAiUserPrincipal.class
                 );
 
         Method effective =
                 ModelCatalogController.class.getMethod(
                         "effective",
+                        String.class,
+                        int.class,
                         SafeAiUserPrincipal.class
                 );
 
@@ -130,12 +137,40 @@ class ModelControllerContractTest {
                 SUPER_ADMIN_WRITE_BOUNDARY
         );
 
-        assertAuthenticationPrincipal(
-                latest.getParameters()[0]
+        assertRequestParam(
+                latest.getParameters()[0],
+                "afterModelKey",
+                false,
+                ValueConstants.DEFAULT_NONE
+        );
+
+        assertRequestParam(
+                latest.getParameters()[1],
+                "limit",
+                true,
+                "100"
         );
 
         assertAuthenticationPrincipal(
-                effective.getParameters()[0]
+                latest.getParameters()[2]
+        );
+
+        assertRequestParam(
+                effective.getParameters()[0],
+                "afterModelKey",
+                false,
+                ValueConstants.DEFAULT_NONE
+        );
+
+        assertRequestParam(
+                effective.getParameters()[1],
+                "limit",
+                true,
+                "100"
+        );
+
+        assertAuthenticationPrincipal(
+                effective.getParameters()[2]
         );
 
         assertRequestBodyValidated(
@@ -285,7 +320,7 @@ class ModelControllerContractTest {
     }
 
     @Test
-    void catalogControllerDelegatesLatestAndEffectiveWithExactPrincipal() {
+    void catalogControllerDelegatesLatestAndEffectiveWithExactPaginationAndPrincipal() {
         ModelCatalogService service =
                 mock(
                         ModelCatalogService.class
@@ -299,6 +334,9 @@ class ModelControllerContractTest {
         SafeAiUserPrincipal principal =
                 ModelTestFixtures.adminPrincipal();
 
+        String effectiveCursor =
+                "openai:gpt-test";
+
         List<ModelCatalogEntryResponse> latest =
                 List.of();
 
@@ -307,6 +345,8 @@ class ModelControllerContractTest {
 
         when(
                 service.findLatest(
+                        null,
+                        100,
                         principal
                 )
         ).thenReturn(
@@ -315,6 +355,8 @@ class ModelControllerContractTest {
 
         when(
                 service.findEffective(
+                        effectiveCursor,
+                        25,
                         principal
                 )
         ).thenReturn(
@@ -323,6 +365,8 @@ class ModelControllerContractTest {
 
         assertThat(
                 controller.latest(
+                        null,
+                        100,
                         principal
                 )
         ).isSameAs(
@@ -331,6 +375,8 @@ class ModelControllerContractTest {
 
         assertThat(
                 controller.effective(
+                        effectiveCursor,
+                        25,
                         principal
                 )
         ).isSameAs(
@@ -340,17 +386,17 @@ class ModelControllerContractTest {
         verify(
                 service
         ).findLatest(
-                same(
-                        principal
-                )
+                isNull(),
+                eq(100),
+                same(principal)
         );
 
         verify(
                 service
         ).findEffective(
-                same(
-                        principal
-                )
+                eq(effectiveCursor),
+                eq(25),
+                same(principal)
         );
     }
 
@@ -848,6 +894,46 @@ class ModelControllerContractTest {
                 () ->
                         element
                                 + " must declare @PreAuthorize"
+        );
+    }
+
+    private static void assertRequestParam(
+            Parameter parameter,
+            String expectedName,
+            boolean expectedRequired,
+            String expectedDefaultValue
+    ) {
+        RequestParam annotation =
+                Objects.requireNonNull(
+                        parameter.getAnnotation(
+                                RequestParam.class
+                        ),
+                        () ->
+                                parameter
+                                        + " must declare @RequestParam"
+                );
+
+        String declaredName =
+                annotation.value().isBlank()
+                        ? annotation.name()
+                        : annotation.value();
+
+        assertThat(
+                declaredName
+        ).isEqualTo(
+                expectedName
+        );
+
+        assertThat(
+                annotation.required()
+        ).isEqualTo(
+                expectedRequired
+        );
+
+        assertThat(
+                annotation.defaultValue()
+        ).isEqualTo(
+                expectedDefaultValue
         );
     }
 

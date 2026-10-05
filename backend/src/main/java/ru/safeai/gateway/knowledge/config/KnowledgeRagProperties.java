@@ -2,7 +2,7 @@ package ru.safeai.gateway.knowledge.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@ConfigurationProperties(prefix = "safeai.knowledge.rag")
+@ConfigurationProperties(prefix = "safeai.knowledge.rag", ignoreUnknownFields = false)
 public record KnowledgeRagProperties(
         Integer topK,
         Integer maxContextChars,

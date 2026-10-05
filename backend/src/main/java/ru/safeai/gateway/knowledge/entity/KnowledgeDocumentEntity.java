@@ -31,8 +31,13 @@ public class KnowledgeDocumentEntity {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    /** Latest uploaded version, regardless of ingestion outcome. */
     @Column(name = "current_version_id")
     private UUID currentVersionId;
+
+    /** Latest successfully published/searchable version. */
+    @Column(name = "searchable_version_id")
+    private UUID searchableVersionId;
 
     @Column(name = "created_by_user_id", nullable = false, updatable = false)
     private UUID createdByUserId;

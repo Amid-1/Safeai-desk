@@ -167,6 +167,30 @@ class ModelRoutingCostPolicyTest {
     }
 
     @Test
+    void governanceUpperBoundRoundsEveryPositiveFractionUpInsteadOfDown() {
+        ModelCatalogEntry entry = ModelTestFixtures.entry(
+                ru.safeai.gateway.model.domain.ModelLifecycle.ACTIVE,
+                ModelPricingStatus.CONFIGURED,
+                true,
+                new BigDecimal("0.000000100000"),
+                BigDecimal.ZERO,
+                Set.of(),
+                ru.safeai.gateway.model.domain.ModelRetentionStatus.NOT_DECLARED,
+                ru.safeai.gateway.model.domain.ModelTrainingUseStatus.NOT_DECLARED
+        );
+
+        ModelRoutingCostPolicy.PricingEstimate estimate = policy.estimateCost(
+                entry,
+                ModelTestFixtures.configuredRuntime(),
+                1L,
+                0L
+        );
+
+        assertThat(estimate.cost()).isEqualByComparingTo("0.000000000001");
+        assertThat(estimate.complete()).isTrue();
+    }
+
+    @Test
     void incompleteEntryWithMissingOrdinaryPriceIsUnknown() {
         ModelCatalogEntry entry =
                 ModelTestFixtures.entry(
@@ -239,7 +263,19 @@ class ModelRoutingCostPolicyTest {
         ).isNull();
 
         assertThat(
-                snapshot.monthlySpentUsd()
+                snapshot.monthlyActualCostUsd()
+        ).isNull();
+
+        assertThat(
+                snapshot.monthlyReservedCostUsd()
+        ).isNull();
+
+        assertThat(
+                snapshot.monthlyUnknownCostCount()
+        ).isZero();
+
+        assertThat(
+                snapshot.monthlyCommittedUsd()
         ).isNull();
 
         assertThat(
@@ -305,7 +341,19 @@ class ModelRoutingCostPolicyTest {
         ).isNull();
 
         assertThat(
-                snapshot.monthlySpentUsd()
+                snapshot.monthlyActualCostUsd()
+        ).isNull();
+
+        assertThat(
+                snapshot.monthlyReservedCostUsd()
+        ).isNull();
+
+        assertThat(
+                snapshot.monthlyUnknownCostCount()
+        ).isZero();
+
+        assertThat(
+                snapshot.monthlyCommittedUsd()
         ).isNull();
 
         assertThat(
@@ -357,6 +405,38 @@ class ModelRoutingCostPolicyTest {
 
         assertThat(
                 snapshot.monthlyCostKnown()
+        ).isFalse();
+
+        assertThat(
+                snapshot.monthlyActualCostUsd()
+        ).isEqualByComparingTo(
+                "20.000000000000"
+        );
+
+        assertThat(
+                snapshot.monthlyReservedCostUsd()
+        ).isEqualByComparingTo(
+                BigDecimal.ZERO
+        );
+
+        assertThat(
+                snapshot.monthlyUnknownCostCount()
+        ).isEqualTo(
+                1L
+        );
+
+        assertThat(
+                snapshot.monthlyCommittedUsd()
+        ).isEqualByComparingTo(
+                "20.000000000000"
+        );
+
+        assertThat(
+                snapshot.monthlyProjectedUsd()
+        ).isNull();
+
+        assertThat(
+                snapshot.exceeded()
         ).isFalse();
 
         assertThat(
@@ -480,7 +560,9 @@ class ModelRoutingCostPolicyTest {
         ).thenReturn(
                 new ModelRouteDecisionRepository.MonthlyCostSnapshot(
                         BigDecimal.ZERO,
-                        0L
+                        0L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO
                 )
         );
 
@@ -517,9 +599,17 @@ class ModelRoutingCostPolicyTest {
     }
 
     private void stubMonthlySnapshot(
-            BigDecimal committed,
+            BigDecimal actualCostUsd,
             long unknownCount
     ) {
+        BigDecimal reservedCostUsd =
+                BigDecimal.ZERO;
+
+        BigDecimal committedCostUsd =
+                actualCostUsd.add(
+                        reservedCostUsd
+                );
+
         when(
                 decisionRepository.loadCommittedMonthlyCostSnapshot(
                         ModelTestFixtures.ORGANIZATION_ID,
@@ -532,8 +622,10 @@ class ModelRoutingCostPolicyTest {
                 )
         ).thenReturn(
                 new ModelRouteDecisionRepository.MonthlyCostSnapshot(
-                        committed,
-                        unknownCount
+                        committedCostUsd,
+                        unknownCount,
+                        actualCostUsd,
+                        reservedCostUsd
                 )
         );
     }

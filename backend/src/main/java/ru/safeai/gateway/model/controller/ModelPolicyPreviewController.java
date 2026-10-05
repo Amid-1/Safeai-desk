@@ -23,27 +23,17 @@ public class ModelPolicyPreviewController {
 
     private final ModelPolicyPreviewService service;
 
-    public ModelPolicyPreviewController(
-            ModelPolicyPreviewService service
-    ) {
-        this.service = Objects.requireNonNull(
-                service,
-                "service"
-        );
+    public ModelPolicyPreviewController(ModelPolicyPreviewService service) {
+        this.service = Objects.requireNonNull(service, "service");
     }
 
     @PostMapping("/{organizationId}/preview")
     public ModelPolicyPreviewResponse preview(
             @PathVariable UUID organizationId,
-            @Valid @RequestBody
-            CreateOrganizationModelPolicyVersionRequest request,
+            @Valid @RequestBody CreateOrganizationModelPolicyVersionRequest request,
             @AuthenticationPrincipal(errorOnInvalidType = true)
             SafeAiUserPrincipal currentUser
     ) {
-        return service.preview(
-                organizationId,
-                request,
-                currentUser
-        );
+        return service.preview(organizationId, request, currentUser);
     }
 }

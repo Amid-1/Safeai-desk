@@ -472,9 +472,9 @@ RestAuthenticationEntryPoint / RestAccessDeniedHandler
 backend/
 ├── docs/
 │   └── config/
-│       ├── application-security-example.yaml
 │       ├── application-prod-knowledge.example.yml
-│       └── application-prod-knowledge-reconciliation.example.yml
+│       ├── application-prod-knowledge-reconciliation.example.yml
+│       └── application-security-example.yaml
 │
 ├── src/
 │   ├── main/
@@ -483,12 +483,13 @@ backend/
 │   │       ├── application-local.yml
 │   │       ├── application-local-nginx.yml
 │   │       ├── application-prod.yml
+│   │       ├── application-prod-knowledge-reconciliation.example.yml
 │   │       └── logback-spring.xml
 │   │
 │   └── test/
 │       └── resources/
-│           ├── application-test.yml
-│           └── application-auth-postgres-it.yml
+│           ├── application-auth-postgres-it.yml
+│           └── application-test.yml
 │
 deploy/
 └── prometheus/
@@ -574,15 +575,20 @@ backend/
 │   │       │       ├── V49__model_control_plane_strict_routing_and_generic_pricing.sql
 │   │       │       ├── V50__ai_execution_attempt_usage_evidence.sql
 │   │       │       ├── V51__ai_execution_attempt_integrity_hardening.sql
+│   │       │       ├── V52__model_strict_execution_and_modality_integrity.sql
+│   │       │       ├── V53__physical_attempt_transition_and_pricing_integrity.sql
+│   │       │       ├── V54__provider_identity_and_reconciliation_safety.sql
+│   │       │       ├── V55__knowledge_russian_lexical_profile.sql
+│   │       │       ├── V56__knowledge_storage_upload_intents.sql
+│   │       │       ├── V57__knowledge_index_generations.sql
+│   │       │       ├── V58__chat_title_lifecycle.sql
 │   │       │       └── README_DB.md
 │   │       ├── META-INF/
 │   │       ├── application.yml
 │   │       ├── application-local.yml
-│   │       ├── application-local-management-snippet.yml
 │   │       ├── application-local-nginx.yml
 │   │       ├── application-prod.yml
-│   │       ├── application-prod-knowledge.example.yml
-│   │       ├── application-prod-management-snippet.yml
+│   │       ├── application-prod-knowledge-reconciliation.example.yml
 │   │       └── logback-spring.xml
 │   │
 │   └── test/
@@ -627,7 +633,9 @@ ai/
 │   ├── ModelExecutionPlanEntity
 │   ├── ModelExecutionPlanRepository
 │   ├── OutcomeCertainty
+│   ├── PhysicalAttemptReconciliationRequiredException
 │   ├── ProviderExecutionTarget
+│   ├── ProviderFailureCertainty
 │   ├── ProviderPricingEvidence
 │   ├── ProviderUsageEvidence
 │   ├── ResolvedModelMismatchException
@@ -644,7 +652,10 @@ ai/
 ├── pricing/
 │   ├── ModelPricingProperties
 │   ├── ModelPricingService
-│   └── PricingResult
+│   ├── PricingResolver
+│   ├── PricingResult
+│   ├── StaticConfigurationPricingResolver
+│   └── VersionedCatalogPricingResolver
 │
 ├── provider/
 │   ├── anthropic/
@@ -807,7 +818,8 @@ chat/
 │   └── ChatRecoveryProperties
 │
 ├── controller/
-│   └── ChatController
+│   ├── ChatController
+│   └── ChatTitleController
 │
 ├── dto/
 │   ├── ChatCapabilitiesResponse
@@ -821,7 +833,8 @@ chat/
 │   ├── MessagePageRequest
 │   ├── MessageResponse
 │   ├── SendMessageRequest
-│   └── SendMessageResponse
+│   ├── SendMessageResponse
+│   └── UpdateChatTitleRequest
 │
 ├── entity/
 │   ├── ChatMessageEntity
@@ -864,23 +877,29 @@ chat/
 │   └── RecoveredChatTurn
 │
 └── service/
-    ├── AiHistoryBuilder
-    ├── ChatContentNormalizer
-    ├── ChatLockService
-    ├── ChatMapper
-    ├── ChatProcessingContext
-    ├── ChatQuotaService
-    ├── ChatSecurityStateService
-    ├── ChatService
-    ├── ChatTurnAuditDetailsFactory
-    ├── ChatTurnExecutionCoordinator
-    ├── ChatTurnFinalizationService
-    ├── ChatTurnLeaseService
-    ├── ChatTurnReadSupport
-    ├── ChatTurnRecoveryCoordinator
-    ├── ChatTurnRecoveryScheduler
-    ├── ChatTurnRecoveryService
-    └── ChatTurnReservationService
+│   ├── AiHistoryBuilder
+│   ├── ChatContentNormalizer
+│   ├── ChatLockService
+│   ├── ChatMapper
+│   ├── ChatProcessingContext
+│   ├── ChatQuotaService
+│   ├── ChatSecurityStateService
+│   ├── ChatService
+│   ├── ChatTurnAuditDetailsFactory
+│   ├── ChatTurnExecutionCoordinator
+│   ├── ChatTurnFinalizationService
+│   ├── ChatTurnLeaseService
+│   ├── ChatTurnReadSupport
+│   ├── ChatTurnRecoveryCoordinator
+│   ├── ChatTurnRecoveryScheduler
+│   ├── ChatTurnRecoveryService
+│   └── ChatTurnReservationService
+│
+└── title/
+    ├── ChatTitlePolicy
+    ├── ChatTitleService
+    └── ChatTitleSource
+    
     
     
     
@@ -1002,16 +1021,20 @@ knowledge/
 │   ├── KnowledgeEmbeddingProvider
 │   ├── OpenAiKnowledgeEmbeddingProvider
 │   └── PgVectorSupport
+│
 ├── entity/
 │   ├── KnowledgeBaseEntity
 │   ├── KnowledgeBaseMembershipEntity
 │   ├── KnowledgeDocumentEntity
 │   ├── KnowledgeDocumentVersionEntity
 │   └── KnowledgeIngestionJobEntity
+│
 ├── evaluation/
 │   └── KnowledgeRetrievalMetrics
+│
 ├── exception/
 │   └── KnowledgeStorageUnavailableException
+│
 ├── extraction/
 │   ├── CsvKnowledgeExtractor
 │   ├── DocxKnowledgeExtractor
@@ -1029,6 +1052,14 @@ knowledge/
 │   ├── PptxKnowledgeExtractor
 │   ├── XlsxKnowledgeExtractor
 │   └── XmlKnowledgeExtractor
+│
+├── generation/
+│   ├── KnowledgeGenerationGc
+│   └── KnowledgeGenerationGcScheduler
+│
+│
+│
+│
 ├── ingestion/
 │   ├── EmbeddedKnowledgeChunk
 │   ├── ExpiredKnowledgeIngestionJob
@@ -1041,17 +1072,20 @@ knowledge/
 │   ├── KnowledgeIngestionQueueRepository
 │   ├── KnowledgeIngestionScheduler
 │   └── StaleIngestionOwnershipException
+│
 ├── model/
 │   ├── KnowledgeBaseAccessLevel
 │   ├── KnowledgeBaseVisibility
 │   ├── KnowledgeHealthState
 │   └── KnowledgeIngestionStatus
+│
 ├── ocr/
 │   ├── DisabledKnowledgeOcrProvider
 │   ├── HttpKnowledgeOcrProvider
 │   ├── KnowledgeOcrProvider
 │   ├── OcrDocument
 │   └── OcrPage
+│
 ├── rag/
 │   ├── AnswerPassportService
 │   ├── KnowledgeCitationValidator
@@ -1063,6 +1097,7 @@ knowledge/
 │   ├── RagCitation
 │   ├── RagCompletion
 │   └── RagPreparation
+│
 ├── repository/
 │   ├── KnowledgeBaseMembershipRepository
 │   ├── KnowledgeBaseRepository
@@ -1071,10 +1106,12 @@ knowledge/
 │   ├── KnowledgeDocumentVersionRepository
 │   ├── KnowledgeIngestionJobRepository
 │   └── KnowledgeMemberDirectoryRepository
+│
 ├── retrieval/
 │   ├── KnowledgeRetrievalExecution
 │   ├── KnowledgeRetrievalHit
 │   └── KnowledgeRetrievalRepository
+│
 ├── service/
 │   ├── KnowledgeAccessService
 │   ├── KnowledgeBaseNameNormalizer
@@ -1093,7 +1130,14 @@ knowledge/
 │   ├── KnowledgeStructuredTextValidator
 │   ├── KnowledgeUploadFileSupport
 │   └── KnowledgeValidationErrors
+│
 └── storage/
+    ├── reconciliation/
+    │   ├── KnowledgeStorageReconciliationConfiguration
+    │   ├── KnowledgeStorageReconciliationProperties
+    │   ├── KnowledgeStorageReconciliationScheduler
+    │   └── KnowledgeStorageUploadJournal
+    │   
     ├── KnowledgeStorageConfiguration
     ├── KnowledgeStorageProductionInvariantVerifier
     ├── KnowledgeStorageProperties
@@ -1108,11 +1152,13 @@ knowledge/
 model/
 ├── config/
 │   └── ModelRoutingEnvelopeProperties
+│
 ├── controller/
 │   ├── ModelCatalogController
 │   ├── ModelRouteDecisionController
 │   ├── ModelRuntimeController
 │   └── OrganizationModelPolicyController
+│
 ├── domain/
 │   ├── BudgetEnforcement
 │   ├── ModelCapability
@@ -1132,6 +1178,7 @@ model/
 │   ├── OrganizationModelPolicy
 │   ├── RuntimeModelProbeResult
 │   └── RuntimeModelProbeStatus
+│
 ├── dto/
 │   ├── CreateModelCatalogVersionRequest
 │   ├── CreateOrganizationModelPolicyVersionRequest
@@ -1143,31 +1190,35 @@ model/
 │   ├── RuntimeModelProbeResponse
 │   ├── RuntimeModelStatusResponse
 │   └── RuntimeModelStatusWireResponse
+│
 ├── exception/
 │   ├── ModelRouteDeniedException
 │   └── ModelRouteEnvelopeExceededException
+│
 ├── repository/
 │   ├── ModelCatalogRepository
 │   ├── ModelRouteDecisionRepository
 │   ├── ModelRouteRequestMutexRepository
 │   └──OrganizationModelPolicyRepository
-│   ├── 
-│   ├── 
-│   ├── 
-│   ├── 
-│   └── 
+│
 ├── service/
 │   ├── AnthropicRuntimeModelHealthProbe
+│   ├── DatabaseTimestampNormalizer
 │   ├── MockRuntimeModelHealthProbe
+│   ├── ModelCatalogAuditDetails
 │   ├── ModelCatalogAuditDetailsFactory
 │   ├── ModelCatalogRules
 │   ├── ModelCatalogService
 │   ├── ModelControlPlaneAccess
 │   ├── ModelControlPlaneNumericValidation
+│   ├── ModelInputTokenEstimator
 │   ├── ModelPolicyPreviewService
 │   ├── ModelRouteDecisionFactory
 │   ├── ModelRouteDecisionIntegrity
+│   ├── ModelRouteExecutionBindingService
 │   ├── ModelRouteExecutionGuard
+│   ├── ModelRouteExecutionIdentity
+│   ├── ModelRouteReservedRequestService
 │   ├── ModelRoutingCostPolicy
 │   ├── ModelRoutingEnvelopeService
 │   ├── ModelRoutingExecutionCapabilityGate
@@ -1181,9 +1232,8 @@ model/
 │   ├── RuntimeModelProbeHttpSupport
 │   ├── RuntimeModelProbeService
 │   └── RuntimeModelStatusService
-└── /
-    ├── 
-    └── 
+│
+└── 
   
   
   

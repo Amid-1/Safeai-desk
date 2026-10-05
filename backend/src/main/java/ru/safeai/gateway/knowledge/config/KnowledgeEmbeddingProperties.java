@@ -8,8 +8,7 @@ import java.util.Locale;
 import java.util.Set;
 
 @ConfigurationProperties(
-        prefix = "safeai.knowledge.embedding"
-)
+        prefix = "safeai.knowledge.embedding", ignoreUnknownFields = false)
 public record KnowledgeEmbeddingProperties(
         String provider,
         String baseUrl,

@@ -73,6 +73,7 @@ public class KnowledgeDocumentQueryRepository {
                             document.enabled,
                             document.version as document_version,
                             document.current_version_id,
+                            document.searchable_version_id,
                             document.created_at,
                             document.updated_at,
                             version.version_number,
@@ -178,6 +179,10 @@ public class KnowledgeDocumentQueryRepository {
                 ),
                 resultSet.getObject(
                         "current_version_id",
+                        UUID.class
+                ),
+                resultSet.getObject(
+                        "searchable_version_id",
                         UUID.class
                 ),
                 nullableVersionNumber(

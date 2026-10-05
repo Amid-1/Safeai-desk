@@ -9,7 +9,7 @@ import java.time.Duration;
  * application YAML discoverable by Spring Boot configuration metadata.
  * The scheduler remains off until it is explicitly enabled.
  */
-@ConfigurationProperties(prefix = "safeai.knowledge.storage-reconciliation")
+@ConfigurationProperties(prefix = "safeai.knowledge.storage-reconciliation", ignoreUnknownFields = false)
 public record KnowledgeStorageReconciliationProperties(
         Boolean enabled,
         Duration pollDelay

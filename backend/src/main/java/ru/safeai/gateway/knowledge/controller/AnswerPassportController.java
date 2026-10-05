@@ -19,7 +19,9 @@ public class AnswerPassportController {
 
     private final AnswerPassportService service;
 
-    public AnswerPassportController(AnswerPassportService service) {
+    public AnswerPassportController(
+            AnswerPassportService service
+    ) {
         this.service = service;
     }
 
@@ -30,8 +32,11 @@ public class AnswerPassportController {
             @AuthenticationPrincipal(errorOnInvalidType = true)
             SafeAiUserPrincipal currentUser
     ) {
-        // Tenant/user identity is derived inside the service from the principal.
-        // Raw organizationId/userId are no longer part of the public service API.
+        /*
+         * Tenant/user identity is derived inside the service from the authenticated
+         * principal. Raw organizationId/userId are deliberately not accepted from
+         * the request and therefore cannot be forged by the caller.
+         */
         return service.requireByTurn(
                 chatId,
                 turnId,

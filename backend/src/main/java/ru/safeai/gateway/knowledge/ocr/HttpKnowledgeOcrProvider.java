@@ -64,6 +64,14 @@ public class HttpKnowledgeOcrProvider
             );
         }
 
+        if (pdf.length > properties.maxInputBytes()) {
+            throw new KnowledgeIngestionException(
+                    "OCR_INPUT_TOO_LARGE",
+                    "PDF превышает отдельный безопасный лимит OCR request",
+                    false
+            );
+        }
+
         try {
             JsonNode body =
                     client.post()

@@ -22,17 +22,25 @@ public class KnowledgeEvaluationController {
 
     private final KnowledgeEvaluationService service;
 
-    public KnowledgeEvaluationController(KnowledgeEvaluationService service) {
+    public KnowledgeEvaluationController(
+            KnowledgeEvaluationService service
+    ) {
         this.service = service;
     }
 
     @PostMapping
     public KnowledgeEvaluationResponse evaluate(
             @PathVariable UUID knowledgeBaseId,
-            @Valid @RequestBody KnowledgeEvaluationRequest request,
+            @Valid
+            @RequestBody
+            KnowledgeEvaluationRequest request,
             @AuthenticationPrincipal(errorOnInvalidType = true)
             SafeAiUserPrincipal user
     ) {
-        return service.evaluate(knowledgeBaseId, request, user);
+        return service.evaluate(
+                knowledgeBaseId,
+                request,
+                user
+        );
     }
 }

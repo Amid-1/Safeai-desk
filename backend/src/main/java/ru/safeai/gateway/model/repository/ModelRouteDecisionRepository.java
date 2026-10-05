@@ -3,7 +3,10 @@ package ru.safeai.gateway.model.repository;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
+import ru.safeai.gateway.model.domain.ModelBudgetCommitmentSnapshot;
 import ru.safeai.gateway.model.domain.ModelCapability;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
@@ -17,7 +20,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
@@ -71,7 +73,9 @@ public class ModelRouteDecisionRepository {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc не должен быть null");
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
     public void lockOrganizationBudget(UUID organizationId) {
+        Objects.requireNonNull(organizationId, "organizationId");
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
                     "select pg_advisory_xact_lock(hashtextextended(?, 0))"
@@ -89,6 +93,7 @@ public class ModelRouteDecisionRepository {
      * after the ChatTurn row is flushed and before any Redis/provider side
      * effect.
      */
+    @Transactional(propagation = Propagation.MANDATORY)
     public void validateAllowedTurnLinkBeforeExternalSideEffects() {
         jdbc.execute(
                 "set constraints ctrg_model_route_decision_turn_v45 immediate"
@@ -116,160 +121,44 @@ public class ModelRouteDecisionRepository {
     }
 
     /**
-     * V50/V51 physical-attempt ledger + still-in-flight request reservations.
-     * <p>
-     * A plan with attempts is NEVER charged through assistant.cost_usd. Pre-V50
-     * turns without an execution plan retain an explicit legacy fallback.
-     * <p>
-     * Known physical costs are the sum of billable attempt evidence, including
-     * attempts belonging to a FAILED logical turn. STARTED/AMBIGUOUS or
-     * unpriced successful attempts mark the monthly cost unverifiable. HARD
-     * enforcement then rejects instead of treating an estimate as exact.
-     * <p>
-     * A PROCESSING turn reserves one future/current physical attempt until a
-     * successful physical attempt completes, even between failed retries.
-     * Reservations are deliberately conservative, not actual provider spend.
-     * Accounting month follows the existing route-decision created_at contract.
+     * V62 hardens the V60 commitment model so a pending reservation exists only
+     * before attempt #1 or after an explicitly retry-safe failed attempt.
+     * Provider-evidenced costs, active upper-bound reservations and unknown
+     * liability remain separate. Physical month uses attempt started_at (UTC);
+     * active reservations carry across months. Pre-ledger history keeps its
+     * explicitly labelled legacy route timestamp. The existing decision
+     * monthlySpentUsd field remains total commitment for hash compatibility;
+     * actual spend and reservations are available separately on this snapshot.
      */
     public MonthlyCostSnapshot loadCommittedMonthlyCostSnapshot(
             UUID organizationId,
             Instant periodStart,
             Instant periodEnd
     ) {
+        Objects.requireNonNull(organizationId, "organizationId");
+        Objects.requireNonNull(periodStart, "periodStart");
+        Objects.requireNonNull(periodEnd, "periodEnd");
+        if (!periodStart.isBefore(periodEnd)) {
+            throw new IllegalArgumentException("Monthly cost period must have a positive duration");
+        }
         MonthlyCostSnapshot snapshot = jdbc.queryForObject(
                 """
-                with selected_turns as (
-                    select
-                        d.id as decision_id,
-                        d.estimated_max_cost_usd,
-                        d.pricing_complete,
-                        t.state,
-                        plan.id as plan_id,
-                        assistant.cost_usd as legacy_assistant_cost,
-                        assistant.usage_status as legacy_usage_status,
-                        assistant.pricing_status as legacy_pricing_status
-                    from model_route_decisions d
-                    join chat_turns t on t.model_route_decision_id = d.id
-                    left join model_execution_plans plan
-                           on plan.chat_turn_id = t.id
-                          and plan.model_route_decision_id = d.id
-                    left join chat_messages assistant
-                           on assistant.id = t.assistant_message_id
-                          and plan.id is null
-                    where d.organization_id = ?
-                      and d.outcome = 'ALLOWED'
-                      and d.created_at >= ?
-                      and d.created_at < ?
-                      and t.state in ('PROCESSING', 'AMBIGUOUS', 'SUCCEEDED', 'FAILED')
-                ),
-                attempt_totals as (
-                    select
-                        s.decision_id,
-                        count(a.id)::bigint as attempt_count,
-                        count(a.id) filter (
-                            where a.outcome = 'STARTED'
-                        )::bigint as started_count,
-                        count(a.id) filter (
-                            where a.outcome = 'SUCCEEDED'
-                        )::bigint as succeeded_count,
-                        coalesce(sum(
-                            case
-                                when a.outcome <> 'STARTED'
-                                 and a.pricing_status in ('PRICED', 'FREE')
-                                 and a.cost_usd is not null
-                                    then a.cost_usd
-                                else 0
-                            end
-                        ), 0) as evidenced_cost_usd,
-                        count(a.id) filter (
-                            where a.outcome in ('STARTED', 'AMBIGUOUS')
-                               or (a.outcome = 'SUCCEEDED'
-                                   and coalesce((
-                                       a.usage_status = 'AVAILABLE'
-                                       and a.specialized_dimensions_valid = true
-                                       and a.pricing_status in ('PRICED', 'FREE')
-                                       and a.cost_usd is not null
-                                   ), false) = false)
-                               or (a.outcome = 'FAILED'
-                                   and a.outcome_certainty <> 'KNOWN_NOT_EXECUTED'
-                                   and coalesce((
-                                       a.usage_status = 'AVAILABLE'
-                                       and a.specialized_dimensions_valid = true
-                                       and a.pricing_status in ('PRICED', 'FREE')
-                                       and a.cost_usd is not null
-                                   ), false) = false)
-                        )::bigint as uncertain_count
-                    from selected_turns s
-                    join model_execution_attempts a
-                      on a.execution_plan_id = s.plan_id
-                    group by s.decision_id
-                ),
-                ledger as (
-                    select
-                        s.*,
-                        coalesce(a.attempt_count, 0) as attempt_count,
-                        coalesce(a.started_count, 0) as started_count,
-                        coalesce(a.succeeded_count, 0) as succeeded_count,
-                        coalesce(a.evidenced_cost_usd, 0) as evidenced_cost_usd,
-                        coalesce(a.uncertain_count, 0) as uncertain_count,
-                        (s.state = 'SUCCEEDED'
-                            and s.legacy_usage_status = 'AVAILABLE'
-                            and s.legacy_pricing_status in ('PRICED', 'FREE')
-                            and s.legacy_assistant_cost is not null
-                        ) as legacy_exact
-                    from selected_turns s
-                    left join attempt_totals a on a.decision_id = s.decision_id
+                with scoped as (
+                    select * from public.model_cost_commitment_ledger_v62
+                    where organization_id = ?
+                      and (carry_forward or (ledger_at >= ? and ledger_at < ?))
                 )
                 select
-                    coalesce(sum(
-                        case
-                            when plan_id is null and legacy_exact
-                                then legacy_assistant_cost
-                            when plan_id is null
-                                then coalesce(estimated_max_cost_usd, 0)
-                            else evidenced_cost_usd
-                                 + case
-                                     when state = 'PROCESSING'
-                                          and (started_count > 0
-                                               or succeeded_count = 0)
-                                         then coalesce(estimated_max_cost_usd, 0)
-                                     else 0
-                                   end
-                        end
-                    ), 0) as committed_cost_usd,
-                    coalesce(sum(
-                        case
-                            when plan_id is null
-                                then case
-                                    when legacy_exact then 0
-                                    when state = 'FAILED'
-                                         or state = 'AMBIGUOUS'
-                                         or pricing_complete = false
-                                         or estimated_max_cost_usd is null
-                                        then 1
-                                    else 0
-                                end
-                            else uncertain_count
-                                 + case
-                                     when state in ('SUCCEEDED', 'AMBIGUOUS')
-                                          and attempt_count = 0 then 1
-                                     when state = 'SUCCEEDED'
-                                          and succeeded_count = 0 then 1
-                                     when state = 'PROCESSING'
-                                          and (started_count > 0
-                                               or succeeded_count = 0)
-                                          and (pricing_complete = false
-                                               or estimated_max_cost_usd is null)
-                                         then 1
-                                     else 0
-                                   end
-                        end
-                    ), 0)::bigint as unknown_committed_cost_count
-                from ledger
+                    coalesce(sum(actual_cost_usd) filter (where not carry_forward), 0) as actual_cost_usd,
+                    coalesce(sum(reserved_cost_usd), 0) as reserved_cost_usd,
+                    coalesce(sum(unknown_cost_count), 0)::bigint as unknown_committed_cost_count
+                from scoped
                 """,
                 (rs, ignoredRowNumber) -> new MonthlyCostSnapshot(
-                        rs.getBigDecimal("committed_cost_usd"),
-                        rs.getLong("unknown_committed_cost_count")
+                        rs.getBigDecimal("actual_cost_usd").add(rs.getBigDecimal("reserved_cost_usd")),
+                        rs.getLong("unknown_committed_cost_count"),
+                        rs.getBigDecimal("actual_cost_usd"),
+                        rs.getBigDecimal("reserved_cost_usd")
                 ),
                 organizationId,
                 Timestamp.from(periodStart),
@@ -280,6 +169,74 @@ public class ModelRouteDecisionRepository {
                 snapshot,
                 "Monthly model cost aggregate must return exactly one row"
         );
+    }
+
+    /** Uses the immutable policy version referenced by the sealed decision, never the latest policy. */
+    public boolean requiresSinglePhysicalAttempt(UUID decisionId) {
+        Boolean single = jdbc.queryForObject("""
+                select (d.budget_enforcement = 'HARD' and d.monthly_budget_usd is not null)
+                    or coalesce((p.enabled = true and p.max_request_cost_usd is not null), false)
+                from model_route_decisions d
+                left join organization_model_policies p
+                  on p.id = d.policy_id and p.version = d.policy_version
+                 and p.organization_id = d.organization_id
+                where d.id = ? and d.outcome = 'ALLOWED'
+                """, Boolean.class, decisionId);
+        return Boolean.TRUE.equals(single);
+    }
+
+    public void insertBudgetCommitmentSnapshot(
+            UUID decisionId,
+            ModelBudgetCommitmentSnapshot snapshot,
+            Instant createdAt
+    ) {
+        Objects.requireNonNull(decisionId, "decisionId");
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(createdAt, "createdAt");
+        int updated = jdbc.update(
+                """
+                insert into public.model_route_budget_commitments_v64 (
+                    model_route_decision_id,
+                    actual_cost_usd,
+                    reserved_cost_usd,
+                    unknown_cost_count,
+                    cost_state,
+                    created_at
+                ) values (?, ?, ?, ?, ?, ?)
+                """,
+                decisionId,
+                snapshot.actualCostUsd(),
+                snapshot.reservedCostUsd(),
+                snapshot.unknownCostCount(),
+                snapshot.commitmentState().name(),
+                Timestamp.from(createdAt)
+        );
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "Model route budget commitment insert affected " + updated + " rows"
+            );
+        }
+    }
+
+    public Optional<ModelBudgetCommitmentSnapshot> findBudgetCommitmentSnapshot(UUID decisionId) {
+        Objects.requireNonNull(decisionId, "decisionId");
+        List<ModelBudgetCommitmentSnapshot> rows = jdbc.query(
+                """
+                select actual_cost_usd, reserved_cost_usd, unknown_cost_count, cost_state
+                from public.model_route_budget_commitments_v64
+                where model_route_decision_id = ?
+                """,
+                (rs, ignored) -> new ModelBudgetCommitmentSnapshot(
+                        rs.getBigDecimal("actual_cost_usd"),
+                        rs.getBigDecimal("reserved_cost_usd"),
+                        rs.getLong("unknown_cost_count"),
+                        ru.safeai.gateway.model.domain.MonthlyCommitmentState.valueOf(
+                                rs.getString("cost_state")
+                        )
+                ),
+                decisionId
+        );
+        return rows.stream().findFirst();
     }
 
     public ModelRouteDecision insert(ModelRouteDecision decision) {
@@ -415,20 +372,15 @@ public class ModelRouteDecisionRepository {
     }
 
     private static Set<ModelCapability> capabilities(Array array) throws SQLException {
-        if (array == null) {
-            return Set.of();
-        }
-        try {
-            Object raw = array.getArray();
-            if (!(raw instanceof String[] strings)) {
-                throw new SQLException("Expected PostgreSQL text[] for required_capabilities");
+        EnumSet<ModelCapability> result = EnumSet.noneOf(ModelCapability.class);
+        for (String value : JdbcTextArrayReader.read(array, "required_capabilities")) {
+            try {
+                result.add(ModelCapability.valueOf(value));
+            } catch (IllegalArgumentException exception) {
+                throw new SQLException("Invalid model capability in required_capabilities: " + value, exception);
             }
-            EnumSet<ModelCapability> result = EnumSet.noneOf(ModelCapability.class);
-            Arrays.stream(strings).map(ModelCapability::valueOf).forEach(result::add);
-            return Set.copyOf(result);
-        } finally {
-            array.free();
         }
+        return Set.copyOf(result);
     }
 
     private static void setNullableInteger(
@@ -457,12 +409,24 @@ public class ModelRouteDecisionRepository {
 
     public record MonthlyCostSnapshot(
             BigDecimal committedCostUsd,
-            long unknownCommittedCostCount
+            long unknownCommittedCostCount,
+            BigDecimal actualCostUsd,
+            BigDecimal reservedCostUsd
     ) {
+        public MonthlyCostSnapshot(BigDecimal committedCostUsd, long unknownCommittedCostCount) {
+            this(committedCostUsd, unknownCommittedCostCount, committedCostUsd, BigDecimal.ZERO);
+        }
+
         public MonthlyCostSnapshot {
             committedCostUsd = committedCostUsd == null
                     ? BigDecimal.ZERO
                     : committedCostUsd;
+            actualCostUsd = actualCostUsd == null ? BigDecimal.ZERO : actualCostUsd;
+            reservedCostUsd = reservedCostUsd == null ? BigDecimal.ZERO : reservedCostUsd;
+            if (actualCostUsd.signum() < 0 || reservedCostUsd.signum() < 0
+                    || committedCostUsd.compareTo(actualCostUsd.add(reservedCostUsd)) != 0) {
+                throw new IllegalArgumentException("Invalid cost commitment components");
+            }
             if (unknownCommittedCostCount < 0L) {
                 throw new IllegalArgumentException(
                         "unknownCommittedCostCount не может быть отрицательным"

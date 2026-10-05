@@ -31,11 +31,21 @@ class KnowledgeDocumentExtractorContractTest {
             "application/vnd.openxmlformats-officedocument"
                     + ".presentationml.presentation";
 
+    private static final long OCR_MAX_RESPONSE_BYTES = 65_536L;
+    private static final long OCR_MAX_INPUT_BYTES = 25L * 1024L * 1024L;
+
     private final KnowledgeIngestionProperties properties = properties(20_000);
     private final KnowledgeOcrProperties ocrProperties =
             new KnowledgeOcrProperties(
-                    "disabled", null, null, List.of(), 20,
-                    Duration.ofSeconds(1), Duration.ofSeconds(1), 65_536L
+                    "disabled",
+                    null,
+                    null,
+                    List.of(),
+                    20,
+                    Duration.ofSeconds(1),
+                    Duration.ofSeconds(1),
+                    OCR_MAX_RESPONSE_BYTES,
+                    OCR_MAX_INPUT_BYTES
             );
     private final List<KnowledgeDocumentExtractor> extractors = List.of(
             new PdfKnowledgeExtractor(

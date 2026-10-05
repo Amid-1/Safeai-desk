@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 
-@ConfigurationProperties(prefix = "safeai.knowledge.ingestion")
+@ConfigurationProperties(prefix = "safeai.knowledge.ingestion", ignoreUnknownFields = false)
 public record KnowledgeIngestionProperties(
         Boolean enabled,
         Duration pollDelay,

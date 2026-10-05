@@ -9,16 +9,13 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Governance rejection persisted as immutable
- * model_route_decisions evidence.
- * <p>
- * ChatTurnReservationService intentionally commits
- * ModelRouteDeniedException via noRollbackFor so that
- * a deterministic DENIED route decision remains durable.
+ * Governance rejection persisted as immutable model_route_decisions evidence.
+ *
+ * <p>ChatTurnReservationService intentionally commits ModelRouteDeniedException
+ * via noRollbackFor so that deterministic DENIED route evidence remains durable.</p>
  */
 @Getter
-public class ModelRouteDeniedException
-        extends ForbiddenOperationException {
+public class ModelRouteDeniedException extends ForbiddenOperationException {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -31,24 +28,8 @@ public class ModelRouteDeniedException
             ModelRouteReason reason,
             String publicMessage
     ) {
-        super(
-                Objects.requireNonNull(
-                        publicMessage,
-                        "publicMessage не должен быть null"
-                )
-        );
-
-        this.decisionId =
-                Objects.requireNonNull(
-                        decisionId,
-                        "decisionId не должен быть null"
-                );
-
-        this.reason =
-                Objects.requireNonNull(
-                        reason,
-                        "reason не должен быть null"
-                );
+        super(Objects.requireNonNull(publicMessage, "publicMessage не должен быть null"));
+        this.decisionId = Objects.requireNonNull(decisionId, "decisionId не должен быть null");
+        this.reason = Objects.requireNonNull(reason, "reason не должен быть null");
     }
-
 }

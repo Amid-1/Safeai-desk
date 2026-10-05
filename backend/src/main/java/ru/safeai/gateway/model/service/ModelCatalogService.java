@@ -62,6 +62,8 @@ public class ModelCatalogService {
 
     @Transactional(readOnly = true)
     public List<ModelCatalogEntryResponse> findLatest(
+            String afterModelKey,
+            int limit,
             SafeAiUserPrincipal currentUser
     ) {
         ModelControlPlaneAccess.requireAdminOrSuperAdmin(
@@ -69,7 +71,9 @@ public class ModelCatalogService {
                 "Недостаточно прав для просмотра model catalog"
         );
 
-        return repository.findLatestAll()
+        String cursor = normalizeCursor(afterModelKey);
+        validateLimit(limit);
+        return repository.findLatestPage(cursor, limit)
                 .stream()
                 .map(ModelCatalogEntryResponse::from)
                 .toList();
@@ -77,6 +81,8 @@ public class ModelCatalogService {
 
     @Transactional(readOnly = true)
     public List<ModelCatalogEntryResponse> findEffective(
+            String afterModelKey,
+            int limit,
             SafeAiUserPrincipal currentUser
     ) {
         ModelControlPlaneAccess.requireAdminOrSuperAdmin(
@@ -85,9 +91,11 @@ public class ModelCatalogService {
         );
 
         Instant now =
-                clock.instant();
+                DatabaseTimestampNormalizer.normalize(clock.instant());
 
-        return repository.findEffectiveAll(now)
+        String cursor = normalizeCursor(afterModelKey);
+        validateLimit(limit);
+        return repository.findEffectivePage(now, cursor, limit)
                 .stream()
                 .map(ModelCatalogEntryResponse::from)
                 .toList();
@@ -95,9 +103,12 @@ public class ModelCatalogService {
 
     @Transactional(readOnly = true)
     public List<ModelCatalogEntryResponse> findHistory(
-            String modelKey,
-            SafeAiUserPrincipal currentUser
+            String modelKey, Integer beforeVersion, int limit, SafeAiUserPrincipal currentUser
     ) {
+        if (limit < 1 || limit > 200 || (beforeVersion != null && beforeVersion <= 0)) {
+            throw new ru.safeai.gateway.common.exception.BadRequestException(
+                    "limit должен быть 1–200; beforeVersion должен быть положительным");
+        }
         ModelControlPlaneAccess.requireAdminOrSuperAdmin(
                 currentUser,
                 "Недостаточно прав для просмотра истории каталога моделей"
@@ -105,7 +116,7 @@ public class ModelCatalogService {
 
         String normalizedModelKey = normalizeModelKey(modelKey);
 
-        return repository.findVersions(normalizedModelKey)
+        return repository.findVersions(normalizedModelKey, beforeVersion, limit)
                 .stream()
                 .map(ModelCatalogEntryResponse::from)
                 .toList();
@@ -258,7 +269,7 @@ public class ModelCatalogService {
                 new ModelCatalogEntry(
                         UUID.randomUUID(),
                         modelKey,
-                        previousVersion + 1,
+                        ModelControlPlaneNumericValidation.nextVersion(previousVersion),
                         provider,
                         providerModelId,
                         displayName,
@@ -517,7 +528,7 @@ public class ModelCatalogService {
                 new ModelCatalogEntry(
                         UUID.randomUUID(),
                         modelKey,
-                        previousVersion + 1,
+                        ModelControlPlaneNumericValidation.nextVersion(previousVersion),
                         runtimeProvider,
                         runtimeModel,
                         runtimeModel,
@@ -659,6 +670,20 @@ public class ModelCatalogService {
                         entry
                 )
         );
+    }
+
+    private static void validateLimit(int limit) {
+        if (limit < 1 || limit > 200) {
+            throw new ru.safeai.gateway.common.exception.BadRequestException(
+                    "limit должен быть в диапазоне 1–200"
+            );
+        }
+    }
+
+    private static String normalizeCursor(String value) {
+        return value == null || value.isBlank()
+                ? null
+                : normalizeModelKey(value);
     }
 
     static String normalizeModelKey(

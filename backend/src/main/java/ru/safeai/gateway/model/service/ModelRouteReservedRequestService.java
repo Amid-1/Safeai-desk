@@ -1,44 +1,44 @@
 package ru.safeai.gateway.model.service;
 
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
-import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
 import ru.safeai.gateway.chat.service.ChatContentNormalizer;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
+import ru.safeai.gateway.model.repository.ModelRouteRequestBindingRepository;
 
-import java.sql.Timestamp;
 import java.time.Clock;
-import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Persisted, append-only exact pre-RAG request identity for a governed turn. */
+/** Persisted append-only request identity and final prepared-request binding. */
 @Service
 public class ModelRouteReservedRequestService {
-    private final JdbcTemplate jdbc;
+
+    private static final short PREPARED_BINDING_VERSION = 2;
+
     private final ModelRouteDecisionRepository decisions;
+    private final ModelRouteRequestBindingRepository bindings;
     private final ChatContentNormalizer normalizer;
     private final Clock clock;
 
     public ModelRouteReservedRequestService(
-            JdbcTemplate jdbc,
             ModelRouteDecisionRepository decisions,
+            ModelRouteRequestBindingRepository bindings,
             ChatContentNormalizer normalizer,
             Clock clock
     ) {
-        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.decisions = Objects.requireNonNull(decisions, "decisions");
+        this.bindings = Objects.requireNonNull(bindings, "bindings");
         this.normalizer = Objects.requireNonNull(normalizer, "normalizer");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    /** Call after the ChatTurn is flushed, in the SAME reservation transaction. */
+    /** Call after ChatTurn flush, in the SAME reservation transaction. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void seal(
             UUID decisionId,
@@ -48,8 +48,14 @@ public class ModelRouteReservedRequestService {
             UUID knowledgeBaseId,
             KnowledgeMode knowledgeMode
     ) {
+        Objects.requireNonNull(decisionId, "decisionId");
+        Objects.requireNonNull(chatTurnId, "chatTurnId");
+        Objects.requireNonNull(clientRequestId, "clientRequestId");
         Objects.requireNonNull(baseRequest, "baseRequest");
+        Objects.requireNonNull(baseRequest.providerOperationId(), "providerOperationId");
         Objects.requireNonNull(knowledgeMode, "knowledgeMode");
+        requireKnowledgeScopeShape(knowledgeMode, knowledgeBaseId);
+
         ModelRouteDecision decision = readDecision(decisionId);
         if (decision.outcome() != ModelRouteOutcome.ALLOWED
                 || decision.decisionIntegrityVersion() != 3
@@ -59,33 +65,147 @@ public class ModelRouteReservedRequestService {
                 || !decision.organizationId().equals(baseRequest.organizationId())
                 || !decision.userId().equals(baseRequest.userId())
                 || !decision.chatId().equals(baseRequest.chatId())
-                || !Objects.equals(decision.estimatedInputTokens(),
-                        baseRequest.reservedInputTokens())
-                || !Objects.equals(decision.estimatedOutputTokens(),
+                || !Objects.equals(
+                        decision.estimatedInputTokens(),
+                        baseRequest.reservedInputTokens()
+                )
+                || !Objects.equals(
+                        decision.estimatedOutputTokens(),
                         baseRequest.maxOutputTokens() == null
-                                ? null : baseRequest.maxOutputTokens().longValue())
-                || !AiInputUnitEstimator.VERSION.equals(decision.inputAccountingVersion())
-                || !decision.requestContentHash().equals(normalizer.requestHash(
-                        baseRequest.userMessage(), knowledgeBaseId, knowledgeMode))
+                                ? null
+                                : baseRequest.maxOutputTokens().longValue()
+                )
+                || !ModelInputTokenEstimator.version().equals(
+                        decision.inputAccountingVersion()
+                )
+                || !decision.requestContentHash().equals(
+                        normalizer.requestHash(
+                                baseRequest.userMessage(),
+                                knowledgeBaseId,
+                                knowledgeMode
+                        )
+                )
                 || decision.additionalInputUnitUpperBound() == null
                 || Math.addExact(
-                        AiInputUnitEstimator.estimateBaseRequest(
-                                baseRequest.userMessage(), baseRequest.history()),
-                        decision.additionalInputUnitUpperBound())
-                        != decision.estimatedInputTokens()) {
-            throw new IllegalStateException("Cannot seal a base request different from routed evidence");
+                        ModelInputTokenEstimator.estimateBaseRequest(baseRequest),
+                        decision.additionalInputUnitUpperBound()
+                ) != decision.estimatedInputTokens()) {
+            throw new IllegalStateException(
+                    "Cannot seal a base request different from routed evidence"
+            );
         }
-        int count = jdbc.update("""
-                insert into public.model_route_reserved_requests (
-                    model_route_decision_id, chat_turn_id, provider_operation_id,
-                    base_request_sha256, created_at
-                ) values (?, ?, ?, ?, ?)
-                """, decisionId, chatTurnId, baseRequest.providerOperationId(),
+
+        int count = bindings.insertReserved(
+                decisionId,
+                chatTurnId,
+                baseRequest.providerOperationId(),
                 ModelRouteExecutionIdentity.baseSha256(baseRequest),
-                Timestamp.from(clock.instant()));
+                DatabaseTimestampNormalizer.normalize(clock.instant())
+        );
         if (count != 1) {
             throw new IllegalStateException("Reserved request was not sealed");
         }
+    }
+
+    @Transactional(readOnly = true)
+    ModelRouteRequestBindingRepository.KnowledgeRagReceipt requireKnowledgeReceipt(
+            UUID chatTurnId,
+            UUID organizationId,
+            UUID userId,
+            UUID knowledgeBaseId
+    ) {
+        ModelRouteRequestBindingRepository.KnowledgeRagReceipt receipt =
+                bindings.findKnowledgeRagReceipt(chatTurnId, knowledgeBaseId)
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Trusted Knowledge RAG context receipt is missing"
+                        ));
+
+        if (!receipt.chatTurnId().equals(chatTurnId)
+                || !receipt.organizationId().equals(organizationId)
+                || !receipt.userId().equals(userId)
+                || !receipt.knowledgeBaseId().equals(knowledgeBaseId)) {
+            throw new IllegalStateException(
+                    "Knowledge RAG receipt does not match governed execution identity"
+            );
+        }
+        return receipt;
+    }
+
+    @Transactional
+    void bindPrepared(
+            ModelRouteExecutionIdentity identity,
+            AiChatRequest reserved,
+            AiChatRequest prepared
+    ) {
+        Objects.requireNonNull(identity, "identity");
+        Objects.requireNonNull(reserved, "reserved");
+        Objects.requireNonNull(prepared, "prepared");
+
+        String baseSha256 = ModelRouteExecutionIdentity.baseSha256(reserved);
+        String preparedSha256 = ModelRouteExecutionIdentity.preparedSha256(prepared);
+        long preparedInputUnits = ModelInputTokenEstimator.estimatePreparedRequest(prepared);
+
+        UUID knowledgeBaseId = null;
+        UUID retrievalRunId = null;
+        String ragContextSha256 = null;
+
+        if (identity.knowledgeMode().usesKnowledge()) {
+            ModelRouteRequestBindingRepository.KnowledgeRagReceipt receipt =
+                    requireKnowledgeReceipt(
+                            identity.chatTurnId(),
+                            identity.organizationId(),
+                            identity.userId(),
+                            identity.knowledgeBaseId()
+                    );
+
+            if (!Objects.equals(identity.retrievalRunId(), receipt.retrievalRunId())
+                    || !Objects.equals(identity.ragContextSha256(), receipt.contextSha256())
+                    || !Objects.equals(
+                            identity.trustedPreparedRequestSha256(),
+                            receipt.preparedRequestSha256()
+                    )
+                    || !preparedSha256.equals(receipt.preparedRequestSha256())) {
+                throw new IllegalStateException(
+                        "Prepared request does not match durable Knowledge RAG evidence"
+                );
+            }
+
+            knowledgeBaseId = receipt.knowledgeBaseId();
+            retrievalRunId = receipt.retrievalRunId();
+            ragContextSha256 = receipt.contextSha256();
+        } else if (identity.retrievalRunId() != null
+                || identity.ragContextSha256() != null
+                || identity.trustedPreparedRequestSha256() != null) {
+            throw new IllegalStateException(
+                    "GENERAL execution cannot carry Knowledge RAG evidence"
+            );
+        }
+
+        ModelRouteRequestBindingRepository.PreparedBinding expected =
+                new ModelRouteRequestBindingRepository.PreparedBinding(
+                        identity.decisionId(),
+                        identity.chatTurnId(),
+                        identity.providerOperationId(),
+                        baseSha256,
+                        preparedSha256,
+                        ModelInputTokenEstimator.version(),
+                        preparedInputUnits,
+                        DatabaseTimestampNormalizer.normalize(clock.instant()),
+                        knowledgeBaseId,
+                        retrievalRunId,
+                        ragContextSha256,
+                        PREPARED_BINDING_VERSION
+                );
+
+        bindings.insertPreparedIfAbsent(expected);
+
+        ModelRouteRequestBindingRepository.PreparedBinding persisted =
+                bindings.findPrepared(identity.decisionId())
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Prepared request receipt was not persisted"
+                        ));
+
+        requireEquivalentPreparedBinding(expected, persisted);
     }
 
     @Transactional(readOnly = true)
@@ -93,30 +213,68 @@ public class ModelRouteReservedRequestService {
             UUID decisionId,
             UUID chatTurnId,
             UUID providerOperationId,
-            AiChatRequest baseRequest
+            AiChatRequest request
     ) {
-        Objects.requireNonNull(baseRequest, "baseRequest");
-        List<String> hashes = jdbc.query("""
-                select base_request_sha256
-                from public.model_route_reserved_requests
-                where model_route_decision_id = ?
-                  and chat_turn_id = ?
-                  and provider_operation_id = ?
-                """, (rs, row) -> rs.getString(1),
-                decisionId, chatTurnId, providerOperationId);
-        if (hashes.size() != 1
-                || !hashes.getFirst().equals(
-                        ModelRouteExecutionIdentity.baseSha256(baseRequest))) {
+        Objects.requireNonNull(request, "request");
+        String expectedHash = ModelRouteExecutionIdentity.baseSha256(request);
+        String persistedHash = bindings.findReservedHash(
+                        decisionId,
+                        chatTurnId,
+                        providerOperationId
+                )
+                .orElseThrow(() -> new IllegalStateException(
+                        "Reserved request seal is missing"
+                ));
+        if (!expectedHash.equals(persistedHash)) {
             throw new IllegalStateException(
-                    "Pre-RAG request differs from transactionally sealed route reservation");
+                    "Reserved request differs from persisted request seal"
+            );
         }
     }
 
     private ModelRouteDecision readDecision(UUID decisionId) {
-        Objects.requireNonNull(decisionId, "decisionId");
-        ModelRouteDecision result = decisions.findById(decisionId)
-                .orElseThrow(() -> new IllegalStateException("Route decision not found"));
-        ModelRouteDecisionIntegrity.requireValid(result);
-        return result;
+        ModelRouteDecision decision = decisions.findById(decisionId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Model route decision not found: " + decisionId
+                ));
+        ModelRouteDecisionIntegrity.requireValid(decision);
+        return decision;
+    }
+
+    private static void requireKnowledgeScopeShape(
+            KnowledgeMode knowledgeMode,
+            UUID knowledgeBaseId
+    ) {
+        if (knowledgeMode.usesKnowledge() && knowledgeBaseId == null) {
+            throw new IllegalArgumentException(
+                    "knowledgeBaseId обязателен для KnowledgeMode"
+            );
+        }
+        if (!knowledgeMode.usesKnowledge() && knowledgeBaseId != null) {
+            throw new IllegalArgumentException(
+                    "GENERAL KnowledgeMode не должен содержать knowledgeBaseId"
+            );
+        }
+    }
+
+    private static void requireEquivalentPreparedBinding(
+            ModelRouteRequestBindingRepository.PreparedBinding expected,
+            ModelRouteRequestBindingRepository.PreparedBinding persisted
+    ) {
+        if (!expected.modelRouteDecisionId().equals(persisted.modelRouteDecisionId())
+                || !expected.chatTurnId().equals(persisted.chatTurnId())
+                || !expected.providerOperationId().equals(persisted.providerOperationId())
+                || !expected.baseRequestSha256().equals(persisted.baseRequestSha256())
+                || !expected.preparedRequestSha256().equals(persisted.preparedRequestSha256())
+                || !expected.inputAccountingVersion().equals(persisted.inputAccountingVersion())
+                || expected.preparedInputUnits() != persisted.preparedInputUnits()
+                || !Objects.equals(expected.knowledgeBaseId(), persisted.knowledgeBaseId())
+                || !Objects.equals(expected.retrievalRunId(), persisted.retrievalRunId())
+                || !Objects.equals(expected.ragContextSha256(), persisted.ragContextSha256())
+                || persisted.bindingVersion() != PREPARED_BINDING_VERSION) {
+            throw new IllegalStateException(
+                    "Prepared request differs from immutable persisted receipt"
+            );
+        }
     }
 }

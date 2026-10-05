@@ -3,6 +3,8 @@ package ru.safeai.gateway.model.repository;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.model.domain.ModelCapability;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelCatalogSource;
@@ -16,6 +18,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
@@ -62,16 +65,17 @@ public class ModelCatalogRepository {
             created_at
             """;
 
-    private static final String FIND_LATEST_ALL_SQL =
+    private static final String FIND_LATEST_PAGE_SQL =
             "select * from ("
                     + "select distinct on (model_key) "
                     + SELECT_COLUMNS
                     + " from model_catalog_entries "
                     + "order by model_key, version desc"
                     + ") latest "
-                    + "order by provider, model_key";
+                    + "where (?::text is null or model_key > ?::text) "
+                    + "order by model_key limit ?";
 
-    private static final String FIND_EFFECTIVE_ALL_SQL =
+    private static final String FIND_EFFECTIVE_PAGE_SQL =
             "select * from ("
                     + "select distinct on (model_key) "
                     + SELECT_COLUMNS
@@ -79,7 +83,8 @@ public class ModelCatalogRepository {
                     + "where effective_from <= ? "
                     + "order by model_key, version desc"
                     + ") effective "
-                    + "order by provider, model_key";
+                    + "where (?::text is null or model_key > ?::text) "
+                    + "order by model_key limit ?";
 
     private static final String FIND_EFFECTIVE_BY_RUNTIME_SQL =
             "select * from ("
@@ -110,6 +115,7 @@ public class ModelCatalogRepository {
         return rows.stream().findFirst();
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
     public void lockModelKey(String modelKey) {
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
@@ -142,22 +148,37 @@ public class ModelCatalogRepository {
     }
 
     /**
-     * Full append-only history of one logical model key, newest version first.
+     * Bounded append-only history page of one logical model key, newest version first.
      * Routing itself still uses a server-clock-effective immutable snapshot.
      */
-    public List<ModelCatalogEntry> findVersions(String modelKey) {
+    public List<ModelCatalogEntry> findVersions(String modelKey, Integer beforeVersion, int limit) {
+        if (limit < 1 || limit > 200 || (beforeVersion != null && beforeVersion <= 0)) {
+            throw new IllegalArgumentException("Invalid catalog history cursor or limit");
+        }
         return jdbc.query(
                 "select " + SELECT_COLUMNS + " from model_catalog_entries "
-                        + "where model_key = ? order by version desc",
-                this::map,
-                modelKey
+                        + "where model_key = ? and (?::integer is null or version < ?::integer) "
+                        + "order by version desc limit ?",
+                statement -> {
+                    statement.setString(1, modelKey);
+                    setNullableInteger(statement, 2, beforeVersion);
+                    setNullableInteger(statement, 3, beforeVersion);
+                    statement.setInt(4, limit);
+                },
+                this::map
         );
     }
 
-    /** Latest created version of every key, including future-effective rows. */
-    public List<ModelCatalogEntry> findLatestAll() {
+    /** Bounded latest-created page, including future-effective rows. */
+    public List<ModelCatalogEntry> findLatestPage(String afterModelKey, int limit) {
+        validatePage(afterModelKey, limit);
         return jdbc.query(
-                FIND_LATEST_ALL_SQL,
+                FIND_LATEST_PAGE_SQL,
+                statement -> {
+                    setNullableText(statement, 1, afterModelKey);
+                    setNullableText(statement, 2, afterModelKey);
+                    statement.setInt(3, limit);
+                },
                 this::map
         );
     }
@@ -184,12 +205,23 @@ public class ModelCatalogRepository {
         return rows.stream().findFirst();
     }
 
-    /** Effective snapshot of every logical model key at the supplied instant. */
-    public List<ModelCatalogEntry> findEffectiveAll(Instant asOf) {
+    /** Bounded effective snapshot page at the supplied instant. */
+    public List<ModelCatalogEntry> findEffectivePage(
+            Instant asOf,
+            String afterModelKey,
+            int limit
+    ) {
+        Objects.requireNonNull(asOf, "asOf");
+        validatePage(afterModelKey, limit);
         return jdbc.query(
-                FIND_EFFECTIVE_ALL_SQL,
-                this::map,
-                Timestamp.from(asOf)
+                FIND_EFFECTIVE_PAGE_SQL,
+                statement -> {
+                    statement.setTimestamp(1, Timestamp.from(asOf));
+                    setNullableText(statement, 2, afterModelKey);
+                    setNullableText(statement, 3, afterModelKey);
+                    statement.setInt(4, limit);
+                },
+                this::map
         );
     }
 
@@ -242,6 +274,7 @@ public class ModelCatalogRepository {
     }
 
     public ModelCatalogEntry insert(ModelCatalogEntry entry) {
+        Objects.requireNonNull(entry, "entry не должен быть null");
         int updated = jdbc.update(
                 """
                 insert into model_catalog_entries (
@@ -261,38 +294,41 @@ public class ModelCatalogRepository {
                     ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?, ?
                 )
                 """,
-                entry.id(),
-                entry.modelKey(),
-                entry.version(),
-                entry.provider(),
-                entry.providerModelId(),
-                entry.displayName(),
-                entry.lifecycle().name(),
-                entry.maxInputTokens(),
-                entry.maxOutputTokens(),
-                entry.capabilities().contains(ModelCapability.TOOLS),
-                entry.capabilities().contains(ModelCapability.VISION),
-                entry.capabilities().contains(ModelCapability.STRUCTURED_OUTPUT),
-                entry.inputModalities().contains(ModelModality.TEXT),
-                entry.inputModalities().contains(ModelModality.IMAGE),
-                entry.inputModalities().contains(ModelModality.AUDIO),
-                entry.outputModalities().contains(ModelModality.TEXT),
-                entry.outputModalities().contains(ModelModality.AUDIO),
-                entry.retentionStatus().name(),
-                entry.retentionDays(),
-                entry.trainingUseStatus().name(),
-                entry.pricingStatus().name(),
-                entry.pricingComplete(),
-                entry.inputUsdPer1mTokens(),
-                entry.cachedInputUsdPer1mTokens(),
-                entry.cacheWriteInputUsdPer1mTokens(),
-                entry.outputUsdPer1mTokens(),
-                entry.extraPricingJson(),
-                entry.pricingVersion(),
-                Timestamp.from(entry.effectiveFrom()),
-                entry.source().name(),
-                entry.createdByUserId(),
-                Timestamp.from(entry.createdAt())
+                statement -> {
+                    int index = 1;
+                    statement.setObject(index++, entry.id());
+                    statement.setString(index++, entry.modelKey());
+                    statement.setInt(index++, entry.version());
+                    statement.setString(index++, entry.provider());
+                    statement.setString(index++, entry.providerModelId());
+                    statement.setString(index++, entry.displayName());
+                    statement.setString(index++, entry.lifecycle().name());
+                    statement.setInt(index++, entry.maxInputTokens());
+                    statement.setInt(index++, entry.maxOutputTokens());
+                    statement.setBoolean(index++, entry.capabilities().contains(ModelCapability.TOOLS));
+                    statement.setBoolean(index++, entry.capabilities().contains(ModelCapability.VISION));
+                    statement.setBoolean(index++, entry.capabilities().contains(ModelCapability.STRUCTURED_OUTPUT));
+                    statement.setBoolean(index++, entry.inputModalities().contains(ModelModality.TEXT));
+                    statement.setBoolean(index++, entry.inputModalities().contains(ModelModality.IMAGE));
+                    statement.setBoolean(index++, entry.inputModalities().contains(ModelModality.AUDIO));
+                    statement.setBoolean(index++, entry.outputModalities().contains(ModelModality.TEXT));
+                    statement.setBoolean(index++, entry.outputModalities().contains(ModelModality.AUDIO));
+                    statement.setString(index++, entry.retentionStatus().name());
+                    setNullableInteger(statement, index++, entry.retentionDays());
+                    statement.setString(index++, entry.trainingUseStatus().name());
+                    statement.setString(index++, entry.pricingStatus().name());
+                    statement.setBoolean(index++, entry.pricingComplete());
+                    statement.setBigDecimal(index++, entry.inputUsdPer1mTokens());
+                    statement.setBigDecimal(index++, entry.cachedInputUsdPer1mTokens());
+                    statement.setBigDecimal(index++, entry.cacheWriteInputUsdPer1mTokens());
+                    statement.setBigDecimal(index++, entry.outputUsdPer1mTokens());
+                    statement.setString(index++, entry.extraPricingJson());
+                    statement.setString(index++, entry.pricingVersion());
+                    statement.setTimestamp(index++, Timestamp.from(entry.effectiveFrom()));
+                    statement.setString(index++, entry.source().name());
+                    statement.setObject(index++, entry.createdByUserId());
+                    statement.setTimestamp(index, Timestamp.from(entry.createdAt()));
+                }
         );
 
         if (updated != 1) {
@@ -303,6 +339,39 @@ public class ModelCatalogRepository {
             );
         }
         return entry;
+    }
+
+    private static void validatePage(String afterModelKey, int limit) {
+        if (limit < 1 || limit > 200) {
+            throw new IllegalArgumentException("Catalog page limit must be 1..200");
+        }
+        if (afterModelKey != null && (afterModelKey.isBlank() || afterModelKey.length() > 200)) {
+            throw new IllegalArgumentException("Invalid catalog cursor");
+        }
+    }
+
+    private static void setNullableText(
+            PreparedStatement statement,
+            int index,
+            String value
+    ) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.VARCHAR);
+        } else {
+            statement.setString(index, value);
+        }
+    }
+
+    private static void setNullableInteger(
+            PreparedStatement statement,
+            int index,
+            Integer value
+    ) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.INTEGER);
+        } else {
+            statement.setInt(index, value);
+        }
     }
 
     private ModelCatalogEntry map(

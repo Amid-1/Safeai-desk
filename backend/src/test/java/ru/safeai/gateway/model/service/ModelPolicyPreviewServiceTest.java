@@ -120,6 +120,88 @@ class ModelPolicyPreviewServiceTest {
     }
 
     @Test
+    void previewTraversesEffectiveCatalogThroughBoundedPages() {
+        Fixture fixture =
+                fixture(
+                        List.of()
+                );
+
+        List<ModelCatalogEntry> firstPage =
+                java.util.stream.IntStream
+                        .range(
+                                0,
+                                200
+                        )
+                        .mapToObj(index ->
+                                entry(
+                                        "openai:model-%03d".formatted(index),
+                                        "0",
+                                        "0"
+                                )
+                        )
+                        .toList();
+
+        List<ModelCatalogEntry> secondPage =
+                List.of(
+                        entry(
+                                "openai:model-200",
+                                "0",
+                                "0"
+                        )
+                );
+
+        when(
+                fixture.catalogRepository.findEffectivePage(
+                        NOW,
+                        null,
+                        200
+                )
+        ).thenReturn(
+                firstPage
+        );
+
+        when(
+                fixture.catalogRepository.findEffectivePage(
+                        NOW,
+                        firstPage.getLast().modelKey(),
+                        200
+                )
+        ).thenReturn(
+                secondPage
+        );
+
+        ModelPolicyPreviewResponse preview =
+                fixture.service.preview(
+                        ORGANIZATION_ID,
+                        request(
+                                null
+                        ),
+                        fixture.user
+                );
+
+        assertEquals(
+                201,
+                preview.models().size()
+        );
+
+        verify(
+                fixture.catalogRepository
+        ).findEffectivePage(
+                NOW,
+                null,
+                200
+        );
+
+        verify(
+                fixture.catalogRepository
+        ).findEffectivePage(
+                NOW,
+                firstPage.getLast().modelKey(),
+                200
+        );
+    }
+
+    @Test
     void monthlyBudgetPreviewReadsSnapshotWithoutTakingLiveRoutingLock() {
         Fixture fixture = fixture(List.of(
                 entry("openai:gpt-main", "0", "0")
@@ -170,6 +252,41 @@ class ModelPolicyPreviewServiceTest {
         );
     }
 
+    @Test
+    void transientUnverifiableMonthlyBudgetDoesNotMasqueradeAsStructuralPolicyLockout() {
+        Fixture fixture = fixture(List.of(
+                entry("openai:gpt-main", "0", "0")
+        ));
+
+        when(fixture.decisionRepository.loadCommittedMonthlyCostSnapshot(
+                ORGANIZATION_ID,
+                Instant.parse("2026-09-01T00:00:00Z"),
+                Instant.parse("2026-10-01T00:00:00Z")
+        )).thenReturn(
+                new ModelRouteDecisionRepository.MonthlyCostSnapshot(
+                        BigDecimal.ZERO,
+                        1L,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO
+                )
+        );
+
+        ModelPolicyPreviewResponse preview = fixture.service.preview(
+                ORGANIZATION_ID,
+                requestWithBudget(new BigDecimal("10.00")),
+                fixture.user
+        );
+
+        assertEquals(ModelRouteOutcome.DENIED, preview.automaticOutcome());
+        assertEquals(ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE, preview.automaticReason());
+        assertEquals(0, preview.executableModelCount());
+        assertFalse(preview.wouldLockOutOrganization());
+        assertEquals(
+                ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE,
+                preview.models().getFirst().reason()
+        );
+    }
+
     private static Fixture fixture(List<ModelCatalogEntry> catalog) {
         ModelCatalogRepository catalogRepository =
                 mock(ModelCatalogRepository.class);
@@ -190,8 +307,15 @@ class ModelPolicyPreviewServiceTest {
                 .thenReturn(true);
         when(policyRepository.findLatest(ORGANIZATION_ID))
                 .thenReturn(Optional.empty());
-        when(catalogRepository.findEffectiveAll(NOW))
-                .thenReturn(catalog);
+        when(
+                catalogRepository.findEffectivePage(
+                        NOW,
+                        null,
+                        200
+                )
+        ).thenReturn(
+                catalog
+        );
         when(catalogRepository.findEffectiveByRuntime("openai", "gpt-x", NOW))
                 .thenReturn(catalog);
         when(catalogRepository.hasEffectiveHistoryByRuntime("openai", "gpt-x", NOW))
@@ -212,6 +336,7 @@ class ModelPolicyPreviewServiceTest {
                         Clock.fixed(NOW, ZoneOffset.UTC)
                 ),
                 user,
+                catalogRepository,
                 decisionRepository,
                 policyRepository
         );
@@ -316,9 +441,9 @@ class ModelPolicyPreviewServiceTest {
     private record Fixture(
             ModelPolicyPreviewService service,
             SafeAiUserPrincipal user,
+            ModelCatalogRepository catalogRepository,
             ModelRouteDecisionRepository decisionRepository,
             OrganizationModelPolicyRepository policyRepository
     ) {
     }
 }
-

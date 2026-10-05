@@ -323,12 +323,12 @@ final class ChatTurnExecutionCoordinator {
             log.warn(
                     "Model route input envelope exceeded before provider call: "
                             + "chatId={}, turnId={}, decisionId={}, "
-                            + "reservedInputTokens={}, actualEstimatedInputTokens={}",
+                            + "reservedInputUnits={}, actualEstimatedInputUnits={}",
                     context.chatId(),
                     context.turnId(),
                     exception.decisionId(),
-                    exception.reservedInputTokens(),
-                    exception.actualEstimatedInputTokens()
+                    exception.reservedInputUnits(),
+                    exception.actualEstimatedInputUnits()
             );
 
             throw failRouteEnvelope(

@@ -25,6 +25,7 @@ import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.exception.ModelRouteDeniedException;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
+import ru.safeai.gateway.model.repository.ModelRouteRequestMutexRepository;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
 
@@ -58,6 +59,9 @@ class ModelRoutingServiceTest {
     private ModelRouteDecisionRepository decisionRepository;
 
     @Mock
+    private ModelRouteRequestMutexRepository requestMutexRepository;
+
+    @Mock
     private RuntimeModelStatusService runtimeStatusService;
 
     @Mock
@@ -71,6 +75,7 @@ class ModelRoutingServiceTest {
                 catalogRepository,
                 policyRepository,
                 decisionRepository,
+                requestMutexRepository,
                 runtimeStatusService,
                 audit,
                 ModelTestFixtures.CLOCK
@@ -80,7 +85,7 @@ class ModelRoutingServiceTest {
     @Test
     void runtimeSelectionUsesEffectiveCatalogAtDecisionInstant() {
         ModelCatalogEntry entry = ModelTestFixtures.freeEntry();
-        stubNewDecisionNoPolicy();
+        stubNewDecisionWithAllowAllPolicy();
         when(catalogRepository.findEffectiveByRuntime(
                 "openai",
                 "gpt-test",
@@ -111,7 +116,7 @@ class ModelRoutingServiceTest {
     @Test
     void explicitSelectionUsesEffectiveVersionAtDecisionInstant() {
         ModelCatalogEntry entry = ModelTestFixtures.freeEntry();
-        stubNewDecisionNoPolicy();
+        stubNewDecisionWithAllowAllPolicy();
         when(catalogRepository.findEffective(
                 "openai:gpt-test",
                 ModelTestFixtures.NOW
@@ -130,7 +135,7 @@ class ModelRoutingServiceTest {
 
     @Test
     void previouslyGovernedRuntimeCannotFallBackAfterEffectiveRemap() {
-        stubNewDecisionNoPolicy();
+        stubNewDecisionWithAllowAllPolicy();
         when(catalogRepository.findEffectiveByRuntime(
                 "openai",
                 "gpt-test",
@@ -159,7 +164,7 @@ class ModelRoutingServiceTest {
 
     @Test
     void futureOnlyCatalogHistoryCannotAuthorizeRuntimeBeforeActivation() {
-        stubNewDecisionNoPolicy();
+        stubNewDecisionWithAllowAllPolicy();
         when(catalogRepository.findEffectiveByRuntime(
                 "openai",
                 "gpt-test",
@@ -220,6 +225,10 @@ class ModelRoutingServiceTest {
 
         assertThat(result.decisionId())
                 .isEqualTo(persisted.id());
+        verify(requestMutexRepository).lock(
+                ModelTestFixtures.CHAT_ID,
+                ModelTestFixtures.CLIENT_REQUEST_ID
+        );
         verify(runtimeStatusService, never()).current();
         verify(policyRepository, never()).findLatest(any());
         verify(decisionRepository, never())
@@ -261,7 +270,7 @@ class ModelRoutingServiceTest {
 
     @Test
     void unsupportedCapabilityIsPersistedAsStableDenial() {
-        stubNewDecisionNoPolicy();
+        stubNewDecisionWithAllowAllPolicy();
         when(catalogRepository.findEffectiveByRuntime(
                 "openai",
                 "gpt-test",
@@ -477,6 +486,8 @@ class ModelRoutingServiceTest {
                 otherTenantPrincipal
         )).isInstanceOf(ForbiddenOperationException.class);
 
+        verify(requestMutexRepository, never())
+                .lock(any(), any());
         verify(decisionRepository, never())
                 .findByRequest(any(), any());
     }
@@ -535,8 +546,40 @@ class ModelRoutingServiceTest {
     }
 
     @Test
-    void allowedDecisionWritesAuditEvidence() {
+    void missingPolicyFailsClosedBeforeRuntimeOrCatalogSelection() {
         stubNewDecisionNoPolicy();
+
+        ModelRouteDeniedException exception =
+                catchDenial(
+                        request(
+                                null,
+                                Set.of()
+                        )
+                );
+
+        assertThat(exception.getReason())
+                .isEqualTo(
+                        ModelRouteReason.MODEL_NOT_ALLOWED
+                );
+
+        verify(policyRepository).findLatest(
+                ModelTestFixtures.ORGANIZATION_ID
+        );
+
+        verify(runtimeStatusService, never())
+                .current();
+
+        verify(catalogRepository, never())
+                .findEffectiveByRuntime(
+                        any(),
+                        any(),
+                        any()
+                );
+    }
+
+    @Test
+    void allowedDecisionWritesAuditEvidence() {
+        stubNewDecisionWithAllowAllPolicy();
 
         when(
                 catalogRepository.findEffectiveByRuntime(
@@ -575,13 +618,19 @@ class ModelRoutingServiceTest {
         );
     }
 
+    private void stubNewDecisionWithAllowAllPolicy() {
+        OrganizationModelPolicy allowAll = ModelTestFixtures.policy(
+                true, Set.of(), Set.of(), null, null, null, null, null,
+                BudgetEnforcement.SOFT, false, false, false
+        );
+        stubNewDecisionWithPolicy(allowAll);
+    }
+
     private void stubNewDecisionNoPolicy() {
         when(decisionRepository.findByRequest(
                 ModelTestFixtures.CHAT_ID,
                 ModelTestFixtures.CLIENT_REQUEST_ID
         )).thenReturn(Optional.empty());
-        when(runtimeStatusService.current())
-                .thenReturn(ModelTestFixtures.freeRuntime());
         when(policyRepository.findLatest(
                 ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(Optional.empty());

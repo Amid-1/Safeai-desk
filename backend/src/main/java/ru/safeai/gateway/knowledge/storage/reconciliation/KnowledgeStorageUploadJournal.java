@@ -85,7 +85,7 @@ public class KnowledgeStorageUploadJournal {
                     order by created_at, id limit ? for update skip locked
                 )
                 update public.knowledge_storage_upload_intents intent
-                set state='NEEDS_REVIEW', reviewed_at=now(),
+                set state='NEEDS_REVIEW', needs_review_at=now(),
                     last_error_code='UNCERTAIN_S3_PUT'
                 from candidates where intent.id=candidates.id
                 """, Timestamp.from(cutoff), maximum);
@@ -102,7 +102,7 @@ public class KnowledgeStorageUploadJournal {
                     limit ? for update skip locked
                 )
                 update public.knowledge_storage_upload_intents intent
-                set state='NEEDS_REVIEW', reviewed_at=now(),
+                set state='NEEDS_REVIEW', needs_review_at=now(),
                     cleanup_token=null, cleanup_claimed_at=null,
                     last_error_code='STALE_AMBIGUOUS_S3_DELETE'
                 from candidates where intent.id=candidates.id
@@ -178,7 +178,7 @@ public class KnowledgeStorageUploadJournal {
     public void cleanupUncertain(CleanupClaim claim) {
         int n = jdbc.update("""
                 update public.knowledge_storage_upload_intents
-                set state='NEEDS_REVIEW', reviewed_at=now(),
+                set state='NEEDS_REVIEW', needs_review_at=now(),
                     cleanup_token=null, cleanup_claimed_at=null,
                     last_error_code='UNCERTAIN_S3_DELETE'
                 where id=? and state='CLEANING' and cleanup_token=?

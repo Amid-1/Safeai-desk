@@ -1,11 +1,11 @@
 package ru.safeai.gateway.model.domain;
 
 /**
- * Human/API semantic for the V45 monthly budget snapshot.
+ * Backward-compatible high-level monthly cost exactness state.
  *
- * <p>The persisted V45 boolean remains backward compatible. This state is
- * derived from snapshot presence and therefore does not rewrite immutable
- * historical evidence.</p>
+ * <p>Use {@link MonthlyCommitmentState} when callers need to distinguish
+ * actual/reserved commitments, a proven lower-bound overrun, or an
+ * unverifiable projection.</p>
  */
 public enum MonthlyCostState {
     NOT_EVALUATED,

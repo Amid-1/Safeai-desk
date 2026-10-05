@@ -7,37 +7,46 @@ import ru.safeai.gateway.model.domain.ModelRouteRequest;
 import java.util.Objects;
 
 /**
- * Conservative tokenizer-independent upper estimator used by governance.
+ * Single model-layer adapter for versioned deterministic input accounting.
  *
- * <p>UTF-8 byte length is intentionally used as a token upper estimate for
- * ordinary text: one Unicode code point may occupy multiple bytes, so this is
- * conservative compared with practical provider tokenizers. The same
- * representation is used both before reservation and in the post-RAG guard.</p>
+ * <p>No other model-control-plane class should call {@link AiInputUnitEstimator}
+ * directly. Keeping reservation, execution and durable binding on one adapter
+ * prevents silent accounting drift.</p>
  */
 final class ModelInputTokenEstimator {
 
     private ModelInputTokenEstimator() {
     }
 
-    static long estimateRouteRequest(
-            ModelRouteRequest request
-    ) {
-        Objects.requireNonNull(request, "request не должен быть null");
+    static String version() {
+        return AiInputUnitEstimator.VERSION;
+    }
 
+    static long estimateBaseRequest(AiChatRequest request) {
+        Objects.requireNonNull(request, "request не должен быть null");
+        return AiInputUnitEstimator.estimateBaseRequest(
+                request.userMessage(),
+                request.history()
+        );
+    }
+
+    static long estimateBaseRequest(ModelRouteRequest request) {
+        Objects.requireNonNull(request, "request не должен быть null");
+        return AiInputUnitEstimator.estimateBaseRequest(
+                request.userMessage(),
+                request.history()
+        );
+    }
+
+    static long estimateRouteRequest(ModelRouteRequest request) {
         return Math.addExact(
-                AiInputUnitEstimator.estimateBaseRequest(
-                        request.userMessage(),
-                        request.history()
-                ),
+                estimateBaseRequest(request),
                 request.additionalInputUnitUpperBound()
         );
     }
 
-    static long estimatePreparedRequest(
-            AiChatRequest request
-    ) {
+    static long estimatePreparedRequest(AiChatRequest request) {
         Objects.requireNonNull(request, "request не должен быть null");
-
         return AiInputUnitEstimator.estimatePreparedRequest(request);
     }
 }

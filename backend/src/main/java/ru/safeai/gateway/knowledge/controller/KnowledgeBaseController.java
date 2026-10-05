@@ -19,17 +19,17 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.CreateKnowledgeBaseMemberRequest;
 import ru.safeai.gateway.knowledge.dto.CreateKnowledgeBaseRequest;
+import ru.safeai.gateway.knowledge.dto.KnowledgeBaseAccessResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseMemberPageResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseMemberResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBasePageResponse;
-import ru.safeai.gateway.knowledge.dto.KnowledgeBaseAccessResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeBaseResponse;
 import ru.safeai.gateway.knowledge.dto.KnowledgeMemberCandidateResponse;
 import ru.safeai.gateway.knowledge.dto.UpdateKnowledgeBaseMemberRequest;
 import ru.safeai.gateway.knowledge.dto.UpdateKnowledgeBaseRequest;
-import ru.safeai.gateway.knowledge.service.KnowledgeBaseService;
-import ru.safeai.gateway.knowledge.service.KnowledgeAccessService;
 import ru.safeai.gateway.knowledge.model.KnowledgeBaseAccessLevel;
+import ru.safeai.gateway.knowledge.service.KnowledgeAccessService;
+import ru.safeai.gateway.knowledge.service.KnowledgeBaseService;
 
 import java.util.List;
 import java.util.UUID;
@@ -46,7 +46,8 @@ public class KnowledgeBaseController {
 
     @GetMapping
     public KnowledgeBasePageResponse findAll(
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser,
             @RequestParam(defaultValue = "0")
             @Min(0)
             int page,
@@ -67,7 +68,8 @@ public class KnowledgeBaseController {
     @GetMapping("/{knowledgeBaseId}")
     public KnowledgeBaseResponse findById(
             @PathVariable UUID knowledgeBaseId,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return knowledgeBaseService.findById(
                 knowledgeBaseId,
@@ -78,7 +80,8 @@ public class KnowledgeBaseController {
     @GetMapping("/{knowledgeBaseId}/access")
     public KnowledgeBaseAccessResponse effectiveAccess(
             @PathVariable UUID knowledgeBaseId,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return KnowledgeBaseAccessResponse.from(
                 knowledgeAccessService.requireAccess(
@@ -95,7 +98,8 @@ public class KnowledgeBaseController {
             @Valid
             @RequestBody
             CreateKnowledgeBaseRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return knowledgeBaseService.create(
                 request,
@@ -110,7 +114,8 @@ public class KnowledgeBaseController {
             @Valid
             @RequestBody
             UpdateKnowledgeBaseRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return knowledgeBaseService.update(
                 knowledgeBaseId,
@@ -123,7 +128,8 @@ public class KnowledgeBaseController {
     @PreAuthorize("hasRole('ADMIN')")
     public KnowledgeBaseMemberPageResponse findMembers(
             @PathVariable UUID knowledgeBaseId,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser,
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser,
             @RequestParam(defaultValue = "0")
             @Min(0)
             int page,
@@ -151,7 +157,8 @@ public class KnowledgeBaseController {
             @Min(1)
             @Max(50)
             int limit,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return knowledgeBaseService.searchMemberCandidates(
                 query,
@@ -167,7 +174,8 @@ public class KnowledgeBaseController {
             @Valid
             @RequestBody
             CreateKnowledgeBaseMemberRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return knowledgeBaseService.addMember(
                 knowledgeBaseId,
@@ -184,7 +192,8 @@ public class KnowledgeBaseController {
             @Valid
             @RequestBody
             UpdateKnowledgeBaseMemberRequest request,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         return knowledgeBaseService.updateMember(
                 knowledgeBaseId,
@@ -202,7 +211,8 @@ public class KnowledgeBaseController {
             @RequestParam
             @Min(0)
             long expectedVersion,
-            @AuthenticationPrincipal SafeAiUserPrincipal currentUser
+            @AuthenticationPrincipal(errorOnInvalidType = true)
+            SafeAiUserPrincipal currentUser
     ) {
         knowledgeBaseService.removeMember(
                 knowledgeBaseId,

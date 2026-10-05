@@ -22,40 +22,109 @@ import java.util.Objects;
 @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 public class ModelCatalogController {
 
+    private static final int DEFAULT_PAGE_LIMIT = 100;
+    private static final int DEFAULT_HISTORY_LIMIT = 100;
+
     private final ModelCatalogService service;
 
-    public ModelCatalogController(
-            ModelCatalogService service
-    ) {
+    public ModelCatalogController(ModelCatalogService service) {
         this.service = Objects.requireNonNull(
                 service,
                 "service не должен быть null"
         );
     }
 
+    /**
+     * Bounded latest-created catalog page. The cursor is the last modelKey from
+     * the previous page; null starts from the beginning.
+     */
     @GetMapping
     public List<ModelCatalogEntryResponse> latest(
+            @RequestParam(value = "afterModelKey", required = false) String afterModelKey,
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
             @AuthenticationPrincipal(errorOnInvalidType = true)
             SafeAiUserPrincipal currentUser
     ) {
-        return service.findLatest(currentUser);
+        return service.findLatest(
+                afterModelKey,
+                limit,
+                currentUser
+        );
     }
 
+    /**
+     * Source-compatible Java helper for pre-pagination callers/tests.
+     * Deliberately not mapped as a second Spring MVC endpoint.
+     */
+    public List<ModelCatalogEntryResponse> latest(
+            SafeAiUserPrincipal currentUser
+    ) {
+        return latest(
+                null,
+                DEFAULT_PAGE_LIMIT,
+                currentUser
+        );
+    }
+
+    /** Bounded server-clock-effective catalog page. */
     @GetMapping("/effective")
     public List<ModelCatalogEntryResponse> effective(
+            @RequestParam(value = "afterModelKey", required = false) String afterModelKey,
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
             @AuthenticationPrincipal(errorOnInvalidType = true)
             SafeAiUserPrincipal currentUser
     ) {
-        return service.findEffective(currentUser);
+        return service.findEffective(
+                afterModelKey,
+                limit,
+                currentUser
+        );
+    }
+
+    /**
+     * Source-compatible Java helper for pre-pagination callers/tests.
+     * Deliberately not mapped as a second Spring MVC endpoint.
+     */
+    public List<ModelCatalogEntryResponse> effective(
+            SafeAiUserPrincipal currentUser
+    ) {
+        return effective(
+                null,
+                DEFAULT_PAGE_LIMIT,
+                currentUser
+        );
     }
 
     @GetMapping("/versions")
     public List<ModelCatalogEntryResponse> history(
             @RequestParam("modelKey") String modelKey,
+            @RequestParam(value = "beforeVersion", required = false) Integer beforeVersion,
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
             @AuthenticationPrincipal(errorOnInvalidType = true)
             SafeAiUserPrincipal currentUser
     ) {
-        return service.findHistory(modelKey, currentUser);
+        return service.findHistory(
+                modelKey,
+                beforeVersion,
+                limit,
+                currentUser
+        );
+    }
+
+    /**
+     * Source-compatible Java helper for callers/tests that used the original
+     * two-argument history method. Deliberately not a Spring MVC mapping.
+     */
+    public List<ModelCatalogEntryResponse> history(
+            String modelKey,
+            SafeAiUserPrincipal currentUser
+    ) {
+        return history(
+                modelKey,
+                null,
+                DEFAULT_HISTORY_LIMIT,
+                currentUser
+        );
     }
 
     @PostMapping
@@ -65,7 +134,10 @@ public class ModelCatalogController {
             @AuthenticationPrincipal(errorOnInvalidType = true)
             SafeAiUserPrincipal currentUser
     ) {
-        return service.createVersion(request, currentUser);
+        return service.createVersion(
+                request,
+                currentUser
+        );
     }
 
     @PostMapping("/import-runtime")

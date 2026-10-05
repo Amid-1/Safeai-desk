@@ -1,5 +1,6 @@
 package ru.safeai.gateway.model.service;
 
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 
 import java.nio.charset.StandardCharsets;
@@ -18,6 +19,11 @@ final class OrganizationModelPolicyAuditDetailsFactory {
             16_000;
 
     private OrganizationModelPolicyAuditDetailsFactory() {
+    }
+
+    static AuditDetails createAuditDetails(OrganizationModelPolicy policy) {
+        Map<String, Object> snapshot = create(policy);
+        return () -> snapshot;
     }
 
     static Map<String, Object> create(

@@ -17,20 +17,23 @@ public class KnowledgeCitationValidator {
             "Недостаточно данных в разрешённой базе знаний.";
 
     /**
-     * Application-looking marker, including malformed candidates. Cyrillic С
-     * is matched explicitly to prevent homoglyph citations from looking
-     * authoritative in the visible response.
+     * Application-looking marker, including malformed candidates.
      *
-     * Valid citation syntax remains EXACTLY [C1]..[C999] (ASCII C, optional
-     * ASCII case folding, without spaces or leading zeroes). Invalid candidates
-     * are removed atomically with all valid citations on any invalidity.
+     * <p>Cyrillic С/с is matched explicitly to prevent homoglyph citations from
+     * looking authoritative in the visible response.</p>
      *
-     * The bounded character class intentionally does not treat arbitrary
-     * bracketed prose (e.g. [Customer]) as an application citation.
+     * <p>Valid citation syntax remains exactly [C1]..[C999] (ASCII C/c,
+     * without spaces or leading zeroes). Invalid candidates are removed
+     * atomically with all valid citations on any invalidity.</p>
+     *
+     * <p>The bounded character class intentionally does not treat arbitrary
+     * bracketed prose such as [Customer] as an application citation.</p>
      */
     private static final Pattern APPLICATION_CITATION_CANDIDATE =
             Pattern.compile(
-                    "\\[[ \t]*[Cc\u0421\u0441][ \t]*([0-9]*|[a-zA-Z\u0430-\u044f\u0410-\u042f]{1,3}[0-9]{0,3})[ \t]*]"
+                    "\\[[ \t]*[CcСс][ \t]*"
+                            + "([0-9]*|[a-zA-Zа-яА-Я]{1,3}[0-9]{0,3})"
+                            + "[ \t]*]"
             );
 
     private static final Pattern VALID_NUMERIC_CITATION =
@@ -44,7 +47,6 @@ public class KnowledgeCitationValidator {
                 preparation,
                 "preparation не должен быть null"
         );
-
         Objects.requireNonNull(
                 response,
                 "response не должен быть null"
@@ -60,58 +62,60 @@ public class KnowledgeCitationValidator {
         Map<String, KnowledgeContextSource> allowed =
                 new LinkedHashMap<>();
 
-        preparation.sources()
-                .forEach(
-                        source -> {
-                            Objects.requireNonNull(
-                                    source,
-                                    "Knowledge source не должен быть null"
-                            );
+        preparation.sources().forEach(source -> {
+            Objects.requireNonNull(
+                    source,
+                    "Knowledge source не должен быть null"
+            );
 
-                            allowed.put(
-                                    source.label(),
-                                    source
-                            );
-                        }
-                );
+            allowed.put(
+                    source.label(),
+                    source
+            );
+        });
+
+        String originalContent = Objects.requireNonNull(
+                response.content(),
+                "response.content не должен быть null"
+        );
 
         Matcher matcher =
                 APPLICATION_CITATION_CANDIDATE.matcher(
-                        response.content()
+                        originalContent
                 );
 
         Map<String, RagCitation> citations =
                 new LinkedHashMap<>();
 
-        boolean valid =
-                true;
+        boolean valid = true;
 
         StringBuilder sanitized =
                 new StringBuilder(
-                        response.content().length()
+                        originalContent.length()
                 );
 
         while (matcher.find()) {
-            Matcher canonical = VALID_NUMERIC_CITATION.matcher(matcher.group());
-            Integer ordinal = canonical.matches()
-                    ? parseOrdinal(canonical.group(2))
-                    : null;
+            Matcher canonical =
+                    VALID_NUMERIC_CITATION.matcher(
+                            matcher.group()
+                    );
+
+            Integer ordinal =
+                    canonical.matches()
+                            ? parseOrdinal(canonical.group(2))
+                            : null;
 
             /*
-             * Malformed numeric application citation.
-             *
-             * Remove it from visible text and mark the complete citation set
-             * invalid.
+             * Malformed application citation:
+             * remove it from visible text and invalidate the complete
+             * structured citation set.
              */
             if (ordinal == null) {
-                valid =
-                        false;
-
+                valid = false;
                 matcher.appendReplacement(
                         sanitized,
                         ""
                 );
-
                 continue;
             }
 
@@ -119,23 +123,18 @@ public class KnowledgeCitationValidator {
                     "C" + ordinal;
 
             KnowledgeContextSource source =
-                    allowed.get(
-                            label
-                    );
+                    allowed.get(label);
 
             /*
-             * Syntactically valid marker, but it does not refer to a source
-             * actually materialized for this exact RAG request.
+             * Syntactically valid marker that does not refer to a source
+             * materialized for this exact RAG request.
              */
             if (source == null) {
-                valid =
-                        false;
-
+                valid = false;
                 matcher.appendReplacement(
                         sanitized,
                         ""
                 );
-
                 continue;
             }
 
@@ -144,14 +143,10 @@ public class KnowledgeCitationValidator {
                     new RagCitation(
                             label,
                             ordinal,
-                            source.hit()
-                                    .chunkId()
+                            source.hit().chunkId()
                     )
             );
 
-            /*
-             * Canonicalize accepted marker representation.
-             */
             matcher.appendReplacement(
                     sanitized,
                     Matcher.quoteReplacement(
@@ -160,55 +155,24 @@ public class KnowledgeCitationValidator {
             );
         }
 
-        matcher.appendTail(
-                sanitized
-        );
+        matcher.appendTail(sanitized);
 
         String content =
-                sanitized.toString()
-                        .strip();
+                sanitized.toString().strip();
 
         /*
-         * Critical persistence invariant.
-         *
-         * Citation validation is atomic.
-         *
-         * Example:
-         *
-         *     "... [C1] ... [C999] ..."
-         *
-         * C1 may be a legitimate source, but once C999 is encountered the
-         * model output as a whole has produced an invalid structured citation
-         * set.
-         *
-         * We therefore must never return:
-         *
-         *     citationsValid = false
-         *     citations      = [C1]
-         *
-         * because Answer Passport correctly rejects that inconsistent state.
-         *
-         * Instead:
-         *
-         *     citationsValid      = false
-         *     citations           = []
-         *     evidenceSufficient  = false
-         *
-         * All remaining numeric application citation markers are also removed
-         * from visible answer text so that invalid output cannot leave a
-         * visually authoritative-looking citation behind.
+         * Citation validation is atomic. Once any application citation is
+         * malformed or unbound, no structured citation may survive as trusted
+         * evidence and no authoritative-looking application marker may remain
+         * in visible text.
          */
         if (!valid) {
             citations.clear();
 
             content =
                     APPLICATION_CITATION_CANDIDATE
-                            .matcher(
-                                    content
-                            )
-                            .replaceAll(
-                                    ""
-                            )
+                            .matcher(content)
+                            .replaceAll("")
                             .strip();
         }
 
@@ -218,25 +182,16 @@ public class KnowledgeCitationValidator {
                         && !citations.isEmpty();
 
         /*
-         * KNOWLEDGE_ONLY is fail-closed.
-         *
-         * Without a completely valid citation set backed by the exact
-         * materialized sources, the answer is replaced by the canonical
-         * abstention response.
+         * KNOWLEDGE_ONLY is fail-closed: without a completely valid citation
+         * set backed by the exact materialized sources, replace the answer with
+         * the canonical abstention response.
          */
-        if (preparation.mode()
-                == KnowledgeMode.KNOWLEDGE_ONLY
-                && (
-                !evidenceSufficient
-                        || content.isBlank()
-        )) {
-            content =
-                    ABSTENTION;
+        if (preparation.mode() == KnowledgeMode.KNOWLEDGE_ONLY
+                && (!evidenceSufficient || content.isBlank())) {
 
+            content = ABSTENTION;
             citations.clear();
-
-            evidenceSufficient =
-                    false;
+            evidenceSufficient = false;
         }
 
         return new RagCompletion(
@@ -257,12 +212,8 @@ public class KnowledgeCitationValidator {
             String value
     ) {
         /*
-         * Application-controlled citation namespace:
-         *
-         * C1 .. C999
-         *
-         * Leading zeroes are rejected so that [C01] cannot become an alias
-         * for [C1].
+         * Application-controlled citation namespace: C1..C999.
+         * Leading zeroes are rejected so [C01] cannot alias [C1].
          */
         if (value == null
                 || value.isEmpty()
@@ -273,12 +224,9 @@ public class KnowledgeCitationValidator {
 
         try {
             int ordinal =
-                    Integer.parseInt(
-                            value
-                    );
+                    Integer.parseInt(value);
 
-            return ordinal >= 1
-                    && ordinal <= 999
+            return ordinal >= 1 && ordinal <= 999
                     ? ordinal
                     : null;
 

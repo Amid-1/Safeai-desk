@@ -14,39 +14,161 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Tag("unit")
 class KnowledgeOcrBoundaryRegressionTest {
+
+    private static final long MAX_RESPONSE_BYTES =
+            65_536L;
+
+    private static final long MAX_INPUT_BYTES =
+            25L * 1024L * 1024L;
+
     @Test
     void providerMustRejectEmptyPdfBeforeNetwork() {
-        var props = new KnowledgeOcrProperties("http", "https://ocr.safeai.test/api", "secret",
-                List.of("ocr.safeai.test"), 20, Duration.ofSeconds(1),
-                Duration.ofSeconds(2), 65_536L);
-        var provider = new HttpKnowledgeOcrProvider(props);
-        assertThatThrownBy(() -> provider.extractPdf(null))
-                .isInstanceOf(KnowledgeIngestionException.class)
-                .extracting("code").isEqualTo("OCR_INVALID_INPUT");
-        assertThatThrownBy(() -> provider.extractPdf(new byte[0]))
-                .isInstanceOf(KnowledgeIngestionException.class)
-                .extracting("code").isEqualTo("OCR_INVALID_INPUT");
+        HttpKnowledgeOcrProvider provider =
+                httpProvider();
+
+        assertThatThrownBy(
+                () -> provider.extractPdf(
+                        null
+                )
+        )
+                .isInstanceOf(
+                        KnowledgeIngestionException.class
+                )
+                .extracting(
+                        "code"
+                )
+                .isEqualTo(
+                        "OCR_INVALID_INPUT"
+                );
+
+        assertThatThrownBy(
+                () -> provider.extractPdf(
+                        new byte[0]
+                )
+        )
+                .isInstanceOf(
+                        KnowledgeIngestionException.class
+                )
+                .extracting(
+                        "code"
+                )
+                .isEqualTo(
+                        "OCR_INVALID_INPUT"
+                );
+    }
+
+    @Test
+    void configuredOcrBoundaryRetainsExplicitInputAndResponseLimits() {
+        KnowledgeOcrProperties properties =
+                configuredProperties();
+
+        assertThat(
+                properties.maxResponseBytes()
+        ).isEqualTo(
+                MAX_RESPONSE_BYTES
+        );
+
+        assertThat(
+                properties.maxInputBytes()
+        ).isEqualTo(
+                MAX_INPUT_BYTES
+        );
     }
 
     @Test
     void disabledProviderDoesNotClaimOcrCapability() {
-        var provider = new DisabledKnowledgeOcrProvider();
-        assertThat(provider.enabled()).isFalse();
+        DisabledKnowledgeOcrProvider provider =
+                new DisabledKnowledgeOcrProvider();
+
+        assertThat(
+                provider.enabled()
+        ).isFalse();
     }
 
     @Test
     void documentAndPagesDefensivelyCopyAndRequirePositivePageNumbers() {
-        var pages = new ArrayList<>(List.of(new OcrPage(1, "Evidence")));
-        var document = new OcrDocument("model-v1", pages);
+        ArrayList<OcrPage> pages =
+                new ArrayList<>(
+                        List.of(
+                                new OcrPage(
+                                        1,
+                                        "Evidence"
+                                )
+                        )
+                );
+
+        OcrDocument document =
+                new OcrDocument(
+                        "model-v1",
+                        pages
+                );
+
         pages.clear();
-        assertThat(document.pages()).hasSize(1);
-        assertThatThrownBy(() -> document.pages().clear())
-                .isInstanceOf(UnsupportedOperationException.class);
-        assertThatThrownBy(() -> new OcrPage(0, "value"))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new OcrPage(1, null))
-                .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new OcrDocument(" ", List.of()))
-                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(
+                document.pages()
+        ).hasSize(
+                1
+        );
+
+        assertThatThrownBy(
+                () -> document.pages()
+                        .clear()
+        ).isInstanceOf(
+                UnsupportedOperationException.class
+        );
+
+        assertThatThrownBy(
+                () -> new OcrPage(
+                        0,
+                        "value"
+                )
+        ).isInstanceOf(
+                IllegalArgumentException.class
+        );
+
+        assertThatThrownBy(
+                () -> new OcrPage(
+                        1,
+                        null
+                )
+        ).isInstanceOf(
+                NullPointerException.class
+        );
+
+        assertThatThrownBy(
+                () -> new OcrDocument(
+                        " ",
+                        List.of()
+                )
+        ).isInstanceOf(
+                IllegalArgumentException.class
+        );
+    }
+
+    private static HttpKnowledgeOcrProvider httpProvider() {
+        return new HttpKnowledgeOcrProvider(
+                configuredProperties()
+        );
+    }
+
+    private static KnowledgeOcrProperties configuredProperties() {
+        return new KnowledgeOcrProperties(
+                "http",
+                "https://ocr.safeai.test/api",
+                "secret",
+                List.of(
+                        "ocr.safeai.test"
+                ),
+                20,
+                Duration.ofSeconds(
+                        1
+                ),
+                Duration.ofSeconds(
+                        2
+                ),
+                MAX_RESPONSE_BYTES,
+                MAX_INPUT_BYTES
+        );
     }
 }

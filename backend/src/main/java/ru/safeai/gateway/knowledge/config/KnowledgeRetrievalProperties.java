@@ -2,7 +2,7 @@ package ru.safeai.gateway.knowledge.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@ConfigurationProperties(prefix = "safeai.knowledge.retrieval")
+@ConfigurationProperties(prefix = "safeai.knowledge.retrieval", ignoreUnknownFields = false)
 public record KnowledgeRetrievalProperties(
         Integer maxQueryChars,
         Integer maxTopK,

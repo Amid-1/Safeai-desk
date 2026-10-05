@@ -159,11 +159,13 @@ final class OrganizationModelPolicyRules {
 
         TreeSet<String> result = new TreeSet<>();
         for (String value : values) {
-            result.add(
-                    ModelCatalogService.normalizeModelKey(
-                            value
-                    )
-            );
+            String normalized = ModelCatalogRules.normalizeModelKey(value);
+            if (!result.add(normalized)) {
+                throw new BadRequestException(
+                        "Model policy содержит дублирующийся canonical modelKey: "
+                                + normalized
+                );
+            }
         }
         return Collections.unmodifiableSet(result);
     }
@@ -173,6 +175,6 @@ final class OrganizationModelPolicyRules {
     ) {
         return value == null || value.isBlank()
                 ? null
-                : ModelCatalogService.normalizeModelKey(value);
+                : ModelCatalogRules.normalizeModelKey(value);
     }
 }

@@ -108,7 +108,7 @@ public class OrganizationModelPolicyService {
         OrganizationModelPolicy policy = OrganizationModelPolicyRules.buildPolicy(
                 UUID.randomUUID(),
                 target,
-                previousVersion + 1,
+                ModelControlPlaneNumericValidation.nextVersion(previousVersion),
                 request,
                 currentUser.getId(),
                 now
@@ -119,7 +119,7 @@ public class OrganizationModelPolicyService {
                 currentUser,
                 policy.organizationId(),
                 AuditEventType.MODEL_POLICY_VERSION_CREATED,
-                OrganizationModelPolicyAuditDetailsFactory.create(policy)
+                OrganizationModelPolicyAuditDetailsFactory.createAuditDetails(policy)
         );
 
         return OrganizationModelPolicyResponse.from(policy);

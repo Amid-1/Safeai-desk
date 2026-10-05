@@ -74,7 +74,7 @@ public class RuntimeModelProbeService {
         RuntimeModelHealthProbe probe = probes.get(provider);
 
         if (probe == null) {
-            return new RuntimeModelProbeResult(
+            RuntimeModelProbeResult missing = new RuntimeModelProbeResult(
                     provider,
                     runtime.model(),
                     RuntimeModelProbeStatus.ERROR,
@@ -83,37 +83,60 @@ public class RuntimeModelProbeService {
                     null,
                     "Для текущего provider проверка доступности не зарегистрирована"
             );
+            statusService.recordProbe(missing);
+            return missing;
         }
 
-        RuntimeModelProbeResult result = Objects.requireNonNull(
-                probe.probe(),
-                "Runtime probe вернул null"
-        );
-
-        if (!provider.equals(normalizeProvider(result.provider()))
-                || !runtime.model().equals(result.model())) {
-            return new RuntimeModelProbeResult(
-                    provider,
-                    runtime.model(),
-                    RuntimeModelProbeStatus.CONFIGURATION_MISMATCH,
-                    Instant.now(clock),
-                    result.latencyMs(),
-                    result.httpStatus(),
-                    "Результат проверки не совпал с текущей runtime-конфигурацией"
-            );
+        long startedNanos = System.nanoTime();
+        RuntimeModelProbeResult result;
+        try {
+            result = Objects.requireNonNull(probe.probe(), "Runtime probe returned null");
+            if (!provider.equals(normalizeProvider(result.provider()))
+                    || !runtime.model().equals(result.model())) {
+                result = new RuntimeModelProbeResult(
+                        provider, runtime.model(), RuntimeModelProbeStatus.CONFIGURATION_MISMATCH,
+                        clock.instant(), result.latencyMs(), result.httpStatus(),
+                        "Результат проверки не совпал с текущей runtime-конфигурацией");
+            } else {
+                // Do not expose arbitrary adapter exception/response text to the caller.
+                result = new RuntimeModelProbeResult(
+                        provider, runtime.model(), result.status(), clock.instant(),
+                        result.latencyMs(), result.httpStatus(), publicMessage(result.status()));
+            }
+        } catch (RuntimeException exception) {
+            result = new RuntimeModelProbeResult(
+                    provider, runtime.model(), RuntimeModelProbeStatus.ERROR,
+                    clock.instant(), Math.max(0L, (System.nanoTime() - startedNanos) / 1_000_000L),
+                    null, "Не удалось безопасно выполнить проверку runtime-модели");
         }
-
+        statusService.recordProbe(result);
         return result;
+    }
+
+    private static String publicMessage(RuntimeModelProbeStatus status) {
+        return switch (status) {
+            case AVAILABLE -> "Провайдер подтвердил доступность модели";
+            case AUTH_ERROR -> "Провайдер отклонил аутентификацию или запретил доступ к модели";
+            case MODEL_NOT_FOUND -> "Провайдер не нашёл настроенную модель";
+            case RATE_LIMITED -> "Провайдер временно ограничил запросы";
+            case CONFIGURATION_MISMATCH -> "Результат проверки не совпал с runtime-конфигурацией";
+            case UNAVAILABLE -> "Провайдер временно недоступен";
+            case ERROR -> "Проверка завершилась внутренней ошибкой";
+        };
     }
 
     private static String normalizeProvider(
             String value
     ) {
-        return Objects.requireNonNull(
+        String normalized = Objects.requireNonNull(
                 value,
                 "provider не должен быть null"
         )
                 .trim()
                 .toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            throw new IllegalStateException("Runtime probe provider must not be blank");
+        }
+        return normalized;
     }
 }

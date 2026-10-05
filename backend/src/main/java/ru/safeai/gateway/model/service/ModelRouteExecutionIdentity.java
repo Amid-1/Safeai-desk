@@ -1,27 +1,23 @@
 package ru.safeai.gateway.model.service;
 
 import ru.safeai.gateway.ai.dto.AiChatRequest;
-import ru.safeai.gateway.ai.dto.AiMessage;
-import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
+import ru.safeai.gateway.ai.input.AiRequestFingerprint;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
 
-import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
- * The immutable receipt for one DB-verified ALLOWED decision and its exact
- * pre-RAG request. Never derive an identity from the prepared request.
- * The public record constructor validates shape; execution remains untrusted
- * until ModelRouteExecutionBindingService verifies persisted decision evidence.
+ * Immutable execution capability issued from a DB-verified ALLOWED decision.
+ *
+ * <p>For Knowledge routes V64 additionally binds the exact retrieval run,
+ * exact assembled context hash and exact prepared-request hash written by the
+ * Knowledge layer before provider I/O. The public constructor remains usable
+ * for source compatibility, but an identity without durable Knowledge
+ * provenance is rejected by the execution guard.</p>
  */
 public record ModelRouteExecutionIdentity(
         UUID decisionId,
@@ -42,8 +38,13 @@ public record ModelRouteExecutionIdentity(
         String provider,
         String providerModelId,
         UUID knowledgeBaseId,
-        KnowledgeMode knowledgeMode
+        KnowledgeMode knowledgeMode,
+        UUID retrievalRunId,
+        String ragContextSha256,
+        String trustedPreparedRequestSha256
 ) {
+    private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
+
     public ModelRouteExecutionIdentity {
         Objects.requireNonNull(decisionId, "decisionId");
         Objects.requireNonNull(catalogEntryId, "catalogEntryId");
@@ -60,17 +61,93 @@ public record ModelRouteExecutionIdentity(
         Objects.requireNonNull(provider, "provider");
         Objects.requireNonNull(providerModelId, "providerModelId");
         Objects.requireNonNull(knowledgeMode, "knowledgeMode");
-        if (!semanticRequestHash.matches("[0-9a-f]{64}")
-                || !baseRequestSha256.matches("[0-9a-f]{64}")
-                || reservedInputUnits < 0
+
+        if (!SHA256.matcher(semanticRequestHash).matches()
+                || !SHA256.matcher(baseRequestSha256).matches()
+                || reservedInputUnits < 0L
                 || catalogVersion <= 0
                 || selectedModelKey.isBlank()
                 || maxOutputUnits <= 0
-                || !AiInputUnitEstimator.VERSION.equals(inputAccountingVersion)
-                || (knowledgeMode.usesKnowledge() && knowledgeBaseId == null)
-                || (!knowledgeMode.usesKnowledge() && knowledgeBaseId != null)) {
+                || !ModelInputTokenEstimator.version().equals(inputAccountingVersion)) {
             throw new IllegalStateException("Invalid governed execution identity");
         }
+
+        if (knowledgeMode.usesKnowledge()) {
+            Objects.requireNonNull(
+                    knowledgeBaseId,
+                    "knowledgeBaseId обязателен для Knowledge execution identity"
+            );
+            boolean noProvenance = retrievalRunId == null
+                    && ragContextSha256 == null
+                    && trustedPreparedRequestSha256 == null;
+            boolean completeProvenance = retrievalRunId != null
+                    && isSha256(ragContextSha256)
+                    && isSha256(trustedPreparedRequestSha256);
+            if (!noProvenance && !completeProvenance) {
+                throw new IllegalStateException(
+                        "Knowledge execution provenance must be absent or complete"
+                );
+            }
+        } else if (knowledgeBaseId != null
+                || retrievalRunId != null
+                || ragContextSha256 != null
+                || trustedPreparedRequestSha256 != null) {
+            throw new IllegalStateException(
+                    "GENERAL execution identity cannot carry Knowledge provenance"
+            );
+        }
+    }
+
+    /**
+     * Source-compatible constructor for V53/V62 callers. New Knowledge
+     * production identities are issued by {@link ModelRouteExecutionBindingService}
+     * with durable V64 provenance.
+     */
+    public ModelRouteExecutionIdentity(
+            UUID decisionId,
+            UUID catalogEntryId,
+            int catalogVersion,
+            String selectedModelKey,
+            UUID organizationId,
+            UUID userId,
+            UUID chatId,
+            UUID chatTurnId,
+            UUID clientRequestId,
+            UUID providerOperationId,
+            String semanticRequestHash,
+            String baseRequestSha256,
+            String inputAccountingVersion,
+            long reservedInputUnits,
+            int maxOutputUnits,
+            String provider,
+            String providerModelId,
+            UUID knowledgeBaseId,
+            KnowledgeMode knowledgeMode
+    ) {
+        this(
+                decisionId,
+                catalogEntryId,
+                catalogVersion,
+                selectedModelKey,
+                organizationId,
+                userId,
+                chatId,
+                chatTurnId,
+                clientRequestId,
+                providerOperationId,
+                semanticRequestHash,
+                baseRequestSha256,
+                inputAccountingVersion,
+                reservedInputUnits,
+                maxOutputUnits,
+                provider,
+                providerModelId,
+                knowledgeBaseId,
+                knowledgeMode,
+                null,
+                null,
+                null
+        );
     }
 
     static ModelRouteExecutionIdentity bind(
@@ -80,7 +157,10 @@ public record ModelRouteExecutionIdentity(
             UUID providerOperationId,
             AiChatRequest reserved,
             UUID knowledgeBaseId,
-            KnowledgeMode knowledgeMode
+            KnowledgeMode knowledgeMode,
+            UUID retrievalRunId,
+            String ragContextSha256,
+            String trustedPreparedRequestSha256
     ) {
         Objects.requireNonNull(decision, "decision");
         Objects.requireNonNull(reserved, "reserved");
@@ -95,8 +175,10 @@ public record ModelRouteExecutionIdentity(
                 || decision.chatTurnId() == null
                 || decision.estimatedInputTokens() == null
                 || decision.estimatedOutputTokens() == null
-                || !AiInputUnitEstimator.VERSION.equals(decision.inputAccountingVersion())) {
-            throw new IllegalStateException("Decision is not executable under strict v3 governance");
+                || !ModelInputTokenEstimator.version().equals(decision.inputAccountingVersion())) {
+            throw new IllegalStateException(
+                    "Decision is not executable under strict v3 governance"
+            );
         }
         if (!decision.chatTurnId().equals(chatTurnId)
                 || !decision.clientRequestId().equals(clientRequestId)
@@ -104,29 +186,54 @@ public record ModelRouteExecutionIdentity(
                 || !decision.userId().equals(reserved.userId())
                 || !decision.chatId().equals(reserved.chatId())
                 || !providerOperationId.equals(reserved.providerOperationId())
-                || !Objects.equals(decision.estimatedInputTokens(), reserved.reservedInputTokens())
-                || !Objects.equals(decision.estimatedOutputTokens(),
-                        reserved.maxOutputTokens() == null
-                                ? null : reserved.maxOutputTokens().longValue())) {
-            throw new IllegalStateException("Decision, ChatTurn and reserved request do not match");
+                || !Objects.equals(
+                        reserved.reservedInputTokens(),
+                        decision.estimatedInputTokens()
+                )
+                || reserved.maxOutputTokens() == null
+                || differentLong(
+                        decision.estimatedOutputTokens(),
+                        reserved.maxOutputTokens()
+                )) {
+            throw new IllegalStateException(
+                    "Decision, ChatTurn and reserved request do not match"
+            );
         }
-        // Enforce exact accounting estimate, not merely the copied cap.
-        long base = AiInputUnitEstimator.estimateBaseRequest(
-                reserved.userMessage(), reserved.history());
-        long expected = Math.addExact(base, decision.additionalInputUnitUpperBound());
+
+        long base = ModelInputTokenEstimator.estimateBaseRequest(reserved);
+        long expected = Math.addExact(
+                base,
+                decision.additionalInputUnitUpperBound()
+        );
         if (expected != decision.estimatedInputTokens()) {
-            throw new IllegalStateException("Reserved input does not match persisted accounting evidence");
+            throw new IllegalStateException(
+                    "Reserved input does not match persisted accounting evidence"
+            );
         }
+
         return new ModelRouteExecutionIdentity(
-                decision.id(), decision.selectedCatalogEntryId(),
-                decision.selectedCatalogVersion(), decision.selectedModelKey(),
-                decision.organizationId(), decision.userId(),
-                decision.chatId(), chatTurnId, clientRequestId, providerOperationId,
-                decision.requestContentHash(), baseSha256(reserved),
-                decision.inputAccountingVersion(), expected,
+                decision.id(),
+                decision.selectedCatalogEntryId(),
+                decision.selectedCatalogVersion(),
+                decision.selectedModelKey(),
+                decision.organizationId(),
+                decision.userId(),
+                decision.chatId(),
+                chatTurnId,
+                clientRequestId,
+                providerOperationId,
+                decision.requestContentHash(),
+                baseSha256(reserved),
+                decision.inputAccountingVersion(),
+                expected,
                 Math.toIntExact(decision.estimatedOutputTokens()),
-                decision.selectedProvider(), decision.selectedProviderModelId(),
-                knowledgeBaseId, knowledgeMode
+                decision.selectedProvider(),
+                decision.selectedProviderModelId(),
+                knowledgeBaseId,
+                knowledgeMode,
+                retrievalRunId,
+                ragContextSha256,
+                trustedPreparedRequestSha256
         );
     }
 
@@ -138,7 +245,7 @@ public record ModelRouteExecutionIdentity(
                 || decision.selectedCatalogVersion() == null
                 || !decision.id().equals(decisionId)
                 || !Objects.equals(decision.selectedCatalogEntryId(), catalogEntryId)
-                || !Objects.equals(decision.selectedCatalogVersion(), catalogVersion)
+                || differentInteger(decision.selectedCatalogVersion(), catalogVersion)
                 || !Objects.equals(decision.selectedModelKey(), selectedModelKey)
                 || !decision.organizationId().equals(organizationId)
                 || !decision.userId().equals(userId)
@@ -146,12 +253,14 @@ public record ModelRouteExecutionIdentity(
                 || !Objects.equals(decision.chatTurnId(), chatTurnId)
                 || !decision.clientRequestId().equals(clientRequestId)
                 || !decision.requestContentHash().equals(semanticRequestHash)
-                || !Objects.equals(decision.estimatedInputTokens(), reservedInputUnits)
-                || !Objects.equals(decision.estimatedOutputTokens(), (long) maxOutputUnits)
+                || differentLong(decision.estimatedInputTokens(), reservedInputUnits)
+                || differentLong(decision.estimatedOutputTokens(), maxOutputUnits)
                 || !Objects.equals(decision.inputAccountingVersion(), inputAccountingVersion)
                 || !Objects.equals(decision.selectedProvider(), provider)
                 || !Objects.equals(decision.selectedProviderModelId(), providerModelId)) {
-            throw new IllegalStateException("Execution identity does not match persisted route decision");
+            throw new IllegalStateException(
+                    "Execution identity does not match persisted route decision"
+            );
         }
     }
 
@@ -160,10 +269,12 @@ public record ModelRouteExecutionIdentity(
                 || !userId.equals(request.userId())
                 || !chatId.equals(request.chatId())
                 || !providerOperationId.equals(request.providerOperationId())
-                || !Objects.equals(reservedInputUnits, request.reservedInputTokens())
-                || !Objects.equals(maxOutputUnits, request.maxOutputTokens())
+                || differentLong(request.reservedInputTokens(), reservedInputUnits)
+                || differentInteger(request.maxOutputTokens(), maxOutputUnits)
                 || !baseRequestSha256.equals(baseSha256(request))) {
-            throw new IllegalStateException("Reserved AI request identity was replaced");
+            throw new IllegalStateException(
+                    "Reserved AI request identity was replaced"
+            );
         }
     }
 
@@ -172,57 +283,99 @@ public record ModelRouteExecutionIdentity(
                 || !userId.equals(prepared.userId())
                 || !chatId.equals(prepared.chatId())
                 || !providerOperationId.equals(prepared.providerOperationId())
-                || !Objects.equals(reservedInputUnits, prepared.reservedInputTokens())
-                || !Objects.equals(maxOutputUnits, prepared.maxOutputTokens())
+                || differentLong(prepared.reservedInputTokens(), reservedInputUnits)
+                || differentInteger(prepared.maxOutputTokens(), maxOutputUnits)
                 || !reserved.userMessage().equals(prepared.userMessage())
                 || !reserved.history().equals(prepared.history())) {
-            throw new IllegalStateException("Prepared request has a different immutable base identity");
+            throw new IllegalStateException(
+                    "Prepared request has a different immutable base identity"
+            );
         }
+
         if (knowledgeMode.usesKnowledge()) {
-            requireAppendOnly(reserved.systemInstructions(), prepared.systemInstructions());
-            requireAppendOnly(reserved.developerInstructions(), prepared.developerInstructions());
-        } else if (!Objects.equals(reserved.systemInstructions(), prepared.systemInstructions())
-                || !Objects.equals(reserved.developerInstructions(), prepared.developerInstructions())) {
-            throw new IllegalStateException("Non-RAG route changed instructions");
+            requireAppendOnly(
+                    reserved.systemInstructions(),
+                    prepared.systemInstructions()
+            );
+            requireAppendOnly(
+                    reserved.developerInstructions(),
+                    prepared.developerInstructions()
+            );
+        } else if (!Objects.equals(
+                reserved.systemInstructions(),
+                prepared.systemInstructions()
+        ) || !Objects.equals(
+                reserved.developerInstructions(),
+                prepared.developerInstructions()
+        )) {
+            throw new IllegalStateException(
+                    "Non-RAG route changed instructions"
+            );
+        }
+    }
+
+    void requireTrustedPreparedProvenance(AiChatRequest prepared) {
+        if (!knowledgeMode.usesKnowledge()) {
+            if (retrievalRunId != null
+                    || ragContextSha256 != null
+                    || trustedPreparedRequestSha256 != null) {
+                throw new IllegalStateException(
+                        "GENERAL identity unexpectedly carries Knowledge provenance"
+                );
+            }
+            return;
+        }
+
+        if (retrievalRunId == null
+                || !isSha256(ragContextSha256)
+                || !isSha256(trustedPreparedRequestSha256)) {
+            throw new IllegalStateException(
+                    "Knowledge execution identity lacks durable RAG provenance"
+            );
+        }
+
+        String actualPreparedSha256 = preparedSha256(prepared);
+        if (!trustedPreparedRequestSha256.equals(actualPreparedSha256)) {
+            throw new IllegalStateException(
+                    "Prepared request differs from the trusted Knowledge RAG receipt"
+            );
         }
     }
 
     private static void requireAppendOnly(String base, String actual) {
         if (base == null) {
-            return; // A RAG-enabled route may introduce SYSTEM/DEVELOPER instructions.
+            if (actual == null || actual.isBlank()) {
+                throw new IllegalStateException(
+                        "Knowledge preparation must materialize a nonblank trusted instruction block"
+                );
+            }
+            return;
         }
-        if (actual == null || !(actual.equals(base) || actual.startsWith(base + "\n\n"))) {
-            throw new IllegalStateException("RAG replaced the original instruction prefix");
+        if (actual == null
+                || !(actual.equals(base) || actual.startsWith(base + "\n\n"))) {
+            throw new IllegalStateException(
+                    "RAG replaced the original instruction prefix"
+            );
         }
+    }
+
+    private static boolean differentLong(Long value, long expected) {
+        return value == null || value != expected;
+    }
+
+    private static boolean differentInteger(Integer value, int expected) {
+        return value == null || value != expected;
+    }
+
+    static String preparedSha256(AiChatRequest request) {
+        return AiRequestFingerprint.preparedSha256(request);
     }
 
     static String baseSha256(AiChatRequest request) {
-        try {
-            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-            try (DataOutputStream out = new DataOutputStream(bytes)) {
-                write(out, request.userMessage());
-                write(out, request.systemInstructions());
-                write(out, request.developerInstructions());
-                out.writeInt(request.history().size());
-                for (AiMessage message : request.history()) {
-                    write(out, message.role().name());
-                    write(out, message.content());
-                }
-            }
-            return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray()));
-        } catch (IOException | NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("Unable to hash base AI request", exception);
-        }
+        return AiRequestFingerprint.baseSha256(request);
     }
 
-    private static void write(DataOutputStream out, String value) throws IOException {
-        if (value == null) {
-            out.writeInt(-1);
-        } else {
-            byte[] encoded = value.getBytes(StandardCharsets.UTF_8);
-            out.writeInt(encoded.length);
-            out.write(encoded);
-        }
+    private static boolean isSha256(String value) {
+        return value != null && SHA256.matcher(value).matches();
     }
 }

@@ -79,7 +79,7 @@ final class ModelControlPlaneNumericValidation {
                 .add(outputCost)
                 .setScale(
                         POSTGRES_DECIMAL_SCALE,
-                        RoundingMode.HALF_UP
+                        RoundingMode.CEILING
                 );
 
         if (violatesNonNegativeNumeric30Scale12(worstCaseCost)) {
@@ -97,15 +97,28 @@ final class ModelControlPlaneNumericValidation {
             return true;
         }
 
+        // Use long arithmetic before normalization: extreme positive exponents
+        // can overflow int digit arithmetic or stripTrailingZeros scale.
+        if (value.signum() != 0
+                && (long) value.precision() - value.scale() > POSTGRES_DECIMAL_INTEGER_DIGITS) {
+            return true;
+        }
         BigDecimal normalized = value.stripTrailingZeros();
         int scale = Math.max(normalized.scale(), 0);
-        int integerDigits = Math.max(
-                normalized.precision() - normalized.scale(),
-                0
+        long integerDigits = Math.max(
+                (long) normalized.precision() - normalized.scale(),
+                0L
         );
 
         return scale > POSTGRES_DECIMAL_SCALE
                 || integerDigits > POSTGRES_DECIMAL_INTEGER_DIGITS;
+    }
+
+    static int nextVersion(int previousVersion) {
+        if (previousVersion < 0 || previousVersion == Integer.MAX_VALUE) {
+            throw new BadRequestException("Невозможно создать следующую версию: диапазон integer исчерпан");
+        }
+        return previousVersion + 1;
     }
 
     private static BigDecimal tokenCost(
@@ -117,7 +130,7 @@ final class ModelControlPlaneNumericValidation {
                 .divide(
                         ONE_MILLION,
                         POSTGRES_DECIMAL_SCALE,
-                        RoundingMode.HALF_UP
+                        RoundingMode.CEILING
                 );
     }
 }

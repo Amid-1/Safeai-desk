@@ -20,13 +20,8 @@ public class ModelRouteDecisionController {
 
     private final ModelRoutingService service;
 
-    public ModelRouteDecisionController(
-            ModelRoutingService service
-    ) {
-        this.service = Objects.requireNonNull(
-                service,
-                "service не должен быть null"
-        );
+    public ModelRouteDecisionController(ModelRoutingService service) {
+        this.service = Objects.requireNonNull(service, "service не должен быть null");
     }
 
     @GetMapping("/{decisionId}")

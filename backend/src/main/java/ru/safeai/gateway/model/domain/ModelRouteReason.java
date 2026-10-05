@@ -4,6 +4,14 @@ public enum ModelRouteReason {
     REQUESTED_MODEL,
     POLICY_DEFAULT,
     RUNTIME_ONLY_MATCH,
+
+    /**
+     * Historical compatibility value retained for immutable route evidence.
+     * New routing must never emit this reason.
+     *
+     * @deprecated historical read compatibility only
+     */
+    @Deprecated
     LEGACY_RUNTIME_FALLBACK,
 
     MODEL_NOT_ALLOWED,

@@ -67,29 +67,48 @@ class ModelCatalogServiceTest {
 
     @Test
     void effectiveCatalogUsesServerClock() {
-        when(repository.findEffectiveAll(ModelTestFixtures.NOW))
-                .thenReturn(List.of());
+        when(repository.findEffectivePage(
+                ModelTestFixtures.NOW,
+                null,
+                100
+        )).thenReturn(List.of());
 
         assertThat(service.findEffective(
+                null,
+                100,
                 ModelTestFixtures.superAdminPrincipal()
         )).isEmpty();
 
-        verify(repository)
-                .findEffectiveAll(ModelTestFixtures.NOW);
+        verify(repository).findEffectivePage(
+                ModelTestFixtures.NOW,
+                null,
+                100
+        );
     }
 
     @Test
     void adminCanReadCatalogButUserCannot() {
-        when(repository.findLatestAll())
-                .thenReturn(List.of());
+        when(repository.findLatestPage(
+                null,
+                100
+        )).thenReturn(List.of());
 
         assertThat(service.findLatest(
+                null,
+                100,
                 ModelTestFixtures.adminPrincipal()
         )).isEmpty();
 
         assertThatThrownBy(() -> service.findLatest(
+                null,
+                100,
                 ModelTestFixtures.userPrincipal()
         )).isInstanceOf(ForbiddenOperationException.class);
+
+        verify(repository).findLatestPage(
+                null,
+                100
+        );
     }
 
     @Test
@@ -808,4 +827,3 @@ class ModelCatalogServiceTest {
         );
     }
 }
-

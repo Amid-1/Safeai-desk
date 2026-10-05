@@ -22,7 +22,6 @@ import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -105,11 +104,11 @@ public class ModelPolicyPreviewService {
             );
         }
 
-        Instant now = clock.instant();
+        Instant now = DatabaseTimestampNormalizer.normalize(clock.instant());
         OrganizationModelPolicy draft = OrganizationModelPolicyRules.buildPolicy(
                 PREVIEW_UUID,
                 target,
-                currentVersion + 1,
+                ModelControlPlaneNumericValidation.nextVersion(currentVersion),
                 request,
                 currentUser.getId(),
                 now
@@ -119,11 +118,7 @@ public class ModelPolicyPreviewService {
                 "Runtime model status не должен быть null"
         );
 
-        List<ModelCatalogEntry> effectiveCatalog = catalogRepository
-                .findEffectiveAll(now)
-                .stream()
-                .sorted(Comparator.comparing(ModelCatalogEntry::modelKey))
-                .toList();
+        List<ModelCatalogEntry> effectiveCatalog = loadEffectiveCatalog(now);
 
         ModelRoutingCostPolicy.BudgetContext budgetContext =
                 costPolicy.loadBudgetContextForPreview(
@@ -177,9 +172,36 @@ public class ModelPolicyPreviewService {
                 automatic.reason(),
                 automatic.modelKey(),
                 executable,
-                draft.enabled() && executable == 0,
+                draft.enabled() && items.stream().noneMatch(item ->
+                        item.outcome() == ModelRouteOutcome.ALLOWED
+                                || item.reason() == ModelRouteReason.MONTHLY_BUDGET_EXCEEDED
+                                || item.reason() == ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE),
                 items
         );
+    }
+
+    private List<ModelCatalogEntry> loadEffectiveCatalog(Instant now) {
+        final int pageSize = 200;
+        final int hardLimit = 5_000;
+        List<ModelCatalogEntry> result = new ArrayList<>();
+        String cursor = null;
+        while (true) {
+            List<ModelCatalogEntry> page = catalogRepository.findEffectivePage(
+                    now,
+                    cursor,
+                    pageSize
+            );
+            result.addAll(page);
+            if (result.size() > hardLimit) {
+                throw new ConflictException(
+                        "Model policy preview превышает безопасный лимит 5000 effective models"
+                );
+            }
+            if (page.size() < pageSize) {
+                return List.copyOf(result);
+            }
+            cursor = page.getLast().modelKey();
+        }
     }
 
     private ModelPolicyPreviewItemResponse evaluateEntry(
@@ -274,8 +296,18 @@ public class ModelPolicyPreviewService {
                 maxEnvelopePricing.complete(),
                 ModelPolicyPreviewItemResponse.decimal(maxEnvelopePricing.cost()),
                 ModelPolicyPreviewItemResponse.decimal(budget.monthlyBudgetUsd()),
+                ModelPolicyPreviewItemResponse.decimal(budget.monthlyActualCostUsd()),
+                ModelPolicyPreviewItemResponse.decimal(budget.monthlyReservedCostUsd()),
+                ModelPolicyPreviewItemResponse.decimal(budget.monthlyCommittedUsd()),
+                budget.monthlyUnknownCostCount(),
                 ModelPolicyPreviewItemResponse.decimal(budget.monthlyProjectedUsd()),
                 budget.monthlyCostKnown(),
+                budget.monthlyBudgetUsd() == null
+                        ? ru.safeai.gateway.model.domain.MonthlyCostState.NOT_EVALUATED
+                        : budget.monthlyCostKnown()
+                        ? ru.safeai.gateway.model.domain.MonthlyCostState.KNOWN
+                        : ru.safeai.gateway.model.domain.MonthlyCostState.UNKNOWN,
+                budget.monthlyCommitmentState(),
                 budget.exceeded()
         );
     }

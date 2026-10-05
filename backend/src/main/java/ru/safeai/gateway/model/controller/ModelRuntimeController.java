@@ -24,22 +24,14 @@ public class ModelRuntimeController {
             RuntimeModelStatusService statusService,
             RuntimeModelProbeService probeService
     ) {
-        this.statusService = Objects.requireNonNull(
-                statusService,
-                "statusService не должен быть null"
-        );
-        this.probeService = Objects.requireNonNull(
-                probeService,
-                "probeService не должен быть null"
-        );
+        this.statusService = Objects.requireNonNull(statusService, "statusService не должен быть null");
+        this.probeService = Objects.requireNonNull(probeService, "probeService не должен быть null");
     }
 
     @GetMapping("/runtime")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public RuntimeModelStatusWireResponse runtime() {
-        return RuntimeModelStatusWireResponse.from(
-                statusService.current()
-        );
+        return RuntimeModelStatusWireResponse.from(statusService.current());
     }
 
     /** Performs a metadata-only provider/model availability check. */

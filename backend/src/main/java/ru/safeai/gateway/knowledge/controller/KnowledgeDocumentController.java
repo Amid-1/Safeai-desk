@@ -1,5 +1,6 @@
 package ru.safeai.gateway.knowledge.controller;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -118,12 +119,11 @@ public class KnowledgeDocumentController {
         );
     }
 
-
     @PatchMapping("/{documentId}")
     public KnowledgeDocumentResponse update(
             @PathVariable UUID knowledgeBaseId,
             @PathVariable UUID documentId,
-            @jakarta.validation.Valid
+            @Valid
             @RequestBody
             UpdateKnowledgeDocumentRequest request,
             @AuthenticationPrincipal(errorOnInvalidType = true)
@@ -137,9 +137,7 @@ public class KnowledgeDocumentController {
         );
     }
 
-    @PostMapping(
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-    )
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public KnowledgeDocumentResponse upload(
             @PathVariable UUID knowledgeBaseId,
@@ -196,9 +194,7 @@ public class KnowledgeDocumentController {
         );
     }
 
-    @GetMapping(
-            "/{documentId}/versions/{versionId}/download"
-    )
+    @GetMapping("/{documentId}/versions/{versionId}/download")
     public ResponseEntity<Resource> downloadVersion(
             @PathVariable UUID knowledgeBaseId,
             @PathVariable UUID documentId,
@@ -222,9 +218,10 @@ public class KnowledgeDocumentController {
         MediaType mediaType;
 
         try {
-            mediaType = MediaType.parseMediaType(
-                    value.mediaType()
-            );
+            mediaType =
+                    MediaType.parseMediaType(
+                            value.mediaType()
+                    );
         } catch (InvalidMediaTypeException exception) {
             mediaType =
                     MediaType.APPLICATION_OCTET_STREAM;

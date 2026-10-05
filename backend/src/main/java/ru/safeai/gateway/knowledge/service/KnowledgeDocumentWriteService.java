@@ -135,7 +135,7 @@ public class KnowledgeDocumentWriteService {
                         user
                 );
 
-        return publishVersion(
+        return registerUploadedVersion(
                 document,
                 version,
                 storageKey,
@@ -207,7 +207,7 @@ public class KnowledgeDocumentWriteService {
             throw exception;
         }
 
-        return publishVersion(
+        return registerUploadedVersion(
                 document,
                 version,
                 storageKey,
@@ -217,11 +217,13 @@ public class KnowledgeDocumentWriteService {
 
 
     /**
-     * Shared metadata-publication sequence for initial and subsequent versions.
+     * Shared upload-registration sequence for initial and subsequent versions.
      * Called only from the public transactional entry points; all JPA writes,
      * audit evidence and STORED -> LINKED stay in the SAME database transaction.
+     * currentVersionId tracks the latest upload only; V63 advances
+     * searchableVersionId later, atomically with successful READY publication.
      */
-    private KnowledgeDocumentResponse publishVersion(
+    private KnowledgeDocumentResponse registerUploadedVersion(
             KnowledgeDocumentEntity document,
             KnowledgeDocumentVersionEntity version,
             String storageKey,

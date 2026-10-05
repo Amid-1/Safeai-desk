@@ -2,36 +2,43 @@ package ru.safeai.gateway.chat.integration;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
+import ru.safeai.gateway.ai.input.AiRequestFingerprint;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.service.ChatContentNormalizer;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
+import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelRouteRequest;
 import ru.safeai.gateway.model.domain.ModelRouteResult;
+import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
+import ru.safeai.gateway.model.repository.ModelRouteRequestBindingRepository;
+import ru.safeai.gateway.model.repository.ModelRouteRequestMutexRepository;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
 import ru.safeai.gateway.model.service.ModelRouteReservedRequestService;
 import ru.safeai.gateway.model.service.ModelRoutingService;
 import ru.safeai.gateway.model.service.RuntimeModelStatusService;
 import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
-import org.springframework.dao.DataAccessException;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.test.context.ActiveProfiles;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -254,18 +261,26 @@ class ChatDatabaseStateConstraintIntegrationTest
                 execution.attemptId()
         )).isInstanceOf(DataAccessException.class);
 
-        Map<String, Object> persisted = jdbcTemplate.queryForMap(
+        String persistedOutcome = requiredStringScalar(
                 """
-                select outcome, deployment_ref
+                select outcome
+                from public.model_execution_attempts
+                where id = ?
+                """,
+                execution.attemptId()
+        );
+        String persistedDeploymentRef = requiredStringScalar(
+                """
+                select deployment_ref
                 from public.model_execution_attempts
                 where id = ?
                 """,
                 execution.attemptId()
         );
 
-        assertThat(persisted.get("outcome"))
+        assertThat(persistedOutcome)
                 .isEqualTo("STARTED");
-        assertThat(persisted.get("deployment_ref"))
+        assertThat(persistedDeploymentRef)
                 .isEqualTo("static:openai:gpt-test");
     }
 
@@ -301,38 +316,53 @@ class ChatDatabaseStateConstraintIntegrationTest
 
         assertThat(updated).isEqualTo(1);
 
-        Map<String, Object> evidence = jdbcTemplate.queryForMap(
-                """
-                select outcome, input_tokens, cached_input_tokens,
-                       cache_write_input_tokens, output_tokens,
-                       pricing_status, cost_usd, price_book_version
-                from public.model_execution_attempts
-                where id = ?
-                """,
-                execution.attemptId()
+        AttemptEvidence evidence = Objects.requireNonNull(
+                jdbcTemplate.queryForObject(
+                        """
+                        select outcome, input_tokens, cached_input_tokens,
+                               cache_write_input_tokens, output_tokens,
+                               pricing_status, cost_usd, price_book_version
+                        from public.model_execution_attempts
+                        where id = ?
+                        """,
+                        (resultSet, rowNum) -> new AttemptEvidence(
+                                resultSet.getString("outcome"),
+                                resultSet.getLong("input_tokens"),
+                                resultSet.getLong("cached_input_tokens"),
+                                resultSet.getLong("cache_write_input_tokens"),
+                                resultSet.getLong("output_tokens"),
+                                resultSet.getString("pricing_status"),
+                                resultSet.getBigDecimal("cost_usd"),
+                                resultSet.getString("price_book_version")
+                        ),
+                        execution.attemptId()
+                ),
+                "Execution evidence row must exist"
         );
 
-        assertThat(evidence.get("outcome"))
+        assertThat(evidence.outcome())
                 .isEqualTo("SUCCEEDED");
-        assertThat(evidence.get("input_tokens"))
-                .isEqualTo(100);
-        assertThat(evidence.get("cached_input_tokens"))
-                .isEqualTo(80);
-        assertThat(evidence.get("cache_write_input_tokens"))
-                .isEqualTo(10);
-        assertThat(evidence.get("output_tokens"))
-                .isEqualTo(20);
-        assertThat(evidence.get("pricing_status"))
+        assertThat(evidence.inputTokens())
+                .isEqualTo(100L);
+        assertThat(evidence.cachedInputTokens())
+                .isEqualTo(80L);
+        assertThat(evidence.cacheWriteInputTokens())
+                .isEqualTo(10L);
+        assertThat(evidence.outputTokens())
+                .isEqualTo(20L);
+        assertThat(evidence.pricingStatus())
                 .isEqualTo("FREE");
-        assertThat(evidence.get("price_book_version"))
+        assertThat(evidence.costUsd())
+                .isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(evidence.priceBookVersion())
                 .isEqualTo("mock-2026-01");
     }
 
     /**
-     * V53/V54 permit physical execution only for an exact catalog-backed v3
-     * ALLOWED route, committed ChatTurn and immutable pre-RAG request seal.
-     * Prepare all four records atomically; do not weaken DB constraints or
-     * create a legacy catalog-less plan for a physical-attempt test.
+     * V53-V65 permit physical execution only for an exact catalog-backed v3
+     * ALLOWED route with tenant policy, committed GENERAL ChatTurn, immutable
+     * pre-RAG seal and V64 binding_version=2 prepared-request receipt.
+     * Keep the entire fixture atomic; never weaken DB constraints for this test.
      */
     private ExecutionIds insertStartedExecutionAttempt() {
         // Catalog is append-only and survives other methods in this test class.
@@ -373,6 +403,12 @@ class ChatDatabaseStateConstraintIntegrationTest
 
         ModelCatalogRepository catalog =
                 new ModelCatalogRepository(jdbcTemplate);
+        OrganizationModelPolicyRepository policyRepository =
+                new OrganizationModelPolicyRepository(jdbcTemplate);
+        ModelRouteDecisionRepository decisionRepository =
+                new ModelRouteDecisionRepository(jdbcTemplate);
+        ModelRouteRequestBindingRepository bindingRepository =
+                new ModelRouteRequestBindingRepository(jdbcTemplate);
 
         RuntimeModelStatusService runtime =
                 mock(RuntimeModelStatusService.class);
@@ -380,8 +416,9 @@ class ChatDatabaseStateConstraintIntegrationTest
 
         ModelRoutingService routing = new ModelRoutingService(
                 catalog,
-                new OrganizationModelPolicyRepository(jdbcTemplate),
-                new ModelRouteDecisionRepository(jdbcTemplate),
+                policyRepository,
+                decisionRepository,
+                new ModelRouteRequestMutexRepository(jdbcTemplate),
                 runtime,
                 mock(AuditEventService.class),
                 ModelTestFixtures.CLOCK
@@ -411,9 +448,12 @@ class ChatDatabaseStateConstraintIntegrationTest
                         List.of(new SimpleGrantedAuthority("ROLE_USER"))
                 );
 
-        // The catalog, route->planned-turn FK, turn, seal, plan and attempt
-        // must commit atomically. No orphaned fixture rows on setup failure.
-        return new TransactionTemplate(transactionManager).execute(tx -> {
+        // The policy, catalog, route->planned-turn FK, turn, base seal, V64
+        // prepared binding, execution plan and physical attempt commit atomically.
+        // This fixture follows the same fail-closed boundaries as production.
+        return Objects.requireNonNull(
+                new TransactionTemplate(transactionManager).execute(tx -> {
+            ensureAllowAllModelPolicy(policyRepository);
             catalog.insert(entry);
             ModelRouteResult route = routing.decide(
                     new ModelRouteRequest(
@@ -446,11 +486,12 @@ class ChatDatabaseStateConstraintIntegrationTest
                         provider_operation_id, user_message_id,
                         state, processing_token, lease_until,
                         provider_call_started_at, provider, requested_model,
+                        knowledge_mode, knowledge_base_id,
                         model_route_decision_id, outcome_ambiguous,
                         created_at, updated_at, version
                     ) values (
                         ?, ?, ?, ?, ?, ?, ?, ?, 'PROCESSING', ?, ?,
-                        ?, ?, ?, ?, false, ?, ?, 0
+                        ?, ?, ?, 'GENERAL', null, ?, false, ?, ?, 0
                     )
                     """,
                     turnId,
@@ -490,6 +531,40 @@ class ChatDatabaseStateConstraintIntegrationTest
                     baseRequest,
                     null,
                     KnowledgeMode.GENERAL
+            );
+
+            String sealedBaseRequestSha256 = requiredStringScalar(
+                    """
+                    select base_request_sha256
+                    from public.model_route_reserved_requests
+                    where model_route_decision_id = ?
+                      and chat_turn_id = ?
+                      and provider_operation_id = ?
+                    """,
+                    route.decisionId(),
+                    turnId,
+                    providerOperationId
+            );
+            long preparedInputUnits =
+                    AiInputUnitEstimator.estimatePreparedRequest(baseRequest);
+            assertThat(preparedInputUnits)
+                    .isLessThanOrEqualTo(route.estimatedInputTokens());
+
+            bindingRepository.insertPreparedIfAbsent(
+                    new ModelRouteRequestBindingRepository.PreparedBinding(
+                            route.decisionId(),
+                            turnId,
+                            providerOperationId,
+                            sealedBaseRequestSha256,
+                            AiRequestFingerprint.preparedSha256(baseRequest),
+                            AiInputUnitEstimator.VERSION,
+                            preparedInputUnits,
+                            EXECUTION_AT,
+                            null,
+                            null,
+                            null,
+                            (short) 2
+                    )
             );
 
             UUID planId = UUID.randomUUID();
@@ -542,7 +617,50 @@ class ChatDatabaseStateConstraintIntegrationTest
             );
 
             return new ExecutionIds(planId, attemptId);
-        });
+        }),
+                "Execution fixture transaction must return identifiers"
+        );
+    }
+
+    private void ensureAllowAllModelPolicy(
+            OrganizationModelPolicyRepository policyRepository
+    ) {
+        policyRepository.lockOrganization(ORGANIZATION_ID);
+        int nextVersion = policyRepository.findLatest(ORGANIZATION_ID)
+                .map(OrganizationModelPolicy::version)
+                .orElse(0) + 1;
+
+        policyRepository.insert(
+                new OrganizationModelPolicy(
+                        UUID.randomUUID(),
+                        ORGANIZATION_ID,
+                        nextVersion,
+                        true,
+                        Set.of(),
+                        Set.of(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        BudgetEnforcement.SOFT,
+                        false,
+                        false,
+                        false,
+                        USER_ID,
+                        EXECUTION_AT.minusSeconds(90)
+                )
+        );
+    }
+
+    private String requiredStringScalar(
+            String sql,
+            Object... arguments
+    ) {
+        return Objects.requireNonNull(
+                jdbcTemplate.queryForObject(sql, String.class, arguments),
+                "Required database scalar must not be null"
+        );
     }
 
     private UUID processingTurnWithUserMessage() {
@@ -566,9 +684,31 @@ class ChatDatabaseStateConstraintIntegrationTest
         );
     }
 
+    private record AttemptEvidence(
+            String outcome,
+            long inputTokens,
+            long cachedInputTokens,
+            long cacheWriteInputTokens,
+            long outputTokens,
+            String pricingStatus,
+            BigDecimal costUsd,
+            String priceBookVersion
+    ) {
+        private AttemptEvidence {
+            Objects.requireNonNull(outcome, "outcome");
+            Objects.requireNonNull(pricingStatus, "pricingStatus");
+            Objects.requireNonNull(costUsd, "costUsd");
+            Objects.requireNonNull(priceBookVersion, "priceBookVersion");
+        }
+    }
+
     private record ExecutionIds(
             UUID planId,
             UUID attemptId
     ) {
+        private ExecutionIds {
+            Objects.requireNonNull(planId, "planId");
+            Objects.requireNonNull(attemptId, "attemptId");
+        }
     }
 }

@@ -7,11 +7,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.dto.CreateOrganizationModelPolicyVersionRequest;
@@ -20,7 +22,6 @@ import ru.safeai.gateway.model.testsupport.ModelTestFixtures;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashSet;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -209,7 +211,7 @@ class OrganizationModelPolicyServiceTest {
     }
 
     @Test
-    void modelKeysAreCanonicalizedDeduplicatedAndSorted() {
+    void modelKeysAreCanonicalizedAndSorted() {
         when(repository.lockOrganization(
                 ModelTestFixtures.ORGANIZATION_ID
         )).thenReturn(true);
@@ -234,6 +236,22 @@ class OrganizationModelPolicyServiceTest {
                 .containsExactly("a:model", "z:model");
         assertThat(captor.getValue().defaultModelKey())
                 .isEqualTo("a:model");
+    }
+
+    @Test
+    void duplicateCanonicalModelKeysAreRejectedBeforeInsert() {
+        Set<String> allow = new LinkedHashSet<>();
+        allow.add(" Z:Model ");
+        allow.add("z:model");
+        CreateOrganizationModelPolicyVersionRequest request = new CreateOrganizationModelPolicyVersionRequest(
+                0, true, allow, Set.of(), null, null, null, null, null,
+                BudgetEnforcement.SOFT, false, false, false
+        );
+        stubReadyForFirstVersion();
+        assertThatThrownBy(() -> service.createVersion(
+                ModelTestFixtures.ORGANIZATION_ID, request, ModelTestFixtures.adminPrincipal()
+        )).isInstanceOf(BadRequestException.class);
+        verify(repository, never()).insert(any());
     }
 
     @Test
@@ -339,18 +357,12 @@ class OrganizationModelPolicyServiceTest {
                 principal
         );
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, Object>> captor =
-                ArgumentCaptor.forClass(Map.class);
+        var details =
+                requirePolicyCreatedAuditDetails(
+                        principal
+                ).toMap();
 
-        verify(audit).record(
-                same(principal),
-                eq(ModelTestFixtures.ORGANIZATION_ID),
-                eq(AuditEventType.MODEL_POLICY_VERSION_CREATED),
-                captor.capture()
-        );
-
-        assertThat(captor.getValue())
+        assertThat(details)
                 .containsEntry("organizationId", ModelTestFixtures.ORGANIZATION_ID)
                 .containsEntry("version", 1)
                 .containsEntry("enabled", true)
@@ -368,11 +380,11 @@ class OrganizationModelPolicyServiceTest {
                         "denyModelKeys"
                 );
 
-        assertThat(captor.getValue().get("allowModelKeysSha256"))
+        assertThat(details.get("allowModelKeysSha256"))
                 .asString()
                 .matches("[0-9a-f]{64}");
 
-        assertThat(captor.getValue().get("denyModelKeysSha256"))
+        assertThat(details.get("denyModelKeysSha256"))
                 .asString()
                 .matches("[0-9a-f]{64}");
     }
@@ -415,18 +427,12 @@ class OrganizationModelPolicyServiceTest {
                 principal
         );
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, Object>> captor =
-                ArgumentCaptor.forClass(Map.class);
+        var details =
+                requirePolicyCreatedAuditDetails(
+                        principal
+                ).toMap();
 
-        verify(audit).record(
-                same(principal),
-                eq(ModelTestFixtures.ORGANIZATION_ID),
-                eq(AuditEventType.MODEL_POLICY_VERSION_CREATED),
-                captor.capture()
-        );
-
-        assertThat(captor.getValue())
+        assertThat(details)
                 .containsEntry("organizationId", ModelTestFixtures.ORGANIZATION_ID)
                 .containsEntry("version", 1)
                 .containsEntry("enabled", true)
@@ -457,6 +463,67 @@ class OrganizationModelPolicyServiceTest {
                 );
     }
 
+    /**
+     * Verifies the exact typed AuditDetails overload for the fixture tenant
+     * and returns the single immutable policy-audit payload passed by the service.
+     *
+     * <p>AuditEventService also exposes a Map-based overload. A typed matcher
+     * pins verification to the production AuditDetails overload. The invocation
+     * is then selected by its declared fourth parameter type, so this test does
+     * not depend on the synthetic class name of the lambda returned by
+     * OrganizationModelPolicyAuditDetailsFactory.</p>
+     */
+    private AuditDetails requirePolicyCreatedAuditDetails(
+            SafeAiUserPrincipal principal
+    ) {
+        verify(audit).record(
+                same(principal),
+                eq(ModelTestFixtures.ORGANIZATION_ID),
+                eq(AuditEventType.MODEL_POLICY_VERSION_CREATED),
+                isA(AuditDetails.class)
+        );
+
+        var matches =
+                org.mockito.Mockito.mockingDetails(audit)
+                        .getInvocations()
+                        .stream()
+                        .filter(invocation ->
+                                "record".equals(
+                                        invocation.getMethod().getName()
+                                )
+                        )
+                        .filter(invocation ->
+                                invocation.getMethod().getParameterCount() == 4
+                        )
+                        .filter(invocation ->
+                                invocation.getMethod()
+                                        .getParameterTypes()[3]
+                                        == AuditDetails.class
+                        )
+                        .filter(invocation ->
+                                invocation.getArgument(0) == principal
+                        )
+                        .filter(invocation ->
+                                ModelTestFixtures.ORGANIZATION_ID.equals(
+                                        invocation.getArgument(1)
+                                )
+                        )
+                        .filter(invocation ->
+                                AuditEventType.MODEL_POLICY_VERSION_CREATED
+                                        == invocation.getArgument(2)
+                        )
+                        .map(invocation ->
+                                invocation.<AuditDetails>getArgument(3)
+                        )
+                        .toList();
+
+        assertThat(matches)
+                .as("exactly one typed policy-created audit invocation")
+                .hasSize(1);
+
+        return matches.getFirst();
+    }
+
     private void stubReadyForFirstVersion() {
         when(repository.lockOrganization(
                 ModelTestFixtures.ORGANIZATION_ID
@@ -471,7 +538,6 @@ class OrganizationModelPolicyServiceTest {
         Set<String> allow = new LinkedHashSet<>();
         allow.add(" Z:Model ");
         allow.add("a:model");
-        allow.add("z:model");
 
         return new CreateOrganizationModelPolicyVersionRequest(
                 0,

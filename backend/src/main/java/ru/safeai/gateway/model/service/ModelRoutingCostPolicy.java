@@ -1,12 +1,6 @@
 package ru.safeai.gateway.model.service;
 
-import ru.safeai.gateway.ai.input.AiInputUnitEstimator;
-import ru.safeai.gateway.model.domain.BudgetEnforcement;
-import ru.safeai.gateway.model.domain.ModelCatalogEntry;
-import ru.safeai.gateway.model.domain.ModelPricingStatus;
-import ru.safeai.gateway.model.domain.ModelRouteReason;
-import ru.safeai.gateway.model.domain.ModelRouteRequest;
-import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
+import ru.safeai.gateway.model.domain.*;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
 
@@ -111,14 +105,19 @@ final class ModelRoutingCostPolicy {
                         periodEnd
                 );
 
-        BigDecimal spent = commitment.committedCostUsd();
+        BigDecimal committed = commitment.committedCostUsd();
         boolean valid = !ModelControlPlaneNumericValidation
-                .violatesNonNegativeNumeric30Scale12(spent);
+                .violatesNonNegativeNumeric30Scale12(committed)
+                && !ModelControlPlaneNumericValidation
+                .violatesNonNegativeNumeric30Scale12(commitment.actualCostUsd())
+                && !ModelControlPlaneNumericValidation
+                .violatesNonNegativeNumeric30Scale12(commitment.reservedCostUsd());
 
         return new BudgetContext(
                 true,
                 valid,
-                spent,
+                commitment.actualCostUsd(),
+                commitment.reservedCostUsd(),
                 commitment.unknownCommittedCostCount()
         );
     }
@@ -137,89 +136,121 @@ final class ModelRoutingCostPolicy {
         Objects.requireNonNull(policy, "policy не должен быть null при budget evaluation");
 
         if (!context.valid()) {
-            return unverifiableBudget(policy);
+            return unverifiableBudget(
+                    policy,
+                    context.actualCostUsd(),
+                    context.reservedCostUsd(),
+                    context.unknownCommittedCostCount()
+            );
         }
 
         BigDecimal spent = context.committedCostUsd();
 
         boolean currentCostKnown =
                 currentPricing.complete()
-                        && currentPricing.cost() != null;
+                        && !ModelControlPlaneNumericValidation
+                                .violatesNonNegativeNumeric30Scale12(currentPricing.cost());
 
         boolean costKnown =
                 context.unknownCommittedCostCount() == 0L
                         && currentCostKnown;
 
-        /*
-         * committedCostUsd is a known lower bound when historical rows with
-         * unknown cost exist. A complete current request cost can safely be
-         * added to that lower bound. This allows us to distinguish a budget
-         * that is already provably exceeded from one that is merely
-         * unverifiable.
-         */
-        BigDecimal knownLowerBound =
-                currentCostKnown
-                        ? spent.add(
-                                currentPricing.cost()
-                        )
-                        : spent;
-
-        if (ModelControlPlaneNumericValidation
-                .violatesNonNegativeNumeric30Scale12(
-                        knownLowerBound
-                )) {
-            return unverifiableBudget(
-                    policy
+        if (!costKnown) {
+            // V62 keeps exactness and overrun as independent facts. Unknown
+            // liability does not erase a budget overrun that is already proven
+            // by the known committed amount plus any known current estimate.
+            boolean exceeded = knownCommitmentExceedsBudget(
+                    spent,
+                    currentPricing.complete() ? currentPricing.cost() : null,
+                    policy.monthlyBudgetUsd()
             );
-        }
+            ModelRouteReason denialReason = null;
+            if (policy.budgetEnforcement() == BudgetEnforcement.HARD) {
+                denialReason = exceeded
+                        ? ModelRouteReason.MONTHLY_BUDGET_EXCEEDED
+                        : ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE;
+            }
+            long unknownLiabilityCount = Math.addExact(
+                    context.unknownCommittedCostCount(),
+                    currentCostKnown ? 0L : 1L
+            );
+            MonthlyCommitmentState state = exceeded
+                    ? MonthlyCommitmentState.UNKNOWN_EXCEEDED_LOWER_BOUND
+                    : policy.budgetEnforcement() == BudgetEnforcement.HARD
+                    ? MonthlyCommitmentState.UNVERIFIABLE
+                    : MonthlyCommitmentState.UNKNOWN_WITHIN_LOWER_BOUND;
 
-        BigDecimal projected =
-                costKnown
-                        ? knownLowerBound
-                        : null;
-
-        boolean provenExceeded =
-                knownLowerBound.compareTo(
-                        policy.monthlyBudgetUsd()
-                ) > 0;
-
-        if (policy.budgetEnforcement()
-                == BudgetEnforcement.HARD
-                && provenExceeded) {
             return new BudgetSnapshot(
                     policy.monthlyBudgetUsd(),
-                    spent,
-                    projected,
-                    costKnown,
-                    true,
-                    ModelRouteReason.MONTHLY_BUDGET_EXCEEDED
-            );
-        }
-
-        if (policy.budgetEnforcement()
-                == BudgetEnforcement.HARD
-                && !costKnown) {
-            return new BudgetSnapshot(
-                    policy.monthlyBudgetUsd(),
-                    spent,
+                    context.actualCostUsd(),
+                    context.reservedCostUsd(),
+                    unknownLiabilityCount,
                     null,
                     false,
-                    false,
-                    ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE
+                    exceeded,
+                    denialReason,
+                    state
             );
         }
-
+        BigDecimal projected = spent.add(currentPricing.cost());
+        if (ModelControlPlaneNumericValidation
+                .violatesNonNegativeNumeric30Scale12(projected)) {
+            return unverifiableBudget(
+                    policy,
+                    context.actualCostUsd(),
+                    context.reservedCostUsd(),
+                    0L
+            );
+        }
+        boolean exceeded = projected.compareTo(policy.monthlyBudgetUsd()) > 0;
         return new BudgetSnapshot(
                 policy.monthlyBudgetUsd(),
-                spent,
+                context.actualCostUsd(),
+                context.reservedCostUsd(),
+                0L,
                 projected,
-                costKnown,
-                provenExceeded,
-                null
+                true,
+                exceeded,
+                policy.budgetEnforcement() == BudgetEnforcement.HARD && exceeded
+                        ? ModelRouteReason.MONTHLY_BUDGET_EXCEEDED : null,
+                exceeded
+                        ? MonthlyCommitmentState.KNOWN_EXCEEDED
+                        : MonthlyCommitmentState.KNOWN_WITHIN
         );
     }
 
-    private static BudgetSnapshot unverifiableBudget(OrganizationModelPolicy policy) {
+
+    private static boolean knownCommitmentExceedsBudget(
+            BigDecimal committedBeforeRequest,
+            BigDecimal currentKnownEstimate,
+            BigDecimal monthlyBudgetUsd
+    ) {
+        Objects.requireNonNull(committedBeforeRequest, "committedBeforeRequest");
+        Objects.requireNonNull(monthlyBudgetUsd, "monthlyBudgetUsd");
+
+        if (committedBeforeRequest.compareTo(monthlyBudgetUsd) > 0) {
+            return true;
+        }
+        if (currentKnownEstimate == null
+                || ModelControlPlaneNumericValidation
+                        .violatesNonNegativeNumeric30Scale12(currentKnownEstimate)) {
+            return false;
+        }
+
+        // BigDecimal arithmetic itself is unbounded. Even if the sum no longer
+        // fits numeric(30,12), it is certainly above any valid numeric(30,12)
+        // budget because both components are non-negative.
+        BigDecimal knownProjectedCommitment =
+                committedBeforeRequest.add(currentKnownEstimate);
+        return knownProjectedCommitment.compareTo(monthlyBudgetUsd) > 0;
+    }
+
+    private static BudgetSnapshot unverifiableBudget(
+            OrganizationModelPolicy policy,
+            BigDecimal actualCostUsd,
+            BigDecimal reservedCostUsd,
+            long unknownCostCount
+    ) {
         ModelRouteReason denialReason =
                 policy.budgetEnforcement() == BudgetEnforcement.HARD
                         ? ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE
@@ -227,11 +258,14 @@ final class ModelRoutingCostPolicy {
 
         return new BudgetSnapshot(
                 policy.monthlyBudgetUsd(),
-                null,
+                actualCostUsd,
+                reservedCostUsd,
+                Math.max(unknownCostCount, 0L),
                 null,
                 false,
                 false,
-                denialReason
+                denialReason,
+                MonthlyCommitmentState.UNVERIFIABLE
         );
     }
 
@@ -269,10 +303,7 @@ final class ModelRoutingCostPolicy {
 
     long estimateInputTokens(ModelRouteRequest request) {
         Objects.requireNonNull(request, "request");
-        return Math.addExact(
-                AiInputUnitEstimator.estimateBaseRequest(
-                        request.userMessage(), request.history()),
-                request.additionalInputUnitUpperBound());
+        return ModelInputTokenEstimator.estimateRouteRequest(request);
     }
 
     PricingEstimate estimateCost(
@@ -344,43 +375,206 @@ final class ModelRoutingCostPolicy {
     ) {
         BigDecimal inputCost = BigDecimal.valueOf(inputTokens)
                 .multiply(inputRate)
-                .divide(ONE_MILLION, MONEY_SCALE, RoundingMode.HALF_UP);
+                .divide(ONE_MILLION, MONEY_SCALE, RoundingMode.CEILING);
         BigDecimal outputCost = BigDecimal.valueOf(outputTokens)
                 .multiply(outputRate)
-                .divide(ONE_MILLION, MONEY_SCALE, RoundingMode.HALF_UP);
+                .divide(ONE_MILLION, MONEY_SCALE, RoundingMode.CEILING);
 
-        return inputCost.add(outputCost).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        return inputCost.add(outputCost).setScale(MONEY_SCALE, RoundingMode.CEILING);
     }
 
     record PricingEstimate(BigDecimal cost, boolean complete) {
+        PricingEstimate {
+            if (cost != null && ModelControlPlaneNumericValidation
+                    .violatesNonNegativeNumeric30Scale12(cost)) {
+                throw new IllegalArgumentException("Pricing estimate is outside numeric(30,12)");
+            }
+            if (complete && cost == null) {
+                throw new IllegalArgumentException("Complete pricing estimate must have a cost");
+            }
+        }
     }
 
     record BudgetContext(
             boolean evaluated,
             boolean valid,
-            BigDecimal committedCostUsd,
+            BigDecimal actualCostUsd,
+            BigDecimal reservedCostUsd,
             long unknownCommittedCostCount
     ) {
+        BudgetContext {
+            actualCostUsd = actualCostUsd == null ? BigDecimal.ZERO : actualCostUsd;
+            reservedCostUsd = reservedCostUsd == null ? BigDecimal.ZERO : reservedCostUsd;
+            if (actualCostUsd.signum() < 0 || reservedCostUsd.signum() < 0) {
+                throw new IllegalArgumentException("Budget commitment components must be non-negative");
+            }
+            if (unknownCommittedCostCount < 0L) {
+                throw new IllegalArgumentException("unknownCommittedCostCount must be non-negative");
+            }
+            if (!evaluated && (!valid
+                    || actualCostUsd.signum() != 0
+                    || reservedCostUsd.signum() != 0
+                    || unknownCommittedCostCount != 0L)) {
+                throw new IllegalArgumentException("Non-evaluated budget context must be empty");
+            }
+        }
+
+        BigDecimal committedCostUsd() {
+            return actualCostUsd.add(reservedCostUsd);
+        }
+
         static BudgetContext none() {
-            return new BudgetContext(
-                    false,
-                    true,
-                    BigDecimal.ZERO,
-                    0L
-            );
+            return new BudgetContext(false, true, BigDecimal.ZERO, BigDecimal.ZERO, 0L);
         }
     }
 
     record BudgetSnapshot(
             BigDecimal monthlyBudgetUsd,
-            BigDecimal monthlySpentUsd,
+            BigDecimal monthlyActualCostUsd,
+            BigDecimal monthlyReservedCostUsd,
+            long monthlyUnknownCostCount,
             BigDecimal monthlyProjectedUsd,
             boolean monthlyCostKnown,
             boolean exceeded,
-            ModelRouteReason denialReason
+            ModelRouteReason denialReason,
+            MonthlyCommitmentState monthlyCommitmentState
     ) {
+        BudgetSnapshot {
+            Objects.requireNonNull(
+                    monthlyCommitmentState,
+                    "monthlyCommitmentState"
+            );
+
+            if (monthlyBudgetUsd == null) {
+                if (monthlyActualCostUsd != null
+                        || monthlyReservedCostUsd != null
+                        || monthlyUnknownCostCount != 0L
+                        || monthlyProjectedUsd != null
+                        || monthlyCostKnown
+                        || exceeded
+                        || denialReason != null
+                        || monthlyCommitmentState != MonthlyCommitmentState.NOT_EVALUATED) {
+                    throw new IllegalArgumentException(
+                            "Non-evaluated budget snapshot must be empty"
+                    );
+                }
+            } else {
+                if (monthlyBudgetUsd.signum() < 0
+                        || monthlyUnknownCostCount < 0L
+                        || (monthlyActualCostUsd != null
+                            && monthlyActualCostUsd.signum() < 0)
+                        || (monthlyReservedCostUsd != null
+                            && monthlyReservedCostUsd.signum() < 0)
+                        || (monthlyProjectedUsd != null
+                            && monthlyProjectedUsd.signum() < 0)) {
+                    throw new IllegalArgumentException(
+                            "Budget snapshot values must be non-negative"
+                    );
+                }
+
+                boolean actualPresent = monthlyActualCostUsd != null;
+                boolean reservedPresent = monthlyReservedCostUsd != null;
+                if (actualPresent != reservedPresent) {
+                    throw new IllegalArgumentException(
+                            "Actual/reserved commitment components must be present together"
+                    );
+                }
+
+                if (monthlyCostKnown
+                        && (!actualPresent
+                            || monthlyProjectedUsd == null
+                            || monthlyUnknownCostCount != 0L)) {
+                    throw new IllegalArgumentException(
+                            "Known monthly cost requires exact commitment and projection"
+                    );
+                }
+
+                if (!monthlyCostKnown && monthlyProjectedUsd != null) {
+                    throw new IllegalArgumentException(
+                            "Unknown monthly cost cannot expose an exact projection"
+                    );
+                }
+
+                if (denialReason == ModelRouteReason.MONTHLY_BUDGET_EXCEEDED
+                        && !exceeded) {
+                    throw new IllegalArgumentException(
+                            "Budget-exceeded denial requires exceeded=true"
+                    );
+                }
+
+                if (denialReason == ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE
+                        && (monthlyCostKnown || exceeded)) {
+                    throw new IllegalArgumentException(
+                            "Unverifiable budget denial requires unknown, unproven cost"
+                    );
+                }
+
+                switch (monthlyCommitmentState) {
+                    case KNOWN_WITHIN -> {
+                        if (!monthlyCostKnown || exceeded) {
+                            throw new IllegalArgumentException(
+                                    "KNOWN_WITHIN requires known non-exceeded cost"
+                            );
+                        }
+                    }
+                    case KNOWN_EXCEEDED -> {
+                        if (!monthlyCostKnown || !exceeded) {
+                            throw new IllegalArgumentException(
+                                    "KNOWN_EXCEEDED requires known exceeded cost"
+                            );
+                        }
+                    }
+                    case UNKNOWN_WITHIN_LOWER_BOUND -> {
+                        if (monthlyCostKnown
+                                || exceeded
+                                || !actualPresent
+                                || monthlyUnknownCostCount == 0L) {
+                            throw new IllegalArgumentException(
+                                    "UNKNOWN_WITHIN_LOWER_BOUND requires known components plus unknown liability"
+                            );
+                        }
+                    }
+                    case UNKNOWN_EXCEEDED_LOWER_BOUND -> {
+                        if (monthlyCostKnown
+                                || !exceeded
+                                || !actualPresent
+                                || monthlyUnknownCostCount == 0L) {
+                            throw new IllegalArgumentException(
+                                    "UNKNOWN_EXCEEDED_LOWER_BOUND requires unknown liability and proven overrun"
+                            );
+                        }
+                    }
+                    case UNVERIFIABLE -> {
+                        if (monthlyCostKnown || exceeded) {
+                            throw new IllegalArgumentException(
+                                    "UNVERIFIABLE cannot claim exact cost or proven overrun"
+                            );
+                        }
+                    }
+                    case NOT_EVALUATED -> throw new IllegalArgumentException(
+                            "Evaluated budget cannot be NOT_EVALUATED"
+                    );
+                }
+            }
+        }
+
+        BigDecimal monthlyCommittedUsd() {
+            if (monthlyActualCostUsd == null) {
+                return null;
+            }
+            BigDecimal committed = monthlyActualCostUsd.add(monthlyReservedCostUsd);
+            return ModelControlPlaneNumericValidation
+                    .violatesNonNegativeNumeric30Scale12(committed)
+                    ? null
+                    : committed;
+        }
+
         static BudgetSnapshot none() {
-            return new BudgetSnapshot(null, null, null, false, false, null);
+            return new BudgetSnapshot(
+                    null, null, null, 0L, null, false, false, null,
+                    MonthlyCommitmentState.NOT_EVALUATED
+            );
         }
     }
+
 }

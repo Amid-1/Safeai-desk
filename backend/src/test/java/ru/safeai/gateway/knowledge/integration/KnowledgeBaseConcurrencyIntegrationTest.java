@@ -44,15 +44,21 @@ class KnowledgeBaseConcurrencyIntegrationTest
     @Test
     void concurrentEquivalentNames_produceOneSuccessAndOneConflict()
             throws Exception {
-        UUID organizationId = UUID.randomUUID();
-        UUID adminId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
+
+        UUID adminId =
+                UUID.randomUUID();
 
         insertOrganization(
                 organizationId,
                 "Knowledge Base Concurrency "
                         + UUID.randomUUID()
                                 .toString()
-                                .substring(0, 8),
+                                .substring(
+                                        0,
+                                        8
+                                ),
                 true
         );
 
@@ -62,11 +68,17 @@ class KnowledgeBaseConcurrencyIntegrationTest
                 "kb-create-race-"
                         + UUID.randomUUID()
                                 .toString()
-                                .substring(0, 8)
+                                .substring(
+                                        0,
+                                        8
+                                )
                         + "@test.local",
                 true,
                 "ADMIN",
-                Instant.now().minusSeconds(60)
+                Instant.now()
+                        .minusSeconds(
+                                60
+                        )
         );
 
         SafeAiUserPrincipal principal =
@@ -82,29 +94,44 @@ class KnowledgeBaseConcurrencyIntegrationTest
                         )
                 );
 
-        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch start =
+                new CountDownLatch(
+                        1
+                );
 
         try (
                 ExecutorService executor =
-                        Executors.newFixedThreadPool(2)
+                        Executors.newFixedThreadPool(
+                                2
+                        )
         ) {
             Future<CreateOutcome> first =
-                    executor.submit(() -> {
-                        await(start);
-                        return createOutcome(
-                                "Concurrent Runbooks",
-                                principal
-                        );
-                    });
+                    executor.submit(
+                            () -> {
+                                await(
+                                        start
+                                );
+
+                                return createOutcome(
+                                        "Concurrent Runbooks",
+                                        principal
+                                );
+                            }
+                    );
 
             Future<CreateOutcome> second =
-                    executor.submit(() -> {
-                        await(start);
-                        return createOutcome(
-                                "  concurrent   runbooks  ",
-                                principal
-                        );
-                    });
+                    executor.submit(
+                            () -> {
+                                await(
+                                        start
+                                );
+
+                                return createOutcome(
+                                        "  concurrent   runbooks  ",
+                                        principal
+                                );
+                            }
+                    );
 
             try {
                 start.countDown();
@@ -121,29 +148,35 @@ class KnowledgeBaseConcurrencyIntegrationTest
                                 )
                         );
 
-                assertThat(outcomes)
-                        .containsExactlyInAnyOrder(
-                                CreateOutcome.SUCCESS,
-                                CreateOutcome.CONFLICT
-                        );
+                assertThat(
+                        outcomes
+                ).containsExactlyInAnyOrder(
+                        CreateOutcome.SUCCESS,
+                        CreateOutcome.CONFLICT
+                );
             } finally {
                 start.countDown();
             }
         }
 
-        Integer count = jdbcTemplate.queryForObject(
-                """
-                select count(*)
-                from public.knowledge_bases
-                where organization_id = ?
-                  and lower(name) = lower(?)
-                """,
-                Integer.class,
-                organizationId,
-                "Concurrent Runbooks"
-        );
+        Integer count =
+                jdbcTemplate.queryForObject(
+                        """
+                        select count(*)
+                        from public.knowledge_bases
+                        where organization_id = ?
+                          and lower(name) = lower(?)
+                        """,
+                        Integer.class,
+                        organizationId,
+                        "Concurrent Runbooks"
+                );
 
-        assertThat(count).isEqualTo(1);
+        assertThat(
+                count
+        ).isEqualTo(
+                1
+        );
     }
 
     private CreateOutcome createOutcome(
@@ -166,15 +199,21 @@ class KnowledgeBaseConcurrencyIntegrationTest
         }
     }
 
-    private static void await(CountDownLatch latch) {
+    private static void await(
+            CountDownLatch latch
+    ) {
         try {
-            if (!latch.await(15, TimeUnit.SECONDS)) {
+            if (!latch.await(
+                    15,
+                    TimeUnit.SECONDS
+            )) {
                 throw new IllegalStateException(
                         "Concurrency barrier timeout"
                 );
             }
         } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
+            Thread.currentThread()
+                    .interrupt();
 
             throw new IllegalStateException(
                     "Concurrency test interrupted",
