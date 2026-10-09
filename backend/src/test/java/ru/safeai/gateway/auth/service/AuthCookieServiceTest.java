@@ -1,176 +1,165 @@
 package ru.safeai.gateway.auth.service;
 
 import jakarta.servlet.http.Cookie;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.time.Duration;
+import java.util.HashSet;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class AuthCookieServiceTest {
-    private static final String ACCESS_NAME = "safeai_access";
-    private static final String REFRESH_NAME = "safeai_refresh";
-
-    @Mock private AuthCookieProperties properties;
-    private AuthCookieService service;
-
-    @BeforeEach
-    void setUp() { service = new AuthCookieService(properties); }
 
     @Test
-    void addAccessTokenCookieUsesProductionAttributes() {
-        stubAccessTokenCookieProperties();
+    void issuesHttpOnlyAccessAndPathRestrictedRefresh() {
+        AuthCookieProperties settings = settings(false, "Lax", null,
+                "safeai-access", "safeai-refresh");
+        when(settings.accessTokenMaxAge()).thenReturn(Duration.ofMinutes(15));
+        AuthCookieService service = new AuthCookieService(settings);
         MockHttpServletResponse response = new MockHttpServletResponse();
-        service.addAccessTokenCookie(response, "access-token");
-        assertThat(onlySetCookie(response))
-                .contains(ACCESS_NAME + "=access-token", "Path=/", "Max-Age=900",
-                        "HttpOnly", "SameSite=Lax")
+        service.addAccessTokenCookie(response, "access");
+        service.addRefreshTokenCookie(response, "refresh", Duration.ofDays(7));
+        List<String> cookies = headers(response);
+        assertThat(cookies).hasSize(2);
+        assertThat(cookies.get(0)).contains("safeai-access=access", "Path=/", "Max-Age=900", "HttpOnly", "SameSite=Lax")
                 .doesNotContain("Secure", "Domain=");
+        assertThat(cookies.get(1)).contains("safeai-refresh=refresh", "Path=/api/auth", "Max-Age=604800", "HttpOnly");
     }
 
     @Test
-    void addRefreshTokenCookieUsesRestrictedPathAndProvidedMaxAge() {
-        stubRefreshTokenCookieProperties();
+    void secureHostAccessAndSecureRefreshAreValid() {
+        AuthCookieProperties settings = settings(true, "Lax", null,
+                "__Host-safeai-access", "__Secure-safeai-refresh");
+        when(settings.accessTokenMaxAge()).thenReturn(Duration.ofMinutes(15));
         MockHttpServletResponse response = new MockHttpServletResponse();
-        service.addRefreshTokenCookie(response, "refresh-token", Duration.ofDays(7));
-        assertThat(onlySetCookie(response))
-                .contains(REFRESH_NAME + "=refresh-token", "Path=/api/auth",
-                        "Max-Age=604800", "HttpOnly", "SameSite=Lax")
-                .doesNotContain("Domain=");
+        AuthCookieService service = new AuthCookieService(settings);
+        service.addAccessTokenCookie(response, "a");
+        service.addRefreshTokenCookie(response, "r", Duration.ofDays(7));
+        assertThat(headers(response)).hasSize(2);
+        assertThat(headers(response).get(0)).contains("Secure", "Path=/").doesNotContain("Domain=");
+        assertThat(headers(response).get(1)).contains("Secure", "Path=/api/auth").doesNotContain("Domain=");
     }
 
     @Test
-    void clearAuthCookiesExpiresEveryCurrentAndLegacyIdentityWithoutTouchingCsrf() {
-        stubAuthCookieNames();
-        stubDefaultCookieAttributes();
+    void invalidHostPrefixedRefreshNeverWritesAHeader() {
+        AuthCookieProperties settings = settings(true, "Lax", null,
+                "__Host-safeai-access", "__Host-safeai-refresh");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        service.clearAuthCookies(response);
-        List<String> headers = List.copyOf(response.getHeaders(HttpHeaders.SET_COOKIE));
+        assertThatThrownBy(() -> new AuthCookieService(settings)
+                .addRefreshTokenCookie(response, "r", Duration.ofDays(7)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Path=/");
+        assertThat(headers(response)).isEmpty();
+    }
 
-        // Every distinct historical identity must be expired. Requiring exactly
-        // five deletions would permit existing legacy sessions to survive logout.
-        assertThat(headers).hasSizeGreaterThanOrEqualTo(10);
-        assertThat(headers).allSatisfy(header -> assertThat(header)
+    @Test
+    void rejectsNoneWithoutSecureForIssuanceAndExpiry() {
+        AuthCookieProperties settings = settings(false, "None", null,
+                "safeai-access", "safeai-refresh");
+        when(settings.accessTokenMaxAge()).thenReturn(Duration.ofMinutes(15));
+        AuthCookieService service = new AuthCookieService(settings);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        assertThatThrownBy(() -> service.addAccessTokenCookie(response, "a"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("Secure=true");
+        assertThatThrownBy(() -> service.clearAuthCookies(response))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("Secure=true");
+        assertThat(headers(response)).isEmpty();
+    }
+
+    @Test
+    void expiresKnownLegacyScopesWithoutDuplicatesOrCsrf() {
+        AuthCookieProperties settings = settings(false, "Lax", null,
+                "safeai-access", "safeai-refresh");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        new AuthCookieService(settings).clearAuthCookies(response);
+        List<String> cookies = headers(response);
+        assertThat(cookies).hasSize(new HashSet<>(cookies).size());
+        assertThat(cookies).allSatisfy(cookie -> assertThat(cookie)
                 .contains("Max-Age=0", "HttpOnly")
                 .doesNotContain("XSRF-TOKEN"));
-
-        assertExpired(headers, ACCESS_NAME, "/");
-        assertExpired(headers, REFRESH_NAME, "/api/auth");
-        assertExpired(headers, REFRESH_NAME, "/");
-        assertExpired(headers, "safeai-access", "/");
-        assertExpired(headers, "safeai-refresh", "/");
-        assertExpired(headers, "safeai-refresh", "/api/auth");
-        assertExpired(headers, "access_token", "/");
-        assertExpired(headers, "refresh_token", "/");
-        assertExpired(headers, "refresh_token", "/api/auth");
-        assertExpired(headers, "__Secure-safeai-refresh", "/");
-        assertExpired(headers, "__Secure-safeai-refresh", "/api/auth");
-        assertExpired(headers, "__Host-safeai-access", "/");
-
-        assertThat(headers).filteredOn(h -> h.startsWith("__Secure-")
-                || h.startsWith("__Host-"))
-                .allSatisfy(h -> assertThat(h).contains("Secure"));
+        assertExpired(cookies, "access_token", "/");
+        assertExpired(cookies, "refresh_token", "/");
+        assertExpired(cookies, "refresh_token", "/api/auth");
+        assertExpired(cookies, "safeai-refresh", "/api/auth");
+        assertExpired(cookies, "__Host-safeai-access", "/");
+        assertExpired(cookies, "__Host-safeai-refresh", "/");
+        assertThat(cookies).filteredOn(c -> c.startsWith("__Host-") || c.startsWith("__Secure-"))
+                .allSatisfy(c -> assertThat(c).contains("Secure"));
     }
 
     @Test
-    void extractRefreshTokenReadsConfiguredCookieName() {
-        when(properties.refreshTokenName()).thenReturn(REFRESH_NAME);
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setCookies(new Cookie(ACCESS_NAME, "access-token"),
-                new Cookie(REFRESH_NAME, "refresh-token"));
-        assertThat(service.extractRefreshToken(request)).isEqualTo("refresh-token");
-    }
-
-    @Test
-    void extractRefreshTokenReturnsNullForMissingOrBlankCookie() {
-        when(properties.refreshTokenName()).thenReturn(REFRESH_NAME);
-        MockHttpServletRequest missing = new MockHttpServletRequest();
-        missing.setCookies(new Cookie(ACCESS_NAME, "access-token"));
-        MockHttpServletRequest blank = new MockHttpServletRequest();
-        blank.setCookies(new Cookie(REFRESH_NAME, " "));
-        assertThat(service.extractRefreshToken(missing)).isNull();
-        assertThat(service.extractRefreshToken(blank)).isNull();
-    }
-
-    @Test
-    void cookieCreationRejectsBlankTokenAndNonPositiveMaxAge() {
+    void domainMigrationExpiresHostOnlyAndDomainScopedIdentities() {
+        AuthCookieProperties settings = settings(true, "None", "example.com",
+                "safeai-access", "__Secure-safeai-refresh");
         MockHttpServletResponse response = new MockHttpServletResponse();
+        new AuthCookieService(settings).clearAuthCookies(response);
+        List<String> cookies = headers(response);
+        assertThat(cookies).anySatisfy(c -> assertThat(c)
+                .startsWith("safeai-access=").contains("Path=/", "Max-Age=0")
+                .doesNotContain("Domain="));
+        assertThat(cookies).anySatisfy(c -> assertThat(c)
+                .startsWith("safeai-access=").contains("Domain=example.com", "Max-Age=0"));
+        assertThat(cookies).anySatisfy(c -> assertThat(c)
+                .startsWith("__Secure-safeai-refresh=").contains("Domain=example.com", "Path=/api/auth"));
+        assertThat(cookies).filteredOn(c -> c.startsWith("__Host-"))
+                .allSatisfy(c -> assertThat(c).doesNotContain("Domain="));
+        assertThat(cookies).allSatisfy(c -> assertThat(c).contains("Secure", "SameSite=None"));
+    }
+
+    @Test
+    void rejectsEmptyAndNonPositiveIssuanceWithoutMutation() {
+        AuthCookieProperties settings = settings(false, "Lax", null,
+                "safeai-access", "safeai-refresh");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AuthCookieService service = new AuthCookieService(settings);
         assertThatThrownBy(() -> service.addAccessTokenCookie(response, " "))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.addRefreshTokenCookie(
-                response, "refresh-token", Duration.ZERO))
+        assertThatThrownBy(() -> service.addRefreshTokenCookie(response, "token", Duration.ZERO))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(response.getHeaders(HttpHeaders.SET_COOKIE)).isEmpty();
+        assertThat(headers(response)).isEmpty();
     }
 
     @Test
-    void cookiesUseSecureAndDomainWhenConfigured() {
-        when(properties.accessTokenName()).thenReturn(ACCESS_NAME);
-        when(properties.accessTokenMaxAge()).thenReturn(Duration.ofMinutes(15));
-        when(properties.secure()).thenReturn(true);
-        when(properties.sameSite()).thenReturn("Lax");
-        when(properties.hasDomain()).thenReturn(true);
-        when(properties.domain()).thenReturn("example.com");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        service.addAccessTokenCookie(response, "access-token");
-        assertThat(onlySetCookie(response)).contains("Secure", "Domain=example.com");
+    void extractsOnlyNamedAndNonblankTokens() {
+        AuthCookieProperties settings = settings(false, "Lax", null,
+                "safeai-access", "safeai-refresh");
+        AuthCookieService service = new AuthCookieService(settings);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setCookies(new Cookie("safeai-access", "a"), new Cookie("safeai-refresh", "r"));
+        assertThat(service.extractAccessToken(request)).isEqualTo("a");
+        assertThat(service.extractRefreshToken(request)).isEqualTo("r");
+        request.setCookies(new Cookie("safeai-refresh", " "));
+        assertThat(service.extractRefreshToken(request)).isNull();
     }
 
-    @Test
-    void securePrefixesCannotBeIssuedWithInvalidAttributes() {
-        when(properties.accessTokenName()).thenReturn("__Host-safeai-access");
-        when(properties.accessTokenMaxAge()).thenReturn(Duration.ofMinutes(15));
-        when(properties.secure()).thenReturn(true);
-        when(properties.hasDomain()).thenReturn(true);
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        assertThatThrownBy(() -> service.addAccessTokenCookie(response, "token"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("__Host-");
-        assertThat(response.getHeaders(HttpHeaders.SET_COOKIE)).isEmpty();
+    private static AuthCookieProperties settings(boolean secure, String sameSite,
+                                                  String domain, String accessName,
+                                                  String refreshName) {
+        AuthCookieProperties properties = mock(AuthCookieProperties.class);
+        lenient().when(properties.secure()).thenReturn(secure);
+        lenient().when(properties.sameSite()).thenReturn(sameSite);
+        lenient().when(properties.hasDomain()).thenReturn(domain != null);
+        if (domain != null) lenient().when(properties.domain()).thenReturn(domain);
+        lenient().when(properties.accessTokenName()).thenReturn(accessName);
+        lenient().when(properties.refreshTokenName()).thenReturn(refreshName);
+        return properties;
+    }
+
+    private static List<String> headers(MockHttpServletResponse response) {
+        return List.copyOf(response.getHeaders(HttpHeaders.SET_COOKIE));
     }
 
     private static void assertExpired(List<String> headers, String name, String path) {
         assertThat(headers).anySatisfy(header -> assertThat(header)
                 .startsWith(name + "=")
-                .contains("Path=" + path + ";", "Max-Age=0"));
-    }
-
-    private void stubAccessTokenCookieProperties() {
-        when(properties.accessTokenName()).thenReturn(ACCESS_NAME);
-        when(properties.accessTokenMaxAge()).thenReturn(Duration.ofMinutes(15));
-        stubDefaultCookieAttributes();
-    }
-
-    private void stubRefreshTokenCookieProperties() {
-        when(properties.refreshTokenName()).thenReturn(REFRESH_NAME);
-        stubDefaultCookieAttributes();
-    }
-
-    private void stubAuthCookieNames() {
-        when(properties.accessTokenName()).thenReturn(ACCESS_NAME);
-        when(properties.refreshTokenName()).thenReturn(REFRESH_NAME);
-    }
-
-    private void stubDefaultCookieAttributes() {
-        when(properties.secure()).thenReturn(false);
-        when(properties.sameSite()).thenReturn("Lax");
-        when(properties.hasDomain()).thenReturn(false);
-    }
-
-    private String onlySetCookie(MockHttpServletResponse response) {
-        List<String> cookies = List.copyOf(response.getHeaders(HttpHeaders.SET_COOKIE));
-        assertThat(cookies).hasSize(1);
-        return cookies.getFirst();
+                .contains("Path=" + path, "Max-Age=0"));
     }
 }

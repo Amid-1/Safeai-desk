@@ -122,7 +122,7 @@ class AuthCookiePropertiesTest {
                 .isEqualTo("__Host-safeai-access");
 
         assertThat(properties.refreshTokenName())
-                .isEqualTo("__Host-safeai-refresh");
+                .isEqualTo("__Secure-safeai-refresh");
 
         // A __Host- prefix is a stronger contract, not merely a naming convention.
         assertThat(properties.secure()).isTrue();
@@ -554,36 +554,15 @@ class AuthCookiePropertiesTest {
     }
 
     @Test
-    void hostPrefixedRefreshCookieIsRejectedBeforeWritingAnyHeader() {
-        AuthCookieProperties properties = new AuthCookieProperties(
-                true,
-                "Lax",
-                ACCESS_MAX_AGE,
-                REFRESH_MAX_AGE,
-                REFRESH_ABSOLUTE_MAX_AGE,
-                REUSE_DETECTION_RETENTION,
-                null,
-                "__Host-custom-access",
-                "__Host-custom-refresh"
-        );
-
-        // __Host- requires Path=/, while refresh tokens are deliberately scoped
-        // to /api/auth. A forbidden cookie must never be emitted.
-        assertThat(properties.secure()).isTrue();
-        assertThat(properties.hasDomain()).isFalse();
-        assertThat(properties.refreshTokenName()).isEqualTo("__Host-custom-refresh");
-
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        AuthCookieService service = new AuthCookieService(properties);
-
-        assertThatThrownBy(() -> service.addRefreshTokenCookie(
-                response, "test-refresh-token", Duration.ofDays(7)))
+    void hostPrefixedRefreshCookieFailsAtConfigurationBinding() {
+        assertThatThrownBy(() -> new AuthCookieProperties(
+                true, "Lax", ACCESS_MAX_AGE, REFRESH_MAX_AGE,
+                REFRESH_ABSOLUTE_MAX_AGE, REUSE_DETECTION_RETENTION,
+                null, "__Host-custom-access", "__Host-custom-refresh"
+        ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("__Host-")
-                .hasMessageContaining("Path=/")
-                .hasMessageContaining("Domain");
-
-        assertThat(response.getHeaders(HttpHeaders.SET_COOKIE)).isEmpty();
+                .hasMessageContaining("Path=/api/auth");
     }
 
     @Test

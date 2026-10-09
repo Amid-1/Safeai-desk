@@ -22,8 +22,8 @@ public record AuthCookieProperties(
     public static final String HOST_ACCESS_TOKEN_NAME =
             "__Host-safeai-access";
 
-    public static final String HOST_REFRESH_TOKEN_NAME =
-            "__Host-safeai-refresh";
+    public static final String SECURE_REFRESH_TOKEN_NAME =
+            "__Secure-safeai-refresh";
 
     public static final String HOST_CSRF_TOKEN_NAME =
             "__Host-XSRF-TOKEN";
@@ -161,20 +161,15 @@ public record AuthCookieProperties(
                 );
 
         /*
-         * Refresh cookie is Path=/ as well. This is deliberate: production
-         * host-binding through __Host- is stronger against sibling-subdomain
-         * cookie injection than the previous narrower /api/auth path.
+         * Refresh-cookie использует Path=/api/auth. Для такого пути подходит
+         * префикс __Secure-, но не __Host- (требует Path=/).
          */
         refreshTokenName =
                 normalizeCookieName(
                         refreshTokenName,
-                        secure && !hasDomain
-                                ? HOST_REFRESH_TOKEN_NAME
-                                : (
-                                secure
-                                        ? "__Secure-safeai-refresh"
-                                        : "safeai-refresh"
-                        ),
+                        secure
+                                ? SECURE_REFRESH_TOKEN_NAME
+                                : "safeai-refresh",
                         "safeai.auth.cookies.refresh-token-name"
                 );
 
@@ -191,6 +186,14 @@ public record AuthCookieProperties(
                 hasDomain,
                 "refresh-token-name"
         );
+
+        // Fail fast at configuration binding, not during the first refresh.
+        if (refreshTokenName.startsWith("__Host-")) {
+            throw new IllegalStateException(
+                    "refresh-token-name с префиксом __Host- требует Path=/; "
+                            + "refresh cookie использует Path=/api/auth"
+            );
+        }
     }
 
     public boolean hasDomain() {
