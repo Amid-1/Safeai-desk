@@ -10,13 +10,15 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
- * Carries a recorder across adapter internals without leaking Chat concerns
- * into provider implementations. Retry executors call the event methods for
- * every physical HTTP attempt. Adapters which do not implement that contract
- * are rejected by {@link AiExecutionService} before provider I/O.
+ * Carries durable physical-attempt recording across provider adapter internals.
+ *
+ * <p>A real provider call is legal only while a governed execution scope is
+ * active for the exact provider operation. This makes the attempt ledger a
+ * runtime invariant instead of a convention followed only by AiExecutionService.</p>
  */
 @Component
 public class AiExecutionAttemptScope {
+
     private final ThreadLocal<State> current = new ThreadLocal<>();
 
     public <T extends AiChatResponse> T execute(
@@ -27,9 +29,6 @@ public class AiExecutionAttemptScope {
         return execute(operationId, observer, Integer.MAX_VALUE, action);
     }
 
-    /**
-     * maxCalls=1 disables retries for HARD financial reservations.
-     */
     public <T extends AiChatResponse> T execute(
             UUID operationId,
             AiExecutionAttemptObserver observer,
@@ -39,30 +38,16 @@ public class AiExecutionAttemptScope {
         if (maxCalls < 1) {
             throw new IllegalArgumentException("maxCalls must be positive");
         }
-        Objects.requireNonNull(
-                operationId,
-                "operationId не должен быть null"
-        );
-        Objects.requireNonNull(
-                observer,
-                "observer не должен быть null"
-        );
-        Objects.requireNonNull(
-                action,
-                "action не должен быть null"
-        );
+
+        Objects.requireNonNull(operationId, "operationId не должен быть null");
+        Objects.requireNonNull(observer, "observer не должен быть null");
+        Objects.requireNonNull(action, "action не должен быть null");
 
         if (current.get() != null) {
-            throw new IllegalStateException(
-                    "Nested AI execution scope is forbidden"
-            );
+            throw new IllegalStateException("Nested AI execution scope is forbidden");
         }
 
-        State state = new State(
-                operationId,
-                observer,
-                maxCalls
-        );
+        State state = new State(operationId, observer, maxCalls);
         current.set(state);
 
         try {
@@ -100,13 +85,29 @@ public class AiExecutionAttemptScope {
         }
     }
 
-    public void started(AiProviderAttemptContext attempt) {
+    /**
+     * Fail-closed physical-I/O gate.
+     *
+     * <p>Provider adapters/retry executors must call this before creating an
+     * attempt and before issuing network I/O.</p>
+     */
+    public void requireActive(UUID operationId) {
+        Objects.requireNonNull(operationId, "operationId не должен быть null");
+
         State state = required();
 
-        Objects.requireNonNull(
-                attempt,
-                "attempt не должен быть null"
-        );
+        if (!state.operationId.equals(operationId)) {
+            throw new IllegalStateException(
+                    "AI provider operationId does not match the active governed execution"
+            );
+        }
+    }
+
+    public void started(AiProviderAttemptContext attempt) {
+        State state = required();
+        Objects.requireNonNull(attempt, "attempt не должен быть null");
+
+        requireActive(attempt.operationId());
 
         if (state.activeAttempt != null) {
             throw new IllegalStateException(
@@ -114,14 +115,7 @@ public class AiExecutionAttemptScope {
             );
         }
 
-        if (!state.operationId.equals(attempt.operationId())) {
-            throw new IllegalStateException(
-                    "AI execution attempt operationId does not match the active execution"
-            );
-        }
-
-        if (attempt.attemptNumber()
-                != state.lastAttemptNumber + 1) {
+        if (attempt.attemptNumber() != state.lastAttemptNumber + 1) {
             throw new IllegalStateException(
                     "AI execution attempts must be reported sequentially"
             );
@@ -142,17 +136,14 @@ public class AiExecutionAttemptScope {
         try {
             state.observer.succeeded(attempt, response);
         } catch (AiProviderException governanceRejection) {
-            // Observer already stored the physical success before evaluating
-            // resolved-model approval; this is not a failed HTTP attempt.
+            // Physical success was already persisted by the observer.
             throw governanceRejection;
         } catch (RuntimeException terminalPersistenceFailure) {
-            // The provider definitely returned, but an interrupted/failed
-            // DB acknowledgement cannot prove whether the SUCCEEDED commit
-            // happened. Never retry or overwrite terminal V51 evidence.
             throw new PhysicalAttemptReconciliationRequiredException(
-                    attempt.attemptId(), terminalPersistenceFailure);
+                    attempt.attemptId(),
+                    terminalPersistenceFailure
+            );
         } finally {
-            // No further physical call can be made in this execution scope.
             state.activeAttempt = null;
         }
     }
@@ -180,13 +171,15 @@ public class AiExecutionAttemptScope {
     }
 
     public int permittedMaxAttempts(int requested) {
-        State state = current.get();
-        return state == null ? requested : Math.min(requested, state.maxCalls);
+        if (requested < 1) {
+            throw new IllegalArgumentException("requested must be positive");
+        }
+
+        State state = required();
+        return Math.min(requested, state.maxCalls);
     }
 
-    public boolean hasActiveAttempt(
-            AiProviderAttemptContext attempt
-    ) {
+    public boolean hasActiveAttempt(AiProviderAttemptContext attempt) {
         State state = current.get();
 
         return state != null
@@ -195,6 +188,8 @@ public class AiExecutionAttemptScope {
     }
 
     private State active(AiProviderAttemptContext attempt) {
+        Objects.requireNonNull(attempt, "attempt не должен быть null");
+
         State state = required();
 
         if (state.activeAttempt == null
@@ -211,8 +206,7 @@ public class AiExecutionAttemptScope {
             State state,
             AiProviderException primary
     ) {
-        AiProviderAttemptContext attempt =
-                state.activeAttempt;
+        AiProviderAttemptContext attempt = state.activeAttempt;
 
         try {
             failed(attempt, primary);
@@ -225,8 +219,7 @@ public class AiExecutionAttemptScope {
             State state,
             RuntimeException primary
     ) {
-        AiProviderAttemptContext attempt =
-                state.activeAttempt;
+        AiProviderAttemptContext attempt = state.activeAttempt;
 
         try {
             ambiguous(attempt, primary);
@@ -240,7 +233,7 @@ public class AiExecutionAttemptScope {
 
         if (state == null) {
             throw new IllegalStateException(
-                    "No AI execution scope is active"
+                    "No governed AI execution scope is active"
             );
         }
 

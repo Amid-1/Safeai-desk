@@ -101,6 +101,9 @@ app:
           private-key: ${SAFEAI_JWT_PRIVATE_KEY}
 
 safeai:
+  # Canonical deployment-mode signal used by production invariants.
+  environment: ${SAFEAI_ENVIRONMENT:local}
+
   platform:
     organization-id: ${SAFEAI_PLATFORM_ORGANIZATION_ID:00000000-0000-0000-0000-000000000001}
 
@@ -119,8 +122,11 @@ safeai:
       refresh-token-absolute-max-age: ${SAFEAI_AUTH_REFRESH_TOKEN_ABSOLUTE_MAX_AGE:90d}
       reuse-detection-retention: ${SAFEAI_AUTH_REUSE_DETECTION_RETENTION:7d}
       domain: ${SAFEAI_AUTH_COOKIES_DOMAIN:}
-      access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:safeai-access}
-      refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:safeai-refresh}
+
+      # Blank defaults are intentional: AuthCookieProperties selects
+      # hardened __Host-/__Secure- names when deployment settings allow it.
+      access-token-name: ${SAFEAI_AUTH_ACCESS_COOKIE_NAME:}
+      refresh-token-name: ${SAFEAI_AUTH_REFRESH_COOKIE_NAME:}
 
     refresh-cleanup:
       cron: "${SAFEAI_AUTH_REFRESH_CLEANUP_CRON:0 0 3 * * *}"
@@ -161,8 +167,9 @@ safeai:
       key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:local:user-status}
 
     hsts:
+      # Application-managed HSTS switch.
+      # If HSTS is emitted by the trusted TLS edge/reverse proxy, keep this false.
       enabled: ${SAFEAI_HSTS_ENABLED:false}
-
   audit:
     outbox:
       batch-size: ${SAFEAI_AUDIT_OUTBOX_BATCH_SIZE:100}

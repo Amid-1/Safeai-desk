@@ -97,11 +97,11 @@ final class OrganizationCommandOperations {
             throw exception;
         }
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 saved.getId(),
                 AuditEventType.ORGANIZATION_CREATED,
-                Map.of(
+                () -> Map.of(
                         "organizationId",
                         saved.getId().toString(),
                         "organizationName",
@@ -157,11 +157,11 @@ final class OrganizationCommandOperations {
             throw exception;
         }
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 saved.getId(),
                 AuditEventType.ORGANIZATION_NAME_CHANGED,
-                Map.of(
+                () -> Map.of(
                         "organizationId",
                         saved.getId().toString(),
                         "oldName",
@@ -293,11 +293,12 @@ final class OrganizationCommandOperations {
                 )
         );
 
-        auditEventService.record(
+        final boolean auditSessionsRevoked = sessionsRevoked;
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 saved.getId(),
                 AuditEventType.ORGANIZATION_ENABLED_CHANGED,
-                Map.of(
+                () -> Map.of(
                         "organizationId",
                         saved.getId().toString(),
                         "organizationName",
@@ -311,7 +312,7 @@ final class OrganizationCommandOperations {
                         "newAuthVersion",
                         saved.getAuthVersion(),
                         "sessionsRevoked",
-                        sessionsRevoked,
+                        auditSessionsRevoked,
                         "requiresRelogin",
                         !newEnabled,
                         "version",

@@ -711,7 +711,7 @@ class ModelCatalogServiceTest {
                 principal
         );
 
-        verify(audit).record(
+        verify(audit).recordPrincipalSnapshot(
                 same(principal),
                 eq(ModelTestFixtures.ORGANIZATION_ID),
                 eq(AuditEventType.MODEL_CATALOG_VERSION_CREATED),

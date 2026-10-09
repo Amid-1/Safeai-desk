@@ -34,8 +34,7 @@ class RequiredAuditPolicyIntegrationTest
         extends AbstractAuditPostgresIntegrationTest {
 
     @Autowired
-    private RequiredAuditBusinessOperation
-            businessOperation;
+    private RequiredAuditBusinessOperation businessOperation;
 
     @MockitoBean
     private AuditOutboxWriter outboxWriter;
@@ -45,10 +44,12 @@ class RequiredAuditPolicyIntegrationTest
 
     @Test
     void requiredAuditFailureRollsBackSecuritySensitiveBusinessOperation() {
-        UUID organizationId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
 
         String originalName =
-                "Required Before " + organizationId;
+                "Required Before "
+                        + organizationId;
 
         insertOrganization(
                 organizationId,
@@ -60,13 +61,17 @@ class RequiredAuditPolicyIntegrationTest
                 new TransactionSystemException(
                         "simulated required audit failure"
                 )
-        ).when(outboxWriter)
-                .writeRequired(any());
+        ).when(
+                outboxWriter
+        ).writeRequiredInCurrentTransaction(
+                any()
+        );
 
         assertThatThrownBy(() ->
                 businessOperation.renameOrganization(
                         organizationId,
-                        "Required After " + organizationId
+                        "Required After "
+                                + organizationId
                 )
         )
                 .isInstanceOf(
@@ -85,18 +90,26 @@ class RequiredAuditPolicyIntegrationTest
                         """,
                         organizationId
                 )
-        ).isEqualTo(originalName);
+        ).isEqualTo(
+                originalName
+        );
 
-        assertThat(countAuditOutbox()).isZero();
-        assertThat(countAuditEvents()).isZero();
+        assertThat(
+                countAuditOutbox()
+        ).isZero();
+
+        assertThat(
+                countAuditEvents()
+        ).isZero();
     }
 
-    @TestConfiguration(proxyBeanMethods = false)
+    @TestConfiguration(
+            proxyBeanMethods = false
+    )
     static class PolicyTestConfiguration {
 
         @Bean
-        RequiredAuditBusinessOperation
-        requiredAuditBusinessOperation(
+        RequiredAuditBusinessOperation requiredAuditBusinessOperation(
                 JdbcTemplate jdbcTemplate,
                 AuditEventService auditEventService
         ) {
@@ -110,13 +123,16 @@ class RequiredAuditPolicyIntegrationTest
     public static class RequiredAuditBusinessOperation {
 
         private final JdbcTemplate jdbcTemplate;
+
         private final AuditEventService auditEventService;
 
         RequiredAuditBusinessOperation(
                 JdbcTemplate jdbcTemplate,
                 AuditEventService auditEventService
         ) {
-            this.jdbcTemplate = jdbcTemplate;
+            this.jdbcTemplate =
+                    jdbcTemplate;
+
             this.auditEventService =
                     auditEventService;
         }
@@ -136,12 +152,16 @@ class RequiredAuditPolicyIntegrationTest
                     organizationId
             );
 
-            auditEventService.recordSystem(
-                    organizationId,
-                    AuditEventType
-                            .ORGANIZATION_NAME_CHANGED,
-                    Map.of("newName", newName)
-            );
+            auditEventService
+                    .recordSystemRequiredInCurrentTransaction(
+                            organizationId,
+                            AuditEventType
+                                    .ORGANIZATION_NAME_CHANGED,
+                            Map.of(
+                                    "newName",
+                                    newName
+                            )
+                    );
         }
     }
 }

@@ -53,6 +53,13 @@ public enum ApiErrorCode {
 
     INVALID_REFRESH_TOKEN,
 
+    /**
+     * Provider I/O уже могло/успело выполниться, но durable terminal evidence
+     * не удалось подтвердить. Клиент не должен инициировать новый physical
+     * provider call; нужно перечитать/poll-ить существующий ChatTurn.
+     */
+    AI_EXECUTION_RECONCILIATION_REQUIRED,
+
     AI_PROVIDER_TIMEOUT,
 
     AI_PROVIDER_RATE_LIMITED,

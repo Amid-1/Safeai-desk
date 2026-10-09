@@ -271,11 +271,11 @@ public class KnowledgeEvaluationService {
                             }
                     );
 
-                    audit.record(
+                    audit.recordPrincipalSnapshot(
                             user,
                             user.getOrganizationId(),
                             AuditEventType.KNOWLEDGE_EVALUATION_COMPLETED,
-                            Map.of(
+                            () -> Map.of(
                                     "knowledgeBaseId",
                                     knowledgeBaseId.toString(),
                                     "evaluationRunId",
@@ -442,3 +442,5 @@ public class KnowledgeEvaluationService {
     ) {
     }
 }
+
+

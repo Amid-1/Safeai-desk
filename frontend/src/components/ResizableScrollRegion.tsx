@@ -697,6 +697,15 @@ function ResizableScrollRegion({
         restoreBodyState()
     }
 
+    /**
+     * Double-click restores the configured default lower-panel height.
+     * setUserHeight preserves the same viewport/protected-upper limits as drag
+     * and persists the preference through the existing localStorage effect.
+     */
+    function resetHeight() {
+        setUserHeight(defaultHeight)
+    }
+
     function handleKeyDown(
         event:
             KeyboardEvent<HTMLDivElement>,
@@ -819,6 +828,8 @@ function ResizableScrollRegion({
                         )
                     }
                     tabIndex={0}
+                    title="Потяните вверх или вниз, чтобы изменить высоту. Двойной щелчок — вернуть стандартную высоту."
+                    onDoubleClick={resetHeight}
                     onPointerDown={
                         beginResize
                     }
@@ -874,3 +885,4 @@ function ResizableScrollRegion({
 }
 
 export default ResizableScrollRegion
+

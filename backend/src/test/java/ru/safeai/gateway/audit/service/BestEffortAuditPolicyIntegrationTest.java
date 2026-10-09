@@ -35,8 +35,7 @@ class BestEffortAuditPolicyIntegrationTest
         extends AbstractAuditPostgresIntegrationTest {
 
     @Autowired
-    private BestEffortBusinessOperation
-            businessOperation;
+    private BestEffortBusinessOperation businessOperation;
 
     @MockitoBean
     private AuditOutboxWriter outboxWriter;
@@ -46,11 +45,13 @@ class BestEffortAuditPolicyIntegrationTest
 
     @Test
     void auditCommitFailureDoesNotRollbackBestEffortBusinessOperation() {
-        UUID organizationId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
 
         insertOrganization(
                 organizationId,
-                "Before Best Effort " + organizationId,
+                "Before Best Effort "
+                        + organizationId,
                 true
         );
 
@@ -58,8 +59,11 @@ class BestEffortAuditPolicyIntegrationTest
                 new TransactionSystemException(
                         "simulated audit commit failure"
                 )
-        ).when(outboxWriter)
-                .writeStandalone(any());
+        ).when(
+                outboxWriter
+        ).writeStandaloneRequired(
+                any()
+        );
 
         assertThatCode(() ->
                 businessOperation.renameOrganization(
@@ -83,19 +87,24 @@ class BestEffortAuditPolicyIntegrationTest
                         + organizationId
         );
 
-        assertThat(countAuditOutbox()).isZero();
-        assertThat(countAuditEvents()).isZero();
+        assertThat(
+                countAuditOutbox()
+        ).isZero();
+
+        assertThat(
+                countAuditEvents()
+        ).isZero();
     }
 
-    @TestConfiguration(proxyBeanMethods = false)
+    @TestConfiguration(
+            proxyBeanMethods = false
+    )
     static class PolicyTestConfiguration {
 
         @Bean
-        BestEffortBusinessOperation
-        bestEffortBusinessOperation(
+        BestEffortBusinessOperation bestEffortBusinessOperation(
                 JdbcTemplate jdbcTemplate,
-                BestEffortStandaloneAuditService
-                        auditService
+                BestEffortStandaloneAuditService auditService
         ) {
             return new BestEffortBusinessOperation(
                     jdbcTemplate,
@@ -107,16 +116,19 @@ class BestEffortAuditPolicyIntegrationTest
     public static class BestEffortBusinessOperation {
 
         private final JdbcTemplate jdbcTemplate;
+
         private final BestEffortStandaloneAuditService
                 auditService;
 
         BestEffortBusinessOperation(
                 JdbcTemplate jdbcTemplate,
-                BestEffortStandaloneAuditService
-                        auditService
+                BestEffortStandaloneAuditService auditService
         ) {
-            this.jdbcTemplate = jdbcTemplate;
-            this.auditService = auditService;
+            this.jdbcTemplate =
+                    jdbcTemplate;
+
+            this.auditService =
+                    auditService;
         }
 
         @Transactional
@@ -134,17 +146,19 @@ class BestEffortAuditPolicyIntegrationTest
                     organizationId
             );
 
-            AuditActor actor = new AuditActor(
-                    UUID.randomUUID(),
-                    UUID.randomUUID(),
-                    "standalone@test.com",
-                    "Standalone Actor"
-            );
+            AuditActor actor =
+                    new AuditActor(
+                            UUID.randomUUID(),
+                            UUID.randomUUID(),
+                            "standalone@test.com",
+                            "Standalone Actor"
+                    );
 
             auditService.tryRecord(
                     actor,
                     organizationId,
-                    AuditEventType.RATE_LIMIT_EXCEEDED,
+                    AuditEventType
+                            .RATE_LIMIT_EXCEEDED,
                     Map.of(
                             "type",
                             "AI_MESSAGE_USER",

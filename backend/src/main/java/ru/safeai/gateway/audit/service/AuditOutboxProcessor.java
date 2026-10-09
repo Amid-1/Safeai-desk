@@ -9,20 +9,19 @@ import ru.safeai.gateway.audit.entity.AuditOutboxEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
 import ru.safeai.gateway.audit.repository.AuditOutboxRepository;
 
-import java.time.Clock;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Service
-public class AuditOutboxProcessor {
+public final class AuditOutboxProcessor {
 
     private final AuditOutboxRepository outboxRepository;
     private final AuditEventRepository eventRepository;
     private final AuditOutboxFailureService failureService;
     private final AuditOutboxMetrics metrics;
     private final AuditOutboxProperties properties;
-    private final Clock clock;
     private final TransactionTemplate itemTransaction;
 
     public AuditOutboxProcessor(
@@ -31,25 +30,53 @@ public class AuditOutboxProcessor {
             AuditOutboxFailureService failureService,
             AuditOutboxMetrics metrics,
             AuditOutboxProperties properties,
-            Clock clock,
             PlatformTransactionManager transactionManager
     ) {
-        this.outboxRepository = outboxRepository;
-        this.eventRepository = eventRepository;
-        this.failureService = failureService;
-        this.metrics = metrics;
-        this.properties = properties;
-        this.clock = clock;
+        this.outboxRepository =
+                Objects.requireNonNull(
+                        outboxRepository,
+                        "outboxRepository не должен быть null"
+                );
+
+        this.eventRepository =
+                Objects.requireNonNull(
+                        eventRepository,
+                        "eventRepository не должен быть null"
+                );
+
+        this.failureService =
+                Objects.requireNonNull(
+                        failureService,
+                        "failureService не должен быть null"
+                );
+
+        this.metrics =
+                Objects.requireNonNull(
+                        metrics,
+                        "metrics не должен быть null"
+                );
+
+        this.properties =
+                Objects.requireNonNull(
+                        properties,
+                        "properties не должен быть null"
+                );
+
+        Objects.requireNonNull(
+                transactionManager,
+                "transactionManager не должен быть null"
+        );
 
         itemTransaction =
                 new TransactionTemplate(
                         transactionManager
                 );
 
-        itemTransaction.setPropagationBehavior(
-                TransactionDefinition
-                        .PROPAGATION_REQUIRES_NEW
-        );
+        itemTransaction
+                .setPropagationBehavior(
+                        TransactionDefinition
+                                .PROPAGATION_REQUIRES_NEW
+                );
     }
 
     public BatchResult processBatch() {
@@ -61,20 +88,27 @@ public class AuditOutboxProcessor {
              index < properties.effectiveBatchSize();
              index++) {
 
-            ItemResult result = processOne();
+            ItemResult result =
+                    processOne();
 
-            if (result == ItemResult.EMPTY) {
+            if (result
+                    == ItemResult.EMPTY) {
+
                 break;
             }
 
-            if (result == ItemResult.PROCESSED) {
+            if (result
+                    == ItemResult.PROCESSED) {
+
                 processed++;
                 continue;
             }
 
             failed++;
 
-            if (result == ItemResult.DEAD_LETTERED) {
+            if (result
+                    == ItemResult.DEAD_LETTERED) {
+
                 deadLettered++;
             }
         }
@@ -91,61 +125,70 @@ public class AuditOutboxProcessor {
                 new AtomicReference<>();
 
         try {
-            Boolean found = itemTransaction.execute(
-                    status -> {
-                        Optional<AuditOutboxEntity> optional =
-                                outboxRepository
-                                        .findNextForUpdate(
-                                                clock.instant()
-                                        );
+            Boolean found =
+                    itemTransaction.execute(
+                            status -> {
+                                Optional<AuditOutboxEntity>
+                                        optional =
+                                        outboxRepository
+                                                .findNextForUpdate();
 
-                        if (optional.isEmpty()) {
-                            return false;
-                        }
+                                if (optional.isEmpty()) {
+                                    return false;
+                                }
 
-                        AuditOutboxEntity item =
-                                optional.get();
+                                AuditOutboxEntity item =
+                                        optional.get();
 
-                        selectedId.set(item.getId());
+                                selectedId.set(
+                                        item.getId()
+                                );
 
-                        int insertedRows =
-                                eventRepository
-                                        .insertFromOutbox(
-                                                item.getId()
-                                        );
+                                int insertedRows =
+                                        eventRepository
+                                                .insertFromOutbox(
+                                                        item.getId()
+                                                );
 
-                        /*
-                         * 1 — event inserted.
-                         * 0 — event already exists, therefore delivery is
-                         * idempotently complete.
-                         */
-                        if (insertedRows != 0
-                                && insertedRows != 1) {
-                            throw new IllegalStateException(
-                                    "Unexpected insertFromOutbox "
-                                            + "affected rows: "
-                                            + insertedRows
-                            );
-                        }
+                                /*
+                                 * 1 = inserted.
+                                 * 0 = same event id already exists: delivery is
+                                 * idempotently complete.
+                                 */
+                                if (insertedRows != 0
+                                        && insertedRows != 1) {
 
-                        outboxRepository.delete(item);
-                        outboxRepository.flush();
+                                    throw new IllegalStateException(
+                                            "Unexpected insertFromOutbox affected rows: "
+                                                    + insertedRows
+                                    );
+                                }
 
-                        return true;
-                    }
-            );
+                                outboxRepository.delete(
+                                        item
+                                );
 
-            return Boolean.TRUE.equals(found)
+                                outboxRepository.flush();
+
+                                return true;
+                            }
+                    );
+
+            return Boolean.TRUE.equals(
+                    found
+            )
                     ? ItemResult.PROCESSED
                     : ItemResult.EMPTY;
         } catch (RuntimeException failure) {
-            UUID outboxId = selectedId.get();
+            UUID outboxId =
+                    selectedId.get();
 
             if (outboxId == null) {
                 throw failure;
             }
 
-            AuditOutboxFailureService.FailureResult result =
+            AuditOutboxFailureService.FailureResult
+                    result =
                     failureService.markFailure(
                             outboxId,
                             failure
@@ -157,9 +200,8 @@ public class AuditOutboxProcessor {
 
             if (!result.rowFound()) {
                 /*
-                 * The row may have disappeared after an uncertain commit.
-                 * Because audit_events.id is idempotent, this is treated as
-                 * completed delivery.
+                 * Uncertain commit: the row may have disappeared because the
+                 * insert+delete transaction actually committed.
                  */
                 return ItemResult.PROCESSED;
             }

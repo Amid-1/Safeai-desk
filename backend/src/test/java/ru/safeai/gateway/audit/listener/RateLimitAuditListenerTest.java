@@ -49,9 +49,10 @@ class RateLimitAuditListenerTest {
 
     @BeforeEach
     void setUp() {
-        listener = new RateLimitAuditListener(
-                auditEventService
-        );
+        listener =
+                new RateLimitAuditListener(
+                        auditEventService
+                );
     }
 
     @Test
@@ -74,49 +75,68 @@ class RateLimitAuditListenerTest {
                         )
                 );
 
-        listener.onRateLimitExceeded(event);
+        listener.onRateLimitExceeded(
+                event
+        );
 
         verify(auditEventService)
                 .recordSystemStandaloneRequired(
-                        eq(PLATFORM_ORGANIZATION_ID),
-                        eq(AuditEventType.RATE_LIMIT_EXCEEDED),
+                        eq(
+                                PLATFORM_ORGANIZATION_ID
+                        ),
+                        eq(
+                                AuditEventType
+                                        .RATE_LIMIT_EXCEEDED
+                        ),
                         argThat(
                                 (Map<String, Object> details) ->
                                         "LOGIN_IP".equals(
-                                                details.get("type")
+                                                details.get(
+                                                        "type"
+                                                )
                                         )
-                                                && Integer.valueOf(100)
-                                                .equals(
-                                                        details.get("limit")
+                                                && Integer.valueOf(
+                                                        100
+                                                ).equals(
+                                                        details.get(
+                                                                "limit"
+                                                        )
                                                 )
                                                 && "10m".equals(
-                                                        details.get("window")
+                                                        details.get(
+                                                                "window"
+                                                        )
                                                 )
                                                 && "IP".equals(
-                                                        details.get("dimension")
+                                                        details.get(
+                                                                "dimension"
+                                                        )
                                                 )
-                                                && Integer.valueOf(101)
-                                                .equals(
-                                                        details.get("ipCount")
+                                                && Integer.valueOf(
+                                                        101
+                                                ).equals(
+                                                        details.get(
+                                                                "ipCount"
+                                                        )
                                                 )
                         )
                 );
 
-        verify(auditEventService, never())
-                .recordStandaloneRequired(
-                        any(AuditActor.class),
-                        any(UUID.class),
-                        any(AuditEventType.class),
-                        org.mockito.ArgumentMatchers
-                                .<Map<String, Object>>any()
-                );
-
-        verify(auditEventService, never())
-                .recordSystem(
-                        any(UUID.class),
-                        any(AuditEventType.class),
-                        anyMap()
-                );
+        verify(
+                auditEventService,
+                never()
+        ).recordStandaloneRequired(
+                any(
+                        AuditActor.class
+                ),
+                any(
+                        UUID.class
+                ),
+                any(
+                        AuditEventType.class
+                ),
+                anyMap()
+        );
     }
 
     @Test
@@ -139,7 +159,9 @@ class RateLimitAuditListenerTest {
                         )
                 );
 
-        listener.onRateLimitExceeded(event);
+        listener.onRateLimitExceeded(
+                event
+        );
 
         ArgumentCaptor<AuditActor> actorCaptor =
                 ArgumentCaptor.forClass(
@@ -149,24 +171,43 @@ class RateLimitAuditListenerTest {
         verify(auditEventService)
                 .recordStandaloneRequired(
                         actorCaptor.capture(),
-                        eq(ORGANIZATION_ID),
-                        eq(AuditEventType.RATE_LIMIT_EXCEEDED),
+                        eq(
+                                ORGANIZATION_ID
+                        ),
+                        eq(
+                                AuditEventType
+                                        .RATE_LIMIT_EXCEEDED
+                        ),
                         argThat(
                                 (Map<String, Object> details) ->
                                         "AI_MESSAGE_USER".equals(
-                                                details.get("type")
+                                                details.get(
+                                                        "type"
+                                                )
                                         )
-                                                && Integer.valueOf(20).equals(
-                                                        details.get("limit")
+                                                && Integer.valueOf(
+                                                        20
+                                                ).equals(
+                                                        details.get(
+                                                                "limit"
+                                                        )
                                                 )
                                                 && "1h".equals(
-                                                        details.get("window")
+                                                        details.get(
+                                                                "window"
+                                                        )
                                                 )
                                                 && "USER".equals(
-                                                        details.get("dimension")
+                                                        details.get(
+                                                                "dimension"
+                                                        )
                                                 )
-                                                && Integer.valueOf(20).equals(
-                                                        details.get("userCount")
+                                                && Integer.valueOf(
+                                                        20
+                                                ).equals(
+                                                        details.get(
+                                                                "userCount"
+                                                        )
                                                 )
                         )
                 );
@@ -175,32 +216,37 @@ class RateLimitAuditListenerTest {
                 actorCaptor.getValue();
 
         assertThat(actor.userId())
-                .isEqualTo(USER_ID);
+                .isEqualTo(
+                        USER_ID
+                );
 
         assertThat(actor.organizationId())
-                .isEqualTo(ORGANIZATION_ID);
+                .isEqualTo(
+                        ORGANIZATION_ID
+                );
 
         assertThat(actor.email())
-                .isEqualTo("user@test.com");
+                .isEqualTo(
+                        "user@test.com"
+                );
 
         assertThat(actor.displayName())
-                .isEqualTo("Test User");
-
-        verify(auditEventService, never())
-                .recordSystemStandaloneRequired(
-                        any(UUID.class),
-                        any(AuditEventType.class),
-                        anyMap()
+                .isEqualTo(
+                        "Test User"
                 );
 
-        verify(auditEventService, never())
-                .record(
-                        any(AuditActor.class),
-                        any(UUID.class),
-                        any(AuditEventType.class),
-                        org.mockito.ArgumentMatchers
-                                .<Map<String, Object>>any()
-                );
+        verify(
+                auditEventService,
+                never()
+        ).recordSystemStandaloneRequired(
+                any(
+                        UUID.class
+                ),
+                any(
+                        AuditEventType.class
+                ),
+                anyMap()
+        );
     }
 
     @Test
@@ -225,35 +271,56 @@ class RateLimitAuditListenerTest {
                         )
                 );
 
-        listener.onRateLimitExceeded(event);
+        listener.onRateLimitExceeded(
+                event
+        );
 
         verify(auditEventService)
                 .recordStandaloneRequired(
-                        any(AuditActor.class),
-                        eq(ORGANIZATION_ID),
-                        eq(AuditEventType.RATE_LIMIT_EXCEEDED),
+                        any(
+                                AuditActor.class
+                        ),
+                        eq(
+                                ORGANIZATION_ID
+                        ),
+                        eq(
+                                AuditEventType
+                                        .RATE_LIMIT_EXCEEDED
+                        ),
                         argThat(
                                 (Map<String, Object> details) ->
-                                        !details.containsKey("limit")
+                                        !details.containsKey(
+                                                "limit"
+                                        )
                                                 && "BOTH".equals(
-                                                        details.get("dimension")
+                                                        details.get(
+                                                                "dimension"
+                                                        )
                                                 )
                                                 && "AI_MESSAGE_USER_AND_ORGANIZATION"
                                                 .equals(
-                                                        details.get("type")
+                                                        details.get(
+                                                                "type"
+                                                        )
                                                 )
-                                                && Integer.valueOf(20)
-                                                .equals(
-                                                        details.get("userLimit")
+                                                && Integer.valueOf(
+                                                        20
+                                                ).equals(
+                                                        details.get(
+                                                                "userLimit"
+                                                        )
                                                 )
-                                                && Integer.valueOf(1_000)
-                                                .equals(
+                                                && Integer.valueOf(
+                                                        1_000
+                                                ).equals(
                                                         details.get(
                                                                 "organizationLimit"
                                                         )
                                                 )
                                                 && "1h".equals(
-                                                        details.get("window")
+                                                        details.get(
+                                                                "window"
+                                                        )
                                                 )
                         )
                 );
@@ -284,20 +351,31 @@ class RateLimitAuditListenerTest {
                         "audit enqueue failed"
                 );
 
-        doThrow(enqueueFailure)
-                .when(auditEventService)
-                .recordStandaloneRequired(
-                        any(AuditActor.class),
-                        eq(ORGANIZATION_ID),
-                        eq(AuditEventType.RATE_LIMIT_EXCEEDED),
-                        org.mockito.ArgumentMatchers
-                                .<Map<String, Object>>any()
-                );
+        doThrow(
+                enqueueFailure
+        ).when(
+                auditEventService
+        ).recordStandaloneRequired(
+                any(
+                        AuditActor.class
+                ),
+                eq(
+                        ORGANIZATION_ID
+                ),
+                eq(
+                        AuditEventType
+                                .RATE_LIMIT_EXCEEDED
+                ),
+                anyMap()
+        );
 
-        assertThatThrownBy(
-                () -> listener.onRateLimitExceeded(event)
-        )
-                .isSameAs(enqueueFailure);
+        assertThatThrownBy(() ->
+                listener.onRateLimitExceeded(
+                        event
+                )
+        ).isSameAs(
+                enqueueFailure
+        );
     }
 
     @Test
@@ -325,18 +403,27 @@ class RateLimitAuditListenerTest {
                         "system audit enqueue failed"
                 );
 
-        doThrow(enqueueFailure)
-                .when(auditEventService)
-                .recordSystemStandaloneRequired(
-                        eq(PLATFORM_ORGANIZATION_ID),
-                        eq(AuditEventType.RATE_LIMIT_EXCEEDED),
-                        org.mockito.ArgumentMatchers
-                                .<Map<String, Object>>any()
-                );
+        doThrow(
+                enqueueFailure
+        ).when(
+                auditEventService
+        ).recordSystemStandaloneRequired(
+                eq(
+                        PLATFORM_ORGANIZATION_ID
+                ),
+                eq(
+                        AuditEventType
+                                .RATE_LIMIT_EXCEEDED
+                ),
+                anyMap()
+        );
 
-        assertThatThrownBy(
-                () -> listener.onRateLimitExceeded(event)
-        )
-                .isSameAs(enqueueFailure);
+        assertThatThrownBy(() ->
+                listener.onRateLimitExceeded(
+                        event
+                )
+        ).isSameAs(
+                enqueueFailure
+        );
     }
 }

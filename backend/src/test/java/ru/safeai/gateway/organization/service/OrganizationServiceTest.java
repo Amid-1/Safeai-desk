@@ -14,6 +14,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 import ru.safeai.gateway.auth.service.UserSessionRevocationService;
@@ -38,7 +39,6 @@ import ru.safeai.gateway.organization.repository.OrganizationRepository;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -161,17 +161,17 @@ class OrganizationServiceTest {
                 .isEqualTo(UPDATED_AT);
 
 
-        verify(auditEventService).record(
+        verify(auditEventService).recordPrincipalSnapshot(
                 any(SafeAiUserPrincipal.class),
                 eq(ORGANIZATION_ID),
                 eq(AuditEventType.ORGANIZATION_CREATED),
                 argThat(
-                        (Map<String, Object> details) ->
+                        (AuditDetails details) ->
                                 Long.valueOf(0L).equals(
-                                        details.get("version")
+                                        details.toMap().get("version")
                                 )
                                         && Long.valueOf(0L).equals(
-                                        details.get("authVersion")
+                                        details.toMap().get("authVersion")
                                 )
                 )
         );
@@ -587,20 +587,20 @@ class OrganizationServiceTest {
                 .isEqualTo(VERSION + 1L);
 
 
-        verify(auditEventService).record(
+        verify(auditEventService).recordPrincipalSnapshot(
                 any(SafeAiUserPrincipal.class),
                 eq(ORGANIZATION_ID),
                 eq(AuditEventType.ORGANIZATION_NAME_CHANGED),
                 argThat(
-                        (Map<String, Object> details) ->
+                        (AuditDetails details) ->
                                 Long.valueOf(VERSION + 1L).equals(
-                                        details.get("version")
+                                        details.toMap().get("version")
                                 )
                                         && "SafeAI".equals(
-                                        details.get("oldName")
+                                        details.toMap().get("oldName")
                                 )
                                         && "New SafeAI".equals(
-                                        details.get("newName")
+                                        details.toMap().get("newName")
                                 )
                 )
         );
@@ -838,22 +838,22 @@ class OrganizationServiceTest {
                 )
         );
 
-        verify(auditEventService).record(
+        verify(auditEventService).recordPrincipalSnapshot(
                 any(SafeAiUserPrincipal.class),
                 eq(ORGANIZATION_ID),
                 eq(AuditEventType.ORGANIZATION_ENABLED_CHANGED),
                 argThat(
-                        (Map<String, Object> details) ->
+                        (AuditDetails details) ->
                                 Boolean.TRUE.equals(
-                                        details.get("sessionsRevoked")
+                                        details.toMap().get("sessionsRevoked")
                                 )
                                         && Boolean.TRUE.equals(
-                                        details.get("requiresRelogin")
+                                        details.toMap().get("requiresRelogin")
                                 )
                                         && Long.valueOf(
                                         AUTH_VERSION + 1L
                                 ).equals(
-                                        details.get("newAuthVersion")
+                                        details.toMap().get("newAuthVersion")
                                 )
                 )
         );

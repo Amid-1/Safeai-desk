@@ -319,6 +319,8 @@ public abstract class AbstractChatPostgresIntegrationTest
                     reserved_input_tokens,
                     reserved_output_tokens,
                     reserved_cost_usd,
+                    reservation_version,
+                    cost_verifiable,
                     created_at,
                     updated_at
                 ) values (
@@ -330,6 +332,8 @@ public abstract class AbstractChatPostgresIntegrationTest
                     16000,
                     2048,
                     1.000000000000,
+                    1,
+                    false,
                     ?,
                     ?
                 )

@@ -495,7 +495,7 @@ public class ModelRoutingService {
             ModelRoutingCostPolicy.BudgetSnapshot budget,
             AuditEventType eventType
     ) {
-        audit.record(
+        audit.recordPrincipalSnapshot(
                 currentUser,
                 decision.organizationId(),
                 eventType,

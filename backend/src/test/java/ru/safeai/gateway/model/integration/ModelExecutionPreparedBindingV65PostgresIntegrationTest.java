@@ -59,6 +59,7 @@ class ModelExecutionPreparedBindingV65PostgresIntegrationTest
     private UUID turnId;
     private UUID operationId;
     private UUID planId;
+    private Instant physicalAttemptAt;
 
     @BeforeEach
     void arrangeValidGeneralExecutionWithoutPreparedBinding() {
@@ -106,7 +107,7 @@ class ModelExecutionPreparedBindingV65PostgresIntegrationTest
         ModelRouteDecisionRepository decisionRepository =
                 new ModelRouteDecisionRepository(jdbcTemplate);
 
-        catalogRepository.insert(entry);
+        catalogRepository.insert(entry, "FLAT_TOKEN_V1");
 
         ModelIntegrationTestSupport.insertAllowAllPolicy(
                 jdbcTemplate,
@@ -180,6 +181,22 @@ class ModelExecutionPreparedBindingV65PostgresIntegrationTest
                                     principal
                             ).decisionId();
 
+                    // V67 checks the PROCESSING lease against the actual
+                    // PostgreSQL clock, not the fixed model-routing clock.
+                    // Preserve historical routing provenance while building
+                    // a genuinely live, fenced execution fixture.
+                    java.sql.Timestamp databaseNow = java.util.Objects.requireNonNull(
+                            jdbcTemplate.queryForObject(
+                                    "select clock_timestamp()",
+                                    java.sql.Timestamp.class
+                            ),
+                            "PostgreSQL clock_timestamp() must not be null"
+                    );
+                    Instant liveNow = databaseNow.toInstant();
+                    physicalAttemptAt = liveNow.minusSeconds(2);
+                    Instant turnCreatedAt = physicalAttemptAt.minusSeconds(5);
+                    Instant leaseUntil = liveNow.plusSeconds(180);
+
                     jdbcTemplate.update(
                             """
                             insert into public.chat_turns (
@@ -209,12 +226,12 @@ class ModelExecutionPreparedBindingV65PostgresIntegrationTest
                             operationId,
                             messageId,
                             UUID.randomUUID(),
-                            timestamp(START.plusSeconds(60)),
-                            timestamp(START),
+                            timestamp(leaseUntil),
+                            timestamp(physicalAttemptAt),
                             MODEL,
                             decisionId,
-                            timestamp(START.minusSeconds(10)),
-                            timestamp(START.minusSeconds(10))
+                            timestamp(turnCreatedAt),
+                            timestamp(physicalAttemptAt)
                     );
 
                     jdbcTemplate.update(
@@ -257,6 +274,8 @@ class ModelExecutionPreparedBindingV65PostgresIntegrationTest
                 });
 
         assertThat(decisionId).isNotNull();
+        assertThat(physicalAttemptAt).isNotNull();
+        assertThat(physicalAttemptAt).isBefore(Instant.now().plusSeconds(1));
     }
 
     @Test
@@ -492,8 +511,8 @@ class ModelExecutionPreparedBindingV65PostgresIntegrationTest
                 1,
                 UUID.randomUUID(),
                 MODEL,
-                timestamp(START.plusSeconds(1)),
-                timestamp(START.plusSeconds(1))
+                timestamp(physicalAttemptAt.plusSeconds(1)),
+                timestamp(physicalAttemptAt.plusSeconds(1))
         );
     }
 

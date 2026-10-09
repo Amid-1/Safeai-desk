@@ -360,14 +360,6 @@ public interface UserRepository
                         union all
                     
                         select 1
-                        from public.audit_events
-                                as audit_event
-                        where audit_event.user_id = :userId
-                           or audit_event.actor_user_id = :userId
-                    
-                        union all
-                    
-                        select 1
                         from public.audit_outbox
                                 as audit_outbox_event
                         where audit_outbox_event.actor_user_id = :userId
@@ -418,4 +410,3 @@ public interface UserRepository
             String role
     );
 }
-

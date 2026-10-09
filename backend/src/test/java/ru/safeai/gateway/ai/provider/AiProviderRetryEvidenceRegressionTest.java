@@ -11,6 +11,8 @@ import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.exception.AiProviderQuotaExceededException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
 import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
+import ru.safeai.gateway.ai.execution.AiExecutionAttemptObserver;
+import ru.safeai.gateway.ai.execution.AiExecutionAttemptScope;
 import ru.safeai.gateway.ai.execution.OutcomeCertainty;
 import ru.safeai.gateway.ai.execution.ProviderFailureCertainty;
 import ru.safeai.gateway.ai.testsupport.AiTestFixtures;
@@ -23,6 +25,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /** Supplements existing retry tests and the V54 execution-ledger tests. */
 @Tag("unit")
@@ -34,20 +39,19 @@ class AiProviderRetryEvidenceRegressionTest {
     void explicitRateLimitCanRetrySameTargetWithDistinctPhysicalIds() {
         List<AiProviderAttemptContext> seen = new ArrayList<>();
         AiChatResponse expected = AiTestFixtures.freeResponse();
-        AiChatResponse actual = retry(2).execute("openai", "gpt-4.1",
-                OPERATION, Duration.ZERO, context -> {
+        AiExecutionAttemptObserver observer = mock(AiExecutionAttemptObserver.class);
+        AiChatResponse actual = governedRetry(2, observer, () ->
+                retry(2).execute("openai", "gpt-4.1", OPERATION, Duration.ZERO, context -> {
                     seen.add(context);
                     if (seen.size() == 1) throw rateLimit();
                     return expected;
-                });
+                }));
         assertThat(actual).isSameAs(expected);
         assertThat(seen).hasSize(2);
-        assertThat(seen).extracting(AiProviderAttemptContext::operationId)
-                .containsOnly(OPERATION);
-        assertThat(seen).extracting(AiProviderAttemptContext::attemptNumber)
-                .containsExactly(1, 2);
-        assertThat(seen).extracting(AiProviderAttemptContext::attemptId)
-                .doesNotHaveDuplicates();
+        assertThat(seen).extracting(AiProviderAttemptContext::operationId).containsOnly(OPERATION);
+        assertThat(seen).extracting(AiProviderAttemptContext::attemptNumber).containsExactly(1, 2);
+        assertThat(seen).extracting(AiProviderAttemptContext::attemptId).doesNotHaveDuplicates();
+        verify(observer, times(2)).started(org.mockito.ArgumentMatchers.any(AiProviderAttemptContext.class));
     }
 
     @Test
@@ -55,13 +59,11 @@ class AiProviderRetryEvidenceRegressionTest {
         AtomicInteger attempts = new AtomicInteger();
         AiProviderUnavailableException error = new AiProviderUnavailableException(
                 "openai", "gpt-4.1", true, false, "connect status unproved", null);
-        assertThat(ProviderFailureCertainty.classify(error))
-                .isEqualTo(OutcomeCertainty.AMBIGUOUS);
-        assertThatThrownBy(() -> retry(3).execute("openai", "gpt-4.1",
-                OPERATION, Duration.ZERO, ctx -> {
-                    attempts.incrementAndGet();
-                    throw error;
-                })).isSameAs(error);
+        assertThat(ProviderFailureCertainty.classify(error)).isEqualTo(OutcomeCertainty.AMBIGUOUS);
+        assertThatThrownBy(() -> governedRetry(3, () -> retry(3).execute(
+                "openai", "gpt-4.1", OPERATION, Duration.ZERO, ctx -> {
+                    attempts.incrementAndGet(); throw error;
+                }))).isSameAs(error);
         assertThat(attempts).hasValue(1);
     }
 
@@ -70,13 +72,11 @@ class AiProviderRetryEvidenceRegressionTest {
     void unproved503NeverRetriesRegardlessOfLegacyRecommendedFlag(boolean retryable) {
         AtomicInteger attempts = new AtomicInteger();
         AiProviderException error = providerError(503, AiProviderErrorType.SERVER_ERROR, retryable);
-        assertThat(ProviderFailureCertainty.classify(error))
-                .isEqualTo(OutcomeCertainty.AMBIGUOUS);
-        assertThatThrownBy(() -> retry(3).execute("openai", "gpt-4.1",
-                OPERATION, Duration.ZERO, ctx -> {
-                    attempts.incrementAndGet();
-                    throw error;
-                })).isSameAs(error);
+        assertThat(ProviderFailureCertainty.classify(error)).isEqualTo(OutcomeCertainty.AMBIGUOUS);
+        assertThatThrownBy(() -> governedRetry(3, () -> retry(3).execute(
+                "openai", "gpt-4.1", OPERATION, Duration.ZERO, ctx -> {
+                    attempts.incrementAndGet(); throw error;
+                }))).isSameAs(error);
         assertThat(attempts).hasValue(1);
     }
 
@@ -84,13 +84,11 @@ class AiProviderRetryEvidenceRegressionTest {
     void timeout408NeverRetriesWithoutProofProviderDidNotExecute() {
         AtomicInteger attempts = new AtomicInteger();
         AiProviderException error = providerError(408, AiProviderErrorType.TIMEOUT, true);
-        assertThat(ProviderFailureCertainty.classify(error))
-                .isEqualTo(OutcomeCertainty.AMBIGUOUS);
-        assertThatThrownBy(() -> retry(3).execute("openai", "gpt-4.1",
-                OPERATION, Duration.ZERO, ctx -> {
-                    attempts.incrementAndGet();
-                    throw error;
-                })).isSameAs(error);
+        assertThat(ProviderFailureCertainty.classify(error)).isEqualTo(OutcomeCertainty.AMBIGUOUS);
+        assertThatThrownBy(() -> governedRetry(3, () -> retry(3).execute(
+                "openai", "gpt-4.1", OPERATION, Duration.ZERO, ctx -> {
+                    attempts.incrementAndGet(); throw error;
+                }))).isSameAs(error);
         assertThat(attempts).hasValue(1);
     }
 
@@ -100,13 +98,11 @@ class AiProviderRetryEvidenceRegressionTest {
         AiProviderQuotaExceededException error = new AiProviderQuotaExceededException(
                 "openai", "gpt-4.1", 429, "request-id",
                 "insufficient_quota", "quota exhausted", null);
-        assertThat(ProviderFailureCertainty.classify(error))
-                .isEqualTo(OutcomeCertainty.KNOWN_REJECTED);
-        assertThatThrownBy(() -> retry(3).execute("openai", "gpt-4.1",
-                OPERATION, Duration.ZERO, ctx -> {
-                    attempts.incrementAndGet();
-                    throw error;
-                })).isSameAs(error);
+        assertThat(ProviderFailureCertainty.classify(error)).isEqualTo(OutcomeCertainty.KNOWN_REJECTED);
+        assertThatThrownBy(() -> governedRetry(3, () -> retry(3).execute(
+                "openai", "gpt-4.1", OPERATION, Duration.ZERO, ctx -> {
+                    attempts.incrementAndGet(); throw error;
+                }))).isSameAs(error);
         assertThat(attempts).hasValue(1);
     }
 
@@ -115,21 +111,40 @@ class AiProviderRetryEvidenceRegressionTest {
         AtomicInteger actions = new AtomicInteger();
         assertThatThrownBy(() -> retry(2).execute("openai", "gpt-4.1", null,
                 Duration.ZERO, ctx -> {
-                    actions.incrementAndGet();
-                    return AiTestFixtures.freeResponse();
+                    actions.incrementAndGet(); return AiTestFixtures.freeResponse();
                 })).isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> retry(2).execute("openai", "gpt-4.1", OPERATION,
-                Duration.ofSeconds(3), ctx -> {
-                    actions.incrementAndGet();
-                    return AiTestFixtures.freeResponse();
-                })).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> governedRetry(2, () -> retry(2).execute(
+                "openai", "gpt-4.1", OPERATION, Duration.ofSeconds(3), ctx -> {
+                    actions.incrementAndGet(); return AiTestFixtures.freeResponse();
+                }))).isInstanceOf(IllegalStateException.class);
         assertThat(actions).hasValue(0);
     }
 
+    private static AiChatResponse governedRetry(int maxAttempts,
+                                                java.util.function.Supplier<AiChatResponse> action) {
+        return governedRetry(maxAttempts, mock(AiExecutionAttemptObserver.class), action);
+    }
+
+    private static AiChatResponse governedRetry(int maxAttempts,
+                                                AiExecutionAttemptObserver observer,
+                                                java.util.function.Supplier<AiChatResponse> action) {
+        // The same scope instance MUST be injected into the executor below.
+        AiExecutionAttemptScope scope = RETRY_SCOPE.get();
+        try {
+            return scope.execute(OPERATION, observer, maxAttempts, action);
+        } finally {
+            RETRY_SCOPE.remove();
+        }
+    }
+
+    private static final ThreadLocal<AiExecutionAttemptScope> RETRY_SCOPE =
+            ThreadLocal.withInitial(AiExecutionAttemptScope::new);
+
     private static AiProviderRetryExecutor retry(int maximum) {
-        return new AiProviderRetryExecutor(new AiRetryProperties(true, maximum,
-                Duration.ofMillis(10), Duration.ofMillis(10),
-                Duration.ofSeconds(1), Duration.ofSeconds(2)));
+        return new AiProviderRetryExecutor(
+                new AiRetryProperties(true, maximum, Duration.ofMillis(10),
+                        Duration.ofMillis(10), Duration.ofSeconds(1), Duration.ofSeconds(2)),
+                RETRY_SCOPE.get());
     }
 
     private static AiProviderRateLimitedException rateLimit() {
@@ -138,8 +153,8 @@ class AiProviderRetryEvidenceRegressionTest {
     }
 
     private static AiProviderException providerError(int status,
-                                                     AiProviderErrorType type,
-                                                     boolean retryable) {
+                                                      AiProviderErrorType type,
+                                                      boolean retryable) {
         return new AiProviderException("openai", "gpt-4.1", status,
                 "provider-request-id", type, retryable, false,
                 null, "provider failure", null);

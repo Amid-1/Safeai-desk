@@ -6,10 +6,19 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
 
+/**
+ * Bounds the amount of refresh-token data removed by one scheduled run.
+ *
+ * <p>Configuration is validated during Spring Boot property binding.
+ * Invalid values fail application startup instead of allowing
+ * an unsafe or unbounded cleanup configuration.</p>
+ *
+ * <p>Programmatic callers must use valid values as well.
+ * Runtime batch-size validation is additionally enforced by
+ * {@link RefreshTokenCleanupBatchService}.</p>
+ */
 @Validated
-@ConfigurationProperties(
-        prefix = "safeai.auth.refresh-cleanup"
-)
+@ConfigurationProperties(prefix = "safeai.auth.refresh-cleanup")
 public record RefreshTokenCleanupProperties(
 
         @DefaultValue("500")
@@ -33,5 +42,6 @@ public record RefreshTokenCleanupProperties(
                 message = "max-batches-per-run не должен превышать 10000"
         )
         int maxBatchesPerRun
+
 ) {
 }

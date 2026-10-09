@@ -1,9 +1,11 @@
 package ru.safeai.gateway.chat.dto;
 
-import jakarta.validation.constraints.Size;
-
+/**
+ * Title validation is intentionally centralized in ChatTitlePolicy.
+ * Jakarta @Size counts UTF-16 code units and is inconsistent with the
+ * code-point-based domain/DB contract for supplementary Unicode.
+ */
 public record CreateChatRequest(
-        @Size(max = 255)
         String title
 ) {
 }

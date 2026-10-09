@@ -22,7 +22,7 @@ public class RateLimitAuditListener {
      * Listener намеренно синхронный.
      *
      * <p>Durable enqueue выполняется через отдельную REQUIRES_NEW
-     * transaction. Поэтому последующий rollback business transaction
+     * transaction. Поэтому последующий rollback вызывающего request flow
      * не удаляет RATE_LIMIT_EXCEEDED audit intent.</p>
      *
      * <p>Ошибка durable enqueue должна выйти обратно в publisher.
@@ -44,28 +44,31 @@ public class RateLimitAuditListener {
                 );
 
         /*
-         * Login rejection возникает до аутентификации,
-         * поэтому actorUserId отсутствует.
+         * Событие без actorUserId считается системным /
+         * не привязанным к конкретному authenticated user.
          *
-         * Не пытаемся искать пользователя по введённому email:
-         * пишем системное событие в targetOrganizationId.
+         * Не пытаемся восстанавливать пользователя по email или другим
+         * косвенным данным: audit event сохраняется с системным actor
+         * для явно заданной target organization.
          */
-        if (event.actorUserId() == null) {
-            auditEventService.recordSystemStandaloneRequired(
-                    event.targetOrganizationId(),
-                    AuditEventType.RATE_LIMIT_EXCEEDED,
-                    details
-            );
+        if (event.actorUserId()
+                == null) {
+
+            auditEventService
+                    .recordSystemStandaloneRequired(
+                            event.targetOrganizationId(),
+                            AuditEventType.RATE_LIMIT_EXCEEDED,
+                            details
+                    );
 
             return;
         }
 
         /*
-         * actorEmail / actorDisplayName могут быть null.
+         * actorEmail и actorDisplayName намеренно могут быть null.
          *
-         * Это штатно для access-token principal:
-         * access JWT намеренно не содержит PII.
-         * AuditActor поддерживает частичный snapshot identity.
+         * В частности, access-token principal не обязан содержать PII.
+         * AuditActor поэтому поддерживает частичный identity snapshot.
          */
         AuditActor actor =
                 new AuditActor(
@@ -75,12 +78,13 @@ public class RateLimitAuditListener {
                         event.actorDisplayName()
                 );
 
-        auditEventService.recordStandaloneRequired(
-                actor,
-                event.targetOrganizationId(),
-                AuditEventType.RATE_LIMIT_EXCEEDED,
-                details
-        );
+        auditEventService
+                .recordStandaloneRequired(
+                        actor,
+                        event.targetOrganizationId(),
+                        AuditEventType.RATE_LIMIT_EXCEEDED,
+                        details
+                );
     }
 
     private Map<String, Object> buildAuditDetails(
@@ -97,14 +101,16 @@ public class RateLimitAuditListener {
         );
 
         /*
-         * Для BOTH limit намеренно null:
-         * у события два независимых лимита.
+         * limit является optional полем события.
+         * Например, агрегированное превышение нескольких независимых
+         * лимитов может не иметь одного корректного scalar limit.
          *
-         * Map.copyOf не допускает null values,
-         * поэтому поле добавляется только
-         * для одномерного превышения.
+         * Map.copyOf не допускает null values, поэтому поле добавляется
+         * только когда значение действительно известно.
          */
-        if (event.limit() != null) {
+        if (event.limit()
+                != null) {
+
             result.putIfAbsent(
                     "limit",
                     event.limit()

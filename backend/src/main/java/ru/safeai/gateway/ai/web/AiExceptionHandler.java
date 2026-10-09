@@ -19,6 +19,7 @@ import ru.safeai.gateway.ai.exception.AiProviderQuotaExceededException;
 import ru.safeai.gateway.ai.exception.AiProviderRateLimitedException;
 import ru.safeai.gateway.ai.exception.AiProviderTimeoutException;
 import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
+import ru.safeai.gateway.ai.execution.PhysicalAttemptReconciliationRequiredException;
 import ru.safeai.gateway.common.exception.ApiErrorCode;
 import ru.safeai.gateway.common.exception.ApiErrorResponse;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
@@ -53,12 +54,46 @@ public class AiExceptionHandler {
         );
     }
 
+    /**
+     * This state is intentionally not mapped to a generic 500/provider error.
+     * A physical call has already crossed the external-I/O boundary and a
+     * second provider call must not be started blindly.
+     */
+    @ExceptionHandler(
+            PhysicalAttemptReconciliationRequiredException.class
+    )
+    public ResponseEntity<ApiErrorResponse> handleReconciliationRequired(
+            PhysicalAttemptReconciliationRequiredException exception,
+            HttpServletRequest request
+    ) {
+        log.error(
+                "AI physical attempt requires reconciliation: "
+                        + "providerAttemptId={}, path={}",
+                exception.providerAttemptId(),
+                request.getRequestURI(),
+                exception
+        );
+
+        return buildResponse(
+                HttpStatus.CONFLICT,
+                ApiErrorCode.AI_EXECUTION_RECONCILIATION_REQUIRED,
+                "Состояние AI-выполнения требует сверки. "
+                        + "Обновите состояние текущего запроса; "
+                        + "не запускайте его повторно как новую операцию",
+                request,
+                null
+        );
+    }
+
     @ExceptionHandler(AiProviderTimeoutException.class)
     public ResponseEntity<ApiErrorResponse> handleTimeout(
             AiProviderTimeoutException exception,
             HttpServletRequest request
     ) {
-        logProviderError(exception, request);
+        logProviderError(
+                exception,
+                request
+        );
 
         return buildResponse(
                 HttpStatus.GATEWAY_TIMEOUT,
@@ -74,7 +109,10 @@ public class AiExceptionHandler {
             AiProviderRateLimitedException exception,
             HttpServletRequest request
     ) {
-        logProviderError(exception, request);
+        logProviderError(
+                exception,
+                request
+        );
 
         return buildResponse(
                 HttpStatus.TOO_MANY_REQUESTS,
@@ -90,7 +128,10 @@ public class AiExceptionHandler {
             AiProviderOverloadedException exception,
             HttpServletRequest request
     ) {
-        logProviderError(exception, request);
+        logProviderError(
+                exception,
+                request
+        );
 
         return buildResponse(
                 HttpStatus.SERVICE_UNAVAILABLE,
@@ -109,7 +150,10 @@ public class AiExceptionHandler {
             AiProviderException exception,
             HttpServletRequest request
     ) {
-        logProviderError(exception, request);
+        logProviderError(
+                exception,
+                request
+        );
 
         return buildResponse(
                 HttpStatus.SERVICE_UNAVAILABLE,
@@ -125,7 +169,10 @@ public class AiExceptionHandler {
             AiProviderUnavailableException exception,
             HttpServletRequest request
     ) {
-        logProviderError(exception, request);
+        logProviderError(
+                exception,
+                request
+        );
 
         return buildResponse(
                 HttpStatus.SERVICE_UNAVAILABLE,
@@ -141,7 +188,10 @@ public class AiExceptionHandler {
             AiProviderException exception,
             HttpServletRequest request
     ) {
-        logProviderError(exception, request);
+        logProviderError(
+                exception,
+                request
+        );
 
         return buildResponse(
                 HttpStatus.BAD_GATEWAY,
@@ -168,6 +218,7 @@ public class AiExceptionHandler {
                 == AiProviderErrorType.BILLING_ERROR
                 || exception.getErrorType()
                 == AiProviderErrorType.QUOTA_EXHAUSTED) {
+
             log.error(
                     logMessage,
                     exception.getProvider(),
@@ -207,18 +258,30 @@ public class AiExceptionHandler {
             Duration retryAfter
     ) {
         ResponseEntity.BodyBuilder builder =
-                ResponseEntity.status(status)
-                        .cacheControl(CacheControl.noStore());
+                ResponseEntity.status(
+                                status
+                        )
+                        .cacheControl(
+                                CacheControl.noStore()
+                        );
 
-        if (retryAfter != null && !retryAfter.isNegative()) {
-            long retryAfterSeconds = Math.max(
-                    1L,
-                    (retryAfter.toMillis() + 999L) / 1_000L
-            );
+        if (retryAfter != null
+                && !retryAfter.isNegative()) {
+
+            long retryAfterSeconds =
+                    Math.max(
+                            1L,
+                            (
+                                    retryAfter.toMillis()
+                                            + 999L
+                            ) / 1_000L
+                    );
 
             builder.header(
                     HttpHeaders.RETRY_AFTER,
-                    Long.toString(retryAfterSeconds)
+                    Long.toString(
+                            retryAfterSeconds
+                    )
             );
         }
 

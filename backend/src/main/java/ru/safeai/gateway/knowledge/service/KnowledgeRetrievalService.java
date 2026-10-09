@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -196,11 +197,20 @@ public class KnowledgeRetrievalService {
             persistRun(runId, knowledgeBaseId, user, query, querySha256, topK,
                     startedAt, completedAt, chatTurnId);
             persistHits(runId, knowledgeBaseId, user.getOrganizationId(), hits);
-            audit.record(user, user.getOrganizationId(), AuditEventType.KNOWLEDGE_RETRIEVAL_COMPLETED,
-                    Map.of("knowledgeBaseId", knowledgeBaseId.toString(),
-                            "retrievalRunId", runId.toString(), "querySha256", querySha256,
-                            "embeddingModel", embeddingProvider.model(), "topK", topK,
-                            "hitCount", hits.size()));
+            AuditDetails auditDetails = () -> Map.of(
+                    "knowledgeBaseId", knowledgeBaseId.toString(),
+                    "retrievalRunId", runId.toString(),
+                    "querySha256", querySha256,
+                    "embeddingModel", embeddingProvider.model(),
+                    "topK", topK,
+                    "hitCount", hits.size()
+            );
+            audit.recordPrincipalSnapshot(
+                    user,
+                    user.getOrganizationId(),
+                    AuditEventType.KNOWLEDGE_RETRIEVAL_COMPLETED,
+                    auditDetails
+            );
             return new KnowledgeRetrievalExecution(runId, knowledgeBaseId, chatTurnId,
                     querySha256, embeddingProvider.model(), completedAt, hits);
         });
@@ -507,3 +517,4 @@ public class KnowledgeRetrievalService {
     ) {
     }
 }
+

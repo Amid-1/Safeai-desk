@@ -23,15 +23,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(
-        classes = ru.safeai.gateway.SafeaiBackendApplication.class
-)
+@SpringBootTest(classes = ru.safeai.gateway.SafeaiBackendApplication.class)
 @ActiveProfiles("test")
-class AuditCursorPaginationIntegrationTest
-        extends AbstractAuditPostgresIntegrationTest {
+class AuditCursorPaginationIntegrationTest extends AbstractAuditPostgresIntegrationTest {
 
     @Autowired
     private AuditEventCursorService cursorService;
@@ -41,157 +39,49 @@ class AuditCursorPaginationIntegrationTest
 
     @Test
     void cursorPaginationHasNoDuplicatesAndPreservesTenantIsolation() {
-        UUID organizationId =
-                UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID foreignOrganizationId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
+        Instant sameCreatedAt = Instant.parse("2026-07-30T08:00:00Z");
+        Set<UUID> expected = new HashSet<>();
 
-        UUID foreignOrganizationId =
-                UUID.randomUUID();
-
-        UUID adminId =
-                UUID.randomUUID();
-
-        Instant sameCreatedAt =
-                Instant.parse(
-                        "2026-07-30T08:00:00Z"
-                );
-
-        Set<UUID> expected =
-                new HashSet<>();
-
-        for (int index = 0;
-             index < 3;
-             index++) {
-
-            UUID id =
-                    UUID.randomUUID();
-
+        for (int index = 0; index < 3; index++) {
+            UUID id = UUID.randomUUID();
             expected.add(id);
-
             insertUserUpdatedAuditEvent(
-                    id,
-                    adminId,
-                    organizationId,
-                    "admin@test.com",
-                    "Admin",
-                    organizationId,
-                    Map.of(
-                            "index",
-                            index
-                    ),
-                    sameCreatedAt
-            );
+                    id, adminId, organizationId, "admin@test.com", "Admin",
+                    organizationId, Map.of("index", index), sameCreatedAt);
         }
-
         insertUserUpdatedAuditEvent(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                foreignOrganizationId,
-                "foreign@test.com",
-                "Foreign",
-                foreignOrganizationId,
-                Map.of(
-                        "foreign",
-                        true
-                ),
-                sameCreatedAt
-                        .plusSeconds(1)
-        );
+                UUID.randomUUID(), UUID.randomUUID(), foreignOrganizationId,
+                "foreign@test.com", "Foreign", foreignOrganizationId,
+                Map.of("foreign", true), sameCreatedAt.plusSeconds(1));
 
-        SafeAiUserPrincipal admin =
-                SafeAiUserPrincipal
-                        .accessTokenPrincipal(
-                                adminId,
-                                organizationId,
-                                0L,
-                                0L,
-                                List.of(
-                                        new SimpleGrantedAuthority(
-                                                "ROLE_ADMIN"
-                                        )
-                                )
-                        );
+        SafeAiUserPrincipal admin = SafeAiUserPrincipal.accessTokenPrincipal(
+                adminId, organizationId, 0L, 0L,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
 
-        AuditEventCursorResponse first =
-                cursorService.findAll(
-                        admin,
-                        emptyFilter(),
-                        null,
-                        2
-                );
+        AuditEventCursorResponse first = cursorService.findAll(admin, emptyFilter(), null, 2);
+        assertThat(first.items()).hasSize(2);
+        assertThat(first.hasNext()).isTrue();
+        assertThat(first.nextCursor()).isNotBlank();
 
-        assertThat(
-                first.items()
-        ).hasSize(2);
+        AuditEventCursorResponse second = cursorService.findAll(
+                admin, emptyFilter(), first.nextCursor(), 2);
+        assertThat(second.items()).hasSize(1);
+        assertThat(second.hasNext()).isFalse();
+        assertThat(second.nextCursor()).isNull();
 
-        assertThat(
-                first.hasNext()
-        ).isTrue();
-
-        assertThat(
-                first.nextCursor()
-        ).isNotBlank();
-
-        AuditEventCursorResponse second =
-                cursorService.findAll(
-                        admin,
-                        emptyFilter(),
-                        first.nextCursor(),
-                        2
-                );
-
-        assertThat(
-                second.items()
-        ).hasSize(1);
-
-        assertThat(
-                second.hasNext()
-        ).isFalse();
-
-        assertThat(
-                second.nextCursor()
-        ).isNull();
-
-        List<UUID> allIds =
-                java.util.stream.Stream
-                        .concat(
-                                first.items()
-                                        .stream(),
-                                second.items()
-                                        .stream()
-                        )
-                        .map(
-                                AuditEventResponse::id
-                        )
-                        .toList();
-
-        assertThat(allIds)
+        List<AuditEventResponse> all = Stream.concat(
+                first.items().stream(), second.items().stream()).toList();
+        assertThat(all).extracting(AuditEventResponse::id)
                 .doesNotHaveDuplicates()
-                .containsExactlyInAnyOrderElementsOf(
-                        expected
-                );
-
-        assertThat(
-                java.util.stream.Stream
-                        .concat(
-                                first.items()
-                                        .stream(),
-                                second.items()
-                                        .stream()
-                        )
-                        .map(
-                                AuditEventResponse
-                                        ::organizationId
-                        )
-                        .toList()
-        ).containsOnly(
-                organizationId
-        );
+                .containsExactlyInAnyOrderElementsOf(expected);
+        assertThat(all).extracting(AuditEventResponse::organizationId)
+                .containsOnly(organizationId);
     }
 
-    @SuppressWarnings({
-            "SqlResolve",
-            "SqlNoDataSourceInspection"
-    })
+    @SuppressWarnings({"SqlResolve", "SqlNoDataSourceInspection"})
     private void insertUserUpdatedAuditEvent(
             UUID eventId,
             UUID actorUserId,
@@ -202,51 +92,19 @@ class AuditCursorPaginationIntegrationTest
             Map<String, Object> details,
             Instant createdAt
     ) {
-        Objects.requireNonNull(
-                eventId,
-                "eventId не должен быть null"
-        );
+        Objects.requireNonNull(eventId, "eventId не должен быть null");
+        Objects.requireNonNull(actorUserId, "actorUserId не должен быть null");
+        Objects.requireNonNull(actorOrganizationId, "actorOrganizationId не должен быть null");
+        Objects.requireNonNull(actorEmail, "actorEmail не должен быть null");
+        Objects.requireNonNull(actorDisplayName, "actorDisplayName не должен быть null");
+        Objects.requireNonNull(targetOrganizationId, "targetOrganizationId не должен быть null");
+        Objects.requireNonNull(details, "details не должен быть null");
+        Objects.requireNonNull(createdAt, "createdAt не должен быть null");
 
-        Objects.requireNonNull(
-                actorUserId,
-                "actorUserId не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                actorOrganizationId,
-                "actorOrganizationId не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                actorEmail,
-                "actorEmail не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                actorDisplayName,
-                "actorDisplayName не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                targetOrganizationId,
-                "targetOrganizationId не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                details,
-                "details не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                createdAt,
-                "createdAt не должен быть null"
-        );
-
-        jdbcTemplate.update(
-                """
+        // V68 schema stores an immutable actor snapshot: no legacy user_id column.
+        jdbcTemplate.update("""
                 insert into public.audit_events (
                     id,
-                    user_id,
                     actor_user_id,
                     actor_organization_id,
                     actor_email,
@@ -255,18 +113,8 @@ class AuditCursorPaginationIntegrationTest
                     event_type,
                     details,
                     created_at
-                )
-                values (
-                    ?,
-                    null,
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    ?,
-                    cast(? as jsonb),
-                    ?
+                ) values (
+                    ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?
                 )
                 """,
                 eventId,
@@ -275,27 +123,14 @@ class AuditCursorPaginationIntegrationTest
                 actorEmail,
                 actorDisplayName,
                 targetOrganizationId,
-                AuditEventType
-                        .USER_UPDATED
-                        .name(),
+                AuditEventType.USER_UPDATED.name(),
                 toJson(details),
-                new SqlParameterValue(
-                        Types.TIMESTAMP_WITH_TIMEZONE,
-                        createdAt.atOffset(
-                                ZoneOffset.UTC
-                        )
-                )
+                new SqlParameterValue(Types.TIMESTAMP_WITH_TIMEZONE,
+                        createdAt.atOffset(ZoneOffset.UTC))
         );
     }
 
     private AuditEventFilter emptyFilter() {
-        return new AuditEventFilter(
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-        );
+        return new AuditEventFilter(null, null, null, null, null, null);
     }
 }

@@ -2,7 +2,6 @@ package ru.safeai.gateway.auth.service;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataAccessException;
 import org.springframework.security.authentication.AccountStatusException;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -34,18 +33,21 @@ import ru.safeai.gateway.user.validation.UserEmailNormalizer;
 
 import java.util.Objects;
 
+/**
+ * Application-boundary authentication coordinator.
+ *
+ * <p>Authentication and refresh rotation are committed by dedicated
+ * transaction services before HTTP cookies are written.</p>
+ */
 @Service
-@RequiredArgsConstructor
 public class AuthService {
 
     private static final String AUTH_UNAVAILABLE_INTERNAL_MESSAGE =
             "Authentication infrastructure is unavailable";
 
     private final AuthenticationManager authenticationManager;
-
-    private final LoginSessionTransactionService
-            loginSessionTransactionService;
-
+    private final LoginSessionTransactionService loginSessionTransactionService;
+    private final RefreshSessionTransactionService refreshSessionTransactionService;
     private final JwtService jwtService;
     private final AuthEventService authEventService;
     private final UserRepository userRepository;
@@ -56,165 +58,90 @@ public class AuthService {
     private final AuthCookieService authCookieService;
     private final CsrfTokenRepository csrfTokenRepository;
 
+    public AuthService(
+            AuthenticationManager authenticationManager,
+            LoginSessionTransactionService loginSessionTransactionService,
+            RefreshSessionTransactionService refreshSessionTransactionService,
+            JwtService jwtService,
+            AuthEventService authEventService,
+            UserRepository userRepository,
+            LoginRateLimitService loginRateLimitService,
+            RefreshRateLimitService refreshRateLimitService,
+            ClientIpResolver clientIpResolver,
+            RefreshTokenService refreshTokenService,
+            AuthCookieService authCookieService,
+            CsrfTokenRepository csrfTokenRepository
+    ) {
+        this.authenticationManager = Objects.requireNonNull(authenticationManager);
+        this.loginSessionTransactionService = Objects.requireNonNull(loginSessionTransactionService);
+        this.refreshSessionTransactionService = Objects.requireNonNull(refreshSessionTransactionService);
+        this.jwtService = Objects.requireNonNull(jwtService);
+        this.authEventService = Objects.requireNonNull(authEventService);
+        this.userRepository = Objects.requireNonNull(userRepository);
+        this.loginRateLimitService = Objects.requireNonNull(loginRateLimitService);
+        this.refreshRateLimitService = Objects.requireNonNull(refreshRateLimitService);
+        this.clientIpResolver = Objects.requireNonNull(clientIpResolver);
+        this.refreshTokenService = Objects.requireNonNull(refreshTokenService);
+        this.authCookieService = Objects.requireNonNull(authCookieService);
+        this.csrfTokenRepository = Objects.requireNonNull(csrfTokenRepository);
+    }
+
     /**
-     * Метод намеренно не является транзакционным.
-     *
-     * <p>Проверка password hash выполняется до начала короткой транзакции
-     * создания login session.</p>
+     * Reject malformed input before any external side effect.
+     * Existing passwords are authenticated as supplied; password creation
+     * policy must not retroactively invalidate old credentials.
      */
     public CurrentUserResponse login(
             LoginRequest request,
             HttpServletRequest httpRequest,
             HttpServletResponse response
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(httpRequest, "httpRequest не должен быть null");
+        Objects.requireNonNull(response, "response не должен быть null");
 
-        Objects.requireNonNull(
-                httpRequest,
-                "httpRequest не должен быть null"
-        );
+        // Important: this is application-boundary validation, not solely
+        // controller/Bean Validation. No IP lookup, Redis or auth on failure.
+        String email = UserEmailNormalizer.normalizeAndValidate(request.email());
+        String password = Objects.requireNonNull(
+                request.password(), "password не должен быть null");
 
-        Objects.requireNonNull(
-                response,
-                "response не должен быть null"
-        );
+        String ipAddress = clientIpResolver.resolve(httpRequest);
 
-        String email =
-                UserEmailNormalizer.normalizeAndValidate(
-                        request.email()
-                );
-
-        String password =
-                Objects.requireNonNull(
-                        request.password(),
-                        "password не должен быть null"
-                );
-
-        /*
-         * IP вычисляется один раз и используется как для предварительного
-         * резервирования login attempt, так и для компенсации успешного входа.
-         * Это исключает расхождение при повторном разборе proxy headers.
-         */
-        String ipAddress =
-                clientIpResolver.resolve(
-                        httpRequest
-                );
-
-        /*
-         * LoginRateLimitService самостоятельно:
-         * - применяет fail-closed policy при недоступности Redis;
-         * - публикует подавленное marker-ами security audit event;
-         * - возвращает 429 через RateLimitExceededException.
-         *
-         * AuthService не должен создавать второй audit event на каждый 429.
-         */
-        loginRateLimitService.checkAllowed(
-                email,
-                ipAddress
-        );
+        // Fail closed if the limit backend is unavailable. Never produce
+        // a duplicate auth failure audit for a limiter rejection.
+        loginRateLimitService.checkAllowed(email, ipAddress);
 
         LoginSessionResult session;
-
         try {
-            Authentication authentication =
-                    authenticationManager.authenticate(
-                            UsernamePasswordAuthenticationToken
-                                    .unauthenticated(
-                                            email,
-                                            password
-                                    )
-                    );
+            Authentication authentication = authenticationManager.authenticate(
+                    UsernamePasswordAuthenticationToken.unauthenticated(email, password));
 
-            if (!(authentication.getPrincipal()
-                    instanceof SafeAiUserPrincipal principal)) {
-
+            if (!(authentication.getPrincipal() instanceof SafeAiUserPrincipal principal)) {
                 throw new AuthenticationServiceException(
-                        "Некорректный тип principal после аутентификации"
-                );
+                        "Некорректный principal после аутентификации");
             }
 
-            /*
-             * Вызов выполняется через внешний Spring proxy.
-             * К моменту возврата транзакция создания сессии уже committed.
-             */
-            session =
-                    loginSessionTransactionService.createSession(
-                            principal,
-                            httpRequest
-                    );
-        } catch (BadCredentialsException
-                 | AccountStatusException exception) {
-
-            authEventService.loginFailed(
-                    email,
-                    httpRequest
-            );
-
+            // Spring proxy returns only after the session transaction commits.
+            session = loginSessionTransactionService.createSession(
+                    principal, httpRequest);
+        } catch (BadCredentialsException | AccountStatusException exception) {
+            authEventService.loginFailed(email, httpRequest);
             throw exception;
-        } catch (AuthenticationException
-                 | DataAccessException
+        } catch (AuthenticationException | DataAccessException
                  | TransactionException exception) {
-
-            throw authServiceUnavailable(
-                    exception
-            );
+            throw authServiceUnavailable(exception);
         }
 
-        /*
-         * Генерация JWT выполняется после commit login transaction,
-         * но до изменения HTTP response.
-         */
-        String accessToken =
-                jwtService.generateToken(
-                        session.accessTokenSubject()
-                );
+        // Token generation and response mutation follow successful commit.
+        String accessToken = jwtService.generateToken(session.accessTokenSubject());
 
-        /*
-         * AuthEventService использует BestEffortStandaloneAuditService.
-         * Поэтому audit success является best-effort side effect: сбой audit
-         * storage логируется внутри audit layer и не отменяет уже committed
-         * login session.
-         */
-        authEventService.loginSuccess(
-                session.currentUser(),
-                httpRequest
-        );
-
-        /*
-         * Успешная аутентификация не должна расходовать общий IP-limit:
-         * email counter удаляется, IP counter уменьшается ровно на одну
-         * предварительно зарезервированную попытку. Сам метод best effort
-         * и не превращает уже успешную аутентификацию в ошибку.
-         */
-        loginRateLimitService.onLoginSuccess(
-                email,
-                ipAddress
-        );
-
-        /*
-         * Старый anonymous CSRF token удаляется после успешного login.
-         * Frontend после login должен снова вызвать GET /api/auth/csrf.
-         */
-        csrfTokenRepository.saveToken(
-                null,
-                httpRequest,
-                response
-        );
-
-        authCookieService.addAccessTokenCookie(
-                response,
-                accessToken
-        );
-
+        authEventService.loginSuccess(session.currentUser(), httpRequest);
+        loginRateLimitService.onLoginSuccess(email, ipAddress);
+        csrfTokenRepository.saveToken(null, httpRequest, response);
+        authCookieService.addAccessTokenCookie(response, accessToken);
         authCookieService.addRefreshTokenCookie(
-                response,
-                session.rawRefreshToken(),
-                session.refreshCookieMaxAge()
-        );
-
+                response, session.rawRefreshToken(), session.refreshCookieMaxAge());
         return session.currentUser();
     }
 
@@ -222,224 +149,93 @@ public class AuthService {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(response, "response не должен быть null");
 
-        Objects.requireNonNull(
-                response,
-                "response не должен быть null"
-        );
+        // Check anonymous rate limit before touching credentials or DB.
+        refreshRateLimitService.checkAllowed(clientIpResolver.resolve(request));
 
-        /*
-         * Coarse anonymous IP-limit выполняется ДО чтения/хэширования
-         * refresh token и ДО PostgreSQL lookup.
-         *
-         * На 429/503 cookies намеренно не очищаются:
-         * refresh session остаётся пригодной для повторной попытки.
-         */
-        refreshRateLimitService.checkAllowed(
-                clientIpResolver.resolve(
-                        request
-                )
-        );
-
-        String rawRefreshToken =
-                authCookieService.extractRefreshToken(
-                        request
-                );
-
-        if (rawRefreshToken == null) {
-            clearAuthCookies(
-                    response
-            );
-
-            throw new InvalidRefreshTokenException(
-                    "Refresh token не найден"
-            );
+        String rawRefreshToken = authCookieService.extractRefreshToken(request);
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            clearAuthCookies(response);
+            throw new InvalidRefreshTokenException("Refresh token не найден");
         }
 
         try {
-            RefreshTokenService.RefreshTokenRotationResult rotation =
-                    refreshTokenService.rotate(
-                            rawRefreshToken,
-                            request
-                    );
+            // Rotation plus access-token signing finishes before writing cookies.
+            // The session transaction service owns rotation and its audit.
+            RefreshSessionResult session =
+                    refreshSessionTransactionService.rotateAndSign(rawRefreshToken, request);
 
-            /*
-             * Rotation transaction уже committed.
-             * Только после этого формируются новые cookies.
-             */
-            String newAccessToken =
-                    jwtService.generateToken(
-                            rotation.accessTokenSubject()
-                    );
-
-            authCookieService.addAccessTokenCookie(
-                    response,
-                    newAccessToken
-            );
-
+            authCookieService.addAccessTokenCookie(response, session.accessToken());
             authCookieService.addRefreshTokenCookie(
-                    response,
-                    rotation.rawRefreshToken(),
-                    rotation.refreshCookieMaxAge()
-            );
+                    response, session.rawRefreshToken(), session.refreshCookieMaxAge());
         } catch (RefreshTokenReuseDetectedException exception) {
-            authEventService.refreshReuseDetected(
-                    exception,
-                    request
-            );
-
-            clearAuthCookies(
-                    response
-            );
-
+            // Reuse is audited by the transactional rotation layer; do not
+            // duplicate the incident via best-effort auth audit.
+            clearAuthCookies(response);
             throw exception;
-        } catch (ExpiredRefreshTokenException exception) {
-            /*
-             * ExpiredRefreshTokenException не наследуется от
-             * InvalidRefreshTokenException.
-             */
-            clearAuthCookies(
-                    response
-            );
-
+        } catch (ExpiredRefreshTokenException | InvalidRefreshTokenException exception) {
+            clearAuthCookies(response);
             throw exception;
-        } catch (InvalidRefreshTokenException exception) {
-            clearAuthCookies(
-                    response
-            );
-
-            throw exception;
-        } catch (DataAccessException
-                 | TransactionException exception) {
-
-            /*
-             * При временной недоступности БД cookies сохраняются,
-             * чтобы клиент мог повторить refresh.
-             */
-            throw authServiceUnavailable(
-                    exception
-            );
+        } catch (DataAccessException | TransactionException exception) {
+            // Transient infrastructure failures preserve existing cookies for retry.
+            throw authServiceUnavailable(exception);
         }
     }
 
     /**
-     * Идемпотентен для отсутствующего и повреждённого refresh token.
-     *
-     * <p>При DB outage локальные cookies всё равно очищаются, но клиент
-     * получает 503, поскольку server-side revocation не была подтверждена.</p>
+     * Logout remains idempotent for absent, malformed and revoked tokens.
+     * Clear browser state even if revocation cannot be confirmed.
      */
     public void logout(
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
-
-        Objects.requireNonNull(
-                response,
-                "response не должен быть null"
-        );
+        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(response, "response не должен быть null");
 
         try {
-            String rawRefreshToken =
-                    authCookieService.extractRefreshToken(
-                            request
-                    );
-
-            if (rawRefreshToken != null) {
-                refreshTokenService
-                        .revokeFamilyAndReturnSubject(
-                                rawRefreshToken
-                        )
-                        .ifPresent(subject ->
-                                authEventService.logout(
-                                        subject,
-                                        request
-                                )
-                        );
+            String rawRefreshToken = authCookieService.extractRefreshToken(request);
+            if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
+                refreshTokenService.revokeFamilyAndReturnSubject(rawRefreshToken)
+                        .ifPresent(subject -> authEventService.logout(subject, request));
             }
         } catch (InvalidRefreshTokenException ignored) {
-            /*
-             * Logout остаётся идемпотентным для отсутствующего,
-             * повреждённого или уже недействительного token.
-             */
-        } catch (DataAccessException
-                 | TransactionException exception) {
-
-            throw authServiceUnavailable(
-                    exception
-            );
+            // Explicit idempotence for malformed/revoked credentials.
+        } catch (DataAccessException | TransactionException exception) {
+            throw authServiceUnavailable(exception);
         } finally {
-            clearAuthCookies(
-                    response
-            );
-
-            csrfTokenRepository.saveToken(
-                    null,
-                    request,
-                    response
-            );
+            clearAuthCookies(response);
+            csrfTokenRepository.saveToken(null, request, response);
         }
     }
 
     @Transactional(readOnly = true)
-    public CurrentUserResponse getCurrentUser(
-            SafeAiUserPrincipal principal
-    ) {
-        Objects.requireNonNull(
-                principal,
-                "principal не должен быть null"
-        );
+    public CurrentUserResponse getCurrentUser(SafeAiUserPrincipal principal) {
+        Objects.requireNonNull(principal, "principal не должен быть null");
 
-        UserEntity user =
-                userRepository
-                        .findByIdWithRolesAndOrganization(
-                                principal.getId()
-                        )
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        "Пользователь не найден: "
-                                                + principal.getId()
-                                )
-                        );
+        UserEntity user = userRepository
+                .findByIdWithRolesAndOrganization(principal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Пользователь не найден: " + principal.getId()));
 
         return new CurrentUserResponse(
                 user.getId(),
-                user.getOrganization()
-                        .getId(),
-                UserEmailNormalizer.normalizeStored(
-                        user.getEmail()
-                ),
+                user.getOrganization().getId(),
+                UserEmailNormalizer.normalizeStored(user.getEmail()),
                 user.getFullName(),
-                user.isEnabled()
-                        && user.getOrganization()
-                        .isEnabled(),
-                UserRoleMapper.toRoleNames(
-                        user
-                )
+                user.isEnabled() && user.getOrganization().isEnabled(),
+                UserRoleMapper.toRoleNames(user)
         );
     }
 
-    private void clearAuthCookies(
-            HttpServletResponse response
-    ) {
-        authCookieService.clearAuthCookies(
-                response
-        );
+    private void clearAuthCookies(HttpServletResponse response) {
+        authCookieService.clearAuthCookies(response);
     }
 
-    private AuthServiceUnavailableException authServiceUnavailable(
-            RuntimeException cause
-    ) {
+    private AuthServiceUnavailableException authServiceUnavailable(RuntimeException cause) {
         return new AuthServiceUnavailableException(
-                AUTH_UNAVAILABLE_INTERNAL_MESSAGE,
-                cause
-        );
+                AUTH_UNAVAILABLE_INTERNAL_MESSAGE, cause);
     }
 }

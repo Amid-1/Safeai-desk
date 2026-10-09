@@ -37,7 +37,7 @@ class AuditRetentionLockServiceTest {
             "select pg_advisory_unlock(?)";
 
     private static final String ACQUIRE_FAILURE_MESSAGE =
-            "Не удалось захватить PostgreSQL advisory lock: audit retention";
+            "Не удалось подтвердить захват PostgreSQL advisory lock: audit retention";
 
     private static final String UNLOCK_FAILURE_MESSAGE =
             "Не удалось освободить PostgreSQL advisory lock: audit retention";
@@ -136,7 +136,7 @@ class AuditRetentionLockServiceTest {
     }
 
     @Test
-    void lockAcquisitionFailureDoesNotRunActionOrAbortConnection()
+    void lockAcquisitionFailureAbortsUncertainConnectionWithoutRunningAction()
             throws SQLException {
         when(connection.prepareStatement(
                 TRY_LOCK_SQL
@@ -182,7 +182,9 @@ class AuditRetentionLockServiceTest {
         verify(connection, never()).prepareStatement(
                 UNLOCK_SQL
         );
-        verify(connection, never()).abort(
+        // A failed acquisition query leaves the session-level lock state
+        // uncertain. The connection must not be reused by the pool.
+        verify(connection).abort(
                 any(Executor.class)
         );
     }

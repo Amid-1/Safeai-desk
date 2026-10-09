@@ -257,7 +257,7 @@ class ChatDatabaseStateConstraintIntegrationTest
                     deployment_ref = 'tampered:deployment'
                 where id = ?
                 """,
-                Timestamp.from(EXECUTION_AT.plusSeconds(2)),
+                Timestamp.from(execution.startedAt().plusSeconds(1)),
                 execution.attemptId()
         )).isInstanceOf(DataAccessException.class);
 
@@ -307,10 +307,13 @@ class ChatDatabaseStateConstraintIntegrationTest
                     cost_usd = 0,
                     currency = 'USD',
                     price_book_version = 'mock-2026-01',
+                    response_observed = true,
+                    response_validation_status = 'ACCEPTED',
+                    protocol_failure_code = null,
                     finished_at = ?
                 where id = ?
                 """,
-                Timestamp.from(EXECUTION_AT.plusSeconds(2)),
+                Timestamp.from(execution.startedAt().plusSeconds(1)),
                 execution.attemptId()
         );
 
@@ -321,7 +324,9 @@ class ChatDatabaseStateConstraintIntegrationTest
                         """
                         select outcome, input_tokens, cached_input_tokens,
                                cache_write_input_tokens, output_tokens,
-                               pricing_status, cost_usd, price_book_version
+                               pricing_status, cost_usd, price_book_version,
+                               response_observed, response_validation_status,
+                               protocol_failure_code
                         from public.model_execution_attempts
                         where id = ?
                         """,
@@ -333,7 +338,10 @@ class ChatDatabaseStateConstraintIntegrationTest
                                 resultSet.getLong("output_tokens"),
                                 resultSet.getString("pricing_status"),
                                 resultSet.getBigDecimal("cost_usd"),
-                                resultSet.getString("price_book_version")
+                                resultSet.getString("price_book_version"),
+                                resultSet.getBoolean("response_observed"),
+                                resultSet.getString("response_validation_status"),
+                                resultSet.getString("protocol_failure_code")
                         ),
                         execution.attemptId()
                 ),
@@ -356,6 +364,9 @@ class ChatDatabaseStateConstraintIntegrationTest
                 .isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(evidence.priceBookVersion())
                 .isEqualTo("mock-2026-01");
+        assertThat(evidence.responseObserved()).isTrue();
+        assertThat(evidence.responseValidationStatus()).isEqualTo("ACCEPTED");
+        assertThat(evidence.protocolFailureCode()).isNull();
     }
 
     /**
@@ -454,7 +465,7 @@ class ChatDatabaseStateConstraintIntegrationTest
         return Objects.requireNonNull(
                 new TransactionTemplate(transactionManager).execute(tx -> {
             ensureAllowAllModelPolicy(policyRepository);
-            catalog.insert(entry);
+            catalog.insert(entry, "FLAT_TOKEN_V1");
             ModelRouteResult route = routing.decide(
                     new ModelRouteRequest(
                             ORGANIZATION_ID,
@@ -477,6 +488,21 @@ class ChatDatabaseStateConstraintIntegrationTest
             assertThat(route.catalogVersion()).isEqualTo(1);
             assertThat(route.provider()).isEqualTo(EXECUTION_PROVIDER);
             assertThat(route.providerModelId()).isEqualTo(EXECUTION_MODEL);
+
+            // V67 verifies the physical attempt against the database's real clock,
+            // not ModelTestFixtures.CLOCK (the fixed historical routing clock).
+            // Keep all catalog, policy and route provenance timestamps historical,
+            // but establish a genuinely live, fenced PROCESSING lease.
+            Timestamp databaseNow = Objects.requireNonNull(
+                    jdbcTemplate.queryForObject(
+                            "select clock_timestamp()",
+                            Timestamp.class
+                    ),
+                    "Database clock must return a timestamp"
+            );
+            Instant liveStartedAt = databaseNow.toInstant().minusSeconds(5);
+            Instant liveTurnCreatedAt = liveStartedAt.minusSeconds(10);
+            Instant liveLeaseUntil = databaseNow.toInstant().plusSeconds(180);
 
             jdbcTemplate.update(
                     """
@@ -503,13 +529,13 @@ class ChatDatabaseStateConstraintIntegrationTest
                     providerOperationId,
                     userMessageId,
                     UUID.randomUUID(),
-                    Timestamp.from(EXECUTION_AT.plusSeconds(60)),
-                    Timestamp.from(EXECUTION_AT),
+                    Timestamp.from(liveLeaseUntil),
+                    Timestamp.from(liveStartedAt),
                     EXECUTION_PROVIDER,
                     EXECUTION_MODEL,
                     route.decisionId(),
-                    Timestamp.from(EXECUTION_AT.minusSeconds(10)),
-                    Timestamp.from(EXECUTION_AT.minusSeconds(10))
+                    Timestamp.from(liveTurnCreatedAt),
+                    Timestamp.from(liveStartedAt)
             );
 
             AiChatRequest baseRequest = new AiChatRequest(
@@ -612,11 +638,11 @@ class ChatDatabaseStateConstraintIntegrationTest
                     "static:" + EXECUTION_PROVIDER,
                     "static:" + EXECUTION_PROVIDER + ":" + EXECUTION_MODEL,
                     EXECUTION_MODEL,
-                    Timestamp.from(EXECUTION_AT.plusSeconds(1)),
-                    Timestamp.from(EXECUTION_AT.plusSeconds(1))
+                    Timestamp.from(liveStartedAt.plusSeconds(1)),
+                    Timestamp.from(liveStartedAt.plusSeconds(1))
             );
 
-            return new ExecutionIds(planId, attemptId);
+            return new ExecutionIds(planId, attemptId, liveStartedAt.plusSeconds(1));
         }),
                 "Execution fixture transaction must return identifiers"
         );
@@ -692,23 +718,31 @@ class ChatDatabaseStateConstraintIntegrationTest
             long outputTokens,
             String pricingStatus,
             BigDecimal costUsd,
-            String priceBookVersion
+            String priceBookVersion,
+            boolean responseObserved,
+            String responseValidationStatus,
+            String protocolFailureCode
     ) {
         private AttemptEvidence {
             Objects.requireNonNull(outcome, "outcome");
             Objects.requireNonNull(pricingStatus, "pricingStatus");
             Objects.requireNonNull(costUsd, "costUsd");
             Objects.requireNonNull(priceBookVersion, "priceBookVersion");
+            Objects.requireNonNull(responseValidationStatus, "responseValidationStatus");
         }
     }
 
     private record ExecutionIds(
             UUID planId,
-            UUID attemptId
+            UUID attemptId,
+            Instant startedAt
     ) {
         private ExecutionIds {
             Objects.requireNonNull(planId, "planId");
             Objects.requireNonNull(attemptId, "attemptId");
+            Objects.requireNonNull(startedAt, "startedAt");
         }
     }
 }
+
+

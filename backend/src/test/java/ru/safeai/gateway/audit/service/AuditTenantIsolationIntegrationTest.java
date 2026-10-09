@@ -114,8 +114,7 @@ class AuditTenantIsolationIntegrationTest
                         null,
                         null,
                         null,
-                        fixture
-                                .foreignOrganizationId()
+                        fixture.foreignOrganizationId()
                 );
 
         assertThatThrownBy(() ->
@@ -149,8 +148,7 @@ class AuditTenantIsolationIntegrationTest
                         null,
                         null,
                         null,
-                        fixture
-                                .foreignOrganizationId()
+                        fixture.foreignOrganizationId()
                 );
 
         Page<AuditEventResponse> page =
@@ -389,7 +387,6 @@ class AuditTenantIsolationIntegrationTest
                 """
                 insert into public.audit_events (
                     id,
-                    user_id,
                     actor_user_id,
                     actor_organization_id,
                     actor_email,
@@ -401,7 +398,6 @@ class AuditTenantIsolationIntegrationTest
                 )
                 values (
                     ?,
-                    null,
                     ?,
                     ?,
                     ?,

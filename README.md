@@ -2,12 +2,13 @@
 
 **SafeAI Desk** — production-oriented корпоративная AI-платформа / AI Gateway для безопасного и управляемого использования внешних AI-моделей внутри организаций.
 
-> **Актуальность:** 02 октября 2026  
-> **Backend baseline:** фактически просмотренные модули `common`, `auth`, `user`, `organization`, `ratelimit`, `audit`, 
-> `usage`, `chat`, `model`, `ai`, `knowledge` и Flyway-эволюция схемы `V1–V58`.  
-> **Статус:** production-oriented **pre-1.0**. Проект уже содержит серьёзные security/durability/governance механизмы, 
-> но README не заявляет compliance certification, billing-grade settlement, формально доказанную HA/SLA или полностью 
-> динамический multi-provider runtime.
+> **Актуальность:** 09 октября 2026  
+> **Backend baseline:** ранее просмотренные модули `common`, `auth`, `user`, `organization`, `ratelimit`, `audit`,
+> `usage`, `chat`, `model`, `ai`, `knowledge` + актуализированная Flyway-эволюция схемы `V1–V70`.
+> В редакции учтены подтверждённые описания `V59–V68`, а также назначения `V69–V70` по именам применённых миграций и результатам тестового запуска. Полный повторный аудит исходников всех модулей не проводился.  
+> **Статус:** production-oriented **pre-1.0**. Проект уже содержит серьёзные security/durability/governance/evidence
+> механизмы и database backstops, но README не заявляет compliance certification, invoice-grade settlement,
+> формально доказанную HA/SLA или полностью динамический multi-provider runtime.
 
 ---
 
@@ -34,7 +35,7 @@
 19. [Модуль `ai`](#модуль-ai)
 20. [Модуль `knowledge`](#модуль-knowledge)
 21. [Ключевые backend contracts](#ключевые-backend-contracts)
-22. [Database / Flyway V1–V58](#database--flyway-v1v58)
+22. [Database / Flyway V1–V70](#database--flyway-v1v70)
 23. [Observability и operational jobs](#observability-и-operational-jobs)
 24. [Тестирование](#тестирование)
 25. [Local development](#local-development)
@@ -94,7 +95,7 @@ Identity
 
 # Текущее состояние
 
-На 02.10.2026 реализован следующий backend baseline.
+Ниже описан подтверждённый ранее backend baseline, дополненный состоянием миграций и тестов на 09.10.2026.
 
 ## Identity / Security
 
@@ -125,18 +126,26 @@ Identity
 - lease + fencing;
 - `processingToken`;
 - `providerOperationId`;
-- quota reservation;
+- DB-enforced `NEW → PROCESSING → terminal` state machine;
+- terminal `ChatTurn` immutability;
+- route-bound quota reservation provenance;
+- cost-verifiable reservation flag;
 - route-decision binding;
-- `provider_call_started_at`;
+- `provider_call_started_at` is set at the durable physical `STARTED` boundary;
 - crash recovery;
 - `AMBIGUOUS` protection;
 - no blind retry после неопределённого external I/O;
 - V50+ durable `ModelExecutionPlan`;
 - durable physical `ModelExecutionAttempt`;
+- final prepared-request receipt before physical I/O;
+- v2-only DB execution binding fence;
 - outcome certainty;
+- `PROTOCOL_REJECTED` as physically executed but application-rejected response evidence;
 - retry/fallback safety;
 - immutable physical target identity;
-- provider usage/pricing evidence.
+- provider usage/pricing evidence;
+- completed Chat message evidence immutability;
+- physical spend read model per `ChatTurn`.
 
 ## Model governance
 
@@ -145,15 +154,24 @@ Identity
 - scheduled `effectiveFrom`;
 - organization model policies;
 - allow/deny/default model rules;
+- canonical/unique model-key arrays;
+- unique required-capability arrays;
 - max input/output envelope;
 - max request cost preflight;
 - monthly budget preflight;
+- route-time `actual / reserved / unknown` commitment evidence;
+- explicit monthly cost state;
 - pricing/data requirements;
+- explicit `pricing_scheme` provenance;
 - retention/training requirements;
 - immutable route decisions;
 - integrity digest;
 - exact route decision ↔ `ChatTurn` binding;
+- sealed pre-RAG request hash;
+- sealed final prepared-request hash;
+- exact RAG retrieval/context provenance for Knowledge requests;
 - input-accounting provenance;
+- fail-closed unconfigured-policy semantics;
 - fail-closed capability gate для ещё не реализованного specialized data plane.
 
 ## Knowledge / RAG
@@ -161,9 +179,12 @@ Identity
 - tenant/ACL-aware Knowledge Bases;
 - organization/member visibility;
 - immutable document versions;
+- separate latest-uploaded and searchable/published version pointers;
+- atomic searchable-pointer advancement only after fenced `READY` publication;
 - durable ingestion jobs;
 - S3-compatible object storage;
 - upload intent journal;
+- separate `needs_review_at` and actual `reviewed_at` evidence;
 - fenced orphan cleanup/reconciliation;
 - bounded extraction;
 - PDF/DOCX/PPTX/XLSX/HTML/Markdown/JSON/XML/CSV/plain text extractors;
@@ -175,19 +196,27 @@ Identity
 - deterministic chunking;
 - RAG context assembly;
 - `GENERAL / KNOWLEDGE_ASSISTED / KNOWLEDGE_ONLY`;
+- immutable RAG context receipt bound to exact retrieval run and prepared AI request;
 - inline citations;
 - citation validation;
 - retrieval provenance;
 - Answer Passport;
 - retrieval evaluation;
 - explicit index-generation lifecycle;
+- hardened generation chronology;
 - fenced generation publication/GC.
 
 ## Audit / Usage / Rate limits
 
 - transactional audit outbox;
-- immutable actor snapshots;
+- canonical immutable actor snapshots;
 - immutable target organization snapshots;
+- DB-validated audit event types;
+- object-only JSON audit details;
+- `audit_events` immutable after INSERT while retention DELETE remains explicit;
+- immutable audit-outbox intent with mutable delivery bookkeeping only;
+- monotonic retry attempt count;
+- terminal dead-letter semantics;
 - retry/dead-letter;
 - cursor pagination;
 - retention jobs;
@@ -197,6 +226,8 @@ Identity
 - live + rollup usage analytics;
 - pricing/usage quality states;
 - UTC aggregation;
+- provider-evidenced monthly commitment ledger;
+- per-ChatTurn known physical spend view;
 - rollup reconciliation.
 
 ---
@@ -285,7 +316,7 @@ AI Physical Execution Plane
 - Redis;
 - Maven Wrapper;
 - Lombok;
-- JUnit 5;
+- JUnit Jupiter 6 (текущие тестовые логи);
 - Mockito / Spring Test;
 - Testcontainers;
 - AWS SDK v2 / S3-compatible storage;
@@ -331,17 +362,129 @@ backend/
 │
 ├── src/main/resources/
 │   ├── db/
-│   │   ├── migration/         # V1 ... V58
+│   │   ├── migration/         # V1 ... V70
 │   │   └── local-migration/   # local-only seed
+│   │
 │   ├── application.yml
 │   ├── application-local.yml
 │   ├── application-local-nginx.yml
 │   ├── application-prod.yml
+│   ├── application-prod-knowledge-reconciliation.example.yml
 │   └── logback-spring.xml
 │
 └── src/test/
     ├── java/
     └── resources/
+    
+    
+backend/
+├── src/
+│   ├── main/
+│   │   ├── java/
+│   │   │   └── ru/
+│   │   │       └── safeai/
+│   │   │           └── gateway/
+│   │   │               ├── ai/
+│   │   │               ├── audit/
+│   │   │               ├── auth/
+│   │   │               ├── chat/
+│   │   │               ├── common/
+│   │   │               ├── knowledge/
+│   │   │               ├── model/
+│   │   │               ├── organization/
+│   │   │               ├── ratelimit/
+│   │   │               ├── usage/
+│   │   │               ├── user/
+│   │   │               └── SafeaiBackendApplication
+│   │   │
+│   │   └── resources/
+│   │       ├── db/
+│   │       │   ├── local-migration/
+│   │       │   │   └── R__seed_local_demo_data.sql
+│   │       │   │
+│   │       │   └── migration/
+│   │       │       ├── V1__init_schema.sql
+│   │       │       ├── V2__seed_reference_data.sql
+│   │       │       ├── V3__denormalize_chat_organization.sql
+│   │       │       ├── V4__schema_hardening.sql
+│   │       │       ├── V5__audit_event_types.sql
+│   │       │       ├── V6__updated_at_triggers.sql
+│   │       │       ├── V7__usage_quotas_and_rollups.sql
+│   │       │       ├── V8__usage_chat_messages_indexes.sql
+│   │       │       ├── V9__audit_events_indexes.sql
+│   │       │       ├── V10__schema_hardening_timestamps_audit_rollups.sql
+│   │       │       ├── V11__add_user_updated_audit_event_type.sql
+│   │       │       ├── V12__enforce_tenant_and_refresh_token_integrity.sql
+│   │       │       ├── V13__identity_refresh_and_message_integrity.sql
+│   │       │       ├── V14__chat_turn_idempotency_and_integrity.sql
+│   │       │       ├── V15__audit_query_and_retention_indexes.sql
+│   │       │       ├── V16__preserve_usage_history_on_user_delete.sql
+│   │       │       ├── V17__ai_usage_and_pricing_metadata.sql
+│   │       │       ├── V18__audit_actor_snapshots.sql
+│   │       │       ├── V19__user_management_details_and_audit.sql
+│   │       │       ├── V20__production_integrity_hardening.sql
+│   │       │       ├── V21__refresh_token_cleanup_batch_index.sql
+│   │       │       ├── V22__chat_single_reply_index.sql
+│   │       │       ├── V23__organization_normalized_name_index.sql
+│   │       │       ├── V24__user_security_and_audit_outbox_hardening.sql
+│   │       │       ├── V25__organization_auth_version.sql
+│   │       │       ├── V26__audit_snapshot_retry_and_retention_hardening.sql
+│   │       │       ├── V27__audit_query_and_outbox_indexes.sql
+│   │       │       ├── V28__usage_analytics_hardening.sql
+│   │       │       ├── V29__usage_analytics_indexes.sql
+│   │       │       ├── V30__validate_usage_constraints.sql
+│   │       │       ├── V31__usage_user_report_index.sql
+│   │       │       ├── V32__chat_turn_state_machine.sql
+│   │       │       ├── V33__chat_turn_indexes.sql
+│   │       │       ├── V34__chat_ambiguous_usage_quality.sql
+│   │       │       ├── V35__chat_turn_composite_integrity.sql
+│   │       │       ├── V36__validate_chat_composite_integrity.sql
+│   │       │       ├── V37__audit_target_organization_snapshots.sql
+│   │       │       ├── V38__knowledge_base_core.sql
+│   │       │       ├── V39__knowledge_documents_and_versions.sql
+│   │       │       ├── V40__knowledge_ingestion_job_version_identity.sql
+│   │       │       ├── V41__durable_knowledge_ingestion_and_hybrid_retrieval.sql
+│   │       │       ├── V42__rag_answers_and_answer_passports.sql
+│   │       │       ├── V43__archive_chat_sessions.sql
+│   │       │       ├── V44__knowledge_production_integrity.sql
+│   │       │       ├── V45__model_control_plane.sql
+│   │       │       ├── V46__model_control_plane_hardening.sql
+│   │       │       ├── V47__knowledge_chunk_generation_uniqueness.sql
+│   │       │       ├── V48__model_input_accounting_provenance.sql
+│   │       │       ├── V49__model_control_plane_strict_routing_and_generic_pricing.sql
+│   │       │       ├── V50__ai_execution_attempt_usage_evidence.sql
+│   │       │       ├── V51__ai_execution_attempt_integrity_hardening.sql
+│   │       │       ├── V52__model_strict_execution_and_modality_integrity.sql
+│   │       │       ├── V53__physical_attempt_transition_and_pricing_integrity.sql
+│   │       │       ├── V54__provider_identity_and_reconciliation_safety.sql
+│   │       │       ├── V55__knowledge_russian_lexical_profile.sql
+│   │       │       ├── V56__knowledge_storage_upload_intents.sql
+│   │       │       ├── V57__knowledge_index_generations.sql
+│   │       │       ├── V58__chat_title_lifecycle.sql
+│   │       │       ├── V59__governance_integrity_hardening.sql
+│   │       │       ├── V60__monthly_cost_commitment_ledger.sql
+│   │       │       ├── V61__model_policy_array_uniqueness.sql
+│   │       │       ├── V62__model_control_plane_hardening.sql
+│   │       │       ├── V63__knowledge_publication_and_retention_hardening.sql
+│   │       │       ├── V64__model_control_plane_completion.sql
+│   │       │       ├── V65__model_execution_binding_enforcement.sql
+│   │       │       ├── V66__physical_response_and_pricing_scheme.sql
+│   │       │       ├── V67__chat_execution_quota_and_evidence_hardening.sql
+│   │       │       ├── V68__audit_integrity_hardening.sql
+│   │       │       ├── V69__audit_actor_link_fk_detachment.sql
+│   │       │       ├── V70__audit_live_user_link_separation.sql
+│   │       │       └── README_DB.md
+│   │       │
+│   │       ├── META-INF/
+│   │       ├── application.yml
+│   │       ├── application-local.yml
+│   │       ├── application-local-nginx.yml
+│   │       ├── application-prod.yml
+│   │       ├── application-prod-knowledge-reconciliation.example.yml
+│   │       └── logback-spring.xml
+│   │
+│   └── test/
+│       └── java/
 ```
 
 Основные зависимости модулей:
@@ -965,6 +1108,7 @@ common/
 ├── config/
 │   ├── SchedulingConfiguration
 │   └── TimeConfiguration
+│
 ├── exception/
 │   ├── ApiErrorCode
 │   ├── ApiErrorResponse
@@ -990,37 +1134,46 @@ common/
 │   ├── ResourceNotFoundException
 │   ├── UserVersionConflictException
 │   └── ValidationErrorExtractor
+│
 ├── pagination/
 │   └── StablePageableNormalizer
+│
 ├── persistence/
 │   ├── DatabaseConstraintClassifier
 │   └── PostgresAdvisoryLockExecutor
+│
 ├── platform/
 │   ├── PlatformProperties
 │   └── PlatformPropertiesConfiguration
-└── security/
-    ├── AccessTokenSubject
-    ├── BearerAuthenticationEntryPoint
-    ├── ClientIpProperties
-    ├── ClientIpResolver
-    ├── CorsProperties
-    ├── JwtCodecConfiguration
-    ├── JwtProperties
-    ├── JwtRsaKeyRing
-    ├── JwtService
-    ├── ManagementSecurityConfig
-    ├── package-info.java
-    ├── PasswordEncodingConfiguration
-    ├── ProductionSecurityInvariantValidator
-    ├── RequestIdFilter
-    ├── RestAccessDeniedHandler
-    ├── RestAuthenticationEntryPoint
-    ├── RoleAuthorityMapper
-    ├── SafeAiJwtAuthenticationConverter
-    ├── SafeAiUserPrincipal
-    ├── SecurityIdentityValidator
-    ├── SecurityPropertiesConfiguration
-    └── SystemRole
+│
+├── security/
+│   ├── AccessTokenSubject
+│   ├── BearerAuthenticationEntryPoint
+│   ├── ClientIpProperties
+│   ├── ClientIpResolver
+│   ├── CorsProperties
+│   ├── JwtCodecConfiguration
+│   ├── JwtProperties
+│   ├── JwtRsaKeyRing
+│   ├── JwtService
+│   ├── ManagementSecurityConfig
+│   ├── package-info.java
+│   ├── PasswordEncodingConfiguration
+│   ├── ProductionEnvironmentCondition
+│   ├── ProductionSecurityInvariantValidator
+│   ├── RequestIdFilter
+│   ├── RestAccessDeniedHandler
+│   ├── RestAuthenticationEntryPoint
+│   ├── RoleAuthorityMapper
+│   ├── SafeAiJwtAuthenticationConverter
+│   ├── SafeAiUserPrincipal
+│   ├── SecurityIdentityValidator
+│   ├── SecurityPropertiesConfiguration
+│   └── SystemRole
+│
+└── validation/
+     └── UnicodeValidationSupport
+
 ```
 
 ## Основные контракты
@@ -1101,6 +1254,7 @@ auth/
 │   └── UserStatusFilter
 │
 ├── service/
+│   ├── AuthAuditRequestSupport
 │   ├── AuthCookieConfigurationValidator
 │   ├── AuthCookieProperties
 │   ├── AuthCookieService
@@ -1109,6 +1263,9 @@ auth/
 │   ├── LoginSessionResult
 │   ├── LoginSessionTransactionService
 │   ├── LogoutAuditSubject
+│   ├── RefreshReuseAuditService
+│   ├── RefreshSessionResult
+│   ├── RefreshSessionTransactionService
 │   ├── RefreshTokenCleanupBatchService
 │   ├── RefreshTokenCleanupJob
 │   ├── RefreshTokenCleanupProperties
@@ -1202,6 +1359,7 @@ ru.safeai.gateway.user
 user/
 ├── controller/
 │   └── UserController
+│
 ├── dto/
 │   ├── CreateUserRequest
 │   ├── PermanentDeleteUserRequest
@@ -1212,16 +1370,21 @@ user/
 │   ├── UserDetailsResponse
 │   ├── UserResponse
 │   └── UserStatisticsResponse
+│
 ├── entity/
 │   ├── RoleEntity
 │   └── UserEntity
+│
 ├── event/
 │   └── UserSecurityStateChangedEvent
+│
 ├── mapper/
 │   └── UserRoleMapper
+│
 ├── repository/
 │   ├── RoleRepository
 │   └── UserRepository
+│
 ├── service/
 │   ├── UserManagementProperties
 │   ├── UserSecurityStatus
@@ -1230,6 +1393,7 @@ user/
 │   ├── UserStatusCacheProductionInvariantVerifier
 │   ├── UserStatusCacheProperties
 │   └── UserStatusCacheService
+│
 └── validation/
     ├── BcryptUtf8Length
     ├── BcryptUtf8LengthValidator
@@ -1283,8 +1447,10 @@ ru.safeai.gateway.organization
 organization/
 ├── audit/
 │   └── OrganizationAuditSnapshotProvider
+│
 ├── controller/
 │   └── OrganizationController
+│
 ├── dto/
 │   ├── CreateOrganizationRequest
 │   ├── DisableOrganizationRequest
@@ -1296,13 +1462,17 @@ organization/
 │   ├── OrganizationType
 │   ├── UpdateOrganizationEnabledRequest
 │   └── UpdateOrganizationRequest
+│
 ├── entity/
 │   └── OrganizationEntity
+│
 ├── event/
 │   └── OrganizationSecurityStateChangedEvent
+│
 ├── repository/
 │   ├── OrganizationImpactQueryRepository
 │   └── OrganizationRepository
+│
 └── service/
     ├── OrganizationAccessPolicy
     ├── OrganizationCommandOperations
@@ -1479,6 +1649,7 @@ audit/
 │   ├── AuditCommand
 │   ├── AuditCommandFactory
 │   ├── AuditCursorCodec
+│   ├── AuditDatabaseClock
 │   ├── AuditDetailsSanitizer
 │   ├── AuditDirectoryService
 │   ├── AuditEventCursorService
@@ -1522,6 +1693,32 @@ audit_events
 - delivery retry безопасно повторяется;
 - `audit_events.id = audit_outbox.id` поддерживает idempotent delivery;
 - uncertain DB commit не приводит автоматически к duplicate audit event.
+
+### V68–V70 database integrity
+
+V68 делает разделение intent/evidence явным на уровне PostgreSQL:
+
+- `audit_outbox.event_type` обязан существовать в `audit_event_types`;
+- `details` и в outbox, и в final events должен быть JSON object;
+- actor email canonicalized как lowercase + trim;
+- actor display name canonicalized через trim;
+- control characters запрещены в actor/organization snapshot text;
+- `audit_events` нельзя `UPDATE` после вставки;
+- retention `DELETE` намеренно не блокируется;
+- immutable поля `audit_outbox` нельзя менять после enqueue;
+- `attempt_count` не может уменьшаться;
+- после `dead_lettered_at` delivery row становится terminal;
+- dead-letter row не может одновременно оставаться scheduled через `next_attempt_at`.
+
+### V69–V70: actor snapshot и live user link
+
+Последовательные миграции `V69__audit_actor_link_fk_detachment.sql` и
+`V70__audit_live_user_link_separation.sql` уточняют границы между **исторической
+идентичностью инициатора audit event** и **актуальной ссылкой на пользователя**.
+Ключевой принцип: удаление или изменение существования user row не должно
+уничтожать уже сохранённую историю аудита. При этом live linkage и правила
+tenant isolation должны оставаться проверяемыми. Точные правила удаления,
+`ON DELETE` и состав колонок определяются SQL этих миграций, а не данным README.
 
 ## Immutable snapshots
 
@@ -1607,8 +1804,10 @@ usage/
 │   ├── UsageConfiguration
 │   ├── UsageJdbcClients
 │   └── UsageProperties
+│
 ├── controller/
 │   └── UsageController
+│
 ├── dto/
 │   ├── PagedResponse
 │   ├── UsageCostSummary
@@ -1624,6 +1823,7 @@ usage/
 │   ├── UsageSummaryResponse
 │   ├── UsageTokenSummary
 │   └── UsageUserSummaryResponse
+│
 ├── repository/
 │   ├── JdbcUsageQueryRepository
 │   ├── UsageFactQueryBuilder
@@ -1635,6 +1835,7 @@ usage/
 │   ├── UsageRollupStateRepository
 │   ├── UsageRowMapperSupport
 │   └── UsageSqlFragments
+│
 └── service/
     ├── UsageQueryService
     ├── UsageReportExecutor
@@ -1693,11 +1894,28 @@ SQL paths имеют:
 - performance/integration tests;
 - EXPLAIN/EXPLAIN ANALYZE coverage в тестовой базе.
 
-## Важная граница
+## Product usage vs physical spend
 
-Текущий Usage subsystem является product/chat usage analytics.
+Usage subsystem остаётся product/chat analytics, но после `V60/V62/V67` физические расходы больше не обязаны
+исчезать из accounting только потому, что `ChatTurn` не завершился пользовательским success.
 
-Он **не является полным provider-spend ledger**, потому что V50+ physical attempt может быть billable даже если соответствующий ChatTurn не завершился пользовательским success. Для FinOps нужен отдельный physical-spend view/ledger по `model_execution_attempts`.
+Отдельные DB read models дают разные представления:
+
+```text
+model_cost_commitment_ledger_v62
+    → provider-evidenced actual cost
+    → active upper-bound reservations
+    → unknown liability count
+    → retry-safe carry-forward semantics
+
+chat_physical_spend_v67
+    → known executed input/output
+    → known provider-evidenced cost
+    → usage_unverifiable / cost_unverifiable flags
+```
+
+Это существенно ближе к FinOps, но всё ещё **не invoice/settlement ledger**: `actual` здесь означает
+provider-evidenced cost по сохранённой pricing/usage evidence, а не подтверждение расчёта с поставщиком.
 
 ---
 
@@ -1765,7 +1983,8 @@ chat/
 │
 ├── quota/
 │   ├── ChatQuotaConsumption
-│   └── ChatQuotaPolicy
+│   ├── ChatQuotaPolicy
+│   └── ChatQuotaReservation
 │
 ├── repository/
 │   ├── ChatHistoryRepository
@@ -1782,6 +2001,7 @@ chat/
 └── service/
 │   ├── AiHistoryBuilder
 │   ├── ChatContentNormalizer
+│   ├── ChatDatabaseClockRepository
 │   ├── ChatLockService
 │   ├── ChatMapper
 │   ├── ChatProcessingContext
@@ -1816,6 +2036,17 @@ PROCESSING
 ```
 
 `AMBIGUOUS` — отдельное operationally-sensitive состояние, а не alias для `FAILED`.
+
+V67 закрепляет переходы в PostgreSQL trigger-ом:
+
+```text
+NEW -> PROCESSING
+PROCESSING -> SUCCEEDED | FAILED | AMBIGUOUS
+terminal -> no further UPDATE
+```
+
+Identity/provenance поля `ChatTurn` также защищены от изменения после создания. Дополнительно message row со
+`status=COMPLETED` становится immutable evidence и не может быть переписан ORM/direct SQL.
 
 ## Idempotency
 
@@ -1863,23 +2094,48 @@ Stale worker не может завершить turn после lease takeover.
 
 ## Provider-call ambiguity
 
-Legacy/logical boundary:
+После V67 `provider_call_started_at` больше не должен быть application-level догадкой о том, начался ли provider call.
+
+DB boundary для вставки физического attempt:
+
+```text
+ExecutionPlan
+  ↓
+ChatTurn must be PROCESSING
+  ↓
+processing_token + live lease checked under row lock
+  ↓
+provider_call_started_at = COALESCE(existing, DB clock_timestamp())
+  ↓
+Attempt STARTED may be inserted
+  ↓
+external provider I/O
+```
+
+Поэтому:
 
 ```text
 provider_call_started_at = null
-    → provider ещё не был начат
-    → recovery может быть безопасным
+    → durable STARTED boundary ещё не пройдена
 
 provider_call_started_at != null
-    → provider мог выполнить operation
-    → blind retry запрещён
+    → физический provider execution был разрешён к старту
+    → blind replay после неопределённого исхода запрещён
 ```
 
-V50+ physical attempt ledger дополняет этот coarse-grained marker более точными attempt states.
+Точная истина об outcome хранится в `ModelExecutionAttempt`; `provider_call_started_at` остаётся coarse-grained
+ChatTurn marker для recovery/fencing.
 
 ## Quota reservation
 
-Quota резервируется до provider call и затем settlement/finalization корректирует результат согласно persisted usage/cost quality.
+Quota резервируется до provider call и затем finalization корректирует состояние согласно persisted usage/cost quality.
+
+V67 добавляет provenance:
+
+- `reservation_version=1` — legacy static reservation;
+- `reservation_version=2` — reservation, привязанная к immutable `ModelRouteDecision`;
+- `model_route_decision_id` обязателен для v2;
+- `cost_verifiable=true` допустим только когда `reserved_cost_usd` является доказанным upper bound по поддерживаемой immutable pricing scheme.
 
 ## Recovery
 
@@ -2045,9 +2301,13 @@ Catalog entry — immutable/append-only snapshot.
 - training-use status;
 - pricing status;
 - pricing dimensions/version;
+- explicit `pricingScheme`;
 - `effectiveFrom`;
 - source;
 - creator/time.
+
+V59/V62 дополнительно защищают canonical text/numeric boundaries, а V66 вводит explicit settlement algorithm identity.
+Исторические legacy prices сохраняются, но не должны автоматически считаться проверенной современной pricing scheme.
 
 ### Latest vs effective
 
@@ -2082,7 +2342,15 @@ Policy append-only/versioned.
 - require no training;
 - require zero data retention.
 
+DB canonicality hardening:
+
+- каждый allow/deny key соответствует normalized lowercase key syntax;
+- duplicate key внутри allow/deny array запрещён;
+- required capability array route decision также должен быть unique.
+
 Первое отсутствие policy представляется fail-closed/unconfigured state, а не неявным «разрешить всё».
+После V65 новый strict integrity-v3 decision без policy может существовать только как явное
+`DENIED / MODEL_NOT_ALLOWED` unconfigured evidence; physical execution такой row не авторизует.
 
 ## Route decision
 
@@ -2104,6 +2372,45 @@ Policy append-only/versioned.
 - SHA-256 digest.
 
 DB deferred trigger связывает `ALLOWED` decision с exact `ChatTurn`.
+
+### Budget commitments — V60/V62/V64
+
+Budget accounting разделяет:
+
+```text
+actual_cost_usd
+reserved_cost_usd
+unknown_cost_count
+cost_state
+```
+
+V62 исправляет важный representability case: full monthly liability может оставаться unknown, но известный lower bound
+уже способен доказать budget overrun. V64 сохраняет route-time commitment evidence отдельно и immutable, не изменяя
+исторические V1/V2/V3 decision hashes.
+
+### Final request binding — V62/V64/V65
+
+Governance evidence проходит две durable seal-точки:
+
+```text
+base/pre-RAG request
+  ↓ SHA-256
+model_route_reserved_requests
+  ↓
+retrieval + RAG + context fitting
+  ↓ SHA-256
+model_route_prepared_requests_v62
+  ↓
+binding_version=2
+  ↓
+ExecutionPlan / physical attempt
+```
+
+Для Knowledge mode prepared receipt дополнительно обязан совпасть с immutable
+`knowledge_rag_context_receipts_v64`: exact `RetrievalRun`, KB, user/org, context hash и final prepared-request hash.
+
+После V65 новые prepared receipts должны иметь `binding_version=2`, а DB trigger на
+`model_execution_attempts` не разрешает physical I/O без exact v2 binding.
 
 ## Input accounting
 
@@ -2179,11 +2486,13 @@ ai/
 │   ├── AiRetryTimeoutBudgetValidator
 │   ├── AnthropicProviderConfiguration
 │   └── OpenAiProviderConfiguration
+│
 ├── dto/
 │   ├── AiChatRequest
 │   ├── AiChatResponse
 │   ├── AiMessage
 │   └── AiMessageRole
+│
 ├── exception/
 │   ├── AiContextLimitException
 │   ├── AiProviderBillingException
@@ -2215,20 +2524,26 @@ ai/
 │   ├── ProviderExecutionTarget
 │   ├── ProviderFailureCertainty
 │   ├── ProviderPricingEvidence
+│   ├── ProviderResponseEvidence
 │   ├── ProviderUsageEvidence
 │   ├── ResolvedModelMismatchException
+│   ├── ResponseValidationStatus
 │   └── RetrySafety
 │
 │
 ├── input/
 │   ├── AiInputUnitEstimator
+│   └── AiRequestFingerprint
+│
 ├── metadata/
 │   ├── AiResponseStatus
 │   ├── AiTokenUsage
 │   ├── PricingStatus
 │   └── UsageStatus
+│
 ├── pricing/
 │   ├── ModelPricingProperties
+│   ├── ModelPricingScheme
 │   ├── ModelPricingService
 │   ├── PricingResolver
 │   ├── PricingResult
@@ -2239,11 +2554,14 @@ ai/
 │   ├── anthropic/
 │   │   ├── AnthropicProperties
 │   │   └── AnthropicProvider
+│   │
 │   ├── mock/
 │   │   └── MockAiProvider
+│   │
 │   ├── openai/
 │   │   ├── OpenAiProperties
 │   │   └── OpenAiProvider
+│   │
 │   ├── AiContextWindowProperties
 │   ├── AiContextWindowService
 │   ├── AiJsonNodeSupport
@@ -2257,7 +2575,9 @@ ai/
 │   ├── AiResponseTooLargeIOException
 │   ├── AiRestClientFactory
 │   ├── AiRetryProperties
-│   └── ProviderPropertyValidator
+│   ├── ProviderEvidenceText
+│   ├── ProviderPropertyValidator
+│   └── ProviderRegistry
 │
 └── web/
     └── AiExceptionHandler
@@ -2281,18 +2601,27 @@ AnthropicProvider
 
 ## Durable physical execution
 
-Начиная с V50 AI execution имеет отдельную durable evidence layer.
+Начиная с V50 AI execution имеет отдельную durable evidence layer; V62–V67 доводят binding/start boundary до
+жёсткого database-enforced контракта.
 
 ```text
 ModelRouteDecision
       ↓
+sealed base request
+      ↓
+final prepared request + optional exact RAG receipt
+      ↓
+binding_version=2
+      ↓
 ModelExecutionPlan
       ↓
-ModelExecutionAttempt #1
+live fenced ChatTurn check
+      ↓
+ModelExecutionAttempt STARTED + provider_call_started_at
       ↓
 provider I/O
       ↓
-terminal attempt evidence
+terminal physical evidence
       ↓
 Chat finalization
 ```
@@ -2300,11 +2629,13 @@ Chat finalization
 Ключевой порядок:
 
 ```text
-validate route/binding
+validate governed route/envelope
+  ↓
+commit final prepared-request binding
   ↓
 commit ExecutionPlan
   ↓
-commit Attempt STARTED
+commit Attempt STARTED using live lease/fencing + DB wall clock
   ↓
 external provider I/O
   ↓
@@ -2313,7 +2644,8 @@ persist terminal physical evidence
 application/chat finalization
 ```
 
-Это позволяет переживать crash boundaries без ложного предположения «если Chat не ответил, provider точно ничего не сделал».
+Это позволяет переживать crash boundaries без ложного предположения «если Chat не ответил, provider точно ничего не сделал»
+и не позволяет historical binding v1 авторизовать новый physical call.
 
 ## Physical target identity
 
@@ -2344,7 +2676,7 @@ Outcome certainty не эквивалентен HTTP status и не эквива
 
 Следующий physical attempt допускается только если предыдущий terminal state доказан как retry-safe.
 
-V53 DB boundary сериализует attempt insert и требует:
+DB boundary сериализует attempt insert и требует:
 
 ```text
 previous outcome = FAILED
@@ -2353,7 +2685,15 @@ AND retrySafety = SAME_TARGET_RETRY_ALLOWED
 AND exact same physical target
 ```
 
-Blind fallback/retry после `AMBIGUOUS` запрещён.
+V59 дополнительно запрещает второй physical attempt для bounded-cost routes, если действует:
+
+```text
+HARD monthly budget
+OR policy.max_request_cost_usd
+```
+
+Таким образом cost upper-bound reservation не может быть нарушен скрытым retry. Blind retry/fallback после
+`AMBIGUOUS`, `SUCCEEDED` или physically executed protocol rejection не допускается.
 
 ## Resolved model validation
 
@@ -2381,7 +2721,7 @@ Provider base URL:
 
 ## Pricing
 
-`VersionedCatalogPricingResolver` привязывает settlement к:
+`VersionedCatalogPricingResolver` привязывает calculation evidence к:
 
 ```text
 provider operation
@@ -2393,17 +2733,40 @@ route decision
 exact catalog entry/version
   ↓
 pricing version
+  ↓
+pricing scheme
 ```
 
 Unknown pricing не становится zero.
 
-`StaticConfigurationPricingResolver` остаётся compatibility/dev path, а governed resolution должен использовать versioned catalog evidence.
+V66 делает pricing algorithm identity явной:
 
-## Usage evidence
+```text
+FLAT_TOKEN_V1
+LEGACY_FLAT_UNVERIFIED_V1
+UNSUPPORTED_COMPLEX_V1
+```
+
+Legacy `CONFIGURED` pricing после migration не должен автоматически считаться доказуемым современным расчетом:
+governed path обязан fail closed, пока новая audited catalog version не выберет поддерживаемую scheme.
+
+`StaticConfigurationPricingResolver` остаётся compatibility/dev path, а governed resolution должен использовать
+versioned catalog evidence.
+
+## Usage / response evidence
 
 Provider usage поддерживает quality states и specialized billing dimensions.
 
-Pricing/usage evidence сохраняется на physical attempt для дальнейшего reconciliation.
+V66 отдельно фиксирует факт физически наблюдавшегося provider response:
+
+- `response_observed`;
+- `response_validation_status`;
+- `provider_http_status`;
+- `protocol_failure_code`;
+- `PROTOCOL_REJECTED` outcome.
+
+Это позволяет сохранить billable `KNOWN_EXECUTED` evidence даже когда ответ нельзя принять на application/protocol layer.
+Pricing/usage evidence остаётся на physical attempt для reconciliation.
 
 ---
 
@@ -2422,6 +2785,7 @@ knowledge/
 ├── chunking/
 │   ├── KnowledgeChunkCandidate
 │   └── KnowledgeChunker
+│
 ├── config/
 │   ├── KnowledgeEmbeddingConfigurationInvariantVerifier
 │   ├── KnowledgeEmbeddingProperties
@@ -2431,12 +2795,14 @@ knowledge/
 │   ├── KnowledgeProcessingConfiguration
 │   ├── KnowledgeRagProperties
 │   └── KnowledgeRetrievalProperties
+│
 ├── controller/
 │   ├── AnswerPassportController
 │   ├── KnowledgeBaseController
 │   ├── KnowledgeDocumentController
 │   ├── KnowledgeEvaluationController
 │   └── KnowledgeRetrievalController
+│
 ├── dto/
 │   ├── AnswerCitationResponse
 │   ├── AnswerPassportResponse
@@ -2464,6 +2830,7 @@ knowledge/
 │   ├── UpdateKnowledgeBaseMemberRequest
 │   ├── UpdateKnowledgeBaseRequest
 │   └── UpdateKnowledgeDocumentRequest
+│
 ├── embedding/
 │   ├── HashingKnowledgeEmbeddingProvider
 │   ├── KnowledgeEmbeddingException
@@ -2622,6 +2989,20 @@ Document metadata отделено от immutable uploaded versions.
 - uploader/time;
 - ingestion identity.
 
+После V63 у документа два разных указателя:
+
+```text
+current_version_id
+    = latest uploaded version
+    = может быть PENDING / processing / FAILED
+
+searchable_version_id
+    = latest successfully published searchable version
+    = меняется только после fenced READY publication
+```
+
+Поэтому новый upload больше не должен временно скрывать предыдущую рабочую searchable version.
+
 ## Upload journal — V56
 
 Новый upload создаёт durable intent.
@@ -2644,6 +3025,13 @@ CLEANING
 > Нельзя автоматически считать historical/uncertain S3 object orphan-ом только потому, что SQL row не найден.
 
 Cleanup разрешён только для positively known `STORED` unlinked object с fencing.
+
+V63 также разделяет timestamps:
+
+- `needs_review_at` — когда операция попала в очередь `NEEDS_REVIEW`;
+- `reviewed_at` — резервируется для фактически завершённого human review.
+
+Попадание в review queue больше не маскируется как уже состоявшийся review.
 
 ## Ingestion
 
@@ -2798,9 +3186,13 @@ evidence flags
 
 Это provenance document, а не обещание семантической истинности ответа.
 
-## Index generations — V57
+V64 добавляет более раннюю execution-time proof-точку — immutable `knowledge_rag_context_receipts_v64`.
+Она доказывает, что exact retrieval/context assembly был связан с exact final prepared AI request **до**
+физического provider execution.
 
-Введена отдельная generation-level lifecycle:
+## Index generations — V57/V59/V63
+
+Generation-level lifecycle:
 
 ```text
 ACTIVE
@@ -2814,12 +3206,16 @@ COLLECTED
 
 Инварианты:
 
+- новая generation может быть вставлена только как `ACTIVE`;
+- retirement/collection chronology проверяется БД;
 - максимум одна `ACTIVE` generation для document version;
 - publication проверяет exact chunk count/provenance;
 - stale publication блокируется;
+- searchable pointer меняется атомарно только после успешной publication;
+- защищается именно generation, реально доступная retrieval через `searchable_version_id`;
 - chunk deletion разрешён только fenced GC;
 - retrieval evidence защищает referenced chunks;
-- retired/collected generation нельзя «воскресить» сменой current version;
+- retired/collected generation нельзя «воскресить»;
 - incomplete GC transaction блокируется deferred guard.
 
 ---
@@ -2970,7 +3366,7 @@ Answer Passport читается по chat/turn identity через `AnswerPassp
 
 ---
 
-# Database / Flyway V1–V58
+# Database / Flyway V1–V70
 
 Production migrations:
 
@@ -3025,13 +3421,18 @@ local seed != production reference data
 | `V56`     | durable Knowledge storage upload intents |
 | `V57`     | Knowledge index generations + fenced publication/GC |
 | `V58`     | deterministic chat title lifecycle |
-| `V59`     |  |
-| `V60`     |  |
-| `V61`     |  |
-| `V62`     |  |
-| `V63`     |  |
-| `V64`     |  |
-| `V65`     |  |
+| `V59`     | governance integrity: canonical model keys, bounded-cost single-attempt rule, reconciliation/title/generation hardening |
+| `V60`     | UTC monthly physical cost commitment ledger: actual, reserved, unknown liability, carry-forward |
+| `V61`     | model-policy allow/deny array uniqueness |
+| `V62`     | budget representability fix, final prepared-request receipt, capability canonicality, commitment ledger v2 |
+| `V63`     | Knowledge searchable-version publication, generation lifecycle hardening, review-time semantics |
+| `V64`     | immutable route-time budget commitments, RAG context receipt, prepared-request binding v2 |
+| `V65`     | post-rollout binding v2 enforcement and DB physical-execution fence |
+| `V66`     | physical response/protocol rejection evidence + explicit fail-closed pricing scheme provenance |
+| `V67`     | ChatTurn state/evidence hardening, live STARTED fencing, quota provenance, physical-spend view, DB clock |
+| `V68`     | audit event/outbox integrity: canonical snapshots, typed payload, immutable evidence/intent, terminal dead-letter state |
+| `V69`     | audit actor-link FK detachment: отделение исторического actor snapshot от ссылочной зависимости на удаляемую учётную запись |
+| `V70`     | audit live-user link separation: разделение живой ссылки на пользователя и исторических данных audit actor; сохранение audit evidence при изменении жизненного цикла пользователя |
 
 ## Важные DB boundaries
 
@@ -3042,21 +3443,39 @@ local seed != production reference data
 - exactly-one-role;
 - composite tenant FK;
 - refresh family integrity;
-- audit state checks;
+- audit event type/payload/snapshot validation;
+- immutable `audit_events` UPDATE boundary;
+- immutable `audit_outbox` intent + monotonic delivery metadata;
 - usage quality checks;
 - one reply per user message;
-- ChatTurn lifecycle constraints;
+- DB-enforced ChatTurn transition graph;
+- terminal ChatTurn immutability;
+- completed Chat message immutability;
 - route-decision immutability;
 - deferred exact route-decision ↔ ChatTurn validation;
+- canonical unique model-policy key arrays;
+- route-time budget commitment evidence;
+- sealed base request;
+- sealed final prepared request;
+- exact Knowledge RAG context receipt;
+- binding-version=2 physical execution fence;
 - execution-plan immutability;
+- live lease/fencing requirement at physical `STARTED`;
 - physical attempt sequence;
+- bounded-cost single-attempt rule;
 - physical retry safety;
 - provider target identity;
+- physical response/protocol-rejection evidence;
+- explicit pricing-scheme identity;
 - reconciliation safety;
+- monthly physical cost commitment read model;
+- per-ChatTurn known physical spend read model;
+- Knowledge latest-uploaded vs searchable-version separation;
 - Knowledge chunk/generation provenance;
 - one active Knowledge generation;
-- fenced generation GC;
-- deterministic chat title provenance.
+- fenced generation publication/GC;
+- generation chronology;
+- deterministic chat title provenance and no-backwards provenance transition.
 
 ## Concurrent indexes
 
@@ -3118,12 +3537,49 @@ Multi-instance job должен иметь DB/distributed coordination там, �
 
 README не утверждает `BUILD SUCCESS` без фактического запуска конкретного commit.
 
+## Подтверждённое состояние на 09.10.2026
+
+По предоставленному Maven Surefire summary последнего полного запуска:
+
+```text
+Tests run: 2238, Failures: 0, Errors: 2, Skipped: 3
+BUILD FAILURE
+```
+
+Обе ошибки локализованы в `ChatTurnStateMachineIntegrationTest`, который находится
+**в `ru.safeai.gateway.knowledge.integration`**. Его исторический helper
+`expire()` обновляет `chat_turns.created_at`; PostgreSQL V67 корректно отвергает
+изменение неизменяемой identity. При этом одноимённый класс в
+`ru.safeai.gateway.chat.integration` уже использует тестовый `Clock` для
+моделирования истечения lease и отдельно проходил в IntelliJ IDEA.
+Наличие двух классов с одинаковым простым именем не означает, что второй
+можно безопасно удалить: сперва необходимо сопоставить их сценарии и сохранить
+уникальное покрытие. Исправление должно выполняться в устаревшем тестовом
+helper/fixture без отключения DB triggers, изменения `created_at` и снижения
+строгости assertions.
+
+Статус сборки **не является** подтверждением полного green baseline.
+Необходимо заново прогнать `./mvnw clean test` после исправления оставшегося
+класса и приложить Surefire summary нового запуска.
+
 ## Backend
 
 ```bash
 cd backend
 ./mvnw clean test
 ```
+
+Для двух одноимённых интеграционных классов в разных пакетах используйте
+**полное имя** при выборочном запуске:
+
+```bash
+./mvnw -Dtest=ru.safeai.gateway.chat.integration.ChatTurnStateMachineIntegrationTest test
+./mvnw -Dtest=ru.safeai.gateway.knowledge.integration.ChatTurnStateMachineIntegrationTest test
+```
+
+Команда с коротким `-Dtest=ChatTurnStateMachineIntegrationTest` потенциально
+выберет оба класса и не подходит для изоляции диагностики.
+
 
 Windows:
 
@@ -3229,8 +3685,8 @@ mvnw.cmd clean test
 Перед серьёзным deployment:
 
 ```text
-fresh V1 → V58
-representative populated upgrade → V58
+fresh V1 → V70
+representative populated upgrade → V70
 Flyway history validation
 critical index validity check
 backend clean test
@@ -3395,121 +3851,96 @@ Redirect following с credentials запрещён.
 
 # Текущие ограничения и production-readiness gaps
 
-Этот раздел фиксирует **проверенные на 02.10.2026 ограничения**, чтобы README не создавал ложное впечатление полной enterprise-готовности.
-
-## P0 — Model budget-state representability
-
-Текущая Java budget semantics допускает состояние, при котором:
-
-```text
-historical cost partially unknown
-+
-known lower bound already exceeds budget
-```
-
-то есть budget уже доказанно exceeded, но full monthly projected amount остаётся unknown.
-
-V45 DB constraints одновременно требуют:
-
-```text
-budget_exceeded = true
-→ monthly_projected_usd != null
-
-monthly_cost_known = false
-→ monthly_projected_usd = null
-```
-
-Такое состояние невозможно сохранить.
-
-До серьёзного `HARD` budget production это нужно исправить новой migration + согласованной domain model.
-
-## P1 — AI physical outcome vs application outcome
-
-Текущая attempt schema хорошо различает execution certainty, но не идеально выражает случай:
-
-```text
-provider HTTP response фактически получен
-+
-вызов выполнен/принят на transport level
-+
-response protocol/application validation не прошёл
-```
-
-Нужно отделить physical execution truth от application response acceptance, не теряя billable evidence.
+Этот раздел фиксирует **зафиксированные в ранее проанализированном коде ограничения (переоценены по доступным материалам на 09.10.2026)**. Пункты, закрытые `V59–V68`,
+из списка удалены: budget-state representability закрыт `V62/V64`, final-request/RAG binding — `V62/V64/V65`,
+searchable Knowledge publication — `V63`, physical response vs protocol rejection — `V66`,
+а Chat/Audit evidence получил дополнительные DB backstops в `V67/V68`.
 
 ## P1 — Governed provider entry point
 
-Реальные provider adapters должны fail closed при вызове вне governed `AiExecutionService` / active attempt scope.
+DB уже не разрешает новый physical attempt без v2 final-request binding, а `STARTED` требует live fenced `PROCESSING`
+turn. При этом provider adapter implementation всё равно должен оставаться недоступным для произвольного application
+call-site в обход governed execution scope.
 
-Иначе invariant «каждый physical call имеет durable attempt evidence» остаётся частично дисциплиной call-site.
+Целевой invariant:
+
+```text
+no governed execution identity
+    → no credential-bearing provider I/O
+```
+
+Это желательно подкреплять package/module visibility, explicit execution capability/token и integration tests.
 
 ## P1 — ExecutionPlan recovery
 
-После crash:
+Crash boundary:
 
 ```text
+final request binding committed
++
 ExecutionPlan committed
 +
 Attempt #1 ещё не создан
 ```
 
-БД доказывает отсутствие physical attempt, поэтому операция безопасно recoverable.
+остаётся безопасно recoverable, потому что durable physical `STARTED` evidence отсутствует.
 
-Current service semantics должны иметь explicit recovery path для такого состояния.
-
-## P1 — Final request binding
-
-Context-window fitting сейчас может происходить слишком поздно относительно route/execution binding.
-
-Целевой invariant:
-
-```text
-RAG/history/context fitting
-  ↓
-FINAL provider request
-  ↓
-hash/bind/guard
-  ↓
-adapter serialization only
-```
+Нужен явный, хорошо протестированный application recovery path, который возобновляет именно эту операцию,
+а не создаёт новую route/request identity.
 
 ## P1 — Provider token/context estimation
 
-Governance input units (`UTF8_STRUCTURAL_UNITS_V2`) и provider context tokens — разные величины.
+Governance input units (`UTF8_STRUCTURAL_UNITS_V2`) и provider-native context tokens — разные величины.
 
-Char-based context heuristic не должен выдаваться за строгий tokenizer upper bound.
+Deterministic governance accounting полезен для policy/budget envelopes, но char/structural heuristic нельзя выдавать
+за математически строгий upper bound provider tokenizer. Для моделей с критичным context fit нужен provider-aware
+tokenizer либо консервативный fail-closed bound.
 
-## P1 — Pricing dimensions
+## P1 — Pricing scheme breadth
 
-Current versioned pricing поддерживает базовые input/cache/output dimensions, но полноценные provider-specific tier/service/context pricing schemes требуют отдельного versioned pricing model или fail-closed `UNPRICED`.
+V66 вводит explicit `pricing_scheme` и fail-closed legacy/unsupported states, однако текущая поддерживаемая схема
+не покрывает весь рынок provider billing semantics.
 
-## P1 — Knowledge searchable-version publication
+Отдельного versioned model требуют, например:
 
-Current `knowledge_documents.current_version_id` может переключиться на новую version до публикации её ACTIVE generation.
+- tiered/context pricing;
+- service-class pricing;
+- region/residency surcharges;
+- batch/async discounts;
+- tool/search/image/audio dimensions;
+- cache read/write variants разных providers.
 
-Retrieval одновременно требует current version + active generation.
+Неподдерживаемая схема должна оставаться `UNPRICED`/unverifiable, а не аппроксимироваться как flat-token pricing.
 
-Следовательно новая ingestion может временно скрыть предыдущую searchable version; failed ingestion способна оставить document непоисковым.
+## P1 — Billing-grade settlement
 
-Нужно разделить:
+`model_cost_commitment_ledger_v62` и `chat_physical_spend_v67` дают provider-evidenced accounting и unknown-liability
+semantics, но это ещё не бухгалтерский/invoice settlement subsystem.
 
-```text
-latest uploaded version
-searchable/published version
-```
+Для billing-grade слоя потребуются:
 
-или атомарно переключать searchable pointer при generation publication.
+- provider invoice import/reconciliation;
+- immutable settlement periods;
+- currency/FX policy;
+- credits/discounts/taxes;
+- adjustments;
+- dispute workflow;
+- invoice-to-attempt matching;
+- close/reopen governance;
+- financial audit trail.
 
 ## P1 — Knowledge evidence retention / GC
 
-Retrieval hits правильно защищают cited chunks от GC, но без bounded retention/legal-hold policy historical retrieval evidence может держать generation бесконечно.
+Retrieval evidence защищает referenced chunks/generations от уничтожения, но без bounded retention/legal-hold policy
+historical evidence может удерживать storage indefinitely.
 
 Нужен lifecycle:
 
 - retention;
 - legal hold;
 - privacy deletion/anonymization;
-- evidence compaction/hash/excerpt policy.
+- evidence compaction/hash/excerpt policy;
+- explicit policy для Answer Passport / RetrievalRun longevity.
 
 ## P1 — Mixed scanned PDF fail-closed
 
@@ -3521,45 +3952,61 @@ Strict `KNOWLEDGE_ONLY` не должен публиковать заведом�
 
 Extraction имеет timeout/thread bounds, но untrusted PDF/OOXML всё ещё парсится внутри application JVM.
 
-Для hardened enterprise deployment parsing стоит вынести в отдельный worker/container sandbox boundary.
+Для hardened enterprise deployment parsing стоит вынести в отдельный worker/container sandbox boundary
+с memory/CPU/time/filesystem/network limits.
 
 ## P1 — Knowledge provider attempt/cost evidence
 
-OCR/embedding external calls не имеют такого же полного durable physical-attempt ledger, как chat AI execution.
+OCR/embedding external calls пока не имеют такого же полного durable physical-attempt ledger, как Chat AI execution.
 
-При partial batch success + process crash возможны повторные billable calls.
+При partial batch success + process crash возможны повторные billable calls. Нужны durable operation identity,
+attempt evidence и reconciliation semantics для embedding/OCR pipeline.
 
 ## P1 — Audit required transaction semantics
 
-Required audit path использует `Propagation.REQUIRED`, поэтому без outer business transaction может открыть собственную transaction.
+V68 защищает уже записанный audit intent/evidence от переписывания, но `AuditOutboxWriter.writeRequired()` в
+просмотренном Java baseline использует `Propagation.REQUIRED`.
 
-Для строгого invariant нужен `MANDATORY` или явно разделённые APIs.
+Без outer business transaction это может открыть отдельную transaction. Для строгой атомарности required audit path
+желательно `MANDATORY` либо явно разделённые API:
 
-## P1 — Provider spend vs product usage
-
-Usage отчёты по successful/persisted chat facts не равны полным расходам provider.
-
-Нужен отдельный FinOps physical spend layer по execution attempts.
+```text
+recordRequiredInCurrentTransaction(...)
+recordStandaloneBestEffort(...)
+```
 
 ## P1 — Production mode detection
 
 Часть startup validators historically ориентирована на точные profile names `prod` / `production`.
 
 Deployment profile вроде `production-eu` не должен случайно обходить production safeguards.
-
 Предпочтительно иметь единый explicit production-mode property/profile group.
 
 ## P1/P2 — Concurrent index recovery
 
 Interrupted `CREATE INDEX CONCURRENTLY` может оставить invalid index.
 
-Для critical business unique indexes нужен release assertion по PostgreSQL catalog, а не только `IF NOT EXISTS`.
+Для critical business indexes нужен release assertion по PostgreSQL catalogs (`pg_index.indisvalid` /
+`indisready`), а не только `IF NOT EXISTS`.
+
+## P2 — Human review workflow for Knowledge storage reconciliation
+
+V63 корректно разделяет `needs_review_at` и `reviewed_at`, но сама полноценная operator workflow вокруг
+`NEEDS_REVIEW` должна иметь:
+
+- assignee/claim;
+- resolution code;
+- comment/evidence;
+- resolved timestamp;
+- audit event;
+- safe replay/cleanup action.
 
 ## P2 — V58 legacy title ambiguity
 
 До появления `title_source` невозможно доказать, был ли historical title `Новый чат` placeholder-ом или осознанным user title.
 
-V58 deterministic backfill принимает это как migration trade-off.
+V58 deterministic backfill принимает это как migration trade-off; V59 защищает дальнейшее движение provenance назад,
+но не может ретроспективно восстановить утраченное историческое намерение пользователя.
 
 ## Текущие product boundaries
 
@@ -3568,7 +4015,7 @@ V58 deterministic backfill принимает это как migration trade-off.
 - dynamic multi-provider runtime dispatch;
 - versioned physical provider registry/credential reference;
 - provider fallback/residency router;
-- full billing-grade settlement ledger;
+- invoice-grade billing settlement;
 - streaming end-to-end governance path;
 - TOOLS execution plane;
 - VISION execution plane;
@@ -3630,7 +4077,7 @@ SafeAI Desk не пытается сделать LLM deterministic.
 
 # Frontend
 
-Эта редакция README намеренно фиксирует **backend baseline на 02.10.2026**.
+Эта редакция README фиксирует ранее изученный backend baseline и подтверждённое применение Flyway до `V70` на 09.10.2026.
 
 По предоставленным скриншотам видно, что frontend уже содержит отдельные API clients, runtime parsers, auth context, admin audit/usage/users/organizations/model control plane UI, Chat title UI и Knowledge UI, а также значительный test layer.
 
@@ -3671,21 +4118,25 @@ commit short transaction
   ↓
 Knowledge retrieval / final context preparation
   ↓
-FINAL request binding + execution guard
+RAG context receipt (Knowledge modes)
+  ↓
+FINAL prepared-request hash + binding_version=2
   ↓
 ExecutionPlan
   ↓
-Attempt STARTED committed
+live ChatTurn lease/token fence
+  ↓
+Attempt STARTED + provider_call_started_at committed
   ↓
 provider I/O outside long DB transaction
   ↓
-terminal physical evidence
+terminal physical/response/pricing evidence
   ↓
 fenced ChatTurn finalization
   ↓
-usage / Answer Passport / audit
+usage / physical spend / Answer Passport / audit
 ```
 
 ---
 
-**Документ актуализирован по состоянию backend и Flyway `V1–V58`, рассмотренных к 02 октября 2026 года.**
+**Документ актуализирован 09 октября 2026 года. Подтверждено применение Flyway `V1–V70` в интеграционной среде; текущий полный тестовый прогон пока не завершился успешно.**

@@ -13,9 +13,12 @@ import java.util.function.Supplier;
  * Executes a callback while holding a session-level PostgreSQL advisory lock.
  *
  * <p>The caller owns the connection lifecycle, but this class guarantees that
- * the lock is acquired and released on that very same connection. A connection
- * for which {@code pg_advisory_unlock} cannot be confirmed is aborted before it
- * may return to a pool: otherwise a later request could inherit the lock.</p>
+ * acquire, action and release use that very same PostgreSQL session.</p>
+ *
+ * <p>A session for which lock acquisition or unlock cannot be confirmed is
+ * treated as unsafe and is aborted before it may return to a pool. This is
+ * required because session-level advisory locks survive transaction rollback
+ * and live until explicit unlock or PostgreSQL session termination.</p>
  */
 public final class PostgresAdvisoryLockExecutor {
 
@@ -34,9 +37,18 @@ public final class PostgresAdvisoryLockExecutor {
             String lockDescription,
             Supplier<T> action
     ) {
-        Objects.requireNonNull(connection, "connection не должен быть null");
-        Objects.requireNonNull(lockDescription, "lockDescription не должен быть null");
-        Objects.requireNonNull(action, "action не должен быть null");
+        Objects.requireNonNull(
+                connection,
+                "connection не должен быть null"
+        );
+        Objects.requireNonNull(
+                lockDescription,
+                "lockDescription не должен быть null"
+        );
+        Objects.requireNonNull(
+                action,
+                "action не должен быть null"
+        );
 
         boolean acquired = tryAcquire(
                 connection,
@@ -69,7 +81,9 @@ public final class PostgresAdvisoryLockExecutor {
                 lockDescription
         );
 
-        return LockExecution.acquired(result);
+        return LockExecution.acquired(
+                result
+        );
     }
 
     private static boolean tryAcquire(
@@ -78,25 +92,50 @@ public final class PostgresAdvisoryLockExecutor {
             String lockDescription
     ) {
         try (PreparedStatement statement =
-                     connection.prepareStatement(TRY_LOCK_SQL)) {
-            statement.setLong(1, lockKey);
+                     connection.prepareStatement(
+                             TRY_LOCK_SQL
+                     )) {
 
-            try (ResultSet resultSet = statement.executeQuery()) {
+            statement.setLong(
+                    1,
+                    lockKey
+            );
+
+            try (ResultSet resultSet =
+                         statement.executeQuery()) {
+
                 if (!resultSet.next()) {
-                    throw dataAccessFailure(
-                            "PostgreSQL не вернул результат при захвате "
-                                    + lockDescription,
-                            null
+                    /*
+                     * Query reached PostgreSQL but the expected confirmation
+                     * was not observed. For a session-level lock this is an
+                     * ambiguous acquire boundary: never return the connection
+                     * to a pool.
+                     */
+                    throw new SQLException(
+                            "PostgreSQL не подтвердил результат "
+                                    + "pg_try_advisory_lock"
                     );
                 }
 
-                return resultSet.getBoolean(1);
+                return resultSet.getBoolean(
+                        1
+                );
             }
-        } catch (SQLException exception) {
+        } catch (SQLException acquireFailure) {
+            /*
+             * The server may have acquired the session-level advisory lock
+             * before the client observed the failure. Rollback is insufficient:
+             * terminate the session best-effort before propagating the error.
+             */
+            abortConnection(
+                    connection,
+                    acquireFailure
+            );
+
             throw dataAccessFailure(
-                    "Не удалось захватить PostgreSQL advisory lock: "
+                    "Не удалось подтвердить захват PostgreSQL advisory lock: "
                             + lockDescription,
-                    exception
+                    acquireFailure
             );
         }
     }
@@ -108,9 +147,16 @@ public final class PostgresAdvisoryLockExecutor {
             Throwable actionFailure
     ) {
         try {
-            release(connection, lockKey);
+            release(
+                    connection,
+                    lockKey
+            );
         } catch (SQLException unlockFailure) {
-            abortConnection(connection, unlockFailure);
+            abortConnection(
+                    connection,
+                    unlockFailure
+            );
+
             actionFailure.addSuppressed(
                     dataAccessFailure(
                             "Не удалось освободить PostgreSQL advisory lock: "
@@ -127,9 +173,15 @@ public final class PostgresAdvisoryLockExecutor {
             String lockDescription
     ) {
         try {
-            release(connection, lockKey);
+            release(
+                    connection,
+                    lockKey
+            );
         } catch (SQLException unlockFailure) {
-            abortConnection(connection, unlockFailure);
+            abortConnection(
+                    connection,
+                    unlockFailure
+            );
 
             throw dataAccessFailure(
                     "Не удалось освободить PostgreSQL advisory lock: "
@@ -144,11 +196,22 @@ public final class PostgresAdvisoryLockExecutor {
             long lockKey
     ) throws SQLException {
         try (PreparedStatement statement =
-                     connection.prepareStatement(UNLOCK_SQL)) {
-            statement.setLong(1, lockKey);
+                     connection.prepareStatement(
+                             UNLOCK_SQL
+                     )) {
 
-            try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next() || !resultSet.getBoolean(1)) {
+            statement.setLong(
+                    1,
+                    lockKey
+            );
+
+            try (ResultSet resultSet =
+                         statement.executeQuery()) {
+
+                if (!resultSet.next()
+                        || !resultSet.getBoolean(
+                        1
+                )) {
                     throw new SQLException(
                             "PostgreSQL не подтвердил advisory unlock"
                     );
@@ -157,14 +220,36 @@ public final class PostgresAdvisoryLockExecutor {
         }
     }
 
+    /**
+     * Makes a potentially lock-owning pooled connection unusable best-effort.
+     *
+     * <p>{@link Connection#abort(java.util.concurrent.Executor)} is preferred
+     * because ordinary {@code close()} on a pool proxy may mean "return to
+     * pool". If abort itself fails, close is still attempted as a final
+     * defensive fallback and all cleanup failures are attached to the original
+     * failure.</p>
+     */
     private static void abortConnection(
             Connection connection,
             Throwable rootFailure
     ) {
         try {
-            connection.abort(Runnable::run);
+            connection.abort(
+                    Runnable::run
+            );
+            return;
         } catch (SQLException abortFailure) {
-            rootFailure.addSuppressed(abortFailure);
+            rootFailure.addSuppressed(
+                    abortFailure
+            );
+        }
+
+        try {
+            connection.close();
+        } catch (SQLException closeFailure) {
+            rootFailure.addSuppressed(
+                    closeFailure
+            );
         }
     }
 
@@ -173,8 +258,13 @@ public final class PostgresAdvisoryLockExecutor {
             Throwable cause
     ) {
         return cause == null
-                ? new DataAccessResourceFailureException(message)
-                : new DataAccessResourceFailureException(message, cause);
+                ? new DataAccessResourceFailureException(
+                message
+        )
+                : new DataAccessResourceFailureException(
+                message,
+                cause
+        );
     }
 
     public record LockExecution<T>(
@@ -183,11 +273,19 @@ public final class PostgresAdvisoryLockExecutor {
     ) {
 
         private static <T> LockExecution<T> notAcquired() {
-            return new LockExecution<>(false, null);
+            return new LockExecution<>(
+                    false,
+                    null
+            );
         }
 
-        private static <T> LockExecution<T> acquired(T result) {
-            return new LockExecution<>(true, result);
+        private static <T> LockExecution<T> acquired(
+                T result
+        ) {
+            return new LockExecution<>(
+                    true,
+                    result
+            );
         }
     }
 }

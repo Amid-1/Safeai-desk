@@ -153,11 +153,11 @@ final class UserCommandOperations {
             throw exception;
         }
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 saved.getOrganization().getId(),
                 AuditEventType.USER_CREATED,
-                Map.of(
+                () -> Map.of(
                         "targetUserId",
                         saved.getId().toString(),
                         "targetUserEmail",
@@ -244,11 +244,11 @@ final class UserCommandOperations {
             publishSecurityStateChanged(saved.getId());
         }
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 saved.getOrganization().getId(),
                 AuditEventType.USER_UPDATED,
-                Map.of(
+                () -> Map.of(
                         "targetUserId",
                         saved.getId().toString(),
                         "oldEmail",
@@ -322,11 +322,11 @@ final class UserCommandOperations {
 
         publishSecurityStateChanged(saved.getId());
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 saved.getOrganization().getId(),
                 AuditEventType.USER_ENABLED_CHANGED,
-                Map.of(
+                () -> Map.of(
                         "targetUserId",
                         saved.getId().toString(),
                         "targetUserEmail",
@@ -411,11 +411,11 @@ final class UserCommandOperations {
         );
         publishSecurityStateChanged(saved.getId());
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 saved.getOrganization().getId(),
                 AuditEventType.USER_ROLES_CHANGED,
-                Map.of(
+                () -> Map.of(
                         "targetUserId",
                         saved.getId().toString(),
                         "targetUserEmail",
@@ -467,11 +467,11 @@ final class UserCommandOperations {
         );
         publishSecurityStateChanged(saved.getId());
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 saved.getOrganization().getId(),
                 AuditEventType.USER_PASSWORD_RESET,
-                Map.of(
+                () -> Map.of(
                         "targetUserId",
                         saved.getId().toString(),
                         "targetUserEmail",
@@ -606,11 +606,11 @@ final class UserCommandOperations {
 
         publishSecurityStateChanged(targetUserId);
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 targetOrganizationId,
                 AuditEventType.USER_PERMANENTLY_DELETED,
-                Map.of(
+                () -> Map.of(
                         "targetUserId",
                         targetUserId.toString(),
                         "targetUserEmail",

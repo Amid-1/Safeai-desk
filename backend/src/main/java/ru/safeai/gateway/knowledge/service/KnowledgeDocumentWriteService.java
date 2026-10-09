@@ -111,11 +111,11 @@ public class KnowledgeDocumentWriteService {
          * Оба durable audit intent живут в этой же DB transaction,
          * поэтому при любой дальнейшей ошибке оба откатятся.
          */
-        audit.record(
+        audit.recordPrincipalSnapshot(
                 user,
                 user.getOrganizationId(),
                 AuditEventType.KNOWLEDGE_DOCUMENT_CREATED,
-                Map.of(
+                () -> Map.of(
                         "knowledgeBaseId",
                         knowledgeBaseId.toString(),
                         "documentId",
@@ -348,11 +348,11 @@ public class KnowledgeDocumentWriteService {
             throw exception;
         }
 
-        audit.record(
+        audit.recordPrincipalSnapshot(
                 user,
                 user.getOrganizationId(),
                 AuditEventType.KNOWLEDGE_DOCUMENT_UPDATED,
-                Map.of(
+                () -> Map.of(
                         "knowledgeBaseId",
                         knowledgeBaseId.toString(),
                         "documentId",
@@ -492,11 +492,11 @@ public class KnowledgeDocumentWriteService {
             KnowledgeDocumentVersionEntity version,
             SafeAiUserPrincipal user
     ) {
-        audit.record(
+        audit.recordPrincipalSnapshot(
                 user,
                 user.getOrganizationId(),
                 AuditEventType.KNOWLEDGE_DOCUMENT_VERSION_UPLOADED,
-                Map.of(
+                () -> Map.of(
                         "knowledgeBaseId",
                         document.getKnowledgeBaseId().toString(),
                         "documentId",

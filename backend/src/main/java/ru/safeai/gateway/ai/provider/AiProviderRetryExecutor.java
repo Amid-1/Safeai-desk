@@ -1,31 +1,23 @@
 package ru.safeai.gateway.ai.provider;
 
 import lombok.extern.slf4j.Slf4j;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
 import ru.safeai.gateway.ai.dto.AiChatResponse;
-
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.execution.AiExecutionAttemptScope;
+import ru.safeai.gateway.ai.execution.OutcomeCertainty;
+import ru.safeai.gateway.ai.execution.ProviderFailureCertainty;
 
 import java.time.Duration;
-
 import java.util.Objects;
-
 import java.util.UUID;
-
 import java.util.concurrent.ThreadLocalRandom;
-
 import java.util.function.Function;
-
 import java.util.function.Supplier;
 
 @Slf4j
-
 @Component
-
 public class AiProviderRetryExecutor {
 
     private final AiRetryProperties properties;
@@ -36,11 +28,20 @@ public class AiProviderRetryExecutor {
             AiRetryProperties properties,
             AiExecutionAttemptScope attemptScope
     ) {
-        this.properties = Objects.requireNonNull(properties, "properties не должен быть null");
-        this.attemptScope = Objects.requireNonNull(attemptScope, "attemptScope не должен быть null");
+        this.properties = Objects.requireNonNull(
+                properties,
+                "properties не должен быть null"
+        );
+        this.attemptScope = Objects.requireNonNull(
+                attemptScope,
+                "attemptScope не должен быть null"
+        );
     }
 
-    /** For isolated adapter tests that do not create an execution scope. */
+    /**
+     * Compatibility constructor for tests. Physical execution is still
+     * fail-closed: execute(...) requires a governed scope.
+     */
     public AiProviderRetryExecutor(AiRetryProperties properties) {
         this(properties, new AiExecutionAttemptScope());
     }
@@ -52,20 +53,20 @@ public class AiProviderRetryExecutor {
             Duration attemptTimeout,
             Function<AiProviderAttemptContext, AiChatResponse> action
     ) {
-        Objects.requireNonNull(
-                operationId,
-                "operationId не должен быть null"
-        );
-        Objects.requireNonNull(
-                action,
-                "action не должен быть null"
-        );
+        Objects.requireNonNull(provider, "provider не должен быть null");
+        Objects.requireNonNull(model, "model не должен быть null");
+        Objects.requireNonNull(operationId, "operationId не должен быть null");
+        Objects.requireNonNull(action, "action не должен быть null");
+
+        /*
+         * P1 invariant:
+         * no provider attempt and no HTTP I/O may occur without the exact
+         * governed execution scope created by AiExecutionService.
+         */
+        attemptScope.requireActive(operationId);
 
         Duration normalizedAttemptTimeout =
-                normalizeAttemptTimeout(
-                        attemptTimeout
-                );
-
+                normalizeAttemptTimeout(attemptTimeout);
         Duration totalTimeout =
                 properties.effectiveTotalTimeout();
 
@@ -80,11 +81,13 @@ public class AiProviderRetryExecutor {
         }
 
         int maxAttempts = attemptScope.permittedMaxAttempts(
-                properties.effectiveMaxAttempts());
+                properties.effectiveMaxAttempts()
+        );
+
         Duration backoff = properties.effectiveInitialBackoff();
         long deadlineNanos = safeAdd(
                 System.nanoTime(),
-                totalTimeout.toNanos()
+                saturatedNanos(totalTimeout)
         );
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -97,23 +100,18 @@ public class AiProviderRetryExecutor {
                     );
 
             try {
-                if (attemptScope.active()) {
-                    attemptScope.started(context);
-                }
+                attemptScope.started(context);
+
                 AiChatResponse response = action.apply(context);
-                if (attemptScope.active()) {
-                    attemptScope.succeeded(context, response);
-                }
+
+                attemptScope.succeeded(context, response);
                 return response;
             } catch (AiProviderException exception) {
                 if (attemptScope.hasActiveAttempt(context)) {
                     attemptScope.failed(context, exception);
                 }
-                if (!shouldRetry(
-                        exception,
-                        attempt,
-                        maxAttempts
-                )) {
+
+                if (!shouldRetry(exception, attempt, maxAttempts)) {
                     throw exception;
                 }
 
@@ -155,7 +153,7 @@ public class AiProviderRetryExecutor {
                         exception.getErrorType(),
                         exception.getProviderRequestId(),
                         exception.getRetryAfter(),
-                        delay.toMillis()
+                        saturatedMillis(delay)
                 );
 
                 sleep(delay, provider, model, exception);
@@ -163,14 +161,9 @@ public class AiProviderRetryExecutor {
             } catch (RuntimeException exception) {
                 if (attemptScope.hasActiveAttempt(context)) {
                     try {
-                        attemptScope.ambiguous(
-                                context,
-                                exception
-                        );
+                        attemptScope.ambiguous(context, exception);
                     } catch (RuntimeException recordingFailure) {
-                        exception.addSuppressed(
-                                recordingFailure
-                        );
+                        exception.addSuppressed(recordingFailure);
                     }
                 }
                 throw exception;
@@ -183,13 +176,20 @@ public class AiProviderRetryExecutor {
     }
 
     /**
-     * Совместимость со старыми тестами/вызовами.
+     * Legacy source-compatible overload.
+     *
+     * <p>It intentionally does not create a synthetic execution scope. Calling
+     * it outside AiExecutionService therefore fails before action.get() and
+     * cannot bypass durable physical-attempt evidence.</p>
      */
+    @Deprecated(forRemoval = true)
     public AiChatResponse execute(
             String provider,
             String model,
             Supplier<AiChatResponse> action
     ) {
+        Objects.requireNonNull(action, "action не должен быть null");
+
         return execute(
                 provider,
                 model,
@@ -207,8 +207,8 @@ public class AiProviderRetryExecutor {
         if (!properties.isEnabled()
                 || attempt >= maxAttempts
                 || !exception.isRetryable()
-                || ru.safeai.gateway.ai.execution.ProviderFailureCertainty.classify(exception)
-                   == ru.safeai.gateway.ai.execution.OutcomeCertainty.AMBIGUOUS) {
+                || ProviderFailureCertainty.classify(exception)
+                == OutcomeCertainty.AMBIGUOUS) {
             return false;
         }
 
@@ -224,11 +224,9 @@ public class AiProviderRetryExecutor {
             AiProviderException exception,
             Duration backoff
     ) {
-        if (exception.getRetryAfter() != null) {
-            return exception.getRetryAfter();
-        }
-
-        return withJitter(backoff);
+        return exception.getRetryAfter() != null
+                ? exception.getRetryAfter()
+                : withJitter(backoff);
     }
 
     private boolean fitsDeadline(
@@ -238,14 +236,14 @@ public class AiProviderRetryExecutor {
     ) {
         long now = System.nanoTime();
         long required = safeAdd(
-                delay.toNanos(),
-                attemptTimeout.toNanos()
+                saturatedNanos(delay),
+                saturatedNanos(attemptTimeout)
         );
 
         return safeAdd(now, required) <= deadlineNanos;
     }
 
-    private Duration normalizeAttemptTimeout(
+    private static Duration normalizeAttemptTimeout(
             Duration attemptTimeout
     ) {
         if (attemptTimeout == null) {
@@ -263,15 +261,13 @@ public class AiProviderRetryExecutor {
 
     private Duration nextBackoff(Duration current) {
         Duration max = properties.effectiveMaxBackoff();
-        Duration next;
 
         try {
-            next = current.multipliedBy(2);
+            Duration next = current.multipliedBy(2);
+            return next.compareTo(max) > 0 ? max : next;
         } catch (ArithmeticException exception) {
             return max;
         }
-
-        return next.compareTo(max) > 0 ? max : next;
     }
 
     private void sleep(
@@ -285,7 +281,7 @@ public class AiProviderRetryExecutor {
         }
 
         try {
-            Thread.sleep(duration.toMillis());
+            Thread.sleep(saturatedMillis(duration));
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
 
@@ -305,26 +301,49 @@ public class AiProviderRetryExecutor {
         }
     }
 
-    private Duration withJitter(Duration duration) {
-        long millis = duration.toMillis();
+    private static Duration withJitter(Duration duration) {
+        long millis = saturatedMillis(duration);
 
         if (millis <= 1) {
-            return duration;
+            return Duration.ofMillis(millis);
         }
 
         long lower = Math.max(1L, millis / 2);
-        long jittered = ThreadLocalRandom.current()
-                .nextLong(lower, millis + 1);
+        long upperExclusive = millis == Long.MAX_VALUE
+                ? Long.MAX_VALUE
+                : millis + 1;
 
-        return Duration.ofMillis(jittered);
+        if (lower >= upperExclusive) {
+            return Duration.ofMillis(lower);
+        }
+
+        return Duration.ofMillis(
+                ThreadLocalRandom.current()
+                        .nextLong(lower, upperExclusive)
+        );
     }
 
-    private long safeAdd(long left, long right) {
+    private static long saturatedMillis(Duration duration) {
+        try {
+            return duration.toMillis();
+        } catch (ArithmeticException exception) {
+            return Long.MAX_VALUE;
+        }
+    }
+
+    private static long saturatedNanos(Duration duration) {
+        try {
+            return duration.toNanos();
+        } catch (ArithmeticException exception) {
+            return Long.MAX_VALUE;
+        }
+    }
+
+    private static long safeAdd(long left, long right) {
         try {
             return Math.addExact(left, right);
         } catch (ArithmeticException exception) {
             return Long.MAX_VALUE;
         }
     }
-
 }

@@ -13,6 +13,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.audit.service.AuditOutboxScheduler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -43,7 +44,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
@@ -86,6 +87,8 @@ class KnowledgeGenerationLifecycleIntegrationTest
     @Autowired
     private KnowledgeRetrievalService retrievalService;
 
+    // Intercept the current typed audit API: the assertions below verify
+    // transaction-scoped generation locking and rollback on audit failure.
     @Test
     void servicePersistsEvidenceBeforeReleasingSearchPinAndAuditFailureRollsBack() {
         Fixture fixture = fixture();
@@ -132,11 +135,11 @@ class KnowledgeGenerationLifecycleIntegrationTest
                         ).isEqualTo("55P03"));
             }
             return null;
-        }).when(audit).record(
+        }).when(audit).recordPrincipalSnapshot(
                 eq(user),
                 eq(PLATFORM_ORGANIZATION_ID),
                 eq(AuditEventType.KNOWLEDGE_RETRIEVAL_COMPLETED),
-                anyMap()
+                any(AuditDetails.class)
         );
 
         var result = retrievalService.retrieve(
@@ -155,11 +158,11 @@ class KnowledgeGenerationLifecycleIntegrationTest
         )).isEqualTo(1);
 
         doThrow(new IllegalStateException("audit rejected"))
-                .when(audit).record(
+                .when(audit).recordPrincipalSnapshot(
                         eq(user),
                         eq(PLATFORM_ORGANIZATION_ID),
                         eq(AuditEventType.KNOWLEDGE_RETRIEVAL_COMPLETED),
-                        anyMap()
+                        any(AuditDetails.class)
                 );
 
         assertThatThrownBy(() -> retrievalService.retrieve(

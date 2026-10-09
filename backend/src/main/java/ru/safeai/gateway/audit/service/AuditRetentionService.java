@@ -6,8 +6,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.audit.config.AuditRetentionProperties;
 
-import java.time.Clock;
-import java.time.Instant;
+import java.time.Duration;
 
 @Slf4j
 @Service
@@ -17,7 +16,6 @@ public class AuditRetentionService {
     private final AuditRetentionBatchService batchService;
     private final AuditRetentionLockService lockService;
     private final AuditRetentionProperties properties;
-    private final Clock clock;
 
     @Scheduled(
             cron = "${safeai.audit.retention.cron:0 30 3 * * *}",
@@ -28,14 +26,16 @@ public class AuditRetentionService {
             return;
         }
 
-        Instant threshold = clock.instant().minus(
-                properties.effectivePeriod()
-        );
+        Duration retentionPeriod =
+                properties.effectivePeriod();
 
         AuditRetentionLockService.LockExecution<Integer>
-                execution = lockService.tryExecute(
-                () -> deleteBatches(threshold)
-        );
+                execution =
+                lockService.tryExecute(
+                        () -> deleteBatches(
+                                retentionPeriod
+                        )
+                );
 
         if (!execution.acquired()) {
             log.debug(
@@ -45,20 +45,24 @@ public class AuditRetentionService {
             return;
         }
 
-        int totalDeleted = execution.result();
+        int totalDeleted =
+                execution.result();
 
         if (totalDeleted > 0) {
             log.info(
                     "Audit retention cleanup completed: "
-                            + "deleted={}, threshold={}",
+                            + "deleted={}, retentionPeriod={}",
                     totalDeleted,
-                    threshold
+                    retentionPeriod
             );
         }
     }
 
-    private int deleteBatches(Instant threshold) {
+    private int deleteBatches(
+            Duration retentionPeriod
+    ) {
         int totalDeleted = 0;
+
         int batchSize =
                 properties.effectiveBatchSize();
 
@@ -69,10 +73,11 @@ public class AuditRetentionService {
              batch < maxBatches;
              batch++) {
 
-            int deleted = batchService.deleteBatch(
-                    threshold,
-                    batchSize
-            );
+            int deleted =
+                    batchService.deleteBatch(
+                            retentionPeriod,
+                            batchSize
+                    );
 
             totalDeleted += deleted;
 

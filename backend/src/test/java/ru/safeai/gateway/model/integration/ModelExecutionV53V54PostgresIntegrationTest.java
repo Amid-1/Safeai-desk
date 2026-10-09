@@ -111,7 +111,7 @@ class ModelExecutionV53V54PostgresIntegrationTest
         ModelRouteDecisionRepository decisionRepository =
                 new ModelRouteDecisionRepository(jdbcTemplate);
 
-        catalogRepository.insert(entry);
+        catalogRepository.insert(entry, "FLAT_TOKEN_V1");
         ModelIntegrationTestSupport.insertAllowAllPolicy(
                 jdbcTemplate,
                 ORGANIZATION_ID,
@@ -207,7 +207,7 @@ class ModelExecutionV53V54PostgresIntegrationTest
                             operationId,
                             messageId,
                             UUID.randomUUID(),
-                            timestamp(START.plusSeconds(60)),
+                            databaseLeaseUntil(),
                             timestamp(START),
                             MODEL,
                             decisionId,
@@ -274,6 +274,8 @@ class ModelExecutionV53V54PostgresIntegrationTest
                 update public.model_execution_attempts
                 set outcome='SUCCEEDED', outcome_certainty='KNOWN_EXECUTED',
                     retry_safety='SAME_TARGET_RETRY_FORBIDDEN',
+                    response_observed=true,
+                    response_validation_status='ACCEPTED',
                     resolved_physical_model=?, finished_at=?,
                     usage_status='MISSING', specialized_dimensions_present=false,
                     specialized_dimensions_valid=true, pricing_status='UNPRICED'
@@ -435,6 +437,8 @@ class ModelExecutionV53V54PostgresIntegrationTest
         String terminalIdentity = "outcome='SUCCEEDED', "
                 + "outcome_certainty='KNOWN_EXECUTED', "
                 + "resolved_physical_model='gpt-test', "
+                + "response_observed=true, "
+                + "response_validation_status='ACCEPTED', "
                 + "finished_at='2026-08-28 12:00:04+00'";
 
         for (String invalidEvidence : new String[]{
@@ -487,6 +491,8 @@ class ModelExecutionV53V54PostgresIntegrationTest
                 """
                 update public.model_execution_attempts
                 set outcome='SUCCEEDED', outcome_certainty='KNOWN_EXECUTED',
+                    response_observed=true,
+                    response_validation_status='ACCEPTED',
                     resolved_physical_model=?, finished_at=?,
                     usage_status='AVAILABLE', input_tokens=0, output_tokens=0,
                     specialized_dimensions_present=false,
@@ -526,6 +532,8 @@ class ModelExecutionV53V54PostgresIntegrationTest
                 """
                 update public.model_execution_attempts
                 set outcome='SUCCEEDED', outcome_certainty='KNOWN_EXECUTED',
+                    response_observed=true,
+                    response_validation_status='ACCEPTED',
                     resolved_physical_model=?, finished_at=?,
                     usage_status='PARTIAL', input_tokens=100, output_tokens=null,
                     specialized_dimensions_present=true,
@@ -582,6 +590,8 @@ class ModelExecutionV53V54PostgresIntegrationTest
                 """
                 update public.model_execution_attempts
                 set outcome='SUCCEEDED', outcome_certainty='KNOWN_EXECUTED',
+                    response_observed=true,
+                    response_validation_status='ACCEPTED',
                     resolved_physical_model=?, finished_at=?,
                     usage_status='AVAILABLE', input_tokens=200, output_tokens=300,
                     specialized_dimensions_present=false,
@@ -659,7 +669,7 @@ class ModelExecutionV53V54PostgresIntegrationTest
         );
 
         assertThatThrownBy(() ->
-                new ModelCatalogRepository(jdbcTemplate).insert(invalid)
+                new ModelCatalogRepository(jdbcTemplate).insert(invalid, "FLAT_TOKEN_V1")
         ).isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -697,7 +707,7 @@ class ModelExecutionV53V54PostgresIntegrationTest
         );
 
         assertThatThrownBy(() ->
-                new ModelCatalogRepository(jdbcTemplate).insert(invalid)
+                new ModelCatalogRepository(jdbcTemplate).insert(invalid, "FLAT_TOKEN_V1")
         ).isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -797,6 +807,25 @@ class ModelExecutionV53V54PostgresIntegrationTest
                     });
             return false;
         }
+    }
+
+    /**
+     * V67 rejects any physical attempt whose owning PROCESSING turn has an
+     * expired fencing lease. START is deliberately historical (reproducible
+     * routing/pricing evidence), so it must NOT be used to calculate a live
+     * lease for a test running months later.
+     *
+     * Use PostgreSQL clock on the same test database as the V67 trigger.
+     * This does not bypass the guard or manipulate database time.
+     */
+    private java.sql.Timestamp databaseLeaseUntil() {
+        return Objects.requireNonNull(
+                jdbcTemplate.queryForObject(
+                        "select clock_timestamp() + interval '10 minutes'",
+                        java.sql.Timestamp.class
+                ),
+                "PostgreSQL must return a live test lease timestamp"
+        );
     }
 
     private void insertPlan() {

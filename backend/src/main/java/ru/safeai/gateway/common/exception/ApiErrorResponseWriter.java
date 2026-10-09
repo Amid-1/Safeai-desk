@@ -8,10 +8,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import ru.safeai.gateway.common.security.RequestIdFilter;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Записывает единый JSON-контракт ошибки из Spring Security filter chain.
@@ -26,6 +30,25 @@ import java.nio.charset.StandardCharsets;
 @Component
 @RequiredArgsConstructor
 public class ApiErrorResponseWriter {
+
+    private static final List<String> SAFE_HEADERS_TO_PRESERVE =
+            List.of(
+                    RequestIdFilter.REQUEST_ID_HEADER,
+                    HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN,
+                    HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS,
+                    HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS,
+                    HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS,
+                    HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
+                    HttpHeaders.ACCESS_CONTROL_MAX_AGE,
+                    HttpHeaders.VARY,
+                    "Access-Control-Allow-Private-Network",
+                    "Strict-Transport-Security",
+                    "X-Content-Type-Options",
+                    "X-Frame-Options",
+                    "Referrer-Policy",
+                    "Content-Security-Policy",
+                    "Permissions-Policy"
+            );
 
     private final JsonMapper jsonMapper;
     private final ApiErrorResponseFactory errorResponseFactory;
@@ -76,11 +99,29 @@ public class ApiErrorResponseWriter {
         }
 
         /*
-         * resetBuffer() очищает body, но сохраняет уже установленные headers,
-         * в частности server X-Request-Id.
+         * resetBuffer() preserved every previously written header, including
+         * navigation/entity/cookie headers that are not safe to inherit into
+         * an authentication/authorization error. Snapshot only explicitly
+         * approved correlation/CORS/security headers, then perform a full
+         * reset and rebuild the error response.
          */
-        response.resetBuffer();
-        response.setStatus(status.value());
+        Map<String, List<String>> safeHeaders =
+                snapshotSafeHeaders(
+                        request,
+                        response
+                );
+
+        response.reset();
+
+        restoreSafeHeaders(
+                response,
+                safeHeaders
+        );
+
+        response.setStatus(
+                status.value()
+        );
+
         response.setHeader(
                 HttpHeaders.CACHE_CONTROL,
                 "no-store"
@@ -96,6 +137,7 @@ public class ApiErrorResponseWriter {
         response.setCharacterEncoding(
                 StandardCharsets.UTF_8.name()
         );
+
         response.setContentType(
                 MediaType.APPLICATION_JSON_VALUE
         );
@@ -109,6 +151,93 @@ public class ApiErrorResponseWriter {
                         request,
                         null
                 )
+        );
+    }
+
+    private Map<String, List<String>> snapshotSafeHeaders(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
+        Map<String, List<String>> result =
+                new LinkedHashMap<>();
+
+        for (String headerName
+                : SAFE_HEADERS_TO_PRESERVE) {
+
+            List<String> values =
+                    List.copyOf(
+                            response.getHeaders(
+                                    headerName
+                            )
+                    );
+
+            if (!values.isEmpty()) {
+                result.put(
+                        headerName,
+                        values
+                );
+            }
+        }
+
+        /*
+         * RequestIdFilter owns this value server-side. Reconstruct it from the
+         * request attribute if a downstream component removed the response
+         * header before the security error was written.
+         */
+        if (!result.containsKey(
+                RequestIdFilter.REQUEST_ID_HEADER
+        )) {
+            Object requestId =
+                    request.getAttribute(
+                            RequestIdFilter.REQUEST_ID_ATTRIBUTE
+                    );
+
+            if (requestId
+                    instanceof String value
+                    && !value.isBlank()) {
+
+                result.put(
+                        RequestIdFilter.REQUEST_ID_HEADER,
+                        List.of(
+                                value
+                        )
+                );
+            }
+        }
+
+        return Map.copyOf(
+                result
+        );
+    }
+
+    private void restoreSafeHeaders(
+            HttpServletResponse response,
+            Map<String, List<String>> headers
+    ) {
+        headers.forEach(
+                (headerName, values) -> {
+                    if (values.isEmpty()) {
+                        return;
+                    }
+
+                    response.setHeader(
+                            headerName,
+                            values.getFirst(
+                            )
+                    );
+
+                    for (int index = 1;
+                         index < values.size();
+                         index++) {
+
+                        response.addHeader(
+                                headerName,
+                                values.get(
+                                        index
+                                )
+                        );
+                    }
+                }
         );
     }
 }

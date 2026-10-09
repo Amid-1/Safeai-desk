@@ -31,17 +31,10 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class AuditEventServiceTest {
 
-    private static final UUID USER_ID =
-            UUID.randomUUID();
-
-    private static final UUID ACTOR_ORGANIZATION_ID =
-            UUID.randomUUID();
-
-    private static final UUID TARGET_ORGANIZATION_ID =
-            UUID.randomUUID();
-
-    private static final String ACTOR_EMAIL =
-            "admin@test.com";
+    private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID ACTOR_ORGANIZATION_ID = UUID.randomUUID();
+    private static final UUID TARGET_ORGANIZATION_ID = UUID.randomUUID();
+    private static final String ACTOR_EMAIL = "admin@test.com";
 
     @Mock
     private AuditCommandFactory commandFactory;
@@ -56,208 +49,105 @@ class AuditEventServiceTest {
     private UserEntity userEntity;
 
     @Test
-    void recordFromPrincipalBuildsImmutableActorSnapshot() {
-        AuditEventService service =
-                service();
+    void requiredRecordFromPrincipalBuildsImmutableActorSnapshot() {
+        AuditEventService service = service();
+        SafeAiUserPrincipal principal = principal();
+        AuditCommand command = command();
+        UUID targetUserId = UUID.randomUUID();
+        Map<String, Object> details = Map.of("targetUserId", targetUserId);
 
-        SafeAiUserPrincipal principal =
-                principal();
+        // The current typed API resolves email and displayName from the
+        // tenant-scoped user row rather than trusting JWT claims.
+        stubActorUserWithName("Admin Name");
 
-        AuditCommand command =
-                command();
+        when(commandFactory.create(
+                any(AuditActor.class),
+                eq(TARGET_ORGANIZATION_ID),
+                eq(AuditEventType.USER_UPDATED),
+                anyMap()
+        )).thenReturn(command);
 
-        /*
-         * В этом overload displayName передаётся явно,
-         * поэтому AuditEventService не вызывает userEntity.getFullName().
-         * Стабим только реально используемый email.
-         */
-        stubActorUserEmail();
-
-        when(
-                commandFactory.create(
-                        any(AuditActor.class),
-                        eq(TARGET_ORGANIZATION_ID),
-                        eq(
-                                AuditEventType
-                                        .USER_UPDATED
-                        ),
-                        anyMap()
-                )
-        ).thenReturn(
-                command
-        );
-
-        service.record(
+        service.recordPrincipalSnapshot(
                 principal,
-                "Admin Name",
                 TARGET_ORGANIZATION_ID,
                 AuditEventType.USER_UPDATED,
-                Map.of(
-                        "targetUserId",
-                        UUID.randomUUID()
-                )
+                () -> details
         );
 
         ArgumentCaptor<AuditActor> actorCaptor =
-                ArgumentCaptor.forClass(
-                        AuditActor.class
-                );
+                ArgumentCaptor.forClass(AuditActor.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> detailsCaptor =
+                ArgumentCaptor.forClass(Map.class);
 
-        verify(
-                commandFactory
-        ).create(
+        verify(commandFactory).create(
                 actorCaptor.capture(),
                 eq(TARGET_ORGANIZATION_ID),
-                eq(
-                        AuditEventType
-                                .USER_UPDATED
-                ),
-                anyMap()
+                eq(AuditEventType.USER_UPDATED),
+                detailsCaptor.capture()
         );
 
-        AuditActor actor =
-                actorCaptor.getValue();
+        AuditActor actor = actorCaptor.getValue();
+        assertThat(actor.userId()).isEqualTo(USER_ID);
+        assertThat(actor.organizationId()).isEqualTo(ACTOR_ORGANIZATION_ID);
+        assertThat(actor.email()).isEqualTo(ACTOR_EMAIL);
+        assertThat(actor.displayName()).isEqualTo("Admin Name");
+        assertThat(detailsCaptor.getValue()).containsExactlyInAnyOrderEntriesOf(details);
 
-        assertThat(
-                actor.userId()
-        ).isEqualTo(
-                USER_ID
-        );
-
-        assertThat(
-                actor.organizationId()
-        ).isEqualTo(
-                ACTOR_ORGANIZATION_ID
-        );
-
-        assertThat(
-                actor.email()
-        ).isEqualTo(
-                ACTOR_EMAIL
-        );
-
-        assertThat(
-                actor.displayName()
-        ).isEqualTo(
-                "Admin Name"
-        );
-
-        verify(
-                outboxWriter
-        ).writeRequired(
-                command
-        );
+        verify(outboxWriter).writeRequiredInCurrentTransaction(command);
     }
 
     @Test
     void serializationFailureDoesNotCreatePartialOutboxIntent() {
-        AuditEventService service =
-                service();
+        AuditEventService service = service();
+        stubActorUserWithName("Admin");
 
-        /*
-         * Здесь displayName явно не передаётся,
-         * поэтому snapshot читает и email, и fullName из БД.
-         */
-        stubActorUserWithName();
-
-        doThrow(
-                new IllegalArgumentException(
-                        "Sanitized audit details "
-                                + "не сериализуется в JSON"
-                )
-        ).when(
-                commandFactory
-        ).create(
+        doThrow(new IllegalArgumentException(
+                "Sanitized audit details не сериализуется в JSON"
+        )).when(commandFactory).create(
                 any(AuditActor.class),
                 eq(TARGET_ORGANIZATION_ID),
-                eq(
-                        AuditEventType
-                                .USER_UPDATED
-                ),
+                eq(AuditEventType.USER_UPDATED),
                 anyMap()
         );
 
-        assertThatThrownBy(() ->
-                service.record(
-                        principal(),
-                        TARGET_ORGANIZATION_ID,
-                        AuditEventType.USER_UPDATED,
-                        Map.of(
-                                "safe",
-                                "value"
-                        )
-                )
-        )
-                .isInstanceOf(
-                        IllegalArgumentException.class
-                )
-                .hasMessageContaining(
-                        "не сериализуется в JSON"
-                );
+        assertThatThrownBy(() -> service.recordPrincipalSnapshot(
+                principal(),
+                TARGET_ORGANIZATION_ID,
+                AuditEventType.USER_UPDATED,
+                () -> Map.of("safe", "value")
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("не сериализуется в JSON");
 
-        verifyNoInteractions(
-                outboxWriter
-        );
+        verifyNoInteractions(outboxWriter);
     }
 
     @Test
     void requiredWriterFailureIsNotSwallowed() {
-        AuditEventService service =
-                service();
+        AuditEventService service = service();
+        AuditCommand command = command();
+        stubActorUserWithName("Admin");
 
-        AuditCommand command =
-                command();
+        when(commandFactory.create(
+                any(AuditActor.class),
+                eq(TARGET_ORGANIZATION_ID),
+                eq(AuditEventType.USER_UPDATED),
+                anyMap()
+        )).thenReturn(command);
 
-        /*
-         * Здесь displayName явно не передаётся,
-         * поэтому snapshot читает и email, и fullName из БД.
-         */
-        stubActorUserWithName();
+        doThrow(new IllegalStateException("audit database unavailable"))
+                .when(outboxWriter)
+                .writeRequiredInCurrentTransaction(command);
 
-        when(
-                commandFactory.create(
-                        any(AuditActor.class),
-                        eq(TARGET_ORGANIZATION_ID),
-                        eq(
-                                AuditEventType
-                                        .USER_UPDATED
-                        ),
-                        anyMap()
-                )
-        ).thenReturn(
-                command
-        );
+        assertThatThrownBy(() -> service.recordPrincipalSnapshot(
+                principal(),
+                TARGET_ORGANIZATION_ID,
+                AuditEventType.USER_UPDATED,
+                Map::of
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("audit database unavailable");
 
-        doThrow(
-                new IllegalStateException(
-                        "audit database unavailable"
-                )
-        ).when(
-                outboxWriter
-        ).writeRequired(
-                command
-        );
-
-        assertThatThrownBy(() ->
-                service.record(
-                        principal(),
-                        TARGET_ORGANIZATION_ID,
-                        AuditEventType.USER_UPDATED,
-                        Map.of()
-                )
-        )
-                .isInstanceOf(
-                        IllegalStateException.class
-                )
-                .hasMessageContaining(
-                        "audit database unavailable"
-                );
-
-        verify(
-                outboxWriter
-        ).writeRequired(
-                command
-        );
+        verify(outboxWriter).writeRequiredInCurrentTransaction(command);
     }
 
     private AuditEventService service() {
@@ -280,54 +170,27 @@ class AuditEventServiceTest {
                 TARGET_ORGANIZATION_ID,
                 AuditEventType.USER_UPDATED,
                 Map.of(),
-                Instant.parse(
-                        "2026-07-30T08:00:00Z"
-                )
+                Instant.parse("2026-07-30T08:00:00Z")
         );
     }
 
-    private void stubActorUserEmail() {
-        when(
-                userRepository
-                        .findByIdAndOrganizationId(
-                                USER_ID,
-                                ACTOR_ORGANIZATION_ID
-                        )
-        ).thenReturn(
-                Optional.of(
-                        userEntity
-                )
-        );
+    private void stubActorUserWithName(String fullName) {
+        when(userRepository.findByIdAndOrganizationId(
+                USER_ID,
+                ACTOR_ORGANIZATION_ID
+        )).thenReturn(Optional.of(userEntity));
 
-        when(
-                userEntity.getEmail()
-        ).thenReturn(
-                ACTOR_EMAIL
-        );
-    }
-
-    private void stubActorUserWithName() {
-        stubActorUserEmail();
-
-        when(
-                userEntity.getFullName()
-        ).thenReturn(
-                "Admin"
-        );
+        when(userEntity.getEmail()).thenReturn(ACTOR_EMAIL);
+        when(userEntity.getFullName()).thenReturn(fullName);
     }
 
     private SafeAiUserPrincipal principal() {
-        return SafeAiUserPrincipal
-                .accessTokenPrincipal(
-                        USER_ID,
-                        ACTOR_ORGANIZATION_ID,
-                        0L,
-                        0L,
-                        List.of(
-                                new SimpleGrantedAuthority(
-                                        "ROLE_ADMIN"
-                                )
-                        )
-                );
+        return SafeAiUserPrincipal.accessTokenPrincipal(
+                USER_ID,
+                ACTOR_ORGANIZATION_ID,
+                0L,
+                0L,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
     }
 }

@@ -41,20 +41,28 @@ public class KnowledgeIngestionFailureService {
                 now,
                 nextAttemptAt
         );
-        boolean terminal = !retryable || claim.attempt() >= maxAttempts;
+
+        boolean terminal =
+                !retryable
+                        || claim.attempt() >= maxAttempts;
+
         if (terminal) {
-            audit.recordSystem(
+            audit.recordSystemRequiredInCurrentTransaction(
                     claim.organizationId(),
                     AuditEventType.KNOWLEDGE_INGESTION_FAILED,
                     Map.of(
                             "knowledgeBaseId",
                             claim.knowledgeBaseId().toString(),
-                            "documentId", claim.documentId().toString(),
+                            "documentId",
+                            claim.documentId().toString(),
                             "documentVersionId",
                             claim.documentVersionId().toString(),
-                            "ingestionJobId", claim.jobId().toString(),
-                            "attempt", claim.attempt(),
-                            "errorCode", code
+                            "ingestionJobId",
+                            claim.jobId().toString(),
+                            "attempt",
+                            claim.attempt(),
+                            "errorCode",
+                            code
                     )
             );
         }

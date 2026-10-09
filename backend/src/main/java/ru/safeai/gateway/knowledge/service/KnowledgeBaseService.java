@@ -199,11 +199,11 @@ public class KnowledgeBaseService {
 
         saveMembershipAndRefresh(owner);
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 organization.getId(),
                 AuditEventType.KNOWLEDGE_BASE_CREATED,
-                Map.of(
+                () -> Map.of(
                         "knowledgeBaseId", saved.getId().toString(),
                         "name", saved.getName(),
                         "visibility", saved.getVisibility().name(),
@@ -302,11 +302,11 @@ public class KnowledgeBaseService {
             throw exception;
         }
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 organizationId,
                 AuditEventType.KNOWLEDGE_BASE_UPDATED,
-                Map.of(
+                () -> Map.of(
                         "knowledgeBaseId", saved.getId().toString(),
                         "oldName", oldName,
                         "newName", saved.getName(),
@@ -460,11 +460,11 @@ public class KnowledgeBaseService {
             throw exception;
         }
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 organizationId,
                 AuditEventType.KNOWLEDGE_BASE_MEMBER_ADDED,
-                Map.of(
+                () -> Map.of(
                         "knowledgeBaseId", knowledgeBase.getId().toString(),
                         "targetUserId", targetUser.getId().toString(),
                         "targetUserEmail", targetUser.getEmail(),
@@ -531,11 +531,11 @@ public class KnowledgeBaseService {
         KnowledgeBaseMembershipEntity saved =
                 saveMembershipAndRefresh(membership);
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 organizationId,
                 AuditEventType.KNOWLEDGE_BASE_MEMBER_UPDATED,
-                Map.of(
+                () -> Map.of(
                         "knowledgeBaseId", knowledgeBaseId.toString(),
                         "targetUserId", userId.toString(),
                         "targetUserEmail", targetUser.getEmail(),
@@ -590,11 +590,11 @@ public class KnowledgeBaseService {
         membershipRepository.delete(membership);
         membershipRepository.flush();
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 organizationId,
                 AuditEventType.KNOWLEDGE_BASE_MEMBER_REMOVED,
-                Map.of(
+                () -> Map.of(
                         "knowledgeBaseId", knowledgeBaseId.toString(),
                         "targetUserId", userId.toString(),
                         "targetUserEmail", targetUser.getEmail(),

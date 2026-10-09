@@ -94,6 +94,9 @@ class ProductionSecurityStartupContractTest {
                              * собственным trusted-proxy pipeline.
                              */
                             "server.forward-headers-strategy=none",
+                             "spring.task.scheduling.pool.size=2",
+
+                             "safeai.security.password.allow-legacy-unprefixed-bcrypt=false",
 
                             /*
                              * Public application server.
@@ -201,6 +204,9 @@ class ProductionSecurityStartupContractTest {
                                         + "172.28.0.0/24",
 
                                 "server.forward-headers-strategy=none",
+                             "spring.task.scheduling.pool.size=2",
+
+                             "safeai.security.password.allow-legacy-unprefixed-bcrypt=false",
 
                                 "server.port="
                                         + APPLICATION_PORT,

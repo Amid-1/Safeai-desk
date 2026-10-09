@@ -13,12 +13,16 @@ import org.springframework.security.web.SecurityFilterChain;
 /**
  * Security chain for the dedicated Actuator management server.
  *
- * <p>В production отдельные {@code management.server.port} и
- * {@code management.server.address} являются fail-fast invariant,
- * проверяемым {@link ProductionSecurityInvariantValidator}. Поэтому
- * Prometheus/health/info остаются unauthenticated только внутри выделенного
- * management contour. Application security chain не используется как
- * единственная граница защиты Actuator.</p>
+ * <p>{@link ProductionSecurityInvariantValidator} proves only the application
+ * side of the boundary: a dedicated management port bound to a loopback/private
+ * interface. Production infrastructure must independently enforce firewall /
+ * security-group / Kubernetes NetworkPolicy (or an equivalent mTLS/auth
+ * boundary) so this port is not reachable from the public application
+ * network.</p>
+ *
+ * <p>With that two-layer boundary in place, health/info/prometheus may remain
+ * unauthenticated for internal probes/scrapers. All other Actuator endpoints
+ * are denied.</p>
  */
 @Configuration(proxyBeanMethods = false)
 public class ManagementSecurityConfig {
@@ -69,7 +73,3 @@ public class ManagementSecurityConfig {
         return http.build();
     }
 }
-
-
-
-

@@ -11,6 +11,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 import ru.safeai.gateway.auth.service.UserSessionRevocationService;
@@ -917,11 +919,11 @@ void permanentDeletionDeletesEmptyDisabledUser() {
     verify(userRepository)
             .flush();
 
-    verify(auditEventService).record(
+    verify(auditEventService).recordPrincipalSnapshot(
             same(currentUser),
             eq(ORGANIZATION_A_ID),
-            any(),
-            anyMap()
+            eq(AuditEventType.USER_PERMANENTLY_DELETED),
+            isA(AuditDetails.class)
     );
 }
 

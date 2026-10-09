@@ -221,7 +221,7 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
                 base.cacheWriteInputUsdPer1mTokens()
         );
         assertThatThrownBy(() ->
-                new ModelCatalogRepository(jdbcTemplate).insert(forgedVersion)
+                new ModelCatalogRepository(jdbcTemplate).insert(forgedVersion, "FLAT_TOKEN_V1")
         ).isInstanceOf(DataIntegrityViolationException.class);
 
         ModelCatalogEntry overflowingSpecializedRate = copyCatalogForDbBypass(
@@ -313,12 +313,28 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
                     specialized_dimensions_present=false,
                     specialized_dimensions_valid=true,
                     pricing_status='PRICED', cost_usd=0.125,
-                    currency='USD', price_book_version='integration-v60'
+                    currency='USD', price_book_version='integration-v60',
+                    response_observed=true,
+                    response_validation_status='ACCEPTED',
+                    protocol_failure_code=null
                 where execution_plan_id=? and attempt_number=1
                 """,
                 timestamp(physicalStart.plusSeconds(1)),
                 execution.planId()
         );
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select response_observed from public.model_execution_attempts "
+                        + "where execution_plan_id=? and attempt_number=1",
+                Boolean.class,
+                execution.planId()
+        )).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "select response_validation_status from public.model_execution_attempts "
+                        + "where execution_plan_id=? and attempt_number=1",
+                String.class,
+                execution.planId()
+        )).isEqualTo("ACCEPTED");
 
         ModelRouteDecisionRepository repository =
                 new ModelRouteDecisionRepository(jdbcTemplate);
@@ -465,7 +481,7 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
         ModelRouteDecisionRepository decisionRepository =
                 new ModelRouteDecisionRepository(jdbcTemplate);
 
-        catalogRepository.insert(entry);
+        catalogRepository.insert(entry, "FLAT_TOKEN_V1");
 
         ModelIntegrationTestSupport.insertAllowAllPolicy(
                 jdbcTemplate,
@@ -536,6 +552,17 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
                             principal
                     ).decisionId();
 
+                    // V67 validates an active PROCESSING lease against the
+                    // PostgreSQL wall clock. The historical governance and
+                    // physical accounting instants must remain unchanged.
+                    Instant leaseNow = java.util.Objects.requireNonNull(
+                            jdbcTemplate.queryForObject(
+                                    "select clock_timestamp()",
+                                    java.sql.Timestamp.class
+                            ),
+                            "PostgreSQL clock must be available"
+                    ).toInstant();
+
                     jdbcTemplate.update(
                             """
                             insert into public.chat_turns (
@@ -565,7 +592,7 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
                             operationId,
                             messageId,
                             UUID.randomUUID(),
-                            timestamp(ModelTestFixtures.NOW.plusSeconds(60)),
+                            timestamp(leaseNow.plusSeconds(180)),
                             timestamp(ModelTestFixtures.NOW),
                             decisionHolder[0],
                             timestamp(ModelTestFixtures.NOW.minusSeconds(10)),
@@ -695,3 +722,4 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
     ) {
     }
 }
+

@@ -10,6 +10,16 @@ import java.util.Set;
 
 public final class StablePageableNormalizer {
 
+    /**
+     * Conservative compatibility bound for existing call sites that do not
+     * provide an endpoint-specific offset limit yet.
+     *
+     * <p>Large/high-cardinality endpoints should prefer cursor/keyset
+     * pagination and may pass a stricter value through the explicit overload.</p>
+     */
+    public static final long DEFAULT_MAX_OFFSET =
+            1_000_000L;
+
     private StablePageableNormalizer() {
     }
 
@@ -27,9 +37,42 @@ public final class StablePageableNormalizer {
         FOLLOW_LAST_SORT_DIRECTION
     }
 
+    /**
+     * Backward-compatible entry point.
+     *
+     * <p>In addition to page-size validation it applies a finite offset
+     * ceiling, so existing callers are not left vulnerable to arbitrarily
+     * deep OFFSET pagination.</p>
+     */
     public static Pageable normalize(
             Pageable pageable,
             int maxPageSize,
+            Set<String> allowedSortProperties,
+            Sort defaultSort,
+            String tieBreakerProperty,
+            TieBreakerDirectionPolicy tieBreakerDirectionPolicy
+    ) {
+        return normalize(
+                pageable,
+                maxPageSize,
+                DEFAULT_MAX_OFFSET,
+                allowedSortProperties,
+                defaultSort,
+                tieBreakerProperty,
+                tieBreakerDirectionPolicy
+        );
+    }
+
+    /**
+     * Normalizes bounded offset pagination and stable sorting.
+     *
+     * @param maxOffset maximum allowed SQL-style offset; use a stricter value
+     *                  for large tables and cursor pagination beyond it
+     */
+    public static Pageable normalize(
+            Pageable pageable,
+            int maxPageSize,
+            long maxOffset,
             Set<String> allowedSortProperties,
             Sort defaultSort,
             String tieBreakerProperty,
@@ -63,6 +106,12 @@ public final class StablePageableNormalizer {
         if (maxPageSize < 1) {
             throw new IllegalArgumentException(
                     "maxPageSize должен быть положительным"
+            );
+        }
+
+        if (maxOffset < 0L) {
+            throw new IllegalArgumentException(
+                    "maxOffset не может быть отрицательным"
             );
         }
 
@@ -105,6 +154,12 @@ public final class StablePageableNormalizer {
             );
         }
 
+        validateOffset(
+                pageNumber,
+                pageSize,
+                maxOffset
+        );
+
         validateRequestedSort(
                 pageable.getSort(),
                 allowedSortProperties
@@ -139,6 +194,28 @@ public final class StablePageableNormalizer {
                 pageSize,
                 stableSort
         );
+    }
+
+    private static void validateOffset(
+            int pageNumber,
+            int pageSize,
+            long maxOffset
+    ) {
+        /*
+         * Both operands are non-negative int values. Their maximum product
+         * (Integer.MAX_VALUE ^ 2) is below Long.MAX_VALUE, so after promoting
+         * the first operand to long this multiplication cannot overflow.
+         */
+        long offset =
+                (long) pageNumber
+                        * pageSize;
+
+        if (offset > maxOffset) {
+            throw new BadRequestException(
+                    "Слишком глубокая страница. "
+                            + "Используйте cursor pagination"
+            );
+        }
     }
 
     private static void validateRequestedSort(

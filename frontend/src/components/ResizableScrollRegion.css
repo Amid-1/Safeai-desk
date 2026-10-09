@@ -157,6 +157,12 @@
         background-color 140ms ease;
 }
 
+/* Subtle hover/focus cue without altering separator dimensions. */
+.resizable-scroll-region__handle:hover,
+.resizable-scroll-region__handle:focus-visible {
+    background: rgb(37 99 235 / 4%);
+}
+
 .resizable-scroll-region__handle:hover::before,
 .resizable-scroll-region__handle:focus-visible::before {
     height: 2px;
@@ -491,3 +497,4 @@
         flex-basis: 22px;
     }
 }
+

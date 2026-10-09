@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -47,7 +48,12 @@ class AuthServiceExpiredRefreshTokenTest {
     private AuthenticationManager authenticationManager;
 
     @Mock
-    private LoginSessionTransactionService loginSessionTransactionService;
+    private LoginSessionTransactionService
+            loginSessionTransactionService;
+
+    @Mock
+    private RefreshSessionTransactionService
+            refreshSessionTransactionService;
 
     @Mock
     private JwtService jwtService;
@@ -80,23 +86,25 @@ class AuthServiceExpiredRefreshTokenTest {
         AuthCookieService authCookieService =
                 getAuthCookieService();
 
-        authService = new AuthService(
-                authenticationManager,
-                loginSessionTransactionService,
-                jwtService,
-                authEventService,
-                userRepository,
-                loginRateLimitService,
-                refreshRateLimitService,
-                clientIpResolver,
-                refreshTokenService,
-                authCookieService,
-                csrfTokenRepository
-        );
+        authService =
+                new AuthService(
+                        authenticationManager,
+                        loginSessionTransactionService,
+                        refreshSessionTransactionService,
+                        jwtService,
+                        authEventService,
+                        userRepository,
+                        loginRateLimitService,
+                        refreshRateLimitService,
+                        clientIpResolver,
+                        refreshTokenService,
+                        authCookieService,
+                        csrfTokenRepository
+                );
     }
 
     @Test
-    void expiredRefreshTokenIsRateLimitedBeforeRotationThenClearsCookies() {
+    void expiredRefreshTokenIsRateLimitedBeforeTransactionalRotationThenClearsCookies() {
         MockHttpServletRequest request =
                 new MockHttpServletRequest();
 
@@ -115,84 +123,128 @@ class AuthServiceExpiredRefreshTokenTest {
                         "Refresh token expired"
                 );
 
-        assertThat(exception.getStatus().value())
-                .isEqualTo(
-                        HttpStatus.UNAUTHORIZED.value()
-                );
+        assertThat(
+                exception.getStatus()
+                        .value()
+        ).isEqualTo(
+                HttpStatus.UNAUTHORIZED
+                        .value()
+        );
 
-        assertThat(exception.getErrorCode())
-                .isEqualTo(
-                        ApiErrorCode.EXPIRED_REFRESH_TOKEN
-                );
+        assertThat(
+                exception.getErrorCode()
+        ).isEqualTo(
+                ApiErrorCode.EXPIRED_REFRESH_TOKEN
+        );
 
-        when(clientIpResolver.resolve(request))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        request
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        when(refreshTokenService.rotate(
-                "expired-refresh-token",
-                request
-        )).thenThrow(exception);
+        when(
+                refreshSessionTransactionService
+                        .rotateAndSign(
+                                "expired-refresh-token",
+                                request
+                        )
+        ).thenThrow(
+                exception
+        );
 
         assertThatThrownBy(() ->
                 authService.refresh(
                         request,
                         response
                 )
-        ).isSameAs(exception);
-
-        InOrder order = inOrder(
-                clientIpResolver,
-                refreshRateLimitService,
-                refreshTokenService
+        ).isSameAs(
+                exception
         );
 
-        order.verify(clientIpResolver)
-                .resolve(request);
-
-        order.verify(refreshRateLimitService)
-                .checkAllowed(IP_ADDRESS);
-
-        order.verify(refreshTokenService)
-                .rotate(
-                        "expired-refresh-token",
-                        request
+        InOrder order =
+                inOrder(
+                        clientIpResolver,
+                        refreshRateLimitService,
+                        refreshSessionTransactionService
                 );
+
+        order.verify(
+                clientIpResolver
+        ).resolve(
+                request
+        );
+
+        order.verify(
+                refreshRateLimitService
+        ).checkAllowed(
+                IP_ADDRESS
+        );
+
+        order.verify(
+                refreshSessionTransactionService
+        ).rotateAndSign(
+                "expired-refresh-token",
+                request
+        );
+
+        /*
+         * Refresh orchestration must no longer bypass the transactional
+         * rotate+sign boundary.
+         */
+        verifyNoInteractions(
+                refreshTokenService,
+                jwtService
+        );
 
         List<String> setCookieHeaders =
                 response.getHeaders(
                         HttpHeaders.SET_COOKIE
                 );
 
-        assertThat(setCookieHeaders)
-                .anySatisfy(header ->
-                        assertThat(header)
-                                .startsWith(
-                                        ACCESS_COOKIE + "="
-                                )
-                                .contains(
-                                        "Max-Age=0"
-                                )
-                                .contains(
-                                        "Path=/"
-                                )
-                );
+        assertThat(
+                setCookieHeaders
+        ).anySatisfy(header ->
+                assertThat(
+                        header
+                )
+                        .startsWith(
+                                ACCESS_COOKIE
+                                        + "="
+                        )
+                        .contains(
+                                "Max-Age=0"
+                        )
+                        .contains(
+                                "Path=/"
+                        )
+        );
 
-        assertThat(setCookieHeaders)
-                .anySatisfy(header ->
-                        assertThat(header)
-                                .startsWith(
-                                        REFRESH_COOKIE + "="
-                                )
-                                .contains(
-                                        "Max-Age=0"
-                                )
-                                .contains(
-                                        "Path=/api/auth"
-                                )
-                );
+        assertThat(
+                setCookieHeaders
+        ).anySatisfy(header ->
+                assertThat(
+                        header
+                )
+                        .startsWith(
+                                REFRESH_COOKIE
+                                        + "="
+                        )
+                        .contains(
+                                "Max-Age=0"
+                        )
+                        .contains(
+                                "Path=/api/auth"
+                        )
+        );
 
-        verify(refreshRateLimitService)
-                .checkAllowed(IP_ADDRESS);
+        verify(
+                refreshRateLimitService
+        ).checkAllowed(
+                IP_ADDRESS
+        );
     }
 
     private static @NonNull AuthCookieService getAuthCookieService() {
@@ -200,10 +252,18 @@ class AuthServiceExpiredRefreshTokenTest {
                 new AuthCookieProperties(
                         false,
                         "Lax",
-                        Duration.ofMinutes(15),
-                        Duration.ofDays(30),
-                        Duration.ofDays(90),
-                        Duration.ofDays(7),
+                        Duration.ofMinutes(
+                                15
+                        ),
+                        Duration.ofDays(
+                                30
+                        ),
+                        Duration.ofDays(
+                                90
+                        ),
+                        Duration.ofDays(
+                                7
+                        ),
                         null,
                         ACCESS_COOKIE,
                         REFRESH_COOKIE

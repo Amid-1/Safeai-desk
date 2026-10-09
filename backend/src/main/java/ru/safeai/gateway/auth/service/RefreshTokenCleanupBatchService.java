@@ -9,6 +9,7 @@ import ru.safeai.gateway.auth.repository.RefreshTokenRepository;
 import java.time.Instant;
 import java.util.Objects;
 
+/** A batch is committed independently, enabling safe cleanup of token chains. */
 @Service
 @RequiredArgsConstructor
 public class RefreshTokenCleanupBatchService {
@@ -17,40 +18,20 @@ public class RefreshTokenCleanupBatchService {
 
     private final RefreshTokenRepository refreshTokenRepository;
 
-    /**
-     * Каждый batch фиксируется отдельной физической транзакцией.
-     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public int deleteNextBatch(
-            Instant threshold,
-            int batchSize
-    ) {
-        Objects.requireNonNull(
-                threshold,
-                "threshold не должен быть null"
-        );
+    public int deleteNextBatch(Instant threshold, int batchSize) {
+        Objects.requireNonNull(threshold, "threshold не должен быть null");
 
         if (batchSize < 1 || batchSize > MAX_BATCH_SIZE) {
             throw new IllegalArgumentException(
-                    "batchSize должен находиться в диапазоне 1.."
-                            + MAX_BATCH_SIZE
-            );
+                    "batchSize должен находиться в диапазоне 1.." + MAX_BATCH_SIZE);
         }
 
-        int deletedRows =
-                refreshTokenRepository.deleteExpiredBatch(
-                        threshold,
-                        batchSize
-                );
-
+        int deletedRows = refreshTokenRepository.deleteExpiredBatch(threshold, batchSize);
         if (deletedRows < 0 || deletedRows > batchSize) {
             throw new IllegalStateException(
-                    "Repository вернул некорректное количество "
-                            + "удалённых строк: "
-                            + deletedRows
-            );
+                    "Repository вернул некорректное количество удалённых строк: " + deletedRows);
         }
-
         return deletedRows;
     }
 }

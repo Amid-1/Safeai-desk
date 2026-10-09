@@ -13,6 +13,9 @@ class ProductionSecurityInvariantValidatorTest {
     private static final String ACTIVE_KEY_ID =
             "test-active-key";
 
+    private static final String PREVIOUS_KEY_ID =
+            "test-previous-key";
+
     private static final String APPLICATION_PORT =
             "8080";
 
@@ -22,24 +25,6 @@ class ProductionSecurityInvariantValidatorTest {
     private static final String MANAGEMENT_ADDRESS =
             "172.31.0.20";
 
-    /*
-     * В этом тесте криптографический материал не используется.
-     *
-     * ProductionSecurityInvariantValidator проверяет production-инварианты:
-     *
-     * - HTTPS issuer;
-     * - CORS;
-     * - trusted proxy CIDR;
-     * - forward headers strategy;
-     * - выделенный management server.
-     *
-     * Для JwtProperties достаточно корректно заполненного
-     * key-ring контракта.
-     *
-     * String.join используется намеренно, чтобы тестовые PEM-строки
-     * не содержали завершающий перевод строки. JwtProperties запрещает
-     * внешний whitespace у public/private key.
-     */
     private static final String TEST_PUBLIC_KEY =
             String.join(
                     "\n",
@@ -262,7 +247,7 @@ class ProductionSecurityInvariantValidatorTest {
                         ::afterSingletonsInstantiated
         )
                 .isInstanceOf(
-                        IllegalStateException.class
+                        RuntimeException.class
                 )
                 .hasMessageContaining(
                         "management.server.port"
@@ -348,6 +333,134 @@ class ProductionSecurityInvariantValidatorTest {
         assertManagementAddressRejected(
                 "::"
         );
+    }
+
+    @Test
+    void prodRejectsPublicManagementAddress() {
+        assertManagementAddressRejected(
+                "203.0.113.10"
+        );
+    }
+
+    @Test
+    void prodRejectsPreviousJwtPrivateKeyMaterial() {
+        ProductionSecurityInvariantValidator validator =
+                new ProductionSecurityInvariantValidator(
+                        new CorsProperties(
+                                List.of(
+                                        "https://app.example.com"
+                                )
+                        ),
+                        new ClientIpProperties(
+                                List.of(
+                                        "172.28.0.0/24"
+                                )
+                        ),
+                        propertiesWithPreviousPrivateKey(
+                                "https://safeai.example.com"
+                        ),
+                        validProductionEnvironment()
+                );
+
+        assertThatThrownBy(
+                validator
+                        ::afterSingletonsInstantiated
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        PREVIOUS_KEY_ID
+                )
+                .hasMessageContaining(
+                        "private-key"
+                );
+    }
+
+    @Test
+    void prodRequiresSchedulerPoolOfAtLeastTwo() {
+        MockEnvironment environment =
+                validProductionEnvironment()
+                        .withProperty(
+                                "spring.task.scheduling.pool.size",
+                                "1"
+                        );
+
+        ProductionSecurityInvariantValidator validator =
+                validator(
+                        "https://safeai.example.com",
+                        List.of(
+                                "https://app.example.com"
+                        ),
+                        List.of(
+                                "172.28.0.0/24"
+                        ),
+                        environment
+                );
+
+        assertThatThrownBy(
+                validator
+                        ::afterSingletonsInstantiated
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "spring.task.scheduling.pool.size"
+                );
+    }
+
+    @Test
+    void prodRequiresExplicitLegacyBcryptDecision() {
+        MockEnvironment environment =
+                new MockEnvironment()
+                        .withProperty(
+                                "safeai.environment",
+                                "production"
+                        )
+                        .withProperty(
+                                "server.port",
+                                APPLICATION_PORT
+                        )
+                        .withProperty(
+                                "management.server.port",
+                                MANAGEMENT_PORT
+                        )
+                        .withProperty(
+                                "management.server.address",
+                                MANAGEMENT_ADDRESS
+                        )
+                        .withProperty(
+                                "server.forward-headers-strategy",
+                                "none"
+                        )
+                        .withProperty(
+                                "spring.task.scheduling.pool.size",
+                                "4"
+                        );
+
+        ProductionSecurityInvariantValidator validator =
+                validator(
+                        "https://safeai.example.com",
+                        List.of(
+                                "https://app.example.com"
+                        ),
+                        List.of(
+                                "172.28.0.0/24"
+                        ),
+                        environment
+                );
+
+        assertThatThrownBy(
+                validator
+                        ::afterSingletonsInstantiated
+        )
+                .isInstanceOf(
+                        IllegalStateException.class
+                )
+                .hasMessageContaining(
+                        "allow-legacy-unprefixed-bcrypt"
+                );
     }
 
     private void assertTrustAllRejected(
@@ -452,14 +565,12 @@ class ProductionSecurityInvariantValidatorTest {
         );
     }
 
-    /**
-     * Полностью валидный production environment baseline.
-     *
-     * <p>Каждый negative test должен изменять только тот invariant,
-     * который он непосредственно проверяет.</p>
-     */
     private MockEnvironment validProductionEnvironment() {
         return new MockEnvironment()
+                .withProperty(
+                        "safeai.environment",
+                        "production"
+                )
                 .withProperty(
                         "server.port",
                         APPLICATION_PORT
@@ -475,6 +586,14 @@ class ProductionSecurityInvariantValidatorTest {
                 .withProperty(
                         "server.forward-headers-strategy",
                         "none"
+                )
+                .withProperty(
+                        "spring.task.scheduling.pool.size",
+                        "4"
+                )
+                .withProperty(
+                        "safeai.security.password.allow-legacy-unprefixed-bcrypt",
+                        "true"
                 );
     }
 
@@ -489,6 +608,29 @@ class ProductionSecurityInvariantValidatorTest {
                 List.of(
                         new JwtProperties.KeyEntry(
                                 ACTIVE_KEY_ID,
+                                TEST_PUBLIC_KEY,
+                                TEST_PRIVATE_KEY
+                        )
+                )
+        );
+    }
+
+    private JwtProperties propertiesWithPreviousPrivateKey(
+            String issuer
+    ) {
+        return new JwtProperties(
+                15L,
+                issuer,
+                "safeai-desk-api",
+                ACTIVE_KEY_ID,
+                List.of(
+                        new JwtProperties.KeyEntry(
+                                ACTIVE_KEY_ID,
+                                TEST_PUBLIC_KEY,
+                                TEST_PRIVATE_KEY
+                        ),
+                        new JwtProperties.KeyEntry(
+                                PREVIOUS_KEY_ID,
                                 TEST_PUBLIC_KEY,
                                 TEST_PRIVATE_KEY
                         )

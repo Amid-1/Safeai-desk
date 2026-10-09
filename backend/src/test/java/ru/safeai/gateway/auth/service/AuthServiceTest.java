@@ -75,6 +75,10 @@ class AuthServiceTest {
             loginSessionTransactionService;
 
     @Mock
+    private RefreshSessionTransactionService
+            refreshSessionTransactionService;
+
+    @Mock
     private JwtService jwtService;
 
     @Mock
@@ -108,19 +112,21 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(
-                authenticationManager,
-                loginSessionTransactionService,
-                jwtService,
-                authEventService,
-                userRepository,
-                loginRateLimitService,
-                refreshRateLimitService,
-                clientIpResolver,
-                refreshTokenService,
-                authCookieService,
-                csrfTokenRepository
-        );
+        authService =
+                new AuthService(
+                        authenticationManager,
+                        loginSessionTransactionService,
+                        refreshSessionTransactionService,
+                        jwtService,
+                        authEventService,
+                        userRepository,
+                        loginRateLimitService,
+                        refreshRateLimitService,
+                        clientIpResolver,
+                        refreshTokenService,
+                        authCookieService,
+                        csrfTokenRepository
+                );
     }
 
     @Test
@@ -141,14 +147,19 @@ class AuthServiceTest {
                         response
                 )
         )
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Некорректный формат email");
+                .isInstanceOf(
+                        BadRequestException.class
+                )
+                .hasMessageContaining(
+                        "Некорректный формат email"
+                );
 
         verifyNoInteractions(
                 clientIpResolver,
                 loginRateLimitService,
                 authenticationManager,
                 loginSessionTransactionService,
+                refreshSessionTransactionService,
                 jwtService,
                 authEventService,
                 refreshTokenService,
@@ -189,33 +200,66 @@ class AuthServiceTest {
                 currentUserResponse();
 
         Duration refreshMaxAge =
-                Duration.ofDays(30);
+                Duration.ofDays(
+                        30
+                );
 
-        when(clientIpResolver.resolve(httpRequest))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        httpRequest
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        when(authenticationManager.authenticate(any()))
-                .thenReturn(authentication);
+        when(
+                authenticationManager.authenticate(
+                        any()
+                )
+        ).thenReturn(
+                authentication
+        );
 
-        when(loginSessionTransactionService.createSession(
-                principal,
-                httpRequest
-        )).thenReturn(loginSessionResult);
+        when(
+                loginSessionTransactionService.createSession(
+                        principal,
+                        httpRequest
+                )
+        ).thenReturn(
+                loginSessionResult
+        );
 
-        when(loginSessionResult.accessTokenSubject())
-                .thenReturn(tokenSubject);
+        when(
+                loginSessionResult.accessTokenSubject()
+        ).thenReturn(
+                tokenSubject
+        );
 
-        when(loginSessionResult.currentUser())
-                .thenReturn(currentUser);
+        when(
+                loginSessionResult.currentUser()
+        ).thenReturn(
+                currentUser
+        );
 
-        when(loginSessionResult.rawRefreshToken())
-                .thenReturn("refresh-token");
+        when(
+                loginSessionResult.rawRefreshToken()
+        ).thenReturn(
+                "refresh-token"
+        );
 
-        when(loginSessionResult.refreshCookieMaxAge())
-                .thenReturn(refreshMaxAge);
+        when(
+                loginSessionResult.refreshCookieMaxAge()
+        ).thenReturn(
+                refreshMaxAge
+        );
 
-        when(jwtService.generateToken(tokenSubject))
-                .thenReturn("access-token");
+        when(
+                jwtService.generateToken(
+                        tokenSubject
+                )
+        ).thenReturn(
+                "access-token"
+        );
 
         CurrentUserResponse result =
                 authService.login(
@@ -224,8 +268,11 @@ class AuthServiceTest {
                         response
                 );
 
-        assertThat(result)
-                .isSameAs(currentUser);
+        assertThat(
+                result
+        ).isSameAs(
+                currentUser
+        );
 
         InOrder order =
                 inOrder(
@@ -239,62 +286,76 @@ class AuthServiceTest {
                         authCookieService
                 );
 
-        order.verify(clientIpResolver)
-                .resolve(httpRequest);
+        order.verify(
+                clientIpResolver
+        ).resolve(
+                httpRequest
+        );
 
-        order.verify(loginRateLimitService)
-                .checkAllowed(
-                        EMAIL,
-                        IP_ADDRESS
-                );
+        order.verify(
+                loginRateLimitService
+        ).checkAllowed(
+                EMAIL,
+                IP_ADDRESS
+        );
 
-        order.verify(authenticationManager)
-                .authenticate(
-                        any(
-                                UsernamePasswordAuthenticationToken.class
-                        )
-                );
+        order.verify(
+                authenticationManager
+        ).authenticate(
+                any(
+                        UsernamePasswordAuthenticationToken.class
+                )
+        );
 
-        order.verify(loginSessionTransactionService)
-                .createSession(
-                        principal,
-                        httpRequest
-                );
+        order.verify(
+                loginSessionTransactionService
+        ).createSession(
+                principal,
+                httpRequest
+        );
 
-        order.verify(jwtService)
-                .generateToken(tokenSubject);
+        order.verify(
+                jwtService
+        ).generateToken(
+                tokenSubject
+        );
 
-        order.verify(authEventService)
-                .loginSuccess(
-                        currentUser,
-                        httpRequest
-                );
+        order.verify(
+                authEventService
+        ).loginSuccess(
+                currentUser,
+                httpRequest
+        );
 
-        order.verify(loginRateLimitService)
-                .onLoginSuccess(
-                        EMAIL,
-                        IP_ADDRESS
-                );
+        order.verify(
+                loginRateLimitService
+        ).onLoginSuccess(
+                EMAIL,
+                IP_ADDRESS
+        );
 
-        order.verify(csrfTokenRepository)
-                .saveToken(
-                        null,
-                        httpRequest,
-                        response
-                );
+        order.verify(
+                csrfTokenRepository
+        ).saveToken(
+                null,
+                httpRequest,
+                response
+        );
 
-        order.verify(authCookieService)
-                .addAccessTokenCookie(
-                        response,
-                        "access-token"
-                );
+        order.verify(
+                authCookieService
+        ).addAccessTokenCookie(
+                response,
+                "access-token"
+        );
 
-        order.verify(authCookieService)
-                .addRefreshTokenCookie(
-                        response,
-                        "refresh-token",
-                        refreshMaxAge
-                );
+        order.verify(
+                authCookieService
+        ).addRefreshTokenCookie(
+                response,
+                "refresh-token",
+                refreshMaxAge
+        );
     }
 
     @Test
@@ -311,15 +372,23 @@ class AuthServiceTest {
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        when(clientIpResolver.resolve(httpRequest))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        httpRequest
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        when(authenticationManager.authenticate(any()))
-                .thenThrow(
-                        new BadCredentialsException(
-                                "Bad credentials"
-                        )
-                );
+        when(
+                authenticationManager.authenticate(
+                        any()
+                )
+        ).thenThrow(
+                new BadCredentialsException(
+                        "Bad credentials"
+                )
+        );
 
         assertThatThrownBy(() ->
                 authService.login(
@@ -331,23 +400,27 @@ class AuthServiceTest {
                 BadCredentialsException.class
         );
 
-        verify(loginRateLimitService)
-                .checkAllowed(
-                        EMAIL,
-                        IP_ADDRESS
-                );
+        verify(
+                loginRateLimitService
+        ).checkAllowed(
+                EMAIL,
+                IP_ADDRESS
+        );
 
-        verify(authEventService)
-                .loginFailed(
-                        EMAIL,
-                        httpRequest
-                );
+        verify(
+                authEventService
+        ).loginFailed(
+                EMAIL,
+                httpRequest
+        );
 
-        verify(loginRateLimitService, never())
-                .onLoginSuccess(
-                        anyString(),
-                        anyString()
-                );
+        verify(
+                loginRateLimitService,
+                never()
+        ).onLoginSuccess(
+                anyString(),
+                anyString()
+        );
 
         verifyNoInteractions(
                 loginSessionTransactionService,
@@ -368,15 +441,23 @@ class AuthServiceTest {
         MockHttpServletRequest httpRequest =
                 request();
 
-        when(clientIpResolver.resolve(httpRequest))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        httpRequest
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        when(authenticationManager.authenticate(any()))
-                .thenThrow(
-                        new DisabledException(
-                                "disabled"
-                        )
-                );
+        when(
+                authenticationManager.authenticate(
+                        any()
+                )
+        ).thenThrow(
+                new DisabledException(
+                        "disabled"
+                )
+        );
 
         assertThatThrownBy(() ->
                 authService.login(
@@ -388,17 +469,20 @@ class AuthServiceTest {
                 DisabledException.class
         );
 
-        verify(authEventService)
-                .loginFailed(
-                        EMAIL,
-                        httpRequest
-                );
+        verify(
+                authEventService
+        ).loginFailed(
+                EMAIL,
+                httpRequest
+        );
 
-        verify(loginRateLimitService, never())
-                .onLoginSuccess(
-                        anyString(),
-                        anyString()
-                );
+        verify(
+                loginRateLimitService,
+                never()
+        ).onLoginSuccess(
+                anyString(),
+                anyString()
+        );
     }
 
     @Test
@@ -415,41 +499,71 @@ class AuthServiceTest {
         SafeAiUserPrincipal principal =
                 passwordPrincipal();
 
-        when(clientIpResolver.resolve(httpRequest))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        httpRequest
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        when(authenticationManager.authenticate(any()))
-                .thenReturn(
-                        UsernamePasswordAuthenticationToken
-                                .authenticated(
-                                        principal,
-                                        null,
-                                        principal.getAuthorities()
-                                )
-                );
+        when(
+                authenticationManager.authenticate(
+                        any()
+                )
+        ).thenReturn(
+                UsernamePasswordAuthenticationToken
+                        .authenticated(
+                                principal,
+                                null,
+                                principal.getAuthorities()
+                        )
+        );
 
-        when(loginSessionTransactionService.createSession(
-                principal,
-                httpRequest
-        )).thenReturn(loginSessionResult);
+        when(
+                loginSessionTransactionService.createSession(
+                        principal,
+                        httpRequest
+                )
+        ).thenReturn(
+                loginSessionResult
+        );
 
-        when(loginSessionResult.accessTokenSubject())
-                .thenReturn(accessTokenSubject());
+        when(
+                loginSessionResult.accessTokenSubject()
+        ).thenReturn(
+                accessTokenSubject()
+        );
 
-        when(loginSessionResult.currentUser())
-                .thenReturn(currentUserResponse());
+        when(
+                loginSessionResult.currentUser()
+        ).thenReturn(
+                currentUserResponse()
+        );
 
-        when(loginSessionResult.rawRefreshToken())
-                .thenReturn("refresh-token");
+        when(
+                loginSessionResult.rawRefreshToken()
+        ).thenReturn(
+                "refresh-token"
+        );
 
-        when(loginSessionResult.refreshCookieMaxAge())
-                .thenReturn(
-                        Duration.ofDays(30)
-                );
+        when(
+                loginSessionResult.refreshCookieMaxAge()
+        ).thenReturn(
+                Duration.ofDays(
+                        30
+                )
+        );
 
-        when(jwtService.generateToken(
-                any(AccessTokenSubject.class)
-        )).thenReturn("access-token");
+        when(
+                jwtService.generateToken(
+                        any(
+                                AccessTokenSubject.class
+                        )
+                )
+        ).thenReturn(
+                "access-token"
+        );
 
         authService.login(
                 loginRequest,
@@ -457,18 +571,20 @@ class AuthServiceTest {
                 new MockHttpServletResponse()
         );
 
-        verify(authenticationManager)
-                .authenticate(
-                        any(
-                                UsernamePasswordAuthenticationToken.class
-                        )
-                );
+        verify(
+                authenticationManager
+        ).authenticate(
+                any(
+                        UsernamePasswordAuthenticationToken.class
+                )
+        );
 
-        verify(loginRateLimitService)
-                .onLoginSuccess(
-                        EMAIL,
-                        IP_ADDRESS
-                );
+        verify(
+                loginRateLimitService
+        ).onLoginSuccess(
+                EMAIL,
+                IP_ADDRESS
+        );
     }
 
     @Test
@@ -485,23 +601,33 @@ class AuthServiceTest {
         SafeAiUserPrincipal principal =
                 passwordPrincipal();
 
-        when(clientIpResolver.resolve(httpRequest))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        httpRequest
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        when(authenticationManager.authenticate(any()))
-                .thenReturn(
-                        UsernamePasswordAuthenticationToken
-                                .authenticated(
-                                        principal,
-                                        null,
-                                        principal.getAuthorities()
-                                )
-                );
+        when(
+                authenticationManager.authenticate(
+                        any()
+                )
+        ).thenReturn(
+                UsernamePasswordAuthenticationToken
+                        .authenticated(
+                                principal,
+                                null,
+                                principal.getAuthorities()
+                        )
+        );
 
-        when(loginSessionTransactionService.createSession(
-                principal,
-                httpRequest
-        )).thenThrow(
+        when(
+                loginSessionTransactionService.createSession(
+                        principal,
+                        httpRequest
+                )
+        ).thenThrow(
                 new TransactionSystemException(
                         "commit failed"
                 )
@@ -517,17 +643,21 @@ class AuthServiceTest {
                 AuthServiceUnavailableException.class
         );
 
-        verify(authEventService, never())
-                .loginSuccess(
-                        any(),
-                        any()
-                );
+        verify(
+                authEventService,
+                never()
+        ).loginSuccess(
+                any(),
+                any()
+        );
 
-        verify(loginRateLimitService, never())
-                .onLoginSuccess(
-                        anyString(),
-                        anyString()
-                );
+        verify(
+                loginRateLimitService,
+                never()
+        ).onLoginSuccess(
+                anyString(),
+                anyString()
+        );
 
         verifyNoInteractions(
                 jwtService,
@@ -555,15 +685,22 @@ class AuthServiceTest {
                         )
                 );
 
-        when(clientIpResolver.resolve(httpRequest))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        httpRequest
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        doThrow(exception)
-                .when(loginRateLimitService)
-                .checkAllowed(
-                        EMAIL,
-                        IP_ADDRESS
-                );
+        doThrow(
+                exception
+        ).when(
+                loginRateLimitService
+        ).checkAllowed(
+                EMAIL,
+                IP_ADDRESS
+        );
 
         assertThatThrownBy(() ->
                 authService.login(
@@ -571,7 +708,9 @@ class AuthServiceTest {
                         httpRequest,
                         new MockHttpServletResponse()
                 )
-        ).isSameAs(exception);
+        ).isSameAs(
+                exception
+        );
 
         verifyNoInteractions(
                 authenticationManager,
@@ -582,11 +721,13 @@ class AuthServiceTest {
                 csrfTokenRepository
         );
 
-        verify(loginRateLimitService, never())
-                .onLoginSuccess(
-                        anyString(),
-                        anyString()
-                );
+        verify(
+                loginRateLimitService,
+                never()
+        ).onLoginSuccess(
+                anyString(),
+                anyString()
+        );
     }
 
     @Test
@@ -603,18 +744,27 @@ class AuthServiceTest {
         RateLimitExceededException exception =
                 new RateLimitExceededException(
                         "Слишком много попыток",
-                        Duration.ofSeconds(60)
+                        Duration.ofSeconds(
+                                60
+                        )
                 );
 
-        when(clientIpResolver.resolve(httpRequest))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        httpRequest
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        doThrow(exception)
-                .when(loginRateLimitService)
-                .checkAllowed(
-                        EMAIL,
-                        IP_ADDRESS
-                );
+        doThrow(
+                exception
+        ).when(
+                loginRateLimitService
+        ).checkAllowed(
+                EMAIL,
+                IP_ADDRESS
+        );
 
         assertThatThrownBy(() ->
                 authService.login(
@@ -622,7 +772,9 @@ class AuthServiceTest {
                         httpRequest,
                         new MockHttpServletResponse()
                 )
-        ).isSameAs(exception);
+        ).isSameAs(
+                exception
+        );
 
         verifyNoInteractions(
                 authenticationManager,
@@ -633,91 +785,119 @@ class AuthServiceTest {
                 csrfTokenRepository
         );
 
-        verify(loginRateLimitService, never())
-                .onLoginSuccess(
-                        anyString(),
-                        anyString()
-                );
+        verify(
+                loginRateLimitService,
+                never()
+        ).onLoginSuccess(
+                anyString(),
+                anyString()
+        );
     }
 
     @Test
-    void successfulRefreshChecksIpLimitBeforeTokenLookupAndRotatesBothCookies() {
+    void successfulRefreshChecksIpLimitBeforeTransactionalRotationAndWritesBothCookies() {
         MockHttpServletRequest request =
                 request();
 
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        AccessTokenSubject subject =
-                accessTokenSubject();
-
         Duration maxAge =
-                Duration.ofDays(30);
+                Duration.ofDays(
+                        30
+                );
 
-        RefreshTokenService.RefreshTokenRotationResult rotation =
-                new RefreshTokenService.RefreshTokenRotationResult(
-                        subject,
+        RefreshSessionResult session =
+                new RefreshSessionResult(
+                        "new-access-token",
                         "new-refresh-token",
                         maxAge
                 );
 
-        when(clientIpResolver.resolve(request))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        request
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        when(authCookieService.extractRefreshToken(request))
-                .thenReturn("old-refresh-token");
+        when(
+                authCookieService.extractRefreshToken(
+                        request
+                )
+        ).thenReturn(
+                "old-refresh-token"
+        );
 
-        when(refreshTokenService.rotate(
-                "old-refresh-token",
-                request
-        )).thenReturn(rotation);
-
-        when(jwtService.generateToken(subject))
-                .thenReturn("new-access-token");
+        when(
+                refreshSessionTransactionService
+                        .rotateAndSign(
+                                "old-refresh-token",
+                                request
+                        )
+        ).thenReturn(
+                session
+        );
 
         authService.refresh(
                 request,
                 response
         );
 
-        InOrder order = inOrder(
-                clientIpResolver,
-                refreshRateLimitService,
-                authCookieService,
-                refreshTokenService,
-                jwtService
+        InOrder order =
+                inOrder(
+                        clientIpResolver,
+                        refreshRateLimitService,
+                        authCookieService,
+                        refreshSessionTransactionService
+                );
+
+        order.verify(
+                clientIpResolver
+        ).resolve(
+                request
         );
 
-        order.verify(clientIpResolver)
-                .resolve(request);
+        order.verify(
+                refreshRateLimitService
+        ).checkAllowed(
+                IP_ADDRESS
+        );
 
-        order.verify(refreshRateLimitService)
-                .checkAllowed(IP_ADDRESS);
+        order.verify(
+                authCookieService
+        ).extractRefreshToken(
+                request
+        );
 
-        order.verify(authCookieService)
-                .extractRefreshToken(request);
+        order.verify(
+                refreshSessionTransactionService
+        ).rotateAndSign(
+                "old-refresh-token",
+                request
+        );
 
-        order.verify(refreshTokenService)
-                .rotate(
-                        "old-refresh-token",
-                        request
-                );
+        order.verify(
+                authCookieService
+        ).addAccessTokenCookie(
+                response,
+                "new-access-token"
+        );
 
-        order.verify(jwtService)
-                .generateToken(subject);
+        order.verify(
+                authCookieService
+        ).addRefreshTokenCookie(
+                response,
+                "new-refresh-token",
+                maxAge
+        );
 
-        verify(authCookieService)
-                .addAccessTokenCookie(
-                        response,
-                        "new-access-token"
-                );
-
-        verify(authCookieService)
-                .addRefreshTokenCookie(
-                        response,
-                        "new-refresh-token",
-                        maxAge
-                );
+        verifyNoInteractions(
+                refreshTokenService,
+                jwtService,
+                authEventService
+        );
     }
 
     @Test
@@ -731,43 +911,61 @@ class AuthServiceTest {
         RateLimitExceededException exception =
                 new RateLimitExceededException(
                         "Слишком много запросов обновления сессии",
-                        Duration.ofSeconds(45)
+                        Duration.ofSeconds(
+                                45
+                        )
                 );
 
-        when(clientIpResolver.resolve(request))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        request
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        doThrow(exception)
-                .when(refreshRateLimitService)
-                .checkAllowed(IP_ADDRESS);
+        doThrow(
+                exception
+        ).when(
+                refreshRateLimitService
+        ).checkAllowed(
+                IP_ADDRESS
+        );
 
         assertThatThrownBy(() ->
                 authService.refresh(
                         request,
                         response
                 )
-        ).isSameAs(exception);
-
-        InOrder order = inOrder(
-                clientIpResolver,
-                refreshRateLimitService
+        ).isSameAs(
+                exception
         );
 
-        order.verify(clientIpResolver)
-                .resolve(request);
+        InOrder order =
+                inOrder(
+                        clientIpResolver,
+                        refreshRateLimitService
+                );
 
-        order.verify(refreshRateLimitService)
-                .checkAllowed(IP_ADDRESS);
+        order.verify(
+                clientIpResolver
+        ).resolve(
+                request
+        );
+
+        order.verify(
+                refreshRateLimitService
+        ).checkAllowed(
+                IP_ADDRESS
+        );
 
         verifyNoInteractions(
+                authCookieService,
+                refreshSessionTransactionService,
                 refreshTokenService,
                 jwtService,
                 authEventService,
                 csrfTokenRepository
-        );
-
-        verifyNoInteractions(
-                authCookieService
         );
     }
 
@@ -787,25 +985,40 @@ class AuthServiceTest {
                         )
                 );
 
-        when(clientIpResolver.resolve(request))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        request
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        doThrow(exception)
-                .when(refreshRateLimitService)
-                .checkAllowed(IP_ADDRESS);
+        doThrow(
+                exception
+        ).when(
+                refreshRateLimitService
+        ).checkAllowed(
+                IP_ADDRESS
+        );
 
         assertThatThrownBy(() ->
                 authService.refresh(
                         request,
                         response
                 )
-        ).isSameAs(exception);
+        ).isSameAs(
+                exception
+        );
 
-        verify(refreshRateLimitService)
-                .checkAllowed(IP_ADDRESS);
+        verify(
+                refreshRateLimitService
+        ).checkAllowed(
+                IP_ADDRESS
+        );
 
         verifyNoInteractions(
                 authCookieService,
+                refreshSessionTransactionService,
                 refreshTokenService,
                 jwtService,
                 authEventService,
@@ -814,15 +1027,20 @@ class AuthServiceTest {
     }
 
     @Test
-    void refreshReuseAuditsAndClearsCookies() {
+    void refreshReuseClearsCookiesWithoutDuplicateBestEffortAudit() {
         MockHttpServletRequest request =
                 request();
 
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        when(clientIpResolver.resolve(request))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        request
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
         RefreshTokenReuseDetectedException exception =
                 new RefreshTokenReuseDetectedException(
@@ -832,29 +1050,47 @@ class AuthServiceTest {
                         UUID.randomUUID()
                 );
 
-        when(authCookieService.extractRefreshToken(request))
-                .thenReturn("refresh-token");
+        when(
+                authCookieService.extractRefreshToken(
+                        request
+                )
+        ).thenReturn(
+                "refresh-token"
+        );
 
-        when(refreshTokenService.rotate(
-                "refresh-token",
-                request
-        )).thenThrow(exception);
+        when(
+                refreshSessionTransactionService
+                        .rotateAndSign(
+                                "refresh-token",
+                                request
+                        )
+        ).thenThrow(
+                exception
+        );
 
         assertThatThrownBy(() ->
                 authService.refresh(
                         request,
                         response
                 )
-        ).isSameAs(exception);
+        ).isSameAs(
+                exception
+        );
 
-        verify(authEventService)
-                .refreshReuseDetected(
-                        exception,
-                        request
-                );
+        verify(
+                authCookieService
+        ).clearAuthCookies(
+                response
+        );
 
-        verify(authCookieService)
-                .clearAuthCookies(response);
+        verifyNoInteractions(
+                authEventService
+        );
+
+        verifyNoInteractions(
+                refreshTokenService,
+                jwtService
+        );
     }
 
     @Test
@@ -865,16 +1101,29 @@ class AuthServiceTest {
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        when(clientIpResolver.resolve(request))
-                .thenReturn(IP_ADDRESS);
+        when(
+                clientIpResolver.resolve(
+                        request
+                )
+        ).thenReturn(
+                IP_ADDRESS
+        );
 
-        when(authCookieService.extractRefreshToken(request))
-                .thenReturn("refresh-token");
+        when(
+                authCookieService.extractRefreshToken(
+                        request
+                )
+        ).thenReturn(
+                "refresh-token"
+        );
 
-        when(refreshTokenService.rotate(
-                "refresh-token",
-                request
-        )).thenThrow(
+        when(
+                refreshSessionTransactionService
+                        .rotateAndSign(
+                                "refresh-token",
+                                request
+                        )
+        ).thenThrow(
                 new DataAccessResourceFailureException(
                         "database unavailable"
                 )
@@ -889,8 +1138,16 @@ class AuthServiceTest {
                 AuthServiceUnavailableException.class
         );
 
-        verify(authCookieService, never())
-                .clearAuthCookies(response);
+        verify(
+                authCookieService,
+                never()
+        ).clearAuthCookies(
+                response
+        );
+
+        verifyNoInteractions(
+                authEventService
+        );
     }
 
     @Test
@@ -908,13 +1165,23 @@ class AuthServiceTest {
                         EMAIL
                 );
 
-        when(authCookieService.extractRefreshToken(request))
-                .thenReturn("refresh-token");
-
-        when(refreshTokenService.revokeFamilyAndReturnSubject(
+        when(
+                authCookieService.extractRefreshToken(
+                        request
+                )
+        ).thenReturn(
                 "refresh-token"
-        )).thenReturn(
-                Optional.of(subject)
+        );
+
+        when(
+                refreshTokenService
+                        .revokeFamilyAndReturnSubject(
+                                "refresh-token"
+                        )
+        ).thenReturn(
+                Optional.of(
+                        subject
+                )
         );
 
         authService.logout(
@@ -922,21 +1189,26 @@ class AuthServiceTest {
                 response
         );
 
-        verify(authEventService)
-                .logout(
-                        subject,
-                        request
-                );
+        verify(
+                authEventService
+        ).logout(
+                subject,
+                request
+        );
 
-        verify(authCookieService)
-                .clearAuthCookies(response);
+        verify(
+                authCookieService
+        ).clearAuthCookies(
+                response
+        );
 
-        verify(csrfTokenRepository)
-                .saveToken(
-                        null,
-                        request,
-                        response
-                );
+        verify(
+                csrfTokenRepository
+        ).saveToken(
+                null,
+                request,
+                response
+        );
     }
 
     @Test
@@ -947,12 +1219,20 @@ class AuthServiceTest {
         MockHttpServletResponse response =
                 new MockHttpServletResponse();
 
-        when(authCookieService.extractRefreshToken(request))
-                .thenReturn("malformed");
-
-        when(refreshTokenService.revokeFamilyAndReturnSubject(
+        when(
+                authCookieService.extractRefreshToken(
+                        request
+                )
+        ).thenReturn(
                 "malformed"
-        )).thenThrow(
+        );
+
+        when(
+                refreshTokenService
+                        .revokeFamilyAndReturnSubject(
+                                "malformed"
+                        )
+        ).thenThrow(
                 new InvalidRefreshTokenException(
                         "invalid"
                 )
@@ -963,28 +1243,38 @@ class AuthServiceTest {
                 response
         );
 
-        verify(authEventService, never())
-                .logout(
-                        any(LogoutAuditSubject.class),
-                        any()
-                );
+        verify(
+                authEventService,
+                never()
+        ).logout(
+                any(
+                        LogoutAuditSubject.class
+                ),
+                any()
+        );
 
-        verify(authCookieService)
-                .clearAuthCookies(response);
+        verify(
+                authCookieService
+        ).clearAuthCookies(
+                response
+        );
 
-        verify(csrfTokenRepository)
-                .saveToken(
-                        null,
-                        request,
-                        response
-                );
+        verify(
+                csrfTokenRepository
+        ).saveToken(
+                null,
+                request,
+                response
+        );
     }
 
     private MockHttpServletRequest request() {
         MockHttpServletRequest request =
                 new MockHttpServletRequest();
 
-        request.setRemoteAddr(IP_ADDRESS);
+        request.setRemoteAddr(
+                IP_ADDRESS
+        );
 
         return request;
     }
@@ -1012,7 +1302,9 @@ class AuthServiceTest {
                 ORGANIZATION_ID,
                 0L,
                 0L,
-                Set.of("ADMIN")
+                Set.of(
+                        "ADMIN"
+                )
         );
     }
 
@@ -1023,7 +1315,9 @@ class AuthServiceTest {
                 EMAIL,
                 "Demo Admin",
                 true,
-                Set.of("ADMIN")
+                Set.of(
+                        "ADMIN"
+                )
         );
     }
 }

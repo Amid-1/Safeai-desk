@@ -9,10 +9,8 @@ import ru.safeai.gateway.audit.entity.AuditOutboxEntity;
 import ru.safeai.gateway.audit.repository.AuditOutboxRepository;
 
 import java.sql.SQLException;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,101 +29,174 @@ class AuditOutboxFailureServiceTest {
     @Mock
     private AuditOutboxRepository repository;
 
+    @Mock
+    private AuditDatabaseClock databaseClock;
+
     @Test
     void firstFailureSchedulesInitialBackoff() {
         AuditOutboxEntity entity =
-                entity(0);
+                entity(
+                        0
+                );
 
         when(
                 repository.findByIdForUpdate(
                         entity.getId()
                 )
         ).thenReturn(
-                Optional.of(entity)
+                Optional.of(
+                        entity
+                )
+        );
+
+        when(
+                databaseClock.now()
+        ).thenReturn(
+                NOW
         );
 
         AuditOutboxFailureService.FailureResult result =
-                service(10).markFailure(
+                service(
+                        10
+                ).markFailure(
                         entity.getId(),
                         new IllegalStateException(
                                 "failure"
                         )
                 );
 
-        assertThat(result.rowFound()).isTrue();
-        assertThat(result.deadLettered()).isFalse();
-        assertThat(result.attemptCount()).isEqualTo(1);
+        assertThat(
+                result.rowFound()
+        ).isTrue();
 
-        assertThat(entity.getAttemptCount())
-                .isEqualTo(1);
+        assertThat(
+                result.deadLettered()
+        ).isFalse();
 
-        assertThat(entity.getNextAttemptAt())
-                .isEqualTo(
-                        NOW.plusSeconds(2)
+        assertThat(
+                result.attemptCount()
+        ).isEqualTo(
+                1
+        );
+
+        assertThat(
+                entity.getAttemptCount()
+        ).isEqualTo(
+                1
+        );
+
+        assertThat(
+                entity.getNextAttemptAt()
+        ).isEqualTo(
+                NOW.plusSeconds(
+                        2
+                )
+        );
+
+        assertThat(
+                entity.getDeadLetteredAt()
+        ).isNull();
+
+        assertThat(
+                entity.getLastError()
+        ).isEqualTo(
+                IllegalStateException.class
+                        .getName()
+        );
+
+        verify(repository)
+                .saveAndFlush(
+                        entity
                 );
-
-        assertThat(entity.getDeadLetteredAt())
-                .isNull();
-
-        assertThat(entity.getLastError())
-                .isEqualTo(
-                        IllegalStateException.class
-                                .getName()
-                );
-
-        verify(repository).save(entity);
     }
 
     @Test
     void lastAllowedFailureMovesRowToDeadLetter() {
         AuditOutboxEntity entity =
-                entity(2);
+                entity(
+                        2
+                );
 
         when(
                 repository.findByIdForUpdate(
                         entity.getId()
                 )
         ).thenReturn(
-                Optional.of(entity)
+                Optional.of(
+                        entity
+                )
+        );
+
+        when(
+                databaseClock.now()
+        ).thenReturn(
+                NOW
         );
 
         AuditOutboxFailureService.FailureResult result =
-                service(3).markFailure(
+                service(
+                        3
+                ).markFailure(
                         entity.getId(),
                         new IllegalArgumentException(
                                 "failure"
                         )
                 );
 
-        assertThat(result.deadLettered()).isTrue();
-        assertThat(result.attemptCount()).isEqualTo(3);
+        assertThat(
+                result.deadLettered()
+        ).isTrue();
 
-        assertThat(entity.getNextAttemptAt())
-                .isNull();
+        assertThat(
+                result.attemptCount()
+        ).isEqualTo(
+                3
+        );
 
-        assertThat(entity.getDeadLetteredAt())
-                .isEqualTo(NOW);
+        assertThat(
+                entity.getNextAttemptAt()
+        ).isNull();
 
-        assertThat(entity.getLastError())
-                .isEqualTo(
-                        IllegalArgumentException.class
-                                .getName()
+        assertThat(
+                entity.getDeadLetteredAt()
+        ).isEqualTo(
+                NOW
+        );
+
+        assertThat(
+                entity.getLastError()
+        ).isEqualTo(
+                IllegalArgumentException.class
+                        .getName()
+        );
+
+        verify(repository)
+                .saveAndFlush(
+                        entity
                 );
-
-        verify(repository).save(entity);
     }
 
     @Test
     void sqlFailureStoresOnlySafeDiagnosticMetadata() {
         AuditOutboxEntity entity =
-                entity(0);
+                entity(
+                        0
+                );
 
         when(
                 repository.findByIdForUpdate(
                         entity.getId()
                 )
         ).thenReturn(
-                Optional.of(entity)
+                Optional.of(
+                        entity
+                )
+        );
+
+        when(
+                databaseClock.now()
+        ).thenReturn(
+                NOW
         );
 
         SQLException sqlException =
@@ -135,7 +206,9 @@ class AuditOutboxFailureServiceTest {
                         99
                 );
 
-        service(10).markFailure(
+        service(
+                10
+        ).markFailure(
                 entity.getId(),
                 new IllegalStateException(
                         "wrapper",
@@ -143,33 +216,50 @@ class AuditOutboxFailureServiceTest {
                 )
         );
 
-        assertThat(entity.getLastError())
-                .contains("sqlState=23514")
-                .contains("errorCode=99")
+        assertThat(
+                entity.getLastError()
+        )
+                .contains(
+                        "sqlState=23514"
+                )
+                .contains(
+                        "errorCode=99"
+                )
                 .doesNotContain(
                         "secret-token-value"
                 );
     }
 
     @Test
-    void missingRowHandlesUncertainCommit() {
+    void missingRowHandlesUncertainCommitWithoutReadingClock() {
         UUID id =
                 UUID.randomUUID();
 
         when(
-                repository.findByIdForUpdate(id)
+                repository.findByIdForUpdate(
+                        id
+                )
         ).thenReturn(
                 Optional.empty()
         );
 
         AuditOutboxFailureService.FailureResult result =
-                service(10).markFailure(
+                service(
+                        10
+                ).markFailure(
                         id,
                         new IllegalStateException()
                 );
 
-        assertThat(result.rowFound()).isFalse();
-        assertThat(result.outboxId()).isEqualTo(id);
+        assertThat(
+                result.rowFound()
+        ).isFalse();
+
+        assertThat(
+                result.outboxId()
+        ).isEqualTo(
+                id
+        );
     }
 
     private AuditOutboxFailureService service(
@@ -180,14 +270,15 @@ class AuditOutboxFailureServiceTest {
                 new AuditOutboxProperties(
                         100,
                         maxAttempts,
-                        Duration.ofSeconds(2),
-                        Duration.ofHours(1),
+                        Duration.ofSeconds(
+                                2
+                        ),
+                        Duration.ofHours(
+                                1
+                        ),
                         1_000
                 ),
-                Clock.fixed(
-                        NOW,
-                        ZoneOffset.UTC
-                )
+                databaseClock
         );
     }
 
@@ -200,15 +291,19 @@ class AuditOutboxFailureServiceTest {
         entity.setId(
                 UUID.randomUUID()
         );
+
         entity.setOccurredAt(
                 NOW
         );
+
         entity.setCreatedAt(
                 NOW
         );
+
         entity.setAttemptCount(
                 attemptCount
         );
+
         entity.setNextAttemptAt(
                 NOW
         );

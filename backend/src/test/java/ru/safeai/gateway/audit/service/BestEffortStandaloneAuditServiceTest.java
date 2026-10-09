@@ -32,21 +32,29 @@ class BestEffortStandaloneAuditServiceTest {
         BestEffortStandaloneAuditService service =
                 service();
 
-        AuditCommand command = command();
+        AuditCommand command =
+                command();
 
-        when(commandFactory.create(
-                any(),
-                any(),
-                any(),
-                any()
-        )).thenReturn(command);
+        when(
+                commandFactory.create(
+                        any(),
+                        any(),
+                        any(),
+                        any()
+                )
+        ).thenReturn(
+                command
+        );
 
         doThrow(
                 new TransactionSystemException(
                         "commit failed"
                 )
-        ).when(outboxWriter)
-                .writeStandalone(command);
+        ).when(
+                outboxWriter
+        ).writeStandaloneRequired(
+                command
+        );
 
         assertThatCode(() ->
                 service.tryRecord(
@@ -57,8 +65,11 @@ class BestEffortStandaloneAuditServiceTest {
                 )
         ).doesNotThrowAnyException();
 
-        verify(outboxWriter)
-                .writeStandalone(command);
+        verify(
+                outboxWriter
+        ).writeStandaloneRequired(
+                command
+        );
     }
 
     @Test
@@ -66,14 +77,19 @@ class BestEffortStandaloneAuditServiceTest {
         BestEffortStandaloneAuditService service =
                 service();
 
-        AuditCommand command = command();
+        AuditCommand command =
+                command();
 
-        when(commandFactory.create(
-                any(),
-                any(),
-                any(),
-                any()
-        )).thenReturn(command);
+        when(
+                commandFactory.create(
+                        any(),
+                        any(),
+                        any(),
+                        any()
+                )
+        ).thenReturn(
+                command
+        );
 
         assertThatCode(() ->
                 service.tryRecord(
@@ -84,8 +100,11 @@ class BestEffortStandaloneAuditServiceTest {
                 )
         ).doesNotThrowAnyException();
 
-        verify(outboxWriter)
-                .writeStandalone(command);
+        verify(
+                outboxWriter
+        ).writeStandaloneRequired(
+                command
+        );
     }
 
     private BestEffortStandaloneAuditService service() {
@@ -108,8 +127,12 @@ class BestEffortStandaloneAuditServiceTest {
                         "Admin"
                 ),
                 UUID.randomUUID(),
-                AuditEventType.RATE_LIMIT_EXCEEDED,
-                Map.of("limit", 100),
+                AuditEventType
+                        .RATE_LIMIT_EXCEEDED,
+                Map.of(
+                        "limit",
+                        100
+                ),
                 Instant.parse(
                         "2026-07-30T08:00:00Z"
                 )

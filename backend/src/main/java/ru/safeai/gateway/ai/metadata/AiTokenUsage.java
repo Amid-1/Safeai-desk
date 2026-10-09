@@ -1,17 +1,7 @@
 package ru.safeai.gateway.ai.metadata;
 
 /**
- * Provider token-usage snapshot used for pricing decisions.
- *
- * <p>inputTokens/outputTokens preserve the provider's top-level usage
- * counters. cachedInputTokens/cacheWriteInputTokens preserve specialized
- * billing dimensions when the provider reports them.</p>
- *
- * <p>specializedBillingDimensionsPresent distinguishes an absent billing
- * dimension from a malformed one. specializedBillingDimensionsValid=false
- * means the provider returned specialized billing metadata that could not be
- * interpreted safely, therefore pricing must fail closed instead of silently
- * treating the dimension as zero or absent.</p>
+ * Canonical provider token-usage snapshot used by pricing and durable evidence.
  */
 public record AiTokenUsage(
         Integer inputTokens,
@@ -23,10 +13,14 @@ public record AiTokenUsage(
 ) {
 
     public AiTokenUsage {
+        requireNonNegative(inputTokens, "inputTokens");
+        requireNonNegative(cachedInputTokens, "cachedInputTokens");
+        requireNonNegative(cacheWriteInputTokens, "cacheWriteInputTokens");
+        requireNonNegative(outputTokens, "outputTokens");
+
         if (!specializedBillingDimensionsPresent) {
             if (cachedInputTokens != null
                     || cacheWriteInputTokens != null) {
-
                 throw new IllegalArgumentException(
                         "Отсутствующие specialized billing dimensions "
                                 + "не могут содержать token counters"
@@ -56,48 +50,35 @@ public record AiTokenUsage(
         );
     }
 
-    /**
-     * Определяет полноту provider usage по top-level input/output counters.
-     *
-     * <p>Нулевые token counters являются валидными значениями и означают
-     * AVAILABLE. Отсутствие обоих counters означает MISSING, отсутствие
-     * ровно одного — PARTIAL.</p>
-     */
     public UsageStatus usageStatus() {
-        if (inputTokens == null
-                && outputTokens == null) {
-
+        if (inputTokens == null && outputTokens == null) {
             return UsageStatus.MISSING;
         }
 
-        if (inputTokens == null
-                || outputTokens == null) {
-
+        if (inputTokens == null || outputTokens == null) {
             return UsageStatus.PARTIAL;
         }
 
         return UsageStatus.AVAILABLE;
     }
 
-    /**
-     * Показывает наличие specialized billing dimensions, которые текущая
-     * flat pricing schema не умеет тарифицировать отдельно.
-     *
-     * <p>Нулевые specialized counters безопасны: они не изменяют стоимость
-     * и поэтому не требуют перевода результата в UNPRICED.</p>
-     */
     public boolean hasSpecializedBillableTokens() {
-        return positive(
-                cachedInputTokens
-        ) || positive(
-                cacheWriteInputTokens
-        );
+        return positive(cachedInputTokens)
+                || positive(cacheWriteInputTokens);
     }
 
-    private static boolean positive(
-            Integer value
+    private static void requireNonNegative(
+            Integer value,
+            String field
     ) {
-        return value != null
-                && value > 0;
+        if (value != null && value < 0) {
+            throw new IllegalArgumentException(
+                    field + " не может быть отрицательным"
+            );
+        }
+    }
+
+    private static boolean positive(Integer value) {
+        return value != null && value > 0;
     }
 }

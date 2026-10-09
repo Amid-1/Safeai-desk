@@ -1,15 +1,20 @@
 package ru.safeai.gateway.audit.service;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.safeai.gateway.audit.config.AuditDetailsProperties;
+import ru.safeai.gateway.common.validation.UnicodeValidationSupport;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.lang.reflect.Array;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.time.temporal.TemporalAccessor;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,155 +22,274 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
 
+/**
+ * Audit payload admission + size sanitizer.
+ *
+ * <p>Two modes deliberately exist:</p>
+ *
+ * <ul>
+ *   <li>typed details: caller uses a dedicated AuditDetails implementation and
+ *       arbitrary safe metadata strings are preserved after secret-pattern and
+ *       sensitive-key checks;</li>
+ *   <li>unstructured map: string values are accepted only for an explicit
+ *       metadata-key allowlist. Unknown textual fields are replaced by a
+ *       fixed marker instead of trusting a denylist.</li>
+ * </ul>
+ */
 @Component
-@RequiredArgsConstructor
-public class AuditDetailsSanitizer {
+public final class AuditDetailsSanitizer {
 
     private static final String REDACTED_VALUE =
             "[REDACTED]";
+
+    private static final String OMITTED_UNAPPROVED_TEXT =
+            "[OMITTED_UNAPPROVED_TEXT]";
+
     private static final String MAX_DEPTH_VALUE =
             "[MAX_DEPTH]";
+
     private static final String BUDGET_EXCEEDED_VALUE =
             "[BUDGET_EXCEEDED]";
+
     private static final String NON_FINITE_NUMBER_VALUE =
             "[NON_FINITE_NUMBER]";
+
     private static final String NUMBER_TOO_LARGE_VALUE =
             "[NUMBER_TOO_LARGE]";
+
     private static final String UNSUPPORTED_VALUE_PREFIX =
             "[UNSUPPORTED_TYPE:";
 
-    /*
-     * Exact canonical keys. Substring matching is intentionally forbidden:
-     * tokenFamilyId, tokenVersion, inputTokens and responseTimeMs are safe.
-     */
-    private static final Set<String> SENSITIVE_KEYS = Set.of(
-            "password",
-            "passwordhash",
-            "currentpassword",
-            "newpassword",
-            "accesstoken",
-            "refreshtoken",
-            "rawtoken",
-            "jwttoken",
-            "jwt",
-            "bearer",
-            "bearertoken",
-            "authorization",
-            "cookie",
-            "setcookie",
-            "apikey",
-            "xapikey",
-            "secret",
-            "apisecret",
-            "tokensecret",
-            "accesssecret",
-            "clientsecret",
-            "clientkey",
-            "secretkey",
-            "signingkey",
-            "signingsecret",
-            "encryptionkey",
-            "webhooksecret",
-            "xauthtoken",
-            "proxyauthorization",
-            "credential",
-            "credentials",
-            "passphrase",
-            "privatekey",
-            "prompt",
-            "promptcontent",
-            "rawprompt",
-            "response",
-            "responsebody",
-            "responsecontent",
-            "rawresponse",
-            "requestbody",
-            "rawvalue"
-    );
+    private static final Set<String> SENSITIVE_KEYS =
+            Set.of(
+                    "password",
+                    "passwordhash",
+                    "currentpassword",
+                    "newpassword",
+                    "accesstoken",
+                    "refreshtoken",
+                    "rawtoken",
+                    "jwttoken",
+                    "jwt",
+                    "bearer",
+                    "bearertoken",
+                    "authorization",
+                    "proxyauthorization",
+                    "cookie",
+                    "setcookie",
+                    "apikey",
+                    "xapikey",
+                    "secret",
+                    "apisecret",
+                    "tokensecret",
+                    "accesssecret",
+                    "clientsecret",
+                    "clientkey",
+                    "secretkey",
+                    "signingkey",
+                    "signingsecret",
+                    "encryptionkey",
+                    "webhooksecret",
+                    "xauthtoken",
+                    "credential",
+                    "credentials",
+                    "passphrase",
+                    "privatekey",
+                    "prompt",
+                    "promptcontent",
+                    "rawprompt",
+                    "response",
+                    "responsebody",
+                    "responsecontent",
+                    "rawresponse",
+                    "requestbody",
+                    "requestcontent",
+                    "rawrequest",
+                    "rawvalue",
+                    "payload",
+                    "body",
+                    "headers",
+                    "httpheaders",
+                    "sessioncredential",
+                    "sessionsecret",
+                    "authheader",
+                    "authheadervalue"
+            );
 
-    /*
-     * Exact path segments which always denote a secret-bearing subtree.
-     * Generic "response" is excluded so response.status remains useful.
+    /**
+     * String fields allowed from legacy/unstructured Map callers.
+     *
+     * <p>These names describe identifiers, enum-like states, provider/model
+     * metadata or timestamps. Free-form user/provider bodies are intentionally
+     * absent.</p>
      */
-    private static final Set<String> SENSITIVE_PATH_SEGMENTS = Set.of(
-            "password",
-            "passwordhash",
-            "currentpassword",
-            "newpassword",
-            "accesstoken",
-            "refreshtoken",
-            "rawtoken",
-            "jwttoken",
-            "jwt",
-            "bearer",
-            "bearertoken",
-            "authorization",
-            "cookie",
-            "setcookie",
-            "apikey",
-            "xapikey",
-            "secret",
-            "apisecret",
-            "tokensecret",
-            "accesssecret",
-            "clientsecret",
-            "clientkey",
-            "secretkey",
-            "signingkey",
-            "signingsecret",
-            "encryptionkey",
-            "webhooksecret",
-            "xauthtoken",
-            "proxyauthorization",
-            "credential",
-            "credentials",
-            "passphrase",
-            "privatekey",
-            "prompt",
-            "promptcontent",
-            "rawprompt",
-            "responsebody",
-            "responsecontent",
-            "rawresponse",
-            "requestbody",
-            "rawvalue"
-    );
+    private static final Set<String> SAFE_UNSTRUCTURED_TEXT_KEYS =
+            Set.of(
+                    "provider",
+                    "model",
+                    "modelkey",
+                    "requestedmodel",
+                    "resolvedmodel",
+                    "providerrequestid",
+                    "providermessageid",
+                    "providererrortype",
+                    "failurecode",
+                    "turnstate",
+                    "state",
+                    "status",
+                    "outcome",
+                    "reason",
+                    "source",
+                    "mode",
+                    "role",
+                    "lifecycle",
+                    "usagestatus",
+                    "pricingstatus",
+                    "currency",
+                    "pricingversion",
+                    "finishreason",
+                    "airesponsestatus",
+                    "responsestatus",
+                    "type",
+                    "window",
+                    "retentionmode",
+                    "previoussource",
+                    "newsource",
+                    "archivedat",
+                    "requestid",
+                    "contenttype",
+                    "documenttype",
+                    "capability",
+                    "modality",
+                    "operation",
+                    "policy",
+                    "enforcement",
+                    "lexicalprofile"
+            );
+
+    private static final Pattern JWT_PATTERN =
+            Pattern.compile(
+                    "(?i)\\beyJ[A-Za-z0-9_-]{8,}\\."
+                            + "[A-Za-z0-9_-]{8,}\\."
+                            + "[A-Za-z0-9_-]{8,}\\b"
+            );
+
+    private static final Pattern AUTH_SCHEME_PATTERN =
+            Pattern.compile(
+                    "(?i)\\b(?:bearer|basic)\\s+\\S+"
+            );
+
+    private static final Pattern PEM_PATTERN =
+            Pattern.compile(
+                    "-----BEGIN [A-Z0-9 ]*"
+                            + "(?:PRIVATE KEY|SECRET)"
+                            + "[A-Z0-9 ]*-----"
+            );
+
+    private static final Pattern COMMON_SECRET_PREFIX_PATTERN =
+            Pattern.compile(
+                    "(?i)(?:^|\\s)(?:sk-|sk_live_|rk_live_|"
+                            + "ghp_|github_pat_|xox[baprs]-|AKIA)"
+                            + "[A-Za-z0-9_\\-]{8,}"
+            );
 
     private final JsonMapper jsonMapper;
     private final AuditDetailsProperties properties;
 
+    public AuditDetailsSanitizer(
+            JsonMapper jsonMapper,
+            AuditDetailsProperties properties
+    ) {
+        this.jsonMapper =
+                Objects.requireNonNull(
+                        jsonMapper,
+                        "jsonMapper не должен быть null"
+                );
+
+        this.properties =
+                Objects.requireNonNull(
+                        properties,
+                        "properties не должен быть null"
+                );
+    }
+
+    /**
+     * Legacy/unstructured boundary. Arbitrary string fields are not trusted.
+     */
     public Map<String, Object> sanitize(
             Map<String, Object> details
     ) {
-        if (details == null || details.isEmpty()) {
+        return sanitize(
+                details,
+                TrustMode.UNSTRUCTURED
+        );
+    }
+
+    /**
+     * Typed AuditDetails boundary. The DTO itself is the field allowlist;
+     * this sanitizer remains the second line of defence for secrets/size.
+     */
+    public Map<String, Object> sanitizeTyped(
+            Map<String, Object> details
+    ) {
+        return sanitize(
+                details,
+                TrustMode.TYPED
+        );
+    }
+
+    private Map<String, Object> sanitize(
+            Map<String, Object> details,
+            TrustMode trustMode
+    ) {
+        Objects.requireNonNull(
+                trustMode,
+                "trustMode не должен быть null"
+        );
+
+        if (details == null
+                || details.isEmpty()) {
             return Map.of();
         }
 
-        Budget budget = new Budget(
-                properties.maxTotalNodes(),
-                properties.maxTotalStringChars(),
-                Math.max(
-                        1_024,
-                        properties.maxJsonBytes() - 4_096
-                )
-        );
+        Budget budget =
+                new Budget(
+                        properties.maxTotalNodes(),
+                        properties.maxTotalStringChars(),
+                        Math.max(
+                                1_024,
+                                properties.maxJsonBytes()
+                                        - 4_096
+                        )
+                );
 
-        budget.tryConsumeNode();
+        if (budget.reserveNode()
+                == NodeReservation.EXHAUSTED) {
+            return Map.of(
+                    "_budgetExceeded",
+                    true
+            );
+        }
 
         Map<String, Object> sanitized =
                 sanitizeMapValue(
                         details,
                         0,
-                        budget
+                        budget,
+                        trustMode
                 );
 
         int serializedBytes =
-                serializedSize(sanitized);
+                serializedSize(
+                        sanitized
+                );
 
         if (serializedBytes
                 <= properties.maxJsonBytes()) {
@@ -173,26 +297,33 @@ public class AuditDetailsSanitizer {
         }
 
         return Map.of(
-                "_truncated", true,
-                "_reason", "MAX_JSON_BYTES",
-                "_sanitizedBytes", serializedBytes
+                "_truncated",
+                true,
+                "_reason",
+                "MAX_JSON_BYTES",
+                "_sanitizedBytes",
+                serializedBytes
         );
     }
 
     private Object sanitizeValue(
             Object value,
             int depth,
-            Budget budget
+            Budget budget,
+            TrustMode trustMode,
+            String parentKey
     ) {
         if (value == null) {
             return null;
         }
 
-        if (!budget.tryConsumeNode()) {
+        if (budget.reserveNode()
+                == NodeReservation.EXHAUSTED) {
             return BUDGET_EXCEEDED_VALUE;
         }
 
-        if (depth >= properties.maxDepth()) {
+        if (depth
+                >= properties.maxDepth()) {
             return MAX_DEPTH_VALUE;
         }
 
@@ -200,11 +331,15 @@ public class AuditDetailsSanitizer {
             case String stringValue ->
                     sanitizeString(
                             stringValue,
-                            budget
+                            budget,
+                            trustMode,
+                            parentKey
                     );
 
             case Number numberValue ->
-                    sanitizeNumber(numberValue);
+                    sanitizeNumber(
+                            numberValue
+                    );
 
             case Boolean booleanValue ->
                     booleanValue;
@@ -212,7 +347,9 @@ public class AuditDetailsSanitizer {
             case Character characterValue ->
                     sanitizeString(
                             characterValue.toString(),
-                            budget
+                            budget,
+                            trustMode,
+                            parentKey
                     );
 
             case UUID uuid ->
@@ -222,27 +359,35 @@ public class AuditDetailsSanitizer {
                     enumValue.name();
 
             case TemporalAccessor temporalAccessor ->
-                    temporalAccessor.toString();
+                    consumeSafeText(
+                            temporalAccessor.toString(),
+                            budget
+                    );
 
             case Map<?, ?> mapValue ->
                     sanitizeMapValue(
                             mapValue,
                             depth + 1,
-                            budget
+                            budget,
+                            trustMode
                     );
 
             case Iterable<?> iterableValue ->
                     sanitizeIterableValue(
                             iterableValue,
                             depth + 1,
-                            budget
+                            budget,
+                            trustMode,
+                            parentKey
                     );
 
             default ->
                     sanitizeUnknownValue(
                             value,
                             depth,
-                            budget
+                            budget,
+                            trustMode,
+                            parentKey
                     );
         };
     }
@@ -250,68 +395,98 @@ public class AuditDetailsSanitizer {
     private Object sanitizeUnknownValue(
             Object value,
             int depth,
-            Budget budget
+            Budget budget,
+            TrustMode trustMode,
+            String parentKey
     ) {
-        if (value.getClass().isArray()) {
+        if (value.getClass()
+                .isArray()) {
             return sanitizeArrayValue(
                     value,
                     depth + 1,
-                    budget
+                    budget,
+                    trustMode,
+                    parentKey
             );
         }
 
         return UNSUPPORTED_VALUE_PREFIX
-                + value.getClass().getName()
+                + value.getClass()
+                .getName()
                 + "]";
     }
 
     private Map<String, Object> sanitizeMapValue(
             Map<?, ?> source,
             int depth,
-            Budget budget
+            Budget budget,
+            TrustMode trustMode
     ) {
         Map<String, Object> sanitized =
                 new LinkedHashMap<>();
 
-        int count = 0;
+        int visited = 0;
 
-        for (Map.Entry<?, ?> entry : source.entrySet()) {
-            if (count
+        for (Map.Entry<?, ?> entry
+                : source.entrySet()) {
+
+            if (visited
                     >= properties.maxContainerItems()) {
-                sanitized.put("_truncated", true);
+                sanitized.putIfAbsent(
+                        "_truncated",
+                        true
+                );
                 break;
             }
 
+            visited++;
+
             String key =
-                    sanitizeMapKey(entry.getKey());
+                    sanitizeMapKey(
+                            entry.getKey()
+                    );
 
             if (key == null) {
                 continue;
             }
 
-            if (!budget.tryConsumeText(key)) {
-                sanitized.put(
+            if (budget.reserveText(
+                    key
+            ) == TextReservation.EXHAUSTED) {
+                sanitized.putIfAbsent(
                         "_budgetExceeded",
                         true
                 );
                 break;
             }
 
-            Object value = isSensitiveKey(key)
-                    ? REDACTED_VALUE
-                    : sanitizeValue(
-                            entry.getValue(),
-                            depth,
-                            budget
-                    );
+            Object value =
+                    isSensitiveKey(
+                            key
+                    )
+                            ? REDACTED_VALUE
+                            : sanitizeValue(
+                                    entry.getValue(),
+                                    depth,
+                                    budget,
+                                    trustMode,
+                                    key
+                            );
 
             if (value != null) {
-                sanitized.putIfAbsent(key, value);
-                count++;
+                /*
+                 * Normalization/truncation may collapse two source keys into
+                 * one key. Keep the first admitted value; a later entry must
+                 * not silently overwrite already admitted audit evidence.
+                 */
+                sanitized.putIfAbsent(
+                        key,
+                        value
+                );
             }
 
             if (budget.isExhausted()) {
-                sanitized.put(
+                sanitized.putIfAbsent(
                         "_budgetExceeded",
                         true
                 );
@@ -319,103 +494,230 @@ public class AuditDetailsSanitizer {
             }
         }
 
-        return Collections.unmodifiableMap(sanitized);
+        return Collections.unmodifiableMap(
+                sanitized
+        );
     }
 
     private List<Object> sanitizeIterableValue(
             Iterable<?> source,
             int depth,
-            Budget budget
+            Budget budget,
+            TrustMode trustMode,
+            String parentKey
     ) {
         List<Object> sanitized =
                 new ArrayList<>();
 
-        int count = 0;
+        int visited = 0;
 
         for (Object item : source) {
-            if (count
+            if (visited
                     >= properties.maxContainerItems()) {
-                sanitized.add("_truncated");
+                sanitized.add(
+                        "_truncated"
+                );
                 break;
             }
 
-            Object value =
-                    sanitizeValue(
-                            item,
-                            depth,
-                            budget
-                    );
+            visited++;
 
-            if (value != null) {
-                sanitized.add(value);
-                count++;
-            }
-
-            if (budget.isExhausted()) {
-                sanitized.add(
-                        BUDGET_EXCEEDED_VALUE
-                );
+            if (appendSanitizedElement(
+                    sanitized,
+                    item,
+                    depth,
+                    budget,
+                    trustMode,
+                    parentKey
+            ) == SequenceStep.STOP) {
                 break;
             }
         }
 
-        return List.copyOf(sanitized);
+        return List.copyOf(
+                sanitized
+        );
     }
 
     private List<Object> sanitizeArrayValue(
             Object source,
             int depth,
-            Budget budget
+            Budget budget,
+            TrustMode trustMode,
+            String parentKey
     ) {
         List<Object> sanitized =
                 new ArrayList<>();
 
-        int length = Array.getLength(source);
+        int length =
+                Array.getLength(
+                        source
+                );
 
-        int limit = Math.min(
-                length,
-                properties.maxContainerItems()
-        );
+        int limit =
+                Math.min(
+                        length,
+                        properties.maxContainerItems()
+                );
 
         for (int index = 0;
              index < limit;
              index++) {
 
-            Object value = sanitizeValue(
-                    Array.get(source, index),
+            if (appendSanitizedElement(
+                    sanitized,
+                    Array.get(
+                            source,
+                            index
+                    ),
                     depth,
-                    budget
-            );
-
-            if (value != null) {
-                sanitized.add(value);
-            }
-
-            if (budget.isExhausted()) {
-                sanitized.add(
-                        BUDGET_EXCEEDED_VALUE
-                );
+                    budget,
+                    trustMode,
+                    parentKey
+            ) == SequenceStep.STOP) {
                 break;
             }
         }
 
         if (length
-                > properties.maxContainerItems()) {
-            sanitized.add("_truncated");
+                > properties.maxContainerItems()
+                && !budget.isExhausted()) {
+            sanitized.add(
+                    "_truncated"
+            );
         }
 
-        return List.copyOf(sanitized);
+        return List.copyOf(
+                sanitized
+        );
     }
 
-    private Object sanitizeNumber(Number value) {
+    /**
+     * Shared sequence element path for Iterable and Java arrays.
+     * This intentionally removes the duplicated sanitize/add/budget fragment.
+     */
+    private SequenceStep appendSanitizedElement(
+            List<Object> target,
+            Object sourceValue,
+            int depth,
+            Budget budget,
+            TrustMode trustMode,
+            String parentKey
+    ) {
+        Object value =
+                sanitizeValue(
+                        sourceValue,
+                        depth,
+                        budget,
+                        trustMode,
+                        parentKey
+                );
+
+        if (budget.isExhausted()) {
+            if (value != null
+                    && !BUDGET_EXCEEDED_VALUE.equals(
+                    value
+            )) {
+                target.add(
+                        value
+                );
+            }
+
+            if (target.isEmpty()
+                    || !BUDGET_EXCEEDED_VALUE.equals(
+                    target.getLast(
+                    )
+            )) {
+                target.add(
+                        BUDGET_EXCEEDED_VALUE
+                );
+            }
+
+            return SequenceStep.STOP;
+        }
+
+        if (value != null) {
+            target.add(
+                    value
+            );
+        }
+
+        return SequenceStep.CONTINUE;
+    }
+
+    private String sanitizeString(
+            String value,
+            Budget budget,
+            TrustMode trustMode,
+            String parentKey
+    ) {
+        String normalized =
+                normalizeAndTruncateText(
+                        value
+                );
+
+        if (normalized == null) {
+            return null;
+        }
+
+        if (looksLikeCredential(
+                normalized
+        )) {
+            return REDACTED_VALUE;
+        }
+
+        if (trustMode
+                == TrustMode.UNSTRUCTURED
+                && isUnapprovedUnstructuredTextKey(
+                parentKey
+        )) {
+            return OMITTED_UNAPPROVED_TEXT;
+        }
+
+        return budget.consumeString(
+                normalized
+        );
+    }
+
+    private String consumeSafeText(
+            String value,
+            Budget budget
+    ) {
+        String normalized =
+                normalizeAndTruncateText(
+                        value
+                );
+
+        if (normalized == null) {
+            return null;
+        }
+
+        if (looksLikeCredential(
+                normalized
+        )) {
+            return REDACTED_VALUE;
+        }
+
+        return budget.consumeString(
+                normalized
+        );
+    }
+
+    private Object sanitizeNumber(
+            Number value
+    ) {
         if (value instanceof Double doubleValue) {
-            return Double.isFinite(doubleValue)
+            return Double.isFinite(
+                    doubleValue
+            )
                     ? doubleValue
                     : NON_FINITE_NUMBER_VALUE;
         }
 
         if (value instanceof Float floatValue) {
-            return Float.isFinite(floatValue)
+            return Float.isFinite(
+                    floatValue
+            )
                     ? floatValue
                     : NON_FINITE_NUMBER_VALUE;
         }
@@ -427,28 +729,36 @@ public class AuditDetailsSanitizer {
             return value;
         }
 
-        if (value instanceof AtomicInteger atomicInteger) {
+        if (value
+                instanceof AtomicInteger atomicInteger) {
             return atomicInteger.get();
         }
 
-        if (value instanceof AtomicLong atomicLong) {
+        if (value
+                instanceof AtomicLong atomicLong) {
             return atomicLong.get();
         }
 
-        if (value instanceof BigInteger bigInteger) {
-            return bigInteger.toString().length()
+        if (value
+                instanceof BigInteger bigInteger) {
+            return bigInteger.toString()
+                    .length()
                     <= properties.maxNumberTextLength()
                     ? bigInteger
                     : NUMBER_TOO_LARGE_VALUE;
         }
 
-        if (value instanceof BigDecimal bigDecimal) {
-            return isSafeDecimal(bigDecimal)
+        if (value
+                instanceof BigDecimal bigDecimal) {
+            return isSafeDecimal(
+                    bigDecimal
+            )
                     ? bigDecimal
                     : NUMBER_TOO_LARGE_VALUE;
         }
 
-        String text = value.toString();
+        String text =
+                value.toString();
 
         if (text.length()
                 > properties.maxNumberTextLength()) {
@@ -457,14 +767,19 @@ public class AuditDetailsSanitizer {
 
         try {
             BigDecimal decimal =
-                    new BigDecimal(text);
+                    new BigDecimal(
+                            text
+                    );
 
-            return isSafeDecimal(decimal)
+            return isSafeDecimal(
+                    decimal
+            )
                     ? decimal
                     : NUMBER_TOO_LARGE_VALUE;
         } catch (NumberFormatException ignored) {
             return UNSUPPORTED_VALUE_PREFIX
-                    + value.getClass().getName()
+                    + value.getClass()
+                    .getName()
                     + "]";
         }
     }
@@ -475,126 +790,259 @@ public class AuditDetailsSanitizer {
         int limit =
                 properties.maxNumberTextLength();
 
-        return value.toString().length() <= limit
-                && value.precision() <= limit
-                && Math.abs((long) value.scale())
-                <= limit;
+        return value.toString()
+                .length()
+                <= limit
+                && value.precision()
+                <= limit
+                && Math.abs(
+                (long) value.scale()
+        ) <= limit;
     }
 
-    private String sanitizeString(
-            String value,
-            Budget budget
+    private String sanitizeMapKey(
+            Object rawKey
     ) {
-        String truncated = truncate(value);
-
-        return truncated == null
-                ? null
-                : budget.consumeString(truncated);
-    }
-
-    private String sanitizeMapKey(Object rawKey) {
         if (rawKey == null) {
             return null;
         }
 
-        return switch (rawKey) {
-            case String value ->
-                    truncate(value);
+        String text =
+                switch (rawKey) {
+                    case String value ->
+                            value;
 
-            case UUID value ->
-                    value.toString();
+                    case UUID value ->
+                            value.toString();
 
-            case Enum<?> value ->
-                    value.name();
+                    case Enum<?> value ->
+                            value.name();
 
-            case Number value ->
-                    truncate(value.toString());
+                    case Number value ->
+                            value.toString();
 
-            case Boolean value ->
-                    value.toString();
+                    case Boolean value ->
+                            value.toString();
 
-            case Character value ->
-                    value.toString();
+                    case Character value ->
+                            value.toString();
 
-            default ->
-                    null;
-        };
-    }
+                    default ->
+                            null;
+                };
 
-    private String truncate(String value) {
-        if (value == null || value.isBlank()) {
+        if (text == null
+                || text.isBlank()) {
             return null;
         }
 
-        String trimmed = value.trim();
+        String normalized =
+                normalizeStrictUnicode(
+                        text,
+                        "audit details key"
+                );
+
+        for (int offset = 0;
+             offset < normalized.length();) {
+
+            int codePoint =
+                    normalized.codePointAt(
+                            offset
+                    );
+
+            if (Character.isISOControl(
+                    codePoint
+            )) {
+                throw new IllegalArgumentException(
+                        "Audit details key содержит управляющий символ"
+                );
+            }
+
+            offset +=
+                    Character.charCount(
+                            codePoint
+                    );
+        }
+
+        normalized =
+                normalized.trim();
+
+        if (normalized.isBlank()) {
+            return null;
+        }
 
         return truncateByCodePoints(
-                trimmed,
+                normalized,
                 properties.maxStringLength()
         );
     }
 
-    private String truncateByCodePoints(
-            String value,
-            int maxUtf16Chars
+    private String normalizeAndTruncateText(
+            String value
     ) {
-        if (value.length() <= maxUtf16Chars) {
+        if (value == null
+                || value.isBlank()) {
+            return null;
+        }
+
+        String normalized =
+                normalizeStrictUnicode(
+                        value,
+                        "audit details value"
+                )
+                        .trim();
+
+        if (normalized.isBlank()) {
+            return null;
+        }
+
+        return truncateByCodePoints(
+                normalized,
+                properties.maxStringLength()
+        );
+    }
+
+    /**
+     * Audit payload canonicalization intentionally uses NFKC.
+     *
+     * <p>Only UTF-16 structural validation is shared with other modules.
+     * The normalization form remains an audit-sanitizer decision.</p>
+     */
+    private static String normalizeStrictUnicode(
+            String value,
+            String field
+    ) {
+        UnicodeValidationSupport
+                .requireWellFormedUtf16(
+                        value,
+                        field
+                );
+
+        return Normalizer.normalize(
+                value,
+                Normalizer.Form.NFKC
+        );
+    }
+
+    private static String truncateByCodePoints(
+            String value,
+            int maxCodePoints
+    ) {
+        int count =
+                value.codePointCount(
+                        0,
+                        value.length()
+                );
+
+        if (count
+                <= maxCodePoints) {
             return value;
         }
 
-        int end = maxUtf16Chars;
+        int end =
+                value.offsetByCodePoints(
+                        0,
+                        maxCodePoints
+                );
 
-        if (end > 0
-                && Character.isHighSurrogate(
-                        value.charAt(end - 1)
-                )) {
-            end--;
-        }
-
-        return value.substring(0, end);
+        return value.substring(
+                0,
+                end
+        );
     }
 
-    private boolean isSensitiveKey(String key) {
-        String lower =
-                key.toLowerCase(Locale.ROOT);
+    private static boolean isSensitiveKey(
+            String key
+    ) {
+        String whole =
+                canonicalizeKey(
+                        key
+                );
 
-        String canonicalWhole =
-                canonicalize(lower);
-
-        String[] pathSegments =
-                lower.split("[./:]");
-
-        String leaf = pathSegments.length == 0
-                ? lower
-                : pathSegments[
-                        pathSegments.length - 1
-                ];
-
-        if (SENSITIVE_KEYS.contains(canonicalWhole)
-                || SENSITIVE_KEYS.contains(
-                        canonicalize(leaf)
-                )) {
+        if (SENSITIVE_KEYS.contains(
+                whole
+        )) {
             return true;
         }
 
-        for (String segment : pathSegments) {
-            if (SENSITIVE_PATH_SEGMENTS.contains(
-                    canonicalize(segment)
+        String[] segments =
+                key.split(
+                        "[\\p{P}\\p{Z}\\s]+"
+                );
+
+        for (String segment : segments) {
+            if (SENSITIVE_KEYS.contains(
+                    canonicalizeKey(
+                            segment
+                    )
             )) {
                 return true;
             }
         }
 
         return false;
-    } 
+    }
 
-    private String canonicalize(String value) {
-        return value
-                .replace("-", "")
-                .replace("_", "")
-                .replace(".", "")
-                .replace("/", "")
-                .replace(":", "");
+    private static boolean isUnapprovedUnstructuredTextKey(
+            String key
+    ) {
+        return key == null
+                || !SAFE_UNSTRUCTURED_TEXT_KEYS.contains(
+                canonicalizeKey(
+                        key
+                )
+        );
+    }
+
+    private static String canonicalizeKey(
+            String value
+    ) {
+        String normalized =
+                Normalizer.normalize(
+                                value,
+                                Normalizer.Form.NFKC
+                        )
+                        .toLowerCase(
+                                Locale.ROOT
+                        );
+
+        StringBuilder result =
+                new StringBuilder();
+
+        normalized.codePoints()
+                .filter(
+                        Character::isLetterOrDigit
+                )
+                .forEach(
+                        result::appendCodePoint
+                );
+
+        return result.toString();
+    }
+
+    private static boolean looksLikeCredential(
+            String value
+    ) {
+        return JWT_PATTERN
+                .matcher(
+                        value
+                )
+                .find()
+                || AUTH_SCHEME_PATTERN
+                .matcher(
+                        value
+                )
+                .find()
+                || PEM_PATTERN
+                .matcher(
+                        value
+                )
+                .find()
+                || COMMON_SECRET_PREFIX_PATTERN
+                .matcher(
+                        value
+                )
+                .find();
     }
 
     private int serializedSize(
@@ -602,7 +1050,9 @@ public class AuditDetailsSanitizer {
     ) {
         try {
             return jsonMapper
-                    .writeValueAsBytes(details)
+                    .writeValueAsBytes(
+                            details
+                    )
                     .length;
         } catch (JacksonException exception) {
             throw new IllegalArgumentException(
@@ -611,6 +1061,26 @@ public class AuditDetailsSanitizer {
                     exception
             );
         }
+    }
+
+    private enum TrustMode {
+        TYPED,
+        UNSTRUCTURED
+    }
+
+    private enum NodeReservation {
+        RESERVED,
+        EXHAUSTED
+    }
+
+    private enum TextReservation {
+        RESERVED,
+        EXHAUSTED
+    }
+
+    private enum SequenceStep {
+        CONTINUE,
+        STOP
     }
 
     private static final class Budget {
@@ -626,42 +1096,54 @@ public class AuditDetailsSanitizer {
         ) {
             this.remainingNodes =
                     remainingNodes;
+
             this.remainingStringChars =
                     remainingStringChars;
+
             this.remainingEstimatedBytes =
                     remainingEstimatedBytes;
         }
 
-        private boolean tryConsumeNode() {
+        private NodeReservation reserveNode() {
             if (remainingNodes <= 0
                     || remainingEstimatedBytes < 16) {
-                return false;
+                return NodeReservation.EXHAUSTED;
             }
 
             remainingNodes--;
             remainingEstimatedBytes -= 16;
 
-            return true;
+            return NodeReservation.RESERVED;
         }
 
-        private boolean tryConsumeText(
+        private TextReservation reserveText(
                 String value
         ) {
-            int bytes = utf8Length(value);
+            int bytes =
+                    utf8LengthStrict(
+                            value
+                    );
+
+            int chars =
+                    value.codePointCount(
+                            0,
+                            value.length()
+                    );
 
             if (remainingStringChars
-                    < value.length()
+                    < chars
                     || remainingEstimatedBytes
                     < bytes) {
-                return false;
+                return TextReservation.EXHAUSTED;
             }
 
             remainingStringChars -=
-                    value.length();
+                    chars;
 
-            remainingEstimatedBytes -= bytes;
+            remainingEstimatedBytes -=
+                    bytes;
 
-            return true;
+            return TextReservation.RESERVED;
         }
 
         private String consumeString(
@@ -675,14 +1157,16 @@ public class AuditDetailsSanitizer {
             StringBuilder result =
                     new StringBuilder();
 
-            int usedChars = 0;
+            int usedCodePoints = 0;
             int usedBytes = 0;
 
             for (int offset = 0;
                  offset < value.length();) {
 
                 int codePoint =
-                        value.codePointAt(offset);
+                        value.codePointAt(
+                                offset
+                        );
 
                 String part =
                         new String(
@@ -691,28 +1175,40 @@ public class AuditDetailsSanitizer {
                                 )
                         );
 
-                int chars = part.length();
-                int bytes = utf8Length(part);
+                int bytes =
+                        utf8LengthStrict(
+                                part
+                        );
 
-                if (usedChars + chars
+                if (usedCodePoints + 1
                         > remainingStringChars
                         || usedBytes + bytes
                         > remainingEstimatedBytes) {
                     break;
                 }
 
-                result.append(part);
-                usedChars += chars;
+                result.append(
+                        part
+                );
+
+                usedCodePoints++;
                 usedBytes += bytes;
-                offset += chars;
+
+                offset +=
+                        Character.charCount(
+                                codePoint
+                        );
             }
 
             if (result.isEmpty()) {
                 return BUDGET_EXCEEDED_VALUE;
             }
 
-            remainingStringChars -= usedChars;
-            remainingEstimatedBytes -= usedBytes;
+            remainingStringChars -=
+                    usedCodePoints;
+
+            remainingEstimatedBytes -=
+                    usedBytes;
 
             return result.toString();
         }
@@ -723,12 +1219,32 @@ public class AuditDetailsSanitizer {
                     || remainingEstimatedBytes <= 0;
         }
 
-        private static int utf8Length(
+        private static int utf8LengthStrict(
                 String value
         ) {
-            return value
-                    .getBytes(StandardCharsets.UTF_8)
-                    .length;
+            try {
+                ByteBuffer bytes =
+                        StandardCharsets.UTF_8
+                                .newEncoder()
+                                .onMalformedInput(
+                                        CodingErrorAction.REPORT
+                                )
+                                .onUnmappableCharacter(
+                                        CodingErrorAction.REPORT
+                                )
+                                .encode(
+                                        CharBuffer.wrap(
+                                                value
+                                        )
+                                );
+
+                return bytes.remaining();
+            } catch (CharacterCodingException exception) {
+                throw new IllegalArgumentException(
+                        "Audit details содержит некорректный Unicode",
+                        exception
+                );
+            }
         }
     }
 }

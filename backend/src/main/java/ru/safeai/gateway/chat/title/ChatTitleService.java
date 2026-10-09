@@ -1,9 +1,9 @@
-// backend/src/main/java/ru/safeai/gateway/chat/title/ChatTitleService.java
 package ru.safeai.gateway.chat.title;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.ChatResponse;
 import ru.safeai.gateway.chat.dto.UpdateChatTitleRequest;
@@ -37,24 +37,19 @@ public class ChatTitleService {
             Clock clock
     ) {
         this.sessionRepository = Objects.requireNonNull(
-                sessionRepository,
-                "sessionRepository не должен быть null"
+                sessionRepository, "sessionRepository не должен быть null"
         );
         this.mutexRepository = Objects.requireNonNull(
-                mutexRepository,
-                "mutexRepository не должен быть null"
+                mutexRepository, "mutexRepository не должен быть null"
         );
         this.auditEventService = Objects.requireNonNull(
-                auditEventService,
-                "auditEventService не должен быть null"
+                auditEventService, "auditEventService не должен быть null"
         );
         this.mapper = Objects.requireNonNull(
-                mapper,
-                "mapper не должен быть null"
+                mapper, "mapper не должен быть null"
         );
         this.clock = Objects.requireNonNull(
-                clock,
-                "clock не должен быть null"
+                clock, "clock не должен быть null"
         );
     }
 
@@ -64,18 +59,9 @@ public class ChatTitleService {
             UpdateChatTitleRequest request,
             SafeAiUserPrincipal currentUser
     ) {
-        Objects.requireNonNull(
-                chatId,
-                "chatId не должен быть null"
-        );
-        Objects.requireNonNull(
-                request,
-                "request не должен быть null"
-        );
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
+        Objects.requireNonNull(chatId, "chatId не должен быть null");
+        Objects.requireNonNull(request, "request не должен быть null");
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
         /*
          * Serialize manual rename with first-message reservation.
@@ -89,22 +75,13 @@ public class ChatTitleService {
                         currentUser.getId(),
                         currentUser.getOrganizationId()
                 )
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Чат не найден: " + chatId
-                        )
-                );
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Чат не найден: " + chatId
+                ));
 
-        String normalized =
-                ChatTitlePolicy.normalizeManualTitle(
-                        request.title()
-                );
-
-        ChatTitleSource previousSource =
-                session.getTitleSource();
-
-        String previousTitle =
-                session.getTitle();
+        String normalized = ChatTitlePolicy.normalizeManualTitle(request.title());
+        ChatTitleSource previousSource = session.getTitleSource();
+        String previousTitle = session.getTitle();
 
         /*
          * A repeated identical USER rename is an idempotent no-op.
@@ -117,46 +94,29 @@ public class ChatTitleService {
         }
 
         Instant now = clock.instant();
+        session.renameByUser(normalized, now);
+        ChatSessionEntity saved = sessionRepository.saveAndFlush(session);
 
-        session.renameByUser(
-                normalized,
-                now
+        AuditDetails auditDetails = () -> Map.of(
+                "chatId", saved.getId(),
+                "previousSource", previousSource == null
+                        ? "UNKNOWN" : previousSource.name(),
+                "newSource", ChatTitleSource.USER.name(),
+                "previousTitleLength", codePointLength(previousTitle),
+                "newTitleLength", codePointLength(saved.getTitle())
         );
 
-        ChatSessionEntity saved =
-                sessionRepository.saveAndFlush(
-                        session
-                );
-
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.CHAT_RENAMED,
-                Map.of(
-                        "chatId",
-                        saved.getId(),
-                        "previousSource",
-                        previousSource == null
-                                ? "UNKNOWN"
-                                : previousSource.name(),
-                        "newSource",
-                        ChatTitleSource.USER.name(),
-                        "previousTitleLength",
-                        codePointLength(previousTitle),
-                        "newTitleLength",
-                        codePointLength(saved.getTitle())
-                )
+                auditDetails
         );
 
         return mapper.toChatResponse(saved);
     }
 
     private static int codePointLength(String value) {
-        return value == null
-                ? 0
-                : value.codePointCount(
-                        0,
-                        value.length()
-                );
+        return value == null ? 0 : value.codePointCount(0, value.length());
     }
 }

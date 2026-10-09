@@ -2,6 +2,7 @@ package ru.safeai.gateway.knowledge.storage;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.core.env.StandardEnvironment;
 
 import java.nio.file.Path;
 
@@ -9,23 +10,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class KnowledgeStorageConfigurationBindingTest {
 
-    private static final long DEFAULT_MAX_UPLOAD_BYTES =
-            25L * 1024L * 1024L;
+    private static final long DEFAULT_MAX_UPLOAD_BYTES = 25L * 1024L * 1024L;
+    private static final long EXPLICIT_MAX_UPLOAD_BYTES = 2L * 1024L * 1024L;
+    private static final long MIN_MAX_UPLOAD_BYTES = 1024L * 1024L;
+    private static final String DEFAULT_BUCKET = "safeai-knowledge";
 
-    private static final long EXPLICIT_MAX_UPLOAD_BYTES =
-            2L * 1024L * 1024L;
-
-    private static final long MIN_MAX_UPLOAD_BYTES =
-            1024L * 1024L;
-
-    private static final String DEFAULT_BUCKET =
-            "safeai-knowledge";
-
-    private final ApplicationContextRunner contextRunner =
-            new ApplicationContextRunner()
-                    .withUserConfiguration(
-                            KnowledgeStorageConfiguration.class
-                    );
+    // Only explicitly provided test properties may affect configuration binding.
+    // In particular, Maven may inherit SAFEAI_KNOWLEDGE_STORAGE_* from a sourced .env.
+    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withInitializer(context -> {
+                var sources = context.getEnvironment().getPropertySources();
+                sources.remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
+                sources.remove(StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
+            })
+            .withUserConfiguration(KnowledgeStorageConfiguration.class);
 
     @Test
     void bindsCompleteS3Configuration() {
@@ -33,86 +31,40 @@ class KnowledgeStorageConfigurationBindingTest {
                 .withPropertyValues(
                         "safeai.knowledge.storage.type=s3",
                         "safeai.knowledge.storage.local-root=./tmp/knowledge",
-                        "safeai.knowledge.storage.max-upload-bytes="
-                                + EXPLICIT_MAX_UPLOAD_BYTES,
+                        "safeai.knowledge.storage.max-upload-bytes=" + EXPLICIT_MAX_UPLOAD_BYTES,
                         "safeai.knowledge.storage.endpoint=http://localhost:9000",
                         "safeai.knowledge.storage.access-key=safeai",
                         "safeai.knowledge.storage.secret-key=secret-value",
                         "safeai.knowledge.storage.bucket=safeai-knowledge"
                 )
-                .run(
-                        context -> {
-                            assertThat(context)
-                                    .hasNotFailed();
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
 
-                            KnowledgeStorageProperties properties =
-                                    context.getBean(
-                                            KnowledgeStorageProperties.class
-                                    );
-
-                            assertThat(properties.type())
-                                    .isEqualTo(
-                                            KnowledgeStorageType.S3
-                                    );
-
-                            assertThat(
-                                    properties.localRoot()
-                                            .normalize()
-                            ).isEqualTo(
-                                    Path.of("tmp/knowledge")
-                            );
-
-                            assertThat(properties.maxUploadBytes())
-                                    .isEqualTo(
-                                            EXPLICIT_MAX_UPLOAD_BYTES
-                                    );
-
-                            assertThat(properties.endpoint())
-                                    .isEqualTo(
-                                            "http://localhost:9000"
-                                    );
-
-                            assertThat(properties.accessKey())
-                                    .isEqualTo(
-                                            "safeai"
-                                    );
-
-                            assertThat(properties.secretKey())
-                                    .isEqualTo(
-                                            "secret-value"
-                                    );
-
-                            assertThat(properties.bucket())
-                                    .isEqualTo(
-                                            DEFAULT_BUCKET
-                                    );
-                        }
-                );
+                    KnowledgeStorageProperties properties = context.getBean(KnowledgeStorageProperties.class);
+                    assertThat(properties.type()).isEqualTo(KnowledgeStorageType.S3);
+                    assertThat(properties.localRoot().normalize()).isEqualTo(Path.of("tmp/knowledge"));
+                    assertThat(properties.maxUploadBytes()).isEqualTo(EXPLICIT_MAX_UPLOAD_BYTES);
+                    assertThat(properties.endpoint()).isEqualTo("http://localhost:9000");
+                    assertThat(properties.accessKey()).isEqualTo("safeai");
+                    assertThat(properties.secretKey()).isEqualTo("secret-value");
+                    assertThat(properties.bucket()).isEqualTo(DEFAULT_BUCKET);
+                });
     }
 
     @Test
     void uploadLimitBelowMinimumFailsContextStartup() {
         contextRunner
                 .withPropertyValues(
-                        "safeai.knowledge.storage.max-upload-bytes="
-                                + (MIN_MAX_UPLOAD_BYTES - 1L)
+                        "safeai.knowledge.storage.max-upload-bytes=" + (MIN_MAX_UPLOAD_BYTES - 1L)
                 )
-                .run(
-                        context -> {
-                            assertThat(context)
-                                    .hasFailed();
-
-                            assertThat(
-                                    context.getStartupFailure()
-                            )
-                                    .hasRootCauseInstanceOf(
-                                            IllegalStateException.class
-                                    )
-                                    .hasRootCauseMessage(
-                                            "Некорректное значение safeai.knowledge.storage.max-upload-bytes"
-                                    );
-                        }
-                );
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasRootCauseInstanceOf(IllegalStateException.class)
+                            .hasRootCauseMessage(
+                                    "Некорректное значение safeai.knowledge.storage.max-upload-bytes"
+                            );
+                });
     }
 
     @Test
@@ -124,68 +76,30 @@ class KnowledgeStorageConfigurationBindingTest {
                         "safeai.knowledge.storage.access-key=safeai",
                         "safeai.knowledge.storage.bucket=safeai-knowledge"
                 )
-                .run(
-                        context -> {
-                            assertThat(context)
-                                    .hasFailed();
-
-                            assertThat(
-                                    context.getStartupFailure()
-                            )
-                                    .hasRootCauseInstanceOf(
-                                            IllegalStateException.class
-                                    )
-                                    .hasRootCauseMessage(
-                                            "safeai.knowledge.storage.secret-key должен быть задан для storage.type=s3"
-                                    );
-                        }
-                );
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasRootCauseInstanceOf(IllegalStateException.class)
+                            .hasRootCauseMessage(
+                                    "safeai.knowledge.storage.secret-key должен быть задан для storage.type=s3"
+                            );
+                });
     }
 
     @Test
     void emptyConfigurationBindsLocalDefaults() {
-        contextRunner.run(
-                context -> {
-                    assertThat(context)
-                            .hasNotFailed();
+        contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
 
-                    KnowledgeStorageProperties properties =
-                            context.getBean(
-                                    KnowledgeStorageProperties.class
-                            );
-
-                    assertThat(properties.type())
-                            .isEqualTo(
-                                    KnowledgeStorageType.LOCAL
-                            );
-
-                    assertThat(
-                            properties.localRoot()
-                                    .normalize()
-                    ).isEqualTo(
-                            Path.of("var/knowledge-objects")
-                    );
-
-                    assertThat(properties.bucket())
-                            .isEqualTo(
-                                    DEFAULT_BUCKET
-                            );
-
-                    assertThat(properties.maxUploadBytes())
-                            .isEqualTo(
-                                    DEFAULT_MAX_UPLOAD_BYTES
-                            );
-
-                    assertThat(properties.endpoint())
-                            .isNull();
-
-                    assertThat(properties.accessKey())
-                            .isNull();
-
-                    assertThat(properties.secretKey())
-                            .isNull();
-                }
-        );
+            KnowledgeStorageProperties properties = context.getBean(KnowledgeStorageProperties.class);
+            assertThat(properties.type()).isEqualTo(KnowledgeStorageType.LOCAL);
+            assertThat(properties.localRoot().normalize()).isEqualTo(Path.of("var/knowledge-objects"));
+            assertThat(properties.bucket()).isEqualTo(DEFAULT_BUCKET);
+            assertThat(properties.maxUploadBytes()).isEqualTo(DEFAULT_MAX_UPLOAD_BYTES);
+            assertThat(properties.endpoint()).isNull();
+            assertThat(properties.accessKey()).isNull();
+            assertThat(properties.secretKey()).isNull();
+        });
     }
 
     @Test
@@ -198,35 +112,15 @@ class KnowledgeStorageConfigurationBindingTest {
                         "safeai.knowledge.storage.secret-key=   ",
                         "safeai.knowledge.storage.bucket=   "
                 )
-                .run(
-                        context -> {
-                            assertThat(context)
-                                    .hasNotFailed();
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
 
-                            KnowledgeStorageProperties properties =
-                                    context.getBean(
-                                            KnowledgeStorageProperties.class
-                                    );
-
-                            assertThat(properties.type())
-                                    .isEqualTo(
-                                            KnowledgeStorageType.LOCAL
-                                    );
-
-                            assertThat(properties.endpoint())
-                                    .isNull();
-
-                            assertThat(properties.accessKey())
-                                    .isNull();
-
-                            assertThat(properties.secretKey())
-                                    .isNull();
-
-                            assertThat(properties.bucket())
-                                    .isEqualTo(
-                                            DEFAULT_BUCKET
-                                    );
-                        }
-                );
+                    KnowledgeStorageProperties properties = context.getBean(KnowledgeStorageProperties.class);
+                    assertThat(properties.type()).isEqualTo(KnowledgeStorageType.LOCAL);
+                    assertThat(properties.endpoint()).isNull();
+                    assertThat(properties.accessKey()).isNull();
+                    assertThat(properties.secretKey()).isNull();
+                    assertThat(properties.bucket()).isEqualTo(DEFAULT_BUCKET);
+                });
     }
 }

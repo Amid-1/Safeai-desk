@@ -170,15 +170,15 @@ public class ChatTurnRecoveryCoordinator {
         int updated =
                 ambiguous
                         ? turnRepository
-                                .markExpiredProcessingAmbiguous(
-                                        turn.getId(),
-                                        now
-                                )
+                        .markExpiredProcessingAmbiguous(
+                                turn.getId(),
+                                now
+                        )
                         : turnRepository
-                                .markExpiredBeforeProviderFailed(
-                                        turn.getId(),
-                                        now
-                                );
+                        .markExpiredBeforeProviderFailed(
+                                turn.getId(),
+                                now
+                        );
 
         requireExactlyOneRecoveryUpdate(
                 updated,
@@ -295,13 +295,11 @@ public class ChatTurnRecoveryCoordinator {
             List<RecoveredChatTurn> recovered,
             String trigger
     ) {
-        Map<UUID, List<RecoveredChatTurn>>
-                byOrganization =
+        Map<UUID, List<RecoveredChatTurn>> byOrganization =
                 recovered.stream()
                         .collect(
                                 Collectors.groupingBy(
-                                        RecoveredChatTurn::
-                                                organizationId,
+                                        RecoveredChatTurn::organizationId,
                                         LinkedHashMap::new,
                                         Collectors.toList()
                                 )
@@ -309,14 +307,15 @@ public class ChatTurnRecoveryCoordinator {
 
         byOrganization.forEach(
                 (organizationId, turns) ->
-                        auditEventService.recordSystem(
-                                organizationId,
-                                AuditEventType.AI_RESPONSE_FAILED,
-                                recoveryAuditDetails(
-                                        turns,
-                                        trigger
+                        auditEventService
+                                .recordSystemRequiredInCurrentTransaction(
+                                        organizationId,
+                                        AuditEventType.AI_RESPONSE_FAILED,
+                                        recoveryAuditDetails(
+                                                turns,
+                                                trigger
+                                        )
                                 )
-                        )
         );
     }
 
@@ -327,8 +326,7 @@ public class ChatTurnRecoveryCoordinator {
         long ambiguousCount =
                 turns.stream()
                         .filter(
-                                RecoveredChatTurn::
-                                        outcomeAmbiguous
+                                RecoveredChatTurn::outcomeAmbiguous
                         )
                         .count();
 
@@ -355,8 +353,7 @@ public class ChatTurnRecoveryCoordinator {
                 "turnIds",
                 turns.stream()
                         .map(
-                                RecoveredChatTurn::
-                                        turnId
+                                RecoveredChatTurn::turnId
                         )
                         .limit(100)
                         .toList()

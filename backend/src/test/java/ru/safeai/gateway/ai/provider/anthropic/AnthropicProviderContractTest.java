@@ -1,6 +1,10 @@
 package ru.safeai.gateway.ai.provider.anthropic;
 
 import org.junit.jupiter.api.AfterEach;
+import ru.safeai.gateway.ai.execution.AiExecutionAttemptScope;
+import ru.safeai.gateway.ai.execution.AiExecutionAttemptObserver;
+import ru.safeai.gateway.ai.dto.AiChatRequest;
+import static org.mockito.Mockito.mock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -40,6 +44,13 @@ import static ru.safeai.gateway.ai.testsupport.AiTestFixtures.request;
 @Tag("contract")
 @Timeout(10)
 class AnthropicProviderContractTest {
+    private final AiExecutionAttemptScope attemptScope = new AiExecutionAttemptScope();
+
+    private AiChatResponse send(AnthropicProvider provider, AiChatRequest request) {
+        return attemptScope.execute(request.providerOperationId(),
+                mock(AiExecutionAttemptObserver.class), () -> provider.sendMessage(request));
+    }
+
 
     private static final String REQUESTED_MODEL = "claude-sonnet";
     private static final String ACTUAL_MODEL =
@@ -76,9 +87,9 @@ class AnthropicProviderContractTest {
                 response(stopReason, "Ответ")
         );
 
-        AiChatResponse result = provider(
+        AiChatResponse result = send(provider(
                 List.of(price(ACTUAL_MODEL))
-        ).sendMessage(request());
+        ), request());
 
         assertThat(result.responseStatus()).isEqualTo(expectedStatus);
         assertThat(result.finishReason()).isEqualTo(stopReason);
@@ -97,7 +108,7 @@ class AnthropicProviderContractTest {
     ) {
         server.enqueue(200, response(stopReason, "Текст"));
 
-        assertThatThrownBy(() -> provider().sendMessage(request()))
+        assertThatThrownBy(() -> send(provider(), request()))
                 .isInstanceOf(AiProviderException.class)
                 .satisfies(exception -> assertThat(
                         ((AiProviderException) exception).getErrorType()
@@ -108,7 +119,7 @@ class AnthropicProviderContractTest {
     void developerInstructionsArePreservedInTopLevelSystemBlocks() {
         server.enqueue(200, response("end_turn", "Ответ"));
 
-        provider().sendMessage(request());
+        send(provider(), request());
 
         JsonNode body = server.singleRequest().jsonBody();
         JsonNode system = body.get("system");
@@ -132,10 +143,10 @@ class AnthropicProviderContractTest {
     void maxResponseCharsIsEnforced() {
         server.enqueue(200, response("end_turn", "123456"));
 
-        assertThatThrownBy(() -> provider(
+        assertThatThrownBy(() -> send(provider(
                 5,
                 List.of()
-        ).sendMessage(request()))
+        ), request()))
                 .isInstanceOf(AiProviderException.class)
                 .satisfies(exception -> assertThat(
                         ((AiProviderException) exception).getErrorType()
@@ -150,7 +161,7 @@ class AnthropicProviderContractTest {
                 }}
                 """);
 
-        assertThatThrownBy(() -> provider().sendMessage(request()))
+        assertThatThrownBy(() -> send(provider(), request()))
                 .isInstanceOf(AiProviderRateLimitedException.class);
 
         server.enqueue(402, """
@@ -159,7 +170,7 @@ class AnthropicProviderContractTest {
                 }}
                 """);
 
-        assertThatThrownBy(() -> provider().sendMessage(request()))
+        assertThatThrownBy(() -> send(provider(), request()))
                 .isInstanceOf(AiProviderBillingException.class);
 
         server.enqueue(529, """
@@ -168,7 +179,7 @@ class AnthropicProviderContractTest {
                 }}
                 """);
 
-        assertThatThrownBy(() -> provider().sendMessage(request()))
+        assertThatThrownBy(() -> send(provider(), request()))
                 .isInstanceOf(AiProviderOverloadedException.class);
     }
 
@@ -193,13 +204,13 @@ class AnthropicProviderContractTest {
         );
 
         AiChatResponse result =
-                provider(
+                send(provider(
                         List.of(
                                 price(
                                         ACTUAL_MODEL
                                 )
                         )
-                ).sendMessage(
+                ), 
                         request()
                 );
 
@@ -220,9 +231,9 @@ class AnthropicProviderContractTest {
     void unknownResolvedModelIsUnpriced() {
         server.enqueue(200, response("end_turn", "Ответ"));
 
-        AiChatResponse result = provider(
+        AiChatResponse result = send(provider(
                 List.of(price(REQUESTED_MODEL))
-        ).sendMessage(request());
+        ), request());
 
         assertThat(result.model()).isEqualTo(ACTUAL_MODEL);
         assertThat(result.pricingStatus())
@@ -283,7 +294,7 @@ class AnthropicProviderContractTest {
                 new AiResponseMetadataService(
                         new StaticConfigurationPricingResolver(pricingService)
                 ),
-                new AiProviderRetryExecutor(retryProperties),
+                new AiProviderRetryExecutor(retryProperties, attemptScope),
                 new AiContextWindowService(
                         AiContextWindowProperties.defaults()
                 ),

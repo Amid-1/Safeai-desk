@@ -141,7 +141,7 @@ public class ChatTurnFinalizationService {
         }
 
         quotaService.releaseFailure(context.turnId(), now);
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.AI_RESPONSE_FAILED,
@@ -251,7 +251,7 @@ public class ChatTurnFinalizationService {
         quotaService.settleSuccess(context.turnId(), response, now);
         touchChat(context, currentUser, now);
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.AI_RESPONSE_RECEIVED,
@@ -323,7 +323,7 @@ public class ChatTurnFinalizationService {
         }
 
         quotaService.releaseFailure(context.turnId(), now);
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.AI_RESPONSE_FAILED,
@@ -370,7 +370,7 @@ public class ChatTurnFinalizationService {
         }
 
         quotaService.markAmbiguous(context.turnId(), now);
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.AI_RESPONSE_FAILED,

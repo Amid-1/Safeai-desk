@@ -359,11 +359,11 @@ public class ChatTurnReservationService {
 
         session.touch(now);
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.CHAT_MESSAGE_SENT,
-                Map.of(
+                () -> Map.of(
                         "chatId", chatId,
                         "turnId", turnId,
                         "messageId", userMessageId,

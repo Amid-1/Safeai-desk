@@ -215,8 +215,8 @@ class ModelControlPlanePostgresIntegrationTest {
                 ModelTestFixtures.NOW.minusSeconds(60)
         );
 
-        catalogRepository.insert(version1);
-        catalogRepository.insert(version2);
+        catalogRepository.insert(version1, "FLAT_TOKEN_V1");
+        catalogRepository.insert(version2, "FLAT_TOKEN_V1");
 
         assertThat(catalogRepository.findEffective(
                 modelKey,
@@ -248,8 +248,8 @@ class ModelControlPlanePostgresIntegrationTest {
                 ModelTestFixtures.NOW.plusSeconds(3_600)
         );
 
-        catalogRepository.insert(active);
-        catalogRepository.insert(future);
+        catalogRepository.insert(active, "FLAT_TOKEN_V1");
+        catalogRepository.insert(future, "FLAT_TOKEN_V1");
 
         assertThat(catalogRepository.findLatest(modelKey))
                 .contains(future);
@@ -268,7 +268,7 @@ class ModelControlPlanePostgresIntegrationTest {
                 "openai",
                 "future-runtime",
                 ModelTestFixtures.NOW.plusSeconds(60)
-        ));
+        ), "FLAT_TOKEN_V1");
 
         assertThat(catalogRepository.hasEffectiveHistoryByRuntime(
                 "openai",
@@ -294,7 +294,7 @@ class ModelControlPlanePostgresIntegrationTest {
                 ModelTestFixtures.NOW
         );
 
-        catalogRepository.insert(entry);
+        catalogRepository.insert(entry, "FLAT_TOKEN_V1");
 
         ModelCatalogEntry loaded = catalogRepository
                 .findLatest(modelKey)
@@ -313,7 +313,7 @@ class ModelControlPlanePostgresIntegrationTest {
                 "gpt-test",
                 ModelTestFixtures.NOW
         );
-        catalogRepository.insert(catalog);
+        catalogRepository.insert(catalog, "FLAT_TOKEN_V1");
 
         OrganizationModelPolicy policy = policy(UUID.randomUUID());
         policyRepository.insert(policy);
@@ -401,7 +401,7 @@ class ModelControlPlanePostgresIntegrationTest {
                 "gpt-test",
                 ModelTestFixtures.NOW.minusSeconds(1)
         );
-        catalogRepository.insert(entry);
+        catalogRepository.insert(entry, "FLAT_TOKEN_V1");
         insertAllowAllRoutingPolicy();
 
         RuntimeModelStatusService runtimeStatus =

@@ -88,6 +88,19 @@ public class ModelExecutionAttemptEntity {
     @Column(name = "failure_type", length = 64)
     private String failureType;
 
+    @Column(name = "response_observed", nullable = false)
+    private boolean responseObserved;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "response_validation_status", length = 40)
+    private ResponseValidationStatus responseValidationStatus;
+
+    @Column(name = "provider_http_status")
+    private Integer providerHttpStatus;
+
+    @Column(name = "protocol_failure_code", length = 64)
+    private String protocolFailureCode;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "usage_status", length = 32)
     private UsageStatus usageStatus;
@@ -203,6 +216,18 @@ public class ModelExecutionAttemptEntity {
         value.fallbackSafety =
                 FallbackSafety.FALLBACK_FORBIDDEN;
 
+        value.responseObserved =
+                false;
+
+        value.responseValidationStatus =
+                null;
+
+        value.providerHttpStatus =
+                null;
+
+        value.protocolFailureCode =
+                null;
+
         return value;
     }
 
@@ -236,6 +261,20 @@ public class ModelExecutionAttemptEntity {
 
         fallbackSafety =
                 FallbackSafety.FALLBACK_FORBIDDEN;
+
+        /*
+         * A successfully materialized AiChatResponse proves that a physical
+         * provider response was observed and accepted by the application
+         * protocol layer.
+         */
+        responseObserved =
+                true;
+
+        responseValidationStatus =
+                ResponseValidationStatus.ACCEPTED;
+
+        protocolFailureCode =
+                null;
 
         resolvedPhysicalModel =
                 validatedResponse.model();

@@ -10,6 +10,8 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
+import ru.safeai.gateway.audit.model.AuditActor;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.audit.service.BestEffortStandaloneAuditService;
 import ru.safeai.gateway.common.exception.ConflictException;
@@ -37,13 +39,15 @@ import ru.safeai.gateway.knowledge.storage.StoredObject;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -360,7 +364,7 @@ class KnowledgeDocumentServiceTest {
 
         verify(
                 audit
-        ).record(
+        ).recordPrincipalSnapshot(
                 any(SafeAiUserPrincipal.class),
                 eq(
                         ORGANIZATION_ID
@@ -368,12 +372,12 @@ class KnowledgeDocumentServiceTest {
                 eq(
                         AuditEventType.KNOWLEDGE_DOCUMENT_CREATED
                 ),
-                anyMap()
+                isA(AuditDetails.class)
         );
 
         verify(
                 audit
-        ).record(
+        ).recordPrincipalSnapshot(
                 any(SafeAiUserPrincipal.class),
                 eq(
                         ORGANIZATION_ID
@@ -381,7 +385,7 @@ class KnowledgeDocumentServiceTest {
                 eq(
                         AuditEventType.KNOWLEDGE_DOCUMENT_VERSION_UPLOADED
                 ),
-                anyMap()
+                isA(AuditDetails.class)
         );
     }
 
@@ -873,14 +877,20 @@ class KnowledgeDocumentServiceTest {
         verify(
                 downloadAudit
         ).tryRecord(
-                any(),
-                eq(
-                        ORGANIZATION_ID
+                argThat((AuditActor actor) ->
+                        USER_ID.equals(actor.userId())
+                                && ORGANIZATION_ID.equals(actor.organizationId())
                 ),
-                eq(
-                        AuditEventType.KNOWLEDGE_DOCUMENT_DOWNLOADED
-                ),
-                anyMap()
+                eq(ORGANIZATION_ID),
+                eq(AuditEventType.KNOWLEDGE_DOCUMENT_DOWNLOADED),
+                argThat((Map<String, Object> details) ->
+                        details != null
+                                && details.size() == 4
+                                && KNOWLEDGE_BASE_ID.toString().equals(details.get("knowledgeBaseId"))
+                                && DOCUMENT_ID.toString().equals(details.get("documentId"))
+                                && versionId.toString().equals(details.get("documentVersionId"))
+                                && Boolean.FALSE.equals(details.get("historicalVersion"))
+                )
         );
     }
 

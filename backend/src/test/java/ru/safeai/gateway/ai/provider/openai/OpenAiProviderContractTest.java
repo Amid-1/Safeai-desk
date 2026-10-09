@@ -1,6 +1,9 @@
 package ru.safeai.gateway.ai.provider.openai;
 
 import org.junit.jupiter.api.AfterEach;
+import ru.safeai.gateway.ai.execution.AiExecutionAttemptScope;
+import ru.safeai.gateway.ai.execution.AiExecutionAttemptObserver;
+import static org.mockito.Mockito.mock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -47,6 +50,13 @@ import static ru.safeai.gateway.ai.testsupport.AiTestFixtures.request;
 @Tag("contract")
 @Timeout(10)
 class OpenAiProviderContractTest {
+    private final AiExecutionAttemptScope attemptScope = new AiExecutionAttemptScope();
+
+    private AiChatResponse send(OpenAiProvider provider, AiChatRequest request) {
+        return attemptScope.execute(request.providerOperationId(),
+                mock(AiExecutionAttemptObserver.class), () -> provider.sendMessage(request));
+    }
+
 
     private static final String REQUESTED_MODEL =
             "gpt-4.1";
@@ -87,7 +97,7 @@ class OpenAiProviderContractTest {
         );
 
         AiChatResponse response =
-                provider(
+                send(provider(
                         100_000,
                         disabledRetry(),
                         List.of(
@@ -96,7 +106,7 @@ class OpenAiProviderContractTest {
                                         "v-actual"
                                 )
                         )
-                ).sendMessage(request());
+                ), request());
 
         assertThat(response.content())
                 .isEqualTo("Ответ");
@@ -149,7 +159,7 @@ class OpenAiProviderContractTest {
         );
 
         AiChatResponse response =
-                provider(
+                send(provider(
                         100_000,
                         disabledRetry(),
                         List.of(
@@ -158,7 +168,7 @@ class OpenAiProviderContractTest {
                                         "v-actual"
                                 )
                         )
-                ).sendMessage(
+                ), 
                         request()
                 );
 
@@ -198,7 +208,7 @@ class OpenAiProviderContractTest {
         );
 
         AiChatResponse response =
-                provider().sendMessage(request());
+                send(provider(), request());
 
         assertThat(response.responseStatus())
                 .isEqualTo(AiResponseStatus.INCOMPLETE);
@@ -229,7 +239,7 @@ class OpenAiProviderContractTest {
         );
 
         AiChatResponse response =
-                provider().sendMessage(request());
+                send(provider(), request());
 
         assertThat(response.responseStatus())
                 .isEqualTo(AiResponseStatus.REFUSED);
@@ -255,8 +265,7 @@ class OpenAiProviderContractTest {
         );
 
         assertProtocolError(
-                () -> provider()
-                        .sendMessage(request())
+                () -> send(provider(), request())
         );
     }
 
@@ -275,8 +284,7 @@ class OpenAiProviderContractTest {
         );
 
         assertProtocolError(
-                () -> provider()
-                        .sendMessage(request())
+                () -> send(provider(), request())
         );
     }
 
@@ -288,11 +296,11 @@ class OpenAiProviderContractTest {
         );
 
         assertThatThrownBy(
-                () -> provider(
+                () -> send(provider(
                         5,
                         disabledRetry(),
                         List.of()
-                ).sendMessage(request())
+                ), request())
         )
                 .isInstanceOf(AiProviderException.class)
                 .satisfies(exception ->
@@ -313,7 +321,7 @@ class OpenAiProviderContractTest {
         );
 
         AiChatResponse response =
-                provider(
+                send(provider(
                         100_000,
                         disabledRetry(),
                         List.of(
@@ -322,7 +330,7 @@ class OpenAiProviderContractTest {
                                         "alias-v1"
                                 )
                         )
-                ).sendMessage(request());
+                ), request());
 
         assertThat(response.model())
                 .isEqualTo(ACTUAL_MODEL);
@@ -341,7 +349,7 @@ class OpenAiProviderContractTest {
                 completedResponse("Ответ")
         );
 
-        provider().sendMessage(request());
+        send(provider(), request());
 
         JsonNode body =
                 server.singleRequest()
@@ -371,8 +379,7 @@ class OpenAiProviderContractTest {
         );
 
         assertThatThrownBy(
-                () -> provider()
-                        .sendMessage(request())
+                () -> send(provider(), request())
         )
                 .isInstanceOf(
                         AiProviderRateLimitedException.class
@@ -403,8 +410,7 @@ class OpenAiProviderContractTest {
         );
 
         assertThatThrownBy(
-                () -> provider()
-                        .sendMessage(request())
+                () -> send(provider(), request())
         )
                 .isInstanceOf(
                         AiProviderQuotaExceededException.class
@@ -440,11 +446,11 @@ class OpenAiProviderContractTest {
                 request();
 
         AiChatResponse response =
-                provider(
+                send(provider(
                         100_000,
                         enabledRetry(),
                         List.of()
-                ).sendMessage(request);
+                ), request);
 
         assertThat(response.content())
                 .isEqualTo("Ответ после retry");
@@ -502,7 +508,7 @@ class OpenAiProviderContractTest {
                 completedResponse("Ответ")
         );
 
-        provider().sendMessage(request());
+        send(provider(), request());
 
         JsonNode input =
                 server.singleRequest()
@@ -596,7 +602,7 @@ class OpenAiProviderContractTest {
                         new StaticConfigurationPricingResolver(pricingService)
                 ),
                 new AiProviderRetryExecutor(
-                        retryProperties
+                        retryProperties, attemptScope
                 ),
                 new AiContextWindowService(
                         AiContextWindowProperties.defaults()

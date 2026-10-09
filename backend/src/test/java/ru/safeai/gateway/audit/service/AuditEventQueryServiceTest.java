@@ -12,6 +12,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.util.ReflectionTestUtils;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.dto.AuditEventFilter;
 import ru.safeai.gateway.audit.dto.AuditEventResponse;
@@ -73,6 +74,11 @@ class AuditEventQueryServiceTest {
                     "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
             );
 
+    private static final Instant CREATED_AT =
+            Instant.parse(
+                    "2026-06-12T12:00:00Z"
+            );
+
     private static final Sort DEFAULT_AUDIT_SORT =
             Sort.by(
                     Sort.Order.desc(
@@ -84,8 +90,7 @@ class AuditEventQueryServiceTest {
             );
 
     @Mock
-    private AuditEventRepository
-            auditEventRepository;
+    private AuditEventRepository auditEventRepository;
 
     private AuditEventQueryService service;
 
@@ -113,7 +118,9 @@ class AuditEventQueryServiceTest {
                         )
                 );
 
-        assertAuditEvent(response);
+        assertAuditEvent(
+                response
+        );
 
         verifyFindAll(
                 PageRequest.of(
@@ -140,7 +147,9 @@ class AuditEventQueryServiceTest {
                         )
                 );
 
-        assertAuditEvent(response);
+        assertAuditEvent(
+                response
+        );
 
         verifyFindAll(
                 PageRequest.of(
@@ -489,19 +498,27 @@ class AuditEventQueryServiceTest {
         AuditEventEntity event =
                 auditEventEntity();
 
-        event.setActorUserId(
+        setField(
+                event,
+                "actorUserId",
                 null
         );
 
-        event.setActorOrganizationId(
+        setField(
+                event,
+                "actorOrganizationId",
                 null
         );
 
-        event.setActorEmail(
+        setField(
+                event,
+                "actorEmail",
                 null
         );
 
-        event.setActorDisplayName(
+        setField(
+                event,
+                "actorDisplayName",
                 "SYSTEM"
         );
 
@@ -558,7 +575,9 @@ class AuditEventQueryServiceTest {
                         )
         ).thenReturn(
                 new PageImpl<>(
-                        List.of(event)
+                        List.of(
+                                event
+                        )
                 )
         );
     }
@@ -588,7 +607,9 @@ class AuditEventQueryServiceTest {
     ) {
         assertThat(
                 response.getContent()
-        ).hasSize(1);
+        ).hasSize(
+                1
+        );
 
         AuditEventResponse item =
                 response.getContent()
@@ -648,9 +669,7 @@ class AuditEventQueryServiceTest {
         assertThat(
                 item.createdAt()
         ).isEqualTo(
-                Instant.parse(
-                        "2026-06-12T12:00:00Z"
-                )
+                CREATED_AT
         );
     }
 
@@ -669,50 +688,78 @@ class AuditEventQueryServiceTest {
         AuditEventEntity event =
                 new AuditEventEntity();
 
-        event.setId(
+        setField(
+                event,
+                "id",
                 AUDIT_EVENT_ID
         );
 
-        event.setActorUserId(
+        setField(
+                event,
+                "actorUserId",
                 USER_ID
         );
 
-        event.setActorOrganizationId(
+        setField(
+                event,
+                "actorOrganizationId",
                 ORGANIZATION_ID
         );
 
-        event.setActorEmail(
+        setField(
+                event,
+                "actorEmail",
                 "admin@test.com"
         );
 
-        event.setActorDisplayName(
+        setField(
+                event,
+                "actorDisplayName",
                 "Admin"
         );
 
-        event.setOrganizationId(
+        setField(
+                event,
+                "organizationId",
                 ORGANIZATION_ID
         );
 
-        event.setEventType(
+        setField(
+                event,
+                "eventType",
                 AuditEventType
                         .USER_LOGIN_SUCCESS
                         .name()
         );
 
-        event.setDetails(
+        setField(
+                event,
+                "details",
                 Map.of(
                         "email",
                         "admin@test.com"
                 )
         );
 
-        event.setCreatedAt(
-                Instant.parse(
-                        "2026-06-12T12:00:00Z"
-                )
+        setField(
+                event,
+                "createdAt",
+                CREATED_AT
         );
 
         return event;
+    }
+
+    private static void setField(
+            AuditEventEntity event,
+            String fieldName,
+            Object value
+    ) {
+        ReflectionTestUtils.setField(
+                event,
+                fieldName,
+                value
+        );
     }
 
     private SafeAiUserPrincipal adminPrincipal() {

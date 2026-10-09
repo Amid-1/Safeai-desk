@@ -18,6 +18,7 @@ import ru.safeai.gateway.ai.execution.AiExecutionResult;
 import ru.safeai.gateway.ai.execution.AiExecutionService;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.config.ChatProperties;
 import ru.safeai.gateway.chat.dto.CreateChatRequest;
@@ -787,14 +788,15 @@ class ChatServiceTest {
         assertThat(session.getArchivedAt()).isEqualTo(ChatTestFixtures.NOW);
         assertThat(session.getArchivedByUserId()).isEqualTo(ChatTestFixtures.USER_ID);
         verify(sessionRepository).saveAndFlush(session);
-        verify(auditEventService).record(
-                any(SafeAiUserPrincipal.class),
+        verify(auditEventService).recordPrincipalSnapshot(
+                argThat((SafeAiUserPrincipal principal) ->
+                        principal != null
+                                && ChatTestFixtures.USER_ID.equals(principal.getId())
+                                && ChatTestFixtures.ORGANIZATION_ID.equals(principal.getOrganizationId())),
                 eq(ChatTestFixtures.ORGANIZATION_ID),
                 eq(AuditEventType.CHAT_ARCHIVED),
-                argThat((Map<String, Object> details) ->
-                        isArchivedAuditDetails(
-                                details
-                        )
+                argThat((AuditDetails details) ->
+                        details != null && isArchivedAuditDetails(details.toMap())
                 )
         );
     }
@@ -807,6 +809,9 @@ class ChatServiceTest {
         )
                 && "AUDIT_PRESERVED".equals(
                 details.get("retentionMode")
+        )
+                && ChatTestFixtures.NOW.toString().equals(
+                details.get("archivedAt")
         );
     }
 

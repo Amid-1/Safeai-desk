@@ -1,21 +1,32 @@
 package ru.safeai.gateway.common.security;
 
 import org.springframework.beans.factory.SmartInitializingSingleton;
-import org.springframework.context.annotation.Profile;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
+import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.util.Locale;
 import java.util.Objects;
 
 /**
- * Fail-fast проверки production security model.
+ * Fail-fast проверки production security/operations model.
+ *
+ * <p>The bean is selected by {@link ProductionEnvironmentCondition}; it does
+ * not depend on an exact {@code prod}/{@code production} profile name.</p>
  */
 @Component
-@Profile({"prod", "production"})
+@Conditional(ProductionEnvironmentCondition.class)
 public final class ProductionSecurityInvariantValidator
         implements SmartInitializingSingleton {
+
+    private static final int MIN_SCHEDULER_POOL_SIZE =
+            2;
+
+    private static final String LEGACY_BCRYPT_PROPERTY =
+            "safeai.security.password.allow-legacy-unprefixed-bcrypt";
 
     private final CorsProperties corsProperties;
     private final ClientIpProperties clientIpProperties;
@@ -60,6 +71,9 @@ public final class ProductionSecurityInvariantValidator
         validateIssuer();
         validateForwardedHeadersStrategy();
         validateManagementServer();
+        validateJwtRotationKeyMaterial();
+        validateSchedulerPool();
+        validateLegacyPasswordCompatibilityDeclaration();
     }
 
     private void validateCors() {
@@ -181,7 +195,9 @@ public final class ProductionSecurityInvariantValidator
             );
         }
 
-        if (managementPort.equals(appPort)) {
+        if (managementPort.equals(
+                appPort
+        )) {
             throw new IllegalStateException(
                     "В production management.server.port "
                             + "должен отличаться от server.port"
@@ -199,17 +215,129 @@ public final class ProductionSecurityInvariantValidator
         String normalizedAddress =
                 managementAddress.trim();
 
-        /*
-         * Архитектурный invariant проекта — management contour
-         * привязан к конкретному internal/ops interface, а не ко всем
-         * интерфейсам хоста.
-         */
-        if ("0.0.0.0".equals(normalizedAddress)
-                || "::".equals(normalizedAddress)
-                || "0:0:0:0:0:0:0:0".equals(normalizedAddress)) {
+        InetAddress resolvedAddress =
+                resolveManagementAddress(
+                        normalizedAddress
+                );
+
+        if (!isInternalManagementAddress(
+                resolvedAddress
+        )) {
             throw new IllegalStateException(
                     "В production management.server.address "
-                            + "не должен быть wildcard address"
+                            + "должен быть loopback/private/link-local "
+                            + "адресом внутреннего management contour, "
+                            + "а не public-facing interface: "
+                            + normalizedAddress
+            );
+        }
+    }
+
+    private InetAddress resolveManagementAddress(
+            String address
+    ) {
+        try {
+            return InetAddress.getByName(
+                    address
+            );
+        } catch (UnknownHostException exception) {
+            throw new IllegalStateException(
+                    "В production management.server.address "
+                            + "не удалось разрешить: "
+                            + address,
+                    exception
+            );
+        }
+    }
+
+    private boolean isInternalManagementAddress(
+            InetAddress address
+    ) {
+        if (address.isAnyLocalAddress()
+                || address.isMulticastAddress()) {
+            return false;
+        }
+
+        return address.isLoopbackAddress()
+                || address.isSiteLocalAddress()
+                || address.isLinkLocalAddress()
+                || isIpv6UniqueLocalAddress(
+                address
+        );
+    }
+
+    private boolean isIpv6UniqueLocalAddress(
+            InetAddress address
+    ) {
+        byte[] bytes =
+                address.getAddress();
+
+        return bytes.length == 16
+                && (bytes[0] & 0xFE) == 0xFC;
+    }
+
+    /**
+     * Only the active JWT key may carry signing material in production.
+     */
+    private void validateJwtRotationKeyMaterial() {
+        for (JwtProperties.KeyEntry key
+                : jwtProperties.keys()) {
+
+            if (!key.id().equals(
+                    jwtProperties.activeKeyId()
+            )
+                    && key.privateKey() != null) {
+
+                throw new IllegalStateException(
+                        "В production previous JWT key "
+                                + key.id()
+                                + " не должен содержать private-key; "
+                                + "оставьте только public-key"
+                );
+            }
+        }
+    }
+
+    /**
+     * A single scheduler thread lets one slow maintenance task starve unrelated
+     * jobs. Production must declare an explicit pool of at least two threads.
+     */
+    private void validateSchedulerPool() {
+        Integer schedulerPoolSize =
+                environment.getProperty(
+                        "spring.task.scheduling.pool.size",
+                        Integer.class
+                );
+
+        if (schedulerPoolSize == null
+                || schedulerPoolSize < MIN_SCHEDULER_POOL_SIZE) {
+
+            throw new IllegalStateException(
+                    "В production spring.task.scheduling.pool.size "
+                            + "должен быть задан явно и быть >= "
+                            + MIN_SCHEDULER_POOL_SIZE
+            );
+        }
+    }
+
+    /**
+     * Legacy unprefixed BCrypt is a migration switch, not an implicit permanent
+     * behavior. Production must make the choice explicit.
+     */
+    private void validateLegacyPasswordCompatibilityDeclaration() {
+        Boolean allowLegacy =
+                environment.getProperty(
+                        LEGACY_BCRYPT_PROPERTY,
+                        Boolean.class
+                );
+
+        if (allowLegacy == null) {
+            throw new IllegalStateException(
+                    "В production "
+                            + LEGACY_BCRYPT_PROPERTY
+                            + " должен быть задан явно. "
+                            + "Используйте true только на период миграции "
+                            + "legacy BCrypt hashes, затем переключите на false"
             );
         }
     }

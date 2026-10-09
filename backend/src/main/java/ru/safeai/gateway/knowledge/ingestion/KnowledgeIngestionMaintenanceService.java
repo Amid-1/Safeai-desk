@@ -34,11 +34,8 @@ public class KnowledgeIngestionMaintenanceService {
                         maxAttempts
                 );
 
-        for (
-                ExpiredKnowledgeIngestionJob job
-                : failed
-        ) {
-            audit.recordSystem(
+        for (ExpiredKnowledgeIngestionJob job : failed) {
+            audit.recordSystemRequiredInCurrentTransaction(
                     job.organizationId(),
                     AuditEventType.KNOWLEDGE_INGESTION_FAILED,
                     Map.of(

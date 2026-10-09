@@ -30,10 +30,17 @@ public abstract class AbstractAuditPostgresIntegrationTest
          * Test-only cleanup. TRUNCATE avoids the misleading IntelliJ
          * "DELETE without WHERE" inspection and is faster for integration
          * test isolation.
+         *
+         * V70: audit_event_user_links references audit_events.
+         * Both tables must be included in the same TRUNCATE statement.
+         *
+         * CASCADE is intentionally not used to avoid truncating
+         * unrelated tables through additional foreign keys.
          */
         jdbcTemplate.execute(
                 """
                 truncate table
+                    public.audit_event_user_links,
                     public.audit_outbox,
                     public.audit_events
                 """

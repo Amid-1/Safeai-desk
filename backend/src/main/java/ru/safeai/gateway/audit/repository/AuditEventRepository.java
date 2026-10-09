@@ -35,7 +35,6 @@ public interface AuditEventRepository
             value = """
                     insert into public.audit_events (
                         id,
-                        user_id,
                         actor_user_id,
                         actor_organization_id,
                         actor_email,
@@ -47,7 +46,6 @@ public interface AuditEventRepository
                         created_at
                     )
                     select outbox.id,
-                           actor.id,
                            outbox.actor_user_id,
                            outbox.actor_organization_id,
                            outbox.actor_email,
@@ -58,8 +56,6 @@ public interface AuditEventRepository
                            outbox.details,
                            outbox.occurred_at
                     from public.audit_outbox as outbox
-                    left join public.users as actor
-                      on actor.id = outbox.actor_user_id
                     where outbox.id = :outboxId
                     on conflict (id) do nothing
                     """,
@@ -69,6 +65,11 @@ public interface AuditEventRepository
             @Param("outboxId") UUID outboxId
     );
 
+    /**
+     * Retention cutoff is evaluated by PostgreSQL so a fast/slow JVM clock
+     * cannot delete immutable evidence early.
+     * Associated live-user links are removed by ON DELETE CASCADE.
+     */
     @SuppressWarnings({
             "SqlResolve",
             "SqlNoDataSourceInspection"
@@ -83,7 +84,11 @@ public interface AuditEventRepository
                     where audit_event.id in (
                         select candidate.id
                         from public.audit_events as candidate
-                        where candidate.created_at < :threshold
+                        where candidate.created_at
+                              < clock_timestamp()
+                                - make_interval(
+                                    secs => cast(:retentionSeconds as double precision)
+                                  )
                         order by candidate.created_at,
                                  candidate.id
                         limit :batchSize
@@ -91,8 +96,8 @@ public interface AuditEventRepository
                     """,
             nativeQuery = true
     )
-    int deleteBatchCreatedBefore(
-            @Param("threshold") Instant threshold,
+    int deleteRetentionBatch(
+            @Param("retentionSeconds") long retentionSeconds,
             @Param("batchSize") int batchSize
     );
 }

@@ -17,16 +17,15 @@ import ru.safeai.gateway.audit.entity.AuditOutboxEntity;
 import ru.safeai.gateway.audit.repository.AuditEventRepository;
 import ru.safeai.gateway.audit.repository.AuditOutboxRepository;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -188,8 +187,12 @@ class AuditOutboxProcessorTest {
 
         when(
                 failureService.markFailure(
-                        eq(poison.getId()),
-                        any(RuntimeException.class)
+                        eq(
+                                poison.getId()
+                        ),
+                        any(
+                                RuntimeException.class
+                        )
                 )
         ).thenReturn(
                 new AuditOutboxFailureService
@@ -262,8 +265,12 @@ class AuditOutboxProcessorTest {
 
         when(
                 failureService.markFailure(
-                        eq(poison.getId()),
-                        any(RuntimeException.class)
+                        eq(
+                                poison.getId()
+                        ),
+                        any(
+                                RuntimeException.class
+                        )
                 )
         ).thenReturn(
                 new AuditOutboxFailureService
@@ -322,8 +329,12 @@ class AuditOutboxProcessorTest {
 
         when(
                 failureService.markFailure(
-                        eq(item.getId()),
-                        any(RuntimeException.class)
+                        eq(
+                                item.getId()
+                        ),
+                        any(
+                                RuntimeException.class
+                        )
                 )
         ).thenReturn(
                 new AuditOutboxFailureService
@@ -358,8 +369,12 @@ class AuditOutboxProcessorTest {
         verify(
                 failureService
         ).markFailure(
-                eq(item.getId()),
-                any(RuntimeException.class)
+                eq(
+                        item.getId()
+                ),
+                any(
+                        RuntimeException.class
+                )
         );
 
         verify(
@@ -388,8 +403,12 @@ class AuditOutboxProcessorTest {
 
         when(
                 failureService.markFailure(
-                        eq(item.getId()),
-                        any(RuntimeException.class)
+                        eq(
+                                item.getId()
+                        ),
+                        any(
+                                RuntimeException.class
+                        )
                 )
         ).thenReturn(
                 new AuditOutboxFailureService
@@ -422,10 +441,9 @@ class AuditOutboxProcessorTest {
         ).isZero();
 
         /*
-         * Processor still observes the failed commit attempt,
-         * therefore delivery failure telemetry is recorded even
-         * though the missing outbox row proves that delivery most
-         * likely committed successfully.
+         * Processor observed a failed commit attempt. The missing outbox row
+         * means delivery most likely committed, but failure telemetry remains
+         * useful for the uncertain-commit incident.
          */
         verify(
                 metrics
@@ -466,27 +484,26 @@ class AuditOutboxProcessorTest {
                 metrics,
                 never()
         ).recordDeliveryFailure(
-                any(Boolean.class)
+                anyBoolean()
         );
     }
 
     private void whenNextRows(
             AuditOutboxEntity... rows
     ) {
-        OngoingStubbing<
-                Optional<AuditOutboxEntity>
-                > stubbing =
+        OngoingStubbing<Optional<AuditOutboxEntity>>
+                stubbing =
                 when(
                         outboxRepository
-                                .findNextForUpdate(
-                                        NOW
-                                )
+                                .findNextForUpdate()
                 );
 
         for (AuditOutboxEntity row : rows) {
             stubbing =
                     stubbing.thenReturn(
-                            Optional.of(row)
+                            Optional.of(
+                                    row
+                            )
                     );
         }
 
@@ -506,13 +523,13 @@ class AuditOutboxProcessorTest {
                 new AuditOutboxProperties(
                         10,
                         10,
-                        Duration.ofSeconds(2),
-                        Duration.ofHours(1),
+                        Duration.ofSeconds(
+                                2
+                        ),
+                        Duration.ofHours(
+                                1
+                        ),
                         1_000
-                ),
-                Clock.fixed(
-                        NOW,
-                        ZoneOffset.UTC
                 ),
                 transactionManager
         );

@@ -230,11 +230,11 @@ public class AnswerPassportService {
                 }
         );
 
-        audit.record(
+        audit.recordPrincipalSnapshot(
                 user,
                 user.getOrganizationId(),
                 AuditEventType.KNOWLEDGE_ANSWER_GENERATED,
-                Map.of(
+                () -> Map.of(
                         "chatTurnId",
                         context.turnId().toString(),
                         "modelRouteDecisionId",

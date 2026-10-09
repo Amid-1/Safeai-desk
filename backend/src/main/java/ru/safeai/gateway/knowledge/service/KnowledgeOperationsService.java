@@ -369,11 +369,11 @@ public class KnowledgeOperationsService {
             );
         }
 
-        audit.record(
+        audit.recordPrincipalSnapshot(
                 user,
                 user.getOrganizationId(),
                 AuditEventType.KNOWLEDGE_REINDEX_REQUESTED,
-                Map.of(
+                () -> Map.of(
                         "knowledgeBaseId",
                         knowledgeBaseId.toString(),
                         "documentId",

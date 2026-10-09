@@ -14,7 +14,6 @@ import java.util.UUID;
 public interface AuditOutboxRepository
         extends JpaRepository<AuditOutboxEntity, UUID> {
 
-
     long countByDeadLetteredAtIsNull();
 
     long countByDeadLetteredAtIsNotNull();
@@ -26,6 +25,9 @@ public interface AuditOutboxRepository
             """)
     Optional<Instant> findOldestPendingCreatedAt();
 
+    /**
+     * PostgreSQL, not an application node, decides whether a retry is due.
+     */
     @SuppressWarnings({
             "SqlResolve",
             "SqlNoDataSourceInspection"
@@ -35,17 +37,16 @@ public interface AuditOutboxRepository
                     select outbox.*
                     from public.audit_outbox as outbox
                     where outbox.dead_lettered_at is null
-                      and outbox.next_attempt_at <= :now
-                    order by outbox.created_at,
+                      and outbox.next_attempt_at <= clock_timestamp()
+                    order by outbox.next_attempt_at,
+                             outbox.created_at,
                              outbox.id
                     limit 1
                     for update of outbox skip locked
                     """,
             nativeQuery = true
     )
-    Optional<AuditOutboxEntity> findNextForUpdate(
-            @Param("now") Instant now
-    );
+    Optional<AuditOutboxEntity> findNextForUpdate();
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

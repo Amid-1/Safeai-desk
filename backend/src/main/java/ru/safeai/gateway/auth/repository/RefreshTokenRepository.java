@@ -18,7 +18,7 @@ public interface RefreshTokenRepository
 
     /**
      * Блокируется только строка refresh token.
-
+     * <p>
      * User, organization и roles загружаются отдельным запросом
      * внутри той же транзакции RefreshTokenService.rotate().
      */
@@ -32,6 +32,13 @@ public interface RefreshTokenRepository
             @Param("tokenHash") String tokenHash
     );
 
+    /**
+     * Terminates still-active members of a family without destroying the
+     * original provenance of tokens that were already revoked earlier.
+     *
+     * <p>Example: a predecessor that is already ROTATED remains ROTATED;
+     * currently active descendants receive REUSE_DETECTED/LOGOUT/etc.</p>
+     */
     @Modifying(flushAutomatically = true)
     @Query("""
             update RefreshTokenEntity token
@@ -39,7 +46,10 @@ public interface RefreshTokenRepository
                     token.revokedAt,
                     :revokedAt
                 ),
-                token.revocationReason = :reason
+                token.revocationReason = coalesce(
+                    token.revocationReason,
+                    :reason
+                )
             where token.tokenFamilyId = :tokenFamilyId
             """)
     int terminateFamily(
@@ -55,7 +65,10 @@ public interface RefreshTokenRepository
                     token.revokedAt,
                     :revokedAt
                 ),
-                token.revocationReason = :reason
+                token.revocationReason = coalesce(
+                    token.revocationReason,
+                    :reason
+                )
             where token.user.id = :userId
             """)
     int terminateAllByUserId(
@@ -71,7 +84,10 @@ public interface RefreshTokenRepository
                     token.revokedAt,
                     :revokedAt
                 ),
-                token.revocationReason = :reason
+                token.revocationReason = coalesce(
+                    token.revocationReason,
+                    :reason
+                )
             where token.user.id in (
                 select appUser.id
                 from UserEntity appUser

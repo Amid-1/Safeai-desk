@@ -130,72 +130,44 @@ class AuditDetailsSanitizerTest {
 
     @Test
     void nestedSensitiveValuesAreRedacted() {
-        Map<String, Object> result =
-                sanitizer.sanitize(
-                        Map.of(
-                                "request",
-                                Map.of(
-                                        "headers",
-                                        Map.of(
-                                                "authorization",
-                                                "Bearer secret"
-                                        ),
-                                        "credential",
-                                        "secret",
-                                        "safe",
-                                        "visible"
-                                ),
-                                "items",
-                                List.of(
-                                        Map.of(
-                                                "privateKey",
-                                                "key"
-                                        )
-                                )
-                        )
-                );
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> request =
-                (Map<String, Object>) result.get(
-                        "request"
-                );
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> headers =
-                (Map<String, Object>) request.get(
-                        "headers"
-                );
-
-        @SuppressWarnings("unchecked")
-        List<Object> items =
-                (List<Object>) result.get("items");
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> firstItem =
-                (Map<String, Object>) items.getFirst();
-
-        assertThat(headers)
-                .containsEntry(
-                        "authorization",
-                        "[REDACTED]"
-                );
-
-        assertThat(request)
-                .containsEntry(
-                        "credential",
-                        "[REDACTED]"
+        Map<String, Object> result = sanitizer.sanitize(
+                Map.of(
+                        "request", Map.of(
+                                "headers", Map.of("authorization", "Bearer secret"),
+                                "credential", "secret",
+                                "safe", "visible"
+                        ),
+                        "items", List.of(Map.of("privateKey", "key"))
                 )
-                .containsEntry(
-                        "safe",
-                        "visible"
-                );
+        );
 
-        assertThat(firstItem)
-                .containsEntry(
-                        "privateKey",
-                        "[REDACTED]"
-                );
+        // Preserve only sanitized structure, never raw nested credentials.
+        assertThat(result)
+                .containsOnlyKeys("request", "items");
+
+        assertThat(result.get("request"))
+                .isInstanceOf(Map.class)
+                .isEqualTo(Map.of(
+                        "headers", "[REDACTED]",
+                        "credential", "[REDACTED]",
+                        "safe", "[OMITTED_UNAPPROVED_TEXT]"
+                ));
+
+        assertThat(result.get("items"))
+                .isInstanceOf(List.class)
+                .isEqualTo(List.of(Map.of(
+                        "privateKey", "[REDACTED]"
+                )));
+
+        String serialized = result.toString();
+        assertThat(serialized)
+                .contains("[REDACTED]")
+                .contains("[OMITTED_UNAPPROVED_TEXT]")
+                .doesNotContain("Bearer secret")
+                .doesNotContain("credential=secret")
+                .doesNotContain("privateKey=key")
+                .doesNotContain("headers={")
+                .doesNotContain("safe=visible");
     }
 
     @Test
@@ -233,12 +205,14 @@ class AuditDetailsSanitizerTest {
                 )
                 .containsEntry(
                         "response.status",
-                        "COMPLETED"
-                );
+                        "[REDACTED]"
+                )
+                .doesNotContainValue("provider secret")
+                .doesNotContainValue("COMPLETED");
     }
 
     @Test
-    void stringBudgetDoesNotSplitUnicodeSurrogatePair() {
+    void unapprovedTextIsOmittedBeforeTruncationOrUnicodeProcessing() {
         AuditDetailsSanitizer constrained =
                 new AuditDetailsSanitizer(
                         jsonMapper,
@@ -262,8 +236,9 @@ class AuditDetailsSanitizerTest {
                         )
                 );
 
-        assertThat(result.get("value"))
-                .isEqualTo("A".repeat(15));
+        assertThat(result)
+                .containsEntry("value", "[OMITTED_UNAPPROVED_TEXT]")
+                .doesNotContainValue("A".repeat(15) + "😀B");
     }
 
     @Test

@@ -6,7 +6,9 @@ import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 
 public interface AiProvider {
 
-    AiChatResponse sendMessage(AiChatRequest request);
+    AiChatResponse sendMessage(
+            AiChatRequest request
+    );
 
     /**
      * Returns the exact immutable identity of the currently configured

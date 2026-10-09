@@ -29,7 +29,6 @@ class ModelCatalogRepositoryBindingTest {
     @Test
     void firstPageBindsSqlNullCursorAndExplicitLimit() throws Exception {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
-
         try (PreparedStatement statement = mock(PreparedStatement.class)) {
             doAnswer(invocation -> {
                 invocation.<PreparedStatementSetter>getArgument(1).setValues(statement);
@@ -41,8 +40,7 @@ class ModelCatalogRepositoryBindingTest {
             );
 
             assertThat(new ModelCatalogRepository(jdbc)
-                    .findVersions("openai:gpt-test", null, 100))
-                    .isEmpty();
+                    .findVersions("openai:gpt-test", null, 100)).isEmpty();
             verify(statement).setString(1, "openai:gpt-test");
             verify(statement).setNull(2, Types.INTEGER);
             verify(statement).setNull(3, Types.INTEGER);
@@ -54,7 +52,6 @@ class ModelCatalogRepositoryBindingTest {
     void subsequentPageBindsExclusiveCursorAndLimit() throws Exception {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         AtomicReference<String> sql = new AtomicReference<>();
-
         try (PreparedStatement statement = mock(PreparedStatement.class)) {
             doAnswer(invocation -> {
                 sql.set(invocation.getArgument(0));
@@ -66,8 +63,7 @@ class ModelCatalogRepositoryBindingTest {
                     org.mockito.ArgumentMatchers.<RowMapper<ModelCatalogEntry>>any()
             );
 
-            new ModelCatalogRepository(jdbc)
-                    .findVersions("openai:gpt-test", 9, 25);
+            new ModelCatalogRepository(jdbc).findVersions("openai:gpt-test", 9, 25);
             assertThat(sql.get()).contains(
                     "version < ?::integer",
                     "order by version desc limit ?"
@@ -92,7 +88,7 @@ class ModelCatalogRepositoryBindingTest {
     }
 
     @Test
-    void insertBindsAllThirtyTwoColumnsIncludingNullablePricesAndJson() throws Exception {
+    void insertBindsAllThirtyThreeParametersIncludingPricingScheme() throws Exception {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         Map<Integer, Object> bound = new TreeMap<>();
         AtomicReference<String> sql = new AtomicReference<>();
@@ -111,18 +107,16 @@ class ModelCatalogRepositoryBindingTest {
                 sql.set(invocation.getArgument(0));
                 invocation.<PreparedStatementSetter>getArgument(1).setValues(statement);
                 return 1;
-            }).when(jdbc).update(
-                    anyString(),
-                    any(PreparedStatementSetter.class)
-            );
-            ModelCatalogEntry entry = ModelTestFixtures.freeEntry();
+            }).when(jdbc).update(anyString(), any(PreparedStatementSetter.class));
 
+            ModelCatalogEntry entry = ModelTestFixtures.freeEntry();
             assertThat(new ModelCatalogRepository(jdbc).insert(entry)).isSameAs(entry);
-            assertThat(bound).hasSize(32);
-            assertThat(sql.get().chars()
-                    .filter(character -> character == '?')
-                    .count()).isEqualTo(32);
-            assertThat(sql.get()).contains("cast(? as jsonb)");
+            assertThat(bound).hasSize(33);
+            assertThat(bound.keySet()).containsExactlyElementsOf(
+                    java.util.stream.IntStream.rangeClosed(1, 33).boxed().toList());
+            assertThat(sql.get().chars().filter(character -> character == '?').count())
+                    .isEqualTo(33);
+            assertThat(sql.get()).contains("cast(? as jsonb)", "pricing_scheme");
             assertThat(bound)
                     .containsEntry(1, entry.id())
                     .containsEntry(3, entry.version())
@@ -136,7 +130,8 @@ class ModelCatalogRepositoryBindingTest {
                     .containsEntry(29, Timestamp.from(entry.effectiveFrom()))
                     .containsEntry(30, entry.source().name())
                     .containsEntry(31, entry.createdByUserId())
-                    .containsEntry(32, Timestamp.from(entry.createdAt()));
+                    .containsEntry(32, Timestamp.from(entry.createdAt()))
+                    .containsEntry(33, "FLAT_TOKEN_V1");
         }
     }
 }

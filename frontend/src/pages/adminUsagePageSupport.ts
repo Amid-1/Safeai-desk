@@ -17,6 +17,7 @@ export {
     parseTab,
     reportDescription,
     reportTitle,
+    trimDecimal,
     validateFilters,
 } from './adminUsage.helpers'
 

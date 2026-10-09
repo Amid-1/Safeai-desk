@@ -1,6 +1,8 @@
 package ru.safeai.gateway.auth.service;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.time.Duration;
 
@@ -120,7 +122,11 @@ class AuthCookiePropertiesTest {
                 .isEqualTo("__Host-safeai-access");
 
         assertThat(properties.refreshTokenName())
-                .isEqualTo("__Secure-safeai-refresh");
+                .isEqualTo("__Host-safeai-refresh");
+
+        // A __Host- prefix is a stronger contract, not merely a naming convention.
+        assertThat(properties.secure()).isTrue();
+        assertThat(properties.hasDomain()).isFalse();
     }
 
     @Test
@@ -542,31 +548,96 @@ class AuthCookiePropertiesTest {
                 )
         )
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(
-                        "__Host- требует Secure=true, "
-                                + "отсутствие Domain и Path=/"
-                );
+                .hasMessageContaining("__Host-")
+                .hasMessageContaining("Secure=true")
+                .hasMessageContaining("Domain");
     }
 
     @Test
-    void hostPrefixCannotBeUsedForRefreshCookiePath() {
-        assertThatThrownBy(() ->
-                new AuthCookieProperties(
-                        true,
-                        "Lax",
-                        ACCESS_MAX_AGE,
-                        REFRESH_MAX_AGE,
-                        REFRESH_ABSOLUTE_MAX_AGE,
-                        REUSE_DETECTION_RETENTION,
-                        null,
-                        "__Host-custom-access",
-                        "__Host-custom-refresh"
-                )
-        )
+    void hostPrefixedRefreshCookieIsRejectedBeforeWritingAnyHeader() {
+        AuthCookieProperties properties = new AuthCookieProperties(
+                true,
+                "Lax",
+                ACCESS_MAX_AGE,
+                REFRESH_MAX_AGE,
+                REFRESH_ABSOLUTE_MAX_AGE,
+                REUSE_DETECTION_RETENTION,
+                null,
+                "__Host-custom-access",
+                "__Host-custom-refresh"
+        );
+
+        // __Host- requires Path=/, while refresh tokens are deliberately scoped
+        // to /api/auth. A forbidden cookie must never be emitted.
+        assertThat(properties.secure()).isTrue();
+        assertThat(properties.hasDomain()).isFalse();
+        assertThat(properties.refreshTokenName()).isEqualTo("__Host-custom-refresh");
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AuthCookieService service = new AuthCookieService(properties);
+
+        assertThatThrownBy(() -> service.addRefreshTokenCookie(
+                response, "test-refresh-token", Duration.ofDays(7)))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(
-                        "__Host- требует Secure=true, "
-                                + "отсутствие Domain и Path=/"
-                );
+                .hasMessageContaining("__Host-")
+                .hasMessageContaining("Path=/")
+                .hasMessageContaining("Domain");
+
+        assertThat(response.getHeaders(HttpHeaders.SET_COOKIE)).isEmpty();
+    }
+
+    @Test
+    void securePrefixedRefreshCookieIsIssuedAtRestrictedPath() {
+        AuthCookieProperties properties = new AuthCookieProperties(
+                true,
+                "Lax",
+                ACCESS_MAX_AGE,
+                REFRESH_MAX_AGE,
+                REFRESH_ABSOLUTE_MAX_AGE,
+                REUSE_DETECTION_RETENTION,
+                null,
+                "__Host-custom-access",
+                "__Secure-custom-refresh"
+        );
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        new AuthCookieService(properties).addRefreshTokenCookie(
+                response, "test-refresh-token", Duration.ofDays(7));
+
+        assertThat(response.getHeaders(HttpHeaders.SET_COOKIE))
+                .singleElement()
+                .satisfies(cookie -> assertThat(cookie)
+                        .startsWith("__Secure-custom-refresh=test-refresh-token;")
+                        .contains("Path=/api/auth")
+                        .contains("Secure")
+                        .contains("HttpOnly")
+                        .contains("SameSite=Lax")
+                        .contains("Max-Age=604800")
+                        .doesNotContain("Domain="));
+    }
+
+    @Test
+    void hostPrefixedRefreshCookieRejectsConfiguredDomain() {
+        assertThatThrownBy(() -> new AuthCookieProperties(
+                true, "Lax", ACCESS_MAX_AGE, REFRESH_MAX_AGE,
+                REFRESH_ABSOLUTE_MAX_AGE, REUSE_DETECTION_RETENTION,
+                "example.com", "custom-access", "__Host-custom-refresh"
+        ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("__Host-")
+                .hasMessageContaining("Domain");
+    }
+
+    @Test
+    void hostPrefixedRefreshCookieRejectsInsecureConfiguration() {
+        assertThatThrownBy(() -> new AuthCookieProperties(
+                false, "Lax", ACCESS_MAX_AGE, REFRESH_MAX_AGE,
+                REFRESH_ABSOLUTE_MAX_AGE, REUSE_DETECTION_RETENTION,
+                null, "custom-access", "__Host-custom-refresh"
+        ))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("__Host-")
+                .hasMessageContaining("Secure=true");
     }
 }
+

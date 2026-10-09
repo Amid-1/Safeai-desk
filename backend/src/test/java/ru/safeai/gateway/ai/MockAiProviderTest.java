@@ -6,14 +6,16 @@ import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.dto.AiMessage;
 import ru.safeai.gateway.ai.dto.AiMessageRole;
+import ru.safeai.gateway.ai.execution.AiExecutionAttemptObserver;
+import ru.safeai.gateway.ai.execution.AiExecutionAttemptScope;
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
 import ru.safeai.gateway.ai.metadata.UsageStatus;
 import ru.safeai.gateway.ai.pricing.ModelPricingProperties;
 import ru.safeai.gateway.ai.pricing.ModelPricingService;
-import ru.safeai.gateway.ai.provider.mock.MockAiProvider;
 import ru.safeai.gateway.ai.provider.AiProviderRetryExecutor;
 import ru.safeai.gateway.ai.provider.AiRetryProperties;
+import ru.safeai.gateway.ai.provider.mock.MockAiProvider;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -23,12 +25,15 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 @Tag("unit")
 class MockAiProviderTest {
 
     private static final Instant NOW =
-            Instant.parse("2026-07-12T12:00:00Z");
+            Instant.parse(
+                    "2026-07-12T12:00:00Z"
+            );
 
     private static final UUID USER_ID =
             UUID.fromString(
@@ -52,8 +57,11 @@ class MockAiProviderTest {
 
     @Test
     void returnsAvailableFreeVersionedResponse() {
+        MockProviderHarness harness =
+                provider();
+
         AiChatResponse response =
-                provider().sendMessage(
+                harness.sendMessage(
                         new AiChatRequest(
                                 USER_ID,
                                 ORGANIZATION_ID,
@@ -66,51 +74,66 @@ class MockAiProviderTest {
                         )
                 );
 
-        assertThat(response.content())
-                .isEqualTo(
-                        "Mock AI provider response: Привет"
-                );
+        assertThat(
+                response.content()
+        ).isEqualTo(
+                "Mock AI provider response: Привет"
+        );
 
-        assertThat(response.requestedModel())
-                .isEqualTo("mock-safeai");
+        assertThat(
+                response.requestedModel()
+        ).isEqualTo(
+                "mock-safeai"
+        );
 
-        assertThat(response.model())
-                .isEqualTo("mock-safeai");
+        assertThat(
+                response.model()
+        ).isEqualTo(
+                "mock-safeai"
+        );
 
-        assertThat(response.providerRequestId())
-                .isNotBlank();
+        assertThat(
+                response.providerRequestId()
+        ).isNotBlank();
 
-        assertThat(response.responseStatus())
-                .isEqualTo(
-                        AiResponseStatus.COMPLETED
-                );
+        assertThat(
+                response.responseStatus()
+        ).isEqualTo(
+                AiResponseStatus.COMPLETED
+        );
 
-        assertThat(response.usageStatus())
-                .isEqualTo(
-                        UsageStatus.AVAILABLE
-                );
+        assertThat(
+                response.usageStatus()
+        ).isEqualTo(
+                UsageStatus.AVAILABLE
+        );
 
-        assertThat(response.pricingStatus())
-                .isEqualTo(
-                        PricingStatus.FREE
-                );
+        assertThat(
+                response.pricingStatus()
+        ).isEqualTo(
+                PricingStatus.FREE
+        );
 
-        assertThat(response.costUsd())
-                .isEqualByComparingTo(
-                        BigDecimal.ZERO
-                );
+        assertThat(
+                response.costUsd()
+        ).isEqualByComparingTo(
+                BigDecimal.ZERO
+        );
 
-        assertThat(response.costUsd().scale())
-                .isEqualTo(12);
+        assertThat(
+                response.costUsd().scale()
+        ).isEqualTo(
+                12
+        );
     }
 
     @Test
     void includesInstructionsAndHistoryInTokenEstimate() {
-        MockAiProvider provider =
+        MockProviderHarness harness =
                 provider();
 
         AiChatResponse minimal =
-                provider.sendMessage(
+                harness.sendMessage(
                         request(
                                 null,
                                 null,
@@ -119,7 +142,7 @@ class MockAiProviderTest {
                 );
 
         AiChatResponse enriched =
-                provider.sendMessage(
+                harness.sendMessage(
                         request(
                                 "system instructions",
                                 "developer instructions",
@@ -136,10 +159,11 @@ class MockAiProviderTest {
                         )
                 );
 
-        assertThat(enriched.inputTokens())
-                .isGreaterThan(
-                        minimal.inputTokens()
-                );
+        assertThat(
+                enriched.inputTokens()
+        ).isGreaterThan(
+                minimal.inputTokens()
+        );
     }
 
     private AiChatRequest request(
@@ -159,7 +183,7 @@ class MockAiProviderTest {
         );
     }
 
-    private MockAiProvider provider() {
+    private MockProviderHarness provider() {
         ModelPricingProperties properties =
                 new ModelPricingProperties(
                         List.of(
@@ -173,14 +197,15 @@ class MockAiProviderTest {
                         )
                 );
 
-        return new MockAiProvider(
-                new ModelPricingService(
-                        properties,
-                        Clock.fixed(
-                                NOW,
-                                ZoneOffset.UTC
-                        )
-                ),
+        AiExecutionAttemptScope attemptScope =
+                new AiExecutionAttemptScope();
+
+        AiExecutionAttemptObserver observer =
+                mock(
+                        AiExecutionAttemptObserver.class
+                );
+
+        AiProviderRetryExecutor retryExecutor =
                 new AiProviderRetryExecutor(
                         new AiRetryProperties(
                                 false,
@@ -189,8 +214,51 @@ class MockAiProviderTest {
                                 null,
                                 null,
                                 null
-                        )
-                )
+                        ),
+                        attemptScope
+                );
+
+        MockAiProvider provider =
+                new MockAiProvider(
+                        new ModelPricingService(
+                                properties,
+                                Clock.fixed(
+                                        NOW,
+                                        ZoneOffset.UTC
+                                )
+                        ),
+                        retryExecutor
+                );
+
+        return new MockProviderHarness(
+                provider,
+                attemptScope,
+                observer
         );
+    }
+
+    /**
+     * MockAiProvider now follows the same physical-attempt governance
+     * contract as real providers. The harness therefore executes every
+     * provider call inside the same AiExecutionAttemptScope that is injected
+     * into AiProviderRetryExecutor.
+     */
+    private record MockProviderHarness(
+            MockAiProvider provider,
+            AiExecutionAttemptScope attemptScope,
+            AiExecutionAttemptObserver observer
+    ) {
+
+        private AiChatResponse sendMessage(
+                AiChatRequest request
+        ) {
+            return attemptScope.execute(
+                    request.providerOperationId(),
+                    observer,
+                    () -> provider.sendMessage(
+                            request
+                    )
+            );
+        }
     }
 }

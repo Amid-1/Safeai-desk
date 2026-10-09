@@ -1,4 +1,3 @@
-// backend/src/main/java/ru/safeai/gateway/chat/title/ChatTitlePolicy.java
 package ru.safeai.gateway.chat.title;
 
 import java.util.Objects;
@@ -8,46 +7,65 @@ import java.util.regex.Pattern;
 /**
  * Pure deterministic policy for chat titles.
  *
- * <p>No provider/LLM call is performed here. Chat naming therefore adds no
- * hidden model invocation, spend, retry path or execution-attempt evidence.</p>
+ * <p>No provider/LLM call is performed here.</p>
  */
 public final class ChatTitlePolicy {
 
-    public static final String DEFAULT_TITLE = "Новый чат";
-    public static final int MAX_STORED_TITLE_CODE_POINTS = 255;
-    public static final int MAX_AUTOMATIC_TITLE_CODE_POINTS = 72;
+    public static final String DEFAULT_TITLE =
+            "Новый чат";
 
-    private static final int MIN_USEFUL_SENTENCE_CODE_POINTS = 18;
-    private static final int MIN_WORD_BOUNDARY_PREFIX_CODE_POINTS = 28;
+    public static final int
+            MAX_STORED_TITLE_CODE_POINTS = 255;
+
+    public static final int
+            MAX_AUTOMATIC_TITLE_CODE_POINTS = 72;
+
+    private static final int
+            MIN_USEFUL_SENTENCE_CODE_POINTS = 18;
+
+    private static final int
+            MIN_WORD_BOUNDARY_PREFIX_CODE_POINTS = 28;
 
     private static final Pattern WHITESPACE =
             Pattern.compile("[\\p{Z}\\s]+");
 
-    private static final Pattern LEADING_MARKUP = Pattern.compile(
-            "^(?:(?:#{1,6}|[>*+\\-]|\\d{1,4}[.)])\\s+)+"
-    );
+    private static final Pattern LEADING_MARKUP =
+            Pattern.compile(
+                    "^(?:(?:#{1,6}|[>*+\\-]|\\d{1,4}[.)])\\s+)+"
+            );
 
-    private static final Pattern GREETING_PREFIX = Pattern.compile(
-            "(?iu)^(?:привет(?:ствую)?|здравствуйте|добрый\\s+(?:день|вечер|утро)|hello|hi|hey)"
-                    + "(?:\\s*[,!:.—-]+\\s*|\\s+)"
-    );
+    private static final Pattern GREETING_PREFIX =
+            Pattern.compile(
+                    "(?iu)^(?:привет(?:ствую)?|здравствуйте|"
+                            + "добрый\\s+(?:день|вечер|утро)|"
+                            + "hello|hi|hey)"
+                            + "(?:\\s*[,!:.—-]+\\s*|\\s+)"
+            );
 
     private static final Pattern SENTENCE_END =
-            Pattern.compile("[.!?…](?:\\s|$)");
+            Pattern.compile(
+                    "[.!?…](?:\\s|$)"
+            );
 
     private static final Pattern TRAILING_FRAGMENT =
-            Pattern.compile("[\\p{P}\\s]+$");
+            Pattern.compile(
+                    "[\\p{P}\\s]+$"
+            );
 
     private ChatTitlePolicy() {
     }
 
-    public static String normalizeCreationTitle(String value) {
+    public static String normalizeCreationTitle(
+            String value
+    ) {
         return value == null || value.isBlank()
                 ? DEFAULT_TITLE
                 : normalizeExplicitTitle(value);
     }
 
-    public static String normalizeStoredTitle(String value) {
+    public static String normalizeStoredTitle(
+            String value
+    ) {
         if (value == null || value.isBlank()) {
             return DEFAULT_TITLE;
         }
@@ -55,7 +73,9 @@ public final class ChatTitlePolicy {
         return normalizeExplicitTitle(value);
     }
 
-    public static String normalizeManualTitle(String value) {
+    public static String normalizeManualTitle(
+            String value
+    ) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(
                     "Название чата не должно быть пустым"
@@ -65,14 +85,22 @@ public final class ChatTitlePolicy {
         return normalizeExplicitTitle(value);
     }
 
-    public static String automaticTitle(String firstUserMessage) {
+    public static String automaticTitle(
+            String firstUserMessage
+    ) {
         Objects.requireNonNull(
                 firstUserMessage,
                 "firstUserMessage не должен быть null"
         );
 
+        validateUnicodeAndControls(
+                firstUserMessage
+        );
+
         String normalized =
-                normalizeWhitespace(firstUserMessage);
+                normalizeWhitespace(
+                        firstUserMessage
+                );
 
         if (normalized.isEmpty()) {
             return DEFAULT_TITLE;
@@ -104,10 +132,16 @@ public final class ChatTitlePolicy {
             candidate = sentence;
         }
 
-        return truncateAutomaticTitle(candidate);
+        return truncateAutomaticTitle(
+                candidate
+        );
     }
 
-    private static String normalizeExplicitTitle(String value) {
+    private static String normalizeExplicitTitle(
+            String value
+    ) {
+        validateUnicodeAndControls(value);
+
         String normalized =
                 normalizeWhitespace(value);
 
@@ -123,7 +157,9 @@ public final class ChatTitlePolicy {
                         normalized.length()
                 );
 
-        if (codePoints > MAX_STORED_TITLE_CODE_POINTS) {
+        if (codePoints
+                > MAX_STORED_TITLE_CODE_POINTS) {
+
             throw new IllegalArgumentException(
                     "Название чата не должно превышать "
                             + MAX_STORED_TITLE_CODE_POINTS
@@ -134,14 +170,58 @@ public final class ChatTitlePolicy {
         return normalized;
     }
 
-    private static String normalizeWhitespace(String value) {
+    private static void validateUnicodeAndControls(
+            String value
+    ) {
+        for (int index = 0;
+             index < value.length();
+             index++) {
+
+            char current =
+                    value.charAt(index);
+
+            if (Character.isHighSurrogate(current)) {
+                if (index + 1 >= value.length()
+                        || !Character.isLowSurrogate(
+                        value.charAt(index + 1)
+                )) {
+                    throw new IllegalArgumentException(
+                            "Название чата содержит некорректный Unicode"
+                    );
+                }
+
+                index++;
+                continue;
+            }
+
+            if (Character.isLowSurrogate(current)) {
+                throw new IllegalArgumentException(
+                        "Название чата содержит некорректный Unicode"
+                );
+            }
+
+            if (Character.isISOControl(current)
+                    && !Character.isWhitespace(current)) {
+
+                throw new IllegalArgumentException(
+                        "Название чата содержит управляющий символ"
+                );
+            }
+        }
+    }
+
+    private static String normalizeWhitespace(
+            String value
+    ) {
         return WHITESPACE
                 .matcher(value)
                 .replaceAll(" ")
                 .trim();
     }
 
-    private static String firstUsefulSentence(String value) {
+    private static String firstUsefulSentence(
+            String value
+    ) {
         Matcher matcher =
                 SENTENCE_END.matcher(value);
 
@@ -150,7 +230,10 @@ public final class ChatTitlePolicy {
                     matcher.start() + 1;
 
             String sentence =
-                    value.substring(0, end).trim();
+                    value.substring(
+                            0,
+                            end
+                    ).trim();
 
             int length =
                     sentence.codePointCount(
@@ -158,12 +241,17 @@ public final class ChatTitlePolicy {
                             sentence.length()
                     );
 
-            if (length >= MIN_USEFUL_SENTENCE_CODE_POINTS
-                    && length <= MAX_AUTOMATIC_TITLE_CODE_POINTS) {
+            if (length
+                    >= MIN_USEFUL_SENTENCE_CODE_POINTS
+                    && length
+                    <= MAX_AUTOMATIC_TITLE_CODE_POINTS) {
+
                 return sentence;
             }
 
-            if (length > MAX_AUTOMATIC_TITLE_CODE_POINTS) {
+            if (length
+                    > MAX_AUTOMATIC_TITLE_CODE_POINTS) {
+
                 return null;
             }
         }
@@ -171,8 +259,11 @@ public final class ChatTitlePolicy {
         return null;
     }
 
-    private static String truncateAutomaticTitle(String value) {
-        String normalized = value.trim();
+    private static String truncateAutomaticTitle(
+            String value
+    ) {
+        String normalized =
+                value.trim();
 
         int codePoints =
                 normalized.codePointCount(
@@ -180,7 +271,9 @@ public final class ChatTitlePolicy {
                         normalized.length()
                 );
 
-        if (codePoints <= MAX_AUTOMATIC_TITLE_CODE_POINTS) {
+        if (codePoints
+                <= MAX_AUTOMATIC_TITLE_CODE_POINTS) {
+
             return normalized;
         }
 
@@ -194,18 +287,20 @@ public final class ChatTitlePolicy {
                 );
 
         String prefix =
-                normalized
-                        .substring(0, end)
-                        .stripTrailing();
+                normalized.substring(
+                        0,
+                        end
+                ).stripTrailing();
 
         int lastSpace =
                 prefix.lastIndexOf(' ');
 
         if (lastSpace > 0) {
             String wordBoundary =
-                    prefix
-                            .substring(0, lastSpace)
-                            .stripTrailing();
+                    prefix.substring(
+                            0,
+                            lastSpace
+                    ).stripTrailing();
 
             int wordBoundaryLength =
                     wordBoundary.codePointCount(
@@ -215,6 +310,7 @@ public final class ChatTitlePolicy {
 
             if (wordBoundaryLength
                     >= MIN_WORD_BOUNDARY_PREFIX_CODE_POINTS) {
+
                 prefix = wordBoundary;
             }
         }
@@ -227,9 +323,10 @@ public final class ChatTitlePolicy {
 
         if (prefix.isEmpty()) {
             prefix =
-                    normalized
-                            .substring(0, end)
-                            .stripTrailing();
+                    normalized.substring(
+                            0,
+                            end
+                    ).stripTrailing();
         }
 
         return prefix + "…";

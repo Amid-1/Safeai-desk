@@ -38,11 +38,13 @@ class AuditOutboxIntegrationTest
 
     @Test
     void businessTransactionRollbackLeavesNoAuditIntentOrEvent() {
-        UUID organizationId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
 
         insertOrganization(
                 organizationId,
-                "Rollback Audit " + organizationId,
+                "Rollback Audit "
+                        + organizationId,
                 true
         );
 
@@ -52,33 +54,36 @@ class AuditOutboxIntegrationTest
                 );
 
         assertThatThrownBy(() ->
-                transaction.executeWithoutResult(status -> {
-                    jdbcTemplate.update(
-                            """
-                            update public.organizations
-                            set name = ?
-                            where id = ?
-                            """,
-                            "Rollback Changed "
-                                    + organizationId,
-                            organizationId
-                    );
-
-                    auditEventService.recordSystem(
-                            organizationId,
-                            AuditEventType
-                                    .ORGANIZATION_NAME_CHANGED,
-                            Map.of(
-                                    "newName",
+                transaction.executeWithoutResult(
+                        status -> {
+                            jdbcTemplate.update(
+                                    """
+                                    update public.organizations
+                                    set name = ?
+                                    where id = ?
+                                    """,
                                     "Rollback Changed "
-                                            + organizationId
-                            )
-                    );
+                                            + organizationId,
+                                    organizationId
+                            );
 
-                    throw new IllegalStateException(
-                            "force rollback"
-                    );
-                })
+                            auditEventService
+                                    .recordSystemRequiredInCurrentTransaction(
+                                            organizationId,
+                                            AuditEventType
+                                                    .ORGANIZATION_NAME_CHANGED,
+                                            Map.of(
+                                                    "newName",
+                                                    "Rollback Changed "
+                                                            + organizationId
+                                            )
+                                    );
+
+                            throw new IllegalStateException(
+                                    "force rollback"
+                            );
+                        }
+                )
         )
                 .isInstanceOf(
                         IllegalStateException.class
@@ -87,8 +92,13 @@ class AuditOutboxIntegrationTest
                         "force rollback"
                 );
 
-        assertThat(countAuditOutbox()).isZero();
-        assertThat(countAuditEvents()).isZero();
+        assertThat(
+                countAuditOutbox()
+        ).isZero();
+
+        assertThat(
+                countAuditEvents()
+        ).isZero();
 
         assertThat(
                 queryString(
@@ -99,16 +109,20 @@ class AuditOutboxIntegrationTest
                         """,
                         organizationId
                 )
-        ).startsWith("Rollback Audit");
+        ).startsWith(
+                "Rollback Audit"
+        );
     }
 
     @Test
     void businessCommitCreatesDurableIntentAndWorkerCreatesEvent() {
-        UUID organizationId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
 
         insertOrganization(
                 organizationId,
-                "Commit Audit " + organizationId,
+                "Commit Audit "
+                        + organizationId,
                 true
         );
 
@@ -117,40 +131,65 @@ class AuditOutboxIntegrationTest
                         transactionManager
                 );
 
-        transaction.executeWithoutResult(status -> {
-            jdbcTemplate.update(
-                    """
-                    update public.organizations
-                    set name = ?
-                    where id = ?
-                    """,
-                    "Committed Audit " + organizationId,
-                    organizationId
-            );
-
-            auditEventService.recordSystem(
-                    organizationId,
-                    AuditEventType
-                            .ORGANIZATION_NAME_CHANGED,
-                    Map.of(
-                            "newName",
+        transaction.executeWithoutResult(
+                status -> {
+                    jdbcTemplate.update(
+                            """
+                            update public.organizations
+                            set name = ?
+                            where id = ?
+                            """,
                             "Committed Audit "
-                                    + organizationId
-                    )
-            );
-        });
+                                    + organizationId,
+                            organizationId
+                    );
 
-        assertThat(countAuditOutbox()).isEqualTo(1);
-        assertThat(countAuditEvents()).isZero();
+                    auditEventService
+                            .recordSystemRequiredInCurrentTransaction(
+                                    organizationId,
+                                    AuditEventType
+                                            .ORGANIZATION_NAME_CHANGED,
+                                    Map.of(
+                                            "newName",
+                                            "Committed Audit "
+                                                    + organizationId
+                                    )
+                            );
+                }
+        );
+
+        assertThat(
+                countAuditOutbox()
+        ).isEqualTo(
+                1
+        );
+
+        assertThat(
+                countAuditEvents()
+        ).isZero();
 
         AuditOutboxProcessor.BatchResult result =
                 auditOutboxProcessor.processBatch();
 
-        assertThat(result.processed()).isEqualTo(1);
-        assertThat(result.failed()).isZero();
+        assertThat(
+                result.processed()
+        ).isEqualTo(
+                1
+        );
 
-        assertThat(countAuditOutbox()).isZero();
-        assertThat(countAuditEvents()).isEqualTo(1);
+        assertThat(
+                result.failed()
+        ).isZero();
+
+        assertThat(
+                countAuditOutbox()
+        ).isZero();
+
+        assertThat(
+                countAuditEvents()
+        ).isEqualTo(
+                1
+        );
 
         assertThat(
                 queryString(
@@ -168,26 +207,36 @@ class AuditOutboxIntegrationTest
 
     @Test
     void secondWorkerRunDoesNotCreateDuplicateEvent() {
-        UUID organizationId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
 
         insertOrganization(
                 organizationId,
-                "Idempotent Audit " + organizationId,
+                "Idempotent Audit "
+                        + organizationId,
                 true
         );
 
-        auditEventService.recordSystem(
+        /*
+         * This setup has no business transaction to join, so standalone
+         * required audit is the explicit and correct durability contract.
+         */
+        auditEventService.recordSystemStandaloneRequired(
                 organizationId,
                 AuditEventType.USER_CREATED,
-                Map.of("test", true)
+                Map.of(
+                        "test",
+                        true
+                )
         );
 
-        UUID eventId = queryUuid(
-                """
-                select id
-                from public.audit_outbox
-                """
-        );
+        UUID eventId =
+                queryUuid(
+                        """
+                        select id
+                        from public.audit_outbox
+                        """
+                );
 
         insertDeliveredAuditEvent(
                 eventId,
@@ -198,20 +247,38 @@ class AuditOutboxIntegrationTest
         );
 
         AuditOutboxProcessor.BatchResult first =
-                auditOutboxProcessor.processBatch();
+                auditOutboxProcessor
+                        .processBatch();
 
         AuditOutboxProcessor.BatchResult second =
-                auditOutboxProcessor.processBatch();
+                auditOutboxProcessor
+                        .processBatch();
 
-        assertThat(first.processed()).isEqualTo(1);
-        assertThat(second.processed()).isZero();
-        assertThat(countAuditOutbox()).isZero();
-        assertThat(countAuditEvents()).isEqualTo(1);
+        assertThat(
+                first.processed()
+        ).isEqualTo(
+                1
+        );
+
+        assertThat(
+                second.processed()
+        ).isZero();
+
+        assertThat(
+                countAuditOutbox()
+        ).isZero();
+
+        assertThat(
+                countAuditEvents()
+        ).isEqualTo(
+                1
+        );
     }
 
     @Test
     void unknownEventTypeIsRejectedAtomicallyByDatabasePolicy() {
-        UUID organizationId = UUID.randomUUID();
+        UUID organizationId =
+                UUID.randomUUID();
 
         assertThatThrownBy(() ->
                 jdbcTemplate.update(
@@ -234,20 +301,26 @@ class AuditOutboxIntegrationTest
                         UUID.randomUUID(),
                         organizationId
                 )
-        )
-                .isInstanceOf(
-                        DataIntegrityViolationException.class
-                );
+        ).isInstanceOf(
+                DataIntegrityViolationException.class
+        );
 
-        assertThat(countAuditOutbox()).isZero();
-        assertThat(countAuditEvents()).isZero();
+        assertThat(
+                countAuditOutbox()
+        ).isZero();
+
+        assertThat(
+                countAuditEvents()
+        ).isZero();
     }
 
     @Test
     void databaseDetailsSizeConstraintRejectsOversizedRawInsert() {
         String oversized =
                 "{\"payload\":\""
-                        + "x".repeat(70_000)
+                        + "x".repeat(
+                        70_000
+                )
                         + "\"}";
 
         assertThatThrownBy(() ->
@@ -270,15 +343,17 @@ class AuditOutboxIntegrationTest
                         """,
                         UUID.randomUUID(),
                         UUID.randomUUID(),
-                        AuditEventType.USER_CREATED.name(),
+                        AuditEventType.USER_CREATED
+                                .name(),
                         oversized
                 )
-        )
-                .isInstanceOf(
-                        DataIntegrityViolationException.class
-                );
+        ).isInstanceOf(
+                DataIntegrityViolationException.class
+        );
 
-        assertThat(countAuditEvents()).isZero();
+        assertThat(
+                countAuditEvents()
+        ).isZero();
     }
 
     @SuppressWarnings({
@@ -294,7 +369,6 @@ class AuditOutboxIntegrationTest
                 """
                 insert into public.audit_events (
                     id,
-                    user_id,
                     actor_user_id,
                     actor_organization_id,
                     actor_email,
@@ -309,7 +383,6 @@ class AuditOutboxIntegrationTest
                     null,
                     null,
                     null,
-                    null,
                     'SYSTEM',
                     ?,
                     ?,
@@ -319,7 +392,8 @@ class AuditOutboxIntegrationTest
                 """,
                 eventId,
                 organizationId,
-                AuditEventType.USER_CREATED.name(),
+                AuditEventType.USER_CREATED
+                        .name(),
                 """
                 {"alreadyDelivered":true}
                 """.trim(),
@@ -332,3 +406,4 @@ class AuditOutboxIntegrationTest
         );
     }
 }
+

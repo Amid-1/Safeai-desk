@@ -3,14 +3,18 @@ package ru.safeai.gateway.auth.security;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * HSTS policy for the public application security filter chain.
+ * HSTS policy for the public application security boundary.
  *
- * <p>Disabled by default so local HTTP/test environments are not forced
- * into HTTPS. Production deployment should explicitly enable it only when
- * HTTPS is guaranteed at the public edge.</p>
+ * <p>{@code enabled=true} means Spring emits HSTS itself.
+ * {@code edgeManaged=true} means the deployment contract requires the trusted
+ * TLS terminator / ingress / load balancer to emit HSTS instead.</p>
+ *
+ * <p>Production startup validation requires at least one of these guarantees.
+ * Local/test HTTP can keep both values false.</p>
  */
 @ConfigurationProperties(prefix = "safeai.security.hsts")
 public record HstsProperties(
-        boolean enabled
+        boolean enabled,
+        boolean edgeManaged
 ) {
 }

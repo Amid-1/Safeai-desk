@@ -352,8 +352,8 @@ protected void insertOrganization(
         jdbcTemplate.update("""
                         insert into public.audit_events (
                             id,
-                            user_id,
                             actor_user_id,
+                            actor_organization_id,
                             actor_email,
                             actor_display_name,
                             organization_id,
@@ -365,7 +365,7 @@ protected void insertOrganization(
                         """,
                 UUID.randomUUID(),
                 userId,
-                userId,
+                organizationId,
                 email,
                 "Test User",
                 organizationId
@@ -381,17 +381,23 @@ protected void insertOrganization(
                         insert into public.audit_outbox (
                             id,
                             actor_user_id,
+                            actor_organization_id,
                             actor_email,
                             actor_display_name,
                             organization_id,
                             event_type,
                             details,
-                            created_at
-                        ) values (?, ?, ?, ?, ?, 'USER_CREATED',
-                                  '{}'::jsonb, current_timestamp)
+                            occurred_at,
+                            created_at,
+                            attempt_count,
+                            next_attempt_at
+                        ) values (?, ?, ?, ?, ?, ?, 'USER_CREATED',
+                                  '{}'::jsonb, current_timestamp,
+                                  current_timestamp, 0, current_timestamp)
                         """,
                 UUID.randomUUID(),
                 userId,
+                organizationId,
                 email,
                 "Test User",
                 organizationId

@@ -3,6 +3,7 @@ package ru.safeai.gateway.audit.service;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -29,6 +30,9 @@ class AuditActorSnapshotIntegrationTest
 
     @Autowired
     private AuditEventService auditEventService;
+
+    @Autowired
+    private TransactionTemplate transactionTemplate;
 
     @Autowired
     private AuditOutboxProcessor auditOutboxProcessor;
@@ -68,16 +72,16 @@ class AuditActorSnapshotIntegrationTest
                         "ROLE_ADMIN"
                 );
 
-        auditEventService.record(
+        transactionTemplate.executeWithoutResult(status ->
+                auditEventService.recordPrincipalSnapshot(
                 principal,
-                "Own Organization Admin",
                 organizationId,
                 AuditEventType.USER_UPDATED,
-                Map.of(
+                () -> Map.of(
                         "targetUserId",
                         UUID.randomUUID()
                 )
-        );
+        ));
 
         assertThat(
                 auditOutboxProcessor
@@ -174,17 +178,17 @@ class AuditActorSnapshotIntegrationTest
                         "ROLE_SUPER_ADMIN"
                 );
 
-        auditEventService.record(
+        transactionTemplate.executeWithoutResult(status ->
+                auditEventService.recordPrincipalSnapshot(
                 principal,
-                "Platform Super Admin",
                 targetOrganizationId,
                 AuditEventType
                         .ORGANIZATION_ENABLED_CHANGED,
-                Map.of(
+                () -> Map.of(
                         "enabled",
                         false
                 )
-        );
+        ));
 
         auditOutboxProcessor
                 .processBatch();
@@ -271,20 +275,20 @@ class AuditActorSnapshotIntegrationTest
                 "ADMIN"
         );
 
-        auditEventService.record(
+        transactionTemplate.executeWithoutResult(status ->
+                auditEventService.recordPrincipalSnapshot(
                 principal(
                         adminId,
                         organizationId,
                         "ROLE_ADMIN"
                 ),
-                "Email Admin",
                 organizationId,
                 AuditEventType.USER_UPDATED,
-                Map.of(
+                () -> Map.of(
                         "change",
                         "before-email-change"
                 )
-        );
+        ));
 
         jdbcTemplate.update(
                 """
@@ -352,21 +356,21 @@ class AuditActorSnapshotIntegrationTest
                 "ADMIN"
         );
 
-        auditEventService.record(
+        transactionTemplate.executeWithoutResult(status ->
+                auditEventService.recordPrincipalSnapshot(
                 principal(
                         adminId,
                         organizationId,
                         "ROLE_ADMIN"
                 ),
-                "Deleted Admin",
                 organizationId,
                 AuditEventType
                         .USER_PERMANENTLY_DELETED,
-                Map.of(
+                () -> Map.of(
                         "targetUserId",
                         UUID.randomUUID()
                 )
-        );
+        ));
 
         auditOutboxProcessor
                 .processBatch();
@@ -374,8 +378,10 @@ class AuditActorSnapshotIntegrationTest
         UUID linkedBeforeDelete =
                 jdbcTemplate.queryForObject(
                         """
-                        select user_id
-                        from public.audit_events
+                        select link.user_id
+                        from public.audit_events as event
+                        left join public.audit_event_user_links as link
+                          on link.audit_event_id = event.id
                         """,
                         UUID.class
                 );
@@ -393,12 +399,14 @@ class AuditActorSnapshotIntegrationTest
         Map<String, Object> row =
                 jdbcTemplate.queryForMap(
                         """
-                        select user_id,
-                               actor_user_id,
-                               actor_organization_id,
-                               actor_email,
-                               actor_display_name
-                        from public.audit_events
+                        select link.user_id as user_id,
+                               event.actor_user_id,
+                               event.actor_organization_id,
+                               event.actor_email,
+                               event.actor_display_name
+                        from public.audit_events as event
+                        left join public.audit_event_user_links as link
+                          on link.audit_event_id = event.id
                         """
                 );
 
@@ -463,20 +471,20 @@ class AuditActorSnapshotIntegrationTest
                 "ADMIN"
         );
 
-        auditEventService.record(
+        transactionTemplate.executeWithoutResult(status ->
+                auditEventService.recordPrincipalSnapshot(
                 principal(
                         adminId,
                         organizationId,
                         "ROLE_ADMIN"
                 ),
-                "Deleted Before Worker",
                 organizationId,
                 AuditEventType.USER_UPDATED,
-                Map.of(
+                () -> Map.of(
                         "test",
                         true
                 )
-        );
+        ));
 
         assertThat(
                 countAuditOutbox()
@@ -492,12 +500,14 @@ class AuditActorSnapshotIntegrationTest
         Map<String, Object> row =
                 jdbcTemplate.queryForMap(
                         """
-                        select user_id,
-                               actor_user_id,
-                               actor_organization_id,
-                               actor_email,
-                               actor_display_name
-                        from public.audit_events
+                        select link.user_id as user_id,
+                               event.actor_user_id,
+                               event.actor_organization_id,
+                               event.actor_email,
+                               event.actor_display_name
+                        from public.audit_events as event
+                        left join public.audit_event_user_links as link
+                          on link.audit_event_id = event.id
                         """
                 );
 
@@ -534,6 +544,98 @@ class AuditActorSnapshotIntegrationTest
         );
     }
 
+    @Test
+    void directAuditEventUpdateCannotRewriteActorIdentityOrSnapshot() {
+        UUID organizationId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
+
+        insertOrganization(
+                organizationId,
+                "Immutable Snapshot " + organizationId,
+                true
+        );
+
+        insertTestUser(
+                adminId,
+                organizationId,
+                "immutable-" + adminId + "@test.com",
+                "Immutable Admin",
+                "ADMIN"
+        );
+
+        transactionTemplate.executeWithoutResult(status ->
+                auditEventService.recordPrincipalSnapshot(
+                        principal(adminId, organizationId, "ROLE_ADMIN"),
+                        organizationId,
+                        AuditEventType.USER_UPDATED,
+                        () -> Map.of("targetUserId", UUID.randomUUID())
+                )
+        );
+
+        assertThat(auditOutboxProcessor.processBatch().processed())
+                .isEqualTo(1);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                jdbcTemplate.update(
+                        "update public.audit_events set actor_user_id = null where actor_user_id = ?",
+                        adminId
+                )
+        ).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class)
+                .hasMessageContaining("immutable");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                jdbcTemplate.update(
+                        "update public.audit_events set actor_display_name = ? where actor_user_id = ?",
+                        "Tampered",
+                        adminId
+                )
+        ).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class)
+                .hasMessageContaining("immutable");
+
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                """
+                select link.user_id as user_id,
+                       event.actor_user_id,
+                       event.actor_display_name
+                from public.audit_events as event
+                left join public.audit_event_user_links as link
+                  on link.audit_event_id = event.id
+                where event.actor_user_id = ?
+                """,
+                adminId
+        );
+        assertThat(row.get("user_id")).isEqualTo(adminId);
+        assertThat(row.get("actor_user_id")).isEqualTo(adminId);
+        assertThat(row.get("actor_display_name")).isEqualTo("Immutable Admin");
+    }
+
+    @Test
+    void auditEventHasNoMutableUserIdColumnAndLinkHasBothCascadeConstraints() {
+        Integer legacyColumnCount = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'audit_events'
+                  and column_name = 'user_id'
+                """,
+                Integer.class
+        );
+        assertThat(legacyColumnCount).isZero();
+
+        Integer cascadeForeignKeys = jdbcTemplate.queryForObject(
+                """
+                select count(*)
+                from pg_constraint
+                where conrelid = 'public.audit_event_user_links'::regclass
+                  and contype = 'f'
+                  and confdeltype = 'c'
+                """,
+                Integer.class
+        );
+        assertThat(cascadeForeignKeys).isEqualTo(2);
+    }
+
     private SafeAiUserPrincipal principal(
             UUID userId,
             UUID organizationId,
@@ -553,3 +655,4 @@ class AuditActorSnapshotIntegrationTest
                 );
     }
 }
+

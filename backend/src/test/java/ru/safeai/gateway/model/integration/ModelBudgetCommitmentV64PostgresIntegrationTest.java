@@ -95,7 +95,7 @@ class ModelBudgetCommitmentV64PostgresIntegrationTest
         ModelRouteDecisionRepository decisionRepository =
                 new ModelRouteDecisionRepository(jdbcTemplate);
 
-        catalogRepository.insert(entry);
+        catalogRepository.insert(entry, "FLAT_TOKEN_V1");
 
         ModelIntegrationTestSupport.insertAllowAllPolicy(
                 jdbcTemplate,

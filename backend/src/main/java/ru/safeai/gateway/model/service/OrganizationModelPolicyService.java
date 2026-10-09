@@ -115,7 +115,7 @@ public class OrganizationModelPolicyService {
         );
 
         repository.insert(policy);
-        audit.record(
+        audit.recordPrincipalSnapshot(
                 currentUser,
                 policy.organizationId(),
                 AuditEventType.MODEL_POLICY_VERSION_CREATED,

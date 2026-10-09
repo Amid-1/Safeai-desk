@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -24,6 +25,7 @@ import ru.safeai.gateway.knowledge.repository.KnowledgeDocumentRepository;
 import java.sql.ResultSet;
 import java.time.Clock;
 import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -40,11 +42,13 @@ class KnowledgeOperationsServiceRegressionTest {
     private static final UUID DOCUMENT_ID = UUID.fromString("10000000-0000-4000-8000-000000000021");
     private static final UUID VERSION_ID = UUID.fromString("10000000-0000-4000-8000-000000000022");
     private static final UUID JOB_ID = UUID.fromString("10000000-0000-4000-8000-000000000023");
+
     @Mock KnowledgeAccessService access;
     @Mock KnowledgeDocumentRepository documents;
     @Mock KnowledgeEmbeddingProvider embedding;
     @Mock JdbcTemplate jdbc;
     @Mock AuditEventService audit;
+
     private KnowledgeOperationsService service;
     private SafeAiUserPrincipal admin;
 
@@ -79,11 +83,23 @@ class KnowledgeOperationsServiceRegressionTest {
         stubDocument(VERSION_ID);
         stubJob("READY");
         when(jdbc.update(anyString(), any(), any(), eq(JOB_ID), eq("READY"))).thenReturn(1);
+
         KnowledgeReindexResponse result = service.reindex(KB_ID, DOCUMENT_ID, admin);
         assertThat(result.documentVersionId()).isEqualTo(VERSION_ID);
         assertThat(result.status()).isEqualTo(KnowledgeIngestionStatus.PENDING);
-        verify(audit).record(eq(admin), eq(ORG_ID),
-                eq(AuditEventType.KNOWLEDGE_REINDEX_REQUESTED), anyMap());
+
+        var evidence = org.mockito.ArgumentCaptor.forClass(AuditDetails.class);
+        verify(audit).recordPrincipalSnapshot(
+                same(admin), eq(ORG_ID),
+                eq(AuditEventType.KNOWLEDGE_REINDEX_REQUESTED), evidence.capture());
+        assertThat(evidence.getValue()).isNotNull();
+        assertThat(evidence.getValue().toMap()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "knowledgeBaseId", KB_ID.toString(),
+                "documentId", DOCUMENT_ID.toString(),
+                "documentVersionId", VERSION_ID.toString(),
+                "ingestionJobId", JOB_ID.toString()
+        ));
+        verifyNoMoreInteractions(audit);
     }
 
     @Test

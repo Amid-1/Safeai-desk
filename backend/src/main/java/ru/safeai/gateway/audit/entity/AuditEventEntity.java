@@ -3,10 +3,9 @@ package ru.safeai.gateway.audit.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import lombok.Getter;
-import lombok.Setter;
+import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -14,17 +13,31 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Materialized immutable audit evidence.
+ *
+ * <p>V68 also rejects UPDATE at the PostgreSQL boundary. {@link Immutable}
+ * prevents normal Hibernate dirty checking from pretending this is a mutable
+ * aggregate.</p>
+ */
 @Getter
-@Setter
+@Immutable
 @Entity
 @Table(name = "audit_events")
 public class AuditEventEntity {
 
     @Id
-    @Column(name = "id", nullable = false)
+    @Column(
+            name = "id",
+            nullable = false,
+            updatable = false
+    )
     private UUID id;
 
-    @Column(name = "actor_user_id", updatable = false)
+    @Column(
+            name = "actor_user_id",
+            updatable = false
+    )
     private UUID actorUserId;
 
     @Column(
@@ -47,9 +60,6 @@ public class AuditEventEntity {
     )
     private String actorDisplayName;
 
-    /**
-     * Target organization события.
-     */
     @Column(
             name = "organization_id",
             nullable = false,
@@ -57,10 +67,6 @@ public class AuditEventEntity {
     )
     private UUID organizationId;
 
-    /**
-     * Immutable snapshot имени target organization на момент события.
-     * Nullable только для legacy rows / аварийного best-effort snapshot.
-     */
     @Column(
             name = "target_organization_name",
             length = 255,
@@ -91,35 +97,4 @@ public class AuditEventEntity {
             updatable = false
     )
     private Instant createdAt;
-
-    @PrePersist
-    void validateBeforePersist() {
-        if (id == null) {
-            throw new IllegalStateException(
-                    "AuditEventEntity.id должен быть установлен явно"
-            );
-        }
-
-        if (organizationId == null) {
-            throw new IllegalStateException(
-                    "AuditEventEntity.organizationId должен быть установлен явно"
-            );
-        }
-
-        if (eventType == null || eventType.isBlank()) {
-            throw new IllegalStateException(
-                    "AuditEventEntity.eventType должен быть установлен явно"
-            );
-        }
-
-        if (createdAt == null) {
-            throw new IllegalStateException(
-                    "AuditEventEntity.createdAt должен быть установлен явно"
-            );
-        }
-
-        if (details == null) {
-            details = Map.of();
-        }
-    }
 }

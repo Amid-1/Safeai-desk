@@ -198,26 +198,26 @@ public class ModelCatalogService {
                 request.capabilities() == null
                         ? Set.of()
                         : Set.copyOf(
-                                request.capabilities()
-                        );
+                        request.capabilities()
+                );
 
         Set<ModelModality> inputModalities =
                 request.inputModalities() == null
                         ? Set.of(
-                                ModelModality.TEXT
-                        )
+                        ModelModality.TEXT
+                )
                         : Set.copyOf(
-                                request.inputModalities()
-                        );
+                        request.inputModalities()
+                );
 
         Set<ModelModality> outputModalities =
                 request.outputModalities() == null
                         ? Set.of(
-                                ModelModality.TEXT
-                        )
+                        ModelModality.TEXT
+                )
                         : Set.copyOf(
-                                request.outputModalities()
-                        );
+                        request.outputModalities()
+                );
 
         ModelCatalogRules.validateCatalogSemantics(
                 request.lifecycle(),
@@ -311,6 +311,7 @@ public class ModelCatalogService {
                 entry
         );
     }
+
     /**
      * Bootstraps the catalog from the physical runtime without overstating
      * retention/training/specialized pricing metadata.
@@ -390,11 +391,10 @@ public class ModelCatalogService {
                 pricingComplete =
                         false;
             }
-            default ->
-                    throw new IllegalStateException(
-                            "Unsupported runtime pricing status: "
-                                    + runtimePricingStatus
-                    );
+            default -> throw new IllegalStateException(
+                    "Unsupported runtime pricing status: "
+                            + runtimePricingStatus
+            );
         }
 
         EnumSet<ModelCapability> capabilities =
@@ -498,19 +498,19 @@ public class ModelCatalogService {
 
         if (latest != null
                 && sameRuntimeSnapshot(
-                        latest,
-                        runtimeProvider,
-                        runtimeModel,
-                        runtime,
-                        capabilities,
-                        inputModalities,
-                        outputModalities,
-                        pricingStatus,
-                        pricingComplete,
-                        runtimeInputPrice,
-                        runtimeOutputPrice,
-                        runtimePricingVersion
-                )) {
+                latest,
+                runtimeProvider,
+                runtimeModel,
+                runtime,
+                capabilities,
+                inputModalities,
+                outputModalities,
+                pricingStatus,
+                pricingComplete,
+                runtimeInputPrice,
+                runtimeOutputPrice,
+                runtimePricingVersion
+        )) {
             return ModelCatalogEntryResponse.from(
                     latest
             );
@@ -584,21 +584,21 @@ public class ModelCatalogService {
             String pricingVersion
     ) {
         return latest.modelKey().equals(
-                        normalizeModelKey(
-                                provider
-                                        + ":"
-                                        + providerModelId
-                        )
-                )
-                && latest.provider().equals(
+                normalizeModelKey(
                         provider
+                                + ":"
+                                + providerModelId
                 )
+        )
+                && latest.provider().equals(
+                provider
+        )
                 && latest.providerModelId().equals(
-                        providerModelId
-                )
+                providerModelId
+        )
                 && latest.displayName().equals(
-                        providerModelId
-                )
+                providerModelId
+        )
                 && latest.lifecycle()
                 == ModelLifecycle.ACTIVE
                 && latest.maxInputTokens()
@@ -606,14 +606,14 @@ public class ModelCatalogService {
                 && latest.maxOutputTokens()
                 == runtime.maxOutputTokens()
                 && latest.capabilities().equals(
-                        capabilities
-                )
+                capabilities
+        )
                 && latest.inputModalities().equals(
-                        inputModalities
-                )
+                inputModalities
+        )
                 && latest.outputModalities().equals(
-                        outputModalities
-                )
+                outputModalities
+        )
                 && latest.retentionStatus()
                 == ModelRetentionStatus.NOT_DECLARED
                 && latest.retentionDays()
@@ -625,24 +625,24 @@ public class ModelCatalogService {
                 && latest.pricingComplete()
                 == pricingComplete
                 && moneyEquals(
-                        latest.inputUsdPer1mTokens(),
-                        inputPrice
-                )
+                latest.inputUsdPer1mTokens(),
+                inputPrice
+        )
                 && latest.cachedInputUsdPer1mTokens()
                 == null
                 && latest.cacheWriteInputUsdPer1mTokens()
                 == null
                 && moneyEquals(
-                        latest.outputUsdPer1mTokens(),
-                        outputPrice
-                )
+                latest.outputUsdPer1mTokens(),
+                outputPrice
+        )
                 && "{}".equals(
-                        latest.extraPricingJson()
-                )
+                latest.extraPricingJson()
+        )
                 && Objects.equals(
-                        latest.pricingVersion(),
-                        pricingVersion
-                );
+                latest.pricingVersion(),
+                pricingVersion
+        );
     }
 
     private static boolean moneyEquals(
@@ -662,13 +662,11 @@ public class ModelCatalogService {
             SafeAiUserPrincipal currentUser,
             ModelCatalogEntry entry
     ) {
-        audit.record(
+        audit.recordPrincipalSnapshot(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.MODEL_CATALOG_VERSION_CREATED,
-                ModelCatalogAuditDetailsFactory.create(
-                        entry
-                )
+                ModelCatalogAuditDetailsFactory.create(entry)
         );
     }
 

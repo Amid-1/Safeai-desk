@@ -606,7 +606,7 @@ class ModelRoutingServiceTest {
 
         verify(
                 audit
-        ).record(
+        ).recordPrincipalSnapshot(
                 same(principal),
                 eq(
                         ModelTestFixtures.ORGANIZATION_ID

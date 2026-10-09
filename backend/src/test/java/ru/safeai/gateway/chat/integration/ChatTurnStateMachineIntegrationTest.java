@@ -102,6 +102,7 @@ class ChatTurnStateMachineIntegrationTest
 
     @BeforeEach
     void preparePrimaryChat() {
+        adjustableClock().reset();
         resetModelControlPlaneFixture();
         alignChatTimestamps();
         assertOwnedChatVisible();
@@ -112,6 +113,7 @@ class ChatTurnStateMachineIntegrationTest
 
     @AfterEach
     void clearModelControlPlaneFixture() {
+        adjustableClock().reset();
         resetModelControlPlaneFixture();
     }
 
@@ -182,7 +184,7 @@ class ChatTurnStateMachineIntegrationTest
                 now.minusSeconds(120)
         );
 
-        modelCatalogRepository.insert(catalogEntry);
+        modelCatalogRepository.insert(catalogEntry, "FLAT_TOKEN_V1");
 
         assertThat(modelCatalogRepository.findEffectiveByRuntime(
                 runtime.provider(),
@@ -1079,52 +1081,90 @@ class ChatTurnStateMachineIntegrationTest
         );
     }
 
-    private void expire(
-            UUID turnId
-    ) {
-        Instant now =
-                clock.instant();
+    /**
+     * Time-based recovery must be simulated by advancing the injected test
+     * clock, not by writing an invalid PROCESSING row. V67 requires
+     * lease_until > updated_at; it also protects immutable turn identity.
+     * <p>
+     * The persisted lease, provider-call marker, fencing token and identity
+     * must remain unchanged until the production recovery code runs.
+     */
+    private void expire(UUID turnId) {
+        Instant now = clock.instant();
 
-        Instant createdAt =
-                now.minusSeconds(20);
-
-        Instant updatedAt =
-                now.minusSeconds(10);
-
-        Instant providerCallStartedAt =
-                now.minusSeconds(5);
-
-        Instant leaseUntil =
-                now.minusSeconds(1);
-
-        int updated = jdbcTemplate.update(
-                """
-                update public.chat_turns
-                   set created_at = ?,
-                       updated_at = ?,
-                       lease_until = ?,
-                       provider_call_started_at =
-                           case
-                               when provider_call_started_at is null
-                                   then cast(null as timestamptz)
-                               else cast(? as timestamptz)
-                           end
-                 where id = ?
-                """,
-                Timestamp.from(createdAt),
-                Timestamp.from(updatedAt),
-                Timestamp.from(leaseUntil),
-                Timestamp.from(providerCallStartedAt),
-                turnId
+        ExpiredTurnLeaseEvidence before = Objects.requireNonNull(
+                jdbcTemplate.queryForObject(
+                        """
+                        select created_at, updated_at, provider_call_started_at,
+                               state, processing_token, lease_until
+                        from public.chat_turns
+                        where id = ?
+                        """,
+                        (rs, row) -> new ExpiredTurnLeaseEvidence(
+                                rs.getTimestamp("created_at").toInstant(),
+                                rs.getTimestamp("updated_at").toInstant(),
+                                rs.getTimestamp("provider_call_started_at") == null
+                                        ? null
+                                        : rs.getTimestamp("provider_call_started_at").toInstant(),
+                                rs.getString("state"),
+                                rs.getObject("processing_token", UUID.class),
+                                rs.getTimestamp("lease_until").toInstant()
+                        ),
+                        turnId
+                ),
+                "PROCESSING ChatTurn must exist before simulating expiration"
         );
 
-        assertThat(updated)
-                .as(
-                        "Должен быть состарен один chat turn: turnId=%s",
+        assertThat(before.state()).isEqualTo("PROCESSING");
+        assertThat(before.processingToken()).isNotNull();
+        assertThat(before.leaseUntil()).isAfter(before.updatedAt());
+        assertThat(before.leaseUntil()).isAfter(now);
+
+        adjustableClock().advanceTo(before.leaseUntil().plusSeconds(1));
+
+        assertThat(clock.instant()).isAfter(before.leaseUntil());
+
+        ExpiredTurnLeaseEvidence after = Objects.requireNonNull(
+                jdbcTemplate.queryForObject(
+                        """
+                        select created_at, updated_at, provider_call_started_at,
+                               state, processing_token, lease_until
+                        from public.chat_turns
+                        where id = ?
+                        """,
+                        (rs, row) -> new ExpiredTurnLeaseEvidence(
+                                rs.getTimestamp("created_at").toInstant(),
+                                rs.getTimestamp("updated_at").toInstant(),
+                                rs.getTimestamp("provider_call_started_at") == null
+                                        ? null
+                                        : rs.getTimestamp("provider_call_started_at").toInstant(),
+                                rs.getString("state"),
+                                rs.getObject("processing_token", UUID.class),
+                                rs.getTimestamp("lease_until").toInstant()
+                        ),
                         turnId
-                )
-                .isEqualTo(1);
+                ),
+                "ChatTurn must remain present after advancing the test clock"
+        );
+
+        assertThat(after).isEqualTo(before);
     }
+
+    private ChatIntegrationClockConfiguration.AdjustableClock adjustableClock() {
+        assertThat(clock)
+                .as("Chat state-machine recovery tests require an adjustable test Clock")
+                .isInstanceOf(ChatIntegrationClockConfiguration.AdjustableClock.class);
+        return (ChatIntegrationClockConfiguration.AdjustableClock) clock;
+    }
+
+    private record ExpiredTurnLeaseEvidence(
+            Instant createdAt,
+            Instant updatedAt,
+            Instant providerCallStartedAt,
+            String state,
+            UUID processingToken,
+            Instant leaseUntil
+    ) { }
 
     private static AiProviderException
     unambiguousProviderFailure() {

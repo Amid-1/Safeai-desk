@@ -387,7 +387,7 @@ class UserManagementPostgresIntegrationTest
     }
 
     @Test
-    void auditDependencyBlocksPermanentDeletion() {
+    void auditEvidenceSurvivesUserDeletionAndLiveLinkIsRemoved() {
         DeletionFixture fixture = disabledUserFixture("audit@test.com");
         insertAuditDependency(
                 fixture.userId(),
@@ -395,7 +395,48 @@ class UserManagementPostgresIntegrationTest
                 fixture.email()
         );
 
-        assertDeletionConflict(fixture, "связанные данные");
+        Long evidenceBefore = jdbcTemplate.queryForObject("""
+                select count(*)
+                from public.audit_events
+                where actor_user_id = ?
+                  and actor_organization_id = ?
+                  and actor_email = ?
+                """, Long.class,
+                fixture.userId(), fixture.organizationId(), fixture.email());
+        assertThat(evidenceBefore).isEqualTo(1L);
+
+        Long liveLinksBefore = jdbcTemplate.queryForObject("""
+                select count(*)
+                from public.audit_event_user_links
+                where user_id = ?
+                """, Long.class, fixture.userId());
+        assertThat(liveLinksBefore).isEqualTo(1L);
+
+        userService.permanentlyDelete(
+                fixture.userId(),
+                new PermanentDeleteUserRequest(fixture.email(), 0L),
+                superAdminPrincipal()
+        );
+
+        assertThat(userExists(fixture.userId())).isFalse();
+
+        Long evidenceAfter = jdbcTemplate.queryForObject("""
+                select count(*)
+                from public.audit_events
+                where actor_user_id = ?
+                  and actor_organization_id = ?
+                  and actor_email = ?
+                  and event_type = 'USER_CREATED'
+                """, Long.class,
+                fixture.userId(), fixture.organizationId(), fixture.email());
+        assertThat(evidenceAfter).isEqualTo(1L);
+
+        Long liveLinksAfter = jdbcTemplate.queryForObject("""
+                select count(*)
+                from public.audit_event_user_links
+                where user_id = ?
+                """, Long.class, fixture.userId());
+        assertThat(liveLinksAfter).isZero();
     }
 
     @Test

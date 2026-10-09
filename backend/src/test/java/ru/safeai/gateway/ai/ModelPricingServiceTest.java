@@ -16,176 +16,292 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Tag("unit")
 class ModelPricingServiceTest {
 
     private static final Instant NOW =
-            Instant.parse("2026-07-12T12:00:00Z");
+            Instant.parse(
+                    "2026-07-12T12:00:00Z"
+            );
 
     @Test
     void calculatesVersionedPriceAtScaleTwelve() {
-        PricingResult result = service(List.of(
-                price("gpt-snapshot", "2.00", "8.00", "v1")
-        )).calculate(
-                "gpt-snapshot",
-                1_000_000,
-                500_000,
-                UsageStatus.AVAILABLE
+        PricingResult result =
+                service(
+                        List.of(
+                                price(
+                                        "gpt-snapshot",
+                                        "2.00",
+                                        "8.00",
+                                        "v1"
+                                )
+                        )
+                ).calculate(
+                        "gpt-snapshot",
+                        1_000_000,
+                        500_000,
+                        UsageStatus.AVAILABLE
+                );
+
+        assertThat(
+                result.status()
+        ).isEqualTo(
+                PricingStatus.PRICED
         );
 
-        assertThat(result.status()).isEqualTo(PricingStatus.PRICED);
-        assertThat(result.costUsd())
-                .isEqualByComparingTo("6.000000000000");
-        assertThat(result.costUsd().scale()).isEqualTo(12);
+        assertThat(
+                result.costUsd()
+        ).isEqualByComparingTo(
+                "6.000000000000"
+        );
+
+        assertThat(
+                result.costUsd().scale()
+        ).isEqualTo(
+                12
+        );
     }
 
     @Test
     void verySmallNonZeroCostIsNotLostAtScaleSix() {
-        PricingResult result = service(List.of(
-                price("tiny", "0.20", "0", "tiny-v1")
-        )).calculate(
-                "tiny",
-                1,
-                0,
-                UsageStatus.AVAILABLE
+        PricingResult result =
+                service(
+                        List.of(
+                                price(
+                                        "tiny",
+                                        "0.20",
+                                        "0",
+                                        "tiny-v1"
+                                )
+                        )
+                ).calculate(
+                        "tiny",
+                        1,
+                        0,
+                        UsageStatus.AVAILABLE
+                );
+
+        assertThat(
+                result.status()
+        ).isEqualTo(
+                PricingStatus.PRICED
         );
 
-        assertThat(result.status()).isEqualTo(PricingStatus.PRICED);
-        assertThat(result.costUsd())
-                .isEqualByComparingTo("0.000000200000");
-        assertThat(result.costUsd()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(
+                result.costUsd()
+        ).isEqualByComparingTo(
+                "0.000000200000"
+        );
+
+        assertThat(
+                result.costUsd()
+        ).isGreaterThan(
+                BigDecimal.ZERO
+        );
     }
 
     @Test
     void specializedCachedInputIsUnpricedInsteadOfApproximatelyPriced() {
-        ModelPricingService service = service(List.of(
-                price("gpt-snapshot", "2", "8", "v1")
-        ));
+        ModelPricingService service =
+                service(
+                        List.of(
+                                price(
+                                        "gpt-snapshot",
+                                        "2",
+                                        "8",
+                                        "v1"
+                                )
+                        )
+                );
 
-        PricingResult result = service.calculate(
-                "gpt-snapshot",
-                new AiTokenUsage(
-                        20_000,
-                        15_000,
-                        null,
-                        1_000,
-                        true,
-                        true
-                )
+        PricingResult result =
+                service.calculate(
+                        "gpt-snapshot",
+                        new AiTokenUsage(
+                                20_000,
+                                15_000,
+                                null,
+                                1_000,
+                                true,
+                                true
+                        )
+                );
+
+        assertThat(
+                result.status()
+        ).isEqualTo(
+                PricingStatus.UNPRICED
         );
 
-        assertThat(result.status())
-                .isEqualTo(PricingStatus.UNPRICED);
+        assertThat(
+                result.costUsd()
+        ).isNull();
 
-        assertThat(result.costUsd())
-                .isNull();
+        assertThat(
+                result.currency()
+        ).isNull();
 
-        assertThat(result.currency())
-                .isNull();
-
-        assertThat(result.priceVersion())
-                .isNull();
+        assertThat(
+                result.priceVersion()
+        ).isNull();
     }
 
     @Test
     void cacheWriteInputIsUnpricedInsteadOfApproximatelyPriced() {
-        ModelPricingService service = service(List.of(
-                price("gpt-snapshot", "2", "8", "v1")
-        ));
+        ModelPricingService service =
+                service(
+                        List.of(
+                                price(
+                                        "gpt-snapshot",
+                                        "2",
+                                        "8",
+                                        "v1"
+                                )
+                        )
+                );
 
-        PricingResult result = service.calculate(
-                "gpt-snapshot",
-                new AiTokenUsage(
-                        20_000,
-                        null,
-                        5_000,
-                        1_000,
-                        true,
-                        true
-                )
+        PricingResult result =
+                service.calculate(
+                        "gpt-snapshot",
+                        new AiTokenUsage(
+                                20_000,
+                                null,
+                                5_000,
+                                1_000,
+                                true,
+                                true
+                        )
+                );
+
+        assertThat(
+                result.status()
+        ).isEqualTo(
+                PricingStatus.UNPRICED
         );
 
-        assertThat(result.status())
-                .isEqualTo(PricingStatus.UNPRICED);
-
-        assertThat(result.costUsd())
-                .isNull();
+        assertThat(
+                result.costUsd()
+        ).isNull();
     }
 
     @Test
     void malformedSpecializedBillingMetadataFailsClosed() {
-        ModelPricingService service = service(List.of(
-                price("gpt-snapshot", "2", "8", "v1")
-        ));
+        ModelPricingService service =
+                service(
+                        List.of(
+                                price(
+                                        "gpt-snapshot",
+                                        "2",
+                                        "8",
+                                        "v1"
+                                )
+                        )
+                );
 
-        PricingResult result = service.calculate(
-                "gpt-snapshot",
-                new AiTokenUsage(
-                        20_000,
-                        null,
-                        null,
-                        1_000,
-                        true,
-                        false
-                )
+        PricingResult result =
+                service.calculate(
+                        "gpt-snapshot",
+                        new AiTokenUsage(
+                                20_000,
+                                null,
+                                null,
+                                1_000,
+                                true,
+                                false
+                        )
+                );
+
+        assertThat(
+                result.status()
+        ).isEqualTo(
+                PricingStatus.CALCULATION_FAILED
         );
 
-        assertThat(result.status())
-                .isEqualTo(PricingStatus.CALCULATION_FAILED);
-
-        assertThat(result.costUsd())
-                .isNull();
+        assertThat(
+                result.costUsd()
+        ).isNull();
     }
 
     @Test
     void zeroSpecializedBillingCountersCanStillUseFlatPrice() {
-        ModelPricingService service = service(List.of(
-                price("gpt-snapshot", "2", "8", "v1")
-        ));
+        ModelPricingService service =
+                service(
+                        List.of(
+                                price(
+                                        "gpt-snapshot",
+                                        "2",
+                                        "8",
+                                        "v1"
+                                )
+                        )
+                );
 
-        PricingResult result = service.calculate(
-                "gpt-snapshot",
-                new AiTokenUsage(
-                        1_000,
-                        0,
-                        0,
-                        500,
-                        true,
-                        true
-                )
+        PricingResult result =
+                service.calculate(
+                        "gpt-snapshot",
+                        new AiTokenUsage(
+                                1_000,
+                                0,
+                                0,
+                                500,
+                                true,
+                                true
+                        )
+                );
+
+        assertThat(
+                result.status()
+        ).isEqualTo(
+                PricingStatus.PRICED
         );
 
-        assertThat(result.status())
-                .isEqualTo(PricingStatus.PRICED);
-
-        assertThat(result.costUsd())
-                .isEqualByComparingTo("0.006000000000");
+        assertThat(
+                result.costUsd()
+        ).isEqualByComparingTo(
+                "0.006000000000"
+        );
     }
 
     @Test
     void actualModelWithoutExactRuleIsUnpriced() {
-        PricingResult result = service(List.of(
-                price("gpt-alias", "2", "8", "alias-v1")
-        )).calculate(
-                "gpt-snapshot",
-                10,
-                20,
-                UsageStatus.AVAILABLE
+        PricingResult result =
+                service(
+                        List.of(
+                                price(
+                                        "gpt-alias",
+                                        "2",
+                                        "8",
+                                        "alias-v1"
+                                )
+                        )
+                ).calculate(
+                        "gpt-snapshot",
+                        10,
+                        20,
+                        UsageStatus.AVAILABLE
+                );
+
+        assertThat(
+                result.status()
+        ).isEqualTo(
+                PricingStatus.UNPRICED
         );
 
-        assertThat(result.status()).isEqualTo(PricingStatus.UNPRICED);
-        assertThat(result.costUsd()).isNull();
+        assertThat(
+                result.costUsd()
+        ).isNull();
     }
 
     @Test
-    void negativeSpecializedCounterFailsClosed() {
-        ModelPricingService service = service(List.of(
-                price("gpt-snapshot", "2", "8", "v1")
-        ));
-
-        PricingResult result = service.calculate(
-                "gpt-snapshot",
+    void negativeSpecializedCounterIsRejectedAtUsageBoundary() {
+        /*
+         * AiTokenUsage is the canonical provider-usage snapshot.
+         * Negative counters are structurally invalid and are rejected before
+         * pricing. ModelPricingService must never receive such an object.
+         */
+        assertThatThrownBy(() ->
                 new AiTokenUsage(
                         1_000,
                         -1,
@@ -194,54 +310,98 @@ class ModelPricingServiceTest {
                         true,
                         true
                 )
-        );
-
-        assertThat(result.status())
-                .isEqualTo(PricingStatus.CALCULATION_FAILED);
+        )
+                .isInstanceOf(
+                        IllegalArgumentException.class
+                )
+                .hasMessageContaining(
+                        "cachedInputTokens"
+                )
+                .hasMessageContaining(
+                        "не может быть отрицательным"
+                );
     }
 
     @Test
     void configuredZeroPriceIsFree() {
-        PricingResult result = service(List.of(
-                price("mock-safeai", "0", "0", "mock-v1")
-        )).calculate(
-                "mock-safeai",
-                10,
-                20,
-                UsageStatus.AVAILABLE
+        PricingResult result =
+                service(
+                        List.of(
+                                price(
+                                        "mock-safeai",
+                                        "0",
+                                        "0",
+                                        "mock-v1"
+                                )
+                        )
+                ).calculate(
+                        "mock-safeai",
+                        10,
+                        20,
+                        UsageStatus.AVAILABLE
+                );
+
+        assertThat(
+                result.status()
+        ).isEqualTo(
+                PricingStatus.FREE
         );
 
-        assertThat(result.status()).isEqualTo(PricingStatus.FREE);
-        assertThat(result.costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(
+                result.costUsd()
+        ).isEqualByComparingTo(
+                BigDecimal.ZERO
+        );
     }
 
     @Test
     void missingOrPartialUsageIsUnpriced() {
-        ModelPricingService service = service(List.of(
-                price("gpt", "2", "8", "v1")
-        ));
+        ModelPricingService service =
+                service(
+                        List.of(
+                                price(
+                                        "gpt",
+                                        "2",
+                                        "8",
+                                        "v1"
+                                )
+                        )
+                );
 
-        assertThat(service.calculate(
-                "gpt",
-                null,
-                null,
-                UsageStatus.MISSING
-        ).status()).isEqualTo(PricingStatus.UNPRICED);
+        assertThat(
+                service.calculate(
+                        "gpt",
+                        null,
+                        null,
+                        UsageStatus.MISSING
+                ).status()
+        ).isEqualTo(
+                PricingStatus.UNPRICED
+        );
 
-        assertThat(service.calculate(
-                "gpt",
-                10,
-                null,
-                UsageStatus.PARTIAL
-        ).status()).isEqualTo(PricingStatus.UNPRICED);
+        assertThat(
+                service.calculate(
+                        "gpt",
+                        10,
+                        null,
+                        UsageStatus.PARTIAL
+                ).status()
+        ).isEqualTo(
+                PricingStatus.UNPRICED
+        );
     }
 
     private ModelPricingService service(
             List<ModelPricingProperties.ModelPrice> prices
     ) {
         return new ModelPricingService(
-                new ModelPricingProperties(prices),
-                Clock.fixed(NOW, ZoneOffset.UTC)
+                new ModelPricingProperties(
+                        prices
+                ),
+                Clock.fixed(
+                        NOW,
+                        ZoneOffset.UTC
+                )
         );
     }
 
@@ -253,8 +413,12 @@ class ModelPricingServiceTest {
     ) {
         return new ModelPricingProperties.ModelPrice(
                 model,
-                new BigDecimal(input),
-                new BigDecimal(output),
+                new BigDecimal(
+                        input
+                ),
+                new BigDecimal(
+                        output
+                ),
                 "USD",
                 version
         );

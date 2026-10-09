@@ -136,11 +136,11 @@ public class ChatService {
         );
         ChatSessionEntity saved = sessionRepository.saveAndFlush(session);
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.CHAT_CREATED,
-                Map.of(
+                () -> Map.of(
                         "chatId", saved.getId(),
                         "titleLength", saved.getTitle().length(),
                         "defaultTitle", request.title() == null || request.title().isBlank()
@@ -178,11 +178,11 @@ public class ChatService {
         session.archive(currentUser.getId(), archivedAt);
         sessionRepository.saveAndFlush(session);
 
-        auditEventService.record(
+        auditEventService.recordPrincipalSnapshot(
                 currentUser,
                 currentUser.getOrganizationId(),
                 AuditEventType.CHAT_ARCHIVED,
-                Map.of(
+                () -> Map.of(
                         "chatId", session.getId(),
                         "archivedAt", archivedAt.toString(),
                         "retentionMode", "AUDIT_PRESERVED"

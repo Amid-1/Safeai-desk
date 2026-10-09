@@ -18,6 +18,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.audit.service.AuditOutboxScheduler;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -43,7 +44,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 
@@ -378,11 +378,11 @@ class KnowledgeS3EndToEndIntegrationTest
         // and the separately committed durable journal state STORED.
         doThrow(new IllegalStateException("audit write failed"))
                 .when(auditEventService)
-                .record(
+                .recordPrincipalSnapshot(
                         any(SafeAiUserPrincipal.class),
                         eq(organizationId),
                         eq(AuditEventType.KNOWLEDGE_DOCUMENT_VERSION_UPLOADED),
-                        anyMap()
+                        any(AuditDetails.class)
                 );
 
         byte[] payload = "rollback payload".getBytes(StandardCharsets.UTF_8);

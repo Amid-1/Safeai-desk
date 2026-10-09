@@ -2,6 +2,7 @@ package ru.safeai.gateway.ai.execution;
 
 import org.junit.jupiter.api.Test;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
+import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 
@@ -21,6 +22,7 @@ class AiExecutionAttemptScopeTest {
         AiExecutionAttemptObserver observer = mock(AiExecutionAttemptObserver.class);
         AiProviderAttemptContext attempt = attempt(1);
         AiChatResponse response = mock(AiChatResponse.class);
+
         assertThat(scope.execute(OPERATION, observer, () -> {
             scope.started(attempt);
             assertThat(scope.hasActiveAttempt(attempt)).isTrue();
@@ -28,6 +30,7 @@ class AiExecutionAttemptScopeTest {
             assertThat(scope.hasActiveAttempt(attempt)).isFalse();
             return response;
         })).isSameAs(response);
+
         verify(observer).started(attempt);
         verify(observer).succeeded(attempt, response);
         verify(observer, never()).failed(any(), any());
@@ -44,6 +47,7 @@ class AiExecutionAttemptScopeTest {
         doThrow(new IllegalStateException("commit acknowledgement lost"))
                 .when(observer).succeeded(attempt, response);
         AtomicInteger physicalCalls = new AtomicInteger();
+
         assertThatThrownBy(() -> scope.execute(OPERATION, observer, () -> {
             scope.started(attempt);
             physicalCalls.incrementAndGet();
@@ -51,6 +55,7 @@ class AiExecutionAttemptScopeTest {
             return response;
         })).isInstanceOf(PhysicalAttemptReconciliationRequiredException.class)
                 .hasCauseInstanceOf(IllegalStateException.class);
+
         assertThat(physicalCalls).hasValue(1);
         assertThat(scope.active()).isFalse();
         verify(observer, never()).failed(any(), any());
@@ -65,11 +70,13 @@ class AiExecutionAttemptScopeTest {
         AiChatResponse response = mock(AiChatResponse.class);
         doThrow(new ResolvedModelMismatchException("openai", "gpt-5", "gpt-6", "req"))
                 .when(observer).succeeded(attempt, response);
+
         assertThatThrownBy(() -> scope.execute(OPERATION, observer, () -> {
             scope.started(attempt);
             scope.succeeded(attempt, response);
             return response;
         })).isInstanceOf(ResolvedModelMismatchException.class);
+
         verify(observer, never()).failed(any(), any());
         verify(observer, never()).ambiguous(any(), any());
         assertThat(scope.active()).isFalse();
@@ -82,17 +89,22 @@ class AiExecutionAttemptScopeTest {
         AiProviderAttemptContext first = attempt(1);
         AiProviderAttemptContext second = attempt(2);
         AiChatResponse response = mock(AiChatResponse.class);
+
         assertThat(scope.execute(OPERATION, observer, () -> {
             scope.started(first);
             assertThatThrownBy(() -> scope.started(second))
-                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("not terminal");
-            scope.failed(first, new AiProviderException("openai", "gpt-5", 429, "req",
-                    ru.safeai.gateway.ai.exception.AiProviderErrorType.RATE_LIMITED,
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("not terminal");
+            scope.failed(first, new AiProviderException(
+                    "openai", "gpt-5", 429, "req",
+                    AiProviderErrorType.RATE_LIMITED,
                     true, false, null, "rate limited", null));
             assertThatThrownBy(() -> scope.started(first))
-                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("sequentially");
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("sequentially");
             return response;
         })).isSameAs(response);
+
         verify(observer).started(first);
         verify(observer, never()).started(second);
         assertThat(scope.active()).isFalse();
@@ -102,13 +114,41 @@ class AiExecutionAttemptScopeTest {
     void hardCapIsVisibleToRetryExecutorAndScopeCannotBeNested() {
         AiExecutionAttemptScope scope = new AiExecutionAttemptScope();
         AiExecutionAttemptObserver observer = mock(AiExecutionAttemptObserver.class);
-        assertThat(scope.permittedMaxAttempts(3)).isEqualTo(3);
+
+        // Fail closed: checking the physical-attempt cap requires governed execution.
+        assertThatThrownBy(() -> scope.permittedMaxAttempts(3))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No governed AI execution scope is active");
+
         assertThatThrownBy(() -> scope.execute(OPERATION, observer, 1, () -> {
             assertThat(scope.permittedMaxAttempts(3)).isEqualTo(1);
-            return scope.execute(OPERATION, observer, () -> mock(AiChatResponse.class));
-        })).isInstanceOf(IllegalStateException.class).hasMessageContaining("Nested");
+            assertThat(scope.permittedMaxAttempts(1)).isEqualTo(1);
+            return scope.execute(OPERATION, observer,
+                    () -> mock(AiChatResponse.class));
+        })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Nested");
+
         assertThat(scope.active()).isFalse();
-        assertThat(scope.permittedMaxAttempts(3)).isEqualTo(3);
+        assertThatThrownBy(() -> scope.permittedMaxAttempts(3))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No governed AI execution scope is active");
+        verifyNoInteractions(observer);
+    }
+
+    @Test
+    void rejectsWrongOperationAndClearsScopeAfterFailure() {
+        AiExecutionAttemptScope scope = new AiExecutionAttemptScope();
+        AiExecutionAttemptObserver observer = mock(AiExecutionAttemptObserver.class);
+        UUID otherOperation = UUID.randomUUID();
+
+        assertThatThrownBy(() -> scope.execute(OPERATION, observer, () -> {
+            scope.requireActive(otherOperation);
+            return mock(AiChatResponse.class);
+        })).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("does not match");
+
+        assertThat(scope.active()).isFalse();
+        verifyNoInteractions(observer);
     }
 
     private static AiProviderAttemptContext attempt(int number) {

@@ -19,15 +19,24 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 90s
 
+  # A single scheduler thread would let one slow maintenance task delay all
+  # other jobs. ProductionSecurityInvariantValidator enforces size >= 2.
+  task:
+    scheduling:
+      pool:
+        size: ${SAFEAI_SCHEDULING_POOL_SIZE:4}
+
 server:
   shutdown: graceful
+
   # Forwarded headers are intentionally not applied by Spring.
   # ClientIpResolver validates X-Forwarded-For against trusted proxy CIDRs.
   forward-headers-strategy: none
 
 management:
-  # Production invariant: Actuator listens on a dedicated internal interface.
-  # No fallback is intentional: a misconfigured deployment must fail fast.
+  # Actuator listens on a dedicated INTERNAL interface in production.
+  # ProductionSecurityInvariantValidator rejects public/wildcard addresses.
+  # Firewall / security-group / Kubernetes NetworkPolicy is still required.
   server:
     port: ${SAFEAI_MANAGEMENT_PORT}
     address: ${SAFEAI_MANAGEMENT_ADDRESS}
@@ -64,8 +73,12 @@ logging:
 # RSA key-ring material is intentionally not declared here.
 # Production supplies it through deployment secret configuration.
 safeai:
+  # Canonical production marker. Keep it fixed in the production profile
+  # rather than allowing an environment override to downgrade the mode.
+  environment: production
+
   ai:
-    # Required in production. AiProductionConfigurationValidator also rejects mock.
+    # Required in production. AiProductionConfigurationValidator rejects mock.
     provider: ${SAFEAI_AI_PROVIDER}
 
   knowledge:
@@ -83,7 +96,18 @@ safeai:
 
   auth:
     cookies:
-      secure: ${SAFEAI_AUTH_COOKIES_SECURE:true}
+      # Production browser auth is HTTPS-only.
+      secure: true
+
+      # ProductionAuthCookieInvariantValidator rejects a non-empty Domain.
+      # Host-only cookies are required for the hardened cookie policy.
+      domain: ""
+
+      # Blank values intentionally delegate naming to AuthCookieProperties:
+      # access -> hardened __Host-* name when Secure=true and Domain is absent;
+      # refresh -> hardened secure-prefixed name according to its contract.
+      access-token-name: ""
+      refresh-token-name: ""
 
   rate-limit:
     redis:
@@ -94,13 +118,19 @@ safeai:
     client-ip:
       trusted-proxy-cidrs: ${SAFEAI_SECURITY_CLIENT_IP_TRUSTED_PROXY_CIDRS:172.28.0.10/32}
 
+    # Migration compatibility must be an explicit production decision.
+    # Switch to false when legacy unprefixed bcrypt rows reach zero.
+    password:
+      allow-legacy-unprefixed-bcrypt: ${SAFEAI_SECURITY_PASSWORD_ALLOW_LEGACY_UNPREFIXED_BCRYPT}
+
     # PostgreSQL remains the security-state source of truth in production.
     user-status-cache:
       enabled: ${SAFEAI_USER_STATUS_CACHE_ENABLED:false}
       ttl: ${SAFEAI_USER_STATUS_CACHE_TTL:15s}
       key-prefix: ${SAFEAI_USER_STATUS_CACHE_KEY_PREFIX:safeai:prod:user-status}
 
-    # HSTS is emitted by the external TLS terminator / reverse proxy.
+    # HSTS is emitted by the trusted TLS edge / reverse proxy.
+    # Keep application-managed HSTS disabled in this deployment.
     hsts:
       enabled: ${SAFEAI_HSTS_ENABLED:false}
 

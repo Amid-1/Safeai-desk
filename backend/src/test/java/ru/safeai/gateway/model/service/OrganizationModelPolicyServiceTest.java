@@ -476,7 +476,7 @@ class OrganizationModelPolicyServiceTest {
     private AuditDetails requirePolicyCreatedAuditDetails(
             SafeAiUserPrincipal principal
     ) {
-        verify(audit).record(
+        verify(audit).recordPrincipalSnapshot(
                 same(principal),
                 eq(ModelTestFixtures.ORGANIZATION_ID),
                 eq(AuditEventType.MODEL_POLICY_VERSION_CREATED),
@@ -488,7 +488,7 @@ class OrganizationModelPolicyServiceTest {
                         .getInvocations()
                         .stream()
                         .filter(invocation ->
-                                "record".equals(
+                                "recordPrincipalSnapshot".equals(
                                         invocation.getMethod().getName()
                                 )
                         )

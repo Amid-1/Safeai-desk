@@ -4,5 +4,6 @@ public enum ExecutionAttemptOutcome {
     STARTED,
     SUCCEEDED,
     FAILED,
-    AMBIGUOUS
+    AMBIGUOUS,
+    PROTOCOL_REJECTED
 }

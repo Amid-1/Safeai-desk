@@ -12,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
@@ -160,11 +161,11 @@ class KnowledgeBaseServiceTest {
         assertThat(captor.getValue().getKnowledgeBaseId()).isEqualTo(KB_ID);
         assertThat(captor.getValue().getAccessLevel()).isEqualTo(KnowledgeBaseAccessLevel.OWNER);
 
-        verify(auditEventService).record(
+        verify(auditEventService).recordPrincipalSnapshot(
                 any(SafeAiUserPrincipal.class),
                 eq(ORGANIZATION_ID),
                 eq(AuditEventType.KNOWLEDGE_BASE_CREATED),
-                anyMap()
+                isA(AuditDetails.class)
         );
     }
 
@@ -320,11 +321,11 @@ class KnowledgeBaseServiceTest {
 
         verify(membershipRepository).delete(membership);
         verify(membershipRepository).flush();
-        verify(auditEventService).record(
+        verify(auditEventService).recordPrincipalSnapshot(
                 any(SafeAiUserPrincipal.class),
                 eq(ORGANIZATION_ID),
                 eq(AuditEventType.KNOWLEDGE_BASE_MEMBER_REMOVED),
-                anyMap()
+                isA(AuditDetails.class)
         );
     }
 
@@ -379,3 +380,4 @@ class KnowledgeBaseServiceTest {
         );
     }
 }
+

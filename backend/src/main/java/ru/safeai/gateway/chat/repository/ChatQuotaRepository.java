@@ -50,6 +50,10 @@ public class ChatQuotaRepository {
             for update
             """;
 
+    // V67 reservation format version. Never infer that a configured reservation
+    // amount is a cryptographically or economically verified provider price.
+    private static final int INITIAL_RESERVATION_VERSION = 1;
+
     private static final String INSERT_RESERVATION_SQL = """
             insert into chat_quota_reservations (
                 turn_id,
@@ -57,6 +61,8 @@ public class ChatQuotaRepository {
                 user_id,
                 period_start,
                 state,
+                reservation_version,
+                cost_verifiable,
                 reserved_input_tokens,
                 reserved_output_tokens,
                 reserved_cost_usd,
@@ -68,6 +74,8 @@ public class ChatQuotaRepository {
                 ?,
                 ?,
                 'RESERVED',
+                ?,
+                ?,
                 ?,
                 ?,
                 ?,
@@ -327,20 +335,24 @@ public class ChatQuotaRepository {
                 "now не должен быть null"
         );
 
-        Timestamp timestamp = Timestamp.from(now);
+        Timestamp timestamp =
+                Timestamp.from(now);
 
-        int updated = jdbcTemplate.update(
-                INSERT_RESERVATION_SQL,
-                turnId,
-                organizationId,
-                userId,
-                Date.valueOf(periodStart),
-                properties.reservationInputTokens(),
-                properties.reservationOutputTokens(),
-                properties.reservationCostUsd(),
-                timestamp,
-                timestamp
-        );
+        int updated =
+                jdbcTemplate.update(
+                        INSERT_RESERVATION_SQL,
+                        turnId,
+                        organizationId,
+                        userId,
+                        Date.valueOf(periodStart),
+                        INITIAL_RESERVATION_VERSION,
+                        false, // Fail-closed: no verified route/price evidence is supplied here.
+                        properties.reservationInputTokens(),
+                        properties.reservationOutputTokens(),
+                        properties.reservationCostUsd(),
+                        timestamp,
+                        timestamp
+                );
 
         requireExactlyOneUpdate(
                 updated,
@@ -370,22 +382,26 @@ public class ChatQuotaRepository {
         );
 
         ChatQuotaReservationState reservationState =
-                resolveSuccessfulReservationState(response);
+                resolveSuccessfulReservationState(
+                        response
+                );
 
-        Timestamp timestamp = Timestamp.from(now);
+        Timestamp timestamp =
+                Timestamp.from(now);
 
-        int updated = jdbcTemplate.update(
-                SETTLE_SUCCESS_SQL,
-                reservationState.name(),
-                response.inputTokens(),
-                response.outputTokens(),
-                response.costUsd(),
-                response.usageStatus().name(),
-                response.pricingStatus().name(),
-                timestamp,
-                timestamp,
-                turnId
-        );
+        int updated =
+                jdbcTemplate.update(
+                        SETTLE_SUCCESS_SQL,
+                        reservationState.name(),
+                        response.inputTokens(),
+                        response.outputTokens(),
+                        response.costUsd(),
+                        response.usageStatus().name(),
+                        response.pricingStatus().name(),
+                        timestamp,
+                        timestamp,
+                        turnId
+                );
 
         requireExactlyOneUpdate(
                 updated,
@@ -408,14 +424,16 @@ public class ChatQuotaRepository {
                 "now не должен быть null"
         );
 
-        Timestamp timestamp = Timestamp.from(now);
+        Timestamp timestamp =
+                Timestamp.from(now);
 
-        int updated = jdbcTemplate.update(
-                RELEASE_FAILURE_SQL,
-                timestamp,
-                timestamp,
-                turnId
-        );
+        int updated =
+                jdbcTemplate.update(
+                        RELEASE_FAILURE_SQL,
+                        timestamp,
+                        timestamp,
+                        turnId
+                );
 
         requireAtMostOneUpdate(
                 updated,
@@ -438,14 +456,16 @@ public class ChatQuotaRepository {
                 "now не должен быть null"
         );
 
-        Timestamp timestamp = Timestamp.from(now);
+        Timestamp timestamp =
+                Timestamp.from(now);
 
-        int updated = jdbcTemplate.update(
-                MARK_AMBIGUOUS_SQL,
-                timestamp,
-                timestamp,
-                turnId
-        );
+        int updated =
+                jdbcTemplate.update(
+                        MARK_AMBIGUOUS_SQL,
+                        timestamp,
+                        timestamp,
+                        turnId
+                );
 
         requireAtMostOneUpdate(
                 updated,
@@ -494,7 +514,7 @@ public class ChatQuotaRepository {
 
     private static ChatQuotaPolicy mapPolicy(
             ResultSet resultSet,
-            int rowNumber
+            int ignoredRowNumber
     ) throws SQLException {
         return new ChatQuotaPolicy(
                 resultSet.getBoolean("enabled"),
@@ -518,7 +538,7 @@ public class ChatQuotaRepository {
 
     private static ChatQuotaConsumption mapConsumption(
             ResultSet resultSet,
-            int rowNumber
+            int ignoredRowNumber
     ) throws SQLException {
         return new ChatQuotaConsumption(
                 resultSet.getLong("requests"),
@@ -551,7 +571,8 @@ public class ChatQuotaRepository {
             ResultSet resultSet,
             String column
     ) throws SQLException {
-        long value = resultSet.getLong(column);
+        long value =
+                resultSet.getLong(column);
 
         return resultSet.wasNull()
                 ? null

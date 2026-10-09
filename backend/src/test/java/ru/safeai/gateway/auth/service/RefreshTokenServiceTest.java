@@ -41,13 +41,19 @@ import static org.mockito.Mockito.when;
 class RefreshTokenServiceTest {
 
     private static final Instant NOW =
-            Instant.parse("2026-06-12T12:00:00Z");
+            Instant.parse(
+                    "2026-06-12T12:00:00Z"
+            );
 
     private static final Duration IDLE_MAX_AGE =
-            Duration.ofDays(30);
+            Duration.ofDays(
+                    30
+            );
 
     private static final Duration ABSOLUTE_MAX_AGE =
-            Duration.ofDays(90);
+            Duration.ofDays(
+                    90
+            );
 
     @Mock
     private RefreshTokenRepository refreshTokenRepository;
@@ -61,28 +67,46 @@ class RefreshTokenServiceTest {
     @Mock
     private AuthCookieProperties authCookieProperties;
 
+    @Mock
+    private RefreshReuseAuditService refreshReuseAuditService;
+
     private RefreshTokenService service;
 
     @BeforeEach
     void setUp() {
-        service = new RefreshTokenService(
-                refreshTokenRepository,
-                userRepository,
-                clientIpResolver,
-                authCookieProperties,
-                Clock.fixed(NOW, ZoneOffset.UTC)
-        );
+        service =
+                new RefreshTokenService(
+                        refreshTokenRepository,
+                        userRepository,
+                        clientIpResolver,
+                        authCookieProperties,
+                        refreshReuseAuditService,
+                        Clock.fixed(
+                                NOW,
+                                ZoneOffset.UTC
+                        )
+                );
     }
 
     @Test
     void createForLoginStoresOnlyTokenHashAndFamilyMetadata() {
         stubRefreshTokenAgesForLogin();
 
-        UserEntity user = enabledUser(0L);
-        MockHttpServletRequest request = request();
+        UserEntity user =
+                enabledUser(
+                        0L
+                );
 
-        when(clientIpResolver.resolve(request))
-                .thenReturn("127.0.0.1");
+        MockHttpServletRequest request =
+                request();
+
+        when(
+                clientIpResolver.resolve(
+                        request
+                )
+        ).thenReturn(
+                "127.0.0.1"
+        );
 
         RefreshTokenService.CreatedRefreshToken result =
                 service.createForLogin(
@@ -96,185 +120,451 @@ class RefreshTokenServiceTest {
                         RefreshTokenEntity.class
                 );
 
-        verify(refreshTokenRepository).save(
+        verify(
+                refreshTokenRepository
+        ).save(
                 captor.capture()
         );
 
-        RefreshTokenEntity saved = captor.getValue();
+        RefreshTokenEntity saved =
+                captor.getValue();
 
-        assertThat(result.rawToken()).isNotBlank();
-        assertThat(saved.getTokenHash())
-                .hasSize(64)
-                .isNotEqualTo(result.rawToken());
-        assertThat(saved.getId()).isEqualTo(result.id());
-        assertThat(saved.getUser()).isSameAs(user);
-        assertThat(saved.getIssuedTokenVersion()).isZero();
-        assertThat(saved.getCreatedAt()).isEqualTo(NOW);
-        assertThat(saved.getExpiresAt())
-                .isEqualTo(NOW.plus(IDLE_MAX_AGE));
-        assertThat(saved.getFamilyCreatedAt())
-                .isEqualTo(NOW);
-        assertThat(saved.getFamilyExpiresAt())
-                .isEqualTo(NOW.plus(ABSOLUTE_MAX_AGE));
-        assertThat(saved.getCreatedByIp())
-                .isEqualTo("127.0.0.1");
-        assertThat(saved.getUserAgent())
-                .isEqualTo("JUnit");
-        assertThat(result.cookieMaxAge())
-                .isEqualTo(IDLE_MAX_AGE);
+        assertThat(
+                result.rawToken()
+        ).isNotBlank();
+
+        assertThat(
+                saved.getTokenHash()
+        )
+                .hasSize(
+                        64
+                )
+                .isNotEqualTo(
+                        result.rawToken()
+                );
+
+        assertThat(
+                saved.getId()
+        ).isEqualTo(
+                result.id()
+        );
+
+        assertThat(
+                saved.getUser()
+        ).isSameAs(
+                user
+        );
+
+        assertThat(
+                saved.getIssuedTokenVersion()
+        ).isZero();
+
+        assertThat(
+                saved.getCreatedAt()
+        ).isEqualTo(
+                NOW
+        );
+
+        assertThat(
+                saved.getExpiresAt()
+        ).isEqualTo(
+                NOW.plus(
+                        IDLE_MAX_AGE
+                )
+        );
+
+        assertThat(
+                saved.getFamilyCreatedAt()
+        ).isEqualTo(
+                NOW
+        );
+
+        assertThat(
+                saved.getFamilyExpiresAt()
+        ).isEqualTo(
+                NOW.plus(
+                        ABSOLUTE_MAX_AGE
+                )
+        );
+
+        assertThat(
+                saved.getCreatedByIp()
+        ).isEqualTo(
+                "127.0.0.1"
+        );
+
+        assertThat(
+                saved.getUserAgent()
+        ).isEqualTo(
+                "JUnit"
+        );
+
+        assertThat(
+                result.cookieMaxAge()
+        ).isEqualTo(
+                IDLE_MAX_AGE
+        );
     }
 
     @Test
     void rotateRevokesOldTokenAndCreatesReplacementInSameFamily() {
         stubIdleRefreshTokenAge();
 
-        UserEntity user = enabledUser(0L);
-        RefreshTokenEntity oldToken = activeToken(user);
-        MockHttpServletRequest request = request();
+        UserEntity user =
+                enabledUser(
+                        0L
+                );
 
-        when(refreshTokenRepository
-                .findByTokenHashForUpdate(anyString()))
-                .thenReturn(Optional.of(oldToken));
-        when(userRepository
-                .findByIdWithRolesAndOrganization(user.getId()))
-                .thenReturn(Optional.of(user));
-        when(clientIpResolver.resolve(request))
-                .thenReturn("127.0.0.1");
+        RefreshTokenEntity oldToken =
+                activeToken(
+                        user
+                );
+
+        MockHttpServletRequest request =
+                request();
+
+        when(
+                refreshTokenRepository
+                        .findByTokenHashForUpdate(
+                                anyString()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        oldToken
+                )
+        );
+
+        when(
+                userRepository
+                        .findByIdWithRolesAndOrganization(
+                                user.getId()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        user
+                )
+        );
+
+        when(
+                clientIpResolver.resolve(
+                        request
+                )
+        ).thenReturn(
+                "127.0.0.1"
+        );
 
         RefreshTokenService.RefreshTokenRotationResult result =
-                service.rotate("old-raw-token", request);
-
-        assertThat(oldToken.getRevokedAt())
-                .isEqualTo(NOW);
-        assertThat(oldToken.getRevocationReason())
-                .isEqualTo(
-                        RefreshTokenRevocationReason.ROTATED
+                service.rotate(
+                        "old-raw-token",
+                        request
                 );
-        assertThat(oldToken.getLastUsedAt())
-                .isEqualTo(NOW);
+
+        assertThat(
+                oldToken.getRevokedAt()
+        ).isEqualTo(
+                NOW
+        );
+
+        assertThat(
+                oldToken.getRevocationReason()
+        ).isEqualTo(
+                RefreshTokenRevocationReason.ROTATED
+        );
+
+        assertThat(
+                oldToken.getLastUsedAt()
+        ).isEqualTo(
+                NOW
+        );
 
         ArgumentCaptor<RefreshTokenEntity> captor =
                 ArgumentCaptor.forClass(
                         RefreshTokenEntity.class
                 );
-        verify(refreshTokenRepository).save(
+
+        verify(
+                refreshTokenRepository
+        ).save(
                 captor.capture()
         );
 
         RefreshTokenEntity replacement =
                 captor.getValue();
 
-        assertThat(replacement.getTokenFamilyId())
-                .isEqualTo(oldToken.getTokenFamilyId());
-        assertThat(replacement.getFamilyCreatedAt())
-                .isEqualTo(oldToken.getFamilyCreatedAt());
-        assertThat(replacement.getFamilyExpiresAt())
-                .isEqualTo(oldToken.getFamilyExpiresAt());
-        assertThat(oldToken.getReplacedByTokenId())
-                .isEqualTo(replacement.getId());
-        assertThat(result.rawRefreshToken())
+        assertThat(
+                replacement.getTokenFamilyId()
+        ).isEqualTo(
+                oldToken.getTokenFamilyId()
+        );
+
+        assertThat(
+                replacement.getFamilyCreatedAt()
+        ).isEqualTo(
+                oldToken.getFamilyCreatedAt()
+        );
+
+        assertThat(
+                replacement.getFamilyExpiresAt()
+        ).isEqualTo(
+                oldToken.getFamilyExpiresAt()
+        );
+
+        assertThat(
+                oldToken.getReplacedByTokenId()
+        ).isEqualTo(
+                replacement.getId()
+        );
+
+        assertThat(
+                result.rawRefreshToken()
+        )
                 .isNotBlank()
-                .isNotEqualTo("old-raw-token");
-        assertThat(result.accessTokenSubject().roles())
-                .containsExactly("ADMIN");
+                .isNotEqualTo(
+                        "old-raw-token"
+                );
+
+        assertThat(
+                result.accessTokenSubject()
+                        .roles()
+        ).containsExactly(
+                "ADMIN"
+        );
+
+        verifyNoInteractions(
+                refreshReuseAuditService
+        );
     }
 
     @Test
-    void rotatedTokenReuseTerminatesWholeFamily() {
-        UserEntity user = enabledUser(0L);
-        RefreshTokenEntity oldToken = activeToken(user);
-        oldToken.setRevokedAt(NOW.minusSeconds(5));
+    void rotatedTokenReuseTerminatesWholeFamilyAndWritesRequiredAudit() {
+        UserEntity user =
+                enabledUser(
+                        0L
+                );
+
+        RefreshTokenEntity oldToken =
+                activeToken(
+                        user
+                );
+
+        oldToken.setRevokedAt(
+                NOW.minusSeconds(
+                        5
+                )
+        );
+
         oldToken.setRevocationReason(
                 RefreshTokenRevocationReason.ROTATED
         );
 
-        when(refreshTokenRepository
-                .findByTokenHashForUpdate(anyString()))
-                .thenReturn(Optional.of(oldToken));
-        when(userRepository
-                .findByIdWithRolesAndOrganization(user.getId()))
-                .thenReturn(Optional.of(user));
-        when(refreshTokenRepository.terminateFamily(
-                oldToken.getTokenFamilyId(),
-                NOW,
-                RefreshTokenRevocationReason.REUSE_DETECTED
-        )).thenReturn(2);
+        MockHttpServletRequest request =
+                request();
+
+        when(
+                refreshTokenRepository
+                        .findByTokenHashForUpdate(
+                                anyString()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        oldToken
+                )
+        );
+
+        when(
+                userRepository
+                        .findByIdWithRolesAndOrganization(
+                                user.getId()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        user
+                )
+        );
+
+        when(
+                refreshTokenRepository
+                        .terminateFamily(
+                                oldToken.getTokenFamilyId(),
+                                NOW,
+                                RefreshTokenRevocationReason
+                                        .REUSE_DETECTED
+                        )
+        ).thenReturn(
+                2
+        );
 
         assertThatThrownBy(() ->
                 service.rotate(
                         "old-raw-token",
-                        request()
+                        request
                 )
         ).isInstanceOf(
                 RefreshTokenReuseDetectedException.class
         );
 
-        verify(refreshTokenRepository).terminateFamily(
+        verify(
+                refreshTokenRepository
+        ).terminateFamily(
                 oldToken.getTokenFamilyId(),
                 NOW,
-                RefreshTokenRevocationReason.REUSE_DETECTED
+                RefreshTokenRevocationReason
+                        .REUSE_DETECTED
         );
-        verify(refreshTokenRepository, never())
-                .save(any());
+
+        verify(
+                refreshReuseAuditService
+        ).recordRequired(
+                user.getId(),
+                user.getOrganization()
+                        .getId(),
+                oldToken.getTokenFamilyId(),
+                request
+        );
+
+        verify(
+                refreshTokenRepository,
+                never()
+        ).save(
+                any()
+        );
     }
 
     @Test
-    void expiredTokenTerminatesFamily() {
-        UserEntity user = enabledUser(0L);
-        RefreshTokenEntity oldToken = activeToken(user);
-        oldToken.setExpiresAt(NOW.minusNanos(1));
+    void expiredTokenTerminatesFamilyWithoutReuseAudit() {
+        UserEntity user =
+                enabledUser(
+                        0L
+                );
 
-        when(refreshTokenRepository
-                .findByTokenHashForUpdate(anyString()))
-                .thenReturn(Optional.of(oldToken));
-        when(userRepository
-                .findByIdWithRolesAndOrganization(user.getId()))
-                .thenReturn(Optional.of(user));
-        when(refreshTokenRepository.terminateFamily(
-                oldToken.getTokenFamilyId(),
-                NOW,
-                RefreshTokenRevocationReason.EXPIRED
-        )).thenReturn(1);
+        RefreshTokenEntity oldToken =
+                activeToken(
+                        user
+                );
+
+        oldToken.setExpiresAt(
+                NOW.minusNanos(
+                        1
+                )
+        );
+
+        when(
+                refreshTokenRepository
+                        .findByTokenHashForUpdate(
+                                anyString()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        oldToken
+                )
+        );
+
+        when(
+                userRepository
+                        .findByIdWithRolesAndOrganization(
+                                user.getId()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        user
+                )
+        );
+
+        when(
+                refreshTokenRepository
+                        .terminateFamily(
+                                oldToken.getTokenFamilyId(),
+                                NOW,
+                                RefreshTokenRevocationReason.EXPIRED
+                        )
+        ).thenReturn(
+                1
+        );
 
         assertThatThrownBy(() ->
-                service.rotate("raw-token", request())
+                service.rotate(
+                        "raw-token",
+                        request()
+                )
         ).isInstanceOf(
                 ExpiredRefreshTokenException.class
         );
 
-        verify(refreshTokenRepository).terminateFamily(
+        verify(
+                refreshTokenRepository
+        ).terminateFamily(
                 oldToken.getTokenFamilyId(),
                 NOW,
                 RefreshTokenRevocationReason.EXPIRED
+        );
+
+        verifyNoInteractions(
+                refreshReuseAuditService
         );
     }
 
     @Test
     void tokenVersionMismatchTerminatesFamily() {
-        UserEntity user = enabledUser(1L);
-        RefreshTokenEntity oldToken = activeToken(user);
-        oldToken.setIssuedTokenVersion(0L);
+        UserEntity user =
+                enabledUser(
+                        1L
+                );
 
-        when(refreshTokenRepository
-                .findByTokenHashForUpdate(anyString()))
-                .thenReturn(Optional.of(oldToken));
-        when(userRepository
-                .findByIdWithRolesAndOrganization(user.getId()))
-                .thenReturn(Optional.of(user));
-        when(refreshTokenRepository.terminateFamily(
-                oldToken.getTokenFamilyId(),
-                NOW,
-                RefreshTokenRevocationReason
-                        .SECURITY_STATE_CHANGED
-        )).thenReturn(1);
+        RefreshTokenEntity oldToken =
+                activeToken(
+                        user
+                );
+
+        oldToken.setIssuedTokenVersion(
+                0L
+        );
+
+        when(
+                refreshTokenRepository
+                        .findByTokenHashForUpdate(
+                                anyString()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        oldToken
+                )
+        );
+
+        when(
+                userRepository
+                        .findByIdWithRolesAndOrganization(
+                                user.getId()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        user
+                )
+        );
+
+        when(
+                refreshTokenRepository
+                        .terminateFamily(
+                                oldToken.getTokenFamilyId(),
+                                NOW,
+                                RefreshTokenRevocationReason
+                                        .SECURITY_STATE_CHANGED
+                        )
+        ).thenReturn(
+                1
+        );
 
         assertThatThrownBy(() ->
-                service.rotate("raw-token", request())
+                service.rotate(
+                        "raw-token",
+                        request()
+                )
         ).isInstanceOf(
                 InvalidRefreshTokenException.class
         );
 
-        verify(refreshTokenRepository).terminateFamily(
+        verify(
+                refreshTokenRepository
+        ).terminateFamily(
                 oldToken.getTokenFamilyId(),
                 NOW,
                 RefreshTokenRevocationReason
@@ -284,58 +574,101 @@ class RefreshTokenServiceTest {
 
     @Test
     void missingTokenReturnsInvalidRefreshToken() {
-        when(refreshTokenRepository
-                .findByTokenHashForUpdate(anyString()))
-                .thenReturn(Optional.empty());
+        when(
+                refreshTokenRepository
+                        .findByTokenHashForUpdate(
+                                anyString()
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
 
         assertThatThrownBy(() ->
-                service.rotate("raw-token", request())
+                service.rotate(
+                        "raw-token",
+                        request()
+                )
         )
                 .isInstanceOf(
                         InvalidRefreshTokenException.class
-                )
-                .hasMessage(
-                        "Недействительный refresh token"
-                )
-                .hasRootCauseMessage(
-                        "Refresh token не найден"
                 );
 
-        verify(refreshTokenRepository, never())
-                .save(any());
+        verify(
+                refreshTokenRepository,
+                never()
+        ).save(
+                any()
+        );
+
+        verifyNoInteractions(
+                refreshReuseAuditService
+        );
     }
 
     @Test
     void logoutTerminatesFamilyAndReturnsAuditSubject() {
-        UserEntity user = enabledUser(0L);
-        RefreshTokenEntity token = activeToken(user);
+        UserEntity user =
+                enabledUser(
+                        0L
+                );
 
-        when(refreshTokenRepository
-                .findByTokenHashForUpdate(anyString()))
-                .thenReturn(Optional.of(token));
-        when(userRepository.findByIdWithOrganization(
-                user.getId()
-        )).thenReturn(Optional.of(user));
-        when(refreshTokenRepository.terminateFamily(
-                token.getTokenFamilyId(),
-                NOW,
-                RefreshTokenRevocationReason.LOGOUT
-        )).thenReturn(1);
+        RefreshTokenEntity token =
+                activeToken(
+                        user
+                );
+
+        when(
+                refreshTokenRepository
+                        .findByTokenHashForUpdate(
+                                anyString()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        token
+                )
+        );
+
+        when(
+                userRepository
+                        .findByIdWithOrganization(
+                                user.getId()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        user
+                )
+        );
+
+        when(
+                refreshTokenRepository
+                        .terminateFamily(
+                                token.getTokenFamilyId(),
+                                NOW,
+                                RefreshTokenRevocationReason.LOGOUT
+                        )
+        ).thenReturn(
+                1
+        );
 
         Optional<LogoutAuditSubject> result =
                 service.revokeFamilyAndReturnSubject(
                         "raw-token"
                 );
 
-        assertThat(result).contains(
+        assertThat(
+                result
+        ).contains(
                 new LogoutAuditSubject(
                         user.getId(),
-                        user.getOrganization().getId(),
+                        user.getOrganization()
+                                .getId(),
                         "admin@test.com"
                 )
         );
 
-        verify(refreshTokenRepository).terminateFamily(
+        verify(
+                refreshTokenRepository
+        ).terminateFamily(
                 token.getTokenFamilyId(),
                 NOW,
                 RefreshTokenRevocationReason.LOGOUT
@@ -344,53 +677,111 @@ class RefreshTokenServiceTest {
 
     @Test
     void logoutOfTerminalFamilyIsIdempotent() {
-        UserEntity user = enabledUser(0L);
-        RefreshTokenEntity token = activeToken(user);
-        token.setRevokedAt(NOW.minusSeconds(60));
+        UserEntity user =
+                enabledUser(
+                        0L
+                );
+
+        RefreshTokenEntity token =
+                activeToken(
+                        user
+                );
+
+        token.setRevokedAt(
+                NOW.minusSeconds(
+                        60
+                )
+        );
+
         token.setRevocationReason(
                 RefreshTokenRevocationReason.LOGOUT
         );
 
-        when(refreshTokenRepository
-                .findByTokenHashForUpdate(anyString()))
-                .thenReturn(Optional.of(token));
+        when(
+                refreshTokenRepository
+                        .findByTokenHashForUpdate(
+                                anyString()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        token
+                )
+        );
 
-        assertThat(service.revokeFamilyAndReturnSubject(
-                "raw-token"
-        )).isEmpty();
+        assertThat(
+                service.revokeFamilyAndReturnSubject(
+                        "raw-token"
+                )
+        ).isEmpty();
 
-        verifyNoInteractions(userRepository);
-        verify(refreshTokenRepository, never())
-                .terminateFamily(
-                        any(),
-                        any(),
-                        any()
-                );
+        verifyNoInteractions(
+                userRepository,
+                refreshReuseAuditService
+        );
+
+        verify(
+                refreshTokenRepository,
+                never()
+        ).terminateFamily(
+                any(),
+                any(),
+                any()
+        );
     }
 
     @Test
     void logoutWithMissingUserClosesFamilyWithoutAuditSubject() {
-        UserEntity user = enabledUser(0L);
-        RefreshTokenEntity token = activeToken(user);
+        UserEntity user =
+                enabledUser(
+                        0L
+                );
 
-        when(refreshTokenRepository
-                .findByTokenHashForUpdate(anyString()))
-                .thenReturn(Optional.of(token));
-        when(userRepository.findByIdWithOrganization(
-                user.getId()
-        )).thenReturn(Optional.empty());
-        when(refreshTokenRepository.terminateFamily(
-                token.getTokenFamilyId(),
-                NOW,
-                RefreshTokenRevocationReason
-                        .SECURITY_STATE_CHANGED
-        )).thenReturn(1);
+        RefreshTokenEntity token =
+                activeToken(
+                        user
+                );
 
-        assertThat(service.revokeFamilyAndReturnSubject(
-                "raw-token"
-        )).isEmpty();
+        when(
+                refreshTokenRepository
+                        .findByTokenHashForUpdate(
+                                anyString()
+                        )
+        ).thenReturn(
+                Optional.of(
+                        token
+                )
+        );
 
-        verify(refreshTokenRepository).terminateFamily(
+        when(
+                userRepository
+                        .findByIdWithOrganization(
+                                user.getId()
+                        )
+        ).thenReturn(
+                Optional.empty()
+        );
+
+        when(
+                refreshTokenRepository
+                        .terminateFamily(
+                                token.getTokenFamilyId(),
+                                NOW,
+                                RefreshTokenRevocationReason
+                                        .SECURITY_STATE_CHANGED
+                        )
+        ).thenReturn(
+                1
+        );
+
+        assertThat(
+                service.revokeFamilyAndReturnSubject(
+                        "raw-token"
+                )
+        ).isEmpty();
+
+        verify(
+                refreshTokenRepository
+        ).terminateFamily(
                 token.getTokenFamilyId(),
                 NOW,
                 RefreshTokenRevocationReason
@@ -401,33 +792,49 @@ class RefreshTokenServiceTest {
     @Test
     void malformedRawTokenIsRejectedBeforeRepositoryAccess() {
         assertThatThrownBy(() ->
-                service.revokeFamilyAndReturnSubject(" ")
+                service.revokeFamilyAndReturnSubject(
+                        " "
+                )
         ).isInstanceOf(
                 InvalidRefreshTokenException.class
         );
 
         verifyNoInteractions(
                 refreshTokenRepository,
-                userRepository
+                userRepository,
+                refreshReuseAuditService
         );
     }
 
     private void stubRefreshTokenAgesForLogin() {
         stubIdleRefreshTokenAge();
 
-        when(authCookieProperties.refreshTokenAbsoluteMaxAge())
-                .thenReturn(ABSOLUTE_MAX_AGE);
+        when(
+                authCookieProperties
+                        .refreshTokenAbsoluteMaxAge()
+        ).thenReturn(
+                ABSOLUTE_MAX_AGE
+        );
     }
 
     private void stubIdleRefreshTokenAge() {
-        when(authCookieProperties.refreshTokenMaxAge())
-                .thenReturn(IDLE_MAX_AGE);
+        when(
+                authCookieProperties
+                        .refreshTokenMaxAge()
+        ).thenReturn(
+                IDLE_MAX_AGE
+        );
     }
 
     private MockHttpServletRequest request() {
         MockHttpServletRequest request =
                 new MockHttpServletRequest();
-        request.addHeader("User-Agent", "JUnit");
+
+        request.addHeader(
+                "User-Agent",
+                "JUnit"
+        );
+
         return request;
     }
 
@@ -437,19 +844,57 @@ class RefreshTokenServiceTest {
         RefreshTokenEntity token =
                 new RefreshTokenEntity();
 
-        token.setId(UUID.randomUUID());
-        token.setUser(user);
-        token.setTokenFamilyId(UUID.randomUUID());
-        token.setCreatedAt(NOW.minus(Duration.ofDays(1)));
-        token.setExpiresAt(NOW.plus(Duration.ofDays(1)));
+        token.setId(
+                UUID.randomUUID()
+        );
+
+        token.setUser(
+                user
+        );
+
+        token.setTokenFamilyId(
+                UUID.randomUUID()
+        );
+
+        token.setCreatedAt(
+                NOW.minus(
+                        Duration.ofDays(
+                                1
+                        )
+                )
+        );
+
+        token.setExpiresAt(
+                NOW.plus(
+                        Duration.ofDays(
+                                1
+                        )
+                )
+        );
+
         token.setFamilyCreatedAt(
-                NOW.minus(Duration.ofDays(1))
+                NOW.minus(
+                        Duration.ofDays(
+                                1
+                        )
+                )
         );
+
         token.setFamilyExpiresAt(
-                NOW.plus(Duration.ofDays(60))
+                NOW.plus(
+                        Duration.ofDays(
+                                60
+                        )
+                )
         );
+
         token.setIssuedTokenVersion(
                 user.getTokenVersion()
+        );
+
+        token.setIssuedOrganizationAuthVersion(
+                user.getOrganization()
+                        .getAuthVersion()
         );
 
         return token;
@@ -460,22 +905,64 @@ class RefreshTokenServiceTest {
     ) {
         OrganizationEntity organization =
                 new OrganizationEntity();
-        organization.setId(UUID.randomUUID());
-        organization.setName("Demo Company");
-        organization.setEnabled(true);
 
-        RoleEntity role = new RoleEntity();
-        role.setId(UUID.randomUUID());
-        role.setName("ADMIN");
+        organization.setId(
+                UUID.randomUUID()
+        );
 
-        UserEntity user = new UserEntity();
-        user.setId(UUID.randomUUID());
-        user.setOrganization(organization);
-        user.setEmail("admin@test.com");
-        user.setPasswordHash("hash");
-        user.setEnabled(true);
-        user.setTokenVersion(tokenVersion);
-        user.setRoles(new HashSet<>(Set.of(role)));
+        organization.setName(
+                "Demo Company"
+        );
+
+        organization.setEnabled(
+                true
+        );
+
+        RoleEntity role =
+                new RoleEntity();
+
+        role.setId(
+                UUID.randomUUID()
+        );
+
+        role.setName(
+                "ADMIN"
+        );
+
+        UserEntity user =
+                new UserEntity();
+
+        user.setId(
+                UUID.randomUUID()
+        );
+
+        user.setOrganization(
+                organization
+        );
+
+        user.setEmail(
+                "admin@test.com"
+        );
+
+        user.setPasswordHash(
+                "hash"
+        );
+
+        user.setEnabled(
+                true
+        );
+
+        user.setTokenVersion(
+                tokenVersion
+        );
+
+        user.setRoles(
+                new HashSet<>(
+                        Set.of(
+                                role
+                        )
+                )
+        );
 
         return user;
     }

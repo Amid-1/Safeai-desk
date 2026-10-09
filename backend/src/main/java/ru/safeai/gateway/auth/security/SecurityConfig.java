@@ -123,17 +123,29 @@ public class SecurityConfig {
                                 new SpaCsrfTokenRequestHandler()
                         )
                 )
-                .cors(Customizer.withDefaults())
-                .headers(this::configureHeaders)
+                .cors(
+                        Customizer.withDefaults()
+                )
+                .headers(
+                        this::configureHeaders
+                )
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(
                                 SessionCreationPolicy.STATELESS
                         )
                 )
-                .formLogin(AbstractHttpConfigurer::disable)
-                .httpBasic(AbstractHttpConfigurer::disable)
-                .logout(AbstractHttpConfigurer::disable)
-                .requestCache(AbstractHttpConfigurer::disable)
+                .formLogin(
+                        AbstractHttpConfigurer::disable
+                )
+                .httpBasic(
+                        AbstractHttpConfigurer::disable
+                )
+                .logout(
+                        AbstractHttpConfigurer::disable
+                )
+                .requestCache(
+                        AbstractHttpConfigurer::disable
+                )
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(
                                 authenticationEntryPoint
@@ -143,10 +155,6 @@ public class SecurityConfig {
                         )
                 )
                 .authorizeHttpRequests(authorize -> authorize
-                        /*
-                         * ERROR dispatch разрешается, чтобы контейнер мог
-                         * завершить уже сформированный error response.
-                         */
                         .dispatcherTypeMatchers(
                                 DispatcherType.ERROR
                         )
@@ -178,32 +186,17 @@ public class SecurityConfig {
                         )
                         .authenticated()
 
-                        /*
-                         * На public application edge публикуется только
-                         * минимальный health endpoint.
-                         */
                         .requestMatchers(
                                 "/actuator/health",
                                 "/actuator/health/**"
                         )
                         .permitAll()
 
-                        /*
-                         * Operational actuator endpoints не являются частью
-                         * application RBAC. Prometheus и остальные endpoints
-                         * должны публиковаться через отдельный management
-                         * contour / internal network.
-                         */
-                        .requestMatchers("/actuator/**")
+                        .requestMatchers(
+                                "/actuator/**"
+                        )
                         .denyAll()
 
-                        /*
-                         * ADMIN сохраняет существующий read-only доступ к
-                         * своей organization. Все остальные HTTP methods под
-                         * /api/organizations/** требуют SUPER_ADMIN.
-                         *
-                         * Порядок matcher-ов принципиален: GET rule идёт первой.
-                         */
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/organizations",
@@ -219,7 +212,9 @@ public class SecurityConfig {
                                 "/api/organizations",
                                 "/api/organizations/**"
                         )
-                        .hasRole("SUPER_ADMIN")
+                        .hasRole(
+                                "SUPER_ADMIN"
+                        )
 
                         .requestMatchers(
                                 "/api/users",
@@ -239,11 +234,6 @@ public class SecurityConfig {
                                 "SUPER_ADMIN"
                         )
 
-                        /*
-                         * Knowledge data plane принадлежит tenant roles.
-                         * Более тонкие create/update/member permissions
-                         * остаются вторым слоем в @PreAuthorize/service.
-                         */
                         .requestMatchers(
                                 "/api/knowledge-bases",
                                 "/api/knowledge-bases/**"
@@ -262,23 +252,14 @@ public class SecurityConfig {
                                 "USER"
                         )
 
-                        /*
-                         * Fail closed: новый API endpoint не становится
-                         * доступен только потому, что разработчик забыл
-                         * добавить matcher/@PreAuthorize.
-                         */
-                        .requestMatchers("/api/**")
+                        .requestMatchers(
+                                "/api/**"
+                        )
                         .denyAll()
 
                         .anyRequest()
                         .denyAll()
                 )
-
-                /*
-                 * Resource Server получает только Authorization header.
-                 * Bearer 401 использует отдельный entry point и только здесь
-                 * получает WWW-Authenticate: Bearer.
-                 */
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(
                                 bearerTokenResolver
@@ -299,11 +280,6 @@ public class SecurityConfig {
                         new CsrfCookieFilter(),
                         BasicAuthenticationFilter.class
                 )
-                /*
-                 * Cookie JWT обрабатывается отдельным фильтром после
-                 * CsrfFilter. Поэтому unsafe cookie-authenticated requests
-                 * обязаны предъявить X-XSRF-TOKEN.
-                 */
                 .addFilterAfter(
                         accessCookieAuthenticationFilter,
                         BearerTokenAuthenticationFilter.class
@@ -319,7 +295,8 @@ public class SecurityConfig {
     AuthenticationManager authenticationManager(
             AuthenticationConfiguration configuration
     ) {
-        return configuration.getAuthenticationManager();
+        return configuration
+                .getAuthenticationManager();
     }
 
     @Bean
@@ -332,7 +309,9 @@ public class SecurityConfig {
                         userDetailsService
                 );
 
-        provider.setPasswordEncoder(passwordEncoder);
+        provider.setPasswordEncoder(
+                passwordEncoder
+        );
 
         return provider;
     }
@@ -346,30 +325,41 @@ public class SecurityConfig {
                 corsProperties.allowedOrigins()
         );
 
-        configuration.setAllowedMethods(List.of(
-                "GET",
-                "POST",
-                "PUT",
-                "PATCH",
-                "DELETE",
-                "OPTIONS"
-        ));
+        configuration.setAllowedMethods(
+                List.of(
+                        "GET",
+                        "POST",
+                        "PUT",
+                        "PATCH",
+                        "DELETE",
+                        "OPTIONS"
+                )
+        );
 
-        configuration.setAllowedHeaders(List.of(
-                HttpHeaders.AUTHORIZATION,
-                HttpHeaders.CONTENT_TYPE,
-                "X-Request-Id",
-                "X-XSRF-TOKEN"
-        ));
+        configuration.setAllowedHeaders(
+                List.of(
+                        HttpHeaders.AUTHORIZATION,
+                        HttpHeaders.CONTENT_TYPE,
+                        "X-Request-Id",
+                        "X-XSRF-TOKEN"
+                )
+        );
 
-        configuration.setExposedHeaders(List.of(
-                "X-Request-Id",
-                HttpHeaders.RETRY_AFTER,
-                HttpHeaders.WWW_AUTHENTICATE
-        ));
+        configuration.setExposedHeaders(
+                List.of(
+                        "X-Request-Id",
+                        HttpHeaders.RETRY_AFTER,
+                        HttpHeaders.WWW_AUTHENTICATE
+                )
+        );
 
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3_600L);
+        configuration.setAllowCredentials(
+                true
+        );
+
+        configuration.setMaxAge(
+                3_600L
+        );
 
         UrlBasedCorsConfigurationSource source =
                 new UrlBasedCorsConfigurationSource();
@@ -385,10 +375,16 @@ public class SecurityConfig {
     @Bean
     CsrfTokenRepository csrfTokenRepository() {
         CookieCsrfTokenRepository repository =
-                CookieCsrfTokenRepository.withHttpOnlyFalse();
+                CookieCsrfTokenRepository
+                        .withHttpOnlyFalse();
 
-        repository.setCookieName("XSRF-TOKEN");
-        repository.setHeaderName("X-XSRF-TOKEN");
+        repository.setCookieName(
+                authCookieProperties.csrfTokenName()
+        );
+
+        repository.setHeaderName(
+                "X-XSRF-TOKEN"
+        );
 
         repository.setCookieCustomizer(cookie -> {
             cookie
@@ -398,9 +394,17 @@ public class SecurityConfig {
                     .secure(
                             authCookieProperties.secure()
                     )
-                    .httpOnly(false)
-                    .path("/");
+                    .httpOnly(
+                            false
+                    )
+                    .path(
+                            "/"
+                    );
 
+            /*
+             * Kept for non-production compatibility only.
+             * ProductionAuthCookieInvariantValidator rejects Domain.
+             */
             if (authCookieProperties.hasDomain()) {
                 cookie.domain(
                         authCookieProperties.domain()
@@ -411,25 +415,22 @@ public class SecurityConfig {
         return repository;
     }
 
-    /**
-     * Только Authorization header.
-     *
-     * <p>Access-cookie намеренно не возвращается этим resolver, иначе
-     * OAuth2ResourceServerConfigurer автоматически исключит
-     * cookie-authenticated request из CSRF-проверки.</p>
-     */
     @Bean
     BearerTokenResolver bearerTokenResolver() {
         DefaultBearerTokenResolver headerResolver =
                 new DefaultBearerTokenResolver();
 
         return request -> {
-            if (isPublicAuthEndpoint(request)) {
+            if (isPublicAuthEndpoint(
+                    request
+            )) {
                 return null;
             }
 
             String headerToken =
-                    headerResolver.resolve(request);
+                    headerResolver.resolve(
+                            request
+                    );
 
             return headerToken == null
                     || headerToken.isBlank()
@@ -443,13 +444,17 @@ public class SecurityConfig {
             JwtDecoder jwtDecoder
     ) {
         JwtAuthenticationProvider provider =
-                new JwtAuthenticationProvider(jwtDecoder);
+                new JwtAuthenticationProvider(
+                        jwtDecoder
+                );
 
         provider.setJwtAuthenticationConverter(
                 resourceServerJwtAuthenticationConverter()
         );
 
-        return new ProviderManager(provider);
+        return new ProviderManager(
+                provider
+        );
     }
 
     private Converter<Jwt, AbstractAuthenticationToken>
@@ -457,7 +462,9 @@ public class SecurityConfig {
         return jwt -> {
             try {
                 return safeAiJwtAuthenticationConverter
-                        .convert(jwt);
+                        .convert(
+                                jwt
+                        );
             } catch (BadJwtException exception) {
                 throw new InvalidBearerTokenException(
                         INVALID_ACCESS_TOKEN_MESSAGE,
@@ -489,9 +496,15 @@ public class SecurityConfig {
         headers.httpStrictTransportSecurity(hsts -> {
             if (hstsProperties.enabled()) {
                 hsts
-                        .includeSubDomains(true)
-                        .preload(true)
-                        .maxAgeInSeconds(31_536_000);
+                        .includeSubDomains(
+                                true
+                        )
+                        .preload(
+                                true
+                        )
+                        .maxAgeInSeconds(
+                                31_536_000
+                        );
             } else {
                 hsts.disable();
             }
@@ -502,24 +515,34 @@ public class SecurityConfig {
             HttpServletRequest request
     ) {
         return PUBLIC_AUTH_ENDPOINTS.contains(
-                pathWithinApplication(request)
+                pathWithinApplication(
+                        request
+                )
         );
     }
 
     private String pathWithinApplication(
             HttpServletRequest request
     ) {
-        String requestUri = request.getRequestURI();
-        String contextPath = request.getContextPath();
+        String requestUri =
+                request.getRequestURI();
+
+        String contextPath =
+                request.getContextPath();
 
         if (contextPath != null
                 && !contextPath.isEmpty()
-                && requestUri.startsWith(contextPath)) {
-            String path = requestUri.substring(
-                    contextPath.length()
-            );
+                && requestUri.startsWith(
+                contextPath
+        )) {
+            String path =
+                    requestUri.substring(
+                            contextPath.length()
+                    );
 
-            return path.isEmpty() ? "/" : path;
+            return path.isEmpty()
+                    ? "/"
+                    : path;
         }
 
         return requestUri;

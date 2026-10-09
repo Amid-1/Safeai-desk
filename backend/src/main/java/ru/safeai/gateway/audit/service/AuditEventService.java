@@ -21,6 +21,26 @@ public class AuditEventService {
     private final AuditOutboxWriter outboxWriter;
     private final UserRepository userRepository;
 
+    /**
+     * Records a typed audit event with a fresh, tenant-scoped actor snapshot.
+     * The write joins the caller's business transaction and remains mandatory.
+     */
+    public void recordPrincipalSnapshot(
+            SafeAiUserPrincipal currentUser,
+            UUID targetOrganizationId,
+            AuditEventType eventType,
+            AuditDetails details
+    ) {
+        record(
+                resolveActorSnapshot(currentUser, null),
+                targetOrganizationId,
+                eventType,
+                details
+        );
+    }
+
+    /** Legacy entry point; retained for existing callers during migration. */
+    @Deprecated(forRemoval = true)
     public void record(
             SafeAiUserPrincipal currentUser,
             UUID targetOrganizationId,
@@ -28,16 +48,14 @@ public class AuditEventService {
             Map<String, Object> details
     ) {
         record(
-                resolveActorSnapshot(
-                        currentUser,
-                        null
-                ),
+                resolveActorSnapshot(currentUser, null),
                 targetOrganizationId,
                 eventType,
                 details
         );
     }
 
+    @Deprecated(forRemoval = true)
     public void record(
             SafeAiUserPrincipal currentUser,
             String actorDisplayName,
@@ -46,31 +64,21 @@ public class AuditEventService {
             Map<String, Object> details
     ) {
         record(
-                resolveActorSnapshot(
-                        currentUser,
-                        actorDisplayName
-                ),
+                resolveActorSnapshot(currentUser, actorDisplayName),
                 targetOrganizationId,
                 eventType,
                 details
         );
     }
 
+    @Deprecated(forRemoval = true)
     public void record(
             SafeAiUserPrincipal currentUser,
             UUID targetOrganizationId,
             AuditEventType eventType,
             AuditDetails details
     ) {
-        record(
-                resolveActorSnapshot(
-                        currentUser,
-                        null
-                ),
-                targetOrganizationId,
-                eventType,
-                details
-        );
+        recordPrincipalSnapshot(currentUser, targetOrganizationId, eventType, details);
     }
 
     public void record(
@@ -83,9 +91,7 @@ public class AuditEventService {
                 actor,
                 targetOrganizationId,
                 eventType,
-                details == null
-                        ? Map.of()
-                        : details.toMap()
+                Objects.requireNonNull(details, "details не должен быть null").toMap()
         );
     }
 
@@ -95,24 +101,24 @@ public class AuditEventService {
             AuditEventType eventType,
             Map<String, Object> details
     ) {
-        AuditCommand command =
-                commandFactory.create(
-                        actor,
-                        targetOrganizationId,
-                        eventType,
-                        details
-                );
-
-        /*
-         * Присоединяется к transaction вызывающего business service.
-         * Ошибка durable audit intent должна откатить security mutation.
-         */
-        outboxWriter.writeRequired(
-                command
+        AuditCommand command = commandFactory.create(
+                actor,
+                targetOrganizationId,
+                eventType,
+                details
         );
+        // Durable audit intent MUST share the business transaction.
+        outboxWriter.writeRequiredInCurrentTransaction(command);
     }
 
-    public void recordSystem(
+    /**
+     * Records a mandatory system audit event in the caller's transaction.
+     *
+     * <p>The outbox writer enforces {@code Propagation.MANDATORY} and flushes
+     * the event before returning. A missing transaction or a persistence
+     * failure is propagated to the caller; neither is silently ignored.</p>
+     */
+    public void recordSystemRequiredInCurrentTransaction(
             UUID targetOrganizationId,
             AuditEventType eventType,
             Map<String, Object> details
@@ -125,33 +131,20 @@ public class AuditEventService {
         );
     }
 
-    /**
-     * Записывает durable audit intent в отдельной transaction.
-     *
-     * <p>В отличие от {@link #record(AuditActor, UUID, AuditEventType, Map)},
-     * этот метод не присоединяется к business transaction вызывающего кода.
-     * Ошибка enqueue намеренно не перехватывается и должна выйти вызывающему
-     * коду. Это требуется, например, rate limiter-у: при сбое audit enqueue
-     * он освобождает Redis notification marker, чтобы следующий rejected
-     * request повторил попытку durable audit.</p>
-     */
+    /** Isolated durable audit intent, deliberately outside the business transaction. */
     public void recordStandaloneRequired(
             AuditActor actor,
             UUID targetOrganizationId,
             AuditEventType eventType,
             Map<String, Object> details
     ) {
-        AuditCommand command =
-                commandFactory.create(
-                        actor,
-                        targetOrganizationId,
-                        eventType,
-                        details
-                );
-
-        outboxWriter.writeStandalone(
-                command
+        AuditCommand command = commandFactory.create(
+                actor,
+                targetOrganizationId,
+                eventType,
+                details
         );
+        outboxWriter.writeStandaloneRequired(command);
     }
 
     public void recordSystemStandaloneRequired(
@@ -160,58 +153,29 @@ public class AuditEventService {
             Map<String, Object> details
     ) {
         recordStandaloneRequired(
-                AuditActor.system(),
-                targetOrganizationId,
-                eventType,
-                details
+                AuditActor.system(), targetOrganizationId, eventType, details
         );
     }
 
     /**
-     * Access-token principal намеренно не содержит PII.
-     *
-     * <p>Поэтому email/fullName для immutable audit snapshot берутся
-     * из текущей записи пользователя в БД в момент формирования
-     * durable audit intent, а не из access JWT.</p>
-     *
-     * <p>Если пользователь уже отсутствует, сохраняем доступную
-     * non-PII identity из principal. Это не мешает записать audit event
-     * при редкой гонке удаления пользователя.</p>
+     * JWT principals have no PII. Resolve canonical actor identity from the
+     * current tenant-scoped user row, falling back to non-PII principal data
+     * only when that user row no longer exists.
      */
     private AuditActor resolveActorSnapshot(
             SafeAiUserPrincipal currentUser,
             String explicitDisplayName
     ) {
-        Objects.requireNonNull(
-                currentUser,
-                "currentUser не должен быть null"
-        );
-
-        UUID userId =
-                currentUser.getId();
-
-        UUID organizationId =
-                currentUser.getOrganizationId();
-
-        return userRepository
-                .findByIdAndOrganizationId(
-                        userId,
-                        organizationId
-                )
-                .map(user ->
-                        actorFromUser(
-                                user,
-                                userId,
-                                organizationId,
-                                explicitDisplayName
-                        )
-                )
-                .orElseGet(() ->
-                        AuditActor.fromPrincipal(
-                                currentUser,
-                                explicitDisplayName
-                        )
-                );
+        Objects.requireNonNull(currentUser, "currentUser не должен быть null");
+        UUID userId = currentUser.getId();
+        UUID organizationId = currentUser.getOrganizationId();
+        return userRepository.findByIdAndOrganizationId(userId, organizationId)
+                .map(user -> actorFromUser(
+                        user, userId, organizationId, explicitDisplayName
+                ))
+                .orElseGet(() -> AuditActor.fromPrincipal(
+                        currentUser, explicitDisplayName
+                ));
     }
 
     private AuditActor actorFromUser(
@@ -220,12 +184,10 @@ public class AuditEventService {
             UUID organizationId,
             String explicitDisplayName
     ) {
-        String displayName =
-                explicitDisplayName == null
-                        || explicitDisplayName.isBlank()
-                        ? user.getFullName()
-                        : explicitDisplayName;
-
+        String displayName = explicitDisplayName == null
+                || explicitDisplayName.isBlank()
+                ? user.getFullName()
+                : explicitDisplayName;
         return new AuditActor(
                 userId,
                 organizationId,
