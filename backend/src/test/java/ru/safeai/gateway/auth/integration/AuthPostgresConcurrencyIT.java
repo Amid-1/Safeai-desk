@@ -33,6 +33,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import ru.safeai.gateway.audit.config.AuditDetailsProperties;
+import ru.safeai.gateway.audit.service.AuditCommandFactory;
+import ru.safeai.gateway.audit.service.AuditDatabaseClock;
+import ru.safeai.gateway.audit.service.AuditDetailsSanitizer;
+import ru.safeai.gateway.audit.service.AuditOutboxWriter;
+import ru.safeai.gateway.organization.audit.OrganizationAuditSnapshotProvider;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 import ru.safeai.gateway.auth.service.*;
@@ -50,6 +56,8 @@ import ru.safeai.gateway.user.entity.RoleEntity;
 import ru.safeai.gateway.user.entity.UserEntity;
 import ru.safeai.gateway.user.repository.RoleRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
+
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -98,6 +106,13 @@ import static org.mockito.Mockito.when;
 @ActiveProfiles("auth-postgres-it")
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import({
+        AuditCommandFactory.class,
+        AuditDatabaseClock.class,
+        AuditDetailsSanitizer.class,
+        AuditOutboxWriter.class,
+        OrganizationAuditSnapshotProvider.class,
+        RefreshReuseAuditService.class,
+        RefreshSessionTransactionService.class,
         RefreshTokenService.class,
         LoginSessionTransactionService.class,
         UserSecurityMutationTestService.class,
@@ -192,10 +207,16 @@ class AuthPostgresConcurrencyIT {
 
     @TestConfiguration(proxyBeanMethods = false)
     @EnableConfigurationProperties({
+            AuditDetailsProperties.class,
             AuthCookieProperties.class,
             RefreshTokenCleanupProperties.class
     })
     static class TestBeans {
+
+        @Bean
+        JsonMapper auditJsonMapper() {
+            return JsonMapper.builder().build();
+        }
 
         @Bean
         Clock clock() {
@@ -258,10 +279,9 @@ class AuthPostgresConcurrencyIT {
 
         assertThat(activeFamilyRows(familyId)).isZero();
         assertThat(familyReasons(familyId))
-                .isNotEmpty()
-                .containsOnly(
-                        RefreshTokenRevocationReason
-                                .REUSE_DETECTED.name()
+                .containsExactlyInAnyOrder(
+                        RefreshTokenRevocationReason.ROTATED.name(),
+                        RefreshTokenRevocationReason.REUSE_DETECTED.name()
                 );
     }
 
@@ -290,9 +310,10 @@ class AuthPostgresConcurrencyIT {
 
         assertThat(activeFamilyRows(familyId)).isZero();
         assertThat(familyReasons(familyId))
-                .isNotEmpty()
-                .containsOnly(
-                        RefreshTokenRevocationReason.LOGOUT.name()
+                .contains(RefreshTokenRevocationReason.LOGOUT.name())
+                .isSubsetOf(
+                        RefreshTokenRevocationReason.LOGOUT.name(),
+                        RefreshTokenRevocationReason.ROTATED.name()
                 );
     }
 
@@ -609,9 +630,9 @@ class AuthPostgresConcurrencyIT {
 
         assertThat(activeFamilyRows(familyId)).isZero();
         assertThat(familyReasons(familyId))
-                .containsOnly(
-                        RefreshTokenRevocationReason
-                                .REUSE_DETECTED.name()
+                .containsExactlyInAnyOrder(
+                        RefreshTokenRevocationReason.ROTATED.name(),
+                        RefreshTokenRevocationReason.REUSE_DETECTED.name()
                 );
     }
 
