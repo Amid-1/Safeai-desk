@@ -7,7 +7,6 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import ru.safeai.gateway.auth.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.security.ClientIpResolver;
-import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.ratelimit.LoginRateLimitService;
 import ru.safeai.gateway.ratelimit.RefreshRateLimitService;
 import ru.safeai.gateway.user.repository.UserRepository;

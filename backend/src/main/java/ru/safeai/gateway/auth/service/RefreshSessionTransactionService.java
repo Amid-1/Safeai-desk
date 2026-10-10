@@ -7,7 +7,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.auth.exception.ExpiredRefreshTokenException;
 import ru.safeai.gateway.auth.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.auth.exception.RefreshTokenReuseDetectedException;
-import ru.safeai.gateway.common.security.JwtService;
 
 import java.util.Objects;
 

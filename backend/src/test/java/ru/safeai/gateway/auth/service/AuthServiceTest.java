@@ -26,7 +26,6 @@ import ru.safeai.gateway.ratelimit.exception.RateLimitUnavailableException;
 import ru.safeai.gateway.auth.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.security.AccessTokenSubject;
 import ru.safeai.gateway.common.security.ClientIpResolver;
-import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.ratelimit.LoginRateLimitService;
 import ru.safeai.gateway.ratelimit.RefreshRateLimitService;

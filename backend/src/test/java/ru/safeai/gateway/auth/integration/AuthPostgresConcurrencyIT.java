@@ -47,7 +47,7 @@ import ru.safeai.gateway.auth.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.auth.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.security.AccessTokenSubject;
 import ru.safeai.gateway.common.security.ClientIpResolver;
-import ru.safeai.gateway.common.security.JwtService;
+import ru.safeai.gateway.auth.service.JwtService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.ratelimit.LoginRateLimitService;
