@@ -1,34 +1,38 @@
-package ru.safeai.gateway.common.exception;
+package ru.safeai.gateway.organization.exception;
 
 import lombok.Getter;
+import ru.safeai.gateway.common.exception.ApiErrorCode;
+import ru.safeai.gateway.common.exception.ApiException;
+import org.springframework.http.HttpStatus;
 
 import java.util.Objects;
 import java.util.UUID;
 
 @Getter
-public final class UserVersionConflictException
-        extends ConflictException {
+public final class OrganizationVersionConflictException
+        extends ApiException {
 
-    private final UUID userId;
+    private final UUID organizationId;
     private final long expectedVersion;
     private final long actualVersion;
 
-    public UserVersionConflictException(
-            UUID userId,
+    public OrganizationVersionConflictException(
+            UUID organizationId,
             long expectedVersion,
             long actualVersion
     ) {
         super(
-                ApiErrorCode.USER_VERSION_CONFLICT,
-                "Пользователь был изменён другим администратором. "
+                HttpStatus.CONFLICT,
+                ApiErrorCode.ORGANIZATION_VERSION_CONFLICT,
+                "Организация была изменена другим пользователем. "
                         + "Обновите данные и повторите операцию",
                 null
         );
 
-        this.userId =
+        this.organizationId =
                 Objects.requireNonNull(
-                        userId,
-                        "userId не должен быть null"
+                        organizationId,
+                        "organizationId не должен быть null"
                 );
 
         if (expectedVersion < 0L) {

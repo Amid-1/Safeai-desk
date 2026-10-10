@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 import ru.safeai.gateway.common.exception.ConflictException;
-import ru.safeai.gateway.common.exception.OrganizationVersionConflictException;
+import ru.safeai.gateway.organization.exception.OrganizationVersionConflictException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.OrganizationDirectoryResponse;

@@ -3,8 +3,8 @@ package ru.safeai.gateway.ratelimit;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Service;
-import ru.safeai.gateway.common.exception.RateLimitExceededException;
-import ru.safeai.gateway.common.exception.RateLimitUnavailableException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitExceededException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitUnavailableException;
 
 import java.time.Duration;
 import java.util.Objects;

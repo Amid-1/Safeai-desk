@@ -9,7 +9,7 @@ import ru.safeai.gateway.identity.session.SessionRevocationPort;
 import ru.safeai.gateway.identity.session.SessionRevocationReason;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
-import ru.safeai.gateway.common.exception.OrganizationVersionConflictException;
+import ru.safeai.gateway.organization.exception.OrganizationVersionConflictException;
 import ru.safeai.gateway.common.persistence.DatabaseConstraintClassifier;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;

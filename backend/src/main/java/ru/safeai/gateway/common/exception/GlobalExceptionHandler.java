@@ -9,7 +9,6 @@ import org.springframework.context.MessageSourceResolvable;
 import org.springframework.core.Ordered;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -51,20 +50,9 @@ public class GlobalExceptionHandler implements Ordered {
             "Данные были изменены другим пользователем. "
                     + "Обновите данные и повторите операцию";
 
-    private static final String CHAT_LOCK_UNAVAILABLE_MESSAGE =
-            "Сервис блокировки чата временно недоступен";
-
-    private static final String RATE_LIMIT_UNAVAILABLE_MESSAGE =
-            "Сервис ограничения запросов временно недоступен";
-
-    private static final String INVALID_REFRESH_TOKEN_MESSAGE =
-            "Недействительный refresh token";
-
     private final ApiExceptionResponseSupport responses;
     private final ValidationErrorExtractor validationErrors =
             new ValidationErrorExtractor();
-    private final RateLimitUnavailableLogger rateLimitLogger =
-            new RateLimitUnavailableLogger();
 
     public GlobalExceptionHandler(
             ApiErrorResponseFactory errorResponseFactory
@@ -77,94 +65,6 @@ public class GlobalExceptionHandler implements Ordered {
     @Override
     public int getOrder() {
         return Ordered.LOWEST_PRECEDENCE;
-    }
-
-    @ExceptionHandler(ChatBusyException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleChatBusy(
-            ChatBusyException exception,
-            HttpServletRequest request
-    ) {
-        return responses.build(
-                HttpStatus.CONFLICT,
-                ApiErrorCode.CHAT_BUSY,
-                responses.safeMessage(
-                        exception.getMessage(),
-                        "В этот чат уже отправляется сообщение"
-                ),
-                request,
-                null,
-                null
-        );
-    }
-
-    @ExceptionHandler(ChatLockUnavailableException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleChatLockUnavailable(
-            ChatLockUnavailableException exception,
-            HttpServletRequest request
-    ) {
-        log.error(
-                "Chat lock service unavailable: requestId={}, path={}",
-                responses.requestId(request),
-                request.getRequestURI(),
-                exception
-        );
-
-        return responses.build(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.CHAT_LOCK_UNAVAILABLE,
-                CHAT_LOCK_UNAVAILABLE_MESSAGE,
-                request,
-                null,
-                null
-        );
-    }
-
-    @ExceptionHandler(RateLimitUnavailableException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleRateLimitUnavailable(
-            RateLimitUnavailableException exception,
-            HttpServletRequest request
-    ) {
-        rateLimitLogger.log(
-                log,
-                exception,
-                request,
-                responses.requestId(request)
-        );
-
-        return responses.build(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.RATE_LIMIT_UNAVAILABLE,
-                RATE_LIMIT_UNAVAILABLE_MESSAGE,
-                request,
-                null,
-                null
-        );
-    }
-
-    @ExceptionHandler(AuthServiceUnavailableException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleAuthServiceUnavailable(
-            AuthServiceUnavailableException exception,
-            HttpServletRequest request
-    ) {
-        log.error(
-                "Authentication service unavailable: requestId={}, path={}",
-                responses.requestId(request),
-                request.getRequestURI(),
-                exception
-        );
-
-        return responses.build(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
-                exception.getPublicMessage(),
-                request,
-                null,
-                null
-        );
     }
 
     @ExceptionHandler(BadRequestException.class)
@@ -199,58 +99,6 @@ public class GlobalExceptionHandler implements Ordered {
                         exception.getMessage(),
                         "Ресурс не найден"
                 ),
-                request,
-                null,
-                null
-        );
-    }
-
-    @ExceptionHandler(UserVersionConflictException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleUserVersionConflict(
-            UserVersionConflictException exception,
-            HttpServletRequest request
-    ) {
-        log.info(
-                "User optimistic version conflict: requestId={}, "
-                        + "userId={}, expectedVersion={}, actualVersion={}, path={}",
-                responses.requestId(request),
-                exception.getUserId(),
-                exception.getExpectedVersion(),
-                exception.getActualVersion(),
-                request.getRequestURI()
-        );
-
-        return responses.build(
-                exception.getStatus(),
-                exception.getErrorCode(),
-                exception.getPublicMessage(),
-                request,
-                null,
-                null
-        );
-    }
-
-    @ExceptionHandler(OrganizationVersionConflictException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleOrganizationVersionConflict(
-            OrganizationVersionConflictException exception,
-            HttpServletRequest request
-    ) {
-        log.info(
-                "Organization optimistic version conflict: requestId={}, "
-                        + "organizationId={}, expectedVersion={}, actualVersion={}, path={}",
-                responses.requestId(request),
-                exception.getOrganizationId(),
-                exception.getExpectedVersion(),
-                exception.getActualVersion(),
-                request.getRequestURI()
-        );
-
-        return responses.build(
-                exception.getStatus(),
-                exception.getErrorCode(),
-                exception.getPublicMessage(),
                 request,
                 null,
                 null
@@ -315,109 +163,6 @@ public class GlobalExceptionHandler implements Ordered {
                 request,
                 null,
                 null
-        );
-    }
-
-    @ExceptionHandler(ExpiredRefreshTokenException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleExpiredRefreshToken(
-            ExpiredRefreshTokenException exception,
-            HttpServletRequest request
-    ) {
-        log.debug(
-                "Expired refresh token: requestId={}, path={}",
-                responses.requestId(request),
-                request.getRequestURI(),
-                exception
-        );
-
-        return responses.build(
-                HttpStatus.UNAUTHORIZED,
-                ApiErrorCode.EXPIRED_REFRESH_TOKEN,
-                "Refresh token истёк",
-                request,
-                null,
-                null
-        );
-    }
-
-    @ExceptionHandler(RefreshTokenReuseDetectedException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleRefreshTokenReuseDetected(
-            RefreshTokenReuseDetectedException exception,
-            HttpServletRequest request
-    ) {
-        log.warn(
-                "Refresh token reuse detected: requestId={}, "
-                        + "userId={}, organizationId={}, tokenFamilyId={}, path={}",
-                responses.requestId(request),
-                exception.getUserId(),
-                exception.getOrganizationId(),
-                exception.getTokenFamilyId(),
-                request.getRequestURI()
-        );
-
-        return responses.build(
-                HttpStatus.UNAUTHORIZED,
-                ApiErrorCode.INVALID_REFRESH_TOKEN,
-                INVALID_REFRESH_TOKEN_MESSAGE,
-                request,
-                null,
-                null
-        );
-    }
-
-    @ExceptionHandler(InvalidRefreshTokenException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleInvalidRefreshToken(
-            InvalidRefreshTokenException exception,
-            HttpServletRequest request
-    ) {
-        log.debug(
-                "Invalid refresh token: requestId={}, path={}",
-                responses.requestId(request),
-                request.getRequestURI(),
-                exception
-        );
-
-        return responses.build(
-                HttpStatus.UNAUTHORIZED,
-                ApiErrorCode.INVALID_REFRESH_TOKEN,
-                INVALID_REFRESH_TOKEN_MESSAGE,
-                request,
-                null,
-                null
-        );
-    }
-
-    @ExceptionHandler(RateLimitExceededException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleRateLimitExceeded(
-            RateLimitExceededException exception,
-            HttpServletRequest request
-    ) {
-        HttpHeaders headers =
-                new HttpHeaders();
-
-        if (exception.getRetryAfterSeconds() > 0L) {
-            headers.set(
-                    HttpHeaders.RETRY_AFTER,
-                    Long.toString(
-                            exception.getRetryAfterSeconds()
-                    )
-            );
-        }
-
-        return responses.build(
-                HttpStatus.TOO_MANY_REQUESTS,
-                ApiErrorCode.RATE_LIMIT_EXCEEDED,
-                responses.safeMessage(
-                        exception.getPublicMessage(),
-                        "Превышен лимит запросов"
-                ),
-                request,
-                null,
-                headers
         );
     }
 

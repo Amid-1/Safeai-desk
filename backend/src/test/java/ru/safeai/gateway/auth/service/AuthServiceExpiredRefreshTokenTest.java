@@ -15,7 +15,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import ru.safeai.gateway.common.exception.ApiErrorCode;
-import ru.safeai.gateway.common.exception.ExpiredRefreshTokenException;
+import ru.safeai.gateway.auth.exception.ExpiredRefreshTokenException;
 import ru.safeai.gateway.common.security.ClientIpResolver;
 import ru.safeai.gateway.common.security.JwtService;
 import ru.safeai.gateway.ratelimit.LoginRateLimitService;

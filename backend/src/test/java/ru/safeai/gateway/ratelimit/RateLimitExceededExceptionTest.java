@@ -1,7 +1,7 @@
 package ru.safeai.gateway.ratelimit;
 
 import org.junit.jupiter.api.Test;
-import ru.safeai.gateway.common.exception.RateLimitExceededException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitExceededException;
 
 import java.time.Duration;
 

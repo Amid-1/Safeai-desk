@@ -26,7 +26,7 @@ import ru.safeai.gateway.chat.repository.ChatTurnMutexRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
-import ru.safeai.gateway.common.exception.ChatBusyException;
+import ru.safeai.gateway.chat.exception.ChatBusyException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.model.domain.ModelRouteReason;

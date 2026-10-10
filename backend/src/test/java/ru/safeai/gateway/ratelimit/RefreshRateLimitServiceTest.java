@@ -6,8 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import ru.safeai.gateway.common.exception.RateLimitExceededException;
-import ru.safeai.gateway.common.exception.RateLimitUnavailableException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitExceededException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitUnavailableException;
 
 import java.time.Duration;
 

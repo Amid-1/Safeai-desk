@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import ru.safeai.gateway.auth.security.UserStatusFilter;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
-import ru.safeai.gateway.common.exception.OrganizationVersionConflictException;
+import ru.safeai.gateway.organization.exception.OrganizationVersionConflictException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.CreateOrganizationRequest;
 import ru.safeai.gateway.organization.dto.DisableOrganizationRequest;

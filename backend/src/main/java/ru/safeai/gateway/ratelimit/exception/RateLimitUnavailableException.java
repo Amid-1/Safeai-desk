@@ -1,4 +1,4 @@
-package ru.safeai.gateway.common.exception;
+package ru.safeai.gateway.ratelimit.exception;
 
 public class RateLimitUnavailableException extends RuntimeException {
 

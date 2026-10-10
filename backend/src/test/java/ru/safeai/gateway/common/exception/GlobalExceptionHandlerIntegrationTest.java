@@ -17,6 +17,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import ru.safeai.gateway.organization.exception.OrganizationExceptionHandler;
+import ru.safeai.gateway.organization.exception.OrganizationVersionConflictException;
+import ru.safeai.gateway.user.exception.UserExceptionHandler;
+import ru.safeai.gateway.user.exception.UserVersionConflictException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitExceptionHandler;
+import ru.safeai.gateway.ratelimit.exception.RateLimitExceededException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitUnavailableException;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -40,6 +47,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandlerIntegrationTest
                 .ErrorProbeController.class,
         GlobalExceptionHandler.class,
+        UserExceptionHandler.class,
+        OrganizationExceptionHandler.class,
+        RateLimitExceptionHandler.class,
         ApiErrorResponseFactory.class,
         GlobalExceptionHandlerIntegrationTest
                 .ClockConfiguration.class
@@ -147,6 +157,22 @@ class GlobalExceptionHandlerIntegrationTest {
                         jsonPath("$.fieldErrors")
                                 .isMap()
                 );
+    }
+
+    @Test
+    void rateLimitUnavailableUses503AndDoesNotLeakInfrastructureMessage()
+            throws Exception {
+        mockMvc.perform(
+                        get("/test/errors/rate-limit-unavailable")
+                )
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value(503))
+                .andExpect(jsonPath("$.error")
+                        .value("RATE_LIMIT_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message")
+                        .value("Сервис ограничения запросов временно недоступен"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(content().string(not(containsString("redis-password"))));
     }
 
     @Test
@@ -313,6 +339,14 @@ class GlobalExceptionHandlerIntegrationTest {
             throw new RateLimitExceededException(
                     "Превышен лимит",
                     Duration.ofMillis(1501)
+            );
+        }
+
+        @GetMapping("/test/errors/rate-limit-unavailable")
+        void rateLimitUnavailable() {
+            throw new RateLimitUnavailableException(
+                    "Internal rate limiter connection failed",
+                    new IllegalStateException("redis-password=do-not-expose")
             );
         }
 

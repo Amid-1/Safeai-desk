@@ -22,7 +22,7 @@ import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnMutexRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
-import ru.safeai.gateway.common.exception.ChatBusyException;
+import ru.safeai.gateway.chat.exception.ChatBusyException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.ratelimit.RedisRateLimitService;

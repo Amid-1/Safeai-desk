@@ -6,8 +6,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
-import ru.safeai.gateway.common.exception.RateLimitExceededException;
-import ru.safeai.gateway.common.exception.RateLimitUnavailableException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitExceededException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitUnavailableException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.time.Duration;

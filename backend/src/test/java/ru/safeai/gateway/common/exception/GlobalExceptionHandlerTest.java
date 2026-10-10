@@ -45,7 +45,6 @@ import ru.safeai.gateway.common.security.RequestIdFilter;
 
 import java.lang.reflect.Method;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -84,113 +83,6 @@ class GlobalExceptionHandlerTest {
     void handlerHasLowestPrecedence() {
         assertThat(handler.getOrder())
                 .isEqualTo(Ordered.LOWEST_PRECEDENCE);
-    }
-
-    @Test
-    void handleChatBusyReturns409AndStableCode() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleChatBusy(
-                        new ChatBusyException(
-                                "В этот чат уже отправляется сообщение"
-                        ),
-                        request("/api/chats/1/messages")
-                );
-
-        assertError(
-                response,
-                HttpStatus.CONFLICT,
-                ApiErrorCode.CHAT_BUSY,
-                "В этот чат уже отправляется сообщение",
-                "/api/chats/1/messages"
-        );
-    }
-
-    @Test
-    void handleChatLockUnavailableReturns503AndDoesNotLeakCause() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleChatLockUnavailable(
-                        new ChatLockUnavailableException(
-                                "Redis lock failed",
-                                new RuntimeException(
-                                        "redis-password=secret"
-                                )
-                        ),
-                        request("/api/chats/1/messages")
-                );
-
-        ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.CHAT_LOCK_UNAVAILABLE,
-                "Сервис блокировки чата временно недоступен",
-                "/api/chats/1/messages"
-        );
-
-        assertThat(body.message())
-                .doesNotContain(
-                        "Redis",
-                        "secret",
-                        "password"
-                );
-    }
-
-    @Test
-    void handleRateLimitUnavailableReturnsSafe503() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleRateLimitUnavailable(
-                        new RateLimitUnavailableException(
-                                "Redis недоступен",
-                                new RuntimeException(
-                                        "redis.internal:6379"
-                                )
-                        ),
-                        request("/api/chats")
-                );
-
-        ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.RATE_LIMIT_UNAVAILABLE,
-                "Сервис ограничения запросов временно недоступен",
-                "/api/chats"
-        );
-
-        assertThat(body.message())
-                .doesNotContain(
-                        "Redis",
-                        "redis.internal"
-                );
-    }
-
-    @Test
-    void handleAuthServiceUnavailableReturnsSafe503() {
-        AuthServiceUnavailableException exception =
-                new AuthServiceUnavailableException(
-                        "Authentication status lookup failed",
-                        new RuntimeException(
-                                "redis.internal:6379"
-                        )
-                );
-
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleAuthServiceUnavailable(
-                        exception,
-                        request("/api/auth/login")
-                );
-
-        ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
-                "Сервис авторизации временно недоступен",
-                "/api/auth/login"
-        );
-
-        assertThat(body.message())
-                .doesNotContain(
-                        "Authentication status lookup failed",
-                        "redis.internal"
-                );
     }
 
     @Test
@@ -270,75 +162,6 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void handleExpiredRefreshTokenReturnsSpecific401() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleExpiredRefreshToken(
-                        new ExpiredRefreshTokenException(
-                                "internal expiry details"
-                        ),
-                        request("/api/auth/refresh")
-                );
-
-        ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.UNAUTHORIZED,
-                ApiErrorCode.EXPIRED_REFRESH_TOKEN,
-                "Refresh token истёк",
-                "/api/auth/refresh"
-        );
-
-        assertThat(body.message())
-                .doesNotContain("internal expiry details");
-    }
-
-    @Test
-    void handleInvalidRefreshTokenReturnsSafe401() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleInvalidRefreshToken(
-                        new InvalidRefreshTokenException(
-                                "refresh token hash missing"
-                        ),
-                        request("/api/auth/refresh")
-                );
-
-        ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.UNAUTHORIZED,
-                ApiErrorCode.INVALID_REFRESH_TOKEN,
-                "Недействительный refresh token",
-                "/api/auth/refresh"
-        );
-
-        assertThat(body.message())
-                .doesNotContain(
-                        "hash",
-                        "missing"
-                );
-    }
-
-    @Test
-    void handleRefreshTokenReuseReturnsGenericInvalidTokenResponse() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleRefreshTokenReuseDetected(
-                        new RefreshTokenReuseDetectedException(
-                                "Обнаружено повторное использование",
-                                UUID.randomUUID(),
-                                UUID.randomUUID(),
-                                UUID.randomUUID()
-                        ),
-                        request("/api/auth/refresh")
-                );
-
-        assertError(
-                response,
-                HttpStatus.UNAUTHORIZED,
-                ApiErrorCode.INVALID_REFRESH_TOKEN,
-                "Недействительный refresh token",
-                "/api/auth/refresh"
-        );
-    }
-
-    @Test
     void handleGenericApiExceptionUsesPublicContract() {
         ResponseEntity<ApiErrorResponse> response =
                 handler.handleApiException(
@@ -353,54 +176,6 @@ class GlobalExceptionHandlerTest {
                 "Публичное сообщение",
                 "/api/test"
         );
-    }
-
-    @Test
-    void handleRateLimitExceededReturns429AndRetryAfterHeader() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleRateLimitExceeded(
-                        new RateLimitExceededException(
-                                "Превышен лимит",
-                                Duration.ofSeconds(60)
-                        ),
-                        request("/api/chats")
-                );
-
-        assertError(
-                response,
-                HttpStatus.TOO_MANY_REQUESTS,
-                ApiErrorCode.RATE_LIMIT_EXCEEDED,
-                "Превышен лимит",
-                "/api/chats"
-        );
-
-        assertThat(response.getHeaders().getFirst(
-                HttpHeaders.RETRY_AFTER
-        )).isEqualTo("60");
-    }
-
-    @Test
-    void handleRateLimitExceededOmitsRetryAfterForZeroDuration() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleRateLimitExceeded(
-                        new RateLimitExceededException(
-                                "Превышен лимит",
-                                Duration.ZERO
-                        ),
-                        request("/api/chats")
-                );
-
-        assertError(
-                response,
-                HttpStatus.TOO_MANY_REQUESTS,
-                ApiErrorCode.RATE_LIMIT_EXCEEDED,
-                "Превышен лимит",
-                "/api/chats"
-        );
-
-        assertThat(response.getHeaders().getFirst(
-                HttpHeaders.RETRY_AFTER
-        )).isNull();
     }
 
     @Test
