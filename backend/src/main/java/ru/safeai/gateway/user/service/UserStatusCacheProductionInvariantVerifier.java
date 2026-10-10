@@ -4,39 +4,23 @@ import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.context.annotation.Profile;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
+import ru.safeai.gateway.common.security.ProductionEnvironmentCondition;
 
-/**
- * Production safety invariant for user security-state lookup.
- *
- * <p>PostgreSQL остаётся source of truth. Текущий Redis cache использует
- * best-effort AFTER_COMMIT invalidation, поэтому stale positive cache entry
- * теоретически может пережить security mutation, если Redis eviction
- * завершится ошибкой.</p>
- *
- * <p>До появления fail-safe invalidation strategy Redis user-status cache
- * запрещено использовать в production как источник security correctness.</p>
- */
+/** Fail closed when the best-effort Redis cache is enabled in production. */
 @Component
-@Profile({"prod", "production"})
+@Conditional(ProductionEnvironmentCondition.class)
 @RequiredArgsConstructor
-public class UserStatusCacheProductionInvariantVerifier
-        implements ApplicationRunner {
-
+public class UserStatusCacheProductionInvariantVerifier implements ApplicationRunner {
     private final UserStatusCacheProperties properties;
 
     @Override
-    public void run(
-            @NonNull ApplicationArguments args
-    ) {
+    public void run(@NonNull ApplicationArguments args) {
         if (properties.isEnabled()) {
             throw new IllegalStateException(
-                    "safeai.security.user-status-cache.enabled=true "
-                            + "запрещён в профилях prod/production: "
-                            + "текущая Redis invalidation является best-effort "
-                            + "и не может быть boundary security correctness"
-            );
+                    "safeai.security.user-status-cache.enabled=true запрещён в production: "
+                            + "best-effort cache invalidation не обеспечивает немедленный security fence");
         }
     }
 }

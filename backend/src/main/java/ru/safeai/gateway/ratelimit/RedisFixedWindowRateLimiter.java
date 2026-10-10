@@ -19,6 +19,23 @@ public class RedisFixedWindowRateLimiter {
     private static final DefaultRedisScript<String>
             INCREMENT_ONE_SCRIPT = script("""
             local ttlMs = tonumber(ARGV[1])
+            local function counter(key)
+                local raw = redis.call('GET', key)
+                if not raw then return 0 end
+                if not string.match(raw, '^%d+$') then
+                    return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
+                end
+                local normalized = string.gsub(raw, '^0+', '')
+                if normalized == '' then normalized = '0' end
+                -- Stay strictly below signed int64 max: an INCR must be safe.
+                local max = '9223372036854775806'
+                if #normalized > #max or (#normalized == #max and normalized > max) then
+                    return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
+                end
+                return tonumber(normalized)
+            end
+            local currentValue = counter(KEYS[1])
+            if type(currentValue) == 'table' then return currentValue end
 
             local current = redis.call(
                 'INCR',
@@ -53,11 +70,25 @@ public class RedisFixedWindowRateLimiter {
             local firstLimit = tonumber(ARGV[2])
             local secondLimit = tonumber(ARGV[3])
 
-            local firstCurrent =
-                tonumber(redis.call('GET', KEYS[1]) or '0')
-
-            local secondCurrent =
-                tonumber(redis.call('GET', KEYS[2]) or '0')
+            local function counter(key)
+                local raw = redis.call('GET', key)
+                if not raw then return 0 end
+                if not string.match(raw, '^%d+$') then
+                    return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
+                end
+                local normalized = string.gsub(raw, '^0+', '')
+                if normalized == '' then normalized = '0' end
+                -- Stay strictly below signed int64 max: an INCR must be safe.
+                local max = '9223372036854775806'
+                if #normalized > #max or (#normalized == #max and normalized > max) then
+                    return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
+                end
+                return tonumber(normalized)
+            end
+            local firstCurrent = counter(KEYS[1])
+            if type(firstCurrent) == 'table' then return firstCurrent end
+            local secondCurrent = counter(KEYS[2])
+            if type(secondCurrent) == 'table' then return secondCurrent end
 
             local firstTtl =
                 redis.call('PTTL', KEYS[1])
@@ -223,6 +254,26 @@ public class RedisFixedWindowRateLimiter {
             local ttlMs = tonumber(ARGV[1])
             local firstLimit = tonumber(ARGV[2])
             local secondLimit = tonumber(ARGV[3])
+
+            local function counter(key)
+                local raw = redis.call('GET', key)
+                if not raw then return 0 end
+                if not string.match(raw, '^%d+$') then
+                    return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
+                end
+                local normalized = string.gsub(raw, '^0+', '')
+                if normalized == '' then normalized = '0' end
+                -- Stay strictly below signed int64 max: an INCR must be safe.
+                local max = '9223372036854775806'
+                if #normalized > #max or (#normalized == #max and normalized > max) then
+                    return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
+                end
+                return tonumber(normalized)
+            end
+            local firstCurrent = counter(KEYS[1])
+            if type(firstCurrent) == 'table' then return firstCurrent end
+            local secondCurrent = counter(KEYS[2])
+            if type(secondCurrent) == 'table' then return secondCurrent end
 
             local newFirst =
                 redis.call(
@@ -680,19 +731,24 @@ public class RedisFixedWindowRateLimiter {
         );
 
         script.setScriptText("""
-                redis.call(
-                    'DEL',
-                    KEYS[1],
-                    KEYS[3]
-                )
-
-                local secondCurrent =
-                    tonumber(
-                        redis.call(
-                            'GET',
-                            KEYS[2]
-                        ) or '0'
-                    )
+                local function counter(key)
+                    local raw = redis.call('GET', key)
+                    if not raw then return 0 end
+                    if not string.match(raw, '^%d+$') then
+                        return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
+                    end
+                    local normalized = string.gsub(raw, '^0+', '')
+                    if normalized == '' then normalized = '0' end
+                    -- Stay strictly below signed int64 max: an INCR must be safe.
+                    local max = '9223372036854775806'
+                    if #normalized > #max or (#normalized == #max and normalized > max) then
+                        return redis.error_reply('INVALID_RATE_LIMIT_COUNTER')
+                    end
+                    return tonumber(normalized)
+                end
+                local secondCurrent = counter(KEYS[2])
+                if type(secondCurrent) == 'table' then return secondCurrent end
+                redis.call('DEL', KEYS[1], KEYS[3])
 
                 if secondCurrent <= 1 then
                     redis.call(

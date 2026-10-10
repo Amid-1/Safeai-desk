@@ -2,10 +2,11 @@
 
 **SafeAI Desk** — production-oriented корпоративная AI-платформа / AI Gateway для безопасного и управляемого использования внешних AI-моделей внутри организаций.
 
-> **Актуальность:** 09 октября 2026  
+> **Актуальность:** 10 октября 2026  
 > **Backend baseline:** ранее просмотренные модули `common`, `auth`, `user`, `organization`, `ratelimit`, `audit`,
-> `usage`, `chat`, `model`, `ai`, `knowledge` + актуализированная Flyway-эволюция схемы `V1–V70`.
-> В редакции учтены подтверждённые описания `V59–V68`, а также назначения `V69–V70` по именам применённых миграций и результатам тестового запуска. Полный повторный аудит исходников всех модулей не проводился.  
+> `usage`, `chat`, `model`, `ai`, `knowledge` + актуализированная Flyway-эволюция схемы `V1–V71`.
+> В редакции сохранён ранее документированный baseline `V1–V70` и добавлено подтверждённое развитие Usage до `V71`, включая dirty-date recalculation, а также результаты выборочных тестов 10.10.2026.
+> **Граница достоверности:** полный аудит всех файлов текущего checkout и новый успешный прогон `./mvnw clean test` не выполнялись; источники — переданный README, фрагменты Java-классов и предоставленные логи.  
 > **Статус:** production-oriented **pre-1.0**. Проект уже содержит серьёзные security/durability/governance/evidence
 > механизмы и database backstops, но README не заявляет compliance certification, invoice-grade settlement,
 > формально доказанную HA/SLA или полностью динамический multi-provider runtime.
@@ -35,7 +36,7 @@
 19. [Модуль `ai`](#модуль-ai)
 20. [Модуль `knowledge`](#модуль-knowledge)
 21. [Ключевые backend contracts](#ключевые-backend-contracts)
-22. [Database / Flyway V1–V70](#database--flyway-v1v70)
+22. [Database / Flyway V1–V71](#database--flyway-v1v71)
 23. [Observability и operational jobs](#observability-и-operational-jobs)
 24. [Тестирование](#тестирование)
 25. [Local development](#local-development)
@@ -95,7 +96,7 @@ Identity
 
 # Текущее состояние
 
-Ниже описан подтверждённый ранее backend baseline, дополненный состоянием миграций и тестов на 09.10.2026.
+Ниже описан подтверждённый ранее backend baseline, дополненный состоянием миграций и тестов на 10.10.2026.
 
 ## Identity / Security
 
@@ -362,7 +363,7 @@ backend/
 │
 ├── src/main/resources/
 │   ├── db/
-│   │   ├── migration/         # V1 ... V70
+│   │   ├── migration/         # V1 ... V71
 │   │   └── local-migration/   # local-only seed
 │   │
 │   ├── application.yml
@@ -473,6 +474,7 @@ backend/
 │   │       │       ├── V68__audit_integrity_hardening.sql
 │   │       │       ├── V69__audit_actor_link_fk_detachment.sql
 │   │       │       ├── V70__audit_live_user_link_separation.sql
+│   │       │       ├── V71__usage_dirty_dates_and_recalculation_queue.sql
 │   │       │       └── README_DB.md
 │   │       │
 │   │       ├── META-INF/
@@ -965,6 +967,8 @@ Baseline properties:
 - backfill per run;
 - advisory lock key;
 - statement timeout.
+
+При работе с `UsageJdbcClients` учитываются изоляция ресурсов аналитических запросов и инварианты пула подключений; конкретные настройки/бюджеты пула следует сверять с `UsageConfiguration`, properties и текущими runtime profiles. Не считать схему пулов доказанной только по одному названию класса.
 
 ## Chat
 
@@ -1545,15 +1549,19 @@ ratelimit/
 
 Redis используется как distributed rate-limit state.
 
-Atomic fixed-window operation выполняется Lua script-ом:
+Atomic fixed-window operation выполняется Lua script-ом. Для dual-counter операций критична **предварительная проверка обоих Redis-значений до первой записи**: Redis Lua сериализует вызовы, но при ошибке **не откатывает** уже выполненные команды.
 
 ```text
-INCR
-+
-TTL initialization
-+
-limit decision
+validate counter #1 + counter #2
+        ↓
+validate update preconditions / limits
+        ↓
+INCR and initialize TTL where applicable
+        ↓
+limit decision / optional marker
 ```
+
+`tryIncrementBoth()` резервирует оба bucket только при допустимости запроса; `incrementBothAndCheck()` сохраняет семантику учёта попытки. Интеграционные тесты отдельно проверяют конкуренцию, TTL и отсутствие частичных записей на повреждённых значениях. В Redis Cluster ключи одной Lua-операции должны находиться в одном hash slot.
 
 ## Keys
 
@@ -1832,11 +1840,14 @@ usage/
 │   ├── UsageQueryCriteria
 │   ├── UsageQueryPlan
 │   ├── UsageQueryRepository
+│   ├── UsageDirtyDateRepository
 │   ├── UsageRollupStateRepository
 │   ├── UsageRowMapperSupport
 │   └── UsageSqlFragments
 │
 └── service/
+    ├── UsageDirtyDateProcessor
+    ├── UsageForcedRebuildService
     ├── UsageQueryService
     ├── UsageReportExecutor
     ├── UsageRollupDayProcessor
@@ -1882,6 +1893,57 @@ CALCULATION_FAILED
 - rollup имеет watermark/reconciliation;
 - recent/incomplete range может дочитываться live;
 - max live range защищает DB от неограниченного тяжёлого запроса.
+
+## V71 — Dirty-date recalculation и восстановление актуальности сводок
+
+Историческая дневная сводка не обязательно остаётся актуальной навсегда: сообщение или физический AI attempt может получить окончательный статус позже даты первоначального rollup. Поэтому механизм V71 отделяет **последовательный backfill** от **повторного расчёта уже закрытых UTC-дней**.
+
+```text
+persisted usage / late-arriving or corrected evidence
+       │
+       ▼
+usage dirty-date tracking (V71)
+       │
+       ▼
+UsageDirtyDateRepository ── pending UTC dates / queue state
+       │
+       ▼
+UsageRollupScheduler ───── PostgreSQL advisory lock
+       │
+       ├── contiguous backfill → UsageRollupDayProcessor(rebuildDay, true)
+       ├── recent reconciliation → rebuildDay(date, false)
+       └── dirty-date processing → UsageDirtyDateProcessor
+                                   │
+                                   ▼
+                               daily rollups
+```
+
+### Компоненты и ответственность
+
+| Класс | Назначение |
+|---|---|
+| `UsageRollupStateRepository` | Чтение `last_completed_date`, поиск первого UTC-дня источников, монотонное продвижение watermark, запуск под PostgreSQL advisory lock |
+| `UsageDirtyDateRepository` | Доступ к очереди дат, требующих повторной обработки; репозиторий должен допускать Spring CGLIB-проксирование, если используется exception translation |
+| `UsageDirtyDateProcessor` | Обработка помеченных дат с учётом состояния очереди; служит отдельной границей от обычного backfill |
+| `UsageForcedRebuildService` | Выделенный сервис принудительного пересчёта; наличие Spring-сервиса само по себе не подтверждает наличие публичного административного HTTP endpoint |
+| `UsageRollupDayProcessor` | Фактическая перестройка дневных агрегатов; `advanceWatermark` определяет, продвигать ли последовательный watermark |
+| `UsageRollupScheduler` | Планирование ограниченных порций backfill, lookback reconciliation и dirty-date обработки в рамках межинстансовой координации |
+| `UsageJdbcClients` | Конфигурация JDBC-клиентов для usage paths; параметры исполнения запросов и подключения следует проверять по коду/configuration |
+
+### Watermark: точный контракт
+
+- `findLastCompletedDate()` возвращает последнюю *последовательно* обработанную дату или `null` до инициализации.
+- `findEarliestUsageDate()` берёт минимум по UTC-дням сообщений `ASSISTANT` и `AMBIGUOUS` chat turns с `completed_at`; это шире прежнего assistant-only поиска.
+- `markCompleted(date)` реализован как условный PostgreSQL `INSERT ... ON CONFLICT DO UPDATE`: повторная запись и запись более ранней даты допустимы, переход вперёд — только на следующий UTC-день; попытка пропустить день приводит к `IllegalStateException`, переведённому репозиторием через Spring exception translation в соответствующий `DataAccessException`.
+- `rebuildDay(date, false)` применяется для reconciliation: **не должен продвигать watermark назад или вперёд**, даже если данные за дату изменились.
+- Pending dirty dates и watermark — разные понятия: корректировка старой даты не должна изображаться как новый contiguous backfill.
+- Планировщик ограничивает backfill и lookback настройками `safeai.usage.rollup.*`; не следует считать, что один запуск пересчитывает всю историю.
+
+### Безопасность исполнения и эксплуатация
+
+Используется `PostgresAdvisoryLockExecutor`, чтобы два экземпляра приложения не запускали конкурирующую работу одного scheduled rollup. Session-level advisory lock привязан к JDBC connection и должен освобождаться при завершении action; корректность изменений всё равно зависит от транзакционных границ отдельных операций. Принудительная переагрегация — потенциально дорогая операция, поэтому перед массовым использованием нужно проверять лимиты, аудит вызывающего и наблюдаемость выполнения по реальному коду.
+
+Для V71 не следует создавать новую SQL-миграцию или редактировать уже применённый `V71__usage_dirty_dates_and_recalculation_queue.sql` только ради документации.
 
 ## Concurrency / performance
 
@@ -3366,7 +3428,7 @@ Answer Passport читается по chat/turn identity через `AnswerPassp
 
 ---
 
-# Database / Flyway V1–V70
+# Database / Flyway V1–V71
 
 Production migrations:
 
@@ -3433,6 +3495,7 @@ local seed != production reference data
 | `V68`     | audit event/outbox integrity: canonical snapshots, typed payload, immutable evidence/intent, terminal dead-letter state |
 | `V69`     | audit actor-link FK detachment: отделение исторического actor snapshot от ссылочной зависимости на удаляемую учётную запись |
 | `V70`     | audit live-user link separation: разделение живой ссылки на пользователя и исторических данных audit actor; сохранение audit evidence при изменении жизненного цикла пользователя |
+| `V71`     | Usage dirty-date queue и повторный расчёт UTC-дней: учёт поздних изменений источников, выборка ожидающих дат и управляемая переагрегация без отката последовательного watermark |
 
 ## Важные DB boundaries
 
@@ -3447,6 +3510,7 @@ local seed != production reference data
 - immutable `audit_events` UPDATE boundary;
 - immutable `audit_outbox` intent + monotonic delivery metadata;
 - usage quality checks;
+- V71 dirty-date recalculation state и инварианты монотонного rollup watermark;
 - one reply per user message;
 - DB-enforced ChatTurn transition graph;
 - terminal ChatTurn immutability;
@@ -3523,7 +3587,7 @@ Prometheus endpoint должен быть internal/network-protected.
 - refresh-token cleanup;
 - audit outbox processing;
 - audit retention;
-- usage rollups/backfill;
+- usage rollups/backfill и V71 dirty-date recalculation;
 - ChatTurn recovery;
 - Knowledge ingestion;
 - Knowledge storage reconciliation;
@@ -3537,9 +3601,9 @@ Multi-instance job должен иметь DB/distributed coordination там, �
 
 README не утверждает `BUILD SUCCESS` без фактического запуска конкретного commit.
 
-## Подтверждённое состояние на 09.10.2026
+## История контрольных прогонов и актуальный статус на 10.10.2026
 
-По предоставленному Maven Surefire summary последнего полного запуска:
+**Предыдущий полный прогон (историческая фиксация, не статус текущего checkout):**
 
 ```text
 Tests run: 2238, Failures: 0, Errors: 2, Skipped: 3
@@ -3557,6 +3621,12 @@ BUILD FAILURE
 уникальное покрытие. Исправление должно выполняться в устаревшем тестовом
 helper/fixture без отключения DB triggers, изменения `created_at` и снижения
 строгости assertions.
+
+**Более поздняя диагностика (10.10.2026):** ранее другой полный Maven-прогон показал `Tests run: 2229, Failures: 1, Errors: 243, Skipped: 3`. Массовые ошибки загрузки `ApplicationContext` имели общий root cause: `UsageDirtyDateRepository` был `final` и не поддавался CGLIB-проксированию Spring. После изменения класса на не-`final` выборочный `UsageRollupReconciliationIntegrationTest` **успешно загрузил Spring-контекст** и применил все **71** миграцию в Testcontainers PostgreSQL, но завершился ошибкой assertion по сообщению `watermarkRejectsSkippedUtcDay()`.
+
+Из предоставленного stack trace: production-исключение содержит `Usage rollup watermark cannot skip an unprocessed day: 2026-06-12`, тогда как старый тест требовал фразу `пропуском UTC-дня`. Тест был обновлён для текущего error contract без изменения запрета на пропуск дат. Отдельно исправлен `UserServiceTest`: нейтральное сообщение конфликта email теперь `Указанный email недоступен`, а не старое `уже существует`. Подтверждение успешного повторного запуска этих изменённых тестов в полученных логах отсутствует.
+
+**Не следует суммировать численность исторических запусков и выдавать её за состояние последней сборки.** Полный `./mvnw clean test` после фиксов не предоставлен; остальные регрессии не исключены.
 
 Статус сборки **не является** подтверждением полного green baseline.
 Необходимо заново прогнать `./mvnw clean test` после исправления оставшегося
@@ -3647,6 +3717,7 @@ mvnw.cmd clean test
 - UTC aggregation;
 - pricing correctness;
 - rollup reconciliation;
+- dirty-date queue, исторический forced rebuild и монотонный watermark (V71);
 - performance/EXPLAIN;
 - tenant isolation.
 
@@ -3680,13 +3751,24 @@ mvnw.cmd clean test
 - retrieval metrics;
 - real fixture contracts.
 
+## Целевые проверки V71
+
+```bash
+cd backend
+./mvnw -Dtest=UsageRollupSchedulerTest,UsageRollupReconciliationIntegrationTest test
+./mvnw -Dtest=RedisFixedWindowRateLimiterIT,UserServiceTest test
+./mvnw clean test
+```
+
+Интеграционные тесты с `@Testcontainers` требуют Docker. Если сборка падает, ищите **первый** `Caused by`, а не только каскадное `ApplicationContext failure threshold exceeded`. Для проверки V71 полезны: выборка earliest UTC date (включая `AMBIGUOUS`), последовательность backfill, повторный расчёт dirty dates, монотонность watermark, lock contention, идемпотентность aggregate rebuild. Не подавляйте проверки SQL-целостности ради зелёного результата.
+
 ## Release candidate checks
 
 Перед серьёзным deployment:
 
 ```text
-fresh V1 → V70
-representative populated upgrade → V70
+fresh V1 → V71
+representative populated upgrade → V71
 Flyway history validation
 critical index validity check
 backend clean test
@@ -3851,7 +3933,7 @@ Redirect following с credentials запрещён.
 
 # Текущие ограничения и production-readiness gaps
 
-Этот раздел фиксирует **зафиксированные в ранее проанализированном коде ограничения (переоценены по доступным материалам на 09.10.2026)**. Пункты, закрытые `V59–V68`,
+Этот раздел фиксирует **зафиксированные в ранее проанализированном коде ограничения (переоценены по доступным материалам на 10.10.2026)**. Пункты, закрытые `V59–V68`,
 из списка удалены: budget-state representability закрыт `V62/V64`, final-request/RAG binding — `V62/V64/V65`,
 searchable Knowledge publication — `V63`, physical response vs protocol rejection — `V66`,
 а Chat/Audit evidence получил дополнительные DB backstops в `V67/V68`.
@@ -4077,7 +4159,7 @@ SafeAI Desk не пытается сделать LLM deterministic.
 
 # Frontend
 
-Эта редакция README фиксирует ранее изученный backend baseline и подтверждённое применение Flyway до `V70` на 09.10.2026.
+Эта редакция README фиксирует ранее изученный backend baseline и подтверждённое применение Flyway до `V70` на 10.10.2026.
 
 По предоставленным скриншотам видно, что frontend уже содержит отдельные API clients, runtime parsers, auth context, admin audit/usage/users/organizations/model control plane UI, Chat title UI и Knowledge UI, а также значительный test layer.
 
@@ -4139,4 +4221,4 @@ usage / physical spend / Answer Passport / audit
 
 ---
 
-**Документ актуализирован 09 октября 2026 года. Подтверждено применение Flyway `V1–V70` в интеграционной среде; текущий полный тестовый прогон пока не завершился успешно.**
+**Документ актуализирован 10 октября 2026 года. Подтверждены запуск тестового Spring-контекста и применение Flyway `V1–V71` в PostgreSQL Testcontainers. Успешный полный прогон всей тестовой матрицы после последних правок не подтверждён.**

@@ -315,15 +315,14 @@ class UsageRollupReconciliationIntegrationTest
                 .isInstanceOf(
                         InvalidDataAccessApiUsageException.class
                 )
-                .hasMessageContaining(
-                        "пропуском UTC-дня"
+                .hasMessage(
+                        "Usage rollup watermark cannot skip an unprocessed day: 2026-06-12"
                 )
                 .hasRootCauseInstanceOf(
                         IllegalStateException.class
                 )
                 .hasRootCauseMessage(
-                        "Usage rollup watermark нельзя продвинуть "
-                                + "с пропуском UTC-дня: 2026-06-12"
+                        "Usage rollup watermark cannot skip an unprocessed day: 2026-06-12"
                 );
 
         assertThat(

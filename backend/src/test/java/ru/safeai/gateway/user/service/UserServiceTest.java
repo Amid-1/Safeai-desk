@@ -258,7 +258,7 @@ class UserServiceTest {
                 adminPrincipal()
         ))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("уже существует");
+                .hasMessage("Указанный email недоступен");
 
         verify(passwordEncoder, never()).encode(any());
         verifyNoInteractions(
@@ -1083,3 +1083,4 @@ void permanentDeletionDeletesEmptyDisabledUser() {
         );
     }
 }
+

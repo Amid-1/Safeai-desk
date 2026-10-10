@@ -116,7 +116,7 @@ final class UserCommandOperations {
 
         /* Fast preflight only; PostgreSQL UNIQUE remains correctness boundary. */
         if (userRepository.existsByEmail(email)) {
-            throw duplicateEmail(email);
+            throw duplicateEmail();
         }
 
         /* BCrypt runs before the organization pessimistic lock. */
@@ -148,7 +148,7 @@ final class UserCommandOperations {
             saved = saveAndRefresh(entity);
         } catch (DataIntegrityViolationException exception) {
             if (isEmailUniqueViolation(exception)) {
-                throw duplicateEmail(email);
+                throw duplicateEmail();
             }
             throw exception;
         }
@@ -213,7 +213,7 @@ final class UserCommandOperations {
 
         if (emailChanged
                 && userRepository.existsByEmail(normalizedEmail)) {
-            throw duplicateEmail(normalizedEmail);
+            throw duplicateEmail();
         }
 
         String oldEmail = user.getEmail();
@@ -231,7 +231,7 @@ final class UserCommandOperations {
             saved = saveAndRefresh(user);
         } catch (DataIntegrityViolationException exception) {
             if (isEmailUniqueViolation(exception)) {
-                throw duplicateEmail(normalizedEmail);
+                throw duplicateEmail();
             }
             throw exception;
         }
@@ -664,13 +664,11 @@ final class UserCommandOperations {
         );
     }
 
-    private static ConflictException duplicateEmail(
-            String email
-    ) {
-        return new ConflictException(
-                "Пользователь с таким email уже существует: " + email
-        );
-    }
+    private static ConflictException duplicateEmail() {
+    return new ConflictException(
+            "Указанный email недоступен"
+    );
+}
 
     private static String nullToEmpty(
             String value
