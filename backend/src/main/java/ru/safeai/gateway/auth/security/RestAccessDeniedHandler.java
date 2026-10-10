@@ -1,37 +1,36 @@
-package ru.safeai.gateway.common.security;
+package ru.safeai.gateway.auth.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
 import ru.safeai.gateway.common.exception.ApiErrorCode;
 import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 
 import java.io.IOException;
 
-/**
- * Entry point только для OAuth2 Resource Server / Authorization: Bearer.
- */
 @Component
 @RequiredArgsConstructor
-public final class BearerAuthenticationEntryPoint
-implements AuthenticationEntryPoint {
+public class RestAccessDeniedHandler
+        implements AccessDeniedHandler {
 
     private final ApiErrorResponseWriter errorResponseWriter;
 
     @Override
-    public void commence(
+    public void handle(
             HttpServletRequest request,
             HttpServletResponse response,
-            AuthenticationException authenticationException
+            AccessDeniedException accessDeniedException
     ) throws IOException {
-        errorResponseWriter.writeBearerUnauthorized(
+        errorResponseWriter.write(
                 request,
                 response,
-                ApiErrorCode.UNAUTHORIZED,
-                "Требуется авторизация"
+                HttpStatus.FORBIDDEN,
+                ApiErrorCode.FORBIDDEN,
+                "Доступ запрещён"
         );
     }
 }

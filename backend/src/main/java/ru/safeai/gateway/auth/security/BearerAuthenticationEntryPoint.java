@@ -1,9 +1,8 @@
-package ru.safeai.gateway.common.security;
+package ru.safeai.gateway.auth.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
@@ -13,12 +12,11 @@ import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 import java.io.IOException;
 
 /**
- * Общий JSON 401 entry point для browser/cookie authentication.
- * Bearer challenge здесь намеренно не выставляется.
+ * Entry point только для OAuth2 Resource Server / Authorization: Bearer.
  */
 @Component
 @RequiredArgsConstructor
-public class RestAuthenticationEntryPoint
+public final class BearerAuthenticationEntryPoint
 implements AuthenticationEntryPoint {
 
     private final ApiErrorResponseWriter errorResponseWriter;
@@ -29,10 +27,9 @@ implements AuthenticationEntryPoint {
             HttpServletResponse response,
             AuthenticationException authenticationException
     ) throws IOException {
-        errorResponseWriter.write(
+        errorResponseWriter.writeBearerUnauthorized(
                 request,
                 response,
-                HttpStatus.UNAUTHORIZED,
                 ApiErrorCode.UNAUTHORIZED,
                 "Требуется авторизация"
         );

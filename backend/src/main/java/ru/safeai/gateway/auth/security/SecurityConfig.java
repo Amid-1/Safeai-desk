@@ -41,12 +41,9 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import ru.safeai.gateway.auth.service.AuthCookieProperties;
 import ru.safeai.gateway.auth.service.AuthCookieService;
-import ru.safeai.gateway.common.security.BearerAuthenticationEntryPoint;
 import ru.safeai.gateway.common.security.ClientIpProperties;
 import ru.safeai.gateway.common.security.CorsProperties;
 import ru.safeai.gateway.common.security.JwtProperties;
-import ru.safeai.gateway.common.security.RestAccessDeniedHandler;
-import ru.safeai.gateway.common.security.RestAuthenticationEntryPoint;
 
 import java.util.List;
 import java.util.Set;

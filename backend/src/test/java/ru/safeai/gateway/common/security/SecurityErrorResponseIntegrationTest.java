@@ -1,5 +1,8 @@
 package ru.safeai.gateway.common.security;
 
+import ru.safeai.gateway.auth.security.RestAuthenticationEntryPoint;
+import ru.safeai.gateway.auth.security.RestAccessDeniedHandler;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
