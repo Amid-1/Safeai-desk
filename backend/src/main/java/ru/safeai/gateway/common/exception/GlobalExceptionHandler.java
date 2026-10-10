@@ -9,7 +9,6 @@ import org.springframework.context.MessageSourceResolvable;
 import org.springframework.core.Ordered;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -51,14 +50,9 @@ public class GlobalExceptionHandler implements Ordered {
             "Данные были изменены другим пользователем. "
                     + "Обновите данные и повторите операцию";
 
-    private static final String RATE_LIMIT_UNAVAILABLE_MESSAGE =
-            "Сервис ограничения запросов временно недоступен";
-
     private final ApiExceptionResponseSupport responses;
     private final ValidationErrorExtractor validationErrors =
             new ValidationErrorExtractor();
-    private final RateLimitUnavailableLogger rateLimitLogger =
-            new RateLimitUnavailableLogger();
 
     public GlobalExceptionHandler(
             ApiErrorResponseFactory errorResponseFactory
@@ -71,29 +65,6 @@ public class GlobalExceptionHandler implements Ordered {
     @Override
     public int getOrder() {
         return Ordered.LOWEST_PRECEDENCE;
-    }
-
-    @ExceptionHandler(RateLimitUnavailableException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleRateLimitUnavailable(
-            RateLimitUnavailableException exception,
-            HttpServletRequest request
-    ) {
-        rateLimitLogger.log(
-                log,
-                exception,
-                request,
-                responses.requestId(request)
-        );
-
-        return responses.build(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.RATE_LIMIT_UNAVAILABLE,
-                RATE_LIMIT_UNAVAILABLE_MESSAGE,
-                request,
-                null,
-                null
-        );
     }
 
     @ExceptionHandler(BadRequestException.class)
@@ -244,37 +215,6 @@ public class GlobalExceptionHandler implements Ordered {
                 request,
                 null,
                 null
-        );
-    }
-
-    @ExceptionHandler(RateLimitExceededException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleRateLimitExceeded(
-            RateLimitExceededException exception,
-            HttpServletRequest request
-    ) {
-        HttpHeaders headers =
-                new HttpHeaders();
-
-        if (exception.getRetryAfterSeconds() > 0L) {
-            headers.set(
-                    HttpHeaders.RETRY_AFTER,
-                    Long.toString(
-                            exception.getRetryAfterSeconds()
-                    )
-            );
-        }
-
-        return responses.build(
-                HttpStatus.TOO_MANY_REQUESTS,
-                ApiErrorCode.RATE_LIMIT_EXCEEDED,
-                responses.safeMessage(
-                        exception.getPublicMessage(),
-                        "Превышен лимит запросов"
-                ),
-                request,
-                null,
-                headers
         );
     }
 

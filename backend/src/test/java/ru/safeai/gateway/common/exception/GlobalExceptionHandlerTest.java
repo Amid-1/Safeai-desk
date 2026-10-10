@@ -45,7 +45,6 @@ import ru.safeai.gateway.common.security.RequestIdFilter;
 
 import java.lang.reflect.Method;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -84,34 +83,6 @@ class GlobalExceptionHandlerTest {
     void handlerHasLowestPrecedence() {
         assertThat(handler.getOrder())
                 .isEqualTo(Ordered.LOWEST_PRECEDENCE);
-    }
-
-    @Test
-    void handleRateLimitUnavailableReturnsSafe503() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleRateLimitUnavailable(
-                        new RateLimitUnavailableException(
-                                "Redis недоступен",
-                                new RuntimeException(
-                                        "redis.internal:6379"
-                                )
-                        ),
-                        request("/api/chats")
-                );
-
-        ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.RATE_LIMIT_UNAVAILABLE,
-                "Сервис ограничения запросов временно недоступен",
-                "/api/chats"
-        );
-
-        assertThat(body.message())
-                .doesNotContain(
-                        "Redis",
-                        "redis.internal"
-                );
     }
 
     @Test
@@ -205,54 +176,6 @@ class GlobalExceptionHandlerTest {
                 "Публичное сообщение",
                 "/api/test"
         );
-    }
-
-    @Test
-    void handleRateLimitExceededReturns429AndRetryAfterHeader() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleRateLimitExceeded(
-                        new RateLimitExceededException(
-                                "Превышен лимит",
-                                Duration.ofSeconds(60)
-                        ),
-                        request("/api/chats")
-                );
-
-        assertError(
-                response,
-                HttpStatus.TOO_MANY_REQUESTS,
-                ApiErrorCode.RATE_LIMIT_EXCEEDED,
-                "Превышен лимит",
-                "/api/chats"
-        );
-
-        assertThat(response.getHeaders().getFirst(
-                HttpHeaders.RETRY_AFTER
-        )).isEqualTo("60");
-    }
-
-    @Test
-    void handleRateLimitExceededOmitsRetryAfterForZeroDuration() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleRateLimitExceeded(
-                        new RateLimitExceededException(
-                                "Превышен лимит",
-                                Duration.ZERO
-                        ),
-                        request("/api/chats")
-                );
-
-        assertError(
-                response,
-                HttpStatus.TOO_MANY_REQUESTS,
-                ApiErrorCode.RATE_LIMIT_EXCEEDED,
-                "Превышен лимит",
-                "/api/chats"
-        );
-
-        assertThat(response.getHeaders().getFirst(
-                HttpHeaders.RETRY_AFTER
-        )).isNull();
     }
 
     @Test

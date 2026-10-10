@@ -8,8 +8,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import ru.safeai.gateway.common.exception.RateLimitExceededException;
-import ru.safeai.gateway.common.exception.RateLimitUnavailableException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitExceededException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitUnavailableException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.time.Duration;

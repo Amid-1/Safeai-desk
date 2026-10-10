@@ -1,4 +1,7 @@
-package ru.safeai.gateway.common.exception;
+package ru.safeai.gateway.ratelimit.exception;
+
+import ru.safeai.gateway.common.exception.ApiErrorCode;
+import ru.safeai.gateway.common.exception.ApiException;
 
 import lombok.Getter;
 import org.springframework.http.HttpStatus;

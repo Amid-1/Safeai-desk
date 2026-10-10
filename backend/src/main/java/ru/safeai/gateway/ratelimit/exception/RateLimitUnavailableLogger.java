@@ -1,4 +1,4 @@
-package ru.safeai.gateway.common.exception;
+package ru.safeai.gateway.ratelimit.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;

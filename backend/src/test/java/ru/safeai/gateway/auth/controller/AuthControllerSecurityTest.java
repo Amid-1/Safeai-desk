@@ -36,9 +36,10 @@ import ru.safeai.gateway.auth.exception.AuthServiceUnavailableException;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
 import ru.safeai.gateway.auth.exception.ExpiredRefreshTokenException;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
+import ru.safeai.gateway.ratelimit.exception.RateLimitExceptionHandler;
 import ru.safeai.gateway.auth.exception.InvalidRefreshTokenException;
-import ru.safeai.gateway.common.exception.RateLimitExceededException;
-import ru.safeai.gateway.common.exception.RateLimitUnavailableException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitExceededException;
+import ru.safeai.gateway.ratelimit.exception.RateLimitUnavailableException;
 import ru.safeai.gateway.auth.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
@@ -71,7 +72,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         AuthController.class,
         AuthControllerSecurityTest.TestSecurityConfig.class,
         GlobalExceptionHandler.class,
-        AuthExceptionHandler.class
+        AuthExceptionHandler.class,
+        RateLimitExceptionHandler.class
 })
 class AuthControllerSecurityTest {
 
