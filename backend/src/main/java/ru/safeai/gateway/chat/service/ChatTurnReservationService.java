@@ -345,6 +345,12 @@ public class ChatTurnReservationService {
                         request.knowledgeMode()
                 );
 
+        // Immutable reservation-time epoch: protects STARTED after disable,
+        // including a rapid disable/re-enable sequence.
+        turn.setAuthorizedOrganizationAuthVersion(
+                currentUser.getOrganizationAuthVersion()
+        );
+
         turnRepository.saveAndFlush(
                 turn
         );

@@ -13,6 +13,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderErrorType;
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.execution.AiExecutionAttemptRecorder;
+import ru.safeai.gateway.ai.execution.AiExecutionPlanService;
+import ru.safeai.gateway.ai.execution.AiExecutionRequest;
+import ru.safeai.gateway.ai.execution.AiExecutionService;
+import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
+import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
 import ru.safeai.gateway.ai.metadata.AiResponseStatus;
 import ru.safeai.gateway.ai.metadata.PricingStatus;
 import ru.safeai.gateway.ai.metadata.UsageStatus;
@@ -39,6 +45,8 @@ import ru.safeai.gateway.model.domain.OrganizationModelPolicy;
 import ru.safeai.gateway.model.dto.RuntimeModelStatusResponse;
 import ru.safeai.gateway.model.repository.ModelCatalogRepository;
 import ru.safeai.gateway.model.repository.OrganizationModelPolicyRepository;
+import ru.safeai.gateway.model.service.ModelRouteExecutionBindingService;
+import ru.safeai.gateway.model.service.ModelRouteExecutionIdentity;
 import ru.safeai.gateway.model.service.RuntimeModelStatusService;
 
 import java.math.BigDecimal;
@@ -83,6 +91,18 @@ class ChatTurnStateMachineIntegrationTest
     private ChatTurnFinalizationService finalizationService;
 
     @Autowired
+    private AiExecutionService aiExecutionService;
+
+    @Autowired
+    private ModelRouteExecutionBindingService executionBindingService;
+
+    @Autowired
+    private AiExecutionPlanService executionPlanService;
+
+    @Autowired
+    private AiExecutionAttemptRecorder physicalAttemptRecorder;
+
+    @Autowired
     private ChatTurnRepository turnRepository;
 
     @Autowired
@@ -109,6 +129,7 @@ class ChatTurnStateMachineIntegrationTest
         seedEffectiveMockRuntimeCatalog();
         seedEnabledOrganizationPolicy();
         assertGovernedRuntimeReady();
+        alignTestClockWithDatabaseForPhysicalExecution();
     }
 
     @AfterEach
@@ -332,13 +353,13 @@ class ChatTurnStateMachineIntegrationTest
                 clientRequestId
         );
 
-        finalizationService.markProviderCallStarted(
-                context
-        );
+        UUID attemptId = startPhysicalAttempt(context);
+        AiChatResponse providerResponse = ChatTestFixtures.freeResponse();
+        physicalAttemptRecorder.succeeded(attemptId, providerResponse);
 
         finalizationService.succeed(
                 context,
-                ChatTestFixtures.freeResponse(),
+                providerResponse,
                 principal()
         );
 
@@ -415,13 +436,13 @@ class ChatTurnStateMachineIntegrationTest
         RouteIdentity routeIdentity =
                 loadRouteIdentity(context);
 
-        finalizationService.markProviderCallStarted(
-                context
-        );
+        UUID attemptId = startPhysicalAttempt(context);
+        AiProviderException providerFailure = unambiguousProviderFailure();
+        physicalAttemptRecorder.failed(attemptId, providerFailure);
 
         finalizationService.failUnambiguous(
                 context,
-                unambiguousProviderFailure(),
+                providerFailure,
                 principal()
         );
 
@@ -472,8 +493,10 @@ class ChatTurnStateMachineIntegrationTest
         RouteIdentity routeIdentity =
                 loadRouteIdentity(context);
 
-        finalizationService.markProviderCallStarted(
-                context
+        UUID attemptId = startPhysicalAttempt(context);
+        physicalAttemptRecorder.ambiguous(
+                attemptId,
+                new IllegalStateException("Simulated uncertain provider outcome")
         );
 
         finalizationService.markAmbiguous(
@@ -566,9 +589,7 @@ class ChatTurnStateMachineIntegrationTest
                 clientRequestId
         );
 
-        finalizationService.markProviderCallStarted(
-                context
-        );
+        startPhysicalAttempt(context);
 
         expire(context.turnId());
 
@@ -599,9 +620,7 @@ class ChatTurnStateMachineIntegrationTest
                 UUID.randomUUID()
         );
 
-        finalizationService.markProviderCallStarted(
-                context
-        );
+        startPhysicalAttempt(context);
 
         int updated =
                 markSucceededWithWrongFencingToken(
@@ -625,16 +644,13 @@ class ChatTurnStateMachineIntegrationTest
                 UUID.randomUUID()
         );
 
-        finalizationService.markProviderCallStarted(
-                context
-        );
+        UUID attemptId = startPhysicalAttempt(context);
+        AiChatResponse providerResponse = response(AiResponseStatus.REFUSED, "refused");
+        physicalAttemptRecorder.succeeded(attemptId, providerResponse);
 
         var result = finalizationService.succeed(
                 context,
-                response(
-                        AiResponseStatus.REFUSED,
-                        "refused"
-                ),
+                providerResponse,
                 principal()
         );
 
@@ -657,16 +673,13 @@ class ChatTurnStateMachineIntegrationTest
                 UUID.randomUUID()
         );
 
-        finalizationService.markProviderCallStarted(
-                context
-        );
+        UUID attemptId = startPhysicalAttempt(context);
+        AiChatResponse providerResponse = response(AiResponseStatus.INCOMPLETE, "max_output_tokens");
+        physicalAttemptRecorder.succeeded(attemptId, providerResponse);
 
         var result = finalizationService.succeed(
                 context,
-                response(
-                        AiResponseStatus.INCOMPLETE,
-                        "max_output_tokens"
-                ),
+                providerResponse,
                 principal()
         );
 
@@ -716,16 +729,13 @@ class ChatTurnStateMachineIntegrationTest
                         decisionIdentity.requestedModel()
                 );
 
-        finalizationService.markProviderCallStarted(
-                context
-        );
+        UUID attemptId = startPhysicalAttempt(context);
+        AiChatResponse providerResponse = response(AiResponseStatus.COMPLETED, "completed");
+        physicalAttemptRecorder.succeeded(attemptId, providerResponse);
 
         finalizationService.succeed(
                 context,
-                response(
-                        AiResponseStatus.COMPLETED,
-                        "completed"
-                ),
+                providerResponse,
                 principal()
         );
 
@@ -757,6 +767,150 @@ class ChatTurnStateMachineIntegrationTest
 
         assertThat(finalizedTurn.getResolvedModel())
                 .isEqualTo("resolved-model");
+    }
+
+    /**
+     * Match test reservations to PostgreSQL wall time WITHOUT moving the
+     * injected clock into the future.
+     *
+     * <p>PostgreSQL V67 records physical STARTED at clock_timestamp(). The
+     * original V72 test helper advanced the JVM Clock one second AHEAD of
+     * PostgreSQL; the resulting ChatTurn.created_at was greater than the
+     * PostgreSQL provider_call_started_at, correctly violating the existing
+     * chk_chat_turns_timestamps constraint.</p>
+     *
+     * <p>The two-second margin guarantees that a newly reserved ChatTurn is
+     * older than the database's subsequent STARTED marker, without rewriting
+     * timestamps or weakening triggers. The test clock is advanced again,
+     * AFTER STARTED commits, before physical terminal evidence/finalization.</p>
+     */
+    private void alignTestClockWithDatabaseForPhysicalExecution() {
+        Instant databaseTime = databaseNow();
+        Instant reservationTime = databaseTime.minusSeconds(2);
+
+        assertThat(reservationTime)
+                .as("The fixed test fixture must precede PostgreSQL wall time")
+                .isAfter(clock.instant());
+
+        adjustableClock().advanceTo(reservationTime);
+
+        assertThat(clock.instant())
+                .as("ChatTurn reservations must not be dated after PostgreSQL")
+                .isBefore(databaseNow());
+    }
+
+    /** PostgreSQL is authoritative for the V67 physical-attempt timestamp. */
+    private Instant databaseNow() {
+        Timestamp timestamp = Objects.requireNonNull(
+                jdbcTemplate.queryForObject(
+                        "SELECT clock_timestamp()",
+                        Timestamp.class
+                ),
+                "PostgreSQL clock_timestamp() must not return null"
+        );
+        return timestamp.toInstant();
+    }
+
+    /**
+     * Align finalization AFTER physical STARTED, not before it.
+     *
+     * <p>The recorder writes its physical STARTED evidence in a separate
+     * committed transaction, and the V67 trigger stamps the ChatTurn using
+     * PostgreSQL time. Advancing the test Clock to a subsequent DB reading
+     * maintains completed_at >= provider_call_started_at for all successful,
+     * failed and ambiguous terminal transitions.</p>
+     */
+    private void alignTestClockAfterPhysicalAttempt(Instant providerStartedAt) {
+        Objects.requireNonNull(providerStartedAt, "providerStartedAt");
+
+        Instant afterCommittedAttempt = databaseNow();
+        assertThat(afterCommittedAttempt)
+                .as("Physical STARTED must be committed before its finalization")
+                .isAfterOrEqualTo(providerStartedAt);
+
+        assertThat(afterCommittedAttempt)
+                .as("The finalization clock must advance, not move backwards")
+                .isAfter(clock.instant());
+
+        adjustableClock().advanceTo(afterCommittedAttempt);
+    }
+
+    /**
+     * Real V65/V67/V72 execution-boundary fixture. It creates the immutable
+     * pre-RAG binding, sealed final request, execution plan and physical
+     * STARTED attempt through production services. PostgreSQL then atomically
+     * verifies the organization epoch, live ChatTurn lease and fencing token,
+     * and is the ONLY writer of provider_call_started_at.
+     * <p>
+     * Returning the attempt ID allows each scenario to persist matching
+     * physical terminal evidence (success, known failure or ambiguity).
+     */
+    private UUID startPhysicalAttempt(ChatProcessingContext context) {
+        assertThat(context.replay()).isFalse();
+        assertThat(context.aiRequest()).isNotNull();
+
+        ModelRouteExecutionIdentity identity = aiExecutionService.bindExecution(
+                context.modelRouteDecisionId(),
+                context.turnId(),
+                context.clientRequestId(),
+                context.providerOperationId(),
+                context.aiRequest(),
+                context.knowledgeBaseId(),
+                context.knowledgeMode()
+        );
+
+        ProviderExecutionTarget target = aiExecutionService.targetFor(
+                context.requestedPhysicalModel()
+        );
+
+        executionBindingService.requireExecutable(
+                identity,
+                context.turnId(),
+                context.modelRouteDecisionId(),
+                context.aiRequest(),
+                context.aiRequest(),
+                target.providerType(),
+                target.requestedPhysicalModel()
+        );
+
+        AiExecutionRequest executionRequest = new AiExecutionRequest(
+                context.turnId(),
+                context.modelRouteDecisionId(),
+                context.aiRequest(),
+                target,
+                identity,
+                context.aiRequest()
+        );
+
+        var plan = executionPlanService.createOrRead(executionRequest);
+        UUID attemptId = UUID.randomUUID();
+        physicalAttemptRecorder.started(
+                plan.getId(),
+                target,
+                new AiProviderAttemptContext(
+                        context.providerOperationId(),
+                        attemptId,
+                        1,
+                        1
+                )
+        );
+
+        var startedTurn = turnRepository.findById(context.turnId()).orElseThrow();
+        Instant physicalStartedAt = Objects.requireNonNull(
+                startedTurn.getProviderCallStartedAt(),
+                "Only a committed physical STARTED may set the ChatTurn marker"
+        );
+
+        assertThat(physicalStartedAt)
+                .as("PostgreSQL STARTED marker must not precede ChatTurn creation")
+                .isAfterOrEqualTo(startedTurn.getCreatedAt());
+
+        alignTestClockAfterPhysicalAttempt(physicalStartedAt);
+
+        assertThat(clock.instant())
+                .as("Terminal evidence must never be dated before physical STARTED")
+                .isAfterOrEqualTo(physicalStartedAt);
+        return attemptId;
     }
 
     private ChatProcessingContext reserve(
@@ -1223,3 +1377,4 @@ class ChatTurnStateMachineIntegrationTest
     }
 
 }
+

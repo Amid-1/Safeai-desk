@@ -212,51 +212,15 @@ public class RefreshTokenService {
         Instant now =
                 clock.instant();
 
-        RefreshTokenEntity oldToken =
-                refreshTokenRepository
-                        .findByTokenHashForUpdate(
-                                hash(
-                                        rawToken
-                                )
-                        )
-                        .orElseThrow(() ->
-                                new InvalidRefreshTokenException(
-                                        "Refresh token не найден"
-                                )
-                        );
+        // Lock order: organization FOR SHARE -> user FOR UPDATE -> token
+        // FOR UPDATE. The scalar discovery query does not acquire row locks.
+        LockedRefreshToken locked = lockTokenInSecurityOrder(hash(rawToken));
+        RefreshTokenEntity oldToken = locked.token();
+        UserEntity user = locked.user();
+        UUID userId = user.getId();
+        UUID familyId = oldToken.getTokenFamilyId();
 
-        UUID userId =
-                oldToken.getUser()
-                        .getId();
-
-        UUID familyId =
-                oldToken.getTokenFamilyId();
-
-        Optional<UserEntity> optionalUser =
-                userRepository
-                        .findByIdWithRolesAndOrganization(
-                                userId
-                        );
-
-        oldToken.setLastUsedAt(
-                now
-        );
-
-        if (optionalUser.isEmpty()) {
-            terminateFamily(
-                    familyId,
-                    now,
-                    RefreshTokenRevocationReason
-                            .SECURITY_STATE_CHANGED
-            );
-
-            throw new InvalidRefreshTokenException(
-                    "Пользователь refresh session не найден"
-            );
-        }
-
-        UserEntity user =
-                optionalUser.get();
+        oldToken.setLastUsedAt(now);
 
         UUID organizationId =
                 user.getOrganization()
@@ -406,20 +370,14 @@ public class RefreshTokenService {
         Instant now =
                 clock.instant();
 
-        Optional<RefreshTokenEntity> optionalToken =
-                refreshTokenRepository
-                        .findByTokenHashForUpdate(
-                                hash(
-                                        rawToken
-                                )
-                        );
-
-        if (optionalToken.isEmpty()) {
+        Optional<LockedRefreshToken> lockedToken =
+                findLockedTokenInSecurityOrder(hash(rawToken));
+        if (lockedToken.isEmpty()) {
             return Optional.empty();
         }
 
-        RefreshTokenEntity token =
-                optionalToken.get();
+        RefreshTokenEntity token = lockedToken.get().token();
+        UserEntity user = lockedToken.get().user();
 
         if (token.getRevokedAt()
                 != null
@@ -429,32 +387,9 @@ public class RefreshTokenService {
             return Optional.empty();
         }
 
-        UUID userId =
-                token.getUser()
-                        .getId();
-
         UUID familyId =
                 token.getTokenFamilyId();
 
-        Optional<UserEntity> optionalUser =
-                userRepository
-                        .findByIdWithOrganization(
-                                userId
-                        );
-
-        if (optionalUser.isEmpty()) {
-            terminateFamily(
-                    familyId,
-                    now,
-                    RefreshTokenRevocationReason
-                            .SECURITY_STATE_CHANGED
-            );
-
-            return Optional.empty();
-        }
-
-        UserEntity user =
-                optionalUser.get();
 
         LogoutAuditSubject subject =
                 new LogoutAuditSubject(
@@ -475,6 +410,52 @@ public class RefreshTokenService {
         return Optional.of(
                 subject
         );
+    }
+
+    private record LockedRefreshToken(RefreshTokenEntity token, UserEntity user) {
+    }
+
+    /**
+     * Discover ids without locks; then lock organization -> user -> token.
+     * A concurrent deletion, token replacement or identity change between
+     * the discovery and the locked read is rejected, never trusted.
+     */
+    private LockedRefreshToken lockTokenInSecurityOrder(String tokenHash) {
+        return findLockedTokenInSecurityOrder(tokenHash).orElseThrow(() ->
+                new InvalidRefreshTokenException("Refresh token не найден"));
+    }
+
+    private Optional<LockedRefreshToken> findLockedTokenInSecurityOrder(
+            String tokenHash) {
+        var candidates = refreshTokenRepository.findLockIdentityByTokenHash(tokenHash);
+        if (candidates.isEmpty()) {
+            return Optional.empty();
+        }
+        if (candidates.size() != 1 || candidates.getFirst().length != 2) {
+            throw new IllegalStateException("Invalid refresh-token identity projection");
+        }
+        UUID userId = (UUID) candidates.getFirst()[0];
+        UUID organizationId = (UUID) candidates.getFirst()[1];
+
+        // This lock participates in the active JPA transaction and is held
+        // until commit, including controlled noRollbackFor exceptions.
+        if (userRepository.lockOrganizationForAuthentication(organizationId).isEmpty()) {
+            throw new InvalidRefreshTokenException("Refresh token organization missing");
+        }
+        UserEntity lockedUser = userRepository.findByIdForSecurityUpdate(userId)
+                .orElseThrow(() -> new InvalidRefreshTokenException(
+                        "Refresh token user missing"));
+        if (!organizationId.equals(lockedUser.getOrganization().getId())) {
+            throw new InvalidRefreshTokenException("Refresh token security scope changed");
+        }
+        RefreshTokenEntity lockedToken = refreshTokenRepository
+                .findByTokenHashForUpdate(tokenHash)
+                .orElseThrow(() -> new InvalidRefreshTokenException(
+                        "Refresh token no longer exists"));
+        if (!userId.equals(lockedToken.getUser().getId())) {
+            throw new InvalidRefreshTokenException("Refresh token ownership changed");
+        }
+        return Optional.of(new LockedRefreshToken(lockedToken, lockedUser));
     }
 
     private void terminateForSecurityState(
@@ -892,3 +873,4 @@ public class RefreshTokenService {
         }
     }
 }
+

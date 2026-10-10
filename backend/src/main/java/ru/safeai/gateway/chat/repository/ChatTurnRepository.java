@@ -60,24 +60,6 @@ public interface ChatTurnRepository
     );
 
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query(value = """
-            update chat_turns
-               set provider_call_started_at = :startedAt,
-                   updated_at = :startedAt,
-                   version = version + 1
-             where id = :turnId
-               and state = 'PROCESSING'
-               and processing_token = :processingToken
-               and provider_call_started_at is null
-               and lease_until >= :startedAt
-            """, nativeQuery = true)
-    int markProviderCallStarted(
-            @Param("turnId") UUID turnId,
-            @Param("processingToken") UUID processingToken,
-            @Param("startedAt") Instant startedAt
-    );
-
     @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """

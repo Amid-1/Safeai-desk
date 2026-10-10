@@ -6,6 +6,7 @@ import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.execution.AiExecutionRequest;
 import ru.safeai.gateway.ai.execution.AiExecutionService;
+import ru.safeai.gateway.ai.execution.AiOrganizationExecutionDeniedException;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
 import ru.safeai.gateway.chat.dto.SendMessageResponse;
 import ru.safeai.gateway.chat.exception.AiOutcomeAmbiguousException;
@@ -158,9 +159,8 @@ final class ChatTurnExecutionCoordinator {
              * claimed by the current contract.
              */
 
-            finalizationService.markProviderCallStarted(
-                    context
-            );
+            // V67/V72: only a successfully committed physical STARTED attempt
+            // may set provider_call_started_at. Never pre-mark an HTTP call.
 
             ensureOwnershipBeforeProvider(
                     context,
@@ -431,18 +431,21 @@ final class ChatTurnExecutionCoordinator {
             );
         } catch (ChatLockUnavailableException
                  | ChatStaleProcessorException exception) {
-            markAmbiguousQuietly(
+            // No physical attempt has been admitted yet. Report a
+            // pre-provider failure, not an invented provider ambiguity.
+            persistPreProviderFailureQuietly(
                     context,
-                    null,
-                    null,
                     "PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL",
                     "CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL",
                     currentUser,
                     exception
             );
 
-            throw ambiguous(
-                    context,
+            throw new ChatTurnFailedException(
+                    context.chatId(),
+                    context.turnId(),
+                    context.clientRequestId(),
+                    "CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL",
                     exception
             );
         }
@@ -551,6 +554,23 @@ final class ChatTurnExecutionCoordinator {
                     "AI_PROVIDER_"
                             + exception.getErrorType().name(),
                     exception
+            );
+        } catch (AiOrganizationExecutionDeniedException denied) {
+            // Rejection occurred before physical STARTED and before provider I/O.
+            // Do not misclassify it as AMBIGUOUS or allow a blind retry.
+            persistPreProviderFailureQuietly(
+                    context,
+                    "ORGANIZATION_EXECUTION_REVOKED",
+                    "ORGANIZATION_SECURITY_EPOCH_REVOKED",
+                    currentUser,
+                    denied
+            );
+            throw new ChatTurnFailedException(
+                    context.chatId(),
+                    context.turnId(),
+                    context.clientRequestId(),
+                    "ORGANIZATION_SECURITY_EPOCH_REVOKED",
+                    denied
             );
         } catch (RuntimeException unexpectedProviderException) {
             markAmbiguousQuietly(

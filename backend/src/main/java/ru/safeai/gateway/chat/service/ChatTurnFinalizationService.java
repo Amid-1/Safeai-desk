@@ -100,24 +100,6 @@ public class ChatTurnFinalizationService {
     }
 
     @Transactional
-    public void markProviderCallStarted(
-            ChatProcessingContext context
-    ) {
-        Objects.requireNonNull(context, "context не должен быть null");
-        Instant now = clock.instant();
-
-        int updated = turnRepository.markProviderCallStarted(
-                context.turnId(),
-                context.processingToken(),
-                now
-        );
-
-        if (updated != 1) {
-            throw stale(context);
-        }
-    }
-
-    @Transactional
     public void failBeforeProviderCall(
             ChatProcessingContext context,
             String providerErrorType,

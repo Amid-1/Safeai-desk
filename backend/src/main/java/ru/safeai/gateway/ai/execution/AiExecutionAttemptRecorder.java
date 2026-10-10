@@ -39,6 +39,11 @@ public class AiExecutionAttemptRecorder {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(attempt, "attempt");
 
+        if (!attempts.organizationEpochCurrent(planId)) {
+            throw new AiOrganizationExecutionDeniedException(
+                    "Organization disabled or security epoch changed before physical STARTED");
+        }
+
         ModelExecutionAttemptEntity predecessor = attempts
                 .findTopByExecutionPlanIdOrderByAttemptNumberDesc(planId)
                 .orElse(null);
@@ -56,9 +61,20 @@ public class AiExecutionAttemptRecorder {
             }
             requireSameTarget(predecessor, target);
         }
-        attempts.saveAndFlush(ModelExecutionAttemptEntity.started(
-                planId, attempt.attemptId(), attempt.attemptNumber(),
-                target, clock.instant()));
+        try {
+            attempts.saveAndFlush(ModelExecutionAttemptEntity.started(
+                    planId, attempt.attemptId(), attempt.attemptNumber(),
+                    target, clock.instant()));
+        } catch (RuntimeException failure) {
+            // Disable may win the row lock between the advisory preflight
+            // and the authoritative V72 BEFORE INSERT trigger. Such a
+            // rejection never commits STARTED and must not be AMBIGUOUS.
+            if (isOrganizationEpochViolation(failure)) {
+                throw new AiOrganizationExecutionDeniedException(
+                        "Organization authorization revoked before STARTED", failure);
+            }
+            throw failure;
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -80,6 +96,17 @@ public class AiExecutionAttemptRecorder {
         ModelExecutionAttemptEntity attempt = find(attemptId);
         attempt.ambiguous(exception.getClass().getSimpleName(), clock.instant());
         attempts.saveAndFlush(attempt);
+    }
+
+    private static boolean isOrganizationEpochViolation(Throwable failure) {
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            String message = current.getMessage();
+            if (message != null && message.contains(
+                    "V72 physical AI attempt denied: organization disabled or authorization epoch revoked")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isKnownTerminalFailure(ModelExecutionAttemptEntity previous) {

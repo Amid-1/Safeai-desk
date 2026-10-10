@@ -35,7 +35,8 @@ public class LoginSessionTransactionService {
      * Короткая транзакция создания login session.
      *
      * <p>Password hash должен быть проверен до входа в этот метод.
-     * Pessimistic user lock синхронизирует login с изменениями
+     * Organization FOR SHARE перед user PESSIMISTIC_WRITE синхронизирует
+     * login с disable и другими security mutations. User lock защищает от изменений
      * password, role, email, enabled и другого security state.</p>
      *
      * <p>lastLoginAt обновляется отдельным bulk update без изменения
@@ -57,6 +58,12 @@ public class LoginSessionTransactionService {
                 request,
                 "request не должен быть null"
         );
+
+        // Acquire the tenant gate BEFORE any user or refresh-token row lock.
+        // A disable transaction holds FOR UPDATE on the same organization.
+        userRepository.lockOrganizationForAuthentication(
+                authenticatedPrincipal.getOrganizationId()
+        ).orElseThrow(this::securityStateChanged);
 
         UserEntity user =
                 userRepository

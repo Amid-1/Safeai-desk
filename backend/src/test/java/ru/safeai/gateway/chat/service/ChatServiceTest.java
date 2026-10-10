@@ -16,6 +16,7 @@ import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.execution.AiExecutionRequest;
 import ru.safeai.gateway.ai.execution.AiExecutionResult;
 import ru.safeai.gateway.ai.execution.AiExecutionService;
+import ru.safeai.gateway.ai.execution.AiOrganizationExecutionDeniedException;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.details.AuditDetails;
@@ -201,7 +202,7 @@ class ChatServiceTest {
     }
 
     @Test
-    void providerOperationMarkerIsCommittedBeforeProviderInvocation() {
+    void executionIsAllowedOnlyAfterPreProviderOwnershipChecks() {
         stubOwnedChatAndProcessing();
         when(aiExecutionService.execute(any()))
                 .thenReturn(execution(ChatTestFixtures.freeResponse()));
@@ -220,18 +221,39 @@ class ChatServiceTest {
 
         assertThat(result).isSameAs(expected);
 
+        // V72: the coordinator must not pre-mark provider_call_started_at.
+        // The durable physical STARTED boundary is owned by AiExecutionService
+        // and its transactional attempt recorder (guarded by PostgreSQL V72).
+        // This unit test verifies the orchestration order at that boundary;
+        // physical attempt persistence is exercised by integration tests.
         InOrder order = inOrder(
-                finalizationService,
+                aiExecutionService,
                 lockService,
                 leaseService,
-                aiExecutionService
+                finalizationService
         );
-        order.verify(finalizationService).markProviderCallStarted(processing);
+        order.verify(aiExecutionService).bindExecution(
+                eq(processing.modelRouteDecisionId()),
+                eq(processing.turnId()),
+                eq(processing.clientRequestId()),
+                eq(processing.providerOperationId()),
+                same(processing.aiRequest()),
+                isNull(),
+                eq(KnowledgeMode.GENERAL)
+        );
         order.verify(lockService).ensureValid(redisLock);
         order.verify(leaseService).ensureValid(leaseWatch);
-        order.verify(aiExecutionService).execute(any());
+        order.verify(aiExecutionService).targetFor(
+                eq(processing.requestedPhysicalModel())
+        );
+        order.verify(aiExecutionService).execute(any(AiExecutionRequest.class));
         order.verify(lockService).ensureValid(redisLock);
         order.verify(leaseService).ensureValid(leaseWatch);
+        order.verify(finalizationService).succeedRag(
+                eq(processing),
+                any(RagCompletion.class),
+                any(SafeAiUserPrincipal.class)
+        );
 
         verify(aiExecutionService).bindExecution(
                 eq(processing.modelRouteDecisionId()),
@@ -311,7 +333,7 @@ class ChatServiceTest {
                 eq("MODEL_ROUTE_INPUT_ENVELOPE_INVALID"),
                 any(SafeAiUserPrincipal.class)
         );
-        verify(finalizationService, never()).markProviderCallStarted(any());
+        verify(finalizationService, never()).succeedRag(any(), any(), any());
         verify(aiExecutionService, never()).execute(any());
     }
 
@@ -342,7 +364,7 @@ class ChatServiceTest {
                 eq("MODEL_ROUTE_INPUT_ENVELOPE_INVALID"),
                 any(SafeAiUserPrincipal.class)
         );
-        verify(finalizationService, never()).markProviderCallStarted(any());
+        verify(finalizationService, never()).succeedRag(any(), any(), any());
         verify(aiExecutionService, never()).execute(any());
     }
 
@@ -369,7 +391,7 @@ class ChatServiceTest {
         assertThat(result.replay()).isTrue();
         verify(aiExecutionService, never()).execute(any());
         verify(leaseService, never()).watch(any(), any(), any(), any());
-        verify(finalizationService, never()).markProviderCallStarted(any());
+        verify(finalizationService, never()).succeedRag(any(), any(), any());
     }
 
     @Test
@@ -426,8 +448,51 @@ class ChatServiceTest {
                 eq("KNOWLEDGE_RAG_PREPARATION_FAILED"),
                 any(SafeAiUserPrincipal.class)
         );
-        verify(finalizationService, never()).markProviderCallStarted(any());
+        verify(finalizationService, never()).succeedRag(any(), any(), any());
         verify(aiExecutionService, never()).execute(any());
+        verify(leaseService).close(leaseWatch);
+        verify(lockService).unlockQuietly(redisLock);
+    }
+
+    /**
+     * V72 revocation occurs before the durable STARTED attempt. The coordinator
+     * must finalize the turn as FAILED, never as AMBIGUOUS, and must not expose
+     * the failed provider authorization as a retryable physical response.
+     */
+    @Test
+    void organizationKillSwitchDenialBeforeStartedFailsWithoutAmbiguity() {
+        stubOwnedChatAndProcessing();
+        AiOrganizationExecutionDeniedException denied =
+                new AiOrganizationExecutionDeniedException(
+                        "Organization security epoch revoked before STARTED"
+                );
+        when(aiExecutionService.execute(any(AiExecutionRequest.class)))
+                .thenThrow(denied);
+
+        assertThatThrownBy(() -> service.sendMessage(
+                ChatTestFixtures.CHAT_ID,
+                request(),
+                ChatTestFixtures.principal()
+        )).isInstanceOf(ChatTurnFailedException.class)
+                .hasCause(denied)
+                .extracting("code")
+                .isEqualTo("ORGANIZATION_SECURITY_EPOCH_REVOKED");
+
+        verify(finalizationService).failBeforeProviderCall(
+                eq(processing),
+                eq("ORGANIZATION_EXECUTION_REVOKED"),
+                eq("ORGANIZATION_SECURITY_EPOCH_REVOKED"),
+                any(SafeAiUserPrincipal.class)
+        );
+        verify(finalizationService, never()).markAmbiguous(
+                any(), any(), any(), any(), any(), any(), any()
+        );
+        verify(finalizationService, never()).failUnambiguous(
+                any(), any(), any()
+        );
+        verify(finalizationService, never()).succeedRag(
+                any(), any(), any()
+        );
         verify(leaseService).close(leaseWatch);
         verify(lockService).unlockQuietly(redisLock);
     }
@@ -619,17 +684,19 @@ class ChatServiceTest {
                 ChatTestFixtures.CHAT_ID,
                 request(),
                 ChatTestFixtures.principal()
-        )).isInstanceOf(AiOutcomeAmbiguousException.class);
+        )).isInstanceOf(ChatTurnFailedException.class)
+                .extracting("code")
+                .isEqualTo("CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL");
 
         verify(aiExecutionService, never()).execute(any());
-        verify(finalizationService).markAmbiguous(
+        verify(finalizationService).failBeforeProviderCall(
                 eq(processing),
-                org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.isNull(),
                 eq("PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
                 eq("CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
                 any(SafeAiUserPrincipal.class)
+        );
+        verify(finalizationService, never()).markAmbiguous(
+                any(), any(), any(), any(), any(), any(), any()
         );
         verify(finalizationService, never()).succeedRag(any(), any(), any());
     }
@@ -649,17 +716,19 @@ class ChatServiceTest {
                 ChatTestFixtures.CHAT_ID,
                 request(),
                 ChatTestFixtures.principal()
-        )).isInstanceOf(AiOutcomeAmbiguousException.class);
+        )).isInstanceOf(ChatTurnFailedException.class)
+                .extracting("code")
+                .isEqualTo("CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL");
 
         verify(aiExecutionService, never()).execute(any());
-        verify(finalizationService).markAmbiguous(
+        verify(finalizationService).failBeforeProviderCall(
                 eq(processing),
-                org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.isNull(),
                 eq("PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
                 eq("CHAT_PROCESSING_OWNERSHIP_LOST_BEFORE_PROVIDER_CALL"),
                 any(SafeAiUserPrincipal.class)
+        );
+        verify(finalizationService, never()).markAmbiguous(
+                any(), any(), any(), any(), any(), any(), any()
         );
         verify(finalizationService, never()).succeedRag(any(), any(), any());
     }

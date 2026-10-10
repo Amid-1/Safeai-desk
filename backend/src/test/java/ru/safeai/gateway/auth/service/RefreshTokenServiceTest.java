@@ -159,6 +159,9 @@ class RefreshTokenServiceTest {
                 saved.getIssuedTokenVersion()
         ).isZero();
 
+        assertThat(saved.getIssuedOrganizationAuthVersion())
+                .isEqualTo(user.getOrganization().getAuthVersion());
+
         assertThat(
                 saved.getCreatedAt()
         ).isEqualTo(
@@ -223,27 +226,8 @@ class RefreshTokenServiceTest {
         MockHttpServletRequest request =
                 request();
 
-        when(
-                refreshTokenRepository
-                        .findByTokenHashForUpdate(
-                                anyString()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        oldToken
-                )
-        );
+        stubLockedToken(oldToken.getUser(), oldToken);
 
-        when(
-                userRepository
-                        .findByIdWithRolesAndOrganization(
-                                user.getId()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        user
-                )
-        );
 
         when(
                 clientIpResolver.resolve(
@@ -297,6 +281,11 @@ class RefreshTokenServiceTest {
                 oldToken.getTokenFamilyId()
         );
 
+        assertThat(replacement.getIssuedTokenVersion())
+                .isEqualTo(user.getTokenVersion());
+        assertThat(replacement.getIssuedOrganizationAuthVersion())
+                .isEqualTo(user.getOrganization().getAuthVersion());
+
         assertThat(
                 replacement.getFamilyCreatedAt()
         ).isEqualTo(
@@ -330,9 +319,14 @@ class RefreshTokenServiceTest {
                 "ADMIN"
         );
 
-        verifyNoInteractions(
-                refreshReuseAuditService
-        );
+        assertSecurityLockOrder(user);
+        ArgumentCaptor<String> discoveryHash = ArgumentCaptor.forClass(String.class);
+        verify(refreshTokenRepository).findLockIdentityByTokenHash(discoveryHash.capture());
+        assertThat(discoveryHash.getValue())
+                .matches("[0-9a-f]{64}")
+                .isNotEqualTo("old-raw-token");
+        verify(refreshTokenRepository).findByTokenHashForUpdate(discoveryHash.getValue());
+        verifyNoInteractions(refreshReuseAuditService);
     }
 
     @Test
@@ -360,27 +354,8 @@ class RefreshTokenServiceTest {
         MockHttpServletRequest request =
                 request();
 
-        when(
-                refreshTokenRepository
-                        .findByTokenHashForUpdate(
-                                anyString()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        oldToken
-                )
-        );
+        stubLockedToken(oldToken.getUser(), oldToken);
 
-        when(
-                userRepository
-                        .findByIdWithRolesAndOrganization(
-                                user.getId()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        user
-                )
-        );
 
         when(
                 refreshTokenRepository
@@ -428,6 +403,20 @@ class RefreshTokenServiceTest {
         ).save(
                 any()
         );
+
+        org.mockito.InOrder sequence = org.mockito.Mockito.inOrder(
+                refreshTokenRepository, userRepository, refreshReuseAuditService);
+        sequence.verify(refreshTokenRepository).findLockIdentityByTokenHash(anyString());
+        sequence.verify(userRepository).lockOrganizationForAuthentication(
+                user.getOrganization().getId());
+        sequence.verify(userRepository).findByIdForSecurityUpdate(user.getId());
+        sequence.verify(refreshTokenRepository).findByTokenHashForUpdate(anyString());
+        sequence.verify(refreshTokenRepository).terminateFamily(
+                oldToken.getTokenFamilyId(), NOW,
+                RefreshTokenRevocationReason.REUSE_DETECTED);
+        sequence.verify(refreshReuseAuditService).recordRequired(
+                user.getId(), user.getOrganization().getId(),
+                oldToken.getTokenFamilyId(), request);
     }
 
     @Test
@@ -448,27 +437,8 @@ class RefreshTokenServiceTest {
                 )
         );
 
-        when(
-                refreshTokenRepository
-                        .findByTokenHashForUpdate(
-                                anyString()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        oldToken
-                )
-        );
+        stubLockedToken(oldToken.getUser(), oldToken);
 
-        when(
-                userRepository
-                        .findByIdWithRolesAndOrganization(
-                                user.getId()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        user
-                )
-        );
 
         when(
                 refreshTokenRepository
@@ -519,27 +489,8 @@ class RefreshTokenServiceTest {
                 0L
         );
 
-        when(
-                refreshTokenRepository
-                        .findByTokenHashForUpdate(
-                                anyString()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        oldToken
-                )
-        );
+        stubLockedToken(oldToken.getUser(), oldToken);
 
-        when(
-                userRepository
-                        .findByIdWithRolesAndOrganization(
-                                user.getId()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        user
-                )
-        );
 
         when(
                 refreshTokenRepository
@@ -574,35 +525,18 @@ class RefreshTokenServiceTest {
 
     @Test
     void missingTokenReturnsInvalidRefreshToken() {
-        when(
-                refreshTokenRepository
-                        .findByTokenHashForUpdate(
-                                anyString()
-                        )
-        ).thenReturn(
-                Optional.empty()
-        );
+        // The first lookup is intentionally non-locking and returns no identity.
+        when(refreshTokenRepository.findLockIdentityByTokenHash(anyString()))
+                .thenReturn(java.util.List.of());
 
-        assertThatThrownBy(() ->
-                service.rotate(
-                        "raw-token",
-                        request()
-                )
-        )
-                .isInstanceOf(
-                        InvalidRefreshTokenException.class
-                );
+        assertThatThrownBy(() -> service.rotate("raw-token", request()))
+                .isInstanceOf(InvalidRefreshTokenException.class);
 
-        verify(
-                refreshTokenRepository,
-                never()
-        ).save(
-                any()
-        );
-
-        verifyNoInteractions(
-                refreshReuseAuditService
-        );
+        verify(refreshTokenRepository).findLockIdentityByTokenHash(anyString());
+        verify(refreshTokenRepository, never()).findByTokenHashForUpdate(anyString());
+        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).terminateFamily(any(), any(), any());
+        verifyNoInteractions(userRepository, refreshReuseAuditService);
     }
 
     @Test
@@ -617,27 +551,8 @@ class RefreshTokenServiceTest {
                         user
                 );
 
-        when(
-                refreshTokenRepository
-                        .findByTokenHashForUpdate(
-                                anyString()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        token
-                )
-        );
+        stubLockedToken(token.getUser(), token);
 
-        when(
-                userRepository
-                        .findByIdWithOrganization(
-                                user.getId()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        user
-                )
-        );
 
         when(
                 refreshTokenRepository
@@ -677,116 +592,41 @@ class RefreshTokenServiceTest {
 
     @Test
     void logoutOfTerminalFamilyIsIdempotent() {
-        UserEntity user =
-                enabledUser(
-                        0L
-                );
+        UserEntity user = enabledUser(0L);
+        RefreshTokenEntity token = activeToken(user);
+        token.setRevokedAt(NOW.minusSeconds(60));
+        token.setRevocationReason(RefreshTokenRevocationReason.LOGOUT);
+        stubLockedToken(user, token);
 
-        RefreshTokenEntity token =
-                activeToken(
-                        user
-                );
+        assertThat(service.revokeFamilyAndReturnSubject("raw-token")).isEmpty();
 
-        token.setRevokedAt(
-                NOW.minusSeconds(
-                        60
-                )
-        );
-
-        token.setRevocationReason(
-                RefreshTokenRevocationReason.LOGOUT
-        );
-
-        when(
-                refreshTokenRepository
-                        .findByTokenHashForUpdate(
-                                anyString()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        token
-                )
-        );
-
-        assertThat(
-                service.revokeFamilyAndReturnSubject(
-                        "raw-token"
-                )
-        ).isEmpty();
-
-        verifyNoInteractions(
-                userRepository,
-                refreshReuseAuditService
-        );
-
-        verify(
-                refreshTokenRepository,
-                never()
-        ).terminateFamily(
-                any(),
-                any(),
-                any()
-        );
+        assertSecurityLockOrder(user);
+        verify(refreshTokenRepository, never()).terminateFamily(any(), any(), any());
+        verify(refreshTokenRepository, never()).save(any());
+        verifyNoInteractions(refreshReuseAuditService);
     }
 
     @Test
-    void logoutWithMissingUserClosesFamilyWithoutAuditSubject() {
-        UserEntity user =
-                enabledUser(
-                        0L
-                );
+    void logoutWithMissingUserFailsClosedBeforeLockingTokenOrWritingAudit() {
+        UserEntity user = enabledUser(0L);
 
-        RefreshTokenEntity token =
-                activeToken(
-                        user
-                );
+        stubTokenDiscovery(user);
+        stubOrganizationSecurityLock(user);
+        when(userRepository.findByIdForSecurityUpdate(user.getId()))
+                .thenReturn(Optional.empty());
 
-        when(
-                refreshTokenRepository
-                        .findByTokenHashForUpdate(
-                                anyString()
-                        )
-        ).thenReturn(
-                Optional.of(
-                        token
-                )
-        );
+        // A deleted or changed subject must not be trusted after the scalar
+        // discovery. No token lock or family write is permitted without it.
+        assertThatThrownBy(() -> service.revokeFamilyAndReturnSubject("raw-token"))
+                .isInstanceOf(InvalidRefreshTokenException.class);
 
-        when(
-                userRepository
-                        .findByIdWithOrganization(
-                                user.getId()
-                        )
-        ).thenReturn(
-                Optional.empty()
-        );
-
-        when(
-                refreshTokenRepository
-                        .terminateFamily(
-                                token.getTokenFamilyId(),
-                                NOW,
-                                RefreshTokenRevocationReason
-                                        .SECURITY_STATE_CHANGED
-                        )
-        ).thenReturn(
-                1
-        );
-
-        assertThat(
-                service.revokeFamilyAndReturnSubject(
-                        "raw-token"
-                )
-        ).isEmpty();
-
-        verify(
-                refreshTokenRepository
-        ).terminateFamily(
-                token.getTokenFamilyId(),
-                NOW,
-                RefreshTokenRevocationReason
-                        .SECURITY_STATE_CHANGED
-        );
+        verify(refreshTokenRepository).findLockIdentityByTokenHash(anyString());
+        verify(userRepository).lockOrganizationForAuthentication(user.getOrganization().getId());
+        verify(userRepository).findByIdForSecurityUpdate(user.getId());
+        verify(refreshTokenRepository, never()).findByTokenHashForUpdate(anyString());
+        verify(refreshTokenRepository, never()).terminateFamily(any(), any(), any());
+        verify(refreshTokenRepository, never()).save(any());
+        verifyNoInteractions(refreshReuseAuditService);
     }
 
     @Test
@@ -804,6 +644,217 @@ class RefreshTokenServiceTest {
                 userRepository,
                 refreshReuseAuditService
         );
+    }
+
+    // V72: security-state and row-lock ordering regression coverage.
+    @Test
+    void organizationAuthEpochMismatchTerminatesFamilyWithoutRotation() {
+        UserEntity user = enabledUser(0L);
+        RefreshTokenEntity token = activeToken(user);
+        token.setIssuedOrganizationAuthVersion(
+                user.getOrganization().getAuthVersion() + 1L);
+        stubLockedToken(user, token);
+        stubFamilyTermination(token, RefreshTokenRevocationReason.SECURITY_STATE_CHANGED);
+
+        assertThatThrownBy(() -> service.rotate("raw-token", request()))
+                .isInstanceOf(InvalidRefreshTokenException.class);
+
+        assertSecurityLockOrder(user);
+        verify(refreshTokenRepository).terminateFamily(
+                token.getTokenFamilyId(), NOW,
+                RefreshTokenRevocationReason.SECURITY_STATE_CHANGED);
+        verify(refreshTokenRepository, never()).save(any());
+        verifyNoInteractions(refreshReuseAuditService);
+    }
+
+    @Test
+    void disabledOrganizationTerminatesFamilyWithoutRotation() {
+        UserEntity user = enabledUser(0L);
+        user.getOrganization().setEnabled(false);
+        RefreshTokenEntity token = activeToken(user);
+        stubLockedToken(user, token);
+        stubFamilyTermination(token, RefreshTokenRevocationReason.ORGANIZATION_DISABLED);
+
+        assertThatThrownBy(() -> service.rotate("raw-token", request()))
+                .isInstanceOf(InvalidRefreshTokenException.class);
+
+        verify(refreshTokenRepository).terminateFamily(
+                token.getTokenFamilyId(), NOW,
+                RefreshTokenRevocationReason.ORGANIZATION_DISABLED);
+        verify(refreshTokenRepository, never()).save(any());
+        verifyNoInteractions(refreshReuseAuditService);
+    }
+
+    @Test
+    void disabledUserTerminatesFamilyWithoutRotation() {
+        UserEntity user = enabledUser(0L);
+        user.setEnabled(false);
+        RefreshTokenEntity token = activeToken(user);
+        stubLockedToken(user, token);
+        stubFamilyTermination(token, RefreshTokenRevocationReason.USER_DISABLED);
+
+        assertThatThrownBy(() -> service.rotate("raw-token", request()))
+                .isInstanceOf(InvalidRefreshTokenException.class);
+
+        verify(refreshTokenRepository).terminateFamily(
+                token.getTokenFamilyId(), NOW,
+                RefreshTokenRevocationReason.USER_DISABLED);
+        verify(refreshTokenRepository, never()).save(any());
+        verifyNoInteractions(refreshReuseAuditService);
+    }
+
+    @Test
+    void absentOrganizationDuringSecurityLockFailsClosedBeforeUserRead() {
+        UserEntity user = enabledUser(0L);
+        stubTokenDiscovery(user);
+        when(userRepository.lockOrganizationForAuthentication(
+                user.getOrganization().getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.rotate("raw-token", request()))
+                .isInstanceOf(InvalidRefreshTokenException.class);
+
+        verify(userRepository, never()).findByIdForSecurityUpdate(any());
+        verify(refreshTokenRepository, never()).findByTokenHashForUpdate(anyString());
+        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).terminateFamily(any(), any(), any());
+        verifyNoInteractions(refreshReuseAuditService);
+    }
+
+    @Test
+    void organizationScopeChangedBetweenDiscoveryAndUserLockFailsClosed() {
+        UserEntity user = enabledUser(0L);
+        UUID oldOrganizationId = UUID.randomUUID();
+        when(refreshTokenRepository.findLockIdentityByTokenHash(anyString()))
+                .thenReturn(java.util.Collections.singletonList(
+                        new Object[]{user.getId(), oldOrganizationId}));
+        when(userRepository.lockOrganizationForAuthentication(oldOrganizationId))
+                .thenReturn(Optional.of(oldOrganizationId));
+        when(userRepository.findByIdForSecurityUpdate(user.getId()))
+                .thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service.rotate("raw-token", request()))
+                .isInstanceOf(InvalidRefreshTokenException.class);
+
+        verify(refreshTokenRepository, never()).findByTokenHashForUpdate(anyString());
+        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).terminateFamily(any(), any(), any());
+        verifyNoInteractions(refreshReuseAuditService);
+    }
+
+    @Test
+    void tokenOwnershipChangedBetweenDiscoveryAndRowLockFailsClosed() {
+        UserEntity user = enabledUser(0L);
+        UserEntity differentUser = enabledUser(0L);
+        RefreshTokenEntity token = activeToken(differentUser);
+        stubLockedToken(user, token);
+
+        assertThatThrownBy(() -> service.rotate("raw-token", request()))
+                .isInstanceOf(InvalidRefreshTokenException.class);
+
+        assertSecurityLockOrder(user);
+        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).terminateFamily(any(), any(), any());
+        verifyNoInteractions(refreshReuseAuditService);
+    }
+
+    @Test
+    void missingTokenAfterSecurityLocksFailsClosedWithoutSideEffects() {
+        UserEntity user = enabledUser(0L);
+        stubTokenDiscovery(user);
+        stubOrganizationSecurityLock(user);
+        when(userRepository.findByIdForSecurityUpdate(user.getId()))
+                .thenReturn(Optional.of(user));
+        when(refreshTokenRepository.findByTokenHashForUpdate(anyString()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.rotate("raw-token", request()))
+                .isInstanceOf(InvalidRefreshTokenException.class);
+
+        assertSecurityLockOrder(user);
+        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).terminateFamily(any(), any(), any());
+        verifyNoInteractions(refreshReuseAuditService);
+    }
+
+    @Test
+    void logoutOnRotatedPredecessorClosesFamilyAndReturnsAuditIdentity() {
+        UserEntity user = enabledUser(0L);
+        RefreshTokenEntity token = activeToken(user);
+        token.setRevokedAt(NOW.minusSeconds(20));
+        token.setRevocationReason(RefreshTokenRevocationReason.ROTATED);
+        stubLockedToken(user, token);
+        stubFamilyTermination(token, RefreshTokenRevocationReason.LOGOUT);
+
+        assertThat(service.revokeFamilyAndReturnSubject("raw-token"))
+                .contains(new LogoutAuditSubject(
+                        user.getId(), user.getOrganization().getId(), "admin@test.com"));
+
+        assertSecurityLockOrder(user);
+        verify(refreshTokenRepository).terminateFamily(
+                token.getTokenFamilyId(), NOW, RefreshTokenRevocationReason.LOGOUT);
+        verify(refreshTokenRepository, never()).save(any());
+        verifyNoInteractions(refreshReuseAuditService);
+    }
+
+    @Test
+    void duplicateDiscoveryProjectionFailsClosedWithoutAnySecurityMutation() {
+        UserEntity user = enabledUser(0L);
+        Object[] identity = {user.getId(), user.getOrganization().getId()};
+        when(refreshTokenRepository.findLockIdentityByTokenHash(anyString()))
+                .thenReturn(java.util.List.of(identity, identity));
+
+        assertThatThrownBy(() -> service.rotate("raw-token", request()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("identity projection");
+
+        verifyNoInteractions(userRepository, refreshReuseAuditService);
+        verify(refreshTokenRepository, never()).findByTokenHashForUpdate(anyString());
+        verify(refreshTokenRepository, never()).save(any());
+        verify(refreshTokenRepository, never()).terminateFamily(any(), any(), any());
+    }
+
+    /**
+     * Sets the exact V72 sequence: scalar, unlocked token identity discovery,
+     * org FOR SHARE, user FOR UPDATE, then token FOR UPDATE.
+     * Mockito mocks have no real PostgreSQL locks; integration tests must
+     * still verify their serializability under concurrent disable.
+     */
+    private void stubLockedToken(UserEntity user, RefreshTokenEntity token) {
+        stubTokenDiscovery(user);
+        stubOrganizationSecurityLock(user);
+        when(userRepository.findByIdForSecurityUpdate(user.getId()))
+                .thenReturn(Optional.of(user));
+        when(refreshTokenRepository.findByTokenHashForUpdate(anyString()))
+                .thenReturn(Optional.of(token));
+    }
+
+    private void stubTokenDiscovery(UserEntity user) {
+        when(refreshTokenRepository.findLockIdentityByTokenHash(anyString()))
+                .thenReturn(java.util.Collections.singletonList(new Object[]{
+                        user.getId(), user.getOrganization().getId()
+                }));
+    }
+
+    private void stubOrganizationSecurityLock(UserEntity user) {
+        UUID organizationId = user.getOrganization().getId();
+        when(userRepository.lockOrganizationForAuthentication(organizationId))
+                .thenReturn(Optional.of(organizationId));
+    }
+
+    private void stubFamilyTermination(RefreshTokenEntity token,
+                                       RefreshTokenRevocationReason reason) {
+        when(refreshTokenRepository.terminateFamily(
+                token.getTokenFamilyId(), NOW, reason)).thenReturn(1);
+    }
+
+    private void assertSecurityLockOrder(UserEntity user) {
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(
+                refreshTokenRepository, userRepository);
+        order.verify(refreshTokenRepository).findLockIdentityByTokenHash(anyString());
+        order.verify(userRepository).lockOrganizationForAuthentication(
+                user.getOrganization().getId());
+        order.verify(userRepository).findByIdForSecurityUpdate(user.getId());
+        order.verify(refreshTokenRepository).findByTokenHashForUpdate(anyString());
     }
 
     private void stubRefreshTokenAgesForLogin() {

@@ -55,11 +55,19 @@
         <maven-failsafe-plugin.version>3.5.6</maven-failsafe-plugin.version>
 
         <!--
-            snappy-java 1.1.10.9 fixes CVE-2026-90559.
-            Keep the version pinned centrally because MinIO depends on Snappy
-            and SafeAI requires the class at runtime when MinioClient is built.
+            snappy-java 1.1.10.11: up-to-date patched release for Snappy
+            ByteBuffer bounds issues, including CVE-2026-90559. Version 1.1.10.9
+            is still flagged for a related out-of-bounds vulnerability.
+            Keep the override because MinIO uses Snappy at runtime.
         -->
-        <snappy-java.version>1.1.10.9</snappy-java.version>
+        <snappy-java.version>1.1.10.11</snappy-java.version>
+
+        <!--
+            pgJDBC 42.7.14 (2026-10-07) fixes CVE-2026-107314 (requireAuth)
+            and CVE-2026-107315 (incorrect byte padding). Keep the driver on
+            the supported 42.7.x line without changing the Spring Boot parent.
+        -->
+        <postgresql.version>42.7.14</postgresql.version>
 
         <!--
             Used by Surefire and Failsafe. An empty base value lets
@@ -112,6 +120,13 @@
                 <version>${snappy-java.version}</version>
             </dependency>
 
+            <!-- Avoid older pgJDBC versions even if another dependency requests one. -->
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
+            </dependency>
+
             <dependency>
                 <groupId>commons-io</groupId>
                 <artifactId>commons-io</artifactId>
@@ -135,6 +150,7 @@
         <dependency>
             <groupId>org.xerial.snappy</groupId>
             <artifactId>snappy-java</artifactId>
+            <version>${snappy-java.version}</version>
         </dependency>
 
         <!-- MinIO 8.6 uses the OkHttp multiplatform facade; Java needs its JVM implementation. -->
@@ -214,6 +230,7 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+            <version>${postgresql.version}</version>
             <scope>runtime</scope>
         </dependency>
 

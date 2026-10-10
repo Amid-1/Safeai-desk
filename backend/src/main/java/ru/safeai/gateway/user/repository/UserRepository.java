@@ -85,6 +85,24 @@ public interface UserRepository
     );
 
     /**
+     * PostgreSQL transaction-scoped organization security gate.
+     * <p>
+     * Lock order for login/refresh is organization FOR SHARE -> user
+     * PESSIMISTIC_WRITE -> refresh token PESSIMISTIC_WRITE. Organization
+     * disable obtains organization PESSIMISTIC_WRITE first. The shared lock
+     * allows different users in the same organization to authenticate in
+     * parallel, while serializing the security-epoch change with issuance.
+     */
+    @Query(value = """
+            SELECT organization.id
+              FROM public.organizations organization
+             WHERE organization.id = :organizationId
+             FOR SHARE OF organization
+            """, nativeQuery = true)
+    Optional<UUID> lockOrganizationForAuthentication(
+            @Param("organizationId") UUID organizationId);
+
+    /**
      * Обновляет operational login metadata без изменения business @Version.
      *
      * <p>Метод вызывается внутри login transaction после получения

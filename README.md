@@ -2,11 +2,11 @@
 
 **SafeAI Desk** — production-oriented корпоративная AI-платформа / AI Gateway для безопасного и управляемого использования внешних AI-моделей внутри организаций.
 
-> **Актуальность:** 10 октября 2026  
-> **Backend baseline:** ранее просмотренные модули `common`, `auth`, `user`, `organization`, `ratelimit`, `audit`,
-> `usage`, `chat`, `model`, `ai`, `knowledge` + актуализированная Flyway-эволюция схемы `V1–V71`.
-> В редакции сохранён ранее документированный baseline `V1–V70` и добавлено подтверждённое развитие Usage до `V71`, включая dirty-date recalculation, а также результаты выборочных тестов 10.10.2026.
-> **Граница достоверности:** полный аудит всех файлов текущего checkout и новый успешный прогон `./mvnw clean test` не выполнялись; источники — переданный README, фрагменты Java-классов и предоставленные логи.  
+> **Актуальность:** версия документа по состоянию на 10 октября 2026 года (последние предоставленные исходники и логи).  
+> **Backend baseline:** модули `common`, `auth`, `user`, `organization`, `ratelimit`, `audit`, `usage`, `chat`, `model`, `ai`, `knowledge`; схема PostgreSQL **Flyway V1–V72**.  
+> **Изменения V71–V72:** Usage dirty-date recalculation (V71); согласованный порядок блокировок при Login/Refresh/Disable, immutable `ChatTurn` organization security epoch и атомарный PostgreSQL gate для физического `ModelExecutionAttempt STARTED` (V72).  
+> **Фактически подтверждено логом:** Spring Boot 4.1.1, Java 21, PostgreSQL 16 через Testcontainers; **72 миграции успешно применены**. В последнем показанном запуске `ChatTurnStateMachineIntegrationTest` возникло нарушение `chk_chat_turns_timestamps` в тестовом сценарии времени. После подготовки исправления повторного успешного лога пока нет.  
+> **Граница достоверности:** история проекта, предоставленные Java/SQL-патчи, README и конкретные логи. Полный аудит фактического checkout, успешный `./mvnw clean test`, проверка populated upgrade и production smoke-тесты в этих материалах отсутствуют.  
 > **Статус:** production-oriented **pre-1.0**. Проект уже содержит серьёзные security/durability/governance/evidence
 > механизмы и database backstops, но README не заявляет compliance certification, invoice-grade settlement,
 > формально доказанную HA/SLA или полностью динамический multi-provider runtime.
@@ -36,7 +36,7 @@
 19. [Модуль `ai`](#модуль-ai)
 20. [Модуль `knowledge`](#модуль-knowledge)
 21. [Ключевые backend contracts](#ключевые-backend-contracts)
-22. [Database / Flyway V1–V71](#database--flyway-v1v71)
+22. [Database / Flyway V1–V72](#database--flyway-v1v72)
 23. [Observability и operational jobs](#observability-и-operational-jobs)
 24. [Тестирование](#тестирование)
 25. [Local development](#local-development)
@@ -44,6 +44,8 @@
 27. [Текущие ограничения и production-readiness gaps](#текущие-ограничения-и-production-readiness-gaps)
 28. [Позиционирование проекта](#позиционирование-проекта)
 29. [Frontend](#frontend)
+30. [Поддержание документации в актуальном состоянии](#поддержание-документации-в-актуальном-состоянии)
+31. [Главное правило дальнейшей эволюции](#главное-правило-дальнейшей-эволюции)
 
 ---
 
@@ -96,7 +98,7 @@ Identity
 
 # Текущее состояние
 
-Ниже описан подтверждённый ранее backend baseline, дополненный состоянием миграций и тестов на 10.10.2026.
+Ниже приведён ранее изученный backend baseline с изменениями V71–V72 и отдельно обозначенными границами подтверждения. Описание возможностей не означает прохождение всего набора тестов текущего checkout.
 
 ## Identity / Security
 
@@ -109,6 +111,8 @@ Identity
 - RSA key ring / active key id;
 - `users.token_version`;
 - `organizations.auth_version`;
+- согласованный порядок блокировок `organization → user → refresh token` для Login/Refresh/Logout;
+- синхронизация выдачи сессий с отключением организации;
 - refresh-token rotation;
 - refresh reuse detection;
 - refresh family termination;
@@ -132,7 +136,9 @@ Identity
 - route-bound quota reservation provenance;
 - cost-verifiable reservation flag;
 - route-decision binding;
-- `provider_call_started_at` is set at the durable physical `STARTED` boundary;
+- `provider_call_started_at` выставляется PostgreSQL только при допущенном durable physical `STARTED` (V67/V72);
+- immutable `chat_turns.authorized_organization_auth_version` для каждого нового ChatTurn (V72);
+- `organizations.enabled` + `auth_version` с row-lock при каждом новом физическом AI attempt (V72);
 - crash recovery;
 - `AMBIGUOUS` protection;
 - no blind retry после неопределённого external I/O;
@@ -345,6 +351,8 @@ AI Physical Execution Plane
 
 # Структура backend
 
+### Краткая карта backend
+
 ```text
 backend/
 ├── src/main/java/ru/safeai/gateway/
@@ -363,7 +371,7 @@ backend/
 │
 ├── src/main/resources/
 │   ├── db/
-│   │   ├── migration/         # V1 ... V71
+│   │   ├── migration/         # V1 ... V72
 │   │   └── local-migration/   # local-only seed
 │   │
 │   ├── application.yml
@@ -376,8 +384,11 @@ backend/
 └── src/test/
     ├── java/
     └── resources/
-    
-    
+```
+
+### Подробная структура backend и Flyway
+
+```text
 backend/
 ├── src/
 │   ├── main/
@@ -475,6 +486,7 @@ backend/
 │   │       │       ├── V69__audit_actor_link_fk_detachment.sql
 │   │       │       ├── V70__audit_live_user_link_separation.sql
 │   │       │       ├── V71__usage_dirty_dates_and_recalculation_queue.sql
+│   │       │       ├── V72__organization_auth_epoch_physical_attempt_gate.sql
 │   │       │       └── README_DB.md
 │   │       │
 │   │       ├── META-INF/
@@ -717,11 +729,15 @@ Refresh token хранится как hash.
 ```text
 cookie
   ↓
-hash
+hash + non-locking identity lookup (only routing IDs)
   ↓
-locked token row
+organization FOR SHARE
   ↓
-validate token + family + epochs
+user PESSIMISTIC_WRITE
+  ↓
+refresh token PESSIMISTIC_WRITE
+  ↓
+RECHECK token hash/owner/expiry/revocation/family + current epochs
   ↓
 revoke predecessor
   ↓
@@ -743,6 +759,25 @@ clear cookies
 ```
 
 DB-инварианты защищают replacement chain/family consistency.
+
+## V72 — единый PostgreSQL lock ordering для сессий
+
+Одновременное создание сессии, refresh и отключение tenant — **конкурентные транзакции**. Текущий патч задаёт общий порядок захвата строк и повторную проверку security state **после** блокировок.
+
+| Операция | Порядок и защита |
+|---|---|
+| Login | `organizations FOR SHARE` → `users PESSIMISTIC_WRITE` → запись login/refresh session |
+| Refresh | неблокирующее чтение только ID владельца токена → `organizations FOR SHARE` → `users PESSIMISTIC_WRITE` → `refresh_tokens PESSIMISTIC_WRITE` → повторная валидация |
+| Logout | согласованный `organization → user → token` перед изменением refresh state |
+| Organization Disable | `organizations PESSIMISTIC_WRITE` → `enabled=false`, `auth_version++` → отзыв refresh sessions |
+| User security mutation | `organizations PESSIMISTIC_WRITE` → `users PESSIMISTIC_WRITE` → связанный отзыв сессий |
+
+Правило **organization → user → token** препятствует обратному захвату блокировок по этим путям. Предварительный lookup ID токена **не является авторизацией**: token hash, владелец, семейство, состояние, `enabled`, `token_version` и `auth_version` проверяются на актуальных данных под блокировками. Блокировка `FOR SHARE` удерживается до commit соответствующей транзакции и конфликтует с disable `FOR UPDATE` той же organization.
+
+После `Disable` любой ранее выпущенный access token должен проходить runtime-проверку `enabled`/epoch; наличие уже подписанного JWT само по себе не сохраняет доступ. Старый refresh token не может получить новую сессию через старую версию безопасности. Повторный Enable не делает старый epoch актуальным.
+
+Это **контракт кода и базы**, а не доказательство отсутствия всех deadlock во всей системе: необходимы реальные PostgreSQL concurrency-тесты, анализ дополнительных lock paths, timeout/serialization diagnostics и проверка поведения при параллельных `Refresh` одной семьи.
+
 
 ## Passwords
 
@@ -1290,7 +1325,11 @@ login rate limit
   ↓
 credentials validation
   ↓
-user + organization security checks
+initial user + organization security checks
+  ↓
+organization FOR SHARE → user PESSIMISTIC_WRITE
+  ↓
+repeat enabled/tokenVersion/authVersion checks under locks
   ↓
 transactional refresh-session creation
   ↓
@@ -1322,19 +1361,19 @@ Security-state infrastructure failure должен fail closed.
 ## Refresh flow
 
 ```text
-refresh cookie
+refresh cookie → hash
   ↓
-hash
+non-locking lookup of token routing identity
   ↓
-SELECT/lock refresh row
+organization FOR SHARE → user PESSIMISTIC_WRITE
   ↓
-validate expiry / revocation / family / security epochs
+refresh token PESSIMISTIC_WRITE
   ↓
-rotate token
+repeat hash/owner/state/family/expiry + enabled/version checks
   ↓
-write successor
+rotate predecessor; persist successor (same transaction)
   ↓
-set new cookies
+sign access JWT + set new cookies
 ```
 
 Reuse detection прекращает token family.
@@ -1513,6 +1552,17 @@ organization.auth_version
 и публикует `OrganizationSecurityStateChangedEvent`.
 
 Это инвалидирует старые auth epochs. Re-enable не должен «оживлять» старые refresh sessions.
+
+### V72: Disable как security boundary, а не только административный флаг
+
+При отключении организация блокируется на запись до изменения `enabled` и увеличения `auth_version`. Login/Refresh запрашивают совместимую с другими читателями, но конфликтующую с Disable блокировку `FOR SHARE`; физический AI STARTED использует такой же organization fence в SQL-триггере.
+
+- Commit Disable запрещает **новый** `ModelExecutionAttempt STARTED`, пока organization отключена.
+- После Enable устаревший `ChatTurn` с прежним authorized epoch всё равно не проходит V72 gate.
+- Физические вызовы, **допущенные до Disable**, не удаляются и не переписываются: нужно завершить/сохранить evidence, включая неопределённый outcome.
+- Внешний HTTP-запрос, разрешённый до Disable, не гарантированно остановится: DB fence определяет момент **авторизации STARTED**, не момент отправки сетевых байтов.
+
+Проверять только `enabled` в Java перед отправкой запрещено считать строгой защитой: между Java check и DB INSERT возникает TOCTOU. База повторно проверяет identity/epoch под row lock.
 
 ---
 # Модуль `ratelimit`
@@ -2139,6 +2189,7 @@ ChatTurn
 processingToken
 providerOperationId
 leaseUntil
+authorized_organization_auth_version (immutable V72)
 quota reservation
 ModelRouteDecision
 reserved execution envelope
@@ -2161,17 +2212,20 @@ Stale worker не может завершить turn после lease takeover.
 DB boundary для вставки физического attempt:
 
 ```text
-ExecutionPlan
+ExecutionPlan + sealed prepared-request binding v2
   ↓
-ChatTurn must be PROCESSING
+V72: organization row FOR SHARE, enabled=true,
+     authorized_organization_auth_version == auth_version
+  ↓
+V67: ChatTurn must be PROCESSING
   ↓
 processing_token + live lease checked under row lock
   ↓
 provider_call_started_at = COALESCE(existing, DB clock_timestamp())
   ↓
-Attempt STARTED may be inserted
+ModelExecutionAttempt STARTED committed
   ↓
-external provider I/O
+external provider I/O (outside long DB transaction)
 ```
 
 Поэтому:
@@ -2187,6 +2241,17 @@ provider_call_started_at != null
 
 Точная истина об outcome хранится в `ModelExecutionAttempt`; `provider_call_started_at` остаётся coarse-grained
 ChatTurn marker для recovery/fencing.
+
+### V72 — immutable authorization epoch у ChatTurn
+
+`chat_turns.authorized_organization_auth_version` — зафиксированная версия безопасности организации, предъявленная авторизованным principal при создании logical turn. V72 при `INSERT chat_turns` блокирует tenant `FOR SHARE`, проверяет `enabled=true` и совпадение epoch; последующее изменение epoch-колонки запрещает DB-trigger.
+
+Исторические ChatTurn, созданные до V72, сохраняют `NULL` (миграция **не приписывает** прошлым запросам произвольную авторизацию). Такие строки не получают право на **новые** физические попытки. `DEFAULT 0` в SQL существует для совместимости новых низкоуровневых тестовых INSERT; production Java должна явно передавать epoch principal, а не полагаться на default.
+
+При pre-`STARTED` запрете (например, Disable, потерянный lease, несоответствие epoch) корректное состояние — контролируемый `FAILED` без подмены его `AMBIGUOUS`. Если attempt уже был разрешён, дальнейший outcome трактуется по durable evidence, а не исходя из последующей смены tenant state.
+
+**Инвариант временной последовательности:** `created_at ≤ provider_call_started_at ≤ completed_at` там, где terminal timestamp установлен. V67/V72 используют физическое время PostgreSQL на STARTED; тестовые injectable часы нужно согласовывать с DB clock, не отключая `chk_chat_turns_timestamps` и не переписывая immutable `created_at`.
+
 
 ## Quota reservation
 
@@ -2677,7 +2742,9 @@ binding_version=2
       ↓
 ModelExecutionPlan
       ↓
-live fenced ChatTurn check
+V72 organization enabled + exact auth_version (FOR SHARE)
+      ↓
+V67 live PROCESSING ChatTurn + lease/processingToken fence
       ↓
 ModelExecutionAttempt STARTED + provider_call_started_at
       ↓
@@ -2697,7 +2764,8 @@ commit final prepared-request binding
   ↓
 commit ExecutionPlan
   ↓
-commit Attempt STARTED using live lease/fencing + DB wall clock
+commit Attempt STARTED with V72 organization epoch gate,
+V67 live lease/fencing and PostgreSQL wall clock
   ↓
 external provider I/O
   ↓
@@ -2708,6 +2776,22 @@ application/chat finalization
 
 Это позволяет переживать crash boundaries без ложного предположения «если Chat не ответил, provider точно ничего не сделал»
 и не позволяет historical binding v1 авторизовать новый physical call.
+
+## V72 — физический AI kill-switch
+
+**V72 ограничивает допуск новых физических вызовов, а не корректность уже состоявшегося внешнего вызова.** Организационный `enabled` и сохранённый `authVersion` проверяются дважды с разными целями:
+
+1. `ModelExecutionAttemptRepository.organizationEpochCurrent(planId)` — неблокирующий advisory preflight для ранней понятной ошибки. Он **не** устраняет TOCTOU.
+2. PostgreSQL `BEFORE INSERT` trigger `trg_a_physical_attempt_organization_epoch_v72` — авторитетная проверка `organization.enabled`, `auth_version`, immutable ChatTurn epoch и совпадения `organization_id`; берёт organization row `FOR SHARE` и удерживает lock до commit INSERT.
+3. Остальные триггеры V53/V54/V65/V67 сохраняют свои дополнительные запреты: attempt ordering/retry, exact governed binding v2, live `PROCESSING` turn, lease и `processingToken`.
+4. Только успешно закоммиченный физический `STARTED` даёт право перейти к provider I/O. С ним одновременно фиксируется `provider_call_started_at`; отдельного публичного `ChatTurnFinalizationService.markProviderCallStarted()` в актуальном патче нет.
+
+**Линеаризация по БД:** конкурентный Disable (`FOR UPDATE` на той же организации) не может закоммититься между V72 проверкой организации и commit разрешённого STARTED. После commit Disable новые STARTED не проходят; после Enable старый ChatTurn также не проходит из-за старого epoch.
+
+**Граница внешнего эффекта:** attempt с разрешением, полученным **до** Disable, может уже выполнять HTTP либо дойти до сетевой отправки **после** Disable. Такой вызов нельзя считать автоматически отменённым. Для более строгой гарантии «никаких сетевых send после commit Disable» понадобятся дополнительные dispatch permits/draining/in-flight coordination; текущая реализация гарантирует **транзакционный допуск**, а не физическую отмену provider I/O.
+
+**Execution evidence не теряется:** `STARTED`, `SUCCEEDED`/`FAILED`/`AMBIGUOUS`, outcome certainty, usage/pricing и retry-safety сохраняются по существующим договорам. Отказы до STARTED и неопределённость после STARTED не объединяются в одно состояние.
+
 
 ## Physical target identity
 
@@ -3428,7 +3512,7 @@ Answer Passport читается по chat/turn identity через `AnswerPassp
 
 ---
 
-# Database / Flyway V1–V71
+# Database / Flyway V1–V72
 
 Production migrations:
 
@@ -3496,6 +3580,34 @@ local seed != production reference data
 | `V69`     | audit actor-link FK detachment: отделение исторического actor snapshot от ссылочной зависимости на удаляемую учётную запись |
 | `V70`     | audit live-user link separation: разделение живой ссылки на пользователя и исторических данных audit actor; сохранение audit evidence при изменении жизненного цикла пользователя |
 | `V71`     | Usage dirty-date queue и повторный расчёт UTC-дней: учёт поздних изменений источников, выборка ожидающих дат и управляемая переагрегация без отката последовательного watermark |
+| `V72`     | immutable authorization epoch у ChatTurn; organization `FOR SHARE` при reservation и каждом физическом `STARTED`; DB-serialized AI kill-switch и запрет оживления старых turns |
+
+## V72 — границы транзакционного допуска и обратная совместимость
+
+Новая migration **`V72__organization_auth_epoch_physical_attempt_gate.sql`** добавляет:
+
+| DB-объект | Назначение |
+|---|---|
+| `chat_turns.authorized_organization_auth_version` (`bigint`, исторически nullable) | Неподменяемый epoch авторизации из момента reservation |
+| `chk_chat_turn_authorized_org_auth_epoch_v72` | Запрет отрицательной версии |
+| `guard_chat_turn_reservation_epoch_v72()` + `trg_a_chat_turn_reservation_epoch_v72` | На `INSERT chat_turns`: tenant `FOR SHARE`, `enabled`, exact epoch |
+| `guard_chat_turn_epoch_immutable_v72()` + `trg_a_chat_turn_epoch_immutable_v72` | Запрет изменения authorization epoch после INSERT |
+| `guard_physical_attempt_organization_epoch_v72()` + `trg_a_physical_attempt_organization_epoch_v72` | На каждый `INSERT model_execution_attempts`: tenant `FOR SHARE` + live security epoch |
+
+```text
+Organization Disable                       Physical STARTED
+--------------------                       ----------------
+organization FOR UPDATE <──── conflict ── organization FOR SHARE
+set enabled=false, auth_version++           check enabled + exact epoch
+commit                                     attempt commit (before provider I/O)
+```
+
+Операции сериализуются по строке организации: победившая транзакция определяет допустимость нового STARTED. **Нет гарантий отмены** уже допущенного сетевого вызова; нельзя менять/удалять его исторический attempt evidence.
+
+Миграция V72 сохраняет `NULL` в исторических строках ChatTurn и даёт `DEFAULT 0` лишь новым SQL-вставкам, которые не передали значение. Такие исторические turns не могут открыть новую physical attempt. Загрузка старых версий backend в смешанном rollout может приводить к fail-closed отказам из-за отсутствующего principal epoch: требуется согласованный cutover. Изменять ранее применённые V1–V71 вместо нового SQL-файла запрещено.
+
+**Статус проверки:** последний предоставленный реальный PostgreSQL Testcontainers log подтверждает применение V1–V72 с нуля. Это **не** подтверждает успешную миграцию населённой базы V71→V72 или успешное прохождение конкурентных тестов. Их нужно проводить отдельно.
+
 
 ## Важные DB boundaries
 
@@ -3525,6 +3637,9 @@ local seed != production reference data
 - binding-version=2 physical execution fence;
 - execution-plan immutability;
 - live lease/fencing requirement at physical `STARTED`;
+- V72 immutable ChatTurn organization authorization epoch;
+- V72 `FOR SHARE` fence при reservation и physical `STARTED`;
+- V72 tenant-disable gate, исключающий новый committed STARTED после Disable;
 - physical attempt sequence;
 - bounded-cost single-attempt rule;
 - physical retry safety;
@@ -3603,6 +3718,25 @@ README не утверждает `BUILD SUCCESS` без фактического
 
 ## История контрольных прогонов и актуальный статус на 10.10.2026
 
+### Последний предоставленный интеграционный лог (V72)
+
+**Подтверждённый запуск через IntelliJ IDEA:** Java 21.0.11, Spring Boot 4.1.1, Testcontainers 2.0.5, PostgreSQL 16.15. Spring-контекст запустился и Flyway применил все **72** миграции (`Successfully applied 72 migrations`).
+
+Однако `ru.safeai.gateway.chat.integration.ChatTurnStateMachineIntegrationTest` в показанном запуске **не прошёл**: при `AiExecutionAttemptRecorder.started()` PostgreSQL правильно отклонял триггерный `UPDATE chat_turns` с SQLSTATE `23514`, `chk_chat_turns_timestamps`.
+
+```text
+Пример доказанной ошибки порядка времени:
+ChatTurn created_at            = 2026-10-10 14:23:45.020831+03
+provider_call_started_at (DB)  = 2026-10-10 14:23:44.183355+03
+Результат                    = ERROR: chk_chat_turns_timestamps
+```
+
+Root cause: ранее выданный тестовый `Clock` искусственно переводился **вперёд** относительно `clock_timestamp()` БД перед новым ChatTurn. Когда V67-триггер выставлял маркер физического STARTED по DB clock, он оказывался *раньше* `created_at`. Это **проблема согласования часов в test fixture**, а не основание выключать constraint либо обходить V72 gate.
+
+Подготовлено отдельное обновление `ChatTurnStateMachineIntegrationTest` с чтением DB clock, корректной временной последовательностью резервирования/STARTED/финализации, сохранением всех 11 тестов и запретом изменения immutable `created_at`. **Повторный успешный прогон после исправления в предоставленных логах не подтверждён.** Аналогичные fixture-time assumptions должны проверяться в других тестах.
+
+### Исторические прогоны до V72
+
 **Предыдущий полный прогон (историческая фиксация, не статус текущего checkout):**
 
 ```text
@@ -3622,15 +3756,14 @@ BUILD FAILURE
 helper/fixture без отключения DB triggers, изменения `created_at` и снижения
 строгости assertions.
 
-**Более поздняя диагностика (10.10.2026):** ранее другой полный Maven-прогон показал `Tests run: 2229, Failures: 1, Errors: 243, Skipped: 3`. Массовые ошибки загрузки `ApplicationContext` имели общий root cause: `UsageDirtyDateRepository` был `final` и не поддавался CGLIB-проксированию Spring. После изменения класса на не-`final` выборочный `UsageRollupReconciliationIntegrationTest` **успешно загрузил Spring-контекст** и применил все **71** миграцию в Testcontainers PostgreSQL, но завершился ошибкой assertion по сообщению `watermarkRejectsSkippedUtcDay()`.
+**Другой исторический полный Maven-прогон (до последнего V72 запуска):** показал `Tests run: 2229, Failures: 1, Errors: 243, Skipped: 3`. Массовые ошибки загрузки `ApplicationContext` имели общий root cause: `UsageDirtyDateRepository` был `final` и не поддавался CGLIB-проксированию Spring. После изменения класса на не-`final` выборочный `UsageRollupReconciliationIntegrationTest` **успешно загрузил Spring-контекст** и применил все **71** миграцию в Testcontainers PostgreSQL, но завершился ошибкой assertion по сообщению `watermarkRejectsSkippedUtcDay()`.
 
 Из предоставленного stack trace: production-исключение содержит `Usage rollup watermark cannot skip an unprocessed day: 2026-06-12`, тогда как старый тест требовал фразу `пропуском UTC-дня`. Тест был обновлён для текущего error contract без изменения запрета на пропуск дат. Отдельно исправлен `UserServiceTest`: нейтральное сообщение конфликта email теперь `Указанный email недоступен`, а не старое `уже существует`. Подтверждение успешного повторного запуска этих изменённых тестов в полученных логах отсутствует.
 
 **Не следует суммировать численность исторических запусков и выдавать её за состояние последней сборки.** Полный `./mvnw clean test` после фиксов не предоставлен; остальные регрессии не исключены.
 
-Статус сборки **не является** подтверждением полного green baseline.
-Необходимо заново прогнать `./mvnw clean test` после исправления оставшегося
-класса и приложить Surefire summary нового запуска.
+Статус сборки **не является** подтверждением полного green baseline. Для current V72 checkout отсутствуют итоговый Surefire summary всей матрицы, DB lock-contention отчёт и положительная проверка populated migration. Перед релизом нужно заново прогнать `./mvnw clean test` и сохранить отчёты. Последний известный сбой не следует скрывать.
+
 
 ## Backend
 
@@ -3657,6 +3790,37 @@ Windows:
 cd backend
 mvnw.cmd clean test
 ```
+
+## Целевые регрессии V72: security epochs, concurrency и физический execution
+
+```bash
+cd backend
+
+# Проверка создания ChatTurn, physical STARTED, результата и recovery:
+./mvnw -Dtest=ru.safeai.gateway.chat.integration.ChatTurnStateMachineIntegrationTest test
+
+# Независимый одноимённый Knowledge test:
+./mvnw -Dtest=ru.safeai.gateway.knowledge.integration.ChatTurnStateMachineIntegrationTest test
+
+# Параллельные Login/Refresh/Disable и token-family races:
+./mvnw -Dtest=OrganizationSecurityGateConcurrencyIT test
+
+# Внутренний preflight и epoch у нового ChatTurn:
+./mvnw -Dtest=AiExecutionAttemptOrganizationGateTest,ChatTurnOrganizationEpochTest test
+
+# Unit-level state/finalization после удаления старого markProviderCallStarted:
+./mvnw -Dtest=ChatServiceTest,ChatTurnFinalizationServiceTest test
+
+# Полный regression suite:
+./mvnw clean test
+```
+
+> Названия классов относятся к исходным V72-патчам; фактическое существование/расположение тестов в текущем checkout необходимо проверить. Некоторые integration suites могут запускаться через отдельный Maven Failsafe-профиль; тогда дополнительно выполните `./mvnw verify` в соответствии с `pom.xml`.
+
+**Конкурентные сценарии, которые должны завершиться без deadlock и без выдачи действительной сессии после Disable:** Login ↔ Disable, Refresh ↔ Disable, несколько concurrent Refresh одного token family, ожидание `FOR SHARE`/`FOR UPDATE`, epoch change + re-enable, authorization при отказах и повторах. Для AI проверить оба порядка гонки: Disable first → попытка запрещена; STARTED first → Disable ждёт commit, evidence сохраняется. Добавить проверку deadlock SQLSTATE `40P01`, statement/lock timeout и соответствующих retry/fail-closed решений.
+
+**Для временных инвариантов** отдельно проверять timestamp ordering с реальными PostgreSQL clock и тестовым `Clock`. Нельзя добиться зелёной сборки удалением `chk_chat_turns_timestamps`, смягчением V67/V72-триггеров или возвратом service-level `markProviderCallStarted()`.
+
 
 ## Фактически присутствующие test categories
 
@@ -3751,7 +3915,7 @@ mvnw.cmd clean test
 - retrieval metrics;
 - real fixture contracts.
 
-## Целевые проверки V71
+## Целевые проверки V71 (сохранены при переходе на V72)
 
 ```bash
 cd backend
@@ -3767,8 +3931,8 @@ cd backend
 Перед серьёзным deployment:
 
 ```text
-fresh V1 → V71
-representative populated upgrade → V71
+fresh V1 → V72
+representative populated upgrade V71 → V72
 Flyway history validation
 critical index validity check
 backend clean test
@@ -3776,6 +3940,10 @@ container build/start
 prod-like startup invariants
 tenant isolation
 auth epoch invalidation
+Login/Refresh/Disable concurrency and deadlock regression
+V72 fresh/populated migration compatibility
+organization kill-switch STARTED-vs-Disable race/re-enable
+ChatTurn chronological CHECK constraints under Testcontainers clock
 ChatTurn recovery
 AI physical attempt recovery/reconciliation
 Model route binding
@@ -3913,6 +4081,19 @@ Production Knowledge требует:
 - production role имеет необходимые extension/index privileges;
 - `pgvector` доступен до применения Knowledge vector migrations.
 
+## V72 rollout — согласованное внедрение security epoch и AI kill-switch
+
+V72 нельзя считать обычной независимой SQL-миграцией: новая схема требует от reservation path явно записывать `authorized_organization_auth_version`, а physical executor должен уважать database rejection. Перед выпуском нужны:
+
+1. Согласованное обновление backend и Flyway V72: не оставлять старые workers, которые создают ChatTurn без текущего epoch.
+2. Migration rehearsal на пустой БД V1–V72 **и** на копии населённой V71 с upgrade до V72. Исторические `NULL` ChatTurn нельзя backfill-ить придуманной версией.
+3. PostgreSQL concurrent races: Login/Refresh/Disable; физический `STARTED` против Disable; Disable→Enable без reactivation старого turn.
+4. Корректный finalization уже начатого provider I/O: сохранять `outcome_certainty`, usage/cost, audit и `AMBIGUOUS` при неопределённости; не выполнять blind retry.
+5. Проверка latency и блокировок `organizations FOR SHARE/FOR UPDATE`, retry policy при SQLSTATE `40P01` и мониторинг времени ожидания транзакций.
+
+**Не считать выполненным** только по наличию SQL-файла или успешному Flyway startup. Full green suite, upgrade rehearsal и runtime/provider smoke-test отдельно обязательны.
+
+
 ## PostgreSQL backup / restore
 
 Backup не считается готовым только потому, что существует cron/script.
@@ -3937,6 +4118,16 @@ Redirect following с credentials запрещён.
 из списка удалены: budget-state representability закрыт `V62/V64`, final-request/RAG binding — `V62/V64/V65`,
 searchable Knowledge publication — `V63`, physical response vs protocol rejection — `V66`,
 а Chat/Audit evidence получил дополнительные DB backstops в `V67/V68`.
+
+## P0 до production — V72 validation и временные инварианты
+
+- **Последний наблюдаемый V72 Testcontainers запуск не прошёл** из-за `chk_chat_turns_timestamps` в clock fixture. Тестовое исправление подготовлено, но успешный повторный запуск не предоставлен.
+- Не подтверждены в CI полная матрица `./mvnw clean test` текущего checkout, реальные гонки Login/Refresh/Disable и `ModelExecutionAttempt STARTED` ↔ Disable, а также migration rehearsal населённой БД V71→V72.
+- Kill-switch синхронизирует **разрешение STARTED**, но не обещает физическую отмену уже допущенного HTTP I/O; если нужен сетевой hard-stop, требуется отдельный dispatch/draining протокол.
+- Старые application instances без нового epoch contract при смешанной раскатке могут получить fail-closed ошибки. Важно описать rollback/runbook и последовательность остановки workers.
+
+Это **release gates**, а не повод ослаблять блокировки, DB triggers, idempotency, durable evidence или прежнюю логику recovery.
+
 
 ## P1 — Governed provider entry point
 
@@ -4159,13 +4350,31 @@ SafeAI Desk не пытается сделать LLM deterministic.
 
 # Frontend
 
-Эта редакция README фиксирует ранее изученный backend baseline и подтверждённое применение Flyway до `V70` на 10.10.2026.
+Эта редакция README описывает backend через Flyway **V72**. Последний показанный лог подтверждает именно применение 72 миграций в новой тестовой PostgreSQL БД; отдельный аудит frontend checkout не выполнялся.
 
 По предоставленным скриншотам видно, что frontend уже содержит отдельные API clients, runtime parsers, auth context, admin audit/usage/users/organizations/model control plane UI, Chat title UI и Knowledge UI, а также значительный test layer.
 
 Полное описание frontend contracts, компонентов и актуального file tree лучше синхронизировать после отдельной передачи текущего frontend archive/source, чтобы не переносить в README устаревшие детали из более ранних версий.
 
 ---
+
+# Поддержание документации в актуальном состоянии
+
+README предназначен для **реализованных и проверяемых** контрактов. `ROADMAP.md` — для будущих возможностей. Новая миграция требует синхронного обновления: migration map, entity/repository contract, API flows, state-machine diagrams, runbook, known-failure status и тестовой матрицы.
+
+При обновлении проекта сверяйте прежде всего:
+
+- `backend/src/main/resources/db/migration/` и `flyway_schema_history` — реально применённая schema/version;
+- актуальные Java-классы, repository signatures и controller mappings — точные backend/API contracts;
+- `backend/pom.xml`, `frontend/package.json` — версии инструментов/библиотек;
+- Surefire/Failsafe XML и последние полные логи — **реальный** статус тестов, а не исторические counts;
+- деплойные профили — фактические security constraints и secret handling;
+- concurrency/DB evidence — подтверждение, что ограничения выдерживают не только happy path, но и гонки/отказоустойчивость.
+
+Никакие сведения о наличии класса, метода или SQL-файла сами по себе не являются доказательством прохождения теста. Статусы «реализовано в исходном патче», «применено в тестовой PostgreSQL», «проверено интеграционным тестом» и «выпущено в production» следует документировать **раздельно**.
+
+---
+
 
 # Главное правило дальнейшей эволюции
 
@@ -4208,6 +4417,10 @@ ExecutionPlan
   ↓
 live ChatTurn lease/token fence
   ↓
+organization enabled + exact immutable authVersion checked under FOR SHARE
+  ↓
+V67 live ChatTurn lease/token fence
+  ↓
 Attempt STARTED + provider_call_started_at committed
   ↓
 provider I/O outside long DB transaction
@@ -4221,4 +4434,4 @@ usage / physical spend / Answer Passport / audit
 
 ---
 
-**Документ актуализирован 10 октября 2026 года. Подтверждены запуск тестового Spring-контекста и применение Flyway `V1–V71` в PostgreSQL Testcontainers. Успешный полный прогон всей тестовой матрицы после последних правок не подтверждён.**
+**Документ актуализирован 10 октября 2026 года. Последний предоставленный Testcontainers log подтверждает запуск Spring-контекста и применение Flyway `V1–V72`, но фиксирует незавершённый/неуспешный тест `ChatTurnStateMachineIntegrationTest` из-за временного CHECK constraint. Последующее исправление тестовых часов подготовлено; новый успешный прогон и полный green build не подтверждены.**

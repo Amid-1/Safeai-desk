@@ -17,6 +17,20 @@ public interface RefreshTokenRepository
         extends JpaRepository<RefreshTokenEntity, UUID> {
 
     /**
+     * Unlocked scalar lookup solely to discover the lock order. Caller MUST
+     * re-read the token after locking organization and user, and verify both
+     * identities again. No security decision is based on this preflight.
+     */
+    @Query(value = """
+            SELECT app_user.id, app_user.organization_id
+              FROM public.refresh_tokens token
+              JOIN public.users app_user ON app_user.id = token.user_id
+             WHERE token.token_hash = :tokenHash
+            """, nativeQuery = true)
+    java.util.List<Object[]> findLockIdentityByTokenHash(
+            @Param("tokenHash") String tokenHash);
+
+    /**
      * Блокируется только строка refresh token.
      * <p>
      * User, organization и roles загружаются отдельным запросом

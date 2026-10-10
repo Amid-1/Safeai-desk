@@ -273,8 +273,11 @@ final class OrganizationCommandOperations {
 
         /*
          * Disable fences NEW authenticated work after commit through
-         * enabled/authVersion. Already-started ChatTurn processing is not
-         * cancelled here because that needs its own fencing protocol.
+         * enabled/authVersion. V72 binds each ChatTurn reservation and every
+         * new physical STARTED attempt to the same organization security epoch
+         * under a PostgreSQL row lock. Attempts authorized before disable
+         * commits may already be in flight and retain their evidence; remote
+         * provider calls cannot be recalled or promised to be cancelled.
          */
         if (!newEnabled) {
             userSessionRevocationService

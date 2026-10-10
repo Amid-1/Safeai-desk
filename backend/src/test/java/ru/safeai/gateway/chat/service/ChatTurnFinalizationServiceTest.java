@@ -9,6 +9,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.safeai.gateway.ai.exception.AiProviderException;
 import ru.safeai.gateway.ai.exception.AiProviderUnavailableException;
+import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.dto.SendMessageResponse;
 import ru.safeai.gateway.chat.entity.ChatMessageEntity;
@@ -24,17 +27,21 @@ import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
 import ru.safeai.gateway.knowledge.rag.AnswerPassportService;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -86,30 +93,130 @@ class ChatTurnFinalizationServiceTest {
         userMessage.setId(ChatTestFixtures.USER_MESSAGE_ID);
     }
 
+    /**
+     * V72: provider_call_started_at is no longer written by finalization.
+     * Only the durable ModelExecutionAttempt STARTED boundary may set it.
+     * If execution is rejected before STARTED, finalization must instead
+     * complete the turn through the dedicated pre-provider FAILED transition.
+     * <p>
+     * This is a service-level test; PostgreSQL STARTED/organization-epoch
+     * serialization is verified separately by the physical-attempt tests.
+     */
     @Test
-    void providerCallMarkerIsPersistedBeforeHttpCall() {
-        when(turnRepository.markProviderCallStarted(
+    void preProviderFailureUsesDedicatedFencedTransitionAndRequiredEvidence() {
+        String providerErrorType = "ORGANIZATION_AUTH_EPOCH_REVOKED";
+        String failureCode = "AI_ORGANIZATION_AUTH_EPOCH_REVOKED";
+
+        when(turnRepository.markFailedBeforeProviderCall(
                 ChatTestFixtures.TURN_ID,
                 ChatTestFixtures.PROCESSING_TOKEN,
+                providerErrorType,
+                failureCode,
                 ChatTestFixtures.NOW
         )).thenReturn(1);
 
-        service.markProviderCallStarted(context);
+        service.failBeforeProviderCall(
+                context,
+                providerErrorType,
+                failureCode,
+                ChatTestFixtures.principal()
+        );
 
-        verify(turnRepository).markProviderCallStarted(
+        // A successful fenced terminal transition must precede quota release,
+        // audit persistence and terminal metrics reporting.
+        InOrder persistenceOrder = inOrder(
+                turnRepository,
+                quotaService,
+                auditEventService,
+                metrics
+        );
+        persistenceOrder.verify(turnRepository).markFailedBeforeProviderCall(
                 ChatTestFixtures.TURN_ID,
                 ChatTestFixtures.PROCESSING_TOKEN,
+                providerErrorType,
+                failureCode,
                 ChatTestFixtures.NOW
+        );
+        persistenceOrder.verify(quotaService).releaseFailure(
+                ChatTestFixtures.TURN_ID,
+                ChatTestFixtures.NOW
+        );
+        persistenceOrder.verify(auditEventService).recordPrincipalSnapshot(
+                argThat((SafeAiUserPrincipal actor) -> actor != null
+                        && ChatTestFixtures.USER_ID.equals(actor.getId())
+                        && ChatTestFixtures.ORGANIZATION_ID.equals(actor.getOrganizationId())),
+                eq(ChatTestFixtures.ORGANIZATION_ID),
+                eq(AuditEventType.AI_RESPONSE_FAILED),
+                argThat((AuditDetails details) -> details != null
+                        && ChatTestFixtures.TURN_ID.equals(details.toMap().get("turnId"))
+                        && "FAILED".equals(details.toMap().get("turnState"))
+                        && providerErrorType.equals(details.toMap().get("providerErrorType"))
+                        && failureCode.equals(details.toMap().get("failureCode"))
+                        && Boolean.FALSE.equals(details.toMap().get("outcomeAmbiguous")))
+        );
+        persistenceOrder.verify(metrics).recordTerminalAfterCommit(ChatTurnState.FAILED);
+
+        // A pre-provider failure must never insert an assistant response
+        // or persist a post-response Answer Passport.
+        verifyNoInteractions(messageRepository, sessionRepository, answerPassportService);
+    }
+
+    /**
+     * If the fencing token / PROCESSING state no longer matches, the SQL
+     * transition updates zero rows. No secondary state or audit evidence may
+     * be produced by a stale worker. The physical STARTED boundary itself is
+     * intentionally not exposed through ChatTurnFinalizationService.
+     */
+    @Test
+    void stalePreProviderFailureIsFencedWithoutQuotaOrAuditSideEffects() {
+        String providerErrorType = "ORGANIZATION_AUTH_EPOCH_REVOKED";
+        String failureCode = "AI_ORGANIZATION_AUTH_EPOCH_REVOKED";
+
+        when(turnRepository.markFailedBeforeProviderCall(
+                ChatTestFixtures.TURN_ID,
+                ChatTestFixtures.PROCESSING_TOKEN,
+                providerErrorType,
+                failureCode,
+                ChatTestFixtures.NOW
+        )).thenReturn(0);
+
+        assertThatThrownBy(() -> service.failBeforeProviderCall(
+                context,
+                providerErrorType,
+                failureCode,
+                ChatTestFixtures.principal()
+        )).isInstanceOf(ChatStaleProcessorException.class);
+
+        verify(turnRepository).markFailedBeforeProviderCall(
+                ChatTestFixtures.TURN_ID,
+                ChatTestFixtures.PROCESSING_TOKEN,
+                providerErrorType,
+                failureCode,
+                ChatTestFixtures.NOW
+        );
+        verifyNoInteractions(
+                quotaService,
+                auditEventService,
+                metrics,
+                messageRepository,
+                sessionRepository,
+                answerPassportService
         );
     }
 
+    /**
+     * Regression guard: the deleted entry points must not return. Only a
+     * physical attempt admitted by PostgreSQL V72 may record STARTED.
+     */
     @Test
-    void staleProviderStartIsFenced() {
-        when(turnRepository.markProviderCallStarted(any(), any(), any()))
-                .thenReturn(0);
+    void physicalStartCannotBeMarkedThroughFinalizationOrTurnRepository() {
+        assertThat(Arrays.stream(ChatTurnFinalizationService.class.getMethods())
+                .map(Method::getName))
+                .doesNotContain("markProviderCallStarted");
 
-        assertThatThrownBy(() -> service.markProviderCallStarted(context))
-                .isInstanceOf(ChatStaleProcessorException.class);
+        assertThat(Arrays.stream(ChatTurnRepository.class.getMethods())
+                .map(Method::getName))
+                .doesNotContain("markProviderCallStarted");
     }
 
     @Test
@@ -179,7 +286,7 @@ class ChatTurnFinalizationServiceTest {
                 eq(assistant.getId()),
                 eq("openai"),
                 any(),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class),
+                any(SafeAiUserPrincipal.class),
                 eq(ChatTestFixtures.NOW)
         );
         verify(quotaService).settleSuccess(
@@ -355,7 +462,7 @@ class ChatTurnFinalizationServiceTest {
                 .isEqualTo(ChatTestFixtures.USER_MESSAGE_ID);
         verify(answerPassportService).findByTurn(
                 eq(ChatTestFixtures.TURN_ID),
-                any(ru.safeai.gateway.common.security.SafeAiUserPrincipal.class)
+                any(SafeAiUserPrincipal.class)
         );
     }
 

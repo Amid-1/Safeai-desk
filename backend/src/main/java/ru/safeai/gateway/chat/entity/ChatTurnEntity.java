@@ -77,8 +77,13 @@ public class ChatTurnEntity {
     private Instant leaseUntil;
 
     /**
-     * Persisted immediately before the first provider HTTP attempt.
+     * Epoch presented by the authenticated caller when this turn was reserved.
+     * Physical execution must match the CURRENT organization auth_version.
+     * Historical rows may be null and cannot start new provider attempts.
      */
+    @Column(name = "authorized_organization_auth_version", updatable = false)
+    private Long authorizedOrganizationAuthVersion;
+
     @Column(name = "provider_call_started_at")
     private Instant providerCallStartedAt;
 
@@ -263,6 +268,11 @@ public class ChatTurnEntity {
                         userMessageId,
                         "userMessageId не должен быть null"
                 );
+
+        // The caller may override this with the authenticated JWT epoch.
+        // Production reservation always does so before saveAndFlush.
+        turn.authorizedOrganizationAuthVersion =
+                turn.organization.getAuthVersion();
 
         turn.state =
                 ChatTurnState.PROCESSING;
