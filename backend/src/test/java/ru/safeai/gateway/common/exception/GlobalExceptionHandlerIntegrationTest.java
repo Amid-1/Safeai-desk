@@ -17,6 +17,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import ru.safeai.gateway.organization.exception.OrganizationExceptionHandler;
+import ru.safeai.gateway.organization.exception.OrganizationVersionConflictException;
+import ru.safeai.gateway.user.exception.UserExceptionHandler;
+import ru.safeai.gateway.user.exception.UserVersionConflictException;
 import ru.safeai.gateway.ratelimit.exception.RateLimitExceptionHandler;
 import ru.safeai.gateway.ratelimit.exception.RateLimitExceededException;
 import ru.safeai.gateway.ratelimit.exception.RateLimitUnavailableException;
@@ -43,6 +47,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandlerIntegrationTest
                 .ErrorProbeController.class,
         GlobalExceptionHandler.class,
+        UserExceptionHandler.class,
+        OrganizationExceptionHandler.class,
         RateLimitExceptionHandler.class,
         ApiErrorResponseFactory.class,
         GlobalExceptionHandlerIntegrationTest

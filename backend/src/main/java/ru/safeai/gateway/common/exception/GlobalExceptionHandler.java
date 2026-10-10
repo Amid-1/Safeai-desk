@@ -105,58 +105,6 @@ public class GlobalExceptionHandler implements Ordered {
         );
     }
 
-    @ExceptionHandler(UserVersionConflictException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleUserVersionConflict(
-            UserVersionConflictException exception,
-            HttpServletRequest request
-    ) {
-        log.info(
-                "User optimistic version conflict: requestId={}, "
-                        + "userId={}, expectedVersion={}, actualVersion={}, path={}",
-                responses.requestId(request),
-                exception.getUserId(),
-                exception.getExpectedVersion(),
-                exception.getActualVersion(),
-                request.getRequestURI()
-        );
-
-        return responses.build(
-                exception.getStatus(),
-                exception.getErrorCode(),
-                exception.getPublicMessage(),
-                request,
-                null,
-                null
-        );
-    }
-
-    @ExceptionHandler(OrganizationVersionConflictException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleOrganizationVersionConflict(
-            OrganizationVersionConflictException exception,
-            HttpServletRequest request
-    ) {
-        log.info(
-                "Organization optimistic version conflict: requestId={}, "
-                        + "organizationId={}, expectedVersion={}, actualVersion={}, path={}",
-                responses.requestId(request),
-                exception.getOrganizationId(),
-                exception.getExpectedVersion(),
-                exception.getActualVersion(),
-                request.getRequestURI()
-        );
-
-        return responses.build(
-                exception.getStatus(),
-                exception.getErrorCode(),
-                exception.getPublicMessage(),
-                request,
-                null,
-                null
-        );
-    }
-
     @ExceptionHandler(ConflictException.class)
     public org.springframework.http.ResponseEntity<ApiErrorResponse>
     handleConflict(

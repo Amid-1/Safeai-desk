@@ -20,7 +20,7 @@ import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
-import ru.safeai.gateway.common.exception.UserVersionConflictException;
+import ru.safeai.gateway.user.exception.UserVersionConflictException;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
