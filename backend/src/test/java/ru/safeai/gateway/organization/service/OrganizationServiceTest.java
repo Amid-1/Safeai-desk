@@ -16,8 +16,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
-import ru.safeai.gateway.auth.service.UserSessionRevocationService;
+import ru.safeai.gateway.identity.session.SessionRevocationReason;
+import ru.safeai.gateway.identity.session.SessionRevocationPort;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.exception.OrganizationVersionConflictException;
@@ -109,7 +109,7 @@ class OrganizationServiceTest {
     private ApplicationEventPublisher eventPublisher;
 
     @Mock
-    private UserSessionRevocationService userSessionRevocationService;
+    private SessionRevocationPort userSessionRevocationService;
 
     @Mock
     private EntityManager entityManager;
@@ -828,7 +828,7 @@ class OrganizationServiceTest {
         verify(userSessionRevocationService)
                 .revokeAllForOrganization(
                         ORGANIZATION_ID,
-                        RefreshTokenRevocationReason.ORGANIZATION_DISABLED
+                        SessionRevocationReason.ORGANIZATION_DISABLED
                 );
 
         verify(eventPublisher).publishEvent(
@@ -918,7 +918,7 @@ class OrganizationServiceTest {
                 never()
         ).revokeAllForOrganization(
                 any(UUID.class),
-                any(RefreshTokenRevocationReason.class)
+                any(SessionRevocationReason.class)
         );
 
         verify(eventPublisher).publishEvent(

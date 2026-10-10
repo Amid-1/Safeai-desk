@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
 import ru.safeai.gateway.auth.repository.RefreshTokenRepository;
+import ru.safeai.gateway.identity.session.SessionRevocationPort;
+import ru.safeai.gateway.identity.session.SessionRevocationReason;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -18,25 +20,25 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class UserSessionRevocationService {
+public class UserSessionRevocationService implements SessionRevocationPort {
 
-    private static final Set<RefreshTokenRevocationReason>
+    private static final Set<SessionRevocationReason>
             USER_REVOCATION_REASONS =
             EnumSet.of(
-                    RefreshTokenRevocationReason.PASSWORD_RESET,
-                    RefreshTokenRevocationReason.ROLE_CHANGED,
-                    RefreshTokenRevocationReason.EMAIL_CHANGED,
-                    RefreshTokenRevocationReason.USER_DISABLED,
-                    RefreshTokenRevocationReason.SECURITY_STATE_CHANGED,
-                    RefreshTokenRevocationReason.ADMIN_REVOKED
+                    SessionRevocationReason.PASSWORD_RESET,
+                    SessionRevocationReason.ROLE_CHANGED,
+                    SessionRevocationReason.EMAIL_CHANGED,
+                    SessionRevocationReason.USER_DISABLED,
+                    SessionRevocationReason.SECURITY_STATE_CHANGED,
+                    SessionRevocationReason.ADMIN_REVOKED
             );
 
-    private static final Set<RefreshTokenRevocationReason>
+    private static final Set<SessionRevocationReason>
             ORGANIZATION_REVOCATION_REASONS =
             EnumSet.of(
-                    RefreshTokenRevocationReason.ORGANIZATION_DISABLED,
-                    RefreshTokenRevocationReason.SECURITY_STATE_CHANGED,
-                    RefreshTokenRevocationReason.ADMIN_REVOKED
+                    SessionRevocationReason.ORGANIZATION_DISABLED,
+                    SessionRevocationReason.SECURITY_STATE_CHANGED,
+                    SessionRevocationReason.ADMIN_REVOKED
             );
 
     private final RefreshTokenRepository refreshTokenRepository;
@@ -49,9 +51,10 @@ public class UserSessionRevocationService {
      * security state пользователя.</p>
      */
     @Transactional(propagation = Propagation.MANDATORY)
+    @Override
     public void revokeAllForUser(
             UUID userId,
-            RefreshTokenRevocationReason reason
+            SessionRevocationReason reason
     ) {
         Objects.requireNonNull(
                 userId,
@@ -77,7 +80,7 @@ public class UserSessionRevocationService {
                 refreshTokenRepository.terminateAllByUserId(
                         userId,
                         revokedAt,
-                        reason
+                        toRefreshTokenReason(reason)
                 );
 
         logResult(
@@ -95,9 +98,10 @@ public class UserSessionRevocationService {
      * security state организации.</p>
      */
     @Transactional(propagation = Propagation.MANDATORY)
+    @Override
     public void revokeAllForOrganization(
             UUID organizationId,
-            RefreshTokenRevocationReason reason
+            SessionRevocationReason reason
     ) {
         Objects.requireNonNull(
                 organizationId,
@@ -124,7 +128,7 @@ public class UserSessionRevocationService {
                         .terminateAllByOrganizationId(
                                 organizationId,
                                 revokedAt,
-                                reason
+                                toRefreshTokenReason(reason)
                         );
 
         logResult(
@@ -135,11 +139,32 @@ public class UserSessionRevocationService {
         );
     }
 
+    private static RefreshTokenRevocationReason toRefreshTokenReason(
+            SessionRevocationReason reason
+    ) {
+        return switch (reason) {
+            case PASSWORD_RESET ->
+                    RefreshTokenRevocationReason.PASSWORD_RESET;
+            case ROLE_CHANGED ->
+                    RefreshTokenRevocationReason.ROLE_CHANGED;
+            case EMAIL_CHANGED ->
+                    RefreshTokenRevocationReason.EMAIL_CHANGED;
+            case USER_DISABLED ->
+                    RefreshTokenRevocationReason.USER_DISABLED;
+            case ORGANIZATION_DISABLED ->
+                    RefreshTokenRevocationReason.ORGANIZATION_DISABLED;
+            case SECURITY_STATE_CHANGED ->
+                    RefreshTokenRevocationReason.SECURITY_STATE_CHANGED;
+            case ADMIN_REVOKED ->
+                    RefreshTokenRevocationReason.ADMIN_REVOKED;
+        };
+    }
+
     private void logResult(
             String subjectType,
             UUID subjectId,
             int affectedRows,
-            RefreshTokenRevocationReason reason
+            SessionRevocationReason reason
     ) {
         if (affectedRows > 0) {
             log.info(

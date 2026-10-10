@@ -14,8 +14,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
-import ru.safeai.gateway.auth.service.UserSessionRevocationService;
+import ru.safeai.gateway.identity.session.SessionRevocationReason;
+import ru.safeai.gateway.identity.session.SessionRevocationPort;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
@@ -92,7 +92,7 @@ class UserServiceTest {
     private ApplicationEventPublisher eventPublisher;
 
     @Mock
-    private UserSessionRevocationService userSessionRevocationService;
+    private SessionRevocationPort userSessionRevocationService;
 
     @Mock
     private EntityManager entityManager;
@@ -567,7 +567,7 @@ class UserServiceTest {
         assertThat(target.getTokenVersion()).isEqualTo(1L);
         verify(userSessionRevocationService).revokeAllForUser(
                 USER_ID,
-                RefreshTokenRevocationReason.EMAIL_CHANGED
+                SessionRevocationReason.EMAIL_CHANGED
         );
         verify(eventPublisher).publishEvent(
                 any(UserSecurityStateChangedEvent.class)
@@ -596,7 +596,7 @@ class UserServiceTest {
         assertThat(target.getTokenVersion()).isEqualTo(1L);
         verify(userSessionRevocationService).revokeAllForUser(
                 USER_ID,
-                RefreshTokenRevocationReason.ROLE_CHANGED
+                SessionRevocationReason.ROLE_CHANGED
         );
     }
 
@@ -623,7 +623,7 @@ class UserServiceTest {
         assertThat(target.getTokenVersion()).isEqualTo(1L);
         verify(userSessionRevocationService).revokeAllForUser(
                 USER_ID,
-                RefreshTokenRevocationReason.PASSWORD_RESET
+                SessionRevocationReason.PASSWORD_RESET
         );
     }
 
@@ -649,7 +649,7 @@ class UserServiceTest {
         assertThat(target.getTokenVersion()).isEqualTo(1L);
         verify(userSessionRevocationService).revokeAllForUser(
                 USER_ID,
-                RefreshTokenRevocationReason.USER_DISABLED
+                SessionRevocationReason.USER_DISABLED
         );
     }
 
@@ -910,7 +910,7 @@ void permanentDeletionDeletesEmptyDisabledUser() {
     verify(userSessionRevocationService)
             .revokeAllForUser(
                     USER_ID,
-                    RefreshTokenRevocationReason.ADMIN_REVOKED
+                    SessionRevocationReason.ADMIN_REVOKED
             );
 
     verify(userRepository)

@@ -5,8 +5,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
-import ru.safeai.gateway.auth.service.UserSessionRevocationService;
+import ru.safeai.gateway.identity.session.SessionRevocationPort;
+import ru.safeai.gateway.identity.session.SessionRevocationReason;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.OrganizationVersionConflictException;
@@ -39,7 +39,7 @@ final class OrganizationCommandOperations {
     private final OrganizationRepository organizationRepository;
     private final AuditEventService auditEventService;
     private final ApplicationEventPublisher eventPublisher;
-    private final UserSessionRevocationService userSessionRevocationService;
+    private final SessionRevocationPort userSessionRevocationService;
     private final EntityManager entityManager;
     private final OrganizationAccessPolicy accessPolicy;
     private final OrganizationResponseMapper responseMapper;
@@ -48,7 +48,7 @@ final class OrganizationCommandOperations {
             OrganizationRepository organizationRepository,
             AuditEventService auditEventService,
             ApplicationEventPublisher eventPublisher,
-            UserSessionRevocationService userSessionRevocationService,
+            SessionRevocationPort userSessionRevocationService,
             EntityManager entityManager,
             OrganizationAccessPolicy accessPolicy,
             OrganizationResponseMapper responseMapper
@@ -283,7 +283,7 @@ final class OrganizationCommandOperations {
             userSessionRevocationService
                     .revokeAllForOrganization(
                             saved.getId(),
-                            RefreshTokenRevocationReason
+                            SessionRevocationReason
                                     .ORGANIZATION_DISABLED
                     );
             sessionsRevoked = true;

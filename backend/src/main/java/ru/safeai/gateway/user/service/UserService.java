@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.auth.service.UserSessionRevocationService;
+import ru.safeai.gateway.identity.session.SessionRevocationPort;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.dto.*;
@@ -29,7 +29,7 @@ public class UserService {
     public UserService(UserRepository userRepository, RoleRepository roleRepository,
                        PasswordEncoder passwordEncoder, AuditEventService auditEventService,
                        ApplicationEventPublisher eventPublisher,
-                       UserSessionRevocationService userSessionRevocationService,
+                       SessionRevocationPort userSessionRevocationService,
                        PlatformProperties platformProperties,
                        UserManagementProperties userManagementProperties,
                        EntityManager entityManager, Clock clock) {
