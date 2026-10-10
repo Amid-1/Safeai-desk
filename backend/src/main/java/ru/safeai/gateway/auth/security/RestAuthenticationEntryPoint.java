@@ -1,36 +1,40 @@
-package ru.safeai.gateway.common.security;
+package ru.safeai.gateway.auth.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 import ru.safeai.gateway.common.exception.ApiErrorCode;
 import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 
 import java.io.IOException;
 
+/**
+ * Общий JSON 401 entry point для browser/cookie authentication.
+ * Bearer challenge здесь намеренно не выставляется.
+ */
 @Component
 @RequiredArgsConstructor
-public class RestAccessDeniedHandler
-        implements AccessDeniedHandler {
+public class RestAuthenticationEntryPoint
+implements AuthenticationEntryPoint {
 
     private final ApiErrorResponseWriter errorResponseWriter;
 
     @Override
-    public void handle(
+    public void commence(
             HttpServletRequest request,
             HttpServletResponse response,
-            AccessDeniedException accessDeniedException
+            AuthenticationException authenticationException
     ) throws IOException {
         errorResponseWriter.write(
                 request,
                 response,
-                HttpStatus.FORBIDDEN,
-                ApiErrorCode.FORBIDDEN,
-                "Доступ запрещён"
+                HttpStatus.UNAUTHORIZED,
+                ApiErrorCode.UNAUTHORIZED,
+                "Требуется авторизация"
         );
     }
 }
