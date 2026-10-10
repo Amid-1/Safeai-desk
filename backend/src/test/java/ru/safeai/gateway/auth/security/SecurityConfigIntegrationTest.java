@@ -38,7 +38,6 @@ import ru.safeai.gateway.common.exception.ApiErrorResponseWriter;
 import ru.safeai.gateway.common.security.AccessTokenSubject;
 import ru.safeai.gateway.common.security.JwtProperties;
 import ru.safeai.gateway.auth.service.JwtService;
-import ru.safeai.gateway.common.security.PasswordEncodingConfiguration;
 import ru.safeai.gateway.common.security.RequestIdFilter;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.service.UserSecurityStatus;
