@@ -1,4 +1,7 @@
-package ru.safeai.gateway.common.exception;
+package ru.safeai.gateway.chat.exception;
+
+import ru.safeai.gateway.common.exception.ApiErrorCode;
+import ru.safeai.gateway.common.exception.ConflictException;
 
 public class ChatBusyException extends ConflictException {
 

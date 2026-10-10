@@ -11,7 +11,7 @@ import ru.safeai.gateway.common.security.RequestIdFilter;
 import java.util.List;
 import java.util.Map;
 
-final class ApiExceptionResponseSupport {
+public final class ApiExceptionResponseSupport {
 
     static final String VALIDATION_MESSAGE =
             "Ошибка валидации запроса";
@@ -20,7 +20,7 @@ final class ApiExceptionResponseSupport {
 
     private final ApiErrorResponseFactory errorResponseFactory;
 
-    ApiExceptionResponseSupport(
+    public ApiExceptionResponseSupport(
             ApiErrorResponseFactory errorResponseFactory
     ) {
         this.errorResponseFactory = errorResponseFactory;
@@ -61,7 +61,7 @@ final class ApiExceptionResponseSupport {
         );
     }
 
-    ResponseEntity<ApiErrorResponse> build(
+    public ResponseEntity<ApiErrorResponse> build(
             HttpStatusCode status,
             ApiErrorCode error,
             String message,
@@ -127,7 +127,7 @@ final class ApiExceptionResponseSupport {
         };
     }
 
-    String safeMessage(
+    public String safeMessage(
             String message,
             String fallback
     ) {
@@ -136,7 +136,7 @@ final class ApiExceptionResponseSupport {
                 : message.trim();
     }
 
-    String requestId(
+    public String requestId(
             HttpServletRequest request
     ) {
         Object value = request.getAttribute(

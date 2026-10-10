@@ -34,7 +34,7 @@ import ru.safeai.gateway.chat.exception.ChatTurnFailedException;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
-import ru.safeai.gateway.common.exception.ChatLockUnavailableException;
+import ru.safeai.gateway.chat.exception.ChatLockUnavailableException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.knowledge.rag.KnowledgeRagService;

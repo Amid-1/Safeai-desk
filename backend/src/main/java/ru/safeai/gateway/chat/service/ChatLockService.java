@@ -7,8 +7,8 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.chat.config.ChatLockProperties;
 import ru.safeai.gateway.chat.observability.ChatMetrics;
-import ru.safeai.gateway.common.exception.ChatBusyException;
-import ru.safeai.gateway.common.exception.ChatLockUnavailableException;
+import ru.safeai.gateway.chat.exception.ChatBusyException;
+import ru.safeai.gateway.chat.exception.ChatLockUnavailableException;
 
 import java.time.Duration;
 import java.util.List;

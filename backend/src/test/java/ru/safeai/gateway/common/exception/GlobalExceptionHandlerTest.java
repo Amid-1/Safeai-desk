@@ -87,54 +87,6 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void handleChatBusyReturns409AndStableCode() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleChatBusy(
-                        new ChatBusyException(
-                                "В этот чат уже отправляется сообщение"
-                        ),
-                        request("/api/chats/1/messages")
-                );
-
-        assertError(
-                response,
-                HttpStatus.CONFLICT,
-                ApiErrorCode.CHAT_BUSY,
-                "В этот чат уже отправляется сообщение",
-                "/api/chats/1/messages"
-        );
-    }
-
-    @Test
-    void handleChatLockUnavailableReturns503AndDoesNotLeakCause() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleChatLockUnavailable(
-                        new ChatLockUnavailableException(
-                                "Redis lock failed",
-                                new RuntimeException(
-                                        "redis-password=secret"
-                                )
-                        ),
-                        request("/api/chats/1/messages")
-                );
-
-        ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.CHAT_LOCK_UNAVAILABLE,
-                "Сервис блокировки чата временно недоступен",
-                "/api/chats/1/messages"
-        );
-
-        assertThat(body.message())
-                .doesNotContain(
-                        "Redis",
-                        "secret",
-                        "password"
-                );
-    }
-
-    @Test
     void handleRateLimitUnavailableReturnsSafe503() {
         ResponseEntity<ApiErrorResponse> response =
                 handler.handleRateLimitUnavailable(

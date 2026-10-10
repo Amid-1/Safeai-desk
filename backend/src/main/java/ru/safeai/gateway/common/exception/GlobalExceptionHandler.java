@@ -51,9 +51,6 @@ public class GlobalExceptionHandler implements Ordered {
             "Данные были изменены другим пользователем. "
                     + "Обновите данные и повторите операцию";
 
-    private static final String CHAT_LOCK_UNAVAILABLE_MESSAGE =
-            "Сервис блокировки чата временно недоступен";
-
     private static final String RATE_LIMIT_UNAVAILABLE_MESSAGE =
             "Сервис ограничения запросов временно недоступен";
 
@@ -77,48 +74,6 @@ public class GlobalExceptionHandler implements Ordered {
     @Override
     public int getOrder() {
         return Ordered.LOWEST_PRECEDENCE;
-    }
-
-    @ExceptionHandler(ChatBusyException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleChatBusy(
-            ChatBusyException exception,
-            HttpServletRequest request
-    ) {
-        return responses.build(
-                HttpStatus.CONFLICT,
-                ApiErrorCode.CHAT_BUSY,
-                responses.safeMessage(
-                        exception.getMessage(),
-                        "В этот чат уже отправляется сообщение"
-                ),
-                request,
-                null,
-                null
-        );
-    }
-
-    @ExceptionHandler(ChatLockUnavailableException.class)
-    public org.springframework.http.ResponseEntity<ApiErrorResponse>
-    handleChatLockUnavailable(
-            ChatLockUnavailableException exception,
-            HttpServletRequest request
-    ) {
-        log.error(
-                "Chat lock service unavailable: requestId={}, path={}",
-                responses.requestId(request),
-                request.getRequestURI(),
-                exception
-        );
-
-        return responses.build(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.CHAT_LOCK_UNAVAILABLE,
-                CHAT_LOCK_UNAVAILABLE_MESSAGE,
-                request,
-                null,
-                null
-        );
     }
 
     @ExceptionHandler(RateLimitUnavailableException.class)

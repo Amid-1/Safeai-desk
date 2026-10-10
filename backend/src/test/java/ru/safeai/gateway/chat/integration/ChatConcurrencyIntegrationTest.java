@@ -15,7 +15,7 @@ import ru.safeai.gateway.chat.exception.ChatQuotaExceededException;
 import ru.safeai.gateway.chat.exception.ChatTurnInProgressException;
 import ru.safeai.gateway.chat.service.ChatProcessingContext;
 import ru.safeai.gateway.chat.service.ChatTurnReservationService;
-import ru.safeai.gateway.common.exception.ChatBusyException;
+import ru.safeai.gateway.chat.exception.ChatBusyException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.OrganizationModelPolicy;

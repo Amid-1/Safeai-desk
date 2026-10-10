@@ -1,4 +1,4 @@
-package ru.safeai.gateway.common.exception;
+package ru.safeai.gateway.chat.exception;
 
 public class ChatLockUnavailableException extends RuntimeException {
 

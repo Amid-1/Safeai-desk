@@ -13,7 +13,7 @@ import ru.safeai.gateway.chat.exception.AiOutcomeAmbiguousException;
 import ru.safeai.gateway.chat.exception.ChatLeaseUnavailableException;
 import ru.safeai.gateway.chat.exception.ChatStaleProcessorException;
 import ru.safeai.gateway.chat.exception.ChatTurnFailedException;
-import ru.safeai.gateway.common.exception.ChatLockUnavailableException;
+import ru.safeai.gateway.chat.exception.ChatLockUnavailableException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.rag.KnowledgeRagService;
 import ru.safeai.gateway.knowledge.rag.RagCompletion;
