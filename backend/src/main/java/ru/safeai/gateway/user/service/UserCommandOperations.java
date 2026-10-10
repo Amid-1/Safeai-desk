@@ -7,8 +7,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
-import ru.safeai.gateway.auth.service.UserSessionRevocationService;
+import ru.safeai.gateway.identity.session.SessionRevocationPort;
+import ru.safeai.gateway.identity.session.SessionRevocationReason;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
@@ -51,7 +51,7 @@ final class UserCommandOperations {
     private final PasswordEncoder passwordEncoder;
     private final AuditEventService auditEventService;
     private final ApplicationEventPublisher eventPublisher;
-    private final UserSessionRevocationService userSessionRevocationService;
+    private final SessionRevocationPort userSessionRevocationService;
     private final UserManagementProperties userManagementProperties;
     private final EntityManager entityManager;
     private final Clock clock;
@@ -65,7 +65,7 @@ final class UserCommandOperations {
             PasswordEncoder passwordEncoder,
             AuditEventService auditEventService,
             ApplicationEventPublisher eventPublisher,
-            UserSessionRevocationService userSessionRevocationService,
+            SessionRevocationPort userSessionRevocationService,
             UserManagementProperties userManagementProperties,
             EntityManager entityManager,
             Clock clock,
@@ -239,7 +239,7 @@ final class UserCommandOperations {
         if (emailChanged) {
             userSessionRevocationService.revokeAllForUser(
                     saved.getId(),
-                    RefreshTokenRevocationReason.EMAIL_CHANGED
+                    SessionRevocationReason.EMAIL_CHANGED
             );
             publishSecurityStateChanged(saved.getId());
         }
@@ -316,7 +316,7 @@ final class UserCommandOperations {
         if (!newEnabled) {
             userSessionRevocationService.revokeAllForUser(
                     saved.getId(),
-                    RefreshTokenRevocationReason.USER_DISABLED
+                    SessionRevocationReason.USER_DISABLED
             );
         }
 
@@ -407,7 +407,7 @@ final class UserCommandOperations {
 
         userSessionRevocationService.revokeAllForUser(
                 saved.getId(),
-                RefreshTokenRevocationReason.ROLE_CHANGED
+                SessionRevocationReason.ROLE_CHANGED
         );
         publishSecurityStateChanged(saved.getId());
 
@@ -463,7 +463,7 @@ final class UserCommandOperations {
 
         userSessionRevocationService.revokeAllForUser(
                 saved.getId(),
-                RefreshTokenRevocationReason.PASSWORD_RESET
+                SessionRevocationReason.PASSWORD_RESET
         );
         publishSecurityStateChanged(saved.getId());
 
@@ -586,7 +586,7 @@ final class UserCommandOperations {
 
         userSessionRevocationService.revokeAllForUser(
                 targetUserId,
-                RefreshTokenRevocationReason.ADMIN_REVOKED
+                SessionRevocationReason.ADMIN_REVOKED
         );
 
         try {

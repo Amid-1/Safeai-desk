@@ -4,7 +4,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.hibernate.Hibernate;
 import org.springframework.transaction.annotation.Transactional;
-import ru.safeai.gateway.auth.entity.RefreshTokenRevocationReason;
+import ru.safeai.gateway.identity.session.SessionRevocationReason;
 import ru.safeai.gateway.auth.service.UserSessionRevocationService;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SystemRole;
@@ -110,7 +110,7 @@ class UserSecurityMutationTestService {
         userSessionRevocationService
                 .revokeAllForUser(
                         userId,
-                        RefreshTokenRevocationReason
+                        SessionRevocationReason
                                 .PASSWORD_RESET
                 );
 
@@ -180,7 +180,7 @@ class UserSecurityMutationTestService {
         userSessionRevocationService
                 .revokeAllForUser(
                         userId,
-                        RefreshTokenRevocationReason
+                        SessionRevocationReason
                                 .ROLE_CHANGED
                 );
 
@@ -212,7 +212,7 @@ class UserSecurityMutationTestService {
         userSessionRevocationService
                 .revokeAllForUser(
                         userId,
-                        RefreshTokenRevocationReason
+                        SessionRevocationReason
                                 .USER_DISABLED
                 );
 

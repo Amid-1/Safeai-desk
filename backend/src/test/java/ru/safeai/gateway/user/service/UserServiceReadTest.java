@@ -15,7 +15,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.auth.service.UserSessionRevocationService;
+import ru.safeai.gateway.identity.session.SessionRevocationPort;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -100,7 +100,7 @@ class UserServiceReadTest {
     private ApplicationEventPublisher eventPublisher;
 
     @Mock
-    private UserSessionRevocationService
+    private SessionRevocationPort
             userSessionRevocationService;
 
     @Mock

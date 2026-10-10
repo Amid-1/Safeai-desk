@@ -14,7 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.auth.service.UserSessionRevocationService;
+import ru.safeai.gateway.identity.session.SessionRevocationPort;
 import ru.safeai.gateway.common.exception.ForbiddenOperationException;
 import ru.safeai.gateway.common.platform.PlatformProperties;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -79,7 +79,7 @@ class UserServiceAuthorizationBoundaryTest {
     private ApplicationEventPublisher eventPublisher;
 
     @Mock
-    private UserSessionRevocationService
+    private SessionRevocationPort
             userSessionRevocationService;
 
     @Mock
