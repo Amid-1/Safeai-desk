@@ -1,4 +1,4 @@
-package ru.safeai.gateway.common.security;
+package ru.safeai.gateway.auth.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.GrantedAuthority;

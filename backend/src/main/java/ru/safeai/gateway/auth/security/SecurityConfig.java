@@ -47,7 +47,6 @@ import ru.safeai.gateway.common.security.CorsProperties;
 import ru.safeai.gateway.common.security.JwtProperties;
 import ru.safeai.gateway.common.security.RestAccessDeniedHandler;
 import ru.safeai.gateway.common.security.RestAuthenticationEntryPoint;
-import ru.safeai.gateway.common.security.SafeAiJwtAuthenticationConverter;
 
 import java.util.List;
 import java.util.Set;

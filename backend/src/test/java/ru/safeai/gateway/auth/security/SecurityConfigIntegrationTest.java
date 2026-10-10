@@ -45,7 +45,6 @@ import ru.safeai.gateway.common.security.PasswordEncodingConfiguration;
 import ru.safeai.gateway.common.security.RequestIdFilter;
 import ru.safeai.gateway.common.security.RestAccessDeniedHandler;
 import ru.safeai.gateway.common.security.RestAuthenticationEntryPoint;
-import ru.safeai.gateway.common.security.SafeAiJwtAuthenticationConverter;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.user.service.UserSecurityStatus;
 import ru.safeai.gateway.user.service.UserStatusCacheService;
