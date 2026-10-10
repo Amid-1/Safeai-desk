@@ -1,10 +1,12 @@
-package ru.safeai.gateway.common.security;
+package ru.safeai.gateway.auth.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
+
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
