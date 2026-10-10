@@ -89,6 +89,85 @@ class RefreshTokenServiceTest {
     }
 
     @Test
+    void reuseDetectionReadsTimeAfterAcquiringSecurityLocks() {
+        UserEntity user = enabledUser(0L);
+        RefreshTokenEntity token = activeToken(user);
+
+        token.setRevokedAt(NOW.minusSeconds(5));
+        token.setRevocationReason(
+                RefreshTokenRevocationReason.ROTATED
+        );
+
+        stubLockedToken(user, token);
+        stubFamilyTermination(
+                token,
+                RefreshTokenRevocationReason.REUSE_DETECTED
+        );
+
+        RefreshTokenService guardedService =
+                serviceWithPostLockClock();
+
+        assertThatThrownBy(() ->
+                guardedService.rotate("raw-token", request())
+        ).isInstanceOf(
+                RefreshTokenReuseDetectedException.class
+        );
+
+        verify(refreshTokenRepository).terminateFamily(
+                token.getTokenFamilyId(),
+                NOW,
+                RefreshTokenRevocationReason.REUSE_DETECTED
+        );
+    }
+
+    @Test
+    void logoutReadsTimeAfterAcquiringSecurityLocks() {
+        UserEntity user = enabledUser(0L);
+        RefreshTokenEntity token = activeToken(user);
+
+        stubLockedToken(user, token);
+        stubFamilyTermination(
+                token,
+                RefreshTokenRevocationReason.LOGOUT
+        );
+
+        RefreshTokenService guardedService =
+                serviceWithPostLockClock();
+
+        assertThat(
+                guardedService.revokeFamilyAndReturnSubject(
+                        "raw-token"
+                )
+        ).isPresent();
+
+        verify(refreshTokenRepository).terminateFamily(
+                token.getTokenFamilyId(),
+                NOW,
+                RefreshTokenRevocationReason.LOGOUT
+        );
+    }
+
+    private RefreshTokenService serviceWithPostLockClock() {
+        Clock guardedClock =
+                org.mockito.Mockito.mock(Clock.class);
+
+        when(guardedClock.instant()).thenAnswer(ignored -> {
+            verify(refreshTokenRepository)
+                    .findByTokenHashForUpdate(anyString());
+            return NOW;
+        });
+
+        return new RefreshTokenService(
+                refreshTokenRepository,
+                userRepository,
+                clientIpResolver,
+                authCookieProperties,
+                refreshReuseAuditService,
+                guardedClock
+        );
+    }
+
+    @Test
     void createForLoginStoresOnlyTokenHashAndFamilyMetadata() {
         stubRefreshTokenAgesForLogin();
 

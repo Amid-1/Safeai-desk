@@ -209,12 +209,14 @@ public class RefreshTokenService {
                 rawToken
         );
 
-        Instant now =
-                clock.instant();
-
         // Lock order: organization FOR SHARE -> user FOR UPDATE -> token
         // FOR UPDATE. The scalar discovery query does not acquire row locks.
         LockedRefreshToken locked = lockTokenInSecurityOrder(hash(rawToken));
+
+        // Capture time after acquiring locks: a concurrent rotation may have
+        // created a successor while this transaction was waiting.
+        Instant now =
+                clock.instant();
         RefreshTokenEntity oldToken = locked.token();
         UserEntity user = locked.user();
         UUID userId = user.getId();
@@ -367,14 +369,16 @@ public class RefreshTokenService {
                 rawToken
         );
 
-        Instant now =
-                clock.instant();
-
         Optional<LockedRefreshToken> lockedToken =
                 findLockedTokenInSecurityOrder(hash(rawToken));
         if (lockedToken.isEmpty()) {
             return Optional.empty();
         }
+
+        // A concurrent refresh may create a successor before these locks
+        // become available. Revocation time must be captured afterwards.
+        Instant now =
+                clock.instant();
 
         RefreshTokenEntity token = lockedToken.get().token();
         UserEntity user = lockedToken.get().user();
