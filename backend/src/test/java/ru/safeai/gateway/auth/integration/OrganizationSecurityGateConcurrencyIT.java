@@ -16,8 +16,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.auth.service.LoginSessionResult;
 import ru.safeai.gateway.auth.service.LoginSessionTransactionService;
 import ru.safeai.gateway.auth.service.RefreshTokenService;
-import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
-import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
+import ru.safeai.gateway.auth.exception.InvalidRefreshTokenException;
+import ru.safeai.gateway.auth.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.testsupport.AbstractPostgresIntegrationTest;
 

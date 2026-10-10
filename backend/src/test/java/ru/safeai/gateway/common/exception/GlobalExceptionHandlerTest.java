@@ -115,37 +115,6 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void handleAuthServiceUnavailableReturnsSafe503() {
-        AuthServiceUnavailableException exception =
-                new AuthServiceUnavailableException(
-                        "Authentication status lookup failed",
-                        new RuntimeException(
-                                "redis.internal:6379"
-                        )
-                );
-
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleAuthServiceUnavailable(
-                        exception,
-                        request("/api/auth/login")
-                );
-
-        ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.SERVICE_UNAVAILABLE,
-                ApiErrorCode.AUTH_SERVICE_UNAVAILABLE,
-                "Сервис авторизации временно недоступен",
-                "/api/auth/login"
-        );
-
-        assertThat(body.message())
-                .doesNotContain(
-                        "Authentication status lookup failed",
-                        "redis.internal"
-                );
-    }
-
-    @Test
     void handleBadRequestReturns400() {
         ResponseEntity<ApiErrorResponse> response =
                 handler.handleBadRequest(
@@ -218,75 +187,6 @@ class GlobalExceptionHandlerTest {
                 ApiErrorCode.FORBIDDEN,
                 "Нельзя изменить чужую организацию",
                 "/api/admin/organizations/1"
-        );
-    }
-
-    @Test
-    void handleExpiredRefreshTokenReturnsSpecific401() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleExpiredRefreshToken(
-                        new ExpiredRefreshTokenException(
-                                "internal expiry details"
-                        ),
-                        request("/api/auth/refresh")
-                );
-
-        ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.UNAUTHORIZED,
-                ApiErrorCode.EXPIRED_REFRESH_TOKEN,
-                "Refresh token истёк",
-                "/api/auth/refresh"
-        );
-
-        assertThat(body.message())
-                .doesNotContain("internal expiry details");
-    }
-
-    @Test
-    void handleInvalidRefreshTokenReturnsSafe401() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleInvalidRefreshToken(
-                        new InvalidRefreshTokenException(
-                                "refresh token hash missing"
-                        ),
-                        request("/api/auth/refresh")
-                );
-
-        ApiErrorResponse body = assertError(
-                response,
-                HttpStatus.UNAUTHORIZED,
-                ApiErrorCode.INVALID_REFRESH_TOKEN,
-                "Недействительный refresh token",
-                "/api/auth/refresh"
-        );
-
-        assertThat(body.message())
-                .doesNotContain(
-                        "hash",
-                        "missing"
-                );
-    }
-
-    @Test
-    void handleRefreshTokenReuseReturnsGenericInvalidTokenResponse() {
-        ResponseEntity<ApiErrorResponse> response =
-                handler.handleRefreshTokenReuseDetected(
-                        new RefreshTokenReuseDetectedException(
-                                "Обнаружено повторное использование",
-                                UUID.randomUUID(),
-                                UUID.randomUUID(),
-                                UUID.randomUUID()
-                        ),
-                        request("/api/auth/refresh")
-                );
-
-        assertError(
-                response,
-                HttpStatus.UNAUTHORIZED,
-                ApiErrorCode.INVALID_REFRESH_TOKEN,
-                "Недействительный refresh token",
-                "/api/auth/refresh"
         );
     }
 

@@ -31,13 +31,15 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import ru.safeai.gateway.auth.dto.CurrentUserResponse;
 import ru.safeai.gateway.auth.dto.LoginRequest;
 import ru.safeai.gateway.auth.service.AuthService;
+import ru.safeai.gateway.auth.exception.AuthExceptionHandler;
+import ru.safeai.gateway.auth.exception.AuthServiceUnavailableException;
 import ru.safeai.gateway.common.exception.ApiErrorResponseFactory;
-import ru.safeai.gateway.common.exception.ExpiredRefreshTokenException;
+import ru.safeai.gateway.auth.exception.ExpiredRefreshTokenException;
 import ru.safeai.gateway.common.exception.GlobalExceptionHandler;
-import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
+import ru.safeai.gateway.auth.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.common.exception.RateLimitExceededException;
 import ru.safeai.gateway.common.exception.RateLimitUnavailableException;
-import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
+import ru.safeai.gateway.auth.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.time.Clock;
@@ -68,7 +70,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({
         AuthController.class,
         AuthControllerSecurityTest.TestSecurityConfig.class,
-        GlobalExceptionHandler.class
+        GlobalExceptionHandler.class,
+        AuthExceptionHandler.class
 })
 class AuthControllerSecurityTest {
 
@@ -374,6 +377,38 @@ class AuthControllerSecurityTest {
                 any(HttpServletResponse.class)
         );
 
+        verifyNoMoreInteractions(authService);
+    }
+
+    @Test
+    void loginWhenAuthServiceUnavailableReturnsSafe503() throws Exception {
+        when(authService.login(
+                any(LoginRequest.class),
+                any(HttpServletRequest.class),
+                any(HttpServletResponse.class)
+        )).thenThrow(new AuthServiceUnavailableException(
+                "Authentication status lookup failed",
+                new IllegalStateException("Redis connection failure")
+        ));
+
+        mockMvc.perform(
+                        validLoginRequest().with(csrf().asHeader())
+                )
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value(503))
+                .andExpect(jsonPath("$.error")
+                        .value("AUTH_SERVICE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.message")
+                        .value("Сервис авторизации временно недоступен"))
+                .andExpect(jsonPath("$.path")
+                        .value("/api/auth/login"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+
+        verify(authService).login(
+                any(LoginRequest.class),
+                any(HttpServletRequest.class),
+                any(HttpServletResponse.class)
+        );
         verifyNoMoreInteractions(authService);
     }
 

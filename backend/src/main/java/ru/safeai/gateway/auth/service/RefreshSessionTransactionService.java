@@ -4,9 +4,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.safeai.gateway.common.exception.ExpiredRefreshTokenException;
-import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
-import ru.safeai.gateway.common.exception.RefreshTokenReuseDetectedException;
+import ru.safeai.gateway.auth.exception.ExpiredRefreshTokenException;
+import ru.safeai.gateway.auth.exception.InvalidRefreshTokenException;
+import ru.safeai.gateway.auth.exception.RefreshTokenReuseDetectedException;
 import ru.safeai.gateway.common.security.JwtService;
 
 import java.util.Objects;

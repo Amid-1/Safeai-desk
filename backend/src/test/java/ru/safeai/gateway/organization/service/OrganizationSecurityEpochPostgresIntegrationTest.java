@@ -9,7 +9,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
 import ru.safeai.gateway.auth.service.RefreshTokenService;
-import ru.safeai.gateway.common.exception.InvalidRefreshTokenException;
+import ru.safeai.gateway.auth.exception.InvalidRefreshTokenException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.organization.dto.DisableOrganizationRequest;
 import ru.safeai.gateway.organization.dto.EnableOrganizationRequest;
