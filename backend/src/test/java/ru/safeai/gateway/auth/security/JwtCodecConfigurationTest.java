@@ -1,4 +1,4 @@
-package ru.safeai.gateway.common.security;
+package ru.safeai.gateway.auth.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -10,6 +10,8 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwtException;
 
 import ru.safeai.gateway.auth.service.JwtService;
+import ru.safeai.gateway.common.security.AccessTokenSubject;
+import ru.safeai.gateway.common.security.JwtProperties;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
