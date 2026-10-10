@@ -1,4 +1,4 @@
-package ru.safeai.gateway.common.security;
+package ru.safeai.gateway.auth.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -7,6 +7,9 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
+
+import ru.safeai.gateway.common.security.AccessTokenSubject;
+import ru.safeai.gateway.common.security.JwtProperties;
 
 import java.time.Clock;
 import java.time.Duration;

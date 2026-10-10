@@ -1,4 +1,4 @@
-package ru.safeai.gateway.common.security;
+package ru.safeai.gateway.auth.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +12,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+
+import ru.safeai.gateway.common.security.AccessTokenSubject;
+import ru.safeai.gateway.common.security.JwtProperties;
 
 import java.time.Clock;
 import java.time.Duration;

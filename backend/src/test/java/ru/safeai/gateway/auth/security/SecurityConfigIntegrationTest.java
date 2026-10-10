@@ -40,7 +40,7 @@ import ru.safeai.gateway.common.security.BearerAuthenticationEntryPoint;
 import ru.safeai.gateway.common.security.JwtCodecConfiguration;
 import ru.safeai.gateway.common.security.JwtProperties;
 import ru.safeai.gateway.common.security.JwtRsaKeyRing;
-import ru.safeai.gateway.common.security.JwtService;
+import ru.safeai.gateway.auth.service.JwtService;
 import ru.safeai.gateway.common.security.PasswordEncodingConfiguration;
 import ru.safeai.gateway.common.security.RequestIdFilter;
 import ru.safeai.gateway.common.security.RestAccessDeniedHandler;
