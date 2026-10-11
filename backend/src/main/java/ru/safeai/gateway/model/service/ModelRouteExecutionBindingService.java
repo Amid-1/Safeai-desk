@@ -3,6 +3,9 @@ package ru.safeai.gateway.model.service;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.execution.AiExecutionIdentity;
+import ru.safeai.gateway.ai.execution.AiKnowledgeExecutionMode;
+import ru.safeai.gateway.ai.execution.AiModelExecutionPort;
 import ru.safeai.gateway.model.spi.ModelRequestContentHashPort;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
@@ -15,7 +18,7 @@ import java.util.UUID;
 
 /** Server-side issuer and verifier of DB-backed execution identities. */
 @Service
-public class ModelRouteExecutionBindingService {
+public class ModelRouteExecutionBindingService implements AiModelExecutionPort {
 
     private final ModelRouteDecisionRepository repository;
     private final ModelRequestContentHashPort contentNormalizer;
@@ -115,6 +118,64 @@ public class ModelRouteExecutionBindingService {
     }
 
     /**
+     * Only the actual Model-issued identity can authorize execution.
+     * The active transaction also covers the existing durable verification.
+     */
+    @Override
+    @Transactional
+    public void authorizePhysicalExecution(
+            AiExecutionIdentity identity,
+            UUID chatTurnId,
+            UUID modelRouteDecisionId,
+            AiChatRequest reserved,
+            AiChatRequest prepared,
+            String targetProvider,
+            String targetModel
+    ) {
+        if (!(identity instanceof ModelRouteExecutionIdentity verified)) {
+            throw new IllegalStateException("Execution identity was not issued by Model Control Plane");
+        }
+        requireExecutable(
+                verified,
+                chatTurnId,
+                modelRouteDecisionId,
+                reserved,
+                prepared,
+                targetProvider,
+                targetModel
+        );
+    }
+
+    /**
+     * Bind the immutable reserved request through the existing DB-backed issuer.
+     * Rejected mode implementations cannot bypass the Model/Knowledge boundary.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public AiExecutionIdentity bindExecution(
+            UUID decisionId,
+            UUID chatTurnId,
+            UUID clientRequestId,
+            UUID providerOperationId,
+            AiChatRequest reserved,
+            UUID knowledgeBaseId,
+            AiKnowledgeExecutionMode knowledgeMode
+    ) {
+        if (!(knowledgeMode instanceof KnowledgeMode mode)) {
+            throw new IllegalStateException("Unrecognized knowledge execution mode");
+        }
+        return bind(
+                decisionId,
+                chatTurnId,
+                clientRequestId,
+                providerOperationId,
+                reserved,
+                knowledgeBaseId,
+                mode
+        );
+    }
+
+    /**
      * Must run before ExecutionPlan creation, attempt STARTED and provider I/O.
      * This method re-verifies all DB evidence so a caller cannot manufacture a
      * trusted execution identity in Java.
@@ -175,6 +236,7 @@ public class ModelRouteExecutionBindingService {
         );
     }
 
+    @Override
     @Transactional(readOnly = true)
     public boolean requiresSinglePhysicalAttempt(UUID decisionId) {
         ModelRouteDecision decision = readDecision(decisionId);

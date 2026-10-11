@@ -1,7 +1,6 @@
 package ru.safeai.gateway.ai.execution;
 
 import ru.safeai.gateway.ai.dto.AiChatRequest;
-import ru.safeai.gateway.model.service.ModelRouteExecutionIdentity;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -18,7 +17,7 @@ public record AiExecutionRequest(
         UUID modelRouteDecisionId,
         AiChatRequest aiRequest,
         ProviderExecutionTarget target,
-        ModelRouteExecutionIdentity executionIdentity,
+        AiExecutionIdentity executionIdentity,
         AiChatRequest reservedAiRequest
 ) {
 

@@ -849,7 +849,7 @@ class ChatTurnStateMachineIntegrationTest
         assertThat(context.replay()).isFalse();
         assertThat(context.aiRequest()).isNotNull();
 
-        ModelRouteExecutionIdentity identity = aiExecutionService.bindExecution(
+        ModelRouteExecutionIdentity identity = (ModelRouteExecutionIdentity) aiExecutionService.bindExecution(
                 context.modelRouteDecisionId(),
                 context.turnId(),
                 context.clientRequestId(),

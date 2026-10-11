@@ -6,9 +6,6 @@ import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.provider.AiProvider;
 import ru.safeai.gateway.ai.provider.AiProviderProperties;
 import ru.safeai.gateway.ai.provider.AiProviderAttemptContext;
-import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
-import ru.safeai.gateway.model.service.ModelRouteExecutionBindingService;
-import ru.safeai.gateway.model.service.ModelRouteExecutionIdentity;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -21,7 +18,7 @@ public class AiExecutionService {
     private final AiExecutionPlanService planService;
     private final AiExecutionAttemptRecorder recorder;
     private final AiExecutionAttemptScope scope;
-    private final ModelRouteExecutionBindingService bindingService;
+    private final AiModelExecutionPort bindingService;
 
     public AiExecutionService(
             AiProvider provider,
@@ -29,7 +26,7 @@ public class AiExecutionService {
             AiExecutionPlanService planService,
             AiExecutionAttemptRecorder recorder,
             AiExecutionAttemptScope scope,
-            ModelRouteExecutionBindingService bindingService
+            AiModelExecutionPort bindingService
     ) {
         this.provider = Objects.requireNonNull(provider, "provider");
         this.properties = Objects.requireNonNull(properties, "properties");
@@ -43,7 +40,7 @@ public class AiExecutionService {
         Objects.requireNonNull(request, "request");
 
         // No plan / STARTED attempt / physical provider I/O before guard passes.
-        bindingService.requireExecutable(
+        bindingService.authorizePhysicalExecution(
                 request.executionIdentity(),
                 request.chatTurnId(),
                 request.modelRouteDecisionId(),
@@ -79,16 +76,16 @@ public class AiExecutionService {
     }
 
     /** Issue the DB-backed, immutable pre-RAG identity before provider I/O. */
-    public ModelRouteExecutionIdentity bindExecution(
+    public AiExecutionIdentity bindExecution(
             UUID decisionId,
             UUID chatTurnId,
             UUID clientRequestId,
             UUID providerOperationId,
             AiChatRequest reservedAiRequest,
             UUID knowledgeBaseId,
-            KnowledgeMode knowledgeMode
+            AiKnowledgeExecutionMode knowledgeMode
     ) {
-        return bindingService.bind(
+        return bindingService.bindExecution(
                 decisionId,
                 chatTurnId,
                 clientRequestId,

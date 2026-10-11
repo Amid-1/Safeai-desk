@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.service;
 
 import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.ai.execution.AiExecutionIdentity;
 import ru.safeai.gateway.ai.input.AiRequestFingerprint;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
@@ -42,7 +43,7 @@ public record ModelRouteExecutionIdentity(
         UUID retrievalRunId,
         String ragContextSha256,
         String trustedPreparedRequestSha256
-) {
+) implements AiExecutionIdentity {
     private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
 
     public ModelRouteExecutionIdentity {
