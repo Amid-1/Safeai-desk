@@ -2,14 +2,12 @@
 
 **SafeAI Desk** — production-oriented корпоративная AI-платформа / AI Gateway для безопасного и управляемого использования внешних AI-моделей внутри организаций.
 
-> **Актуальность:** версия документа по состоянию на 10 октября 2026 года (последние предоставленные исходники и логи).  
-> **Backend baseline:** модули `common`, `auth`, `user`, `organization`, `ratelimit`, `audit`, `usage`, `chat`, `model`, `ai`, `knowledge`; схема PostgreSQL **Flyway V1–V72**.  
-> **Изменения V71–V72:** Usage dirty-date recalculation (V71); согласованный порядок блокировок при Login/Refresh/Disable, immutable `ChatTurn` organization security epoch и атомарный PostgreSQL gate для физического `ModelExecutionAttempt STARTED` (V72).  
-> **Фактически подтверждено логом:** Spring Boot 4.1.1, Java 21, PostgreSQL 16 через Testcontainers; **72 миграции успешно применены**. В последнем показанном запуске `ChatTurnStateMachineIntegrationTest` возникло нарушение `chk_chat_turns_timestamps` в тестовом сценарии времени. После подготовки исправления повторного успешного лога пока нет.  
-> **Граница достоверности:** история проекта, предоставленные Java/SQL-патчи, README и конкретные логи. Полный аудит фактического checkout, успешный `./mvnw clean test`, проверка populated upgrade и production smoke-тесты в этих материалах отсутствуют.  
-> **Статус:** production-oriented **pre-1.0**. Проект уже содержит серьёзные security/durability/governance/evidence
-> механизмы и database backstops, но README не заявляет compliance certification, invoice-grade settlement,
-> формально доказанную HA/SLA или полностью динамический multi-provider runtime.
+> **Срез документации:** 11 октября 2026 года. Сверено с деревом GitHub `main` на коммите `fdcff62fc32131474cbc2639b1fa636edffd45bc` (merge PR #8), предоставленным README и результатами локальных прогонов.
+> **Backend:** Java 21, Spring Boot 4.1.1, модульный монолит; пакеты `common`, `identity`, `auth`, `user`, `organization`, `ratelimit`, `audit`, `usage`, `chat`, `model`, `ai`, `knowledge`; PostgreSQL / Flyway **V1–V72**.
+> **Подтверждено локально на ветке PR #8:** `./mvnw test` — **2259 тестов, 0 failures, 0 errors, 3 skipped**; отдельные PostgreSQL/Redis integration tests — **27/27**; архитектурное правило ArchUnit — positive/negative control. После merge изменения синхронизированы с чистым локальным `main`.
+> **Важно:** `./mvnw test` не заменяет `./mvnw clean test`, CI, populated Flyway upgrade V71→V72, production-like smoke, security review и deployment verification. Они **не объявляются пройденными** этим документом.
+> **Стадия:** production-oriented **pre-1.0**, без утверждений о compliance certification, SLA/HA, invoice-grade settlement либо полноценном dynamic multi-provider execution.
+> **Источники истины:** Java/SQL/config и тесты в checkout определяют реализованное поведение; README документирует срез, его доказательства и ограничения.
 
 ---
 
@@ -18,6 +16,7 @@
 1. [Что решает проект](#что-решает-проект)
 2. [Текущее состояние](#текущее-состояние)
 3. [Архитектура](#архитектура)
+   - [Границы модулей и архитектурный контроль](#границы-модулей-и-архитектурный-контроль)
 4. [Технологический стек](#технологический-стек)
 5. [Структура backend](#структура-backend)
 6. [Роли и границы доступа](#роли-и-границы-доступа)
@@ -25,27 +24,30 @@
 8. [Security architecture](#security-architecture)
 9. [Конфигурация](#конфигурация)
 10. [Модуль `common`](#модуль-common)
-11. [Модуль `auth`](#модуль-auth)
-12. [Модуль `user`](#модуль-user)
-13. [Модуль `organization`](#модуль-organization)
-14. [Модуль `ratelimit`](#модуль-ratelimit)
-15. [Модуль `audit`](#модуль-audit)
-16. [Модуль `usage`](#модуль-usage)
-17. [Модуль `chat`](#модуль-chat)
-18. [Модуль `model`](#модуль-model)
-19. [Модуль `ai`](#модуль-ai)
-20. [Модуль `knowledge`](#модуль-knowledge)
-21. [Ключевые backend contracts](#ключевые-backend-contracts)
-22. [Database / Flyway V1–V72](#database--flyway-v1v72)
-23. [Observability и operational jobs](#observability-и-operational-jobs)
-24. [Тестирование](#тестирование)
-25. [Local development](#local-development)
-26. [Production deployment notes](#production-deployment-notes)
-27. [Текущие ограничения и production-readiness gaps](#текущие-ограничения-и-production-readiness-gaps)
-28. [Позиционирование проекта](#позиционирование-проекта)
-29. [Frontend](#frontend)
-30. [Поддержание документации в актуальном состоянии](#поддержание-документации-в-актуальном-состоянии)
-31. [Главное правило дальнейшей эволюции](#главное-правило-дальнейшей-эволюции)
+11. [Модуль `identity`](#модуль-identity)
+12. [Модуль `auth`](#модуль-auth)
+13. [Модуль `user`](#модуль-user)
+14. [Модуль `organization`](#модуль-organization)
+15. [Модуль `ratelimit`](#модуль-ratelimit)
+16. [Модуль `audit`](#модуль-audit)
+17. [Модуль `usage`](#модуль-usage)
+18. [Модуль `chat`](#модуль-chat)
+19. [Модуль `model`](#модуль-model)
+20. [Модуль `ai`](#модуль-ai)
+21. [Модуль `knowledge`](#модуль-knowledge)
+22. [Ключевые backend contracts](#ключевые-backend-contracts)
+23. [Database / Flyway V1–V72](#database--flyway-v1v72)
+24. [Observability и operational jobs](#observability-и-operational-jobs)
+25. [Тестирование](#тестирование)
+26. [Local development](#local-development)
+27. [Production deployment notes](#production-deployment-notes)
+28. [Текущие ограничения и production-readiness gaps](#текущие-ограничения-и-production-readiness-gaps)
+29. [Позиционирование проекта](#позиционирование-проекта)
+30. [Frontend](#frontend)
+31. [Поддержание документации в актуальном состоянии](#поддержание-документации-в-актуальном-состоянии)
+32. [Главное правило дальнейшей эволюции](#главное-правило-дальнейшей-эволюции)
+33. [Передача контекста в новый AI-чат](#передача-контекста-в-новый-ai-чат)
+34. [План следующего этапа](#план-следующего-этапа)
 
 ---
 
@@ -307,6 +309,73 @@ AI Physical Execution Plane
 
 ---
 
+# Границы модулей и архитектурный контроль
+
+## Действующие правила (подтверждены срезом `main`)
+
+- **`common` независим от остальных прикладных пакетов.** Проверяется `CommonDependencyArchitectureTest`.
+- **`identity.session` — контракт**, не реализация инфраструктуры аутентификации.
+- **`auth` владеет JWT, cookie/filter chain, BCrypt configuration и refresh-session persistence.**
+- **`user` и `organization` вызывают отзыв сессий через `SessionRevocationPort`.**
+- **Семантика публичных ошибок стабильна:** общий envelope в `common.exception`, модульные mappings в своих пакетах.
+- **PostgreSQL-инварианты сильнее соглашений о пакетах:** безопасность tenant/epoch/fencing нельзя ослабить ради переноса классов.
+
+## ArchUnit — PR #8
+
+```text
+backend/pom.xml
+  └── com.tngtech.archunit:archunit-junit5:1.5.1 (test)
+
+backend/src/test/java/ru/safeai/gateway/architecture/
+  └── CommonDependencyArchitectureTest.java
+```
+
+Правило анализирует **производственные классы** `ru.safeai.gateway.common..` и запрещает
+bytecode-зависимости на любые классы `ru.safeai.gateway..` **вне `common..`**. Это шире текстового
+поиска `import`: срабатывает, например, на тип поля и сигнатуру. Оно не является доказательством
+отсутствия runtime reflection, конфигурационных и транзакционных нарушений.
+
+Проверка:
+
+```bash
+cd backend
+./mvnw -Dtest=CommonDependencyArchitectureTest test
+./mvnw test
+```
+
+**Negative control:** временный класс `common.archprobe.ArchUnitBoundaryProbe` с полем типа
+`auth.security.PasswordEncodingConfiguration` привел к ожидаемой `Architecture Violation`.
+Временный файл и скомпилированный `.class` удалены, повторный positive test прошел.
+
+## История разделения границ — восемь merged PR
+
+| PR | Изменение | Архитектурный результат |
+|---|---|---|
+| [#1](https://github.com/Amid-1/Safeai-desk/pull/1) | Common/error boundary | Общая error infrastructure отделена от module-specific concerns |
+| [#2](https://github.com/Amid-1/Safeai-desk/pull/2) | Identity session boundary | Контракт `SessionRevocationPort` / `SessionRevocationReason` вынесен из auth implementation |
+| [#3](https://github.com/Amid-1/Safeai-desk/pull/3) | Common/JWT boundary | `JwtService` принадлежит `auth.service`, сохранены security/concurrency semantics |
+| [#4](https://github.com/Amid-1/Safeai-desk/pull/4) | Authentication converter | `SafeAiJwtAuthenticationConverter` принадлежит `auth.security` |
+| [#5](https://github.com/Amid-1/Safeai-desk/pull/5) | Auth HTTP error boundary | Auth/Spring Security entry points and access-denied handler перенесены в `auth.security` |
+| [#6](https://github.com/Amid-1/Safeai-desk/pull/6) | JWT codec/key ring | `JwtCodecConfiguration`, `JwtRsaKeyRing` и профильный тест перенесены в `auth` |
+| [#7](https://github.com/Amid-1/Safeai-desk/pull/7) | Password encoding ownership | `PasswordEncodingConfiguration` и профильный тест перенесены в `auth.security` |
+| [#8](https://github.com/Amid-1/Safeai-desk/pull/8) | ArchUnit common boundary | Добавлена автоматическая архитектурная проверка `common` |
+
+PR #8: исходный коммит `103c587`, merge-коммит `fdcff62`; `main` синхронизирован с `origin/main`,
+рабочая директория чистая по последнему предоставленному выводу `git status -sb`.
+
+**Эти PR не означают, что остальные пакеты уже имеют автоматические правила независимости.**
+Не создавать новые правила по догадкам: сначала инвентаризировать исходящие зависимости и
+Spring bean graph, затем выбрать допустимую границу и проверить тестами.
+
+## Правило безопасного рефакторинга
+
+Малые изолированные PR, сохранение public API/JSON/errors/configuration, тесты до и после
+перемещения, отсутствие циклов, package visibility без необоснованного `public`, сохранение
+`@Transactional`/event/cache semantics и DB constraints. Не перемещать класс только из-за
+его имени; учитываются фактические consumers, ownership, shared contracts и startup wiring.
+
+---
+
 # Технологический стек
 
 ## Backend
@@ -323,7 +392,8 @@ AI Physical Execution Plane
 - Redis;
 - Maven Wrapper;
 - Lombok;
-- JUnit Jupiter 6 (текущие тестовые логи);
+- JUnit Jupiter / Spring Boot Test (версии берутся из актуального BOM);
+- ArchUnit 1.5.1 (`archunit-junit5`, test scope);
 - Mockito / Spring Test;
 - Testcontainers;
 - AWS SDK v2 / S3-compatible storage;
@@ -337,6 +407,13 @@ AI Physical Execution Plane
 - Docker / Docker Compose.
 
 Точные dependency versions определяет `backend/pom.xml`; README не дублирует их как источник истины.
+Для среза `fdcff62` проверены также `postgresql.version=42.7.14`,
+`snappy-java.version=1.1.10.11` и `testcontainers.version=2.0.5`.
+
+Frontend baseline из `frontend/package.json`: React 19.2.7, React Router 7.18.3,
+TypeScript 6.0.3, Vite 8.0.16, Vitest 4.1.10;
+**Node.js 24.x и npm 11.x** (`engines`/`packageManager`). Эти номера отражают именно
+проверенный manifest, а не отдельную проверку безопасности supply chain.
 
 ## Persistence philosophy
 
@@ -361,6 +438,7 @@ backend/
 │   ├── auth/
 │   ├── chat/
 │   ├── common/
+│   ├── identity/
 │   ├── knowledge/
 │   ├── model/
 │   ├── organization/
@@ -383,6 +461,8 @@ backend/
 │
 └── src/test/
     ├── java/
+    │   └── ru/safeai/gateway/architecture/
+    │       └── CommonDependencyArchitectureTest.java
     └── resources/
 ```
 
@@ -401,6 +481,7 @@ backend/
 │   │   │               ├── auth/
 │   │   │               ├── chat/
 │   │   │               ├── common/
+│   │   │               ├── identity/
 │   │   │               ├── knowledge/
 │   │   │               ├── model/
 │   │   │               ├── organization/
@@ -501,29 +582,24 @@ backend/
 │       └── java/
 ```
 
-Основные зависимости модулей:
+Основные потоки взаимодействия (логические, **не исчерпывающий граф Java imports**):
 
 ```text
-common
- ├─ auth
- ├─ user
- ├─ organization
- ├─ ratelimit
- ├─ audit
- ├─ usage
- ├─ chat
- ├─ model
- ├─ ai
- └─ knowledge
+Потребители / оркестраторы                        Общие контракты
+    auth, user, organization, audit, ... ─────────────► common
+    user, organization ───────────────────────────────► identity.session (порт)
+    auth.service.UserSessionRevocationService ───────► identity.session (реализация порта)
 
-auth ──────────────► user / organization security state
-chat ──────────────► model route decision
-chat ──────────────► knowledge RAG preparation
-model ─────────────► ai execution binding
-ai ────────────────► provider
-chat finalization ─► usage metadata / audit
-knowledge ─────────► Answer Passport + route evidence
+    auth ───► user / organization persisted security state
+    chat ───► model governance ───► ai physical execution ───► provider
+         └──► knowledge retrieval / RAG
+         └──► quota / audit / usage evidence
 ```
+
+Стрелка означает **использование контракта/ответственности**, а не утверждение о полном наборе
+Java-импортов. Фактический межпакетный граф для каждого следующего рефакторинга следует
+снимать с текущих исходников и проверять отдельно. Зафиксированное автоматическое
+ограничение сегодня только одно: **`common` не зависит от других пакетов `ru.safeai.gateway`**.
 
 ---
 
@@ -792,6 +868,15 @@ Baseline включает:
 - current create/reset password policy;
 - UTF-8 byte-length validation;
 - запрет control characters.
+
+## Production environment detection
+
+`common.security.ProductionEnvironmentCondition` включает production-only invariant
+checks не только при `prod`/`production`, но и при профилях вида `prod-k8s`,
+`production-eu`; предпочтительный явный сигнал — `safeai.environment=production`.
+Проверено по текущему классу. Новые профили и механизм включения этих validators
+не должны случайно обходить production hardening. Старый пункт README о распознавании
+**только точных** имен профилей устранен и не считается известным дефектом среза.
 
 ## Request ID
 
@@ -1138,7 +1223,9 @@ Package:
 ru.safeai.gateway.common
 ```
 
-`common` — cross-cutting infrastructure layer. В нём не должна жить business-логика конкретного tenant domain.
+`common` — cross-cutting infrastructure layer. В нем не должна жить business-логика конкретного tenant domain. Это **проверяемая граница**, а не папка для всего, что повторно используется: внутренний код `common..` не должен зависеть от других пакетов `ru.safeai.gateway..`. ArchUnit контролирует это автоматически.
+
+После PR #1–#8 из `common` вынесены auth-specific исключения и handlers, JWT runtime/key ring, auth filter converter и BCrypt configuration. В `common.security` оставлены действительно совместно используемые `SafeAiUserPrincipal`, `SystemRole`, `AccessTokenSubject`, `JwtProperties`, CORS/IP/request-id, management chain и production startup invariants. `JwtProperties` намеренно остается здесь как shared configuration contract; это **не** повод возвращать сюда `JwtService` или crypto implementation.
 
 ## Структура
 
@@ -1147,7 +1234,6 @@ common/
 ├── config/
 │   ├── SchedulingConfiguration
 │   └── TimeConfiguration
-│
 ├── exception/
 │   ├── ApiErrorCode
 │   ├── ApiErrorResponse
@@ -1155,64 +1241,39 @@ common/
 │   ├── ApiErrorResponseWriter
 │   ├── ApiException
 │   ├── ApiExceptionResponseSupport
-│   ├── AuthServiceUnavailableException
 │   ├── BadRequestException
-│   ├── ChatBusyException
-│   ├── ChatLockUnavailableException
 │   ├── ConflictException
-│   ├── ExpiredRefreshTokenException
 │   ├── ForbiddenOperationException
 │   ├── GlobalExceptionHandler
-│   ├── InvalidRefreshTokenException
-│   ├── OrganizationVersionConflictException
-│   ├── RateLimitExceededException
-│   ├── RateLimitUnavailableException
-│   ├── RateLimitUnavailableLogger
 │   ├── README.md
-│   ├── RefreshTokenReuseDetectedException
 │   ├── ResourceNotFoundException
-│   ├── UserVersionConflictException
 │   └── ValidationErrorExtractor
-│
 ├── pagination/
 │   └── StablePageableNormalizer
-│
 ├── persistence/
 │   ├── DatabaseConstraintClassifier
 │   └── PostgresAdvisoryLockExecutor
-│
 ├── platform/
 │   ├── PlatformProperties
 │   └── PlatformPropertiesConfiguration
-│
 ├── security/
 │   ├── AccessTokenSubject
-│   ├── BearerAuthenticationEntryPoint
 │   ├── ClientIpProperties
 │   ├── ClientIpResolver
 │   ├── CorsProperties
-│   ├── JwtCodecConfiguration
 │   ├── JwtProperties
-│   ├── JwtRsaKeyRing
-│   ├── JwtService
 │   ├── ManagementSecurityConfig
 │   ├── package-info.java
-│   ├── PasswordEncodingConfiguration
 │   ├── ProductionEnvironmentCondition
 │   ├── ProductionSecurityInvariantValidator
 │   ├── RequestIdFilter
-│   ├── RestAccessDeniedHandler
-│   ├── RestAuthenticationEntryPoint
 │   ├── RoleAuthorityMapper
-│   ├── SafeAiJwtAuthenticationConverter
 │   ├── SafeAiUserPrincipal
 │   ├── SecurityIdentityValidator
 │   ├── SecurityPropertiesConfiguration
 │   └── SystemRole
-│
 └── validation/
-     └── UnicodeValidationSupport
-
+    └── UnicodeValidationSupport
 ```
 
 ## Основные контракты
@@ -1250,6 +1311,36 @@ Fail-fast startup boundary для явно небезопасных production s
 
 ---
 
+# Модуль `identity`
+
+Package: `ru.safeai.gateway.identity`.
+
+```text
+identity/
+└── session/
+    ├── SessionRevocationPort.java
+    └── SessionRevocationReason.java
+```
+
+Этот пакет — **узкая контрактная граница identity/tenancy**, а не новая реализация JWT или хранилище refresh-token rows.
+
+`SessionRevocationPort` задает две операции: `revokeAllForUser(UUID, SessionRevocationReason)` и
+`revokeAllForOrganization(UUID, SessionRevocationReason)`. Модули `user` и `organization` зависят от порта,
+а реализация `auth.service.UserSessionRevocationService` владеет фактическим отзывом refresh-сессий и
+маппингом причин в auth-specific `RefreshTokenRevocationReason`. Реализация использует
+`@Transactional(propagation = MANDATORY)`: бизнес-операция должна открыть транзакцию до вызова порта.
+
+`SessionRevocationReason` — общие security-mutation reasons (`PASSWORD_RESET`, `ROLE_CHANGED`,
+`EMAIL_CHANGED`, `USER_DISABLED`, `ORGANIZATION_DISABLED`, `SECURITY_STATE_CHANGED`,
+`ADMIN_REVOKED`). Не добавлять сюда details JWT/cookie/refresh-token persistence: они принадлежат `auth`.
+
+В `identity` на данном срезе **два Java-класса**; расширять пакет только при наличии нового реального
+межмодульного identity-контракта. Рекомендуемый следующий защитный тест —
+`identity..` не зависит от `auth`, `user`, `organization` и прочих прикладных модулей; правило сначала
+нужно проверить на реальном bytecode/импортах.
+
+---
+
 # Модуль `auth`
 
 Package:
@@ -1265,33 +1356,40 @@ auth/
 ├── config/
 │   ├── ProductionAuthCookieInvariantValidator
 │   └── RefreshTokenCleanupConfiguration
-│
 ├── controller/
 │   ├── AuthController
 │   └── CsrfController
-│
 ├── dto/
 │   ├── CsrfTokenResponse
 │   ├── CurrentUserResponse
 │   └── LoginRequest
-│
 ├── entity/
 │   ├── RefreshTokenEntity
 │   └── RefreshTokenRevocationReason
-│
+├── exception/
+│   ├── AuthExceptionHandler
+│   ├── AuthServiceUnavailableException
+│   ├── ExpiredRefreshTokenException
+│   ├── InvalidRefreshTokenException
+│   └── RefreshTokenReuseDetectedException
 ├── repository/
 │   └── RefreshTokenRepository
-│
 ├── security/
 │   ├── AccessCookieAuthenticationFilter
+│   ├── BearerAuthenticationEntryPoint
 │   ├── CsrfCookieFilter
 │   ├── CustomUserDetailsService
 │   ├── HstsProperties
+│   ├── JwtCodecConfiguration
+│   ├── JwtRsaKeyRing
 │   ├── package-info.java
+│   ├── PasswordEncodingConfiguration
+│   ├── RestAccessDeniedHandler
+│   ├── RestAuthenticationEntryPoint
+│   ├── SafeAiJwtAuthenticationConverter
 │   ├── SecurityConfig
 │   ├── SpaCsrfTokenRequestHandler
 │   └── UserStatusFilter
-│
 ├── service/
 │   ├── AuthAuditRequestSupport
 │   ├── AuthCookieConfigurationValidator
@@ -1299,6 +1397,7 @@ auth/
 │   ├── AuthCookieService
 │   ├── AuthEventService
 │   ├── AuthService
+│   ├── JwtService
 │   ├── LoginSessionResult
 │   ├── LoginSessionTransactionService
 │   ├── LogoutAuditSubject
@@ -1310,11 +1409,27 @@ auth/
 │   ├── RefreshTokenCleanupProperties
 │   ├── RefreshTokenService
 │   └── UserSessionRevocationService
-│
 └── validation/
     ├── Utf8ByteLength
     └── Utf8ByteLengthValidator
 ```
+
+## Собственность классов после PR #1–#8
+
+`auth.exception` содержит `AuthExceptionHandler` и исключения недействительного, истекшего и повторно
+использованного refresh token, а также недоступности auth infrastructure. Они используют общий
+`common.exception.ApiErrorResponse` contract, но не должны находиться в `common`.
+
+`auth.security` владеет `JwtCodecConfiguration`, `JwtRsaKeyRing`,
+`SafeAiJwtAuthenticationConverter`, `BearerAuthenticationEntryPoint`,
+`RestAuthenticationEntryPoint`, `RestAccessDeniedHandler`, `PasswordEncodingConfiguration`.
+`auth.service.JwtService` владеет JWT runtime. BCrypt остается **strength 12**,
+новые password hashes используют `{bcrypt}`; поддержка legacy unprefixed BCrypt контролируется
+`safeai.security.password.allow-legacy-unprefixed-bcrypt` и не должна выключаться без проверки
+существующих учетных записей.
+
+Public JSON envelope остается совместным контрактом в `common.exception`, а все auth-specific
+status/error code mappings принадлежат `auth.exception.AuthExceptionHandler` и security handlers.
 
 ## Login flow
 
@@ -1402,7 +1517,6 @@ ru.safeai.gateway.user
 user/
 ├── controller/
 │   └── UserController
-│
 ├── dto/
 │   ├── CreateUserRequest
 │   ├── PermanentDeleteUserRequest
@@ -1413,30 +1527,33 @@ user/
 │   ├── UserDetailsResponse
 │   ├── UserResponse
 │   └── UserStatisticsResponse
-│
 ├── entity/
 │   ├── RoleEntity
 │   └── UserEntity
-│
 ├── event/
 │   └── UserSecurityStateChangedEvent
-│
+├── exception/
+│   ├── UserExceptionHandler
+│   └── UserVersionConflictException
 ├── mapper/
 │   └── UserRoleMapper
-│
 ├── repository/
 │   ├── RoleRepository
 │   └── UserRepository
-│
 ├── service/
+│   ├── UserAccessPolicy
+│   ├── UserCommandOperations
+│   ├── UserEntityAccess
 │   ├── UserManagementProperties
+│   ├── UserQueryOperations
+│   ├── UserResponseMapper
+│   ├── UserRoleAssignmentResolver
 │   ├── UserSecurityStatus
 │   ├── UserService
 │   ├── UserStatusCacheInvalidationListener
 │   ├── UserStatusCacheProductionInvariantVerifier
 │   ├── UserStatusCacheProperties
 │   └── UserStatusCacheService
-│
 └── validation/
     ├── BcryptUtf8Length
     ├── BcryptUtf8LengthValidator
@@ -1445,6 +1562,14 @@ user/
     ├── UserEmailNormalizer
     └── ValidPassword
 ```
+
+## Внутренние границы и ответственность
+
+`UserService` координирует публичные операции; выделены package-private `UserCommandOperations`
+и `UserQueryOperations`, `UserAccessPolicy`, `UserEntityAccess`, `UserRoleAssignmentResolver`,
+`UserResponseMapper`. `UserExceptionHandler` и `UserVersionConflictException` локальны для `user`.
+Security-sensitive commands зависят от `identity.session.SessionRevocationPort`, не от
+`auth.service.UserSessionRevocationService` напрямую. Это важная граница PR #2.
 
 ## Основные invariants
 
@@ -1490,10 +1615,8 @@ ru.safeai.gateway.organization
 organization/
 ├── audit/
 │   └── OrganizationAuditSnapshotProvider
-│
 ├── controller/
 │   └── OrganizationController
-│
 ├── dto/
 │   ├── CreateOrganizationRequest
 │   ├── DisableOrganizationRequest
@@ -1505,17 +1628,16 @@ organization/
 │   ├── OrganizationType
 │   ├── UpdateOrganizationEnabledRequest
 │   └── UpdateOrganizationRequest
-│
 ├── entity/
 │   └── OrganizationEntity
-│
 ├── event/
 │   └── OrganizationSecurityStateChangedEvent
-│
+├── exception/
+│   ├── OrganizationExceptionHandler
+│   └── OrganizationVersionConflictException
 ├── repository/
 │   ├── OrganizationImpactQueryRepository
 │   └── OrganizationRepository
-│
 └── service/
     ├── OrganizationAccessPolicy
     ├── OrganizationCommandOperations
@@ -1526,6 +1648,10 @@ organization/
     ├── OrganizationStatusCacheInvalidationListener
     └── PlatformOrganizationInvariantVerifier
 ```
+
+`OrganizationExceptionHandler` и `OrganizationVersionConflictException` принадлежат модулю
+`organization`, а не глобальной `common.exception`. Внутренние command/query operations отделены
+от публичного `OrganizationService`; отзыв сессий проходит через `identity.session.SessionRevocationPort`.
 
 ## Platform organization
 
@@ -1577,6 +1703,11 @@ ru.safeai.gateway.ratelimit
 
 ```text
 ratelimit/
+├── exception/
+│   ├── RateLimitExceededException
+│   ├── RateLimitExceptionHandler
+│   ├── RateLimitUnavailableException
+│   └── RateLimitUnavailableLogger
 ├── AiMessageRateLimitProperties
 ├── DualRateLimitResult
 ├── LoginRateLimitProperties
@@ -1637,6 +1768,10 @@ Raw email/IP/user identity не обязана попадать в Redis key.
 - organization bucket;
 - role-dependent limits.
 
+Auth- и rate-limit-specific failure classes живут в `ratelimit.exception`, включая
+`RateLimitExceededException`, `RateLimitUnavailableException`, `RateLimitUnavailableLogger`
+и `RateLimitExceptionHandler`. Совместимый публичный API error envelope обеспечивает `common.exception`.
+
 ## Failure semantics
 
 Redis outage не должен превращаться в silent allow-all.
@@ -1665,18 +1800,15 @@ audit/
 │   ├── AuditOutboxProperties
 │   ├── AuditRetentionConfiguration
 │   └── AuditRetentionProperties
-│
 ├── controller/
 │   ├── AuditController
 │   └── AuditDirectoryController
-│
 ├── details/
 │   ├── AiResponseAuditDetails
 │   ├── AuditDetails
 │   ├── ChatTurnAuditDetails
 │   ├── RateLimitAuditDetails
 │   └── SecurityRefreshReuseAuditDetails
-│
 ├── dto/
 │   ├── AuditActorDirectoryResponse
 │   ├── AuditEventCursorResponse
@@ -1684,17 +1816,13 @@ audit/
 │   ├── AuditEventPageResponse
 │   ├── AuditEventResponse
 │   └── AuditTargetOrganizationDirectoryResponse
-│
 ├── entity/
 │   ├── AuditEventEntity
 │   └── AuditOutboxEntity
-│
 ├── listener/
 │   └── RateLimitAuditListener
-│
 ├── model/
 │   └── AuditActor
-│
 ├── repository/
 │   ├── AuditDirectoryQueryRepository
 │   ├── AuditEventCriteria
@@ -1702,7 +1830,6 @@ audit/
 │   ├── AuditEventCursorRepositoryImpl
 │   ├── AuditEventRepository
 │   └── AuditOutboxRepository
-│
 ├── service/
 │   ├── AuditCommand
 │   ├── AuditCommandFactory
@@ -1723,10 +1850,8 @@ audit/
 │   ├── AuditRetentionLockService
 │   ├── AuditRetentionService
 │   └── BestEffortStandaloneAuditService
-│
 ├── spi/
 │   └── AuditTargetOrganizationSnapshotProvider
-│
 └── AuditEventType
 ```
 
@@ -1833,16 +1958,19 @@ Retention выполняется bounded batches.
 
 Для межинстансовой координации используется PostgreSQL advisory lock.
 
-## Важная текущая семантика
+## Обязательный и самостоятельный аудит: проверенный контракт
 
-`AuditOutboxWriter.writeRequired()` в просмотренном baseline использует `Propagation.REQUIRED`.
+`AuditOutboxWriter.writeRequiredInCurrentTransaction(AuditCommand)` использует
+`@Transactional(propagation = Propagation.MANDATORY)`: без активной business transaction
+вызов должен завершиться отказом, а не незаметно создать независимую транзакцию.
+`AuditEventService.record(...)` вызывает именно этот метод и сохраняет durable audit intent
+в рамках транзакции caller. `saveAndFlush()` не равнозначен `COMMIT` caller transaction.
 
-Это означает:
-
-- при существующей business transaction audit join-ится в неё;
-- без outer transaction Spring создаст отдельную transaction.
-
-Следовательно гарантированная атомарность required audit path сегодня зависит от корректного transactional call-site. Для абсолютного API-инварианта production hardening логично перейти к `MANDATORY` или явно разделить API `recordRequiredInCurrentTransaction` / `recordStandalone`.
+`AuditOutboxWriter.writeStandaloneRequired(AuditCommand)` использует `REQUIRES_NEW`:
+это отдельный явно выбранный путь для independent audit intent, когда вызов идет через
+Spring transactional proxy. Оба пути нельзя смешивать ради «удобства» или ослаблять
+failure/rollback семантику. Этот контракт уже реализован в проверенном `main` и
+**не является открытой задачей на изменение `REQUIRED → MANDATORY`**.
 
 ---
 
@@ -1860,12 +1988,12 @@ ru.safeai.gateway.usage
 usage/
 ├── config/
 │   ├── UsageConfiguration
+│   ├── UsageHikariPoolInvariantVerifier
 │   ├── UsageJdbcClients
 │   └── UsageProperties
-│
 ├── controller/
-│   └── UsageController
-│
+│   ├── UsageController
+│   └── UsageRebuildController
 ├── dto/
 │   ├── PagedResponse
 │   ├── UsageCostSummary
@@ -1881,20 +2009,18 @@ usage/
 │   ├── UsageSummaryResponse
 │   ├── UsageTokenSummary
 │   └── UsageUserSummaryResponse
-│
 ├── repository/
 │   ├── JdbcUsageQueryRepository
+│   ├── UsageDirtyDateRepository
 │   ├── UsageFactQueryBuilder
 │   ├── UsageFactSql
 │   ├── UsageInstantRange
 │   ├── UsageQueryCriteria
 │   ├── UsageQueryPlan
 │   ├── UsageQueryRepository
-│   ├── UsageDirtyDateRepository
 │   ├── UsageRollupStateRepository
 │   ├── UsageRowMapperSupport
 │   └── UsageSqlFragments
-│
 └── service/
     ├── UsageDirtyDateProcessor
     ├── UsageForcedRebuildService
@@ -1903,6 +2029,14 @@ usage/
     ├── UsageRollupDayProcessor
     └── UsageRollupScheduler
 ```
+
+`UsageRebuildController` входит в текущую структуру `usage.controller`:
+`POST /api/admin/usage/rebuild?date=YYYY-MM-DD` возвращает `202 Accepted`, а сам controller
+защищен `@PreAuthorize("hasRole('SUPER_ADMIN')")`. Внутренний `UsageForcedRebuildService`
+обрабатывает запрос; состояние очереди, ограничения выполнения и audit должны проверяться
+по его реализации и тестам при доработках.
+`UsageHikariPoolInvariantVerifier` и `UsageJdbcClients` — конфигурационные границы
+аналитических JDBC-пулов.
 
 ## Usage quality model
 
@@ -1975,7 +2109,7 @@ UsageRollupScheduler ───── PostgreSQL advisory lock
 | `UsageRollupStateRepository` | Чтение `last_completed_date`, поиск первого UTC-дня источников, монотонное продвижение watermark, запуск под PostgreSQL advisory lock |
 | `UsageDirtyDateRepository` | Доступ к очереди дат, требующих повторной обработки; репозиторий должен допускать Spring CGLIB-проксирование, если используется exception translation |
 | `UsageDirtyDateProcessor` | Обработка помеченных дат с учётом состояния очереди; служит отдельной границей от обычного backfill |
-| `UsageForcedRebuildService` | Выделенный сервис принудительного пересчёта; наличие Spring-сервиса само по себе не подтверждает наличие публичного административного HTTP endpoint |
+| `UsageForcedRebuildService` | Обработка принудительного пересчета; доступен защищенный `UsageRebuildController`, `POST /api/admin/usage/rebuild?date=YYYY-MM-DD` (SUPER_ADMIN, HTTP 202) |
 | `UsageRollupDayProcessor` | Фактическая перестройка дневных агрегатов; `advanceWatermark` определяет, продвигать ли последовательный watermark |
 | `UsageRollupScheduler` | Планирование ограниченных порций backfill, lookback reconciliation и dirty-date обработки в рамках межинстансовой координации |
 | `UsageJdbcClients` | Конфигурация JDBC-клиентов для usage paths; параметры исполнения запросов и подключения следует проверять по коду/configuration |
@@ -2049,11 +2183,9 @@ chat/
 │   ├── ChatProperties
 │   ├── ChatQuotaProperties
 │   └── ChatRecoveryProperties
-│
 ├── controller/
 │   ├── ChatController
 │   └── ChatTitleController
-│
 ├── dto/
 │   ├── ChatCapabilitiesResponse
 │   ├── ChatDetailsResponse
@@ -2068,7 +2200,6 @@ chat/
 │   ├── SendMessageRequest
 │   ├── SendMessageResponse
 │   └── UpdateChatTitleRequest
-│
 ├── entity/
 │   ├── ChatMessageEntity
 │   ├── ChatMessageRole
@@ -2077,27 +2208,26 @@ chat/
 │   ├── ChatSessionEntity
 │   ├── ChatTurnEntity
 │   └── ChatTurnState
-│
 ├── exception/
 │   ├── AiOutcomeAmbiguousException
 │   ├── ChatAccessRevokedException
 │   ├── ChatApiException
 │   ├── ChatApiExceptionHandler
+│   ├── ChatBusyException
+│   ├── ChatInfrastructureExceptionHandler
 │   ├── ChatLeaseUnavailableException
+│   ├── ChatLockUnavailableException
 │   ├── ChatQuotaExceededException
 │   ├── ChatStaleProcessorException
 │   ├── ChatTurnFailedException
 │   ├── ChatTurnInProgressException
 │   └── IdempotencyKeyReusedException
-│
 ├── observability/
 │   └── ChatMetrics
-│
 ├── quota/
 │   ├── ChatQuotaConsumption
 │   ├── ChatQuotaPolicy
 │   └── ChatQuotaReservation
-│
 ├── repository/
 │   ├── ChatHistoryRepository
 │   ├── ChatHistoryTurn
@@ -2109,8 +2239,7 @@ chat/
 │   ├── ChatTurnRecoveryRepository
 │   ├── ChatTurnRepository
 │   └── RecoveredChatTurn
-│
-└── service/
+├── service/
 │   ├── AiHistoryBuilder
 │   ├── ChatContentNormalizer
 │   ├── ChatDatabaseClockRepository
@@ -2129,12 +2258,14 @@ chat/
 │   ├── ChatTurnRecoveryScheduler
 │   ├── ChatTurnRecoveryService
 │   └── ChatTurnReservationService
-│
 └── title/
     ├── ChatTitlePolicy
     ├── ChatTitleService
     └── ChatTitleSource
 ```
+
+Exception ownership: `ChatBusyException` и `ChatLockUnavailableException` находятся
+в `chat.exception` вместе с `ChatInfrastructureExceptionHandler`; не возвращать их в `common`.
 
 ## `ChatTurn` state machine
 
@@ -2312,14 +2443,12 @@ ru.safeai.gateway.model
 model/
 ├── config/
 │   └── ModelRoutingEnvelopeProperties
-│
 ├── controller/
 │   ├── ModelCatalogController
 │   ├── ModelPolicyPreviewController
 │   ├── ModelRouteDecisionController
 │   ├── ModelRuntimeController
 │   └── OrganizationModelPolicyController
-│
 ├── domain/
 │   ├── BudgetEnforcement
 │   ├── ModelBudgetCommitmentSnapshot
@@ -2341,7 +2470,6 @@ model/
 │   ├── OrganizationModelPolicy
 │   ├── RuntimeModelProbeResult
 │   └── RuntimeModelProbeStatus
-│
 ├── dto/
 │   ├── CreateModelCatalogVersionRequest
 │   ├── CreateOrganizationModelPolicyVersionRequest
@@ -2353,11 +2481,9 @@ model/
 │   ├── RuntimeModelProbeResponse
 │   ├── RuntimeModelStatusResponse
 │   └── RuntimeModelStatusWireResponse
-│
 ├── exception/
 │   ├── ModelRouteDeniedException
 │   └── ModelRouteEnvelopeExceededException
-│
 ├── repository/
 │   ├── JdbcTextArrayReader
 │   ├── ModelCatalogRepository
@@ -2365,8 +2491,7 @@ model/
 │   ├── ModelRouteRequestBindingRepository
 │   ├── ModelRouteRequestMutexRepository
 │   └── OrganizationModelPolicyRepository
-│
-├── service/
+└── service/
     ├── AnthropicRuntimeModelHealthProbe
     ├── DatabaseTimestampNormalizer
     ├── MockRuntimeModelHealthProbe
@@ -2613,13 +2738,11 @@ ai/
 │   ├── AiRetryTimeoutBudgetValidator
 │   ├── AnthropicProviderConfiguration
 │   └── OpenAiProviderConfiguration
-│
 ├── dto/
 │   ├── AiChatRequest
 │   ├── AiChatResponse
 │   ├── AiMessage
 │   └── AiMessageRole
-│
 ├── exception/
 │   ├── AiContextLimitException
 │   ├── AiProviderBillingException
@@ -2631,7 +2754,6 @@ ai/
 │   ├── AiProviderResponseTooLargeException
 │   ├── AiProviderTimeoutException
 │   └── AiProviderUnavailableException
-│
 ├── execution/
 │   ├── AiExecutionAttemptObserver
 │   ├── AiExecutionAttemptRecorder
@@ -2640,6 +2762,7 @@ ai/
 │   ├── AiExecutionRequest
 │   ├── AiExecutionResult
 │   ├── AiExecutionService
+│   ├── AiOrganizationExecutionDeniedException
 │   ├── ExecutionAttemptOutcome
 │   ├── FallbackSafety
 │   ├── ModelExecutionAttemptEntity
@@ -2651,23 +2774,18 @@ ai/
 │   ├── ProviderExecutionTarget
 │   ├── ProviderFailureCertainty
 │   ├── ProviderPricingEvidence
-│   ├── ProviderResponseEvidence
 │   ├── ProviderUsageEvidence
 │   ├── ResolvedModelMismatchException
 │   ├── ResponseValidationStatus
 │   └── RetrySafety
-│
-│
 ├── input/
 │   ├── AiInputUnitEstimator
 │   └── AiRequestFingerprint
-│
 ├── metadata/
 │   ├── AiResponseStatus
 │   ├── AiTokenUsage
 │   ├── PricingStatus
 │   └── UsageStatus
-│
 ├── pricing/
 │   ├── ModelPricingProperties
 │   ├── ModelPricingScheme
@@ -2676,19 +2794,15 @@ ai/
 │   ├── PricingResult
 │   ├── StaticConfigurationPricingResolver
 │   └── VersionedCatalogPricingResolver
-│
 ├── provider/
 │   ├── anthropic/
 │   │   ├── AnthropicProperties
 │   │   └── AnthropicProvider
-│   │
 │   ├── mock/
 │   │   └── MockAiProvider
-│   │
 │   ├── openai/
 │   │   ├── OpenAiProperties
 │   │   └── OpenAiProvider
-│   │
 │   ├── AiContextWindowProperties
 │   ├── AiContextWindowService
 │   ├── AiJsonNodeSupport
@@ -2705,7 +2819,6 @@ ai/
 │   ├── ProviderEvidenceText
 │   ├── ProviderPropertyValidator
 │   └── ProviderRegistry
-│
 └── web/
     └── AiExceptionHandler
 ```
@@ -2725,6 +2838,9 @@ MockAiProvider
 OpenAiProvider
 AnthropicProvider
 ```
+
+`AiOrganizationExecutionDeniedException` фиксирует application-level отказ на организационной
+execution boundary; authoritative physical STARTED gate при этом остается в PostgreSQL V72.
 
 ## Durable physical execution
 
@@ -2931,7 +3047,6 @@ knowledge/
 ├── chunking/
 │   ├── KnowledgeChunkCandidate
 │   └── KnowledgeChunker
-│
 ├── config/
 │   ├── KnowledgeEmbeddingConfigurationInvariantVerifier
 │   ├── KnowledgeEmbeddingProperties
@@ -2941,14 +3056,12 @@ knowledge/
 │   ├── KnowledgeProcessingConfiguration
 │   ├── KnowledgeRagProperties
 │   └── KnowledgeRetrievalProperties
-│
 ├── controller/
 │   ├── AnswerPassportController
 │   ├── KnowledgeBaseController
 │   ├── KnowledgeDocumentController
 │   ├── KnowledgeEvaluationController
 │   └── KnowledgeRetrievalController
-│
 ├── dto/
 │   ├── AnswerCitationResponse
 │   ├── AnswerPassportResponse
@@ -2976,7 +3089,6 @@ knowledge/
 │   ├── UpdateKnowledgeBaseMemberRequest
 │   ├── UpdateKnowledgeBaseRequest
 │   └── UpdateKnowledgeDocumentRequest
-│
 ├── embedding/
 │   ├── HashingKnowledgeEmbeddingProvider
 │   ├── KnowledgeEmbeddingException
@@ -2984,20 +3096,16 @@ knowledge/
 │   ├── KnowledgeEmbeddingProvider
 │   ├── OpenAiKnowledgeEmbeddingProvider
 │   └── PgVectorSupport
-│
 ├── entity/
 │   ├── KnowledgeBaseEntity
 │   ├── KnowledgeBaseMembershipEntity
 │   ├── KnowledgeDocumentEntity
 │   ├── KnowledgeDocumentVersionEntity
 │   └── KnowledgeIngestionJobEntity
-│
 ├── evaluation/
 │   └── KnowledgeRetrievalMetrics
-│
 ├── exception/
 │   └── KnowledgeStorageUnavailableException
-│
 ├── extraction/
 │   ├── CsvKnowledgeExtractor
 │   ├── DocxKnowledgeExtractor
@@ -3015,14 +3123,9 @@ knowledge/
 │   ├── PptxKnowledgeExtractor
 │   ├── XlsxKnowledgeExtractor
 │   └── XmlKnowledgeExtractor
-│
 ├── generation/
 │   ├── KnowledgeGenerationGc
 │   └── KnowledgeGenerationGcScheduler
-│
-│
-│
-│
 ├── ingestion/
 │   ├── EmbeddedKnowledgeChunk
 │   ├── ExpiredKnowledgeIngestionJob
@@ -3035,20 +3138,17 @@ knowledge/
 │   ├── KnowledgeIngestionQueueRepository
 │   ├── KnowledgeIngestionScheduler
 │   └── StaleIngestionOwnershipException
-│
 ├── model/
 │   ├── KnowledgeBaseAccessLevel
 │   ├── KnowledgeBaseVisibility
 │   ├── KnowledgeHealthState
 │   └── KnowledgeIngestionStatus
-│
 ├── ocr/
 │   ├── DisabledKnowledgeOcrProvider
 │   ├── HttpKnowledgeOcrProvider
 │   ├── KnowledgeOcrProvider
 │   ├── OcrDocument
 │   └── OcrPage
-│
 ├── rag/
 │   ├── AnswerPassportService
 │   ├── KnowledgeCitationValidator
@@ -3062,7 +3162,6 @@ knowledge/
 │   ├── RagCitation
 │   ├── RagCompletion
 │   └── RagPreparation
-│
 ├── repository/
 │   ├── KnowledgeBaseMembershipRepository
 │   ├── KnowledgeBaseRepository
@@ -3071,19 +3170,17 @@ knowledge/
 │   ├── KnowledgeDocumentVersionRepository
 │   ├── KnowledgeIngestionJobRepository
 │   └── KnowledgeMemberDirectoryRepository
-│
 ├── retrieval/
 │   ├── KnowledgeRetrievalExecution
 │   ├── KnowledgeRetrievalHit
 │   └── KnowledgeRetrievalRepository
-│
 ├── service/
 │   ├── KnowledgeAccessService
 │   ├── KnowledgeBaseNameNormalizer
 │   ├── KnowledgeBaseService
 │   ├── KnowledgeDocumentFileValidator
 │   ├── KnowledgeDocumentMediaTypeDetector
-│   ├── KnowledgeDocumentMediaType
+│   ├── KnowledgeDocumentMediaTypes
 │   ├── KnowledgeDocumentNameNormalizer
 │   ├── KnowledgeDocumentService
 │   ├── KnowledgeDocumentWriteService
@@ -3095,14 +3192,12 @@ knowledge/
 │   ├── KnowledgeStructuredTextValidator
 │   ├── KnowledgeUploadFileSupport
 │   └── KnowledgeValidationErrors
-│
 └── storage/
     ├── reconciliation/
     │   ├── KnowledgeStorageReconciliationConfiguration
     │   ├── KnowledgeStorageReconciliationProperties
     │   ├── KnowledgeStorageReconciliationScheduler
     │   └── KnowledgeStorageUploadJournal
-    │   
     ├── KnowledgeStorageConfiguration
     ├── KnowledgeStorageProductionInvariantVerifier
     ├── KnowledgeStorageProperties
@@ -3110,7 +3205,7 @@ knowledge/
     ├── LocalObjectStorage
     ├── ObjectStorage
     ├── S3ObjectStorage
-    └── StoredObject  
+    └── StoredObject
 ```
 
 ## Knowledge Base access
@@ -3606,7 +3701,7 @@ commit                                     attempt commit (before provider I/O)
 
 Миграция V72 сохраняет `NULL` в исторических строках ChatTurn и даёт `DEFAULT 0` лишь новым SQL-вставкам, которые не передали значение. Такие исторические turns не могут открыть новую physical attempt. Загрузка старых версий backend в смешанном rollout может приводить к fail-closed отказам из-за отсутствующего principal epoch: требуется согласованный cutover. Изменять ранее применённые V1–V71 вместо нового SQL-файла запрещено.
 
-**Статус проверки:** последний предоставленный реальный PostgreSQL Testcontainers log подтверждает применение V1–V72 с нуля. Это **не** подтверждает успешную миграцию населённой базы V71→V72 или успешное прохождение конкурентных тестов. Их нужно проводить отдельно.
+**Статус проверки:** исторический PostgreSQL Testcontainers log подтверждает применение V1–V72 с нуля. Позднее получен успешный локальный прогон `./mvnw test` (2259 tests) и трех выбранных PostgreSQL/Redis concurrency/integration suites (27 tests). Это не равно проверке всех возможных блокировок и не подтверждает upgrade населенной базы V71→V72 или production rollout.
 
 
 ## Важные DB boundaries
@@ -3716,54 +3811,82 @@ Multi-instance job должен иметь DB/distributed coordination там, �
 
 README не утверждает `BUILD SUCCESS` без фактического запуска конкретного commit.
 
-## История контрольных прогонов и актуальный статус на 10.10.2026
+## Статус проверок на 11.10.2026
 
-### Последний предоставленный интеграционный лог (V72)
+Проверки выполнены пользователем локально перед merge PR #8; это **конкретные команды и их вывод**,
+а не заявление о статусе независимого CI, production или `clean` сборки.
 
-**Подтверждённый запуск через IntelliJ IDEA:** Java 21.0.11, Spring Boot 4.1.1, Testcontainers 2.0.5, PostgreSQL 16.15. Spring-контекст запустился и Flyway применил все **72** миграции (`Successfully applied 72 migrations`).
+| Запуск | Фактический результат |
+|---|---|
+| `./mvnw -Dtest=CommonDependencyArchitectureTest test` | 1 test / 0 failures / 0 errors / `BUILD SUCCESS` |
+| Negative control: temporary `common → auth` dependency | Expected `Architecture Violation` / `BUILD FAILURE`; нарушение найдено по типу поля |
+| Повторный positive test после удаления probe | 1 test / 0 failures / 0 errors / `BUILD SUCCESS` |
+| `./mvnw test` | **2259 tests / 0 failures / 0 errors / 3 skipped / `BUILD SUCCESS`** |
+| `./mvnw -Dtest=AuthPostgresConcurrencyIT,OrganizationSecurityGateConcurrencyIT,RedisFixedWindowRateLimiterIT test` | **27 tests / 0 failures / 0 errors / `BUILD SUCCESS`** (15 + 5 + 7) |
+| `git merge-base --is-ancestor 103c587 main` | Подтверждено: исходный коммит PR #8 в истории `main` |
+| `git status -sb` | `## main...origin/main` без изменений |
 
-Однако `ru.safeai.gateway.chat.integration.ChatTurnStateMachineIntegrationTest` в показанном запуске **не прошёл**: при `AiExecutionAttemptRecorder.started()` PostgreSQL правильно отклонял триггерный `UPDATE chat_turns` с SQLSTATE `23514`, `chk_chat_turns_timestamps`.
+Число `2259` — summary из Maven для **основного прогона**; запуск 27 целевых интеграционных
+тестов учитывается отдельно, не нужно автоматически складывать их с общим числом.
 
-```text
-Пример доказанной ошибки порядка времени:
-ChatTurn created_at            = 2026-10-10 14:23:45.020831+03
-provider_call_started_at (DB)  = 2026-10-10 14:23:44.183355+03
-Результат                    = ERROR: chk_chat_turns_timestamps
+### Важно различать уровни доказательств
+
+- **Пройдено:** локальный `./mvnw test` на коде PR #8; targeted PostgreSQL/Redis integration tests; positive/negative ArchUnit test; Git ancestry.
+- **Подтверждено по репозиторию:** наличие миграций Flyway V1–V72, `pom.xml`, классов и архитектурного теста в `main` на `fdcff62`.
+- **Историческое свидетельство:** прежний успешный старт Testcontainers PostgreSQL с применением 72 миграций.
+- **Пока не подтверждено предоставленными материалами:** `./mvnw clean test` после merge, CI на merge SHA, populated upgrade V71→V72, продакшен-запуск, backup/restore drill, всесторонний security/performance/load review.
+
+### Исторические сбои V71/V72 и их уроки (НЕ текущий статус сборки)
+
+Предыдущие логи фиксировали отказ `chk_chat_turns_timestamps`: тестовый `Clock` выставлял
+`ChatTurn.created_at` позднее физического `clock_timestamp()` PostgreSQL, после чего
+DB-триггер корректно отвергал STARTED. Также существовал fixture в Knowledge integration
+suite, который пытался мутировать immutable `created_at`. Эти истории **не следует
+представлять как текущий failing build** после подтвержденного green run 2259 tests.
+
+При новом изменении этого кода по-прежнему нельзя отключать `chk_chat_turns_timestamps`,
+смягчать state-machine/epoch triggers или делать слепой replay после `AMBIGUOUS`.
+Для двух одноименных классов указывайте fully qualified name:
+
+```bash
+cd backend
+./mvnw -Dtest=ru.safeai.gateway.chat.integration.ChatTurnStateMachineIntegrationTest test
+./mvnw -Dtest=ru.safeai.gateway.knowledge.integration.ChatTurnStateMachineIntegrationTest test
 ```
 
-Root cause: ранее выданный тестовый `Clock` искусственно переводился **вперёд** относительно `clock_timestamp()` БД перед новым ChatTurn. Когда V67-триггер выставлял маркер физического STARTED по DB clock, он оказывался *раньше* `created_at`. Это **проблема согласования часов в test fixture**, а не основание выключать constraint либо обходить V72 gate.
+Не интерпретировать `BUILD SUCCESS` одного targeted test как доказательство прохождения
+всей регрессии. Новый PR требует собственного green run, даже если baseline уже зеленый.
 
-Подготовлено отдельное обновление `ChatTurnStateMachineIntegrationTest` с чтением DB clock, корректной временной последовательностью резервирования/STARTED/финализации, сохранением всех 11 тестов и запретом изменения immutable `created_at`. **Повторный успешный прогон после исправления в предоставленных логах не подтверждён.** Аналогичные fixture-time assumptions должны проверяться в других тестах.
+## Карта размещения backend-тестов
 
-### Исторические прогоны до V72
+Текущее дерево `backend/src/test/java/ru/safeai/gateway/` содержит следующие Java-файлы
+тестовых пакетов (количество **файлов**, а не JUnit test cases):
 
-**Предыдущий полный прогон (историческая фиксация, не статус текущего checkout):**
+| Пакет | Java-файлов | Что проверять при изменениях |
+|---|---:|---|
+| `architecture` | 1 | ArchUnit: запрет `common → application` |
+| `common` | 25 | Shared API errors, security/config, infrastructure |
+| `auth` | 25 | Login/refresh/JWT/CSRF/cookie/filter/concurrency |
+| `user` | 20 | Tenant access, validation, mutations, versioning |
+| `organization` | 12 | Platform org, access, security epochs |
+| `ratelimit` | 16 | Redis/Lua, limits, HMAC keys, failure semantics |
+| `audit` | 30 | Immutable evidence, outbox, retries, retention |
+| `usage` | 25 | SQL reporting, rollup, dirty-date, performance |
+| `chat` | 37 | ChatTurn, idempotency, lease, recovery, quotas |
+| `model` | 53 | Catalog, policy, route decision, pricing/budget |
+| `ai` | 45 | Provider adapters, execution evidence, retry |
+| `knowledge` | 59 | ACL, ingestion, retrieval/RAG, storage, GC |
 
-```text
-Tests run: 2238, Failures: 0, Errors: 2, Skipped: 3
-BUILD FAILURE
-```
+Также в корне test package находятся `SafeaiBackendApplicationTests`, utility
+`PasswordHashGenerator`, а в `testsupport` — `AbstractPostgresIntegrationTest`.
+Для `identity` на этом срезе отдельной папки с тестами нет; его порт проверяется
+в тестах потребителей/реализации. Выборочное добавление dedicated ArchUnit identity rule
+закроет пробел в проверке направленности зависимостей.
 
-Обе ошибки локализованы в `ChatTurnStateMachineIntegrationTest`, который находится
-**в `ru.safeai.gateway.knowledge.integration`**. Его исторический helper
-`expire()` обновляет `chat_turns.created_at`; PostgreSQL V67 корректно отвергает
-изменение неизменяемой identity. При этом одноимённый класс в
-`ru.safeai.gateway.chat.integration` уже использует тестовый `Clock` для
-моделирования истечения lease и отдельно проходил в IntelliJ IDEA.
-Наличие двух классов с одинаковым простым именем не означает, что второй
-можно безопасно удалить: сперва необходимо сопоставить их сценарии и сохранить
-уникальное покрытие. Исправление должно выполняться в устаревшем тестовом
-helper/fixture без отключения DB triggers, изменения `created_at` и снижения
-строгости assertions.
-
-**Другой исторический полный Maven-прогон (до последнего V72 запуска):** показал `Tests run: 2229, Failures: 1, Errors: 243, Skipped: 3`. Массовые ошибки загрузки `ApplicationContext` имели общий root cause: `UsageDirtyDateRepository` был `final` и не поддавался CGLIB-проксированию Spring. После изменения класса на не-`final` выборочный `UsageRollupReconciliationIntegrationTest` **успешно загрузил Spring-контекст** и применил все **71** миграцию в Testcontainers PostgreSQL, но завершился ошибкой assertion по сообщению `watermarkRejectsSkippedUtcDay()`.
-
-Из предоставленного stack trace: production-исключение содержит `Usage rollup watermark cannot skip an unprocessed day: 2026-06-12`, тогда как старый тест требовал фразу `пропуском UTC-дня`. Тест был обновлён для текущего error contract без изменения запрета на пропуск дат. Отдельно исправлен `UserServiceTest`: нейтральное сообщение конфликта email теперь `Указанный email недоступен`, а не старое `уже существует`. Подтверждение успешного повторного запуска этих изменённых тестов в полученных логах отсутствует.
-
-**Не следует суммировать численность исторических запусков и выдавать её за состояние последней сборки.** Полный `./mvnw clean test` после фиксов не предоставлен; остальные регрессии не исключены.
-
-Статус сборки **не является** подтверждением полного green baseline. Для current V72 checkout отсутствуют итоговый Surefire summary всей матрицы, DB lock-contention отчёт и положительная проверка populated migration. Перед релизом нужно заново прогнать `./mvnw clean test` и сохранить отчёты. Последний известный сбой не следует скрывать.
-
+Maven Surefire настроен для обычных unit/regular integration tests.
+В `backend/pom.xml` есть отдельный opt-in Failsafe профиль `rate-limit-topology-it`
+(`./mvnw verify -Prate-limit-topology-it`), предназначенный для проверок внешнего
+Redis Sentinel/Cluster. Его успешный прогон **не подтвержден** этим README.
 
 ## Backend
 
@@ -3925,6 +4048,30 @@ cd backend
 ```
 
 Интеграционные тесты с `@Testcontainers` требуют Docker. Если сборка падает, ищите **первый** `Caused by`, а не только каскадное `ApplicationContext failure threshold exceeded`. Для проверки V71 полезны: выборка earliest UTC date (включая `AMBIGUOUS`), последовательность backfill, повторный расчёт dirty dates, монотонность watermark, lock contention, идемпотентность aggregate rebuild. Не подавляйте проверки SQL-целостности ради зелёного результата.
+
+## Архитектурные регрессии и CI
+
+Текущий пакет `architecture` содержит **один** ArchUnit test. Следующие архитектурные правила
+добавляются отдельными PR, только после проверки реальных dependencies/allowed edges.
+Без новых тестов в `common` нельзя возвращать `JwtService`, auth exceptions или BCrypt configuration.
+
+Для запуска всех backend-тестов из корня проекта:
+
+```bash
+cd backend
+./mvnw clean test
+```
+
+Для frontend по актуальному `package.json`:
+
+```bash
+cd frontend
+npm ci
+npm run check
+```
+
+`npm run check` выполняет lint, Vitest и build (с проверкой typecheck/production bundle).
+Команды приведены как воспроизводимые проверки; успешный frontend run **не подтвержден** данным срезом.
 
 ## Release candidate checks
 
@@ -4091,7 +4238,10 @@ V72 нельзя считать обычной независимой SQL-миг
 4. Корректный finalization уже начатого provider I/O: сохранять `outcome_certainty`, usage/cost, audit и `AMBIGUOUS` при неопределённости; не выполнять blind retry.
 5. Проверка latency и блокировок `organizations FOR SHARE/FOR UPDATE`, retry policy при SQLSTATE `40P01` и мониторинг времени ожидания транзакций.
 
-**Не считать выполненным** только по наличию SQL-файла или успешному Flyway startup. Full green suite, upgrade rehearsal и runtime/provider smoke-test отдельно обязательны.
+Успешный локальный `./mvnw test` (2259 тестов) подтвержден отдельно и не подменяет
+`clean test`, CI на релизном коммите, populated V71→V72 upgrade rehearsal, production-like
+race tests и runtime/provider smoke. Не считать production release gate выполненным
+только по SQL-файлу, Flyway startup либо единичному green запуску.
 
 
 ## PostgreSQL backup / restore
@@ -4114,15 +4264,15 @@ Redirect following с credentials запрещён.
 
 # Текущие ограничения и production-readiness gaps
 
-Этот раздел фиксирует **зафиксированные в ранее проанализированном коде ограничения (переоценены по доступным материалам на 10.10.2026)**. Пункты, закрытые `V59–V68`,
+Этот раздел фиксирует ограничения и риски, выявленные в ранее проанализированном коде, с обновленным статусом проверок на 11.10.2026. Некоторые тезисы требуют повторного code audit перед изменением production behavior; их наличие в README не подтверждает незакрытый дефект текущего `main`. Пункты, закрытые `V59–V68`,
 из списка удалены: budget-state representability закрыт `V62/V64`, final-request/RAG binding — `V62/V64/V65`,
 searchable Knowledge publication — `V63`, physical response vs protocol rejection — `V66`,
 а Chat/Audit evidence получил дополнительные DB backstops в `V67/V68`.
 
-## P0 до production — V72 validation и временные инварианты
+## P0 до production — release validation V72 и эксплуатационная готовность
 
-- **Последний наблюдаемый V72 Testcontainers запуск не прошёл** из-за `chk_chat_turns_timestamps` в clock fixture. Тестовое исправление подготовлено, но успешный повторный запуск не предоставлен.
-- Не подтверждены в CI полная матрица `./mvnw clean test` текущего checkout, реальные гонки Login/Refresh/Disable и `ModelExecutionAttempt STARTED` ↔ Disable, а также migration rehearsal населённой БД V71→V72.
+- **Текущий локальный baseline зеленый:** `./mvnw test` — 2259/0/0/3; целевые PostgreSQL/Redis IT — 27/27. Исторический сбой clock fixture не является текущим выводом Maven.
+- По-прежнему **нет предоставленного доказательства** отдельного `./mvnw clean test`, CI на merge SHA, populated V71→V72 migration rehearsal и полного production-like concurrency/chaos validation. Успешные локальные тесты нельзя объявлять достаточным release gate.
 - Kill-switch синхронизирует **разрешение STARTED**, но не обещает физическую отмену уже допущенного HTTP I/O; если нужен сетевой hard-stop, требуется отдельный dispatch/draining протокол.
 - Старые application instances без нового epoch contract при смешанной раскатке могут получить fail-closed ошибки. Важно описать rollback/runbook и последовательность остановки workers.
 
@@ -4235,26 +4385,6 @@ OCR/embedding external calls пока не имеют такого же полн
 При partial batch success + process crash возможны повторные billable calls. Нужны durable operation identity,
 attempt evidence и reconciliation semantics для embedding/OCR pipeline.
 
-## P1 — Audit required transaction semantics
-
-V68 защищает уже записанный audit intent/evidence от переписывания, но `AuditOutboxWriter.writeRequired()` в
-просмотренном Java baseline использует `Propagation.REQUIRED`.
-
-Без outer business transaction это может открыть отдельную transaction. Для строгой атомарности required audit path
-желательно `MANDATORY` либо явно разделённые API:
-
-```text
-recordRequiredInCurrentTransaction(...)
-recordStandaloneBestEffort(...)
-```
-
-## P1 — Production mode detection
-
-Часть startup validators historically ориентирована на точные profile names `prod` / `production`.
-
-Deployment profile вроде `production-eu` не должен случайно обходить production safeguards.
-Предпочтительно иметь единый explicit production-mode property/profile group.
-
 ## P1/P2 — Concurrent index recovery
 
 Interrupted `CREATE INDEX CONCURRENTLY` может оставить invalid index.
@@ -4350,17 +4480,66 @@ SafeAI Desk не пытается сделать LLM deterministic.
 
 # Frontend
 
-Эта редакция README описывает backend через Flyway **V72**. Последний показанный лог подтверждает именно применение 72 миграций в новой тестовой PostgreSQL БД; отдельный аудит frontend checkout не выполнялся.
+Срез `frontend/package.json` и дерева `frontend/src/` в `main` на `fdcff62`, а не только старых
+скриншотов. UI — React 19, TypeScript 6, React Router 7, Vite 8; Vitest / Testing Library.
 
-По предоставленным скриншотам видно, что frontend уже содержит отдельные API clients, runtime parsers, auth context, admin audit/usage/users/organizations/model control plane UI, Chat title UI и Knowledge UI, а также значительный test layer.
+```text
+frontend/
+├── package.json
+├── src/
+│   ├── api/               # typed HTTP clients, response parsers, auth/CSRF, chat, model, Knowledge, admin
+│   ├── auth/              # AuthContext, auth context definition, useAuth
+│   ├── components/
+│   │   ├── admin/         # admin tables/forms/controls
+│   │   ├── chat/
+│   │   └── knowledge/
+│   ├── constants/         # audit event presentation constants
+│   ├── domain/            # UI-level role/policy helpers
+│   ├── hooks/
+│   ├── pages/             # Login, Chat, Knowledge, admin Users/Organizations/Audit/Usage/Models
+│   ├── styles/
+│   ├── test/              # Vitest setup
+│   ├── utils/
+│   ├── App.tsx
+│   └── main.tsx
+└── ...
+```
 
-Полное описание frontend contracts, компонентов и актуального file tree лучше синхронизировать после отдельной передачи текущего frontend archive/source, чтобы не переносить в README устаревшие детали из более ранних версий.
+Auth и browser transport нужно согласовывать с backend HttpOnly cookies + `X-XSRF-TOKEN`;
+frontend route guard — не authorization boundary. API DTO и runtime parsers должны отказывать
+на неверных публичных response shapes, не доверять raw provider body, не раскрывать токены
+в логах/хранилищах браузера.
+
+### Локальные проверки frontend
+
+```bash
+cd frontend
+npm ci
+npm run lint
+npm run test
+npm run build
+```
+
+Для объединенного прогона `npm run check`; CI-ориентированный script — `npm run ci`
+(lint + coverage + production build). `npm run audit:prod` проверяет production dependencies
+по npm audit policy. **Эти команды не запускались в предоставленных логах PR #8.**
+
+Frontend routes/API contracts в точности определяются актуальными `App.tsx`, `api/`,
+`pages/`, а не этим обзорным деревом; перенос endpoint без проверки обоих слоев запрещен.
 
 ---
 
 # Поддержание документации в актуальном состоянии
 
-README предназначен для **реализованных и проверяемых** контрактов. `ROADMAP.md` — для будущих возможностей. Новая миграция требует синхронного обновления: migration map, entity/repository contract, API flows, state-machine diagrams, runbook, known-failure status и тестовой матрицы.
+README предназначен для **реализованных и проверяемых** контрактов. `ROADMAP.md` — для будущих возможностей.
+Связанные документы: `docs/00_PROJECT_OVERVIEW.md`, `docs/01_LOCAL_RUNBOOK.md`,
+`docs/02_DOCKER_RUNBOOK.md`, `docs/03_AUTH_JWT_VERIFICATION.md`,
+`docs/04_ORGANIZATION_USER_API.md`, `docs/05_CHAT_CORE_VERIFICATION.md`,
+`docs/08_DATABASE_CHECKS.md`, `docs/09_TESTING_GUIDE.md`,
+`docs/10_TROUBLESHOOTING.md`, `docs/12_KNOWLEDGE_BASE_CORE_VERIFICATION.md`,
+`backend/src/main/resources/db/README_DB.md`, `docs/runMacBook/LOCAL_DEVELOPMENT_MACOS.md`.
+Эти вспомогательные документы существуют в дереве, но их актуальность по отношению к README
+нужно сверять перед выполнением критических команд; они не переопределяют source code. Новая миграция требует синхронного обновления: migration map, entity/repository contract, API flows, state-machine diagrams, runbook, known-failure status и тестовой матрицы.
 
 При обновлении проекта сверяйте прежде всего:
 
@@ -4434,4 +4613,111 @@ usage / physical spend / Answer Passport / audit
 
 ---
 
-**Документ актуализирован 10 октября 2026 года. Последний предоставленный Testcontainers log подтверждает запуск Spring-контекста и применение Flyway `V1–V72`, но фиксирует незавершённый/неуспешный тест `ChatTurnStateMachineIntegrationTest` из-за временного CHECK constraint. Последующее исправление тестовых часов подготовлено; новый успешный прогон и полный green build не подтверждены.**
+# Передача контекста в новый AI-чат
+
+Этот раздел предназначен для продолжения работы над SafeAI Desk в **новом диалоге** без повторного
+обсуждения восьми уже завершенных PR. Он фиксирует workflow, а не заменяет чтение исходников.
+
+## Контекст проекта на 11.10.2026
+
+```text
+Repository:  https://github.com/Amid-1/Safeai-desk
+Base:        main / origin/main
+Main HEAD:   fdcff62fc32131474cbc2639b1fa636edffd45bc (merge PR #8)
+Java:        21
+Spring Boot: 4.1.1
+DB:          PostgreSQL, Flyway V1–V72, Redis, S3-compatible Knowledge storage
+Structure:   modular monolith; common, identity, auth, user, organization,
+             ratelimit, audit, usage, chat, model, ai, knowledge
+PRs merged:  #1–#8; latest adds ArchUnit 1.5.1 architecture rule for common
+```
+
+**Уже сделано:** module-specific exception handlers выведены из `common.exception`;
+`identity.session` содержит порт отзыва сессий; `auth` владеет JWT runtime/codec,
+RSA ring, Spring Security entry points, JWT converter и BCrypt configuration.
+`common` оставлен за shared error envelope, principal/roles, IP/CORS, Request ID,
+production startup guards, general infrastructure. PR #8 добавил `CommonDependencyArchitectureTest`.
+
+**Проверено до merge PR #8:** `./mvnw test`: 2259 tests, 0 failures, 0 errors, 3 skipped;
+дополнительно 27/27 PostgreSQL/Redis IT, ArchUnit positive/negative test.
+После merge локальный `main` синхронизирован и чистый. Это **не** статус CI или доказательство
+того, что другие модули уже архитектурно изолированы.
+
+## Как вести следующий архитектурный PR
+
+1. Начать с чистого `main` и `git status -sb`; не делать коммит в `main`.
+2. Снять **read-only** карту межмодульных imports и consumers предполагаемого перемещаемого класса.
+3. Проверить bean registration, auto-configuration, package visibility, DTO/error contracts,
+   transaction propagation, lock order, events, retention, DB constraints, тесты.
+4. Разделить *общий контракт*, *владельца реализации*, *адаптер*, *оркестрацию*;
+   не переносить классы механически и не формировать новый общий `common` для устранения import errors.
+5. При обнаружении real boundary violation выбрать минимальный безопасный PR и понятный rollback.
+6. Добавить/скорректировать ArchUnit правило только для **проверенной** архитектурной границы;
+   создать negative control, не фиксируя его в Git.
+7. Выполнить targeted tests, `./mvnw test`, нужные PostgreSQL/Redis IT и frontend checks,
+   если затрагиваются UI/API. Считать общее число тестов и skipped по фактическому лог-файлу.
+8. Проверить `git diff --check`, `git status`, staged diff, затем commit и PR.
+9. Merge через **Create a merge commit**, затем `git switch main` →
+   `git pull --ff-only origin main` → `git status -sb` → `git merge-base --is-ancestor`.
+10. Синхронно обновить документацию; не удалять рабочие ветки до подтверждения merge.
+
+## Неприкосновенные инварианты
+
+Сохранять tenant isolation, exactly-one-role RBAC, fail-closed security, cookie JWT/CSRF,
+refresh rotation/reuse/family, user/org security epochs, organization→user→token lock order,
+durable ChatTurn/idempotency/lease/fencing, `AMBIGUOUS` no-blind-retry, physical
+STARTED DB fence V67/V72, sealed request/route/RAG evidence, immutable SQL evidence,
+pricing `unknown != zero`, audit outbox и Knowledge ACL/provenance. **Нельзя** добиваться
+зеленых тестов ослаблением constraints, SQL migrations или security handlers.
+
+Пользователь предпочитает **небольшие последовательные шаги**: команда → вывод → анализ →
+следующий шаг. Объяснения по-русски; commit/PR описания — на русском, Conventional Commits
+prefix допустим. Не изменять личные файлы, stash и несвязанные ветки, не создавать PR
+без необходимости. При нехватке данных запросить точный файл/лог или проверить repo.
+
+### Команды для начала нового диалога
+
+```bash
+git switch main
+git status -sb
+git log -1 --oneline
+
+git grep -n -E '^import (static )?ru\.safeai\.gateway\.' -- \
+  backend/src/main/java/ru/safeai/gateway/auth
+
+cd backend
+./mvnw -Dtest=CommonDependencyArchitectureTest test
+```
+
+Указывать границы подтверждения: read-only `git grep` проверяет явные Java imports;
+ArchUnit — class dependencies, а ни один из них не заменяет анализ runtime flow,
+Spring wiring, database triggers и concurrency.
+
+---
+
+# План следующего этапа
+
+Приоритет — **не массовый перенос Java-файлов**, а доказуемое выравнивание ownership
+и направление зависимостей в текущем модульном монолите.
+
+| Этап | Цель | Что должно получиться |
+|---|---|---|
+| 1. Identity | Аудит `identity.session` и consumers | Узкий стабильный порт без imports из application modules; ArchUnit при подтверждении чистоты |
+| 2. Auth / User / Organization | Инвентаризация cyclic compile/runtime coupling | Security-state contracts и session revocation без обратных ссылок на auth implementation |
+| 3. Rate limit | Выделить наружу только policy/service contracts | Redis/Lua/HMAC внутри реализации; callers не зависят от storage details |
+| 4. Audit | Проверить outbox API + transactional guarantees | Domain modules depend on audit contract, storage/retention stays audit-owned |
+| 5. Usage | Отделить event/fact contracts от reporting implementation | Ограничение heavy queries, корректность watermark/dirty dates, независимость от UI |
+| 6. Model / AI | Разделить governance permission и physical provider execution | Exact sealed request/attempt evidence; запрет bypass provider I/O; целевые ArchUnit tests |
+| 7. Knowledge | Отделить ACL/ingestion/retrieval/RAG adapters | Контракты не раскрывают storage internals; сохранены provenance/fenced publication |
+| 8. Chat | Оркестратор без обратных зависимостей от нижележащих модулей | Durable ChatTurn и recovery остаются центром workflow без циклического ownership |
+| 9. Frontend / API | Сопоставить DTO, ошибки, RBAC и frontend runtime parsers | Проверяемая end-to-end совместимость, без ослабления backend authorization |
+
+Порядок — гипотеза для **аудита**, а не разрешение сразу вводить все dependency rules.
+Сначала строится фактический dependency graph; архитектура и контракты согласуются с
+доменными инвариантами. Любое изменение — отдельный маленький PR с целевыми тестами.
+
+---
+
+**Актуализация:** 11 октября 2026 года; дерево GitHub `main` `fdcff62` и локальные
+результаты PR #8. Полный production release gate, populated upgrade и deployment
+не подтверждены и не подразумеваются данным README.
