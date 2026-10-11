@@ -1,5 +1,5 @@
 
-package ru.safeai.gateway.organization.service;
+package ru.safeai.gateway.user.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;

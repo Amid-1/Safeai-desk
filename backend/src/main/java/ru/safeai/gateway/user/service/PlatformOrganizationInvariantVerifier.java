@@ -1,5 +1,5 @@
 
-package ru.safeai.gateway.organization.service;
+package ru.safeai.gateway.user.service;
 
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;

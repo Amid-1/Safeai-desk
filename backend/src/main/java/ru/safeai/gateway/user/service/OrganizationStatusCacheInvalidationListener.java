@@ -1,4 +1,4 @@
-package ru.safeai.gateway.organization.service;
+package ru.safeai.gateway.user.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +12,6 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import ru.safeai.gateway.organization.event.OrganizationSecurityStateChangedEvent;
 import ru.safeai.gateway.user.repository.UserRepository;
-import ru.safeai.gateway.user.service.UserStatusCacheProperties;
-import ru.safeai.gateway.user.service.UserStatusCacheService;
 
 import java.util.Objects;
 import java.util.UUID;
