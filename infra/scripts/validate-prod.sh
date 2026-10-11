@@ -24,15 +24,19 @@ set -a
 source "$env_file"
 set +a
 
+env_file="$(cd -- "$(dirname -- "$env_file")" && pwd)/$(basename -- "$env_file")"
+export SAFEAI_RUNTIME_ENV_FILE="$env_file"
+
 required_variables=(
     SAFEAI_BACKEND_IMAGE SAFEAI_NGINX_IMAGE POSTGRES_IMAGE REDIS_IMAGE
     SAFEAI_PUBLIC_BIND SAFEAI_SECRETS_DIR SAFEAI_CONFIG_DIR SAFEAI_SECRET_GID POSTGRES_DB POSTGRES_BOOTSTRAP_USER
     SAFEAI_DB_MIGRATOR_USER SAFEAI_DB_APP_USER SAFEAI_AI_PROVIDER
-    SAFEAI_CORS_ALLOWED_ORIGINS
+    SAFEAI_CORS_ALLOWED_ORIGINS SAFEAI_JWT_ISSUER
+    SAFEAI_KNOWLEDGE_STORAGE_ENDPOINT
 )
 for name in "${required_variables[@]}"; do
     [[ -n "${!name:-}" ]] || { echo "Required variable is empty: $name" >&2; exit 1; }
-    [[ "${!name}" != *REPLACE_WITH* ]] || { echo "Placeholder remains in $name" >&2; exit 1; }
+    [[ "${!name}" != *REPLACE_WITH* && "${!name}" != *REPLACE_ME* ]] || { echo "Placeholder remains in $name" >&2; exit 1; }
 done
 
 [[ "$SAFEAI_PUBLIC_BIND" == 127.0.0.1:* ]] || {
@@ -55,8 +59,9 @@ done
     echo "SAFEAI_AUTH_COOKIES_SECURE must be true in production" >&2
     exit 1
 }
-[[ "${SAFEAI_HSTS_ENABLED:-}" == "true" ]] || {
-    echo "SAFEAI_HSTS_ENABLED must be true for HTTPS API responses" >&2
+[[ "${SAFEAI_HSTS_ENABLED:-}" == "false" &&
+   "${SAFEAI_HSTS_EDGE_MANAGED:-}" == "true" ]] || {
+    echo "HSTS must be managed by the trusted TLS edge in this deployment" >&2
     exit 1
 }
 
@@ -75,7 +80,7 @@ pricing_mode="$(stat -c '%a' "$pricing_file")"
     echo "Production pricing config must not be group/world writable: $pricing_file ($pricing_mode)" >&2
     exit 1
 }
-if grep -q 'REPLACE_WITH' "$pricing_file"; then
+if grep -Eq 'REPLACE_(WITH|ME)' "$pricing_file"; then
     echo "Pricing placeholders remain in: $pricing_file" >&2
     exit 1
 fi
@@ -91,7 +96,9 @@ fi
 
 secret_files=(
     postgres_bootstrap_password db_migrator_password db_app_password
-    redis_password jwt_secret rate_limit_hmac_secret openai_api_key anthropic_api_key
+    redis_password jwt-keys.yml rate_limit_hmac_secret
+    openai_api_key anthropic_api_key knowledge_ocr_api_key
+    knowledge_storage_access_key knowledge_storage_secret_key
 )
 for name in "${secret_files[@]}"; do
     file="$SAFEAI_SECRETS_DIR/$name"
@@ -112,6 +119,18 @@ for name in "${secret_files[@]}"; do
         exit 1
     }
 done
+
+for name in jwt-keys.yml knowledge_storage_access_key knowledge_storage_secret_key; do
+    [[ -s "$SAFEAI_SECRETS_DIR/$name" ]] || {
+        echo "Required production secret is empty: $name" >&2
+        exit 1
+    }
+done
+
+if grep -Eq 'REPLACE_(WITH|ME)' "$SAFEAI_SECRETS_DIR/jwt-keys.yml"; then
+    echo "JWT key ring still contains placeholders" >&2
+    exit 1
+fi
 
 case "$SAFEAI_AI_PROVIDER" in
     openai)

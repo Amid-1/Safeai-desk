@@ -97,6 +97,7 @@ class ProductionSecurityStartupContractTest {
                              "spring.task.scheduling.pool.size=2",
 
                              "safeai.security.password.allow-legacy-unprefixed-bcrypt=false",
+                             "safeai.security.hsts.edge-managed=true",
 
                             /*
                              * Public application server.
@@ -145,6 +146,19 @@ class ProductionSecurityStartupContractTest {
                 .run(context ->
                         assertThat(context)
                                 .hasFailed()
+                );
+    }
+
+    @Test
+    void prodWithoutHstsFailsStartup() {
+        contextRunner
+                .withPropertyValues(
+                        "app.security.jwt.issuer=https://safeai.example.com",
+                        "safeai.security.hsts.enabled=false",
+                        "safeai.security.hsts.edge-managed=false"
+                )
+                .run(context ->
+                        assertThat(context).hasFailed()
                 );
     }
 

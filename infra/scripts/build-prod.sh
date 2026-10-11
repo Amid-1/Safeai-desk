@@ -11,17 +11,23 @@ set -a
 source "$env_file"
 set +a
 
-for name in APP_VERSION SOURCE_URL JAVA_BUILD_IMAGE JAVA_RUNTIME_IMAGE NGINX_BASE_IMAGE POSTGRES_BASE_IMAGE SAFEAI_BACKEND_BUILD_TAG SAFEAI_NGINX_BUILD_TAG SAFEAI_POSTGRES_BUILD_TAG SAFEAI_SECRET_GID; do
-    [[ -n "${!name:-}" && "${!name}" != *REPLACE_WITH* ]] || { echo "Set a real value for $name" >&2; exit 1; }
+for name in APP_VERSION SOURCE_URL JAVA_BUILD_IMAGE JAVA_RUNTIME_IMAGE NODE_BUILD_IMAGE NGINX_BASE_IMAGE POSTGRES_BASE_IMAGE SAFEAI_BACKEND_BUILD_TAG SAFEAI_NGINX_BUILD_TAG SAFEAI_POSTGRES_BUILD_TAG SAFEAI_SECRET_GID; do
+    [[ -n "${!name:-}" && "${!name}" != *REPLACE_WITH* && "${!name}" != *REPLACE_ME* ]] || { echo "Set a real value for $name" >&2; exit 1; }
 done
 
 if [[ "${SAFEAI_REQUIRE_IMMUTABLE_IMAGES:-true}" == "true" ]]; then
-    for name in JAVA_BUILD_IMAGE JAVA_RUNTIME_IMAGE NGINX_BASE_IMAGE POSTGRES_BASE_IMAGE; do
+    for name in JAVA_BUILD_IMAGE JAVA_RUNTIME_IMAGE NODE_BUILD_IMAGE NGINX_BASE_IMAGE POSTGRES_BASE_IMAGE; do
         [[ "${!name}" == *@sha256:* ]] || {
             echo "$name must contain @sha256 for a production build" >&2
             exit 1
         }
     done
+fi
+
+if [[ -n "$(git -C "$repo_dir" status --porcelain --untracked-files=all)" ]]; then
+    echo "Production build requires a clean Git working tree." >&2
+    echo "Commit all intended changes before building release images." >&2
+    exit 1
 fi
 
 vcs_ref="$(git -C "$repo_dir" rev-parse HEAD)"
@@ -41,7 +47,8 @@ if [[ -f "$repo_dir/frontend/package-lock.json" ]]; then
     (
         cd "$repo_dir/frontend"
         npm ci
-        npm run build
+        npm run ci
+        npm run audit:prod
     )
 fi
 [[ -f "$repo_dir/frontend/dist/index.html" ]] || { echo "frontend/dist/index.html is missing" >&2; exit 1; }
@@ -50,7 +57,7 @@ fi
 docker build \
     --file "$repo_dir/infra/postgres/Dockerfile" \
     --build-arg "POSTGRES_BASE_IMAGE=$POSTGRES_BASE_IMAGE" \
-    --build-arg "SAFEAI_SECRET_GID=$SAFEAI_SECRET_GID" \
+    --build-arg "SAFEAI_READER_GID=$SAFEAI_SECRET_GID" \
     --build-arg "APP_VERSION=$APP_VERSION" \
     --build-arg "VCS_REF=$vcs_ref" \
     --build-arg "BUILD_DATE=$build_date" \
@@ -71,7 +78,8 @@ docker build \
 
 docker build \
     --file "$repo_dir/infra/nginx/Dockerfile" \
-    --build-arg "NGINX_BASE_IMAGE=$NGINX_BASE_IMAGE" \
+    --build-arg "NODE_IMAGE=$NODE_BUILD_IMAGE" \
+    --build-arg "NGINX_IMAGE=$NGINX_BASE_IMAGE" \
     --build-arg "APP_VERSION=$APP_VERSION" \
     --build-arg "VCS_REF=$vcs_ref" \
     --build-arg "BUILD_DATE=$build_date" \

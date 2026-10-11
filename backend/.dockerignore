@@ -4,3 +4,13 @@ target
 .env
 *.env
 *.log
+
+# Production environment and local confidential material.
+.env.*
+.local-secrets/
+var/
+**/jwt-keys.yml
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx

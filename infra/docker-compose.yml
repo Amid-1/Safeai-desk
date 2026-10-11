@@ -15,7 +15,7 @@ services:
     # This passes non-secret runtime settings into the container. Compose-file
     # interpolation still requires CLI --env-file backend/.env.prod.
     env_file:
-      - ../backend/.env.prod
+      - "${SAFEAI_RUNTIME_ENV_FILE:-../backend/.env.prod}"
 
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -173,7 +173,7 @@ services:
 
     entrypoint:
       - /bin/bash
-      - /docker-entrypoint-initdb.d/10-create-app-roles.sh
+      - /opt/safeai/10-create-app-roles.sh
 
     environment:
       POSTGRES_HOST: postgres
@@ -190,12 +190,6 @@ services:
         target: db_migrator_password
       - source: db_app_password
         target: db_app_password
-
-    volumes:
-      - type: bind
-        source: ./postgres/init/10-create-app-roles.sh
-        target: /docker-entrypoint-initdb.d/10-create-app-roles.sh
-        read_only: true
 
     depends_on:
       postgres:
@@ -295,10 +289,7 @@ services:
     image: "${SAFEAI_NGINX_IMAGE:?SAFEAI_NGINX_IMAGE is required}"
 
     ports:
-      - target: 8080
-        published: "8080"
-        host_ip: 127.0.0.1
-        protocol: tcp
+      - "${SAFEAI_PUBLIC_BIND:?SAFEAI_PUBLIC_BIND is required}:8080"
 
     depends_on:
       backend:

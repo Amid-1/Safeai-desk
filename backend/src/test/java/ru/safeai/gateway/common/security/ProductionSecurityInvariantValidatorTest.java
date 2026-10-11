@@ -411,6 +411,60 @@ class ProductionSecurityInvariantValidatorTest {
     }
 
     @Test
+    void prodRejectsDeploymentWithoutHsts() {
+        MockEnvironment environment =
+                validProductionEnvironment()
+                        .withProperty(
+                                "safeai.security.hsts.enabled",
+                                "false"
+                        )
+                        .withProperty(
+                                "safeai.security.hsts.edge-managed",
+                                "false"
+                        );
+
+        ProductionSecurityInvariantValidator validator =
+                validator(
+                        "https://safeai.example.com",
+                        List.of("https://app.example.com"),
+                        List.of("172.28.0.0/24"),
+                        environment
+                );
+
+        assertThatThrownBy(
+                validator::afterSingletonsInstantiated
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("HSTS");
+    }
+
+    @Test
+    void prodAcceptsSpringManagedHsts() {
+        MockEnvironment environment =
+                validProductionEnvironment()
+                        .withProperty(
+                                "safeai.security.hsts.enabled",
+                                "true"
+                        )
+                        .withProperty(
+                                "safeai.security.hsts.edge-managed",
+                                "false"
+                        );
+
+        ProductionSecurityInvariantValidator validator =
+                validator(
+                        "https://safeai.example.com",
+                        List.of("https://app.example.com"),
+                        List.of("172.28.0.0/24"),
+                        environment
+                );
+
+        assertThatCode(
+                validator::afterSingletonsInstantiated
+        ).doesNotThrowAnyException();
+    }
+
+    @Test
     void prodRequiresExplicitLegacyBcryptDecision() {
         MockEnvironment environment =
                 new MockEnvironment()
@@ -593,6 +647,10 @@ class ProductionSecurityInvariantValidatorTest {
                 )
                 .withProperty(
                         "safeai.security.password.allow-legacy-unprefixed-bcrypt",
+                        "true"
+                )
+                .withProperty(
+                        "safeai.security.hsts.edge-managed",
                         "true"
                 );
     }

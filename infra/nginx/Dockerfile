@@ -40,6 +40,9 @@ LABEL org.opencontainers.image.title="SafeAI Frontend" \
 COPY infra/nginx/nginx.conf \
     /etc/nginx/conf.d/default.conf
 
+COPY infra/nginx/security-headers.conf \
+    /etc/nginx/snippets/safeai-security-headers.conf
+
 COPY --from=build \
     /workspace/frontend/dist/ \
     /usr/share/nginx/html/

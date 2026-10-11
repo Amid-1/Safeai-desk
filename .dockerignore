@@ -1,0 +1,29 @@
+# Only inputs required by production PostgreSQL and frontend builds.
+**
+!frontend/
+!frontend/**
+!infra/
+!infra/nginx/
+!infra/nginx/nginx.conf
+!infra/nginx/security-headers.conf
+!infra/postgres/
+!infra/postgres/init/
+!infra/postgres/init/10-create-app-roles.sh
+!scripts/
+!scripts/verify-build.mjs
+
+# Never transfer frontend local data, generated files or credentials.
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+frontend/.env
+frontend/.env.*
+frontend/**/.env
+frontend/**/.env.*
+frontend/**/.local-secrets/
+frontend/**/*.pem
+frontend/**/*.key
+frontend/**/*.p12
+frontend/**/*.pfx
+frontend/**/jwt-keys.yml

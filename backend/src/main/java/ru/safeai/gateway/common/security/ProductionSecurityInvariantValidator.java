@@ -74,6 +74,36 @@ public final class ProductionSecurityInvariantValidator
         validateJwtRotationKeyMaterial();
         validateSchedulerPool();
         validateLegacyPasswordCompatibilityDeclaration();
+        validateHsts();
+    }
+
+    /**
+     * A production deployment must enforce HSTS either in Spring Security
+     * or at its trusted HTTPS termination boundary.
+     *
+     * Edge-managed mode is a deployment declaration. The actual public
+     * response header must also be checked during deployment smoke tests.
+     */
+    private void validateHsts() {
+        boolean applicationManaged = environment.getProperty(
+                "safeai.security.hsts.enabled",
+                Boolean.class,
+                false
+        );
+
+        boolean edgeManaged = environment.getProperty(
+                "safeai.security.hsts.edge-managed",
+                Boolean.class,
+                false
+        );
+
+        if (!applicationManaged && !edgeManaged) {
+            throw new IllegalStateException(
+                    "В production требуется HSTS: включите "
+                            + "safeai.security.hsts.enabled либо "
+                            + "safeai.security.hsts.edge-managed"
+            );
+        }
     }
 
     private void validateCors() {
