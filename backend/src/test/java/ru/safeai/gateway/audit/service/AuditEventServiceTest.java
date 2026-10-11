@@ -9,13 +9,11 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.model.AuditActor;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.user.entity.UserEntity;
-import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.audit.spi.AuditActorSnapshotProvider;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -43,10 +42,7 @@ class AuditEventServiceTest {
     private AuditOutboxWriter outboxWriter;
 
     @Mock
-    private UserRepository userRepository;
-
-    @Mock
-    private UserEntity userEntity;
+    private AuditActorSnapshotProvider actorSnapshotProvider;
 
     @Test
     void requiredRecordFromPrincipalBuildsImmutableActorSnapshot() {
@@ -154,7 +150,7 @@ class AuditEventServiceTest {
         return new AuditEventService(
                 commandFactory,
                 outboxWriter,
-                userRepository
+                actorSnapshotProvider
         );
     }
 
@@ -175,13 +171,15 @@ class AuditEventServiceTest {
     }
 
     private void stubActorUserWithName(String fullName) {
-        when(userRepository.findByIdAndOrganizationId(
+        when(actorSnapshotProvider.resolve(
+                any(SafeAiUserPrincipal.class),
+                isNull()
+        )).thenReturn(new AuditActor(
                 USER_ID,
-                ACTOR_ORGANIZATION_ID
-        )).thenReturn(Optional.of(userEntity));
-
-        when(userEntity.getEmail()).thenReturn(ACTOR_EMAIL);
-        when(userEntity.getFullName()).thenReturn(fullName);
+                ACTOR_ORGANIZATION_ID,
+                ACTOR_EMAIL,
+                fullName
+        ));
     }
 
     private SafeAiUserPrincipal principal() {
