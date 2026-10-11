@@ -1,20 +1,22 @@
+
 package ru.safeai.gateway.organization.service;
 
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.context.annotation.Profile;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.common.platform.PlatformProperties;
+import ru.safeai.gateway.common.security.ProductionEnvironmentCondition;
 import ru.safeai.gateway.common.security.SystemRole;
 import ru.safeai.gateway.organization.entity.OrganizationEntity;
 import ru.safeai.gateway.organization.repository.OrganizationRepository;
 import ru.safeai.gateway.user.repository.UserRepository;
 
 @Component
-@Profile({"prod", "production"})
+@Conditional(ProductionEnvironmentCondition.class)
 @RequiredArgsConstructor
 public class PlatformOrganizationInvariantVerifier
         implements ApplicationRunner {
@@ -44,7 +46,7 @@ public class PlatformOrganizationInvariantVerifier
                                         "Platform organization "
                                                 + "отсутствует: "
                                                 + platformProperties
-                                                        .organizationId()
+                                                .organizationId()
                                 )
                         );
 
@@ -101,4 +103,3 @@ public class PlatformOrganizationInvariantVerifier
         }
     }
 }
-

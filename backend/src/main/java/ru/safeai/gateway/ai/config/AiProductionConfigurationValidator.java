@@ -1,10 +1,11 @@
+
 package ru.safeai.gateway.ai.config;
 
 import jakarta.annotation.PostConstruct;
 import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
 import ru.safeai.gateway.ai.provider.AiProviderProperties;
+import ru.safeai.gateway.common.security.ProductionEnvironmentCondition;
 
 import java.util.Locale;
 import java.util.Objects;
@@ -36,7 +37,7 @@ public final class AiProductionConfigurationValidator {
 
     @PostConstruct
     void validate() {
-        if (!environment.acceptsProfiles(Profiles.of("prod", "production"))) {
+        if (!ProductionEnvironmentCondition.isProduction(environment)) {
             return;
         }
 

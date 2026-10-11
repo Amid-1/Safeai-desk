@@ -130,6 +130,54 @@ class RateLimitProductionConfigurationValidatorTest {
         ).doesNotThrowAnyException();
     }
 
+
+    @Test
+    void qualifiedProductionProfileRejectsDisabledLoginLimiter() {
+        assertThatThrownBy(() ->
+                validator("production-eu", false, true, true, false)
+                        .validate()
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("safeai.rate-limit.login.enabled");
+    }
+
+    @Test
+    void qualifiedProductionProfileRejectsDisabledRefreshLimiter() {
+        assertThatThrownBy(() ->
+                validator("prod-k8s", true, false, true, false)
+                        .validate()
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("safeai.rate-limit.refresh.enabled");
+    }
+
+    @Test
+    void qualifiedProductionProfileRejectsDisabledAiLimiter() {
+        assertThatThrownBy(() ->
+                validator("production-eu", true, true, false, false)
+                        .validate()
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("allow-unlimited-ai-traffic");
+    }
+
+    @Test
+    void explicitProductionMarkerRejectsDisabledLoginLimiter() {
+        assertThatThrownBy(() ->
+                validator(
+                        "aws-live",
+                        "production",
+                        false,
+                        true,
+                        true,
+                        false
+                ).validate()
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("safeai.rate-limit.login.enabled");
+    }
+
+
     private RateLimitProductionConfigurationValidator validator(
             String profile,
             boolean loginEnabled,
@@ -137,12 +185,34 @@ class RateLimitProductionConfigurationValidatorTest {
             boolean aiEnabled,
             boolean allowUnlimitedAiTraffic
     ) {
-        MockEnvironment environment =
-                new MockEnvironment();
-
-        environment.setActiveProfiles(
-                profile
+        return validator(
+                profile,
+                null,
+                loginEnabled,
+                refreshEnabled,
+                aiEnabled,
+                allowUnlimitedAiTraffic
         );
+    }
+
+
+    private RateLimitProductionConfigurationValidator validator(
+            String profile,
+            String explicitEnvironment,
+            boolean loginEnabled,
+            boolean refreshEnabled,
+            boolean aiEnabled,
+            boolean allowUnlimitedAiTraffic
+    ) {
+        MockEnvironment environment = new MockEnvironment();
+        environment.setActiveProfiles(profile);
+
+        if (explicitEnvironment != null) {
+            environment.setProperty(
+                    "safeai.environment",
+                    explicitEnvironment
+            );
+        }
 
         return new RateLimitProductionConfigurationValidator(
                 new LoginRateLimitProperties(

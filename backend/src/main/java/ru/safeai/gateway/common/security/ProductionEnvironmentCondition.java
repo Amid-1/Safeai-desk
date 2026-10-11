@@ -21,7 +21,8 @@ import java.util.regex.Pattern;
  */
 public final class ProductionEnvironmentCondition implements Condition {
 
-    private static final String ENVIRONMENT_PROPERTY = "safeai.environment";
+    private static final String ENVIRONMENT_PROPERTY =
+            "safeai.environment";
 
     private static final Pattern PRODUCTION_NAME = Pattern.compile(
             "^(?:prod|production)(?:[-_.].+)?$",
@@ -43,9 +44,26 @@ public final class ProductionEnvironmentCondition implements Condition {
                 "context.environment не должен быть null"
         );
 
-        String explicitEnvironment = environment.getProperty(
-                ENVIRONMENT_PROPERTY
+        return isProduction(environment);
+    }
+
+    /**
+     * Shared production detection for Spring conditions and validators.
+     *
+     * <p>An explicit production marker or any recognized active
+     * production profile enables production invariants.</p>
+     *
+     * @param environment Spring environment
+     * @return true if production security invariants must be enabled
+     */
+    public static boolean isProduction(Environment environment) {
+        Objects.requireNonNull(
+                environment,
+                "environment не должен быть null"
         );
+
+        String explicitEnvironment =
+                environment.getProperty(ENVIRONMENT_PROPERTY);
 
         if (explicitEnvironment != null
                 && isProductionName(explicitEnvironment)) {
