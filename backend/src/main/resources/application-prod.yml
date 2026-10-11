@@ -133,6 +133,7 @@ safeai:
     # Keep application-managed HSTS disabled in this deployment.
     hsts:
       enabled: ${SAFEAI_HSTS_ENABLED:false}
+      edge-managed: ${SAFEAI_HSTS_EDGE_MANAGED:false}
 
   cors:
     # Required in production; there is intentionally no localhost fallback.

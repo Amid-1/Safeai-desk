@@ -9,7 +9,7 @@ ARG APP_VERSION=dev
 ARG VCS_REF=unknown
 ARG BUILD_DATE=unknown
 ARG SOURCE_URL=unknown
-ARG SAFEAI_SECRET_GID=21001
+ARG SAFEAI_READER_GID=21001
 
 LABEL org.opencontainers.image.title="SafeAI PostgreSQL" \
       org.opencontainers.image.description="PostgreSQL with SafeAI role bootstrap and secret-reader group" \
@@ -17,23 +17,23 @@ LABEL org.opencontainers.image.title="SafeAI PostgreSQL" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.source="${SOURCE_URL}" \
-      io.safeai.secret-gid="${SAFEAI_SECRET_GID}"
+      io.safeai.secret-gid="${SAFEAI_READER_GID}"
 
 RUN set -eux; \
-    case "${SAFEAI_SECRET_GID}" in \
+    case "${SAFEAI_READER_GID}" in \
         ''|*[!0-9]*) \
-            echo "SAFEAI_SECRET_GID must be numeric" >&2; \
+            echo "SAFEAI_READER_GID must be numeric" >&2; \
             exit 1; \
             ;; \
     esac; \
-    if getent group "${SAFEAI_SECRET_GID}" >/dev/null; then \
+    if getent group "${SAFEAI_READER_GID}" >/dev/null; then \
         usermod \
             --append \
-            --groups "$(getent group "${SAFEAI_SECRET_GID}" | cut -d: -f1)" \
+            --groups "$(getent group "${SAFEAI_READER_GID}" | cut -d: -f1)" \
             postgres; \
     else \
         groupadd \
-            --gid "${SAFEAI_SECRET_GID}" \
+            --gid "${SAFEAI_READER_GID}" \
             safeai-secrets; \
         usermod \
             --append \
@@ -43,4 +43,4 @@ RUN set -eux; \
 
 COPY --chmod=0755 \
     infra/postgres/init/10-create-app-roles.sh \
-    /docker-entrypoint-initdb.d/10-create-app-roles.sh
+    /opt/safeai/10-create-app-roles.sh
