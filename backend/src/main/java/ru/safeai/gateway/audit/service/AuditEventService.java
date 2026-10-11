@@ -6,8 +6,7 @@ import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.model.AuditActor;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
-import ru.safeai.gateway.user.entity.UserEntity;
-import ru.safeai.gateway.user.repository.UserRepository;
+import ru.safeai.gateway.audit.spi.AuditActorSnapshotProvider;
 
 import java.util.Map;
 import java.util.Objects;
@@ -19,7 +18,7 @@ public class AuditEventService {
 
     private final AuditCommandFactory commandFactory;
     private final AuditOutboxWriter outboxWriter;
-    private final UserRepository userRepository;
+    private final AuditActorSnapshotProvider actorSnapshotProvider;
 
     /**
      * Records a typed audit event with a fresh, tenant-scoped actor snapshot.
@@ -157,42 +156,12 @@ public class AuditEventService {
         );
     }
 
-    /**
-     * JWT principals have no PII. Resolve canonical actor identity from the
-     * current tenant-scoped user row, falling back to non-PII principal data
-     * only when that user row no longer exists.
-     */
+    /** Resolve an actor via the user-owned, tenant-scoped snapshot provider. */
     private AuditActor resolveActorSnapshot(
             SafeAiUserPrincipal currentUser,
             String explicitDisplayName
     ) {
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
-        UUID userId = currentUser.getId();
-        UUID organizationId = currentUser.getOrganizationId();
-        return userRepository.findByIdAndOrganizationId(userId, organizationId)
-                .map(user -> actorFromUser(
-                        user, userId, organizationId, explicitDisplayName
-                ))
-                .orElseGet(() -> AuditActor.fromPrincipal(
-                        currentUser, explicitDisplayName
-                ));
-    }
-
-    private AuditActor actorFromUser(
-            UserEntity user,
-            UUID userId,
-            UUID organizationId,
-            String explicitDisplayName
-    ) {
-        String displayName = explicitDisplayName == null
-                || explicitDisplayName.isBlank()
-                ? user.getFullName()
-                : explicitDisplayName;
-        return new AuditActor(
-                userId,
-                organizationId,
-                user.getEmail(),
-                displayName
-        );
+        return actorSnapshotProvider.resolve(currentUser, explicitDisplayName);
     }
 }
