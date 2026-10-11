@@ -87,7 +87,7 @@ class AiExecutionServiceTest {
         assertThat(result.executionPlanId()).isEqualTo(plan.getId());
         assertThat(result.response()).isSameAs(response);
         InOrder order = inOrder(binding, plans, provider, recorder);
-        order.verify(binding).requireExecutable(identity, TURN, DECISION,
+        order.verify(binding).authorizePhysicalExecution(identity, TURN, DECISION,
                 request.reservedAiRequest(), request.aiRequest(), "openai", "gpt-5");
         order.verify(plans).createOrRead(request);
         order.verify(provider).sendMessage(request.aiRequest());
@@ -98,7 +98,7 @@ class AiExecutionServiceTest {
     @Test
     void badReservedIdentityFailsBeforePlanAndAdapter() {
         doThrow(new IllegalStateException("Pre-RAG request differs from sealed reservation"))
-                .when(binding).requireExecutable(eq(identity), eq(TURN), eq(DECISION),
+                .when(binding).authorizePhysicalExecution(eq(identity), eq(TURN), eq(DECISION),
                         any(), any(), eq("openai"), eq("gpt-5"));
         assertThatThrownBy(() -> service.execute(request))
                 .isInstanceOf(IllegalStateException.class)

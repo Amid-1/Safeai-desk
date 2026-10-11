@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.ai.exception.AiProviderException;
+import ru.safeai.gateway.ai.execution.AiExecutionIdentity;
 import ru.safeai.gateway.ai.execution.AiExecutionRequest;
 import ru.safeai.gateway.ai.execution.AiExecutionService;
 import ru.safeai.gateway.ai.execution.AiOrganizationExecutionDeniedException;
@@ -294,7 +295,7 @@ final class ChatTurnExecutionCoordinator {
 
             // Issue an identity only from the DB-sealed, immutable pre-RAG
             // reservation. Never bind to preparedRequest: it contains RAG text.
-            ModelRouteExecutionIdentity identity =
+            AiExecutionIdentity issuedIdentity =
                     aiExecutionService.bindExecution(
                             decisionId,
                             context.turnId(),
@@ -307,9 +308,14 @@ final class ChatTurnExecutionCoordinator {
 
             // A missing DB-backed binding is an integrity failure, not a
             // raw NullPointerException leaking out of the input guard.
-            if (identity == null) {
+            if (issuedIdentity == null) {
                 throw new IllegalStateException(
                         "Execution binding did not issue an identity"
+                );
+            }
+            if (!(issuedIdentity instanceof ModelRouteExecutionIdentity identity)) {
+                throw new IllegalStateException(
+                        "Execution binding did not issue a model identity"
                 );
             }
 

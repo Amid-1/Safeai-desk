@@ -1,6 +1,8 @@
 package ru.safeai.gateway.knowledge.rag;
 
-public enum KnowledgeMode {
+import ru.safeai.gateway.ai.execution.AiKnowledgeExecutionMode;
+
+public enum KnowledgeMode implements AiKnowledgeExecutionMode {
     GENERAL,
     KNOWLEDGE_ASSISTED,
     KNOWLEDGE_ONLY;

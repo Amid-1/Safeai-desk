@@ -1,7 +1,9 @@
-package ru.safeai.gateway.ai.pricing;
+package ru.safeai.gateway.model.pricing;
 
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
+import ru.safeai.gateway.ai.pricing.PricingResolver;
+import ru.safeai.gateway.ai.pricing.PricingResult;
 import ru.safeai.gateway.ai.execution.ModelExecutionPlanEntity;
 import ru.safeai.gateway.ai.execution.ModelExecutionPlanRepository;
 import ru.safeai.gateway.ai.execution.ProviderExecutionTarget;
