@@ -3,7 +3,6 @@ package ru.safeai.gateway.knowledge.rag;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
-import ru.safeai.gateway.chat.service.ChatProcessingContext;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.config.KnowledgeRagProperties;
 import ru.safeai.gateway.knowledge.retrieval.KnowledgeRetrievalExecution;
@@ -50,7 +49,7 @@ public class KnowledgeRagService {
     }
 
     public RagPreparation prepare(
-            ChatProcessingContext context,
+            KnowledgeChatContext context,
             SafeAiUserPrincipal user
     ) {
         Objects.requireNonNull(context, "context не должен быть null");

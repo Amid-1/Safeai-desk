@@ -1,6 +1,7 @@
 package ru.safeai.gateway.chat.service;
 
 import ru.safeai.gateway.ai.dto.AiChatRequest;
+import ru.safeai.gateway.knowledge.rag.KnowledgeChatContext;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 
 import java.time.Instant;
@@ -28,7 +29,7 @@ public record ChatProcessingContext(
         UUID knowledgeBaseId,
         KnowledgeMode knowledgeMode,
         boolean replay
-) {
+) implements KnowledgeChatContext {
 
     public ChatProcessingContext {
         Objects.requireNonNull(

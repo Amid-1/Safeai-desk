@@ -7,7 +7,6 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.ai.dto.AiChatResponse;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.service.AuditEventService;
-import ru.safeai.gateway.chat.service.ChatProcessingContext;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.knowledge.dto.AnswerCitationResponse;
@@ -46,7 +45,7 @@ public class AnswerPassportService {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public AnswerPassportResponse persist(
-            ChatProcessingContext context,
+            KnowledgeChatContext context,
             UUID assistantMessageId,
             String provider,
             RagCompletion completion,

@@ -3,7 +3,7 @@ package ru.safeai.gateway.model.service;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
-import ru.safeai.gateway.chat.service.ChatContentNormalizer;
+import ru.safeai.gateway.model.spi.ModelRequestContentHashPort;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
@@ -18,12 +18,12 @@ import java.util.UUID;
 public class ModelRouteExecutionBindingService {
 
     private final ModelRouteDecisionRepository repository;
-    private final ChatContentNormalizer contentNormalizer;
+    private final ModelRequestContentHashPort contentNormalizer;
     private final ModelRouteReservedRequestService reservedRequests;
 
     public ModelRouteExecutionBindingService(
             ModelRouteDecisionRepository repository,
-            ChatContentNormalizer contentNormalizer,
+            ModelRequestContentHashPort contentNormalizer,
             ModelRouteReservedRequestService reservedRequests
     ) {
         this.repository = Objects.requireNonNull(repository, "repository");

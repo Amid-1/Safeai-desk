@@ -69,7 +69,7 @@ class AnswerPassportServiceBoundaryTest {
     @Test
     void durablePassportBoundaryMustParticipateInCallingChatTransaction() throws Exception {
         Method method = AnswerPassportService.class.getMethod("persist",
-                ChatProcessingContext.class, UUID.class, String.class, RagCompletion.class,
+                KnowledgeChatContext.class, UUID.class, String.class, RagCompletion.class,
                 SafeAiUserPrincipal.class, java.time.Instant.class);
         Transactional transactional = method.getAnnotation(Transactional.class);
         assertThat(transactional).isNotNull();

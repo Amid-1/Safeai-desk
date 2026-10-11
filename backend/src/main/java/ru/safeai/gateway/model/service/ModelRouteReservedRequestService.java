@@ -4,7 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
-import ru.safeai.gateway.chat.service.ChatContentNormalizer;
+import ru.safeai.gateway.model.spi.ModelRequestContentHashPort;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
 import ru.safeai.gateway.model.domain.ModelRouteDecision;
 import ru.safeai.gateway.model.domain.ModelRouteOutcome;
@@ -23,13 +23,13 @@ public class ModelRouteReservedRequestService {
 
     private final ModelRouteDecisionRepository decisions;
     private final ModelRouteRequestBindingRepository bindings;
-    private final ChatContentNormalizer normalizer;
+    private final ModelRequestContentHashPort normalizer;
     private final Clock clock;
 
     public ModelRouteReservedRequestService(
             ModelRouteDecisionRepository decisions,
             ModelRouteRequestBindingRepository bindings,
-            ChatContentNormalizer normalizer,
+            ModelRequestContentHashPort normalizer,
             Clock clock
     ) {
         this.decisions = Objects.requireNonNull(decisions, "decisions");
