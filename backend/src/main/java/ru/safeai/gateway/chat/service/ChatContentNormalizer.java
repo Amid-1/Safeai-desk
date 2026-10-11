@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 import ru.safeai.gateway.chat.config.ChatProperties;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.knowledge.rag.KnowledgeMode;
+import ru.safeai.gateway.model.spi.ModelRequestContentHashPort;
 
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -17,7 +18,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 @Component
-public class ChatContentNormalizer {
+public class ChatContentNormalizer implements ModelRequestContentHashPort {
 
     private final ChatProperties properties;
 
@@ -83,6 +84,7 @@ public class ChatContentNormalizer {
         }
     }
 
+    @Override
     public String requestHash(
             String normalizedContent,
             UUID knowledgeBaseId,
