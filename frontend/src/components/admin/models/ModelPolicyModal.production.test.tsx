@@ -164,7 +164,11 @@ describe('ModelPolicyModal production safety', () => {
 
         fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
 
-        expect(await screen.findByText(/Исполняемых моделей: 0/)).toBeInTheDocument()
+        await waitFor(() => {
+            expect(screen.getByRole('alert')).toHaveTextContent(
+                'Исполняемых моделей: 0',
+            )
+        })
         expect(screen.getAllByText(/Запрет обучения не подтверждён/)).toHaveLength(2)
 
         const confirmedTrainingLockout = screen.getByRole('alert')
