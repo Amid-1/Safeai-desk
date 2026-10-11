@@ -1,10 +1,11 @@
+
 package ru.safeai.gateway.ratelimit;
 
 import jakarta.annotation.PostConstruct;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
+import ru.safeai.gateway.common.security.ProductionEnvironmentCondition;
 
 import java.util.Objects;
 
@@ -35,45 +36,35 @@ public final class RateLimitProductionConfigurationValidator {
             RateLimitProductionProperties productionProperties,
             Environment environment
     ) {
-        this.loginProperties =
-                Objects.requireNonNull(
-                        loginProperties,
-                        "loginProperties не должен быть null"
-                );
+        this.loginProperties = Objects.requireNonNull(
+                loginProperties,
+                "loginProperties не должен быть null"
+        );
 
-        this.refreshProperties =
-                Objects.requireNonNull(
-                        refreshProperties,
-                        "refreshProperties не должен быть null"
-                );
+        this.refreshProperties = Objects.requireNonNull(
+                refreshProperties,
+                "refreshProperties не должен быть null"
+        );
 
-        this.aiMessageProperties =
-                Objects.requireNonNull(
-                        aiMessageProperties,
-                        "aiMessageProperties не должен быть null"
-                );
+        this.aiMessageProperties = Objects.requireNonNull(
+                aiMessageProperties,
+                "aiMessageProperties не должен быть null"
+        );
 
-        this.productionProperties =
-                Objects.requireNonNull(
-                        productionProperties,
-                        "productionProperties не должен быть null"
-                );
+        this.productionProperties = Objects.requireNonNull(
+                productionProperties,
+                "productionProperties не должен быть null"
+        );
 
-        this.environment =
-                Objects.requireNonNull(
-                        environment,
-                        "environment не должен быть null"
-                );
+        this.environment = Objects.requireNonNull(
+                environment,
+                "environment не должен быть null"
+        );
     }
 
     @PostConstruct
     void validate() {
-        if (!environment.acceptsProfiles(
-                Profiles.of(
-                        "prod",
-                        "production"
-                )
-        )) {
+        if (!ProductionEnvironmentCondition.isProduction(environment)) {
             return;
         }
 
