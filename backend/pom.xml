@@ -43,6 +43,7 @@
         <slf4j.version>2.0.19</slf4j.version>
 
         <testcontainers.version>2.0.5</testcontainers.version>
+        <archunit.version>1.5.1</archunit.version>
         <minio.version>8.6.0</minio.version>
         <okhttp.version>5.1.0</okhttp.version>
         <bouncycastle.version>1.86</bouncycastle.version>
@@ -278,6 +279,14 @@
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
             <version>${logstash-logback-encoder.version}</version>
+        </dependency>
+
+        <!-- Architecture boundary tests -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
+            <scope>test</scope>
         </dependency>
 
         <!-- JUnit, AssertJ, Mockito and Spring test utilities -->
