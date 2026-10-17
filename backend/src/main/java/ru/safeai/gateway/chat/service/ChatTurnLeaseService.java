@@ -10,7 +10,6 @@ import ru.safeai.gateway.chat.observability.ChatMetrics;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 
 import java.time.Clock;
-import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
@@ -29,7 +28,6 @@ public class ChatTurnLeaseService {
     private final ChatTurnRepository turnRepository;
     private final ChatProperties properties;
     private final ChatMetrics metrics;
-    private final Clock clock;
     private final ScheduledThreadPoolExecutor executor;
     private final Semaphore activeWatchdogs;
 
@@ -39,10 +37,18 @@ public class ChatTurnLeaseService {
             ChatMetrics metrics,
             Clock clock
     ) {
-        this.turnRepository = turnRepository;
-        this.properties = properties;
-        this.metrics = metrics;
-        this.clock = clock;
+        this.turnRepository = Objects.requireNonNull(
+                turnRepository, "turnRepository не должен быть null"
+        );
+        this.properties = Objects.requireNonNull(
+                properties, "properties не должен быть null"
+        );
+        this.metrics = Objects.requireNonNull(
+                metrics, "metrics не должен быть null"
+        );
+        // Keep the existing constructor contract for callers and tests.
+        // Lease renewal intentionally uses PostgreSQL time, never JVM time.
+        Objects.requireNonNull(clock, "clock не должен быть null");
         this.executor = new ScheduledThreadPoolExecutor(
                 properties.leaseRenewalThreads(),
                 threadFactory()
@@ -137,14 +143,15 @@ public class ChatTurnLeaseService {
         if (!valid.get()) {
             return;
         }
-        Instant observedAt = clock.instant();
-        Instant newLeaseUntil = observedAt.plus(properties.processingLease());
+
         try {
-            int updated = turnRepository.renewLease(
+            // PostgreSQL provides one authoritative clock sample for both
+            // the lease-expiration predicate and the renewed deadline.
+            // The fenced update never revives an expired or foreign lease.
+            int updated = turnRepository.renewLeaseUsingDatabaseClock(
                     turnId,
                     processingToken,
-                    observedAt,
-                    newLeaseUntil
+                    properties.processingLease().toMillis()
             );
             if (updated != 1) {
                 valid.set(false);

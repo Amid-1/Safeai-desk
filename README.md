@@ -10,13 +10,14 @@
 > **Подтверждённый GitHub baseline:** `main`, Flyway V1–V72,
 > merge PR #8 (`fdcff62`).
 > **Подготовленный целевой набор:** V73 (Organization),
-> V74 (Usage), V75 (Audit), V76 (Knowledge privacy). Наличие этих SQL в текущем
+> V74 (Usage), V75 (Audit), V76 (Knowledge privacy),
+> V77 (backfill исторических заголовков чатов). Наличие этих SQL в текущем
 > локальном checkout и применение к PostgreSQL не подтверждены.
 > **Backend:** Java 21, Spring Boot 4.1.1, модульный монолит,
 > PostgreSQL, Redis, S3, Flyway, Micrometer/Prometheus.
 > **Исторические тесты PR #8:** 2259; 0 failures, 0 errors,
 > 3 skipped. Отдельно — 27/27 PostgreSQL/Redis tests.
-> **Для патчей 13–17 октября, включая V76:** полный `clean test`, populated
+> **Для патчей 13–17 октября, включая V77 и chat-title integration:** полный `clean test`, populated
 > Flyway upgrade, CI и production smoke ещё не подтверждены.
 > **Стадия:** production-oriented pre-1.0; не заявляются
 > сертификация compliance, SLA/HA либо invoice-grade billing.
@@ -53,7 +54,7 @@
 20. [Модуль `ai`](#модуль-ai)
 21. [Модуль `knowledge`](#модуль-knowledge)
 22. [Ключевые backend contracts](#ключевые-backend-contracts)
-23. [Database / Flyway V1–V76](#database--flyway-v1v76)
+23. [Database / Flyway V1–V77](#database--flyway-v1v77)
 24. [Observability и operational jobs](#observability-и-operational-jobs)
 25. [Тестирование](#тестирование)
 26. [Local development](#local-development)
@@ -65,7 +66,7 @@
 32. [Главное правило дальнейшей эволюции](#главное-правило-дальнейшей-эволюции)
 33. [Передача контекста в новый AI-чат](#передача-контекста-в-новый-ai-чат)
 34. [План следующего этапа](#план-следующего-этапа)
-35. [Релизный контроль V73–V76](#релизный-контроль-v73v76)
+35. [Релизный контроль V73–V77](#релизный-контроль-v73v77)
 
 ---
 
@@ -119,7 +120,7 @@ Identity
 # Текущее состояние
 
 Основа раздела — подтверждённый baseline V71–V72.
-Функционал патчей V73–V76 описан далее отдельно.
+Функционал патчей V73–V77 описан далее отдельно.
 Его наличие в архиве не является доказательством внедрения,
 успешного Testcontainers-прогона или работы в production.
 
@@ -270,6 +271,7 @@ Identity
 Статус каждого набора необходимо сверить с `git status`,
 `git diff --cached` и `flyway_schema_history`:
 
+- **Chat / V77 и интеграция title lifecycle.** Подготовлены backfill старых названий, automatic title при первой принятой reservation, ручное rename, frontend refresh, route-bound quota reservation и продление lease по времени PostgreSQL. Применение миграции, сборка и тесты должны подтверждаться отдельно.
 - **Organization / V73.** Согласована канонизация Unicode-
   пробелов в Java и PostgreSQL. Усилены проверка коллизий,
   ISO controls, индекса V23 и конкурентной записи.
@@ -529,7 +531,7 @@ backend/
 │
 ├── src/main/resources/
 │   ├── db/
-│   │   ├── migration/         # V1 ... V76 (цель)
+│   │   ├── migration/         # V1 ... V77 (целевой набор)
 │   │   └── local-migration/   # local-only seed
 │   │
 │   ├── application.yml
@@ -549,7 +551,7 @@ backend/
 ### Подробная структура backend и Flyway
 
 Дерево включает исходный baseline и подготовленные файлы
-патчей V73–V76. Оно не является результатом `ls` твоего
+патчей V73–V77. Оно не является результатом `ls` твоего
 локального checkout и не подтверждает их коммит или запуск.
 
 ```text
@@ -656,6 +658,7 @@ backend/
 │   │       │       ├── V74__usage_midnight_dirty_date_and_physical_indexes.sql
 │   │       │       ├── V75__audit_dead_letter_recovery_event_type.sql
 │   │       │       ├── V76__knowledge_retrieval_query_privacy.sql
+│   │       │       ├── V77__backfill_legacy_default_chat_titles.sql
 │   │       │       └── README_DB.md
 │   │       │
 │   │       ├── META-INF/
@@ -2678,6 +2681,9 @@ Provider call не выполняется внутри долгой business tra
 
 ## Lease / fencing
 
+Watchdog `ChatTurnLeaseService` использует `ChatTurnRepository.renewLeaseUsingDatabaseClock(turnId, processingToken, leaseMillis)` — PostgreSQL `clock_timestamp()` определяет и проверку действующего срока, и новую границу lease в одном SQL-запросе. Сохраняются условия `PROCESSING`, точного `processing_token` и непросроченной аренды; результат, отличный от одной обновлённой строки, означает потерю ownership. Ошибка БД также инвалидирует watchdog; нельзя переключаться на разрешающий fallback по локальным часам JVM. Сигнатура конструктора service сохранена для совместимости существующих consumers.
+
+
 `processingToken` является fencing token.
 
 Finalization должна доказать, что worker всё ещё владеет текущим processing generation.
@@ -2747,6 +2753,9 @@ epoch-колонки запрещает DB-trigger.
 
 ## Quota reservation
 
+Новая reservation-путь вызывает перегрузку `ChatQuotaService.reserve(..., ChatQuotaReservation)` вместо устаревшего пятиаргументного `reserve(...)`. `ChatQuotaReservation` привязывается к immutable `ModelRouteResult.decisionId`, использует `estimatedInputTokens`, `estimatedOutputTokens`, верхнюю оценку `estimatedMaxCostUsd` и `pricingComplete`. Сервис отдельно подтверждает поддерживаемую схему через `hasVerifiedRoutePricingScheme`; неизвестная стоимость не подменяется доказанным нулём и не обходит денежный hard quota. Старую перегрузку не следует возвращать в production-flow лишь ради предупреждений IDE.
+
+
 Quota резервируется до provider call и затем finalization корректирует состояние согласно persisted
 usage/cost quality.
 
@@ -2767,7 +2776,7 @@ Recovery scheduler:
 - использует fencing/lease state;
 - не повторяет blindly unknown provider side effect.
 
-## Chat title lifecycle — V58
+## Chat title lifecycle — V58/V77
 
 Title provenance:
 
@@ -2790,6 +2799,23 @@ Automatic naming:
 - не должен перезаписывать user-owned title;
 - manual rename фиксируется audit event `CHAT_RENAMED`;
 - audit не должен копировать сам текст title без необходимости.
+
+### Автоматическое и ручное переименование — интеграция 17.10.2026
+
+- `ChatTitlePolicy.automaticTitle()` формирует заголовок детерминированно из первого принятого сообщения пользователя, не вызывая LLM; длина ограничена 72 Unicode code points.
+- Frontend при создании пустого чата должен отправлять `title: null` или неявное значение по контракту `CreateChatRequest`, **не** строку `«Новый чат»` как пользовательский заголовок: иначе `ChatSessionEntity.create()` установит `title_source=USER` и автоматическое назначение не сработает. Совместимость JSON уточняется по актуальному DTO.
+- `ChatTurnReservationService.reserveOrReplay()` выполняет проверку идемпотентности до любых новых изменений заголовка; при первом новом принятом USER-сообщении под `ChatTurnMutexRepository.lockChat()` вызывает `assignAutomaticTitle(...)` только если `title_source=DEFAULT`. Все изменения заголовка принадлежат той же транзакции reservation и откатываются при её отказе.
+- Если заголовок имеет источник `AUTO` или `USER`, последующие сообщения не меняют его. Явное изменение пользователем имеет приоритет и переводит источник в `USER`.
+- `ChatTitleService.rename()` проверяет владельца/организацию, использует ту же mutex boundary и регистрирует `CHAT_RENAMED` без помещения текста заголовка в audit details; повторное одинаковое пользовательское переименование идемпотентно.
+- Заголовок в истории должен перечитываться из API после отправки сообщения, чтобы новое название появилось без обновления страницы. Успешный ответ провайдера **не является** необходимым условием для названия уже принятого сообщения: наименование привязано к успешной reservation transaction.
+
+### V77 — однократный backfill исторических заголовков
+
+`V77__backfill_legacy_default_chat_titles.sql` обрабатывает только строки `chat_sessions`, где `title = 'Новый чат'`. Для них по первому непустому `USER`-сообщению (сортировка `created_at, id`) вычисляется заголовок с ограничением до 72 символов, устанавливается `title_source='AUTO'` и увеличивается optimistic `version`. Остальные пользовательские названия сохраняются.
+
+Пустые старые чаты с заглушкой, без USER-сообщений, получают `title_source='DEFAULT'`, чтобы первое новое сообщение могло назвать их автоматически. Миграция не передаёт сообщения провайдеру и не изменяет tenant ownership. При повторном исполнении обновлённые строки не подходят под условие заглушки; однако **Flyway не следует запускать повторно с изменённой checksum**.
+
+**Неустранимая неоднозначность legacy:** старый frontend мог записать буквальную строку `Новый чат` как `USER`; по данным БД нельзя надёжно отличить это от сознательного ручного выбора такого же названия. V77 реализует явную политику восстановления всех заглушек, заказанную владельцем проекта. Перед применением к populated БД необходимо сделать backup и оценить этот компромисс. V58 задним числом не менять.
 
 ---
 # Модуль `model`
@@ -3951,7 +3977,7 @@ POST /api/chats/{id}/messages
 GET  /api/chats/{chatId}/turns/by-client-request/{clientRequestId}
 ```
 
-Дополнительно существует отдельный title-management controller для manual rename lifecycle.
+Ручное переименование обслуживает отдельный `ChatTitleController` / `ChatTitleService`; точный HTTP verb и путь сверять с текущим кодом контроллера. Доступ только к собственным неархивированным чатам своей организации; повторное одинаковое пользовательское название — no-op. Заголовки при создании без пользовательского ввода не должны передаваться как явное `"Новый чат"`.
 
 ## Users
 
@@ -4119,7 +4145,7 @@ Answer Passport читается по chat/turn identity через `AnswerPassp
 
 ---
 
-# Database / Flyway V1–V76
+# Database / Flyway V1–V77
 
 Production migrations:
 
@@ -4269,6 +4295,8 @@ plaintext in newly created retrieval runs на отдельном PostgreSQL с�
     `CHECK ... NOT VALID` защищает новые INSERT/UPDATE без изменения истории.
     Частичный индекс ускоряет обработку `NEEDS_REVIEW` upload intents.
     Исторический plaintext требует отдельного privacy/retention решения.
+- **`V77`**
+  - **Назначение:** восстановление исторических названий чатов `Новый чат` из первого пользовательского сообщения; `AUTO`-provenance для заполненных чатов, `DEFAULT` для пустых legacy-чата, увеличение optimistic `version` без изменения сообщений/tenant. Дополнительных AI-вызовов нет.
 
 
 
@@ -4380,9 +4408,15 @@ V1–V72  →  V73 (Organization)
 этот номер уже занят миграцией организаций.
 
 В текущем публичном `main` проверено только наличие
-**V1–V72**. Отображение V73–V76 в этом README — описание
+**V1–V72**. Отображение V73–V77 в этом README — описание
 подготовленного целевого пакета, не подтверждение применённой
 схемы. Истину об установке даёт `flyway_schema_history`.
+
+## V77 — безопасный backfill исторических чатов
+
+Перед применением `V77__backfill_legacy_default_chat_titles.sql` проверить, что V58 и все V73–V76 уже успешно применены в правильном порядке, сделать snapshot populated БД и провести dry-run подсчёта строк. Данные первого сообщения используются **только внутри того же чата**; миграция не меняет `organization_id`, `user_id`, `created_at`, `chat_messages` и audit trail. Legacy-заголовок `Новый чат` по своей природе неоднозначен, поэтому возможное намеренное название, совпадающее с заглушкой, также будет заменено: это явно принятая политика backfill, а не универсальное восстановление provenance.
+
+После применения проверить число оставшихся заглушек с/без сообщений, распределение `title_source`, `version` и неизменность названий, отличных от заглушки. Новые транзакционные проверки должны охватывать идемпотентный replay, ошибку Redis/quota, ручное rename одновременно с первым сообщением и frontend refresh списка. Если V77 уже есть в `flyway_schema_history`, изменять её нельзя; correction требует следующей свободной версии.
 
 ## V72 — границы транзакционного допуска и обратная совместимость
 
@@ -4592,7 +4626,10 @@ README не утверждает `BUILD SUCCESS` без фактического
   extraction timeout, object hash/size, embedding vector validity и shutdown.
 - Retrieval V76: PostgreSQL constraint negative tests, preserved historical
   row, inserted redacted query and valid hash, immutable trigger, review index.
-- Upgrade: populated Flyway V72 → V76, application startup, production profile,
+- Chat title V58/V77: first accepted message, manually named chats, default placeholder submitted as `null`, concurrent rename/reservation, idempotent replay, rollback, legacy backfill on populated PostgreSQL and UI list refresh.
+- Lease: PostgreSQL-clock renewal, fencing token mismatch, expired lease, DB outage and watchdog ownership-loss metrics.
+- Quota: route-bound reservation, verified/unverified pricing scheme, hard monthly cost limit, unknown-cost fail-closed and rollback consistency.
+- Upgrade: populated Flyway V72 → V77, application startup, production profile,
   Testcontainers PostgreSQL/Redis и отсутствие регрессии публичных API.
 
 Не заменять падающий тест ослаблением CHECK, удалением assert или
@@ -5699,13 +5736,13 @@ Spring wiring, database triggers и concurrency.
 ---
 
 **Актуализация:** 17 октября 2026 года. Сохранён исторический baseline PR #8;
-учтены подготовленные V73–V76, Model pricing, Knowledge ingestion и Audit/Usage hardening.
-GitHub `main` всё ещё содержит V1–V72 на момент проверки;
+учтены подготовленные V73–V77 и chat-title/lease/quota integration, Model pricing, Knowledge ingestion и Audit/Usage hardening.
+Публичный baseline `main` в ранее проведённой проверке содержал V1–V72;
 локальный checkout и реальная схема БД не прочитаны.
 Полный release gate и deployment не заявляются.
 ---
 
-# Релизный контроль V73–V76
+# Релизный контроль V73–V77
 
 Выполнить перед внесением README и патчей в основную ветку:
 
@@ -5717,7 +5754,7 @@ git diff --check
 git diff --stat
 
 find backend/src/main/resources/db/migration \
-  -maxdepth 1 -name 'V7[3456]__*.sql' -print
+  -maxdepth 1 -name 'V7[34567]__*.sql' -print
 
 cd backend
 ./mvnw clean test
@@ -5728,13 +5765,13 @@ cd backend
 ```sql
 SELECT installed_rank, version, script, success
 FROM public.flyway_schema_history
-WHERE version IN ('72', '73', '74', '75', '76')
+WHERE version IN ('72', '73', '74', '75', '76', '77')
 ORDER BY installed_rank;
 ```
 
 После миграции проверить canonical names, dirty queue,
 `audit_event_types`, V76 CHECK, retrieval query redaction,
-review queue index и PostgreSQL index validity. Проверить
+review queue index и PostgreSQL index validity. Проверить V77 backfill, автоматическое название при первой reservation, ручное rename и DB-clock lease; затем
 два экземпляра backend, Redis/DB failures, retention contention
 и реальные события `firing` плюс получение уведомления.
 
@@ -5742,6 +5779,6 @@ review queue index и PostgreSQL index validity. Проверить
 запись, а не объявлять «проверено в production» без evidence.
 
 **Неизменяемое правило:** миграции V1–V72 не переписывать;
-если V73–V76 уже присутствуют в `flyway_schema_history`,
+если V73–V77 уже присутствуют в `flyway_schema_history`,
 изменять их checksum нельзя. Новые corrections — новой
 версией миграции после проверки занятой нумерации.

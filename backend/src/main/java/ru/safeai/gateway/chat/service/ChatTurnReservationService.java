@@ -12,11 +12,13 @@ import ru.safeai.gateway.chat.entity.ChatMessageEntity;
 import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.entity.ChatTurnEntity;
 import ru.safeai.gateway.chat.entity.ChatTurnState;
+import ru.safeai.gateway.chat.title.ChatTitlePolicy;
 import ru.safeai.gateway.chat.exception.AiOutcomeAmbiguousException;
 import ru.safeai.gateway.chat.exception.ChatTurnFailedException;
 import ru.safeai.gateway.chat.exception.ChatTurnInProgressException;
 import ru.safeai.gateway.chat.exception.IdempotencyKeyReusedException;
 import ru.safeai.gateway.chat.observability.ChatMetrics;
+import ru.safeai.gateway.chat.quota.ChatQuotaReservation;
 import ru.safeai.gateway.chat.repository.ChatHistoryRepository;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
 import ru.safeai.gateway.chat.repository.ChatSessionRepository;
@@ -327,6 +329,15 @@ public class ChatTurnReservationService {
                 userMessage
         );
 
+        // The first accepted USER message claims DEFAULT title inside the
+        // same reservation transaction and under the existing chat mutex.
+        // Replays, failed reservations and explicit USER/AUTO titles cannot
+        // rename the chat. Any later failure rolls this change back as well.
+        session.assignAutomaticTitle(
+                ChatTitlePolicy.automaticTitle(content),
+                now
+        );
+
         ChatTurnEntity turn =
                 ChatTurnEntity.processing(
                         turnId,
@@ -355,12 +366,25 @@ public class ChatTurnReservationService {
                 turn
         );
 
+        // Bind the quota reservation to the immutable route decision, rather
+        // than using the deprecated deployment-wide token/cost estimates.
+        // Unverifiable pricing remains explicitly unverifiable: a monetary
+        // hard limit must fail closed in ChatQuotaService.
+        ChatQuotaReservation quotaReservation = new ChatQuotaReservation(
+                route.decisionId(),
+                route.estimatedInputTokens(),
+                route.estimatedOutputTokens(),
+                route.pricingComplete() ? route.estimatedMaxCostUsd() : null,
+                route.pricingComplete()
+        );
+
         quotaService.reserve(
                 chatId,
                 turnId,
                 clientRequestId,
                 currentUser.getOrganizationId(),
-                currentUser.getId()
+                currentUser.getId(),
+                quotaReservation
         );
 
         session.touch(now);
@@ -611,3 +635,4 @@ public class ChatTurnReservationService {
         );
     }
 }
+

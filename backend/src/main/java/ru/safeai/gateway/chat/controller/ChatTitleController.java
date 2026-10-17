@@ -1,4 +1,3 @@
-// backend/src/main/java/ru/safeai/gateway/chat/controller/ChatTitleController.java
 package ru.safeai.gateway.chat.controller;
 
 import jakarta.validation.Valid;
@@ -14,8 +13,13 @@ import ru.safeai.gateway.chat.dto.UpdateChatTitleRequest;
 import ru.safeai.gateway.chat.title.ChatTitleService;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
+import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * Explicit user-driven title changes. Authorization, tenant scope, chat mutex,
+ * title provenance and mandatory audit are enforced in ChatTitleService.
+ */
 @RestController
 @RequestMapping("/api/chats")
 @PreAuthorize("hasAnyRole('ADMIN', 'USER')")
@@ -23,10 +27,8 @@ public class ChatTitleController {
 
     private final ChatTitleService chatTitleService;
 
-    public ChatTitleController(
-            ChatTitleService chatTitleService
-    ) {
-        this.chatTitleService = chatTitleService;
+    public ChatTitleController(ChatTitleService chatTitleService) {
+        this.chatTitleService = Objects.requireNonNull(chatTitleService);
     }
 
     @PatchMapping("/{chatId}")
@@ -36,10 +38,6 @@ public class ChatTitleController {
             @AuthenticationPrincipal(errorOnInvalidType = true)
             SafeAiUserPrincipal currentUser
     ) {
-        return chatTitleService.rename(
-                chatId,
-                request,
-                currentUser
-        );
+        return chatTitleService.rename(chatId, request, currentUser);
     }
 }

@@ -18,6 +18,7 @@ import {
     getChats,
     getChatTurnStatus,
     sendMessage,
+    updateChatTitle,
 } from '../api/chatApi'
 import type {
     AnswerPassport,
@@ -71,6 +72,8 @@ import {
 import {
     formatDateTime,
 } from '../utils/format'
+
+import ChatTitleEditor from '../components/chat/ChatTitleEditor'
 
 import { MessageView, PendingTurnState } from '../components/chat/ChatMessageViews'
 import {
@@ -739,6 +742,40 @@ function ChatPageContent() {
         }
     }
 
+    async function handleRenameChat(title: string): Promise<void> {
+        const chatId = activeChatRef.current?.id
+        if (!chatId) {
+            throw new Error('Чат не выбран')
+        }
+        const updated = await updateChatTitle(chatId, title)
+        setChats((items) => items.map((item) =>
+            item.id === chatId ? updated : item,
+        ))
+        setActiveChat((current) => current?.id === chatId
+            ? { ...current, ...updated }
+            : current,
+        )
+    }
+
+    async function refreshChatTitle(chatId: string): Promise<void> {
+        // The backend owns title provenance. Never derive or overwrite it in UI.
+        try {
+            const serverChat = await getChatById(chatId)
+            setChats((items) => items.map((item) =>
+                item.id === chatId
+                    ? { ...item, title: serverChat.title, updatedAt: serverChat.updatedAt }
+                    : item,
+            ))
+            setActiveChat((current) => current?.id === chatId
+                ? { ...current, title: serverChat.title, updatedAt: serverChat.updatedAt }
+                : current,
+            )
+        } catch {
+            // Message processing has already committed; the next normal load
+            // will synchronize the title. Never resend the message to fix UI.
+        }
+    }
+
     async function handleCreateChat() {
         if (createInFlightRef.current) {
             return
@@ -769,9 +806,7 @@ function ChatPageContent() {
         setHistoryLoading(false)
 
         try {
-            const chat = await createChat(
-                'Новый чат',
-            )
+            const chat = await createChat()
 
             setChats((current) => [
                 chat,
@@ -956,6 +991,7 @@ function ChatPageContent() {
                 pending,
                 result,
             )
+            void refreshChatTitle(pending.chatId)
         } catch (error) {
             await handleSendFailure(
                 pending,
@@ -1146,6 +1182,7 @@ function ChatPageContent() {
                                 pending,
                                 turn,
                             )
+                            void refreshChatTitle(pending.chatId)
                             return
                         }
 
@@ -1821,7 +1858,11 @@ function ChatPageContent() {
                             <div className="chat-panel__header">
                                 <div>
                                     <span className="chat-panel__eyebrow">Текущий чат</span>
-                                    <h2>{activeChat.title}</h2>
+                                    <ChatTitleEditor
+                                        key={activeChat.id}
+                                        title={activeChat.title}
+                                        onSave={handleRenameChat}
+                                    />
                                 </div>
                                 <button
                                     type="button"
