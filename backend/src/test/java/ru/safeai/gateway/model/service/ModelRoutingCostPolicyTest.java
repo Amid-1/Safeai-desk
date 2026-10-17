@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.safeai.gateway.ai.dto.AiMessage;
 import ru.safeai.gateway.ai.dto.AiMessageRole;
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import ru.safeai.gateway.model.domain.BudgetEnforcement;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelPricingStatus;
@@ -149,7 +150,7 @@ class ModelRoutingCostPolicyTest {
     void configuredCatalogEntryCalculatesWorstCaseCostAtScaleTwelve() {
         ModelRoutingCostPolicy.PricingEstimate estimate =
                 policy.estimateCost(
-                        ModelTestFixtures.configuredEntry(),
+                        verifiedFlatPricingEntry(ModelTestFixtures.configuredEntry()),
                         ModelTestFixtures.configuredRuntime(),
                         1_000,
                         500
@@ -179,8 +180,10 @@ class ModelRoutingCostPolicyTest {
                 ru.safeai.gateway.model.domain.ModelTrainingUseStatus.NOT_DECLARED
         );
 
+        ModelCatalogEntry verifiedEntry = verifiedFlatPricingEntry(entry);
+
         ModelRoutingCostPolicy.PricingEstimate estimate = policy.estimateCost(
-                entry,
+                verifiedEntry,
                 ModelTestFixtures.configuredRuntime(),
                 1L,
                 0L
@@ -586,6 +589,44 @@ class ModelRoutingCostPolicyTest {
                 Instant.parse(
                         "2026-09-01T00:00:00Z"
                 )
+        );
+    }
+
+    /**
+     * A configured tariff is complete only when its billing scheme has
+     * explicitly verified provenance. Do not promote legacy unverified
+     * pricing in the production service just to satisfy this positive test.
+     */
+    private static ModelCatalogEntry verifiedFlatPricingEntry(ModelCatalogEntry base) {
+        return new ModelCatalogEntry(
+                base.id(),
+                base.modelKey(),
+                base.version(),
+                base.provider(),
+                base.providerModelId(),
+                base.displayName(),
+                base.lifecycle(),
+                base.maxInputTokens(),
+                base.maxOutputTokens(),
+                base.capabilities(),
+                base.inputModalities(),
+                base.outputModalities(),
+                base.retentionStatus(),
+                base.retentionDays(),
+                base.trainingUseStatus(),
+                base.pricingStatus(),
+                base.pricingComplete(),
+                base.inputUsdPer1mTokens(),
+                base.cachedInputUsdPer1mTokens(),
+                base.cacheWriteInputUsdPer1mTokens(),
+                base.outputUsdPer1mTokens(),
+                base.extraPricingJson(),
+                base.pricingVersion(),
+                base.effectiveFrom(),
+                base.source(),
+                base.createdByUserId(),
+                base.createdAt(),
+                ModelPricingScheme.FLAT_TOKEN_V1
         );
     }
 

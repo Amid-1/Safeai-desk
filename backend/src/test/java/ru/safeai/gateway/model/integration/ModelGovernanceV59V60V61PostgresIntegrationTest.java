@@ -7,6 +7,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.integration.AbstractChatPostgresIntegrationTest;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -231,7 +232,7 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
         );
         assertThatThrownBy(() ->
                 new ModelCatalogRepository(jdbcTemplate)
-                        .insert(overflowingSpecializedRate)
+                        .insert(overflowingSpecializedRate, "FLAT_TOKEN_V1")
         ).isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -471,7 +472,8 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
                 ModelTestFixtures.NOW.minusSeconds(120),
                 template.source(),
                 USER_ID,
-                ModelTestFixtures.NOW.minusSeconds(180)
+                ModelTestFixtures.NOW.minusSeconds(180),
+                ModelPricingScheme.FLAT_TOKEN_V1
         );
 
         ModelCatalogRepository catalogRepository =
@@ -710,7 +712,8 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
                 ModelTestFixtures.NOW.minusSeconds(10),
                 base.source(),
                 USER_ID,
-                ModelTestFixtures.NOW.minusSeconds(20)
+                ModelTestFixtures.NOW.minusSeconds(20),
+                ModelPricingScheme.FLAT_TOKEN_V1
         );
     }
 
@@ -722,4 +725,3 @@ class ModelGovernanceV59V60V61PostgresIntegrationTest
     ) {
     }
 }
-

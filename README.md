@@ -10,13 +10,13 @@
 > **Подтверждённый GitHub baseline:** `main`, Flyway V1–V72,
 > merge PR #8 (`fdcff62`).
 > **Подготовленный целевой набор:** V73 (Organization),
-> V74 (Usage), V75 (Audit). Наличие этих SQL в текущем
+> V74 (Usage), V75 (Audit), V76 (Knowledge privacy). Наличие этих SQL в текущем
 > локальном checkout и применение к PostgreSQL не подтверждены.
 > **Backend:** Java 21, Spring Boot 4.1.1, модульный монолит,
 > PostgreSQL, Redis, S3, Flyway, Micrometer/Prometheus.
 > **Исторические тесты PR #8:** 2259; 0 failures, 0 errors,
 > 3 skipped. Отдельно — 27/27 PostgreSQL/Redis tests.
-> **Для патчей 13–17 октября:** полный `clean test`, populated
+> **Для патчей 13–17 октября, включая V76:** полный `clean test`, populated
 > Flyway upgrade, CI и production smoke ещё не подтверждены.
 > **Стадия:** production-oriented pre-1.0; не заявляются
 > сертификация compliance, SLA/HA либо invoice-grade billing.
@@ -53,7 +53,7 @@
 20. [Модуль `ai`](#модуль-ai)
 21. [Модуль `knowledge`](#модуль-knowledge)
 22. [Ключевые backend contracts](#ключевые-backend-contracts)
-23. [Database / Flyway V1–V75](#database--flyway-v1v75)
+23. [Database / Flyway V1–V76](#database--flyway-v1v76)
 24. [Observability и operational jobs](#observability-и-operational-jobs)
 25. [Тестирование](#тестирование)
 26. [Local development](#local-development)
@@ -65,7 +65,7 @@
 32. [Главное правило дальнейшей эволюции](#главное-правило-дальнейшей-эволюции)
 33. [Передача контекста в новый AI-чат](#передача-контекста-в-новый-ai-чат)
 34. [План следующего этапа](#план-следующего-этапа)
-35. [Релизный контроль V73–V75](#релизный-контроль-v73v75)
+35. [Релизный контроль V73–V76](#релизный-контроль-v73v76)
 
 ---
 
@@ -119,7 +119,7 @@ Identity
 # Текущее состояние
 
 Основа раздела — подтверждённый baseline V71–V72.
-Функционал патчей V73–V75 описан далее отдельно.
+Функционал патчей V73–V76 описан далее отдельно.
 Его наличие в архиве не является доказательством внедрения,
 успешного Testcontainers-прогона или работы в production.
 
@@ -529,7 +529,7 @@ backend/
 │
 ├── src/main/resources/
 │   ├── db/
-│   │   ├── migration/         # V1 ... V75 (цель)
+│   │   ├── migration/         # V1 ... V76 (цель)
 │   │   └── local-migration/   # local-only seed
 │   │
 │   ├── application.yml
@@ -549,7 +549,7 @@ backend/
 ### Подробная структура backend и Flyway
 
 Дерево включает исходный baseline и подготовленные файлы
-патчей V73–V75. Оно не является результатом `ls` твоего
+патчей V73–V76. Оно не является результатом `ls` твоего
 локального checkout и не подтверждает их коммит или запуск.
 
 ```text
@@ -655,6 +655,7 @@ backend/
 │   │       │       ├── V73__organization_unicode_whitespace_canonicalization.sql
 │   │       │       ├── V74__usage_midnight_dirty_date_and_physical_indexes.sql
 │   │       │       ├── V75__audit_dead_letter_recovery_event_type.sql
+│   │       │       ├── V76__knowledge_retrieval_query_privacy.sql
 │   │       │       └── README_DB.md
 │   │       │
 │   │       ├── META-INF/
@@ -1274,6 +1275,8 @@ safeai.knowledge.ocr.*
 ```
 
 ### Ingestion baseline
+
+- bounded concurrent `worker-threads` (по умолчанию 1, диапазон 1–8);
 
 - enabled;
 - poll delay;
@@ -2898,6 +2901,30 @@ target.
 
 ## Versioned Model Catalog
 
+### Явные pricing-схемы и совместимость конструкторов
+
+`ModelCatalogEntry`, `ModelCatalogEntryResponse` и `CreateModelCatalogVersionRequest`
+содержат `ModelPricingScheme`. Существующие positional constructors сохранены ради
+совместимости вызовов, но не для автоматического повышения доверия к старым тарифам.
+
+- Для старой записи `CONFIGURED` без явной схемы используется
+  `LEGACY_FLAT_UNVERIFIED_V1`, а не подтверждённая `FLAT_TOKEN_V1`.
+- `FREE` получает `FLAT_TOKEN_V1`; неподдерживаемые/неполные тарифы не становятся
+  автоматически пригодными для settlement.
+- В ручном создании версии `CONFIGURED` требует явный `pricingScheme=FLAT_TOKEN_V1`.
+- API возвращает денежные значения строками из `BigDecimal.toPlainString()`:
+  десятичные суммы нельзя неявно конвертировать в JavaScript `Number`.
+- `capabilities` и modality sets копируются в неизменяемые коллекции в доменной записи.
+- `ModelCatalogRepository` читает точный `pricing_scheme` и сохраняет его вместе с
+  immutable catalog entry; нельзя подменять exact version текущей latest-версией.
+
+**Регрессионный риск:** в представленном `ModelCatalogService.importRuntime()`
+используется compatibility constructor `ModelCatalogEntry` без явного `pricingScheme`.
+Необходимо проверить `FREE` / `CONFIGURED` / `UNPRICED`, равенство повторных
+runtime imports и точное ограничение V66. Не объявлять это исправленным только
+на основании изменения доменной записи или README.
+
+
 Catalog entry — immutable/append-only snapshot.
 
 Основные поля/семантика:
@@ -3372,6 +3399,29 @@ Provider base URL:
 
 ## Pricing
 
+### Физический settlement и проверка целостности
+
+`VersionedCatalogPricingResolver` принимает `operationId` и проверяет непрерывную
+цепочку `operation → execution plan → ALLOWED route decision → exact catalog version`.
+Без identity либо при несовпадении provider, physical model, tenant, chat turn,
+`decisionIntegrityVersion=3` и версии каталога результат `UNPRICED`.
+
+- Только `FLAT_TOKEN_V1`, полный тариф и обязательные rate dimensions допускают расчёт.
+- Статусы `FREE` и `PRICED` различаются: неизвестную стоимость нельзя заменить нулём.
+- Для OpenAI cached input является частью `input_tokens` и вычитается из ordinary input.
+- Для Anthropic cache-read и cache-write учитываются как отдельные input dimensions.
+- Отсутствие нужного cache rate, неполная usage или неизвестный provider → `UNPRICED`.
+- Арифметическая ошибка и невозможный положительный/нулевой итог → `CALCULATION_FAILED`.
+- Денежные суммы округляются до 12 знаков; идентификатор price book строится из
+  immutable catalog snapshot с SHA-256, не из изменяемого YAML.
+
+`ModelRoutingCostPolicy` использует worst-case reservation cost и отдельные
+`actual`, `reserved`, `unknown` commitment states. Для `HARD` budget неизвестная
+стоимость не должна обходить ограничение. Read-only preview использует snapshot
+без data-plane budget lock и всегда `nonBinding=true`: он не обещает результата
+следующей транзакционной маршрутизации.
+
+
 `VersionedCatalogPricingResolver` привязывает calculation evidence к:
 
 ```text
@@ -3600,6 +3650,26 @@ knowledge/
     ├── S3ObjectStorage
     └── StoredObject
 ```
+
+## Конкурентный ingestion, lease fencing и bounded processing
+
+`KnowledgeIngestionProperties` добавляет `workerThreads` с default 1,
+допустимыми значениями 1–8 и legacy constructor без нового аргумента.
+`KnowledgeIngestionScheduler` создаёт фиксированный pool и claim-ит задачи
+только на свободные слоты в пределах `batchSize`. После каждой волны он
+ожидает `Future.get()`; shutdown вызывает `shutdownNow()`.
+
+`KnowledgeIngestionProcessor` отдельно поддерживает heartbeat leases с
+`processingToken`, регулярное продление во время extraction/embedding и
+fenced publication. При потере ownership публикация запрещена. Проверяются
+точные document/version/tenant IDs, длина S3-объекта, SHA-256 содержимого,
+валидность embedding dimensions (384), finite/non-zero values и batch size.
+
+**Открытые проверки:** failure/cancellation, shutdown, multi-worker race,
+lease renewal во время долгих операций, pool starvation и monotonic state
+transitions. У heartbeat pool фиксировано два потока: проверить capacity под
+фактическую ingest-конкурентность. Наличие кода не доказывает корректность
+поведения при многопроцессном сбое или остановке JVM.
 
 ## Knowledge Base access
 
@@ -4005,6 +4075,41 @@ GET  /api/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/versions/{ver
 
 ## Knowledge retrieval / evaluation
 
+### V76 — privacy для новых retrieval runs
+
+`V76__knowledge_retrieval_query_privacy.sql` вводит `NOT VALID` CHECK:
+
+```sql
+CHECK (query_text = '[REDACTED:SHA256_ONLY]') NOT VALID
+```
+
+PostgreSQL применяет такой CHECK к новым `INSERT` и `UPDATE`, но не проводит
+ретроспективную валидацию всех старых строк. `query_sha256` сохраняет
+ограниченный provenance поиска; SHA-256 не гарантирует анонимность
+низкоэнтропийного запроса и требует соответствующей privacy policy.
+
+Миграция предварительно требует успешную Flyway V75, таблицы
+`knowledge_retrieval_runs` / `knowledge_retrieval_hits` и действующий
+`trg_knowledge_retrieval_runs_immutable_v44`. V41/V44/V55/V63 **не редактировать**.
+Исторические plaintext queries **не удаляются и не редактируются этой миграцией**:
+для них необходим отдельный согласованный retention/evidence процесс.
+
+Добавляется частичный индекс очереди storage review:
+
+```sql
+CREATE INDEX idx_knowledge_upload_needs_review_v76
+    ON public.knowledge_storage_upload_intents (needs_review_at, id)
+    WHERE state = 'NEEDS_REVIEW';
+```
+
+**Проверка совместимости:** все writer paths должны до `INSERT` передавать
+строго `[REDACTED:SHA256_ONLY]`, отдельно сохранять корректный `query_sha256`
+и не писать raw query в trace, audit или metrics. Представленный
+`KnowledgeRetrievalRepository.hybridSearch()` передаёт query в SQL для
+полнотекстового поиска; это само по себе не доказывает сохранение raw text в БД.
+Нужен отдельный тест persist/retrieval-run writer и отрицательный DB test.
+
+
 ```http
 POST /api/knowledge-bases/{knowledgeBaseId}/retrieval
 POST /api/knowledge-bases/{knowledgeBaseId}/evaluations
@@ -4014,7 +4119,7 @@ Answer Passport читается по chat/turn identity через `AnswerPassp
 
 ---
 
-# Database / Flyway V1–V75
+# Database / Flyway V1–V76
 
 Production migrations:
 
@@ -4037,6 +4142,20 @@ ddl-auto=validate
 critical invariants in PostgreSQL where practical
 local seed != production reference data
 ```
+
+## V76: безопасное применение
+
+Порядок миграций обязателен: V73 → V74 → V75 → V76. Нельзя применять V76
+к БД без успешной V75 или переигрывать immutable V41/V44/V55/V63.
+
+`NOT VALID` не означает disabled: PostgreSQL проверяет новые строки, но
+разрешает оставаться существующим строкам, которые могли нарушать новый CHECK.
+Исторические данные подлежат отдельному privacy review. Проверить `conname`,
+`convalidated=false`, `CHECK` enforcement, индекс review queue и absence of
+plaintext in newly created retrieval runs на отдельном PostgreSQL стенде.
+
+В preflight V76 проверяется наличие таблиц и одного immutable trigger; это
+не заменяет проверки всех write paths и совместимости приложения со схемой.
 
 ## Evolution map
 
@@ -4143,6 +4262,13 @@ local seed != production reference data
   - **Назначение:** Usage: dirty date на UTC-полуночи + physical indexes
 - **`V75`**
   - **Назначение:** Audit: тип события recovery terminal dead-letter
+- **`V76`**
+  - **Назначение:** Privacy hardening retrieval evidence: новые записи
+    `knowledge_retrieval_runs` содержат только маркер `[REDACTED:SHA256_ONLY]`
+    вместо raw `query_text`, при сохранении `query_sha256`. Ограничение
+    `CHECK ... NOT VALID` защищает новые INSERT/UPDATE без изменения истории.
+    Частичный индекс ускоряет обработку `NEEDS_REVIEW` upload intents.
+    Исторический plaintext требует отдельного privacy/retention решения.
 
 
 
@@ -4202,6 +4328,27 @@ V74__usage_midnight_dirty_date_and_physical_indexes.sql
 конкурентной записи. Нужны нагрузочные замеры и мониторинг
 lock waits на production-like PostgreSQL.
 
+## V76 — Privacy retrieval runs и индекс review queue
+
+```text
+V76__knowledge_retrieval_query_privacy.sql
+```
+
+- Preflight требует успешно применённую V75, необходимые таблицы
+  и действующий immutable trigger V44.
+- Новые `knowledge_retrieval_runs.query_text` обязаны содержать
+  `[REDACTED:SHA256_ONLY]`; поисковый provenance хранится
+  отдельно в `query_sha256`.
+- `CHECK ... NOT VALID` проверяет новые INSERT/UPDATE, но не
+  подтверждает отсутствие старых открытых запросов в таблице.
+- Частичный индекс `(needs_review_at, id)` с фильтром
+  `state = 'NEEDS_REVIEW'` оптимизирует очередь на проверку
+  в `knowledge_storage_upload_intents`.
+- Не менять применённые V41/V44/V55/V63 и не удалять
+  immutable retrieval evidence ради успешного запуска.
+- Совместимость Java-writer с новым DB CHECK и privacy
+  исторических данных должны подтверждаться отдельно.
+
 ## V75 — Регистрация типа Audit recovery
 
 ```text
@@ -4225,6 +4372,7 @@ V75__audit_dead_letter_recovery_event_type.sql
 V1–V72  →  V73 (Organization)
         →  V74 (Usage)
         →  V75 (Audit event type)
+        →  V76 (Knowledge retrieval query privacy)
 ```
 
 Не копировать ранний конфликтный
@@ -4232,7 +4380,7 @@ V1–V72  →  V73 (Organization)
 этот номер уже занят миграцией организаций.
 
 В текущем публичном `main` проверено только наличие
-**V1–V72**. Отображение V73–V75 в этом README — описание
+**V1–V72**. Отображение V73–V76 в этом README — описание
 подготовленного целевого пакета, не подтверждение применённой
 схемы. Истину об установке даёт `flyway_schema_history`.
 
@@ -4429,6 +4577,27 @@ semantics.
 # Тестирование
 
 README не утверждает `BUILD SUCCESS` без фактического запуска конкретного commit.
+
+## Регрессионные проверки для изменений 17.10.2026
+
+Ниже — **требуемые проверки, а не результаты выполненного прогона**.
+
+- Catalog: legacy positional constructors, `pricingScheme` JSON/request binding,
+  runtime import idempotency, exact-version SQL mapping, V66 scheme CHECK.
+- Pricing: missing operation identity, wrong physical model, invalid usage/cache
+  dimensions, OpenAI/Anthropic semantics, `FREE`, `UNPRICED`, calculation errors.
+- Routing: `HARD` budget с unknown liability, concurrency и read-only
+  `nonBinding` preview без резервирования средств.
+- Ingestion: parallel `workerThreads`, claim leases, heartbeat, cancellation,
+  extraction timeout, object hash/size, embedding vector validity и shutdown.
+- Retrieval V76: PostgreSQL constraint negative tests, preserved historical
+  row, inserted redacted query and valid hash, immutable trigger, review index.
+- Upgrade: populated Flyway V72 → V76, application startup, production profile,
+  Testcontainers PostgreSQL/Redis и отсутствие регрессии публичных API.
+
+Не заменять падающий тест ослаблением CHECK, удалением assert или
+изменением истории Flyway. Сначала установить фактическую причину и
+соответствие нового контракта ожидаемому поведению теста.
 
 ## Исторические проверки на 11.10.2026
 
@@ -4724,7 +4893,7 @@ npm run check
 Команды приведены как воспроизводимые проверки; успешный frontend run **не подтвержден** данным
 срезом.
 
-## Дополнительная регрессия V73–V75
+## Дополнительная регрессия V73–V76
 
 Перед релизом обязательны новые проверки, **не входившие**
 в исторические 2259/27 прогонов PR #8:
@@ -4746,6 +4915,12 @@ npm run check
   реальные Prometheus alerts и получатель Alertmanager.
 - Retention: `AuditRetentionPoolLoadIT`, Hikari pool,
   advisory lock release, lock timeout/deadlock и TPS.
+- V76: reject plaintext query на новых INSERT/UPDATE,
+  accept redacted query с сохранённым SHA-256,
+  исторические строки без переписывания, сохранение immutable trigger,
+  статус `NOT VALID` и индекс `NEEDS_REVIEW`.
+- Privacy review: проверить все insert paths retrieval runs,
+  отсутствие raw query в логах и отдельный retention-план для истории.
 - Полные Maven/backend и frontend проверки на одном
   релизном commit, CI, backup/restore и smoke tests.
 
@@ -4754,8 +4929,8 @@ npm run check
 Перед серьёзным deployment:
 
 ```text
-fresh V1 → V75 (при наличии всех трёх патчей)
-populated upgrade V72 → V75; порядок/lock-timeouts
+fresh V1 → V76 (при наличии всех четырёх патчей)
+populated upgrade V72 → V76; порядок/lock-timeouts
 Flyway history validation
 critical index validity check
 backend clean test
@@ -4904,10 +5079,10 @@ Production Knowledge требует:
 - production role имеет необходимые extension/index privileges;
 - `pgvector` доступен до применения Knowledge vector migrations.
 
-## V73–V75: порядок release и rollback
+## V73–V76: порядок release и rollback
 
-V73–V75 должны находиться в одном согласованном release
-наборе, если включаются все три функциональности.
+V73–V76 должны находиться в одном согласованном release
+наборе, если включаются все четыре набора изменений.
 Перед Flyway: backup, preflight существующих организаций,
 учёт DDL locks, проверка миграционной истории и совместимости
 версий Java-кода с ожидаемой схемой.
@@ -4918,6 +5093,11 @@ V73–V75 должны находиться в одном согласованн
 
 Для V74 проверить, что rollup worker не обрабатывает
 открытый UTC-день и что повторные dirty revisions не теряются.
+
+Для V76 проверить deployment-порядок writer-кода и нового CHECK:
+новые retrieval runs должны сохранять redacted `query_text` и
+`query_sha256`. Исторические raw queries миграция не исправляет.
+Выполнить отдельный privacy review и проверку partial index.
 
 По умолчанию Flyway не откатывает применённый production SQL
 автоматически. Rollback приложения допустим лишь при
@@ -5399,7 +5579,7 @@ Base:        main / origin/main
 Main HEAD:   fdcff62fc32131474cbc2639b1fa636edffd45bc (merge PR #8)
 Java:        21
 Spring Boot: 4.1.1
-DB:          PostgreSQL, GitHub main Flyway V1–V72, target V73–V75
+DB:          PostgreSQL, GitHub main Flyway V1–V72, target V73–V76
 Structure:   modular monolith; common, identity, auth, user, organization,
              ratelimit, audit, usage, chat, model, ai, knowledge
 PRs merged:  #1–#8; latest adds ArchUnit 1.5.1 architecture rule for common
@@ -5519,13 +5699,13 @@ Spring wiring, database triggers и concurrency.
 ---
 
 **Актуализация:** 17 октября 2026 года. Сохранён исторический baseline PR #8;
-учтены подготовленные V73–V75 и Audit/Usage/production hardening.
+учтены подготовленные V73–V76, Model pricing, Knowledge ingestion и Audit/Usage hardening.
 GitHub `main` всё ещё содержит V1–V72 на момент проверки;
 локальный checkout и реальная схема БД не прочитаны.
 Полный release gate и deployment не заявляются.
 ---
 
-# Релизный контроль V73–V75
+# Релизный контроль V73–V76
 
 Выполнить перед внесением README и патчей в основную ветку:
 
@@ -5537,7 +5717,7 @@ git diff --check
 git diff --stat
 
 find backend/src/main/resources/db/migration \
-  -maxdepth 1 -name 'V7[345]__*.sql' -print
+  -maxdepth 1 -name 'V7[3456]__*.sql' -print
 
 cd backend
 ./mvnw clean test
@@ -5548,12 +5728,13 @@ cd backend
 ```sql
 SELECT installed_rank, version, script, success
 FROM public.flyway_schema_history
-WHERE version IN ('72', '73', '74', '75')
+WHERE version IN ('72', '73', '74', '75', '76')
 ORDER BY installed_rank;
 ```
 
 После миграции проверить canonical names, dirty queue,
-`audit_event_types` и PostgreSQL index validity. Проверить
+`audit_event_types`, V76 CHECK, retrieval query redaction,
+review queue index и PostgreSQL index validity. Проверить
 два экземпляра backend, Redis/DB failures, retention contention
 и реальные события `firing` плюс получение уведомления.
 
@@ -5561,6 +5742,6 @@ ORDER BY installed_rank;
 запись, а не объявлять «проверено в production» без evidence.
 
 **Неизменяемое правило:** миграции V1–V72 не переписывать;
-если V73–V75 уже присутствуют в `flyway_schema_history`,
+если V73–V76 уже присутствуют в `flyway_schema_history`,
 изменять их checksum нельзя. Новые corrections — новой
 версией миграции после проверки занятой нумерации.

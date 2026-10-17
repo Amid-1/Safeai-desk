@@ -194,7 +194,7 @@ public class KnowledgeRetrievalService {
                     access.administrator(), query, queryEmbedding, embeddingProvider.model(),
                     topK, properties.candidateLimit(), properties.rrfK());
             Instant completedAt = clock.instant();
-            persistRun(runId, knowledgeBaseId, user, query, querySha256, topK,
+            persistRun(runId, knowledgeBaseId, user, querySha256, topK,
                     startedAt, completedAt, chatTurnId);
             persistHits(runId, knowledgeBaseId, user.getOrganizationId(), hits);
             AuditDetails auditDetails = () -> Map.of(
@@ -297,7 +297,6 @@ public class KnowledgeRetrievalService {
             UUID runId,
             UUID knowledgeBaseId,
             SafeAiUserPrincipal user,
-            String query,
             String querySha256,
             int topK,
             Instant startedAt,
@@ -328,7 +327,7 @@ public class KnowledgeRetrievalService {
                 knowledgeBaseId,
                 user.getId(),
                 chatTurnId,
-                query,
+                "[REDACTED:SHA256_ONLY]",
                 querySha256,
                 embeddingProvider.model(),
                 "simple+russian-v2",
@@ -517,4 +516,3 @@ public class KnowledgeRetrievalService {
     ) {
     }
 }
-

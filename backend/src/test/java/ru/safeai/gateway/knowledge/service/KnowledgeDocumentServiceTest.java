@@ -49,6 +49,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -152,7 +153,9 @@ class KnowledgeDocumentServiceTest {
                         writeService,
                         storage,
                         fileValidator,
-                        downloadAudit
+                        downloadAudit,
+                        null,
+                        audit
                 );
     }
 
@@ -875,8 +878,8 @@ class KnowledgeDocumentServiceTest {
         );
 
         verify(
-                downloadAudit
-        ).tryRecord(
+                audit
+        ).recordStandaloneRequired(
                 argThat((AuditActor actor) ->
                         USER_ID.equals(actor.userId())
                                 && ORGANIZATION_ID.equals(actor.organizationId())
@@ -892,6 +895,63 @@ class KnowledgeDocumentServiceTest {
                                 && Boolean.FALSE.equals(details.get("historicalVersion"))
                 )
         );
+
+        verifyNoInteractions(downloadAudit);
+    }
+
+    @Test
+    void downloadFailsClosedWhenMandatoryAuditPersistenceFails() throws IOException {
+        UUID versionId = UUID.randomUUID();
+        KnowledgeDocumentEntity document = existingDocument();
+        document.setCurrentVersionId(versionId);
+        KnowledgeDocumentVersionEntity version = version(versionId);
+        StoredObject storedObject = new StoredObject(
+                new ByteArrayResource("document".getBytes(StandardCharsets.UTF_8)),
+                8
+        );
+
+        stubBaseForAdmin();
+        when(documents.findByIdAndKnowledgeBaseIdAndOrganizationId(
+                DOCUMENT_ID, KNOWLEDGE_BASE_ID, ORGANIZATION_ID
+        )).thenReturn(Optional.of(document));
+        when(versions.findByIdAndDocumentIdAndKnowledgeBaseIdAndOrganizationId(
+                versionId, DOCUMENT_ID, KNOWLEDGE_BASE_ID, ORGANIZATION_ID
+        )).thenReturn(Optional.of(version));
+        when(storage.get("knowledge/document.txt")).thenReturn(storedObject);
+
+        IllegalStateException auditFailure = new IllegalStateException("audit persistence unavailable");
+        doThrow(auditFailure).when(audit).recordStandaloneRequired(
+                any(AuditActor.class),
+                eq(ORGANIZATION_ID),
+                eq(AuditEventType.KNOWLEDGE_DOCUMENT_DOWNLOADED),
+                anyMap()
+        );
+
+        assertThatThrownBy(() -> service.download(
+                KNOWLEDGE_BASE_ID,
+                DOCUMENT_ID,
+                null,
+                admin()
+        )).isSameAs(auditFailure);
+
+        verify(storage).get("knowledge/document.txt");
+        verify(audit).recordStandaloneRequired(
+                argThat((AuditActor actor) ->
+                        USER_ID.equals(actor.userId())
+                                && ORGANIZATION_ID.equals(actor.organizationId())
+                ),
+                eq(ORGANIZATION_ID),
+                eq(AuditEventType.KNOWLEDGE_DOCUMENT_DOWNLOADED),
+                argThat((Map<String, Object> details) ->
+                        details != null
+                                && details.size() == 4
+                                && KNOWLEDGE_BASE_ID.toString().equals(details.get("knowledgeBaseId"))
+                                && DOCUMENT_ID.toString().equals(details.get("documentId"))
+                                && versionId.toString().equals(details.get("documentVersionId"))
+                                && Boolean.FALSE.equals(details.get("historicalVersion"))
+                )
+        );
+        verifyNoInteractions(downloadAudit);
     }
 
     private void stubBaseForAdmin() {

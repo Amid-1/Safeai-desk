@@ -27,12 +27,18 @@ public final class ModelControlPlaneSchemaVerifier implements SmartInitializingS
                 """
                 with required(name, present) as (
                     values
-                        ('model_route_decisions', to_regclass('public.model_route_decisions') is not null),
-                        ('model_route_reserved_requests', to_regclass('public.model_route_reserved_requests') is not null),
-                        ('model_route_prepared_requests_v62', to_regclass('public.model_route_prepared_requests_v62') is not null),
-                        ('model_cost_commitment_ledger_v62', to_regclass('public.model_cost_commitment_ledger_v62') is not null),
-                        ('model_route_budget_commitments_v64', to_regclass('public.model_route_budget_commitments_v64') is not null),
-                        ('knowledge_rag_context_receipts_v64', to_regclass('public.knowledge_rag_context_receipts_v64') is not null)
+                        ('model_route_decisions',
+                         to_regclass('public.model_route_decisions') is not null),
+                        ('model_route_reserved_requests',
+                         to_regclass('public.model_route_reserved_requests') is not null),
+                        ('model_route_prepared_requests_v62',
+                         to_regclass('public.model_route_prepared_requests_v62') is not null),
+                        ('model_cost_commitment_ledger_v62',
+                         to_regclass('public.model_cost_commitment_ledger_v62') is not null),
+                        ('model_route_budget_commitments_v64',
+                         to_regclass('public.model_route_budget_commitments_v64') is not null),
+                        ('knowledge_rag_context_receipts_v64',
+                         to_regclass('public.knowledge_rag_context_receipts_v64') is not null)
                 )
                 select name from required where not present order by name
                 """,
@@ -57,13 +63,15 @@ public final class ModelControlPlaneSchemaVerifier implements SmartInitializingS
                       and t.tgname = 'ctrg_model_route_decision_turn_v45'
                       and not t.tgisinternal
                       and con.condeferrable
+                      and t.tgenabled in ('O', 'A')
                 )
                 """,
                 Boolean.class
         );
         if (!Boolean.TRUE.equals(exactTurnConstraint)) {
             throw new IllegalStateException(
-                    "Required deferrable constraint trigger ctrg_model_route_decision_turn_v45 is missing"
+                    "Required deferrable constraint trigger "
+                            + "ctrg_model_route_decision_turn_v45 is missing"
             );
         }
 
@@ -103,6 +111,92 @@ public final class ModelControlPlaneSchemaVerifier implements SmartInitializingS
         if (!Boolean.TRUE.equals(v64BudgetState)) {
             throw new IllegalStateException(
                     "V64 budget commitment cost_state is missing"
+            );
+        }
+
+        // Fail closed on drift in persisted guard enforcement. Historical V65
+        // NOT VALID constraints are intentionally not required to be validated;
+        // PostgreSQL nevertheless enforces them for all NEW writes.
+        List<String> inactiveGuards = jdbc.query("""
+                with expected(table_name, trigger_name) as (
+                    values
+                    ('model_catalog_entries',
+                     'trg_model_catalog_entries_immutable_v45'),
+                    ('model_route_prepared_requests_v62',
+                     'trg_model_route_prepared_requests_guard_v64'),
+                    ('model_execution_attempts',
+                     'trg_execution_attempt_prepared_binding_v65'),
+                    ('model_route_budget_commitments_v64',
+                     'trg_model_route_budget_commitments_immutable_v64'),
+                    ('knowledge_rag_context_receipts_v64',
+                     'trg_knowledge_rag_context_receipt_immutable_v64')
+                )
+                select expected.trigger_name
+                from expected
+                where not exists (
+                    select 1
+                    from pg_trigger t
+                    where t.tgrelid = to_regclass(
+                        'public.' || expected.table_name
+                    )
+                      and t.tgname = expected.trigger_name
+                      and not t.tgisinternal
+                      and t.tgenabled in ('O', 'A')
+                )
+                order by expected.trigger_name
+                """, (rs, index) -> rs.getString(1));
+        if (!inactiveGuards.isEmpty()) {
+            throw new IllegalStateException(
+                    "Model Control Plane database guards inactive: "
+                            + inactiveGuards
+            );
+        }
+
+        List<String> missingChecks = jdbc.query("""
+                with required(table_name, name, must_validate) as (
+                    values
+                    ('model_catalog_entries',
+                     'chk_model_catalog_pricing_scheme_v66', true),
+                    ('model_route_prepared_requests_v62',
+                     'chk_model_route_prepared_current_binding_v65', false),
+                    ('model_execution_attempts',
+                     'chk_model_execution_attempt_lifecycle_v66', true),
+                    ('model_route_budget_commitments_v64',
+                     'chk_model_route_budget_commitments_state_shape_v64', true)
+                )
+                select required.name
+                from required
+                where not exists (
+                    select 1
+                    from pg_constraint c
+                    where c.conrelid = to_regclass(
+                        'public.' || required.table_name
+                    )
+                      and c.conname = required.name
+                      and c.contype = 'c'
+                      and (not required.must_validate or c.convalidated)
+                )
+                order by required.name
+                """, (rs, index) -> rs.getString(1));
+        if (!missingChecks.isEmpty()) {
+            throw new IllegalStateException(
+                    "Model Control Plane CHECK constraints missing: "
+                            + missingChecks
+            );
+        }
+
+        Boolean priceSchemeNotNullable = jdbc.queryForObject("""
+                select exists (
+                    select 1 from pg_attribute a
+                    where a.attrelid = to_regclass('public.model_catalog_entries')
+                      and a.attname = 'pricing_scheme'
+                      and a.attnotnull
+                      and not a.attisdropped
+                )
+                """, Boolean.class);
+        if (!Boolean.TRUE.equals(priceSchemeNotNullable)) {
+            throw new IllegalStateException(
+                    "Model catalog pricing_scheme is missing or nullable"
             );
         }
     }

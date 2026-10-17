@@ -9,6 +9,7 @@ import org.springframework.web.multipart.MultipartFile;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.model.AuditActor;
 import ru.safeai.gateway.audit.service.BestEffortStandaloneAuditService;
+import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.common.exception.BadRequestException;
 import ru.safeai.gateway.common.exception.ConflictException;
 import ru.safeai.gateway.common.exception.ResourceNotFoundException;
@@ -48,7 +49,7 @@ public class KnowledgeDocumentService {
     private final KnowledgeDocumentWriteService writeService;
     private final ObjectStorage storage;
     private final KnowledgeDocumentFileValidator fileValidator;
-    private final BestEffortStandaloneAuditService audit;
+    private final AuditEventService requiredDownloadAudit;
     private final KnowledgeStorageUploadJournal uploadJournal;
 
     public KnowledgeDocumentService(
@@ -62,7 +63,22 @@ public class KnowledgeDocumentService {
             BestEffortStandaloneAuditService audit
     ) {
         this(accessService, documents, versions, queryRepository, writeService,
-                storage, fileValidator, audit, null);
+                storage, fileValidator, audit, null, null);
+    }
+
+    public KnowledgeDocumentService(
+            KnowledgeAccessService accessService,
+            KnowledgeDocumentRepository documents,
+            KnowledgeDocumentVersionRepository versions,
+            KnowledgeDocumentQueryRepository queryRepository,
+            KnowledgeDocumentWriteService writeService,
+            ObjectStorage storage,
+            KnowledgeDocumentFileValidator fileValidator,
+            BestEffortStandaloneAuditService audit,
+            KnowledgeStorageUploadJournal uploadJournal
+    ) {
+        this(accessService, documents, versions, queryRepository,
+                writeService, storage, fileValidator, audit, uploadJournal, null);
     }
 
     @Autowired
@@ -75,7 +91,8 @@ public class KnowledgeDocumentService {
             ObjectStorage storage,
             KnowledgeDocumentFileValidator fileValidator,
             BestEffortStandaloneAuditService audit,
-            KnowledgeStorageUploadJournal uploadJournal
+            KnowledgeStorageUploadJournal uploadJournal,
+            AuditEventService requiredDownloadAudit
     ) {
         this.accessService =
                 Objects.requireNonNull(
@@ -119,11 +136,10 @@ public class KnowledgeDocumentService {
                         "fileValidator не должен быть null"
                 );
 
-        this.audit =
-                Objects.requireNonNull(
-                        audit,
-                        "audit не должен быть null"
-                );
+        // Keep legacy constructor validation without retaining an unused field.
+        // Mandatory download audit is handled by requiredDownloadAudit.
+        Objects.requireNonNull(audit, "audit не должен быть null");
+        this.requiredDownloadAudit = requiredDownloadAudit;
         this.uploadJournal = uploadJournal;
     }
 
@@ -440,21 +456,23 @@ public class KnowledgeDocumentService {
             );
         }
 
-        audit.tryRecord(
-                AuditActor.fromPrincipal(
-                        user
-                ),
+        // This records access authorization, NOT successful stream delivery.
+        // Audit must commit before the Resource can be returned for streaming.
+        // A missing audit service (legacy constructor) fails closed.
+        if (requiredDownloadAudit == null) {
+            throw new IllegalStateException(
+                    "Mandatory Knowledge download audit is not configured"
+            );
+        }
+        requiredDownloadAudit.recordStandaloneRequired(
+                AuditActor.fromPrincipal(user),
                 user.getOrganizationId(),
                 AuditEventType.KNOWLEDGE_DOCUMENT_DOWNLOADED,
                 Map.of(
-                        "knowledgeBaseId",
-                        knowledgeBaseId.toString(),
-                        "documentId",
-                        documentId.toString(),
-                        "documentVersionId",
-                        version.getId().toString(),
-                        "historicalVersion",
-                        versionId != null
+                        "knowledgeBaseId", knowledgeBaseId.toString(),
+                        "documentId", documentId.toString(),
+                        "documentVersionId", version.getId().toString(),
+                        "historicalVersion", versionId != null
                 )
         );
 

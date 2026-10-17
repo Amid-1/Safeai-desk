@@ -1,5 +1,11 @@
 package ru.safeai.gateway.knowledge.ingestion;
 
+import jakarta.annotation.PreDestroy;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -29,6 +35,7 @@ public class KnowledgeIngestionScheduler {
     private final KnowledgeIngestionProcessor processor;
     private final KnowledgeIngestionProperties properties;
     private final Clock clock;
+    private final ExecutorService workers;
 
     public KnowledgeIngestionScheduler(
             KnowledgeIngestionQueueRepository queue,
@@ -42,6 +49,12 @@ public class KnowledgeIngestionScheduler {
         this.processor = processor;
         this.properties = properties;
         this.clock = clock;
+        this.workers = Executors.newFixedThreadPool(
+                properties.workerThreads(), runnable -> {
+                    Thread thread = new Thread(runnable, "knowledge-ingestion-worker");
+                    thread.setDaemon(true);
+                    return thread;
+                });
     }
 
     @Scheduled(
@@ -65,30 +78,43 @@ public class KnowledgeIngestionScheduler {
             );
         }
 
-        for (
-                int index = 0;
-                index < properties.batchSize();
-                index++
-        ) {
-            Instant claimedAt =
-                    clock.instant();
-
-            KnowledgeIngestionClaim claim =
-                    queue.claimNext(
-                            claimedAt,
-                            claimedAt.plus(
-                                    properties.processingLease()
-                            ),
-                            properties.maxAttempts()
-                    ).orElse(null);
-
-            if (claim == null) {
+        int processed = 0;
+        while (processed < properties.batchSize()) {
+            // Do not claim work ahead of available execution slots: a
+            // queued-but-unstarted claim could expire before its first renewal.
+            int slots = Math.min(
+                    properties.workerThreads(), properties.batchSize() - processed);
+            List<Future<?>> submitted = new ArrayList<>(slots);
+            for (int i = 0; i < slots; i++) {
+                Instant claimedAt = clock.instant();
+                KnowledgeIngestionClaim claim = queue.claimNext(
+                        claimedAt, claimedAt.plus(properties.processingLease()),
+                        properties.maxAttempts()).orElse(null);
+                if (claim == null) {
+                    break;
+                }
+                submitted.add(workers.submit(() -> processor.process(claim)));
+            }
+            if (submitted.isEmpty()) {
                 return;
             }
-
-            processor.process(
-                    claim
-            );
+            for (Future<?> task : submitted) {
+                try {
+                    task.get();
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Knowledge worker interrupted", error);
+                } catch (java.util.concurrent.ExecutionException error) {
+                    log.error("Knowledge ingestion worker failed: type={}",
+                            error.getCause().getClass().getSimpleName());
+                }
+            }
+            processed += submitted.size();
         }
+    }
+
+    @PreDestroy
+    void shutdown() {
+        workers.shutdownNow();
     }
 }

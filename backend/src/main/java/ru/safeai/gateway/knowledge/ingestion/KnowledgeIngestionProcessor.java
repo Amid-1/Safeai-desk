@@ -1,5 +1,14 @@
 package ru.safeai.gateway.knowledge.ingestion;
 
+import jakarta.annotation.PreDestroy;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -49,6 +58,14 @@ public class KnowledgeIngestionProcessor {
     private final KnowledgeIngestionFailureService failureService;
     private final KnowledgeIngestionProperties properties;
     private final Clock clock;
+    private final ScheduledExecutorService leaseHeartbeats =
+            Executors.newScheduledThreadPool(2, runnable -> {
+                Thread thread = new Thread(runnable, "knowledge-lease-heartbeat");
+                thread.setDaemon(true);
+                return thread;
+            });
+    private final ConcurrentMap<UUID, AtomicReference<KnowledgeIngestionStatus>>
+            activeClaims = new ConcurrentHashMap<>();
 
     public KnowledgeIngestionProcessor(
             KnowledgeIngestionQueueRepository queue,
@@ -83,6 +100,23 @@ public class KnowledgeIngestionProcessor {
                 claim,
                 "claim не должен быть null"
         );
+
+        AtomicReference<KnowledgeIngestionStatus> activeStatus =
+                new AtomicReference<>(KnowledgeIngestionStatus.VALIDATING);
+        if (activeClaims.putIfAbsent(claim.processingToken(), activeStatus) != null) {
+            throw new IllegalStateException("Ingestion claim already active");
+        }
+        long heartbeatMillis = Math.clamp(properties.processingLease().toMillis() / 3L, 1_000L, 30_000L);
+        ScheduledFuture<?> heartbeat = leaseHeartbeats.scheduleWithFixedDelay(() -> {
+            try {
+                renewLeaseAt(claim, activeStatus.get(), clock.instant());
+            } catch (RuntimeException error) {
+                // A transient heartbeat error never grants ownership.
+                // Publication remains fenced by processing_token and lease_until.
+                log.warn("Knowledge lease heartbeat failed: jobId={}, failureType={}",
+                        claim.jobId(), error.getClass().getSimpleName());
+            }
+        }, heartbeatMillis, heartbeatMillis, TimeUnit.MILLISECONDS);
 
         try {
             KnowledgeDocumentVersionEntity version =
@@ -155,14 +189,14 @@ public class KnowledgeIngestionProcessor {
             fail(
                     claim,
                     exception.code(),
-                    exception.getMessage(),
+                    "Ошибка выполнения операции Knowledge. Подробности доступны по error_code.",
                     exception.retryable()
             );
         } catch (KnowledgeIngestionException exception) {
             fail(
                     claim,
                     exception.code(),
-                    exception.getMessage(),
+                    "Ошибка выполнения операции Knowledge. Подробности доступны по error_code.",
                     exception.retryable()
             );
         } catch (IOException exception) {
@@ -174,9 +208,9 @@ public class KnowledgeIngestionProcessor {
             );
         } catch (RuntimeException exception) {
             log.error(
-                    "Unexpected knowledge ingestion failure: jobId={}",
+                    "Unexpected knowledge ingestion failure: jobId={}, failureType={}",
                     claim.jobId(),
-                    exception
+                    exception.getClass().getSimpleName()
             );
 
             fail(
@@ -185,7 +219,15 @@ public class KnowledgeIngestionProcessor {
                     "Внутренняя ошибка обработки документа",
                     true
             );
+        } finally {
+            heartbeat.cancel(false);
+            activeClaims.remove(claim.processingToken(), activeStatus);
         }
+    }
+
+    @PreDestroy
+    void shutdownHeartbeats() {
+        leaseHeartbeats.shutdownNow();
     }
 
     private List<EmbeddedKnowledgeChunk> embedWithLeaseRenewal(
@@ -482,6 +524,12 @@ public class KnowledgeIngestionProcessor {
                         properties.processingLease()
                 )
         );
+        AtomicReference<KnowledgeIngestionStatus> active =
+                activeClaims.get(claim.processingToken());
+        if (active != null) {
+            active.set(target);
+        }
+
     }
 
     private void renewLease(

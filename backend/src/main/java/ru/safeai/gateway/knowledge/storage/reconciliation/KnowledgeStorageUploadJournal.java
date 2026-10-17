@@ -31,6 +31,16 @@ public class KnowledgeStorageUploadJournal {
                 org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
+    /** DB-owned monitoring: terminal review is never treated as cleaned. */
+    @Transactional(readOnly = true)
+    public long countNeedsReview() {
+        Long count = jdbc.queryForObject("""
+                select count(*) from public.knowledge_storage_upload_intents
+                where state = 'NEEDS_REVIEW'
+                """, Long.class);
+        return Objects.requireNonNull(count, "S3 review queue count missing");
+    }
+
     /** Commit the intent BEFORE making the S3 PUT request. */
     public UUID begin(
             UUID baseId, UUID documentId, UUID versionId,

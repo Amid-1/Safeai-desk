@@ -33,6 +33,9 @@ import ru.safeai.gateway.knowledge.service.KnowledgeRetrievalService;
 import ru.safeai.gateway.testsupport.AbstractPostgresIntegrationTest;
 
 import java.sql.Timestamp;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -386,6 +389,19 @@ class KnowledgeGenerationLifecycleIntegrationTest
                 fixture.claim().knowledgeBaseId(),
                 actor
         );
+
+        // V76 requires the exact redaction sentinel, never plaintext or NULL.
+        // The SHA-256 digest is the only retained representation of the query.
+        assertThat(jdbcTemplate.queryForObject(
+                "select query_text from public.knowledge_retrieval_runs where id = ?",
+                String.class,
+                run
+        )).isEqualTo("[REDACTED:SHA256_ONLY]");
+        assertThat(jdbcTemplate.queryForObject(
+                "select query_sha256 from public.knowledge_retrieval_runs where id = ?",
+                String.class,
+                run
+        )).isEqualTo(sha256("evidence"));
         insertRetrievalHitEvidence(
                 run,
                 fixture.claim(),
@@ -554,8 +570,9 @@ class KnowledgeGenerationLifecycleIntegrationTest
                     statement.setObject(2, PLATFORM_ORGANIZATION_ID);
                     statement.setObject(3, knowledgeBaseId);
                     statement.setObject(4, actor);
-                    statement.setString(5, "evidence");
-                    statement.setString(6, "a".repeat(64));
+                    // V76 CHECK requires this exact non-null privacy sentinel.
+                    statement.setString(5, "[REDACTED:SHA256_ONLY]");
+                    statement.setString(6, sha256("evidence"));
                     statement.setString(7, embedding.model());
                     statement.setString(8, "simple+russian-v2");
                     statement.setInt(9, 1);
@@ -565,6 +582,17 @@ class KnowledgeGenerationLifecycleIntegrationTest
                     statement.setTimestamp(13, Timestamp.from(evidenceAt));
                 }
         );
+    }
+
+    private static String sha256(String value) {
+        try {
+            return java.util.HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(value.getBytes(StandardCharsets.UTF_8))
+            );
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     private void insertRetrievalHitEvidence(

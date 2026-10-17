@@ -12,6 +12,7 @@ import ru.safeai.gateway.model.domain.ModelCatalogSource;
 import ru.safeai.gateway.model.domain.ModelLifecycle;
 import ru.safeai.gateway.model.domain.ModelModality;
 import ru.safeai.gateway.model.domain.ModelPricingStatus;
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import ru.safeai.gateway.model.domain.ModelRetentionStatus;
 import ru.safeai.gateway.model.domain.ModelTrainingUseStatus;
 import ru.safeai.gateway.model.dto.CreateModelCatalogVersionRequest;
@@ -239,6 +240,10 @@ public class ModelCatalogService {
                 extraPricingJson
         );
 
+        ModelPricingScheme selectedScheme = selectManualPricingScheme(
+                request.pricingStatus(), request.pricingScheme()
+        );
+
         repository.lockModelKey(
                 modelKey
         );
@@ -295,7 +300,8 @@ public class ModelCatalogService {
                                 : DatabaseTimestampNormalizer.normalize(request.effectiveFrom()),
                         ModelCatalogSource.MANUAL,
                         currentUser.getId(),
-                        now
+                        now,
+                        selectedScheme
                 );
 
         repository.insert(
@@ -567,6 +573,29 @@ public class ModelCatalogService {
         return ModelCatalogEntryResponse.from(
                 entry
         );
+    }
+
+    private static ModelPricingScheme selectManualPricingScheme(
+            ModelPricingStatus status, ModelPricingScheme requested
+    ) {
+        if (status == ModelPricingStatus.CONFIGURED) {
+            if (requested != ModelPricingScheme.FLAT_TOKEN_V1) {
+                throw new ru.safeai.gateway.common.exception.BadRequestException(
+                        "CONFIGURED требует явного pricingScheme=FLAT_TOKEN_V1 "
+                                + "и подтверждения поддерживаемых измерений тарифа"
+                );
+            }
+            return requested;
+        }
+        ModelPricingScheme expected = status == ModelPricingStatus.FREE
+                ? ModelPricingScheme.FLAT_TOKEN_V1
+                : ModelPricingScheme.UNSUPPORTED_COMPLEX_V1;
+        if (requested != null && requested != expected) {
+            throw new ru.safeai.gateway.common.exception.BadRequestException(
+                    "pricingScheme не соответствует pricingStatus"
+            );
+        }
+        return expected;
     }
 
     private static boolean sameRuntimeSnapshot(

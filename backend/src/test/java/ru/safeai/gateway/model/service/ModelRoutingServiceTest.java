@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import ru.safeai.gateway.audit.AuditEventType;
 import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.service.AuditEventService;
@@ -381,7 +382,7 @@ class ModelRoutingServiceTest {
                 "openai",
                 "gpt-test",
                 ModelTestFixtures.NOW
-        )).thenReturn(List.of(ModelTestFixtures.configuredEntry()));
+        )).thenReturn(List.of(verifiedConfiguredEntry()));
 
         ModelRouteDeniedException exception = catchDenial(
                 request(null, Set.of())
@@ -402,7 +403,7 @@ class ModelRoutingServiceTest {
                 "openai",
                 "gpt-test",
                 ModelTestFixtures.NOW
-        )).thenReturn(List.of(ModelTestFixtures.configuredEntry()));
+        )).thenReturn(List.of(verifiedConfiguredEntry()));
         when(decisionRepository.loadCommittedMonthlyCostSnapshot(
                 eq(ModelTestFixtures.ORGANIZATION_ID),
                 any(Instant.class),
@@ -446,7 +447,7 @@ class ModelRoutingServiceTest {
                 "openai",
                 "gpt-test",
                 ModelTestFixtures.NOW
-        )).thenReturn(List.of(ModelTestFixtures.configuredEntry()));
+        )).thenReturn(List.of(verifiedConfiguredEntry()));
         when(decisionRepository.loadCommittedMonthlyCostSnapshot(
                 eq(ModelTestFixtures.ORGANIZATION_ID),
                 any(Instant.class),
@@ -471,6 +472,62 @@ class ModelRoutingServiceTest {
                 .isTrue();
         assertThat(captor.getValue().monthlyProjectedUsd())
                 .isGreaterThan(captor.getValue().monthlyBudgetUsd());
+    }
+
+    @Test
+    void legacyConfiguredPricingCannotBypassRequestCostLimit() {
+        assertUnverifiedSchemeFailsClosed(
+                ModelPricingScheme.LEGACY_FLAT_UNVERIFIED_V1
+        );
+    }
+
+    @Test
+    void unsupportedPricingSchemeCannotBypassRequestCostLimit() {
+        assertUnverifiedSchemeFailsClosed(
+                ModelPricingScheme.UNSUPPORTED_COMPLEX_V1
+        );
+    }
+
+    private void assertUnverifiedSchemeFailsClosed(
+            ModelPricingScheme pricingScheme
+    ) {
+        OrganizationModelPolicy tenantPolicy = ModelTestFixtures.policy(
+                true,
+                Set.of("openai:gpt-test"),
+                Set.of(),
+                null,
+                null,
+                null,
+                new BigDecimal("0.001000000000"),
+                null,
+                BudgetEnforcement.SOFT,
+                false,
+                false,
+                false
+        );
+        stubNewDecisionWithPolicy(tenantPolicy);
+        when(catalogRepository.findEffectiveByRuntime(
+                "openai",
+                "gpt-test",
+                ModelTestFixtures.NOW
+        )).thenReturn(List.of(configuredEntryWithScheme(pricingScheme)));
+
+        ModelRouteDeniedException exception = catchDenial(
+                request(null, Set.of())
+        );
+
+        assertThat(exception.getReason())
+                .isEqualTo(ModelRouteReason.PRICING_INCOMPLETE);
+
+        ArgumentCaptor<ModelRouteDecision> captor =
+                ArgumentCaptor.forClass(ModelRouteDecision.class);
+        verify(decisionRepository).insert(captor.capture());
+        ModelRouteDecision persisted = captor.getValue();
+        assertThat(persisted.outcome()).isEqualTo(ModelRouteOutcome.DENIED);
+        assertThat(persisted.pricingComplete()).isFalse();
+        assertThat(persisted.estimatedMaxCostUsd()).isNull();
+        assertThat(persisted.decisionSha256()).matches("[0-9a-f]{64}");
+        verify(decisionRepository, never()).lockOrganizationBudget(any());
     }
 
     @Test
@@ -615,6 +672,50 @@ class ModelRoutingServiceTest {
                         AuditEventType.MODEL_ROUTE_DECIDED
                 ),
                 isA(AuditDetails.class)
+        );
+    }
+
+    /**
+     * Explicitly verified V66 settlement fixture for positive pricing tests.
+     * The shared legacy fixture intentionally remains fail-closed.
+     */
+    private static ModelCatalogEntry verifiedConfiguredEntry() {
+        return configuredEntryWithScheme(ModelPricingScheme.FLAT_TOKEN_V1);
+    }
+
+    private static ModelCatalogEntry configuredEntryWithScheme(
+            ModelPricingScheme pricingScheme
+    ) {
+        ModelCatalogEntry base = ModelTestFixtures.configuredEntry();
+        return new ModelCatalogEntry(
+                base.id(),
+                base.modelKey(),
+                base.version(),
+                base.provider(),
+                base.providerModelId(),
+                base.displayName(),
+                base.lifecycle(),
+                base.maxInputTokens(),
+                base.maxOutputTokens(),
+                base.capabilities(),
+                base.inputModalities(),
+                base.outputModalities(),
+                base.retentionStatus(),
+                base.retentionDays(),
+                base.trainingUseStatus(),
+                base.pricingStatus(),
+                base.pricingComplete(),
+                base.inputUsdPer1mTokens(),
+                base.cachedInputUsdPer1mTokens(),
+                base.cacheWriteInputUsdPer1mTokens(),
+                base.outputUsdPer1mTokens(),
+                base.extraPricingJson(),
+                base.pricingVersion(),
+                base.effectiveFrom(),
+                base.source(),
+                base.createdByUserId(),
+                base.createdAt(),
+                pricingScheme
         );
     }
 
@@ -784,3 +885,4 @@ class ModelRoutingServiceTest {
         );
     }
 }
+

@@ -9,6 +9,7 @@ import ru.safeai.gateway.model.domain.ModelPricingStatus;
 import ru.safeai.gateway.model.domain.ModelRetentionStatus;
 import ru.safeai.gateway.model.domain.ModelTrainingUseStatus;
 
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Set;
@@ -47,8 +48,75 @@ public record ModelCatalogEntryResponse(
         Instant effectiveFrom,
         ModelCatalogSource source,
         UUID createdByUserId,
-        Instant createdAt
+        Instant createdAt,
+        ModelPricingScheme pricingScheme
 ) {
+    /** Legacy positional callers cannot silently claim verified pricing. */
+    public ModelCatalogEntryResponse(
+        UUID id,
+        String modelKey,
+        int version,
+        String provider,
+        String providerModelId,
+        String displayName,
+        ModelLifecycle lifecycle,
+        int maxInputTokens,
+        int maxOutputTokens,
+        Set<ModelCapability> capabilities,
+        Set<ModelModality> inputModalities,
+        Set<ModelModality> outputModalities,
+        ModelRetentionStatus retentionStatus,
+        Integer retentionDays,
+        ModelTrainingUseStatus trainingUseStatus,
+        ModelPricingStatus pricingStatus,
+        boolean pricingComplete,
+        String inputUsdPer1mTokens,
+        String cachedInputUsdPer1mTokens,
+        String cacheWriteInputUsdPer1mTokens,
+        String outputUsdPer1mTokens,
+        String extraPricingJson,
+        String pricingVersion,
+        Instant effectiveFrom,
+        ModelCatalogSource source,
+        UUID createdByUserId,
+        Instant createdAt
+    ) {
+        this(
+                id,
+                modelKey,
+                version,
+                provider,
+                providerModelId,
+                displayName,
+                lifecycle,
+                maxInputTokens,
+                maxOutputTokens,
+                capabilities,
+                inputModalities,
+                outputModalities,
+                retentionStatus,
+                retentionDays,
+                trainingUseStatus,
+                pricingStatus,
+                pricingComplete,
+                inputUsdPer1mTokens,
+                cachedInputUsdPer1mTokens,
+                cacheWriteInputUsdPer1mTokens,
+                outputUsdPer1mTokens,
+                extraPricingJson,
+                pricingVersion,
+                effectiveFrom,
+                source,
+                createdByUserId,
+                createdAt,
+                pricingStatus == ModelPricingStatus.FREE
+                        ? ModelPricingScheme.FLAT_TOKEN_V1
+                        : pricingStatus == ModelPricingStatus.CONFIGURED
+                        ? ModelPricingScheme.LEGACY_FLAT_UNVERIFIED_V1
+                        : ModelPricingScheme.UNSUPPORTED_COMPLEX_V1
+        );
+    }
+
     public static ModelCatalogEntryResponse from(
             ModelCatalogEntry entry
     ) {
@@ -79,7 +147,8 @@ public record ModelCatalogEntryResponse(
                 entry.effectiveFrom(),
                 entry.source(),
                 entry.createdByUserId(),
-                entry.createdAt()
+                entry.createdAt(),
+                entry.pricingScheme()
         );
     }
 

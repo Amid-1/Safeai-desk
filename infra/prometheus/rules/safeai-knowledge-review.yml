@@ -1,0 +1,34 @@
+# SafeAI-Desk/infra/prometheus/rules/safeai-knowledge-review.yml
+# Loaded by infra/prometheus/prometheus.yml through rules/*.yml.
+groups:
+  - name: safeai-knowledge-storage-review
+    rules:
+      - alert: SafeAiKnowledgeStorageNeedsReview
+        expr: max(safeai_knowledge_storage_needs_review_rows) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: Knowledge S3 reconciliation requires manual review
+          description: Do not automatically delete uncertain S3 objects.
+
+      - alert: SafeAiKnowledgeStorageReviewMetricsFailed
+        expr: max(safeai_knowledge_storage_needs_review_rows) < 0
+        for: 2m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: Knowledge review backlog measurement unavailable
+          description: Inspect DB availability and collector logs.
+
+      - alert: SafeAiKnowledgeStorageReviewMetricsMissing
+        expr: absent(safeai_knowledge_storage_needs_review_rows)
+        for: 5m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: Knowledge review backlog metric is missing
+          description: Verify Actuator scrape and deployed backend revision.

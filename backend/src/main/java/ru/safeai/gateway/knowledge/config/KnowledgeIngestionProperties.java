@@ -1,6 +1,7 @@
 package ru.safeai.gateway.knowledge.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 import java.time.Duration;
 
@@ -18,54 +19,39 @@ public record KnowledgeIngestionProperties(
         Integer maxExtractedChars,
         Long maxDocxUncompressedBytes,
         Integer chunkSizeChars,
-        Integer chunkOverlapChars
+        Integer chunkOverlapChars,
+        Integer workerThreads
 ) {
 
+    /**
+     * Select the canonical record constructor for Spring configuration binding.
+     * The legacy overload below is retained solely for Java caller compatibility.
+     */
+    @ConstructorBinding
     public KnowledgeIngestionProperties {
         enabled = enabled == null || enabled;
         pollDelay = defaultDuration(pollDelay, Duration.ofSeconds(2));
-        processingLease = defaultDuration(
-                processingLease,
-                Duration.ofMinutes(3)
-        );
-        extractionTimeout = defaultDuration(
-                extractionTimeout,
-                Duration.ofSeconds(60)
-        );
-        initialBackoff = defaultDuration(
-                initialBackoff,
-                Duration.ofSeconds(10)
-        );
+        processingLease = defaultDuration(processingLease, Duration.ofMinutes(3));
+        extractionTimeout = defaultDuration(extractionTimeout, Duration.ofSeconds(60));
+        initialBackoff = defaultDuration(initialBackoff, Duration.ofSeconds(10));
         maxBackoff = defaultDuration(maxBackoff, Duration.ofMinutes(10));
         batchSize = bounded(batchSize, 4, 1, 100, "batch-size");
+        workerThreads = bounded(workerThreads, 1, 1, 8, "worker-threads");
         extractionThreads = bounded(
-                extractionThreads,
-                2,
-                1,
-                16,
-                "extraction-threads"
+                extractionThreads, 2, 1, 16, "extraction-threads"
         );
         maxAttempts = bounded(maxAttempts, 5, 1, 20, "max-attempts");
         maxExtractedChars = bounded(
-                maxExtractedChars,
-                2_000_000,
-                1_000,
-                10_000_000,
+                maxExtractedChars, 2_000_000, 1_000, 10_000_000,
                 "max-extracted-chars"
         );
         maxDocxUncompressedBytes = maxDocxUncompressedBytes == null
                 ? 104_857_600L
                 : maxDocxUncompressedBytes;
         chunkSizeChars = bounded(
-                chunkSizeChars,
-                1_200,
-                200,
-                20_000,
-                "chunk-size-chars"
+                chunkSizeChars, 1_200, 200, 20_000, "chunk-size-chars"
         );
-        chunkOverlapChars = chunkOverlapChars == null
-                ? 150
-                : chunkOverlapChars;
+        chunkOverlapChars = chunkOverlapChars == null ? 150 : chunkOverlapChars;
 
         if (pollDelay.isNegative() || pollDelay.isZero()) {
             throw invalid("poll-delay");
@@ -87,10 +73,43 @@ public record KnowledgeIngestionProperties(
                 || maxDocxUncompressedBytes > 1_073_741_824L) {
             throw invalid("max-docx-uncompressed-bytes");
         }
-        if (chunkOverlapChars < 0
-                || chunkOverlapChars >= chunkSizeChars) {
+        if (chunkOverlapChars < 0 || chunkOverlapChars >= chunkSizeChars) {
             throw invalid("chunk-overlap-chars");
         }
+    }
+
+    /** Backwards-compatible constructor for non-Spring call sites. */
+    public KnowledgeIngestionProperties(
+            Boolean enabled,
+            Duration pollDelay,
+            Integer batchSize,
+            Duration processingLease,
+            Duration extractionTimeout,
+            Integer extractionThreads,
+            Integer maxAttempts,
+            Duration initialBackoff,
+            Duration maxBackoff,
+            Integer maxExtractedChars,
+            Long maxDocxUncompressedBytes,
+            Integer chunkSizeChars,
+            Integer chunkOverlapChars
+    ) {
+        this(
+                enabled,
+                pollDelay,
+                batchSize,
+                processingLease,
+                extractionTimeout,
+                extractionThreads,
+                maxAttempts,
+                initialBackoff,
+                maxBackoff,
+                maxExtractedChars,
+                maxDocxUncompressedBytes,
+                chunkSizeChars,
+                chunkOverlapChars,
+                1
+        );
     }
 
     public Duration backoffForAttempt(int attempt) {
@@ -98,22 +117,14 @@ public record KnowledgeIngestionProperties(
         long multiplier = 1L << exponent;
         long millis;
         try {
-            millis = Math.multiplyExact(
-                    initialBackoff.toMillis(),
-                    multiplier
-            );
+            millis = Math.multiplyExact(initialBackoff.toMillis(), multiplier);
         } catch (ArithmeticException exception) {
             millis = Long.MAX_VALUE;
         }
-        return Duration.ofMillis(
-                Math.min(millis, maxBackoff.toMillis())
-        );
+        return Duration.ofMillis(Math.min(millis, maxBackoff.toMillis()));
     }
 
-    private static Duration defaultDuration(
-            Duration value,
-            Duration defaultValue
-    ) {
+    private static Duration defaultDuration(Duration value, Duration defaultValue) {
         return value == null ? defaultValue : value;
     }
 
@@ -133,8 +144,7 @@ public record KnowledgeIngestionProperties(
 
     private static IllegalStateException invalid(String property) {
         return new IllegalStateException(
-                "Некорректное значение safeai.knowledge.ingestion."
-                        + property
+                "Некорректное значение safeai.knowledge.ingestion." + property
         );
     }
 }

@@ -2,6 +2,7 @@ package ru.safeai.gateway.model.service;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import ru.safeai.gateway.model.domain.ModelCatalogEntry;
 import ru.safeai.gateway.model.domain.ModelRouteReason;
 import ru.safeai.gateway.model.repository.ModelRouteDecisionRepository;
@@ -26,39 +27,43 @@ class ModelRoutingCostEnvelopeV54Test {
 
     @Test
     void cacheWriteRateMayExceedOrdinaryInputAndMustRaiseUpperBoundEstimate() {
-        ModelCatalogEntry base =
-                ModelTestFixtures.configuredEntry();
+        ModelCatalogEntry base = ModelTestFixtures.configuredEntry();
 
-        ModelCatalogEntry entry =
-                new ModelCatalogEntry(
-                        base.id(),
-                        base.modelKey(),
-                        base.version(),
-                        base.provider(),
-                        base.providerModelId(),
-                        base.displayName(),
-                        base.lifecycle(),
-                        base.maxInputTokens(),
-                        base.maxOutputTokens(),
-                        base.capabilities(),
-                        base.inputModalities(),
-                        base.outputModalities(),
-                        base.retentionStatus(),
-                        base.retentionDays(),
-                        base.trainingUseStatus(),
-                        base.pricingStatus(),
-                        base.pricingComplete(),
-                        new BigDecimal("2"),
-                        new BigDecimal("0.5"),
-                        new BigDecimal("4"),
-                        new BigDecimal("8"),
-                        base.extraPricingJson(),
-                        base.pricingVersion(),
-                        base.effectiveFrom(),
-                        base.source(),
-                        base.createdByUserId(),
-                        base.createdAt()
-                );
+        // Explicit verified pricing provenance is required by V66+.
+        // The legacy positional constructor intentionally marks CONFIGURED
+        // pricing as unverified and must not be used for this positive case.
+        ModelCatalogEntry entry = new ModelCatalogEntry(
+                base.id(),
+                base.modelKey(),
+                base.version(),
+                base.provider(),
+                base.providerModelId(),
+                base.displayName(),
+                base.lifecycle(),
+                base.maxInputTokens(),
+                base.maxOutputTokens(),
+                base.capabilities(),
+                base.inputModalities(),
+                base.outputModalities(),
+                base.retentionStatus(),
+                base.retentionDays(),
+                base.trainingUseStatus(),
+                base.pricingStatus(),
+                base.pricingComplete(),
+                new BigDecimal("2"),
+                new BigDecimal("0.5"),
+                new BigDecimal("4"),
+                new BigDecimal("8"),
+                base.extraPricingJson(),
+                base.pricingVersion(),
+                base.effectiveFrom(),
+                base.source(),
+                base.createdByUserId(),
+                base.createdAt(),
+                ModelPricingScheme.FLAT_TOKEN_V1
+        );
+
+        assertThat(entry.pricingScheme()).isEqualTo(ModelPricingScheme.FLAT_TOKEN_V1);
 
         ModelRoutingCostPolicy.PricingEstimate estimate =
                 policy.estimateCost(
@@ -78,11 +83,7 @@ class ModelRoutingCostEnvelopeV54Test {
          *  1,000 * 8 / 1,000,000 = 0.008
          * total                      0.088
          */
-        assertThat(
-                estimate.cost()
-        ).isEqualByComparingTo(
-                "0.088000000000"
-        );
+        assertThat(estimate.cost()).isEqualByComparingTo("0.088000000000");
     }
 
     @Test
@@ -113,31 +114,14 @@ class ModelRoutingCostEnvelopeV54Test {
                         estimate
                 );
 
-        assertThat(
-                result.denialReason()
-        ).isEqualTo(
-                ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE
-        );
+        assertThat(result.denialReason())
+                .isEqualTo(ModelRouteReason.MONTHLY_BUDGET_UNVERIFIABLE);
 
         assertThat(result.monthlyCostKnown()).isFalse();
         assertThat(result.monthlyProjectedUsd()).isNull();
 
-        assertThat(
-                result.monthlyActualCostUsd()
-        ).isEqualByComparingTo(
-                "1.0"
-        );
-
-        assertThat(
-                result.monthlyReservedCostUsd()
-        ).isEqualByComparingTo(
-                BigDecimal.ZERO
-        );
-
-        assertThat(
-                result.monthlyUnknownCostCount()
-        ).isEqualTo(
-                1L
-        );
+        assertThat(result.monthlyActualCostUsd()).isEqualByComparingTo("1.0");
+        assertThat(result.monthlyReservedCostUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(result.monthlyUnknownCostCount()).isEqualTo(1L);
     }
 }

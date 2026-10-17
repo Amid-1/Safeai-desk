@@ -313,13 +313,22 @@ final class ModelRoutingCostPolicy {
             long outputTokens
     ) {
         if (entry != null) {
+            // V66: legacy, unknown and complex schemes are never a proven
+            // reservation estimate for HARD monthly budget enforcement.
+            if (!entry.pricingScheme().supportedForAutomaticSettlement()) {
+                return new PricingEstimate(null, false);
+            }
             if (entry.pricingStatus() == ModelPricingStatus.FREE) {
                 return new PricingEstimate(BigDecimal.ZERO, entry.pricingComplete());
             }
 
+            if (entry.pricingStatus() != ModelPricingStatus.CONFIGURED
+                    || !entry.pricingComplete()) {
+                return new PricingEstimate(null, false);
+            }
             if (entry.inputUsdPer1mTokens() == null
                     || entry.outputUsdPer1mTokens() == null) {
-                return new PricingEstimate(null, entry.pricingComplete());
+                return new PricingEstimate(null, true);
             }
 
             // For a generic tariff the three supported input prices are
@@ -341,7 +350,7 @@ final class ModelRoutingCostPolicy {
             if (ModelControlPlaneNumericValidation.violatesNonNegativeNumeric30Scale12(estimatedCost)) {
                 return new PricingEstimate(null, false);
             }
-            return new PricingEstimate(estimatedCost, entry.pricingComplete());
+            return new PricingEstimate(estimatedCost, true);
         }
 
         if ("FREE".equals(runtime.pricingStatus())) {

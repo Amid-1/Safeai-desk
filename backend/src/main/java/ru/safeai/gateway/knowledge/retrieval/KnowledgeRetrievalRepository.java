@@ -201,7 +201,7 @@ public class KnowledgeRetrievalRepository {
                                         parameters.text_query, 32
                                     ),
                                     ts_rank_cd(
-                                        to_tsvector('russian', allowed.content),
+                                        to_tsvector('pg_catalog.russian'::regconfig, allowed.content),
                                         parameters.russian_text_query, 32
                                     )
                                 ) desc,
@@ -213,14 +213,14 @@ public class KnowledgeRetrievalRepository {
                                 parameters.text_query, 32
                             ),
                             ts_rank_cd(
-                                to_tsvector('russian', allowed.content),
+                                to_tsvector('pg_catalog.russian'::regconfig, allowed.content),
                                 parameters.russian_text_query, 32
                             )
                         )::real as lexical_score
                     from allowed_chunks allowed
                     cross join query_parameters parameters
                     where allowed.search_vector @@ parameters.text_query
-                       or to_tsvector('russian', allowed.content)
+                       or to_tsvector('pg_catalog.russian'::regconfig, allowed.content)
                           @@ parameters.russian_text_query
                     order by lexical_score desc, allowed.chunk_id
                     limit :candidateLimit

@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.pricing;
 
 import org.springframework.context.annotation.Primary;
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import org.springframework.stereotype.Service;
 import ru.safeai.gateway.ai.pricing.PricingResolver;
 import ru.safeai.gateway.ai.pricing.PricingResult;
@@ -100,6 +101,7 @@ public final class VersionedCatalogPricingResolver implements PricingResolver {
                 || !price.modelKey().equals(decision.selectedModelKey())
                 || !price.provider().equals(target.providerType())
                 || !price.providerModelId().equals(resolvedModel)
+                || price.pricingScheme() != ModelPricingScheme.FLAT_TOKEN_V1
                 || !price.pricingComplete()
                 || price.pricingVersion() == null
                 || price.pricingVersion().isBlank()
@@ -179,6 +181,7 @@ public final class VersionedCatalogPricingResolver implements PricingResolver {
     private static String version(ModelCatalogEntry price) {
         String value = price.id() + ":" + price.modelKey() + ":"
                 + price.version() + ":" + price.pricingVersion() + ":"
+                + price.pricingScheme().databaseValue() + ":"
                 + price.inputUsdPer1mTokens() + ":"
                 + price.cachedInputUsdPer1mTokens() + ":"
                 + price.cacheWriteInputUsdPer1mTokens() + ":"

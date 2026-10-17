@@ -1,7 +1,9 @@
+// backend/src/test/java/ru/safeai/gateway/model/service/ModelPolicyPreviewServiceTest.java
 package ru.safeai.gateway.model.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.GrantedAuthority;
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.common.security.SystemRole;
 import ru.safeai.gateway.model.config.ModelRoutingEnvelopeProperties;
@@ -33,6 +35,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -117,6 +120,52 @@ class ModelPolicyPreviewServiceTest {
                         .compareTo(new BigDecimal("0.20")) > 0,
                 "Max-envelope cost should remain visible even when a smaller request can pass"
         );
+    }
+
+    @Test
+    void legacyPricingSchemeIsNotAcceptedAsVerifiedBudgetEvidence() {
+        Fixture fixture = fixture(List.of(
+                entry("openai:gpt-main", "5", "15",
+                        ModelPricingScheme.LEGACY_FLAT_UNVERIFIED_V1)
+        ));
+
+        ModelPolicyPreviewResponse preview = fixture.service.preview(
+                ORGANIZATION_ID,
+                request(new BigDecimal("0.20")),
+                fixture.user
+        );
+
+        assertEquals(ModelRouteOutcome.DENIED, preview.automaticOutcome());
+        assertEquals(ModelRouteReason.PRICING_INCOMPLETE, preview.automaticReason());
+        assertEquals(0, preview.executableModelCount());
+        assertTrue(preview.wouldLockOutOrganization());
+        assertFalse(preview.models().getFirst().pricingComplete());
+        assertNull(preview.models().getFirst().estimatedMaxCostUsd());
+        assertEquals(ModelRouteReason.PRICING_INCOMPLETE,
+                preview.models().getFirst().reason());
+        assertTrue(preview.nonBinding());
+    }
+
+    @Test
+    void unsupportedPricingSchemeIsNotAcceptedAsVerifiedBudgetEvidence() {
+        Fixture fixture = fixture(List.of(
+                entry("openai:gpt-main", "5", "15",
+                        ModelPricingScheme.UNSUPPORTED_COMPLEX_V1)
+        ));
+
+        ModelPolicyPreviewResponse preview = fixture.service.preview(
+                ORGANIZATION_ID,
+                request(new BigDecimal("0.20")),
+                fixture.user
+        );
+
+        assertEquals(ModelRouteOutcome.DENIED, preview.automaticOutcome());
+        assertEquals(ModelRouteReason.PRICING_INCOMPLETE, preview.automaticReason());
+        assertEquals(0, preview.executableModelCount());
+        assertTrue(preview.wouldLockOutOrganization());
+        assertFalse(preview.models().getFirst().pricingComplete());
+        assertNull(preview.models().getFirst().estimatedMaxCostUsd());
+        assertTrue(preview.nonBinding());
     }
 
     @Test
@@ -402,10 +451,20 @@ class ModelPolicyPreviewServiceTest {
         );
     }
 
+    /** Verified pricing is explicit; the legacy constructor must remain fail-closed. */
     private static ModelCatalogEntry entry(
             String modelKey,
             String inputRate,
             String outputRate
+    ) {
+        return entry(modelKey, inputRate, outputRate, ModelPricingScheme.FLAT_TOKEN_V1);
+    }
+
+    private static ModelCatalogEntry entry(
+            String modelKey,
+            String inputRate,
+            String outputRate,
+            ModelPricingScheme pricingScheme
     ) {
         return new ModelCatalogEntry(
                 UUID.randomUUID(),
@@ -434,7 +493,8 @@ class ModelPolicyPreviewServiceTest {
                 NOW.minusSeconds(3600),
                 ModelCatalogSource.MANUAL,
                 USER_ID,
-                NOW.minusSeconds(7200)
+                NOW.minusSeconds(7200),
+                pricingScheme
         );
     }
 

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.model.domain.*;
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -34,21 +35,45 @@ public class ModelCatalogRepository {
             input_usd_per_1m_tokens, cached_input_usd_per_1m_tokens,
             cache_write_input_usd_per_1m_tokens, output_usd_per_1m_tokens,
             extra_pricing_json::text as extra_pricing_json,
-            pricing_version, effective_from, source, created_by_user_id, created_at
+            pricing_version, effective_from, source, created_by_user_id, created_at,
+            pricing_scheme
             """;
 
-    private static final String FIND_LATEST_PAGE_SQL =
-            "select * from (select distinct on (model_key) " + SELECT_COLUMNS
-                    + " from model_catalog_entries order by model_key, version desc) latest "
-                    + "where (?::text is null or model_key > ?::text) "
-                    + "order by model_key limit ?";
+    private static final String FIND_LATEST_PAGE_SQL = """
+            select latest.* from (
+                select distinct model_key
+                from model_catalog_entries
+                where (?::text is null or model_key > ?::text)
+                order by model_key
+                limit ?
+            ) keys
+            cross join lateral (
+                select\s""" + SELECT_COLUMNS + """
+                from model_catalog_entries
+                where model_key = keys.model_key
+                order by version desc limit 1
+            ) latest
+            order by keys.model_key
+            """;
 
-    private static final String FIND_EFFECTIVE_PAGE_SQL =
-            "select * from (select distinct on (model_key) " + SELECT_COLUMNS
-                    + " from model_catalog_entries where effective_from <= ? "
-                    + "order by model_key, version desc) effective "
-                    + "where (?::text is null or model_key > ?::text) "
-                    + "order by model_key limit ?";
+    private static final String FIND_EFFECTIVE_PAGE_SQL = """
+            select effective.* from (
+                select distinct model_key
+                from model_catalog_entries
+                where effective_from <= ?
+                  and (?::text is null or model_key > ?::text)
+                order by model_key
+                limit ?
+            ) keys
+            cross join lateral (
+                select\s""" + SELECT_COLUMNS + """
+                from model_catalog_entries
+                where model_key = keys.model_key
+                  and effective_from <= ?
+                order by version desc limit 1
+            ) effective
+            order by keys.model_key
+            """;
 
     private static final String FIND_EFFECTIVE_BY_RUNTIME_SQL =
             "select * from (select distinct on (model_key) " + SELECT_COLUMNS
@@ -154,6 +179,7 @@ public class ModelCatalogRepository {
             setNullableText(statement, 2, afterModelKey);
             setNullableText(statement, 3, afterModelKey);
             statement.setInt(4, limit);
+            statement.setTimestamp(5, Timestamp.from(asOf));
         }, this::map);
     }
 
@@ -181,12 +207,7 @@ public class ModelCatalogRepository {
      */
     public ModelCatalogEntry insert(ModelCatalogEntry entry) {
         Objects.requireNonNull(entry, "entry не должен быть null");
-        String pricingScheme = switch (entry.pricingStatus()) {
-            case FREE -> "FLAT_TOKEN_V1";
-            case CONFIGURED -> "LEGACY_FLAT_UNVERIFIED_V1";
-            case UNPRICED, INCOMPLETE -> "UNSUPPORTED_COMPLEX_V1";
-        };
-        return insert(entry, pricingScheme);
+        return insert(entry, entry.pricingScheme().databaseValue());
     }
 
     /**
@@ -202,6 +223,9 @@ public class ModelCatalogRepository {
             throw new IllegalArgumentException("Unsupported pricingScheme: " + pricingScheme);
         }
 
+        if (!entry.pricingScheme().databaseValue().equals(pricingScheme)) {
+            throw new IllegalArgumentException("Catalog price scheme does not match immutable entry");
+        }
         int updated = jdbc.update(INSERT_SQL, statement -> {
             int index = 1;
             statement.setObject(index++, entry.id());
@@ -301,6 +325,7 @@ public class ModelCatalogRepository {
                 rs.getTimestamp("effective_from").toInstant(),
                 ModelCatalogSource.valueOf(rs.getString("source")),
                 rs.getObject("created_by_user_id", UUID.class),
-                rs.getTimestamp("created_at").toInstant());
+                rs.getTimestamp("created_at").toInstant(),
+                ModelPricingScheme.fromDatabaseValue(rs.getString("pricing_scheme")));
     }
 }

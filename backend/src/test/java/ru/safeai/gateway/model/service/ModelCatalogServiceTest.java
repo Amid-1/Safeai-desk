@@ -1,6 +1,7 @@
 package ru.safeai.gateway.model.service;
 
 import org.junit.jupiter.api.BeforeEach;
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -149,7 +150,8 @@ class ModelCatalogServiceTest {
                 " { } ",
                 null,
                 null,
-                0
+                0,
+                ModelPricingScheme.FLAT_TOKEN_V1
         );
 
         service.createVersion(
@@ -180,6 +182,7 @@ class ModelCatalogServiceTest {
                 .isEqualTo(ModelTestFixtures.NOW);
         assertThat(entry.createdAt())
                 .isEqualTo(ModelTestFixtures.NOW);
+        assertThat(entry.pricingScheme()).isEqualTo(ModelPricingScheme.FLAT_TOKEN_V1);
         assertThat(entry.source())
                 .isEqualTo(ModelCatalogSource.MANUAL);
         assertThat(entry.inputUsdPer1mTokens())
@@ -217,6 +220,7 @@ class ModelCatalogServiceTest {
                 ArgumentCaptor.forClass(ModelCatalogEntry.class);
         verify(repository).insert(captor.capture());
 
+        assertThat(captor.getValue().pricingScheme()).isEqualTo(ModelPricingScheme.FLAT_TOKEN_V1);
         assertThat(captor.getValue().inputUsdPer1mTokens())
                 .isEqualTo(new BigDecimal("1.500000000000"));
         assertThat(captor.getValue().cachedInputUsdPer1mTokens())
@@ -311,6 +315,49 @@ class ModelCatalogServiceTest {
         );
 
         assertRejectedBeforeInsert(request);
+    }
+
+    @Test
+    void configuredRejectsUnconfirmedPricingSchemeBeforeDatabaseWrite() {
+        CreateModelCatalogVersionRequest verified = pricingRequest(
+                ModelPricingStatus.CONFIGURED,
+                true,
+                new BigDecimal("1.00"),
+                null,
+                null,
+                new BigDecimal("4.00"),
+                "{}",
+                "pricing-confirmation-required"
+        );
+
+        CreateModelCatalogVersionRequest unconfirmed = new CreateModelCatalogVersionRequest(
+                verified.modelKey(),
+                verified.provider(),
+                verified.providerModelId(),
+                verified.displayName(),
+                verified.lifecycle(),
+                verified.maxInputTokens(),
+                verified.maxOutputTokens(),
+                verified.capabilities(),
+                verified.inputModalities(),
+                verified.outputModalities(),
+                verified.retentionStatus(),
+                verified.retentionDays(),
+                verified.trainingUseStatus(),
+                verified.pricingStatus(),
+                verified.pricingComplete(),
+                verified.inputUsdPer1mTokens(),
+                verified.cachedInputUsdPer1mTokens(),
+                verified.cacheWriteInputUsdPer1mTokens(),
+                verified.outputUsdPer1mTokens(),
+                verified.extraPricingJson(),
+                verified.pricingVersion(),
+                verified.effectiveFrom(),
+                verified.expectedPreviousVersion(),
+                null
+        );
+
+        assertRejectedBeforeInsert(unconfirmed);
     }
 
     @Test
@@ -470,7 +517,8 @@ class ModelCatalogServiceTest {
                         base.extraPricingJson(),
                         base.pricingVersion(),
                         base.effectiveFrom(),
-                        base.expectedPreviousVersion()
+                        base.expectedPreviousVersion(),
+                        base.pricingScheme()
                 );
 
         assertRejectedBeforeInsert(invalid);
@@ -503,7 +551,8 @@ class ModelCatalogServiceTest {
                         base.extraPricingJson(),
                         base.pricingVersion(),
                         base.effectiveFrom(),
-                        base.expectedPreviousVersion()
+                        base.expectedPreviousVersion(),
+                        base.pricingScheme()
                 );
 
         assertThatThrownBy(() -> service.createVersion(
@@ -754,7 +803,8 @@ class ModelCatalogServiceTest {
                 "{}",
                 null,
                 null,
-                0
+                0,
+                ModelPricingScheme.FLAT_TOKEN_V1
         );
     }
 
@@ -792,7 +842,10 @@ class ModelCatalogServiceTest {
                 extraPricingJson,
                 pricingVersion,
                 base.effectiveFrom(),
-                base.expectedPreviousVersion()
+                base.expectedPreviousVersion(),
+                pricingStatus == ModelPricingStatus.CONFIGURED
+                        ? ModelPricingScheme.FLAT_TOKEN_V1
+                        : null
         );
     }
 
@@ -823,7 +876,8 @@ class ModelCatalogServiceTest {
                 source.extraPricingJson(),
                 source.pricingVersion(),
                 effectiveFrom,
-                source.expectedPreviousVersion()
+                source.expectedPreviousVersion(),
+                source.pricingScheme()
         );
     }
 }

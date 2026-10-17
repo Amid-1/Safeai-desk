@@ -14,6 +14,7 @@ import ru.safeai.gateway.model.domain.ModelPricingStatus;
 import ru.safeai.gateway.model.domain.ModelRetentionStatus;
 import ru.safeai.gateway.model.domain.ModelTrainingUseStatus;
 
+import ru.safeai.gateway.ai.pricing.ModelPricingScheme;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Set;
@@ -41,6 +42,60 @@ public record CreateModelCatalogVersionRequest(
         @Size(max = 16_000) String extraPricingJson,
         @Size(max = 64) String pricingVersion,
         Instant effectiveFrom,
-        @PositiveOrZero int expectedPreviousVersion
+        @PositiveOrZero int expectedPreviousVersion,
+        ModelPricingScheme pricingScheme
 ) {
+    /** Compatibility constructor; CONFIGURED still needs explicit scheme. */
+    public CreateModelCatalogVersionRequest(
+        String modelKey,
+        String provider,
+        String providerModelId,
+        String displayName,
+        ModelLifecycle lifecycle,
+        int maxInputTokens,
+        int maxOutputTokens,
+        Set<ModelCapability> capabilities,
+        Set<ModelModality> inputModalities,
+        Set<ModelModality> outputModalities,
+        ModelRetentionStatus retentionStatus,
+        Integer retentionDays,
+        ModelTrainingUseStatus trainingUseStatus,
+        ModelPricingStatus pricingStatus,
+        boolean pricingComplete,
+        BigDecimal inputUsdPer1mTokens,
+        BigDecimal cachedInputUsdPer1mTokens,
+        BigDecimal cacheWriteInputUsdPer1mTokens,
+        BigDecimal outputUsdPer1mTokens,
+        String extraPricingJson,
+        String pricingVersion,
+        Instant effectiveFrom,
+        int expectedPreviousVersion
+    ) {
+        this(
+                modelKey,
+                provider,
+                providerModelId,
+                displayName,
+                lifecycle,
+                maxInputTokens,
+                maxOutputTokens,
+                capabilities,
+                inputModalities,
+                outputModalities,
+                retentionStatus,
+                retentionDays,
+                trainingUseStatus,
+                pricingStatus,
+                pricingComplete,
+                inputUsdPer1mTokens,
+                cachedInputUsdPer1mTokens,
+                cacheWriteInputUsdPer1mTokens,
+                outputUsdPer1mTokens,
+                extraPricingJson,
+                pricingVersion,
+                effectiveFrom,
+                expectedPreviousVersion,
+                null
+        );
+    }
 }
