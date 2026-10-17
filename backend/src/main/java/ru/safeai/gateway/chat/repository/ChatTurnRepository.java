@@ -79,6 +79,28 @@ public interface ChatTurnRepository
             @Param("newLeaseUntil") Instant newLeaseUntil
     );
 
+    /** One PostgreSQL clock sample owns the check and deadline extension. */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            with db_time as (select clock_timestamp() as observed_at)
+            update chat_turns t
+               set lease_until = db_time.observed_at +
+                       (:leaseMillis * interval '1 millisecond'),
+                   updated_at = db_time.observed_at,
+                   version = t.version + 1
+              from db_time
+             where t.id = :turnId
+               and t.state = 'PROCESSING'
+               and t.processing_token = :processingToken
+               and t.lease_until >= db_time.observed_at
+            """, nativeQuery = true)
+    int renewLeaseUsingDatabaseClock(
+            @Param("turnId") UUID turnId,
+            @Param("processingToken") UUID processingToken,
+            @Param("leaseMillis") long leaseMillis
+    );
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
             update chat_turns
@@ -101,7 +123,7 @@ public interface ChatTurnRepository
                and state = 'PROCESSING'
                and processing_token = :processingToken
                and provider_call_started_at is not null
-               and lease_until >= :completedAt
+               and lease_until >= clock_timestamp()
             """, nativeQuery = true)
     int markSucceeded(
             @Param("turnId") UUID turnId,
@@ -140,7 +162,7 @@ public interface ChatTurnRepository
                and state = 'PROCESSING'
                and processing_token = :processingToken
                and provider_call_started_at is not null
-               and lease_until >= :completedAt
+               and lease_until >= clock_timestamp()
             """, nativeQuery = true)
     int markFailed(
             @Param("turnId") UUID turnId,

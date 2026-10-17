@@ -1,4 +1,3 @@
-// backend/src/main/java/ru/safeai/gateway/audit/AuditEventType.java
 package ru.safeai.gateway.audit;
 
 public enum AuditEventType {
@@ -48,5 +47,7 @@ public enum AuditEventType {
     MODEL_CATALOG_VERSION_CREATED,
     MODEL_POLICY_VERSION_CREATED,
     MODEL_ROUTE_DECIDED,
-    MODEL_ROUTE_DENIED
+    MODEL_ROUTE_DENIED,
+
+    AUDIT_OUTBOX_DEAD_LETTER_RECOVERED
 }

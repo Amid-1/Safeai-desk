@@ -29,7 +29,8 @@ public record ChatQuotaReservation(
 
     private static final BigDecimal UNKNOWN_DATABASE_COST =
             BigDecimal.ZERO.setScale(
-                    DATABASE_MONEY_SCALE
+                    DATABASE_MONEY_SCALE,
+                    RoundingMode.UNNECESSARY
             );
 
     public ChatQuotaReservation {

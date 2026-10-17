@@ -1,4 +1,7 @@
 # SafeAI-Desk/infra/prometheus/prometheus.yml
+# RULES are loaded from the bind-mounted infra/prometheus/rules/ directory.
+# Prometheus evaluates rules locally. Real notifications also require
+# explicitly configured Alertmanager routing; see docs/RUNBOOK_AUDIT.md.
 
 global:
   scrape_interval: 15s
@@ -12,7 +15,7 @@ scrape_configs:
   - job_name: safeai-backend
     scheme: http
     metrics_path: /actuator/prometheus
-
+    honor_labels: false
     static_configs:
       - targets:
           - backend:9091

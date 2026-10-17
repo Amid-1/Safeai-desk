@@ -1,7 +1,6 @@
-# SafeAI-Desk/docs/config/application-prod-knowledge-reconciliation.example.yml
-
-# Documentation example only.
-# Enable only after V56/V57 and recovery/chaos tests pass on a production-like clone.
+# # SafeAI-Desk/docs/config/application-prod-knowledge-reconciliation.example.yml
+# Documentation-only. Enable only after V56/V57 and chaos/recovery tests
+# pass on a production-like clone; do NOT load automatically.
 safeai:
   knowledge:
     storage-reconciliation:

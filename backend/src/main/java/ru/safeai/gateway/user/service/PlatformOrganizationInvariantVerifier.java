@@ -1,4 +1,3 @@
-
 package ru.safeai.gateway.user.service;
 
 import lombok.RequiredArgsConstructor;
@@ -99,6 +98,18 @@ public class PlatformOrganizationInvariantVerifier
                             + users
                             + ", superAdmins="
                             + superAdmins
+            );
+        }
+
+        long activeSuperAdmins =
+                userRepository.countEnabledByOrganizationIdAndRole(
+                        platform.getId(),
+                        SystemRole.SUPER_ADMIN.roleName()
+                );
+        if (activeSuperAdmins < 1L) {
+            throw new IllegalStateException(
+                    "Platform organization не содержит "
+                            + "активного SUPER_ADMIN"
             );
         }
     }

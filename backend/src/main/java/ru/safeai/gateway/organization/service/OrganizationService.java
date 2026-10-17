@@ -6,6 +6,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.identity.session.SessionRevocationPort;
@@ -31,10 +32,7 @@ public class OrganizationService {
     private final OrganizationCommandOperations commands;
     private final OrganizationQueryOperations queries;
 
-    /**
-     * Keep the original dependency-facing constructor so Spring wiring and
-     * existing unit tests do not need a compatibility adapter.
-     */
+    /** Keep the original dependency-facing constructor and wiring contract. */
     public OrganizationService(
             OrganizationRepository organizationRepository,
             OrganizationImpactQueryRepository impactQueryRepository,
@@ -46,10 +44,8 @@ public class OrganizationService {
     ) {
         OrganizationAccessPolicy accessPolicy =
                 new OrganizationAccessPolicy(platformProperties);
-
         OrganizationResponseMapper responseMapper =
                 new OrganizationResponseMapper(accessPolicy);
-
         this.commands = new OrganizationCommandOperations(
                 organizationRepository,
                 auditEventService,
@@ -59,7 +55,6 @@ public class OrganizationService {
                 accessPolicy,
                 responseMapper
         );
-
         this.queries = new OrganizationQueryOperations(
                 organizationRepository,
                 impactQueryRepository,
@@ -108,7 +103,9 @@ public class OrganizationService {
         return queries.findById(id, currentUser);
     }
 
-    @Transactional(readOnly = true)
+    // One consistent PostgreSQL snapshot for entity version and all counters.
+    // This DOES NOT guarantee that state stays unchanged until a later disable.
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public OrganizationDisableImpactResponse getDisableImpact(
             UUID id,
             SafeAiUserPrincipal currentUser

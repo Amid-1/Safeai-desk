@@ -1,22 +1,79 @@
 # SafeAI-Desk/infra/prometheus/rules/safeai-audit-outbox.yml
+# Installed by infra/docker-compose.yml at /etc/prometheus/rules/.
+# Never copy this block into Spring Boot application.yml.
+# Metrics are exported via Micrometer at the INTERNAL /actuator/prometheus endpoint.
 
 groups:
   - name: safeai-audit-outbox
     rules:
-      - alert: SafeAiAuditOutboxDeadLetter
+      # Every replica reports the SAME PostgreSQL backlog. Use max, never sum.
+      - alert: SafeAiAuditDeadLettersPresent
         expr: max(safeai_audit_outbox_dead_letter_rows) > 0
-        for: 1m
+        for: 2m
         labels:
           severity: critical
+          service: safeai-backend
         annotations:
-          summary: "SafeAI audit outbox contains dead-letter rows"
-          description: "At least one durable audit event could not be delivered."
+          summary: "Audit events are stuck in dead-letter"
+          description: "Investigate audit_outbox dead letters and follow docs/RUNBOOK_AUDIT.md; never mutate terminal V68 rows manually."
 
-      - alert: SafeAiAuditOutboxOldestPendingTooOld
-        expr: max(safeai_audit_outbox_oldest_age_seconds) > 300
+      - alert: SafeAiAuditOutboxBacklogStale
+        expr: max(safeai_audit_outbox_oldest_age_seconds) > 600
         for: 5m
         labels:
           severity: warning
+          service: safeai-backend
         annotations:
-          summary: "SafeAI audit outbox delivery is delayed"
-          description: "The oldest pending audit row has been waiting for more than 5 minutes."
+          summary: "Oldest pending audit event has waited more than 10 minutes"
+          description: "Check worker progress, PostgreSQL locks, JDBC pool and retry schedule."
+
+      - alert: SafeAiAuditOutboxMetricsRefreshFailed
+        expr: sum(increase(safeai_audit_outbox_metrics_refresh_failures_total[10m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Audit backlog instrumentation cannot refresh"
+          description: "Stored gauges may be stale; check DB connectivity and the AuditOutboxMetrics scheduled job."
+
+      - alert: SafeAiAuditOutboxProcessorFailed
+        expr: sum(increase(safeai_audit_outbox_processor_failures_total[10m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: safeai-backend
+        annotations:
+          summary: "Audit outbox processor failed"
+          description: "Investigate safe failureType-only logs; never enable SQL-bind or exception-message logging."
+
+      # Without scrape health, a missing metric may look like an empty backlog.
+      - alert: SafeAiBackendMetricsScrapeFailed
+        expr: up{job="safeai-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "SafeAI backend metrics scrape failed"
+          description: "Prometheus cannot scrape a configured backend target; verify management network, port 9091 and /actuator/prometheus."
+
+      - alert: SafeAiBackendMetricsTargetMissing
+        expr: absent(up{job="safeai-backend"})
+        for: 2m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "No SafeAI backend metrics target is registered"
+          description: "Check Prometheus scrape_configs; no target exists for job safeai-backend."
+
+      - alert: SafeAiAuditDeadLetterMetricMissing
+        expr: absent(safeai_audit_outbox_dead_letter_rows)
+        for: 3m
+        labels:
+          severity: critical
+          service: safeai-backend
+        annotations:
+          summary: "Audit dead-letter metric is missing"
+          description: "Check AuditOutboxMetrics registration, Prometheus exporter and scrape access."

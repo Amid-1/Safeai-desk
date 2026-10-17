@@ -1,4 +1,3 @@
-
 package ru.safeai.gateway.usage.repository;
 
 import org.springframework.dao.DataAccessResourceFailureException;

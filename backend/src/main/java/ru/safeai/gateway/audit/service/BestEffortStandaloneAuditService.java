@@ -14,14 +14,12 @@ import java.util.function.Supplier;
 /**
  * Best-effort standalone audit facade.
  *
- * <p>События, записываемые через этот сервис, намеренно не должны влиять
- * на основной business flow: ошибка построения audit command, sanitization,
- * сохранения outbox row, flush или commit отдельной transaction логируется
- * и не пробрасывается вызывающему коду.</p>
+ * <p>Events recorded here deliberately do not change the outcome of a business
+ * operation. Command creation, sanitization, outbox persistence and the separate
+ * transaction's commit are covered by one best-effort failure boundary.</p>
  *
- * <p>Для security/business evidence, которое должно commit-иться атомарно
- * с основной mutation, этот сервис использовать нельзя. Для таких случаев
- * применяется required audit API текущей transaction.</p>
+ * <p>Security/business evidence that must commit atomically with a mutation
+ * must use the required audit API, never this facade.</p>
  */
 @Slf4j
 @Service
@@ -34,93 +32,57 @@ public final class BestEffortStandaloneAuditService {
             AuditCommandFactory commandFactory,
             AuditOutboxWriter outboxWriter
     ) {
-        this.commandFactory =
-                Objects.requireNonNull(
-                        commandFactory,
-                        "commandFactory не должен быть null"
-                );
-
-        this.outboxWriter =
-                Objects.requireNonNull(
-                        outboxWriter,
-                        "outboxWriter не должен быть null"
-                );
+        this.commandFactory = Objects.requireNonNull(
+                commandFactory, "commandFactory не должен быть null");
+        this.outboxWriter = Objects.requireNonNull(
+                outboxWriter, "outboxWriter не должен быть null");
     }
 
     /**
-     * Best-effort standalone audit для typed details.
+     * Typed audit detail entry point. Retained as an integration API even when
+     * the current production call graph does not contain a direct caller.
+     *
+     * <p>Use only dedicated, reviewed AuditDetails implementations here:
+     * the typed sanitizer allows structured metadata strings that the legacy
+     * unstructured-map sanitizer intentionally rejects.</p>
      */
+    @SuppressWarnings("unused") // Public module API; do not remove or redirect to create(Map).
     public void tryRecord(
             AuditActor actor,
             UUID targetOrganizationId,
             AuditEventType eventType,
             AuditDetails details
     ) {
-        tryWrite(
-                actor,
-                targetOrganizationId,
-                eventType,
-                () ->
-                        commandFactory.createTyped(
-                                actor,
-                                targetOrganizationId,
-                                eventType,
-                                details
-                        )
-        );
+        tryWrite(actor, targetOrganizationId, eventType,
+                () -> commandFactory.createTyped(
+                        actor, targetOrganizationId, eventType, details));
     }
 
-    /**
-     * Best-effort standalone audit для legacy/unstructured details.
-     */
+    /** Legacy/unstructured details; keep its strict string-field allowlist. */
     public void tryRecord(
             AuditActor actor,
             UUID targetOrganizationId,
             AuditEventType eventType,
             Map<String, Object> details
     ) {
-        tryWrite(
-                actor,
-                targetOrganizationId,
-                eventType,
-                () ->
-                        commandFactory.create(
-                                actor,
-                                targetOrganizationId,
-                                eventType,
-                                details
-                        )
-        );
+        tryWrite(actor, targetOrganizationId, eventType,
+                () -> commandFactory.create(
+                        actor, targetOrganizationId, eventType, details));
     }
 
-    /**
-     * Best-effort standalone system audit.
-     */
+    /** Best-effort standalone system audit using the unstructured boundary. */
     public void tryRecordSystem(
             UUID targetOrganizationId,
             AuditEventType eventType,
             Map<String, Object> details
     ) {
-        tryRecord(
-                AuditActor.system(),
-                targetOrganizationId,
-                eventType,
-                details
-        );
+        tryRecord(AuditActor.system(), targetOrganizationId, eventType, details);
     }
 
     /**
-     * Выполняет полный standalone audit pipeline:
-     *
-     * <ol>
-     *     <li>создание и sanitization AuditCommand;</li>
-     *     <li>REQUIRES_NEW durable outbox enqueue;</li>
-     *     <li>перехват любой RuntimeException как best-effort failure.</li>
-     * </ol>
-     *
-     * <p>Supplier намеренно вызывается внутри try-блока, чтобы ошибки
-     * command factory и sanitizer имели ту же best-effort семантику,
-     * что и ошибки persistence/transaction commit.</p>
+     * Supplier runs inside the catch boundary: failures before persistence,
+     * during flush and at commit all retain the same best-effort semantics.
+     * The writer remains a separate Spring bean so REQUIRES_NEW is effective.
      */
     private void tryWrite(
             AuditActor actor,
@@ -129,31 +91,12 @@ public final class BestEffortStandaloneAuditService {
             Supplier<AuditCommand> commandSupplier
     ) {
         Objects.requireNonNull(
-                commandSupplier,
-                "commandSupplier не должен быть null"
-        );
-
+                commandSupplier, "commandSupplier не должен быть null");
         try {
-            AuditCommand command =
-                    commandSupplier.get();
-
-            /*
-             * writeStandaloneRequired использует REQUIRES_NEW.
-             *
-             * Вызов остаётся внутри try/catch, поэтому failure на любом
-             * persistence этапе — save, flush или transaction completion —
-             * сохраняет best-effort semantics этого facade.
-             */
-            outboxWriter.writeStandaloneRequired(
-                    command
-            );
+            AuditCommand command = commandSupplier.get();
+            outboxWriter.writeStandaloneRequired(command);
         } catch (RuntimeException exception) {
-            logFailure(
-                    actor,
-                    targetOrganizationId,
-                    eventType,
-                    exception
-            );
+            logFailure(actor, targetOrganizationId, eventType, exception);
         }
     }
 
@@ -163,20 +106,23 @@ public final class BestEffortStandaloneAuditService {
             AuditEventType eventType,
             RuntimeException exception
     ) {
+        /*
+         * This is a security-sensitive log boundary. Throwable messages and
+         * stack traces can contain SQL bind values, credentials, prompts or
+         * provider response bodies. Passing the Throwable to SLF4J as the
+         * final argument would print them. Only the stable exception TYPE
+         * is logged. Never log exception.getMessage() or exception.toString().
+         */
         log.error(
                 "Unable to persist standalone audit intent: "
                         + "eventType={}, actorUserId={}, "
-                        + "actorOrganizationId={}, "
-                        + "targetOrganizationId={}",
+                        + "actorOrganizationId={}, targetOrganizationId={}, "
+                        + "failureType={}",
                 eventType,
-                actor == null
-                        ? null
-                        : actor.userId(),
-                actor == null
-                        ? null
-                        : actor.organizationId(),
+                actor == null ? null : actor.userId(),
+                actor == null ? null : actor.organizationId(),
                 targetOrganizationId,
-                exception
+                exception.getClass().getName()
         );
     }
 }

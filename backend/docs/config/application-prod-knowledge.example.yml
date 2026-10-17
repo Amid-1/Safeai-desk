@@ -1,5 +1,9 @@
-# "D:\Java projects\Safeai-desk\backend\docs\config\application-prod-knowledge.example.yml"
-# Documentation example only. Do not place this file in src/main/resources.
+# # SafeAI-Desk/backend/docs/config/application-prod-knowledge.example.yml
+# Windows path: D:\Java projects\Safeai-desk\backend\docs\config\application-prod-knowledge.example.yml
+# Documentation-only example; not automatically loaded by Spring Boot.
+# Production settings are primarily managed by application.yml/application-prod.yml
+# and external /run/config/pricing.yml and /run/secrets/.
+# Do not import this file wholesale: it is a focused example with an OCR policy.
 safeai:
   knowledge:
     storage:
@@ -47,9 +51,8 @@ safeai:
       max-context-chars: 24000
       max-chunk-chars: 6000
 
-    # OCR may remain disabled if scanned PDFs are intentionally rejected.
-    # For HTTP OCR, connect-timeout + read-timeout must not exceed
-    # ingestion.extraction-timeout.
+    # Keep OCR disabled unless scanned documents are part of the accepted
+    # production feature set; HTTP OCR needs an explicit allowlist and testing.
     ocr:
       provider: disabled
       allowed-hosts: []
@@ -57,4 +60,3 @@ safeai:
       connect-timeout: 5s
       read-timeout: 90s
       max-response-bytes: 16777216
-

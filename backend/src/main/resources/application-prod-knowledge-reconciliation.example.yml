@@ -1,6 +1,7 @@
-# D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod-knowledge-reconciliation.example.yml
-# Optional additive configuration snippet. Enable ONLY after Flyway V56
-# and recovery/chaos tests have passed on a production-like clone.
+# SafeAI-Desk/backend/src/main/resources/application-prod-knowledge-reconciliation.example.yml
+# Windows path: D:\Java projects\Safeai-desk\backend\src\main\resources\application-prod-knowledge-reconciliation.example.yml
+# Optional documentation snippet. NOT automatically active in the prod profile.
+# Enable ONLY after Flyway V56/V57 and recovery/chaos tests pass.
 safeai:
   knowledge:
     storage-reconciliation:

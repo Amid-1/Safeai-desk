@@ -29,12 +29,7 @@ final class OrganizationQueryOperations {
             Sort.by(Sort.Order.desc("createdAt"));
 
     private static final Set<String> ALLOWED_SORT_PROPERTIES =
-            Set.of(
-                    "createdAt",
-                    "name",
-                    "enabled",
-                    "updatedAt"
-            );
+            Set.of("createdAt", "name", "enabled", "updatedAt");
 
     private final OrganizationRepository organizationRepository;
     private final OrganizationImpactQueryRepository impactQueryRepository;
@@ -58,10 +53,7 @@ final class OrganizationQueryOperations {
             Pageable pageable
     ) {
         accessPolicy.requireOrganizationReader(currentUser);
-        Objects.requireNonNull(
-                pageable,
-                "pageable не должен быть null"
-        );
+        Objects.requireNonNull(pageable, "pageable не должен быть null");
 
         Pageable stablePageable = normalizePageable(pageable);
 
@@ -72,23 +64,13 @@ final class OrganizationQueryOperations {
         }
 
         if (stablePageable.getOffset() > 0L) {
-            return new PageImpl<>(
-                    List.of(),
-                    stablePageable,
-                    1L
-            );
+            return new PageImpl<>(List.of(), stablePageable, 1L);
         }
 
         UUID organizationId = currentUser.getOrganizationId();
-
-        OrganizationEntity organization =
-                organizationRepository
-                        .findById(organizationId)
-                        .orElseThrow(() ->
-                                accessPolicy.organizationNotFound(
-                                        organizationId
-                                )
-                        );
+        OrganizationEntity organization = organizationRepository
+                .findById(organizationId)
+                .orElseThrow(() -> accessPolicy.organizationNotFound(organizationId));
 
         return new PageImpl<>(
                 List.of(responseMapper.toResponse(organization)),
@@ -104,157 +86,110 @@ final class OrganizationQueryOperations {
     ) {
         accessPolicy.requireSuperAdmin(currentUser);
 
-        String normalizedQuery =
-                query == null
-                        ? ""
-                        : query.trim();
-
+        String normalizedQuery = query == null ? "" : query.trim();
         if (normalizedQuery.length() > 255) {
-            throw new BadRequestException(
-                    "Поисковый запрос не должен превышать 255 символов"
-            );
+            throw new BadRequestException("Поисковый запрос не должен превышать 255 символов");
         }
 
-        int safeLimit = Math.clamp(
-                limit,
-                1,
-                MAX_DIRECTORY_LIMIT
-        );
-
+        int safeLimit = Math.clamp(limit, 1, MAX_DIRECTORY_LIMIT);
         Pageable pageable = PageRequest.of(
-                0,
-                safeLimit,
-                Sort.by(
-                        Sort.Order.asc("name"),
-                        Sort.Order.asc("id")
-                )
+                0, safeLimit,
+                Sort.by(Sort.Order.asc("name"), Sort.Order.asc("id"))
         );
 
         UUID exactId = parseUuidOrNull(normalizedQuery);
-
         if (exactId != null) {
-            return organizationRepository
-                    .findById(exactId)
+            return organizationRepository.findById(exactId)
                     .map(responseMapper::toDirectoryResponse)
                     .map(List::of)
                     .orElseGet(List::of);
         }
 
-        Page<OrganizationEntity> page =
-                normalizedQuery.isEmpty()
-                        ? organizationRepository.findAll(pageable)
-                        : organizationRepository.searchDirectoryByName(
-                                escapeDirectoryLikeLiteral(normalizedQuery),
-                                pageable
-                        );
+        Page<OrganizationEntity> page = normalizedQuery.isEmpty()
+                ? organizationRepository.findAll(pageable)
+                : organizationRepository.searchDirectoryByName(
+                        escapeDirectoryLikeLiteral(normalizedQuery),
+                        pageable
+                );
 
-        return page.getContent()
-                .stream()
+        return page.getContent().stream()
                 .map(responseMapper::toDirectoryResponse)
                 .toList();
     }
 
-    OrganizationResponse findCurrentOrganization(
-            SafeAiUserPrincipal currentUser
-    ) {
+    OrganizationResponse findCurrentOrganization(SafeAiUserPrincipal currentUser) {
         accessPolicy.requireOrganizationReader(currentUser);
-
         UUID organizationId = currentUser.getOrganizationId();
 
-        return organizationRepository
-                .findById(organizationId)
+        return organizationRepository.findById(organizationId)
                 .map(responseMapper::toResponse)
-                .orElseThrow(() ->
-                        accessPolicy.organizationNotFound(
-                                organizationId
-                        )
-                );
+                .orElseThrow(() -> accessPolicy.organizationNotFound(organizationId));
     }
 
-    OrganizationResponse findById(
-            UUID id,
-            SafeAiUserPrincipal currentUser
-    ) {
+    OrganizationResponse findById(UUID id, SafeAiUserPrincipal currentUser) {
         Objects.requireNonNull(id, "id не должен быть null");
         accessPolicy.requireOrganizationReader(currentUser);
 
         if (!accessPolicy.isSuperAdmin(currentUser)
                 && !currentUser.getOrganizationId().equals(id)) {
-            /*
-             * 404 вместо 403 не раскрывает существование
-             * чужой tenant organization.
-             */
+            // 404 avoids leaking existence of another tenant's organization.
             throw accessPolicy.organizationNotFound(id);
         }
 
-        return organizationRepository
-                .findById(id)
+        return organizationRepository.findById(id)
                 .map(responseMapper::toResponse)
-                .orElseThrow(() ->
-                        accessPolicy.organizationNotFound(id)
-                );
+                .orElseThrow(() -> accessPolicy.organizationNotFound(id));
     }
 
     OrganizationDisableImpactResponse getDisableImpact(
             UUID id,
             SafeAiUserPrincipal currentUser
     ) {
-        accessPolicy.requireMutableOrganizationRequest(
-                id,
-                currentUser
-        );
+        accessPolicy.requireMutableOrganizationRequest(id, currentUser);
 
-        OrganizationEntity entity =
-                organizationRepository
-                        .findById(id)
-                        .orElseThrow(() ->
-                                accessPolicy.organizationNotFound(id)
-                        );
+        OrganizationEntity entity = organizationRepository.findById(id)
+                .orElseThrow(() -> accessPolicy.organizationNotFound(id));
 
         OrganizationImpactQueryRepository.ImpactSnapshot impact =
                 impactQueryRepository.load(id);
 
+        // Advisory only: this query cannot reserve the organization state or
+        // prevent an already-started provider request from completing.
         return new OrganizationDisableImpactResponse(
                 entity.getId(),
                 entity.getVersion(),
                 impact.enabledUsers(),
                 impact.administrators(),
                 impact.activeRefreshSessions(),
-                impact.activeChatOperations()
+                impact.activeChatOperations(),
+                impact.startedPhysicalAttempts(),
+                impact.uncertainPhysicalAttempts(),
+                true
         );
     }
 
-    private static Pageable normalizePageable(
-            Pageable pageable
-    ) {
+    private static Pageable normalizePageable(Pageable pageable) {
         return StablePageableNormalizer.normalize(
                 pageable,
                 MAX_PAGE_SIZE,
                 ALLOWED_SORT_PROPERTIES,
                 DEFAULT_PAGE_SORT,
                 "id",
-                StablePageableNormalizer
-                        .TieBreakerDirectionPolicy
+                StablePageableNormalizer.TieBreakerDirectionPolicy
                         .FOLLOW_LAST_SORT_DIRECTION
         );
     }
 
-    private static String escapeDirectoryLikeLiteral(
-            String value
-    ) {
-        return value
-                .replace("!", "!!")
+    private static String escapeDirectoryLikeLiteral(String value) {
+        return value.replace("!", "!!")
                 .replace("%", "!%")
                 .replace("_", "!_");
     }
 
-    private static UUID parseUuidOrNull(
-            String value
-    ) {
+    private static UUID parseUuidOrNull(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
-
         try {
             return UUID.fromString(value);
         } catch (IllegalArgumentException exception) {

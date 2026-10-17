@@ -143,10 +143,41 @@ class PlatformOrganizationInvariantVerifierTest {
                         "SUPER_ADMIN"
                 )
         ).thenReturn(2L);
+        when(
+                userRepository.countEnabledByOrganizationIdAndRole(
+                        PLATFORM_ORGANIZATION_ID,
+                        "SUPER_ADMIN"
+                )
+        ).thenReturn(1L);
 
         assertThatCode(() ->
                 verifier().run(applicationArguments)
         ).doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsPlatformWhenAllSuperAdminsDisabled() {
+        OrganizationEntity platform = platformOrganization();
+        when(
+                organizationRepository.findById(PLATFORM_ORGANIZATION_ID)
+        ).thenReturn(Optional.of(platform));
+        when(
+                userRepository.countByOrganization_Id(PLATFORM_ORGANIZATION_ID)
+        ).thenReturn(2L);
+        when(
+                userRepository.countByOrganizationIdAndRole(
+                        PLATFORM_ORGANIZATION_ID, "SUPER_ADMIN"
+                )
+        ).thenReturn(2L);
+        when(
+                userRepository.countEnabledByOrganizationIdAndRole(
+                        PLATFORM_ORGANIZATION_ID, "SUPER_ADMIN"
+                )
+        ).thenReturn(0L);
+
+        assertThatThrownBy(() -> verifier().run(applicationArguments))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("активного SUPER_ADMIN");
     }
 
     private PlatformOrganizationInvariantVerifier verifier() {

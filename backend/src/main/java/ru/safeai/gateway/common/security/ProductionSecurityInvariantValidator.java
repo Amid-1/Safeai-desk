@@ -80,7 +80,7 @@ public final class ProductionSecurityInvariantValidator
     /**
      * A production deployment must enforce HSTS either in Spring Security
      * or at its trusted HTTPS termination boundary.
-     *
+     * <p>
      * Edge-managed mode is a deployment declaration. The actual public
      * response header must also be checked during deployment smoke tests.
      */

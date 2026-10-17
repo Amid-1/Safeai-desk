@@ -1,13 +1,30 @@
+<!-- SafeAI-Desk/README.md -->
+
 # SafeAI Desk
 
-**SafeAI Desk** — production-oriented корпоративная AI-платформа / AI Gateway для безопасного и управляемого использования внешних AI-моделей внутри организаций.
+**SafeAI Desk** — production-oriented корпоративная AI-платформа / AI Gateway для безопасного и
+управляемого использования внешних AI-моделей внутри организаций.
 
-> **Срез документации:** 11 октября 2026 года. Сверено с деревом GitHub `main` на коммите `fdcff62fc32131474cbc2639b1fa636edffd45bc` (merge PR #8), предоставленным README и результатами локальных прогонов.
-> **Backend:** Java 21, Spring Boot 4.1.1, модульный монолит; пакеты `common`, `identity`, `auth`, `user`, `organization`, `ratelimit`, `audit`, `usage`, `chat`, `model`, `ai`, `knowledge`; PostgreSQL / Flyway **V1–V72**.
-> **Подтверждено локально на ветке PR #8:** `./mvnw test` — **2259 тестов, 0 failures, 0 errors, 3 skipped**; отдельные PostgreSQL/Redis integration tests — **27/27**; архитектурное правило ArchUnit — positive/negative control. После merge изменения синхронизированы с чистым локальным `main`.
-> **Важно:** `./mvnw test` не заменяет `./mvnw clean test`, CI, populated Flyway upgrade V71→V72, production-like smoke, security review и deployment verification. Они **не объявляются пройденными** этим документом.
-> **Стадия:** production-oriented **pre-1.0**, без утверждений о compliance certification, SLA/HA, invoice-grade settlement либо полноценном dynamic multi-provider execution.
-> **Источники истины:** Java/SQL/config и тесты в checkout определяют реализованное поведение; README документирует срез, его доказательства и ограничения.
+> **Обновлено:** 17 октября 2026 года.
+> **Репозиторий:** `Amid-1/Safeai-desk`.
+> **Подтверждённый GitHub baseline:** `main`, Flyway V1–V72,
+> merge PR #8 (`fdcff62`).
+> **Подготовленный целевой набор:** V73 (Organization),
+> V74 (Usage), V75 (Audit). Наличие этих SQL в текущем
+> локальном checkout и применение к PostgreSQL не подтверждены.
+> **Backend:** Java 21, Spring Boot 4.1.1, модульный монолит,
+> PostgreSQL, Redis, S3, Flyway, Micrometer/Prometheus.
+> **Исторические тесты PR #8:** 2259; 0 failures, 0 errors,
+> 3 skipped. Отдельно — 27/27 PostgreSQL/Redis tests.
+> **Для патчей 13–17 октября:** полный `clean test`, populated
+> Flyway upgrade, CI и production smoke ещё не подтверждены.
+> **Стадия:** production-oriented pre-1.0; не заявляются
+> сертификация compliance, SLA/HA либо invoice-grade billing.
+
+**Источник истины:** файлы текущего checkout, история Flyway,
+фактическая конфигурация и результаты тестов. Подготовленный
+патч, успешно применённая миграция и production deployment —
+три разных состояния; README не подменяет их друг другом.
 
 ---
 
@@ -36,18 +53,19 @@
 20. [Модуль `ai`](#модуль-ai)
 21. [Модуль `knowledge`](#модуль-knowledge)
 22. [Ключевые backend contracts](#ключевые-backend-contracts)
-23. [Database / Flyway V1–V72](#database--flyway-v1v72)
+23. [Database / Flyway V1–V75](#database--flyway-v1v75)
 24. [Observability и operational jobs](#observability-и-operational-jobs)
 25. [Тестирование](#тестирование)
 26. [Local development](#local-development)
 27. [Production deployment notes](#production-deployment-notes)
-28. [Текущие ограничения и production-readiness gaps](#текущие-ограничения-и-production-readiness-gaps)
+28. [Production-readiness gaps](#текущие-ограничения-и-production-readiness-gaps)
 29. [Позиционирование проекта](#позиционирование-проекта)
 30. [Frontend](#frontend)
-31. [Поддержание документации в актуальном состоянии](#поддержание-документации-в-актуальном-состоянии)
+31. [Актуальность документации](#поддержание-документации-в-актуальном-состоянии)
 32. [Главное правило дальнейшей эволюции](#главное-правило-дальнейшей-эволюции)
 33. [Передача контекста в новый AI-чат](#передача-контекста-в-новый-ai-чат)
 34. [План следующего этапа](#план-следующего-этапа)
+35. [Релизный контроль V73–V75](#релизный-контроль-v73v75)
 
 ---
 
@@ -100,7 +118,10 @@ Identity
 
 # Текущее состояние
 
-Ниже приведён ранее изученный backend baseline с изменениями V71–V72 и отдельно обозначенными границами подтверждения. Описание возможностей не означает прохождение всего набора тестов текущего checkout.
+Основа раздела — подтверждённый baseline V71–V72.
+Функционал патчей V73–V75 описан далее отдельно.
+Его наличие в архиве не является доказательством внедрения,
+успешного Testcontainers-прогона или работы в production.
 
 ## Identity / Security
 
@@ -138,7 +159,8 @@ Identity
 - route-bound quota reservation provenance;
 - cost-verifiable reservation flag;
 - route-decision binding;
-- `provider_call_started_at` выставляется PostgreSQL только при допущенном durable physical `STARTED` (V67/V72);
+- `provider_call_started_at` выставляется PostgreSQL только при допущенном durable physical
+  `STARTED` (V67/V72);
 - immutable `chat_turns.authorized_organization_auth_version` для каждого нового ChatTurn (V72);
 - `organizations.enabled` + `auth_version` с row-lock при каждом новом физическом AI attempt (V72);
 - crash recovery;
@@ -241,11 +263,44 @@ Identity
 
 ---
 
+
+## Изменения, подготовленные к 17.10.2026
+
+К базовой архитектуре добавлены **отдельные наборы изменений**.
+Статус каждого набора необходимо сверить с `git status`,
+`git diff --cached` и `flyway_schema_history`:
+
+- **Organization / V73.** Согласована канонизация Unicode-
+  пробелов в Java и PostgreSQL. Усилены проверка коллизий,
+  ISO controls, индекса V23 и конкурентной записи.
+- **Usage / V74.** Устранена потеря dirty-date при переходе
+  через UTC-полночь; созданы индексы физического учёта.
+  Подготовлены физические отчёты, reconciliation, строгая
+  проверка полноты данных и защита тяжёлых SQL-запросов.
+- **Audit / V75.** Добавлена регистрация типа события
+  `AUDIT_OUTBOX_DEAD_LETTER_RECOVERED`. Подготовлен
+  контролируемый recovery terminal dead-letter без обхода V68.
+- **Audit P1/P2.** Подготовлены безопасное логирование
+  исключений, typed sanitizer route, ограничение OFFSET,
+  оптимизация справочников, алерты и тест пула/retention.
+- **Production.** Приведены к реальной структуре проекта
+  правила `infra/prometheus/rules/`, настройки внутренних
+  Actuator endpoints и проверка deployment-конфигурации.
+
+**Не следует считать реализованным только по описанию:**
+автоматическое восстановление каждого dead-letter, доставка
+уведомлений дежурному, подтверждённый billing settlement,
+проведённые нагрузочные тесты и успешный Flyway upgrade.
+
+---
+
 # Архитектура
 
 Проект построен как **модульный монолит**.
 
-Это сознательный выбор: security, tenant, durability, model-governance и provenance invariants выгодно держать в одной PostgreSQL transactional boundary, не добавляя преждевременную распределённую согласованность.
+Это сознательный выбор: security, tenant, durability, model-governance и provenance invariants
+выгодно держать в одной PostgreSQL transactional boundary, не добавляя преждевременную
+распределённую согласованность.
 
 ```text
 ┌──────────────────────────────┐
@@ -305,7 +360,8 @@ AI Physical Execution Plane
 
 `ModelRouteDecision` отвечает на вопрос **что governance разрешил**.
 
-`ModelExecutionAttempt` отвечает на вопрос **что физически пытались выполнить и что удалось доказать о результате**.
+`ModelExecutionAttempt` отвечает на вопрос **что физически пытались выполнить и что удалось доказать
+о результате**.
 
 ---
 
@@ -313,12 +369,15 @@ AI Physical Execution Plane
 
 ## Действующие правила (подтверждены срезом `main`)
 
-- **`common` независим от остальных прикладных пакетов.** Проверяется `CommonDependencyArchitectureTest`.
+- **`common` независим от остальных прикладных пакетов.** Проверяется
+  `CommonDependencyArchitectureTest`.
 - **`identity.session` — контракт**, не реализация инфраструктуры аутентификации.
 - **`auth` владеет JWT, cookie/filter chain, BCrypt configuration и refresh-session persistence.**
 - **`user` и `organization` вызывают отзыв сессий через `SessionRevocationPort`.**
-- **Семантика публичных ошибок стабильна:** общий envelope в `common.exception`, модульные mappings в своих пакетах.
-- **PostgreSQL-инварианты сильнее соглашений о пакетах:** безопасность tenant/epoch/fencing нельзя ослабить ради переноса классов.
+- **Семантика публичных ошибок стабильна:** общий envelope в `common.exception`, модульные mappings
+  в своих пакетах.
+- **PostgreSQL-инварианты сильнее соглашений о пакетах:** безопасность tenant/epoch/fencing нельзя
+  ослабить ради переноса классов.
 
 ## ArchUnit — PR #8
 
@@ -349,16 +408,36 @@ cd backend
 
 ## История разделения границ — восемь merged PR
 
-| PR | Изменение | Архитектурный результат |
-|---|---|---|
-| [#1](https://github.com/Amid-1/Safeai-desk/pull/1) | Common/error boundary | Общая error infrastructure отделена от module-specific concerns |
-| [#2](https://github.com/Amid-1/Safeai-desk/pull/2) | Identity session boundary | Контракт `SessionRevocationPort` / `SessionRevocationReason` вынесен из auth implementation |
-| [#3](https://github.com/Amid-1/Safeai-desk/pull/3) | Common/JWT boundary | `JwtService` принадлежит `auth.service`, сохранены security/concurrency semantics |
-| [#4](https://github.com/Amid-1/Safeai-desk/pull/4) | Authentication converter | `SafeAiJwtAuthenticationConverter` принадлежит `auth.security` |
-| [#5](https://github.com/Amid-1/Safeai-desk/pull/5) | Auth HTTP error boundary | Auth/Spring Security entry points and access-denied handler перенесены в `auth.security` |
-| [#6](https://github.com/Amid-1/Safeai-desk/pull/6) | JWT codec/key ring | `JwtCodecConfiguration`, `JwtRsaKeyRing` и профильный тест перенесены в `auth` |
-| [#7](https://github.com/Amid-1/Safeai-desk/pull/7) | Password encoding ownership | `PasswordEncodingConfiguration` и профильный тест перенесены в `auth.security` |
-| [#8](https://github.com/Amid-1/Safeai-desk/pull/8) | ArchUnit common boundary | Добавлена автоматическая архитектурная проверка `common` |
+- **[#1](https://github.com/Amid-1/Safeai-desk/pull/1)**
+  - **Изменение:** Common/error boundary
+  - **Архитектурный результат:** Общая error infrastructure отделена от module-specific concerns
+- **[#2](https://github.com/Amid-1/Safeai-desk/pull/2)**
+  - **Изменение:** Identity session boundary
+  - **Архитектурный результат:** Контракт `SessionRevocationPort` / `SessionRevocationReason`
+    вынесен из auth implementation
+- **[#3](https://github.com/Amid-1/Safeai-desk/pull/3)**
+  - **Изменение:** Common/JWT boundary
+  - **Архитектурный результат:** `JwtService` принадлежит `auth.service`, сохранены
+    security/concurrency semantics
+- **[#4](https://github.com/Amid-1/Safeai-desk/pull/4)**
+  - **Изменение:** Authentication converter
+  - **Архитектурный результат:** `SafeAiJwtAuthenticationConverter` принадлежит `auth.security`
+- **[#5](https://github.com/Amid-1/Safeai-desk/pull/5)**
+  - **Изменение:** Auth HTTP error boundary
+  - **Архитектурный результат:** Auth/Spring Security entry points and access-denied handler
+    перенесены в `auth.security`
+- **[#6](https://github.com/Amid-1/Safeai-desk/pull/6)**
+  - **Изменение:** JWT codec/key ring
+  - **Архитектурный результат:** `JwtCodecConfiguration`, `JwtRsaKeyRing` и профильный тест
+    перенесены в `auth`
+- **[#7](https://github.com/Amid-1/Safeai-desk/pull/7)**
+  - **Изменение:** Password encoding ownership
+  - **Архитектурный результат:** `PasswordEncodingConfiguration` и профильный тест перенесены в
+    `auth.security`
+- **[#8](https://github.com/Amid-1/Safeai-desk/pull/8)**
+  - **Изменение:** ArchUnit common boundary
+  - **Архитектурный результат:** Добавлена автоматическая архитектурная проверка `common`
+
 
 PR #8: исходный коммит `103c587`, merge-коммит `fdcff62`; `main` синхронизирован с `origin/main`,
 рабочая директория чистая по последнему предоставленному выводу `git status -sb`.
@@ -420,7 +499,8 @@ TypeScript 6.0.3, Vite 8.0.16, Vitest 4.1.10;
 - `spring.jpa.hibernate.ddl-auto=validate`;
 - application не создаёт production schema через Hibernate;
 - schema evolution — только Flyway;
-- критические tenant/security/durability invariants, где практично, подкреплены PostgreSQL FK/UNIQUE/CHECK/trigger;
+- критические tenant/security/durability invariants, где практично, подкреплены PostgreSQL
+  FK/UNIQUE/CHECK/trigger;
 - applied migrations не редактируются задним числом;
 - local seed отделён от production migrations.
 
@@ -449,7 +529,7 @@ backend/
 │
 ├── src/main/resources/
 │   ├── db/
-│   │   ├── migration/         # V1 ... V72
+│   │   ├── migration/         # V1 ... V75 (цель)
 │   │   └── local-migration/   # local-only seed
 │   │
 │   ├── application.yml
@@ -467,6 +547,10 @@ backend/
 ```
 
 ### Подробная структура backend и Flyway
+
+Дерево включает исходный baseline и подготовленные файлы
+патчей V73–V75. Оно не является результатом `ls` твоего
+локального checkout и не подтверждает их коммит или запуск.
 
 ```text
 backend/
@@ -568,6 +652,9 @@ backend/
 │   │       │       ├── V70__audit_live_user_link_separation.sql
 │   │       │       ├── V71__usage_dirty_dates_and_recalculation_queue.sql
 │   │       │       ├── V72__organization_auth_epoch_physical_attempt_gate.sql
+│   │       │       ├── V73__organization_unicode_whitespace_canonicalization.sql
+│   │       │       ├── V74__usage_midnight_dirty_date_and_physical_indexes.sql
+│   │       │       ├── V75__audit_dead_letter_recovery_event_type.sql
 │   │       │       └── README_DB.md
 │   │       │
 │   │       ├── META-INF/
@@ -737,7 +824,8 @@ answer_passport.model_route_decision_id
     -> exact route evidence
 ```
 
-Цель — не полагаться только на service-layer checks и не допустить cross-tenant/provenance mismatch даже при application bug или race.
+Цель — не полагаться только на service-layer checks и не допустить cross-tenant/provenance mismatch
+даже при application bug или race.
 
 ---
 
@@ -751,7 +839,9 @@ refresh token -> HttpOnly cookie
 XSRF-TOKEN    -> readable cookie
 ```
 
-JWT не должен храниться в `localStorage`.
+JWT не должен храниться в `localStorage`. Access principal
+не должен включать email/PII только ради удобства аудита:
+actor snapshot разрешается отдельно из доверенных данных.
 
 Unsafe browser methods передают CSRF header:
 
@@ -766,7 +856,6 @@ X-XSRF-TOKEN
 Access token содержит/валидирует identity и security epoch data:
 
 - subject;
-- email/identity;
 - user ID;
 - organization ID;
 - role;
@@ -780,7 +869,8 @@ Access token содержит/валидирует identity и security epoch da
 - audience;
 - signing key identity.
 
-JWT validity не ограничивается проверкой криптографической подписи: runtime также проверяет текущий user/org security state.
+JWT validity не ограничивается проверкой криптографической подписи: runtime также проверяет текущий
+user/org security state.
 
 ## Security epochs
 
@@ -838,21 +928,39 @@ DB-инварианты защищают replacement chain/family consistency.
 
 ## V72 — единый PostgreSQL lock ordering для сессий
 
-Одновременное создание сессии, refresh и отключение tenant — **конкурентные транзакции**. Текущий патч задаёт общий порядок захвата строк и повторную проверку security state **после** блокировок.
+Одновременное создание сессии, refresh и отключение tenant — **конкурентные транзакции**. Текущий
+патч задаёт общий порядок захвата строк и повторную проверку security state **после** блокировок.
 
-| Операция | Порядок и защита |
-|---|---|
-| Login | `organizations FOR SHARE` → `users PESSIMISTIC_WRITE` → запись login/refresh session |
-| Refresh | неблокирующее чтение только ID владельца токена → `organizations FOR SHARE` → `users PESSIMISTIC_WRITE` → `refresh_tokens PESSIMISTIC_WRITE` → повторная валидация |
-| Logout | согласованный `organization → user → token` перед изменением refresh state |
-| Organization Disable | `organizations PESSIMISTIC_WRITE` → `enabled=false`, `auth_version++` → отзыв refresh sessions |
-| User security mutation | `organizations PESSIMISTIC_WRITE` → `users PESSIMISTIC_WRITE` → связанный отзыв сессий |
+- **Login**
+  - **Порядок и защита:** `organizations FOR SHARE` → `users PESSIMISTIC_WRITE` → запись
+    login/refresh session
+- **Refresh**
+  - **Порядок и защита:** неблокирующее чтение только ID владельца токена → `organizations FOR
+    SHARE` → `users PESSIMISTIC_WRITE` → `refresh_tokens PESSIMISTIC_WRITE` → повторная валидация
+- **Logout**
+  - **Порядок и защита:** согласованный `organization → user → token` перед изменением refresh state
+- **Organization Disable**
+  - **Порядок и защита:** `organizations PESSIMISTIC_WRITE` → `enabled=false`, `auth_version++` →
+    отзыв refresh sessions
+- **User security mutation**
+  - **Порядок и защита:** `organizations PESSIMISTIC_WRITE` → `users PESSIMISTIC_WRITE` → связанный
+    отзыв сессий
 
-Правило **organization → user → token** препятствует обратному захвату блокировок по этим путям. Предварительный lookup ID токена **не является авторизацией**: token hash, владелец, семейство, состояние, `enabled`, `token_version` и `auth_version` проверяются на актуальных данных под блокировками. Блокировка `FOR SHARE` удерживается до commit соответствующей транзакции и конфликтует с disable `FOR UPDATE` той же organization.
 
-После `Disable` любой ранее выпущенный access token должен проходить runtime-проверку `enabled`/epoch; наличие уже подписанного JWT само по себе не сохраняет доступ. Старый refresh token не может получить новую сессию через старую версию безопасности. Повторный Enable не делает старый epoch актуальным.
+Правило **organization → user → token** препятствует обратному захвату блокировок по этим путям.
+Предварительный lookup ID токена **не является авторизацией**: token hash, владелец, семейство,
+состояние, `enabled`, `token_version` и `auth_version` проверяются на актуальных данных под
+блокировками. Блокировка `FOR SHARE` удерживается до commit соответствующей транзакции и конфликтует
+с disable `FOR UPDATE` той же organization.
 
-Это **контракт кода и базы**, а не доказательство отсутствия всех deadlock во всей системе: необходимы реальные PostgreSQL concurrency-тесты, анализ дополнительных lock paths, timeout/serialization diagnostics и проверка поведения при параллельных `Refresh` одной семьи.
+После `Disable` любой ранее выпущенный access token должен проходить runtime-проверку
+`enabled`/epoch; наличие уже подписанного JWT само по себе не сохраняет доступ. Старый refresh token
+не может получить новую сессию через старую версию безопасности. Повторный Enable не делает старый
+epoch актуальным.
+
+Это **контракт кода и базы**, а не доказательство отсутствия всех deadlock во всей системе:
+необходимы реальные PostgreSQL concurrency-тесты, анализ дополнительных lock paths,
+timeout/serialization diagnostics и проверка поведения при параллельных `Refresh` одной семьи.
 
 
 ## Passwords
@@ -947,7 +1055,8 @@ Public response не должен содержать:
 ---
 # Конфигурация
 
-Ниже перечислены ключевые configuration groups, подтверждённые в просмотренном backend. Конкретный production secret/value задаётся deployment environment, а не README.
+Ниже перечислены ключевые configuration groups, подтверждённые в просмотренном backend. Конкретный
+production secret/value задаётся deployment environment, а не README.
 
 ## Core
 
@@ -1027,7 +1136,8 @@ safeai.security.user-status-cache.*
 - TTL;
 - key prefix.
 
-Security correctness не должна зависеть только от cached value; invalidation/fallback semantics должны оставаться fail-safe.
+Security correctness не должна зависеть только от cached value; invalidation/fallback semantics
+должны оставаться fail-safe.
 
 ## Rate limiting
 
@@ -1088,7 +1198,10 @@ Baseline properties:
 - advisory lock key;
 - statement timeout.
 
-При работе с `UsageJdbcClients` учитываются изоляция ресурсов аналитических запросов и инварианты пула подключений; конкретные настройки/бюджеты пула следует сверять с `UsageConfiguration`, properties и текущими runtime profiles. Не считать схему пулов доказанной только по одному названию класса.
+При работе с `UsageJdbcClients` учитываются изоляция ресурсов аналитических запросов и инварианты
+пула подключений; конкретные настройки/бюджеты пула следует сверять с `UsageConfiguration`,
+properties и текущими runtime profiles. Не считать схему пулов доказанной только по одному названию
+класса.
 
 ## Chat
 
@@ -1197,7 +1310,8 @@ hashing
 openai
 ```
 
-Baseline embedding dimension фиксирован текущей реализацией; OpenAI production configuration pins allowed endpoint вместо произвольного outbound host.
+Baseline embedding dimension фиксирован текущей реализацией; OpenAI production configuration pins
+allowed endpoint вместо произвольного outbound host.
 
 ### OCR
 
@@ -1211,7 +1325,8 @@ OCR provider configuration включает:
 - connect/read timeout;
 - maximum response size.
 
-Credential-bearing property records редактируют `toString()` так, чтобы API keys не утекали в logs/diagnostics.
+Credential-bearing property records редактируют `toString()` так, чтобы API keys не утекали в
+logs/diagnostics.
 
 ---
 
@@ -1223,9 +1338,17 @@ Package:
 ru.safeai.gateway.common
 ```
 
-`common` — cross-cutting infrastructure layer. В нем не должна жить business-логика конкретного tenant domain. Это **проверяемая граница**, а не папка для всего, что повторно используется: внутренний код `common..` не должен зависеть от других пакетов `ru.safeai.gateway..`. ArchUnit контролирует это автоматически.
+`common` — cross-cutting infrastructure layer. В нем не должна жить business-логика конкретного
+tenant domain. Это **проверяемая граница**, а не папка для всего, что повторно используется:
+внутренний код `common..` не должен зависеть от других пакетов `ru.safeai.gateway..`. ArchUnit
+контролирует это автоматически.
 
-После PR #1–#8 из `common` вынесены auth-specific исключения и handlers, JWT runtime/key ring, auth filter converter и BCrypt configuration. В `common.security` оставлены действительно совместно используемые `SafeAiUserPrincipal`, `SystemRole`, `AccessTokenSubject`, `JwtProperties`, CORS/IP/request-id, management chain и production startup invariants. `JwtProperties` намеренно остается здесь как shared configuration contract; это **не** повод возвращать сюда `JwtService` или crypto implementation.
+После PR #1–#8 из `common` вынесены auth-specific исключения и handlers, JWT runtime/key ring, auth
+filter converter и BCrypt configuration. В `common.security` оставлены действительно совместно
+используемые `SafeAiUserPrincipal`, `SystemRole`, `AccessTokenSubject`, `JwtProperties`,
+CORS/IP/request-id, management chain и production startup invariants. `JwtProperties` намеренно
+остается здесь как shared configuration contract; это **не** повод возвращать сюда `JwtService` или
+crypto implementation.
 
 ## Структура
 
@@ -1280,15 +1403,18 @@ common/
 
 ### `TimeConfiguration`
 
-Предоставляет injectable UTC `Clock`, чтобы business timestamps и lease/retry/retention tests были воспроизводимыми.
+Предоставляет injectable UTC `Clock`, чтобы business timestamps и lease/retry/retention tests были
+воспроизводимыми.
 
 ### `StablePageableNormalizer`
 
-Централизует bounded pagination/sort normalization и снижает риск расхождения paging semantics между controllers.
+Централизует bounded pagination/sort normalization и снижает риск расхождения paging semantics между
+controllers.
 
 ### `DatabaseConstraintClassifier`
 
-Преобразует ожидаемые PostgreSQL constraint failures в domain-level conflict semantics вместо случайного generic 500.
+Преобразует ожидаемые PostgreSQL constraint failures в domain-level conflict semantics вместо
+случайного generic 500.
 
 ### `PostgresAdvisoryLockExecutor`
 
@@ -1303,7 +1429,8 @@ common/
 
 ### `SafeAiUserPrincipal`
 
-Security principal хранит минимально необходимую identity/security информацию и не должен содержать password credentials.
+Security principal хранит минимально необходимую identity/security информацию и не должен содержать
+password credentials.
 
 ### `ProductionSecurityInvariantValidator`
 
@@ -1322,21 +1449,28 @@ identity/
     └── SessionRevocationReason.java
 ```
 
-Этот пакет — **узкая контрактная граница identity/tenancy**, а не новая реализация JWT или хранилище refresh-token rows.
+Этот пакет — **узкая контрактная граница identity/tenancy**, а не новая реализация JWT или хранилище
+refresh-token rows.
 
 `SessionRevocationPort` задает две операции: `revokeAllForUser(UUID, SessionRevocationReason)` и
-`revokeAllForOrganization(UUID, SessionRevocationReason)`. Модули `user` и `organization` зависят от порта,
-а реализация `auth.service.UserSessionRevocationService` владеет фактическим отзывом refresh-сессий и
+`revokeAllForOrganization(UUID, SessionRevocationReason)`. Модули `user` и `organization` зависят от
+порта,
+а реализация `auth.service.UserSessionRevocationService` владеет фактическим отзывом refresh-сессий
+и
 маппингом причин в auth-specific `RefreshTokenRevocationReason`. Реализация использует
-`@Transactional(propagation = MANDATORY)`: бизнес-операция должна открыть транзакцию до вызова порта.
+`@Transactional(propagation = MANDATORY)`: бизнес-операция должна открыть транзакцию до вызова
+порта.
 
 `SessionRevocationReason` — общие security-mutation reasons (`PASSWORD_RESET`, `ROLE_CHANGED`,
 `EMAIL_CHANGED`, `USER_DISABLED`, `ORGANIZATION_DISABLED`, `SECURITY_STATE_CHANGED`,
-`ADMIN_REVOKED`). Не добавлять сюда details JWT/cookie/refresh-token persistence: они принадлежат `auth`.
+`ADMIN_REVOKED`). Не добавлять сюда details JWT/cookie/refresh-token persistence: они принадлежат
+`auth`.
 
-В `identity` на данном срезе **два Java-класса**; расширять пакет только при наличии нового реального
+В `identity` на данном срезе **два Java-класса**; расширять пакет только при наличии нового
+реального
 межмодульного identity-контракта. Рекомендуемый следующий защитный тест —
-`identity..` не зависит от `auth`, `user`, `organization` и прочих прикладных модулей; правило сначала
+`identity..` не зависит от `auth`, `user`, `organization` и прочих прикладных модулей; правило
+сначала
 нужно проверить на реальном bytecode/импортах.
 
 ---
@@ -1416,7 +1550,8 @@ auth/
 
 ## Собственность классов после PR #1–#8
 
-`auth.exception` содержит `AuthExceptionHandler` и исключения недействительного, истекшего и повторно
+`auth.exception` содержит `AuthExceptionHandler` и исключения недействительного, истекшего и
+повторно
 использованного refresh token, а также недоступности auth infrastructure. Они используют общий
 `common.exception.ApiErrorResponse` contract, но не должны находиться в `common`.
 
@@ -1495,7 +1630,8 @@ Reuse detection прекращает token family.
 
 ## Logout
 
-Logout отзывает server-side refresh state и очищает browser cookies; audit subject snapshot должен быть получен до потери необходимого identity context.
+Logout отзывает server-side refresh state и очищает browser cookies; audit subject snapshot должен
+быть получен до потери необходимого identity context.
 
 ## Cleanup
 
@@ -1585,7 +1721,8 @@ Security-sensitive commands зависят от `identity.session.SessionRevocat
 
 Cache является optimization layer, а не единственным security source of truth.
 
-Security mutation публикует `UserSecurityStateChangedEvent`, после чего cache инвалидируется listener-ом.
+Security mutation публикует `UserSecurityStateChangedEvent`, после чего cache инвалидируется
+listener-ом.
 
 ## Permanent deletion
 
@@ -1651,19 +1788,43 @@ organization/
 
 `OrganizationExceptionHandler` и `OrganizationVersionConflictException` принадлежат модулю
 `organization`, а не глобальной `common.exception`. Внутренние command/query operations отделены
-от публичного `OrganizationService`; отзыв сессий проходит через `identity.session.SessionRevocationPort`.
+от публичного `OrganizationService`; отзыв сессий проходит через
+`identity.session.SessionRevocationPort`.
 
 ## Platform organization
 
-Canonical platform organization имеет отдельную semantic role и не должна обрабатываться как обычный tenant.
+Canonical platform organization имеет отдельную semantic role и не должна обрабатываться как обычный
+tenant.
 
-`PlatformOrganizationInvariantVerifier` проверяет startup/runtime assumptions о protected platform organization.
+`PlatformOrganizationInvariantVerifier` проверяет startup/runtime assumptions о protected platform
+organization.
 
-## Organization naming
+## Organization naming — V73
 
-`OrganizationNameNormalizer` отвечает за canonical/normalized name policy.
+`OrganizationNameNormalizer` задаёт правила имени и проверяет
+запрещённые управляющие символы. В целевом патче Java и БД
+одинаково схлопывают 24 ASCII/Unicode пробельных символа,
+включая NBSP, NNBSP, разделители строк и абзацев.
 
-DB хранит уникальный normalized organization-name invariant.
+- PostgreSQL `lower()` остаётся источником истины для
+  уникального `normalized_name` (с учётом коллации БД).
+- Проверяются потенциальные коллизии существующих tenant names.
+  Миграция останавливается, но не объединяет организации.
+- `SHARE ROW EXCLUSIVE` блокирует конкурентную запись на
+  время preflight/rewrite, а последующий DDL берёт свой lock.
+- Проверяются действующие ограничения V20 и уникальный,
+  `VALID`/`READY` индекс V23.
+- Нормализованные имена проверяются на C0/C1 controls,
+  пустоту, SQL-длину и Java UTF-16 длину не более 255.
+- При реальном изменении записи увеличивается `version`,
+  но не `auth_version`: переименование не выдаётся за
+  security-significant disable/re-enable.
+- `normalizeForConfirmation()` не подменяет уникальность
+  `lower(canonical_organization_name(...))`.
+
+Миграция: `V73__organization_unicode_whitespace_canonicalization.sql`.
+Применять только после теста на копии populated БД,
+предварительной проверки имён и окна блокировок.
 
 ## Enable / disable
 
@@ -1681,14 +1842,19 @@ organization.auth_version
 
 ### V72: Disable как security boundary, а не только административный флаг
 
-При отключении организация блокируется на запись до изменения `enabled` и увеличения `auth_version`. Login/Refresh запрашивают совместимую с другими читателями, но конфликтующую с Disable блокировку `FOR SHARE`; физический AI STARTED использует такой же organization fence в SQL-триггере.
+При отключении организация блокируется на запись до изменения `enabled` и увеличения `auth_version`.
+Login/Refresh запрашивают совместимую с другими читателями, но конфликтующую с Disable блокировку
+`FOR SHARE`; физический AI STARTED использует такой же organization fence в SQL-триггере.
 
 - Commit Disable запрещает **новый** `ModelExecutionAttempt STARTED`, пока organization отключена.
 - После Enable устаревший `ChatTurn` с прежним authorized epoch всё равно не проходит V72 gate.
-- Физические вызовы, **допущенные до Disable**, не удаляются и не переписываются: нужно завершить/сохранить evidence, включая неопределённый outcome.
-- Внешний HTTP-запрос, разрешённый до Disable, не гарантированно остановится: DB fence определяет момент **авторизации STARTED**, не момент отправки сетевых байтов.
+- Физические вызовы, **допущенные до Disable**, не удаляются и не переписываются: нужно
+  завершить/сохранить evidence, включая неопределённый outcome.
+- Внешний HTTP-запрос, разрешённый до Disable, не гарантированно остановится: DB fence определяет
+  момент **авторизации STARTED**, не момент отправки сетевых байтов.
 
-Проверять только `enabled` в Java перед отправкой запрещено считать строгой защитой: между Java check и DB INSERT возникает TOCTOU. База повторно проверяет identity/epoch под row lock.
+Проверять только `enabled` в Java перед отправкой запрещено считать строгой защитой: между Java
+check и DB INSERT возникает TOCTOU. База повторно проверяет identity/epoch под row lock.
 
 ---
 # Модуль `ratelimit`
@@ -1730,7 +1896,9 @@ ratelimit/
 
 Redis используется как distributed rate-limit state.
 
-Atomic fixed-window operation выполняется Lua script-ом. Для dual-counter операций критична **предварительная проверка обоих Redis-значений до первой записи**: Redis Lua сериализует вызовы, но при ошибке **не откатывает** уже выполненные команды.
+Atomic fixed-window operation выполняется Lua script-ом. Для dual-counter операций критична
+**предварительная проверка обоих Redis-значений до первой записи**: Redis Lua сериализует вызовы, но
+при ошибке **не откатывает** уже выполненные команды.
 
 ```text
 validate counter #1 + counter #2
@@ -1742,7 +1910,10 @@ INCR and initialize TTL where applicable
 limit decision / optional marker
 ```
 
-`tryIncrementBoth()` резервирует оба bucket только при допустимости запроса; `incrementBothAndCheck()` сохраняет семантику учёта попытки. Интеграционные тесты отдельно проверяют конкуренцию, TTL и отсутствие частичных записей на повреждённых значениях. В Redis Cluster ключи одной Lua-операции должны находиться в одном hash slot.
+`tryIncrementBoth()` резервирует оба bucket только при допустимости запроса;
+`incrementBothAndCheck()` сохраняет семантику учёта попытки. Интеграционные тесты отдельно проверяют
+конкуренцию, TTL и отсутствие частичных записей на повреждённых значениях. В Redis Cluster ключи
+одной Lua-операции должны находиться в одном hash slot.
 
 ## Keys
 
@@ -1770,7 +1941,20 @@ Raw email/IP/user identity не обязана попадать в Redis key.
 
 Auth- и rate-limit-specific failure classes живут в `ratelimit.exception`, включая
 `RateLimitExceededException`, `RateLimitUnavailableException`, `RateLimitUnavailableLogger`
-и `RateLimitExceptionHandler`. Совместимый публичный API error envelope обеспечивает `common.exception`.
+и `RateLimitExceptionHandler`. Совместимый публичный API error envelope обеспечивает
+`common.exception`.
+
+## Production fail-fast rate-limit invariants
+
+Login и Refresh limiter обязательны в production. Для AI
+отключение требует явного исключения политики
+`allow-unlimited-ai-traffic=true`. Это аварийный escape hatch,
+а не рекомендуемый штатный режим.
+
+Двойные Redis Lua-операции используют hash tags, чтобы все
+ключи одного вызова находились в одном Redis Cluster slot.
+HMAC защищает сырой email/IP от попадания в названия ключей.
+Счётчики и TTL валидируются, а `Retry-After` округляется вверх.
 
 ## Failure semantics
 
@@ -1802,9 +1986,11 @@ audit/
 │   └── AuditRetentionProperties
 ├── controller/
 │   ├── AuditController
-│   └── AuditDirectoryController
+│   ├── AuditDirectoryController
+│   └── AuditOutboxRecoveryController
 ├── details/
 │   ├── AiResponseAuditDetails
+│   ├── AuditDeadLetterRecoveryDetails
 │   ├── AuditDetails
 │   ├── ChatTurnAuditDetails
 │   ├── RateLimitAuditDetails
@@ -1844,6 +2030,7 @@ audit/
 │   ├── AuditOutboxFailureService
 │   ├── AuditOutboxMetrics
 │   ├── AuditOutboxProcessor
+│   ├── AuditOutboxRecoveryService
 │   ├── AuditOutboxScheduler
 │   ├── AuditOutboxWriter
 │   ├── AuditRetentionBatchService
@@ -1923,6 +2110,23 @@ target_organization_name
 
 Snapshot нужен потому, что пользователь/организация могут быть переименованы или удалены позже.
 
+## Typed details и обязательный Audit
+
+Для `AuditDetails` должен использоваться
+`AuditCommandFactory.createTyped(...)` и `sanitizeTyped()`;
+legacy `Map<String, Object>` сохраняет отдельный строгий
+unstructured sanitizer. Иначе разрешённые поля типизированного
+security evidence могут быть ошибочно вырезаны.
+
+`AuditEventService.recordPrincipalSnapshot(...)` использует
+ту же typed boundary. `AuditEventServiceTest` должен мокировать
+`createTyped(...)`, не `create(Map)`; `MANDATORY`-аудит
+по-прежнему не проглатывает ошибки сохранения.
+
+Best-effort standalone остаётся отдельным `REQUIRES_NEW`
+контрактом: ошибка аудита не должна ломать business flow,
+но такой вызов недопустим для обязательного evidence.
+
 ## Delivery
 
 Outbox processor использует:
@@ -1940,6 +2144,29 @@ Failure state включает:
 - bounded/sanitized last error;
 - dead-letter timestamp.
 
+## Контролируемое восстановление dead-letter — V75
+
+Подготовленный endpoint:
+
+```http
+POST /api/admin/audit-events/outbox/dead-letters/{eventId}/recover
+```
+
+- Доступ только `SUPER_ADMIN` с дополнительной сервисной проверкой.
+- Исходная terminal outbox row берётся под `FOR UPDATE`.
+- Original event переносится идемпотентно с тем же UUID.
+- Отдельный required typed audit фиксирует действие оператора.
+- Terminal row удаляется только вместе с успешной фиксацией
+  события и evidence восстановления в одной транзакции.
+- Не выполняется `UPDATE dead_lettered_at` и не снимаются
+  защитные триггеры неизменяемости V68.
+- V75 регистрирует **только тип** события в справочнике;
+  без Java recovery service/controller это не рабочая функция.
+
+Не выполнять recovery до устранения root cause. Сохранять
+старое `occurred_at`: обычные правила retention продолжают
+действовать и для восстановленной записи.
+
 ## Query
 
 ADMIN scope повторно ограничивается tenant policy на service/query layer.
@@ -1952,11 +2179,26 @@ Cursor pagination использует стабильную пару:
 (createdAt, id)
 ```
 
+Подготовленный `AuditEventQueryService` ограничивает глубину
+старой OFFSET-пагинации: максимум 10 000 пропущенных строк,
+HTTP 400 до тяжёлого запроса. Cursor endpoint остаётся.
+
+Исторические справочники используют выборку ID и latest-row;
+`AuditDirectoryService` ограничивает выполнение до 5 секунд.
+Это защита ресурса, но не доказательство дешёвого
+`DISTINCT`/substring-поиска: нужен `EXPLAIN (ANALYZE,
+BUFFERS)` и нагрузочный профиль реальной БД.
+
 ## Retention
 
 Retention выполняется bounded batches.
 
-Для межинстансовой координации используется PostgreSQL advisory lock.
+Для межинстансовой координации используется PostgreSQL
+advisory lock. Session lock удерживает отдельное соединение,
+а `REQUIRES_NEW` batch может потребовать второе. Требуются
+настройка Hikari capacity, lock/timeout monitoring и
+нагрузочная проверка `AuditRetentionPoolLoadIT` на стенде.
+Наличие теста в пакете не означает, что он был выполнен.
 
 ## Обязательный и самостоятельный аудит: проверенный контракт
 
@@ -1993,6 +2235,7 @@ usage/
 │   └── UsageProperties
 ├── controller/
 │   ├── UsageController
+│   ├── UsagePhysicalSpendController
 │   └── UsageRebuildController
 ├── dto/
 │   ├── PagedResponse
@@ -2003,6 +2246,8 @@ usage/
 │   ├── UsageDateModelFilter
 │   ├── UsageModelSummaryResponse
 │   ├── UsagePageRequest
+│   ├── UsagePhysicalReconciliationResponse
+│   ├── UsagePhysicalSpendResponse
 │   ├── UsageProblemModelResponse
 │   ├── UsageResponseSummary
 │   ├── UsageSummaryInvariants
@@ -2015,6 +2260,7 @@ usage/
 │   ├── UsageFactQueryBuilder
 │   ├── UsageFactSql
 │   ├── UsageInstantRange
+│   ├── UsagePhysicalSpendRepository
 │   ├── UsageQueryCriteria
 │   ├── UsageQueryPlan
 │   ├── UsageQueryRepository
@@ -2024,6 +2270,7 @@ usage/
 └── service/
     ├── UsageDirtyDateProcessor
     ├── UsageForcedRebuildService
+    ├── UsagePhysicalSpendService
     ├── UsageQueryService
     ├── UsageReportExecutor
     ├── UsageRollupDayProcessor
@@ -2069,6 +2316,37 @@ CALCULATION_FAILED
 
 `CALCULATION_FAILED` означает, что pricing должен был быть рассчитан, но расчёт завершился ошибкой.
 
+## Физические расходы и сверка — пакет Usage V74
+
+Подготовлены отдельные API:
+
+```http
+GET /api/admin/usage/physical-attempts
+GET /api/admin/usage/physical-attempts/reconciliation
+```
+
+Оба используют `dateFrom`/`dateTo` как диапазон `Instant`.
+`ADMIN` ограничивается своим tenant, `SUPER_ADMIN` может
+читать глобальный scope. Сервис повторно проверяет доступ.
+
+- `UsagePhysicalSpendRepository` агрегирует физические
+  `model_execution_attempts` по времени `started_at`,
+  а не по времени записи chat message.
+- В учёт входит **каждый** физический attempt, включая retry;
+  известные затраты считаются только для `PRICED`/`FREE`.
+- `STARTED`/`AMBIGUOUS` и недостаточная usage/pricing evidence
+  отражаются в unverifiable counters; **unknown != 0**.
+- `costComplete` и `usageComplete` согласованы со счётчиками,
+  неконсистентные флаги отвергаются DTO.
+- Reconciliation выбирает планы по попыткам в интервале,
+  но сравнивает **все попытки каждого выбранного плана**
+  с сохранённой ценой assistant message.
+- `matched`, `mismatched` и `unverifiable` нельзя подменять
+  успешностью chat/провайдера или данными для инвойса.
+
+Новые запросы остаются evidence-backed финансовой аналитикой,
+а не invoice-grade reconciliation с поставщиком.
+
 ## Live + rollup
 
 - source-of-truth факты читаются из persisted chat/AI completion metadata;
@@ -2080,7 +2358,9 @@ CALCULATION_FAILED
 
 ## V71 — Dirty-date recalculation и восстановление актуальности сводок
 
-Историческая дневная сводка не обязательно остаётся актуальной навсегда: сообщение или физический AI attempt может получить окончательный статус позже даты первоначального rollup. Поэтому механизм V71 отделяет **последовательный backfill** от **повторного расчёта уже закрытых UTC-дней**.
+Историческая дневная сводка не обязательно остаётся актуальной навсегда: сообщение или физический AI
+attempt может получить окончательный статус позже даты первоначального rollup. Поэтому механизм V71
+отделяет **последовательный backfill** от **повторного расчёта уже закрытых UTC-дней**.
 
 ```text
 persisted usage / late-arriving or corrected evidence
@@ -2104,34 +2384,95 @@ UsageRollupScheduler ───── PostgreSQL advisory lock
 
 ### Компоненты и ответственность
 
-| Класс | Назначение |
-|---|---|
-| `UsageRollupStateRepository` | Чтение `last_completed_date`, поиск первого UTC-дня источников, монотонное продвижение watermark, запуск под PostgreSQL advisory lock |
-| `UsageDirtyDateRepository` | Доступ к очереди дат, требующих повторной обработки; репозиторий должен допускать Spring CGLIB-проксирование, если используется exception translation |
-| `UsageDirtyDateProcessor` | Обработка помеченных дат с учётом состояния очереди; служит отдельной границей от обычного backfill |
-| `UsageForcedRebuildService` | Обработка принудительного пересчета; доступен защищенный `UsageRebuildController`, `POST /api/admin/usage/rebuild?date=YYYY-MM-DD` (SUPER_ADMIN, HTTP 202) |
-| `UsageRollupDayProcessor` | Фактическая перестройка дневных агрегатов; `advanceWatermark` определяет, продвигать ли последовательный watermark |
-| `UsageRollupScheduler` | Планирование ограниченных порций backfill, lookback reconciliation и dirty-date обработки в рамках межинстансовой координации |
-| `UsageJdbcClients` | Конфигурация JDBC-клиентов для usage paths; параметры исполнения запросов и подключения следует проверять по коду/configuration |
+- **`UsageRollupStateRepository`**
+  - **Назначение:** Чтение `last_completed_date`, поиск первого UTC-дня источников, монотонное
+    продвижение watermark, запуск под PostgreSQL advisory lock
+- **`UsageDirtyDateRepository`**
+  - **Назначение:** Доступ к очереди дат, требующих повторной обработки; репозиторий должен
+    допускать Spring CGLIB-проксирование, если используется exception translation
+- **`UsageDirtyDateProcessor`**
+  - **Назначение:** Обработка помеченных дат с учётом состояния очереди; служит отдельной границей
+    от обычного backfill
+- **`UsageForcedRebuildService`**
+  - **Назначение:** Обработка принудительного пересчета; доступен защищенный
+    `UsageRebuildController`, `POST /api/admin/usage/rebuild?date=YYYY-MM-DD` (SUPER_ADMIN, HTTP
+    202)
+- **`UsageRollupDayProcessor`**
+  - **Назначение:** Фактическая перестройка дневных агрегатов; `advanceWatermark` определяет,
+    продвигать ли последовательный watermark
+- **`UsageRollupScheduler`**
+  - **Назначение:** Планирование ограниченных порций backfill, lookback reconciliation и dirty-date
+    обработки в рамках межинстансовой координации
+- **`UsageJdbcClients`**
+  - **Назначение:** Конфигурация JDBC-клиентов для usage paths; параметры исполнения запросов и
+    подключения следует проверять по коду/configuration
+
 
 ### Watermark: точный контракт
 
-- `findLastCompletedDate()` возвращает последнюю *последовательно* обработанную дату или `null` до инициализации.
-- `findEarliestUsageDate()` берёт минимум по UTC-дням сообщений `ASSISTANT` и `AMBIGUOUS` chat turns с `completed_at`; это шире прежнего assistant-only поиска.
-- `markCompleted(date)` реализован как условный PostgreSQL `INSERT ... ON CONFLICT DO UPDATE`: повторная запись и запись более ранней даты допустимы, переход вперёд — только на следующий UTC-день; попытка пропустить день приводит к `IllegalStateException`, переведённому репозиторием через Spring exception translation в соответствующий `DataAccessException`.
-- `rebuildDay(date, false)` применяется для reconciliation: **не должен продвигать watermark назад или вперёд**, даже если данные за дату изменились.
-- Pending dirty dates и watermark — разные понятия: корректировка старой даты не должна изображаться как новый contiguous backfill.
-- Планировщик ограничивает backfill и lookback настройками `safeai.usage.rollup.*`; не следует считать, что один запуск пересчитывает всю историю.
+- `findLastCompletedDate()` возвращает последнюю *последовательно* обработанную дату или `null` до
+  инициализации.
+- `findEarliestUsageDate()` берёт минимум по UTC-дням сообщений `ASSISTANT` и `AMBIGUOUS` chat turns
+  с `completed_at`; это шире прежнего assistant-only поиска.
+- `markCompleted(date)` реализован как условный PostgreSQL `INSERT ... ON CONFLICT DO UPDATE`:
+  повторная запись и запись более ранней даты допустимы, переход вперёд — только на следующий
+  UTC-день; попытка пропустить день приводит к `IllegalStateException`, переведённому репозиторием
+  через Spring exception translation в соответствующий `DataAccessException`.
+- `rebuildDay(date, false)` применяется для reconciliation: **не должен продвигать watermark назад
+  или вперёд**, даже если данные за дату изменились.
+- Pending dirty dates и watermark — разные понятия: корректировка старой даты не должна изображаться
+  как новый contiguous backfill.
+- Планировщик ограничивает backfill и lookback настройками `safeai.usage.rollup.*`; не следует
+  считать, что один запуск пересчитывает всю историю.
 
 ### Безопасность исполнения и эксплуатация
 
-Используется `PostgresAdvisoryLockExecutor`, чтобы два экземпляра приложения не запускали конкурирующую работу одного scheduled rollup. Session-level advisory lock привязан к JDBC connection и должен освобождаться при завершении action; корректность изменений всё равно зависит от транзакционных границ отдельных операций. Принудительная переагрегация — потенциально дорогая операция, поэтому перед массовым использованием нужно проверять лимиты, аудит вызывающего и наблюдаемость выполнения по реальному коду.
+Используется `PostgresAdvisoryLockExecutor`, чтобы два экземпляра приложения не запускали
+конкурирующую работу одного scheduled rollup. Session-level advisory lock привязан к JDBC connection
+и должен освобождаться при завершении action; корректность изменений всё равно зависит от
+транзакционных границ отдельных операций. Принудительная переагрегация — потенциально дорогая
+операция, поэтому перед массовым использованием нужно проверять лимиты, аудит вызывающего и
+наблюдаемость выполнения по реальному коду.
 
-Для V71 не следует создавать новую SQL-миграцию или редактировать уже применённый `V71__usage_dirty_dates_and_recalculation_queue.sql` только ради документации.
+Для V71 не следует создавать новую SQL-миграцию или редактировать уже применённый
+`V71__usage_dirty_dates_and_recalculation_queue.sql` только ради документации.
+
+## V74 — UTC-полночь, dirty dates и индексы
+
+`V74__usage_midnight_dirty_date_and_physical_indexes.sql`
+переопределяет функцию `safeai_mark_usage_date_dirty_v71`:
+**текущий UTC-день также помечается dirty** внутри исходной
+транзакции. Это защищает от гонки start-before-midnight /
+commit-after-midnight. Обработчик пересчитывает только
+соответствующие закрытые даты в пределах watermark.
+
+V74 добавляет неуникальные индексы:
+
+```sql
+idx_model_execution_attempts_started_plan_v74
+idx_model_execution_plans_organization_id_v74
+```
+
+Увеличение активности dirty queue может создать hot row
+на текущем UTC-дне; нагрузка и contention требуют проверки.
 
 ## Concurrency / performance
 
-`UsageReportExecutor` ограничивает количество конкурентных тяжёлых reports.
+`UsageReportExecutor` ограничивает количество конкурентных
+тяжёлых reports **локальным семафором** и, в подготовленном
+патче, PostgreSQL `pg_try_advisory_xact_lock`-слотами.
+
+Транзакция — `REQUIRES_NEW`, read-only, `REPEATABLE_READ`;
+для нескольких агрегаций отчёта она обеспечивает один DB
+snapshot. При исчерпании слотов возвращается HTTP 429.
+В production размер Hikari-пула проверяется с запасом от
+`maxConcurrentReports + 2`.
+
+Пагинация Usage ограничена 50 000 строками OFFSET; `models`
+не должен молча обрезать финансовый отчёт: `LIMIT 1001` и
+HTTP 422 при более чем 1000 моделях. `daily` ограничен
+366 днями. Эти ограничения относятся к подготовленному
+Usage hardening и требуют регрессионного прогона.
 
 SQL paths имеют:
 
@@ -2142,7 +2483,8 @@ SQL paths имеют:
 
 ## Product usage vs physical spend
 
-Usage subsystem остаётся product/chat analytics, но после `V60/V62/V67` физические расходы больше не обязаны
+Usage subsystem остаётся product/chat analytics, но после `V60/V62/V67` физические расходы больше не
+обязаны
 исчезать из accounting только потому, что `ChatTurn` не завершился пользовательским success.
 
 Отдельные DB read models дают разные представления:
@@ -2161,7 +2503,8 @@ chat_physical_spend_v67
 ```
 
 Это существенно ближе к FinOps, но всё ещё **не invoice/settlement ledger**: `actual` здесь означает
-provider-evidenced cost по сохранённой pricing/usage evidence, а не подтверждение расчёта с поставщиком.
+provider-evidenced cost по сохранённой pricing/usage evidence, а не подтверждение расчёта с
+поставщиком.
 
 ---
 
@@ -2288,7 +2631,8 @@ PROCESSING -> SUCCEEDED | FAILED | AMBIGUOUS
 terminal -> no further UPDATE
 ```
 
-Identity/provenance поля `ChatTurn` также защищены от изменения после создания. Дополнительно message row со
+Identity/provenance поля `ChatTurn` также защищены от изменения после создания. Дополнительно
+message row со
 `status=COMPLETED` становится immutable evidence и не может быть переписан ORM/direct SQL.
 
 ## Idempotency
@@ -2309,7 +2653,8 @@ same clientRequestId + different semantic request
     → IDEMPOTENCY_CONFLICT
 ```
 
-Replay identity не должен зависеть от mutable policy/catalog state, изменившегося уже после принятия оригинальной операции.
+Replay identity не должен зависеть от mutable policy/catalog state, изменившегося уже после принятия
+оригинальной операции.
 
 ## Reservation flow
 
@@ -2338,7 +2683,8 @@ Stale worker не может завершить turn после lease takeover.
 
 ## Provider-call ambiguity
 
-После V67 `provider_call_started_at` больше не должен быть application-level догадкой о том, начался ли provider call.
+После V67 `provider_call_started_at` больше не должен быть application-level догадкой о том, начался
+ли provider call.
 
 DB boundary для вставки физического attempt:
 
@@ -2370,30 +2716,44 @@ provider_call_started_at != null
     → blind replay после неопределённого исхода запрещён
 ```
 
-Точная истина об outcome хранится в `ModelExecutionAttempt`; `provider_call_started_at` остаётся coarse-grained
+Точная истина об outcome хранится в `ModelExecutionAttempt`; `provider_call_started_at` остаётся
+coarse-grained
 ChatTurn marker для recovery/fencing.
 
 ### V72 — immutable authorization epoch у ChatTurn
 
-`chat_turns.authorized_organization_auth_version` — зафиксированная версия безопасности организации, предъявленная авторизованным principal при создании logical turn. V72 при `INSERT chat_turns` блокирует tenant `FOR SHARE`, проверяет `enabled=true` и совпадение epoch; последующее изменение epoch-колонки запрещает DB-trigger.
+`chat_turns.authorized_organization_auth_version` — зафиксированная версия безопасности организации,
+предъявленная авторизованным principal при создании logical turn. V72 при `INSERT chat_turns`
+блокирует tenant `FOR SHARE`, проверяет `enabled=true` и совпадение epoch; последующее изменение
+epoch-колонки запрещает DB-trigger.
 
-Исторические ChatTurn, созданные до V72, сохраняют `NULL` (миграция **не приписывает** прошлым запросам произвольную авторизацию). Такие строки не получают право на **новые** физические попытки. `DEFAULT 0` в SQL существует для совместимости новых низкоуровневых тестовых INSERT; production Java должна явно передавать epoch principal, а не полагаться на default.
+Исторические ChatTurn, созданные до V72, сохраняют `NULL` (миграция **не приписывает** прошлым
+запросам произвольную авторизацию). Такие строки не получают право на **новые** физические попытки.
+`DEFAULT 0` в SQL существует для совместимости новых низкоуровневых тестовых INSERT; production Java
+должна явно передавать epoch principal, а не полагаться на default.
 
-При pre-`STARTED` запрете (например, Disable, потерянный lease, несоответствие epoch) корректное состояние — контролируемый `FAILED` без подмены его `AMBIGUOUS`. Если attempt уже был разрешён, дальнейший outcome трактуется по durable evidence, а не исходя из последующей смены tenant state.
+При pre-`STARTED` запрете (например, Disable, потерянный lease, несоответствие epoch) корректное
+состояние — контролируемый `FAILED` без подмены его `AMBIGUOUS`. Если attempt уже был разрешён,
+дальнейший outcome трактуется по durable evidence, а не исходя из последующей смены tenant state.
 
-**Инвариант временной последовательности:** `created_at ≤ provider_call_started_at ≤ completed_at` там, где terminal timestamp установлен. V67/V72 используют физическое время PostgreSQL на STARTED; тестовые injectable часы нужно согласовывать с DB clock, не отключая `chk_chat_turns_timestamps` и не переписывая immutable `created_at`.
+**Инвариант временной последовательности:** `created_at ≤ provider_call_started_at ≤ completed_at`
+там, где terminal timestamp установлен. V67/V72 используют физическое время PostgreSQL на STARTED;
+тестовые injectable часы нужно согласовывать с DB clock, не отключая `chk_chat_turns_timestamps` и
+не переписывая immutable `created_at`.
 
 
 ## Quota reservation
 
-Quota резервируется до provider call и затем finalization корректирует состояние согласно persisted usage/cost quality.
+Quota резервируется до provider call и затем finalization корректирует состояние согласно persisted
+usage/cost quality.
 
 V67 добавляет provenance:
 
 - `reservation_version=1` — legacy static reservation;
 - `reservation_version=2` — reservation, привязанная к immutable `ModelRouteDecision`;
 - `model_route_decision_id` обязателен для v2;
-- `cost_verifiable=true` допустим только когда `reserved_cost_usd` является доказанным upper bound по поддерживаемой immutable pricing scheme.
+- `cost_verifiable=true` допустим только когда `reserved_cost_usd` является доказанным upper bound
+  по поддерживаемой immutable pricing scheme.
 
 ## Recovery
 
@@ -2532,7 +2892,9 @@ Runtime — это то, что физически настроено в deploym
 
 Control Plane не равен dynamic provider router.
 
-На текущем этапе backend runtime всё ещё представляет один активный configured provider/model target на deployment, а catalog/policy определяют, разрешён ли logical model и совместим ли он с этим target.
+На текущем этапе backend runtime всё ещё представляет один активный configured provider/model target
+на deployment, а catalog/policy определяют, разрешён ли logical model и совместим ли он с этим
+target.
 
 ## Versioned Model Catalog
 
@@ -2558,8 +2920,10 @@ Catalog entry — immutable/append-only snapshot.
 - source;
 - creator/time.
 
-V59/V62 дополнительно защищают canonical text/numeric boundaries, а V66 вводит explicit settlement algorithm identity.
-Исторические legacy prices сохраняются, но не должны автоматически считаться проверенной современной pricing scheme.
+V59/V62 дополнительно защищают canonical text/numeric boundaries, а V66 вводит explicit settlement
+algorithm identity.
+Исторические legacy prices сохраняются, но не должны автоматически считаться проверенной современной
+pricing scheme.
 
 ### Latest vs effective
 
@@ -2600,7 +2964,8 @@ DB canonicality hardening:
 - duplicate key внутри allow/deny array запрещён;
 - required capability array route decision также должен быть unique.
 
-Первое отсутствие policy представляется fail-closed/unconfigured state, а не неявным «разрешить всё».
+Первое отсутствие policy представляется fail-closed/unconfigured state, а не неявным «разрешить
+всё».
 После V65 новый strict integrity-v3 decision без policy может существовать только как явное
 `DENIED / MODEL_NOT_ALLOWED` unconfigured evidence; physical execution такой row не авторизует.
 
@@ -2636,8 +3001,10 @@ unknown_cost_count
 cost_state
 ```
 
-V62 исправляет важный representability case: full monthly liability может оставаться unknown, но известный lower bound
-уже способен доказать budget overrun. V64 сохраняет route-time commitment evidence отдельно и immutable, не изменяя
+V62 исправляет важный representability case: full monthly liability может оставаться unknown, но
+известный lower bound
+уже способен доказать budget overrun. V64 сохраняет route-time commitment evidence отдельно и
+immutable, не изменяя
 исторические V1/V2/V3 decision hashes.
 
 ### Final request binding — V62/V64/V65
@@ -2659,7 +3026,8 @@ ExecutionPlan / physical attempt
 ```
 
 Для Knowledge mode prepared receipt дополнительно обязан совпасть с immutable
-`knowledge_rag_context_receipts_v64`: exact `RetrievalRun`, KB, user/org, context hash и final prepared-request hash.
+`knowledge_rag_context_receipts_v64`: exact `RetrievalRun`, KB, user/org, context hash и final
+prepared-request hash.
 
 После V65 новые prepared receipts должны иметь `binding_version=2`, а DB trigger на
 `model_execution_attempts` не разрешает physical I/O без exact v2 binding.
@@ -2676,7 +3044,8 @@ UTF8_STRUCTURAL_UNITS_V2
 
 Это **не** заявляется как exact provider tokenizer.
 
-Исторические DB column names могут содержать `*_tokens`, но новые semantics в коде трактуются как versioned deterministic accounting units.
+Исторические DB column names могут содержать `*_tokens`, но новые semantics в коде трактуются как
+versioned deterministic accounting units.
 
 ## Capability gate
 
@@ -2844,7 +3213,8 @@ execution boundary; authoritative physical STARTED gate при этом оста
 
 ## Durable physical execution
 
-Начиная с V50 AI execution имеет отдельную durable evidence layer; V62–V67 доводят binding/start boundary до
+Начиная с V50 AI execution имеет отдельную durable evidence layer; V62–V67 доводят binding/start
+boundary до
 жёсткого database-enforced контракта.
 
 ```text
@@ -2890,23 +3260,39 @@ persist terminal physical evidence
 application/chat finalization
 ```
 
-Это позволяет переживать crash boundaries без ложного предположения «если Chat не ответил, provider точно ничего не сделал»
+Это позволяет переживать crash boundaries без ложного предположения «если Chat не ответил, provider
+точно ничего не сделал»
 и не позволяет historical binding v1 авторизовать новый physical call.
 
 ## V72 — физический AI kill-switch
 
-**V72 ограничивает допуск новых физических вызовов, а не корректность уже состоявшегося внешнего вызова.** Организационный `enabled` и сохранённый `authVersion` проверяются дважды с разными целями:
+**V72 ограничивает допуск новых физических вызовов, а не корректность уже состоявшегося внешнего
+вызова.** Организационный `enabled` и сохранённый `authVersion` проверяются дважды с разными целями:
 
-1. `ModelExecutionAttemptRepository.organizationEpochCurrent(planId)` — неблокирующий advisory preflight для ранней понятной ошибки. Он **не** устраняет TOCTOU.
-2. PostgreSQL `BEFORE INSERT` trigger `trg_a_physical_attempt_organization_epoch_v72` — авторитетная проверка `organization.enabled`, `auth_version`, immutable ChatTurn epoch и совпадения `organization_id`; берёт organization row `FOR SHARE` и удерживает lock до commit INSERT.
-3. Остальные триггеры V53/V54/V65/V67 сохраняют свои дополнительные запреты: attempt ordering/retry, exact governed binding v2, live `PROCESSING` turn, lease и `processingToken`.
-4. Только успешно закоммиченный физический `STARTED` даёт право перейти к provider I/O. С ним одновременно фиксируется `provider_call_started_at`; отдельного публичного `ChatTurnFinalizationService.markProviderCallStarted()` в актуальном патче нет.
+1. `ModelExecutionAttemptRepository.organizationEpochCurrent(planId)` — неблокирующий advisory
+   preflight для ранней понятной ошибки. Он **не** устраняет TOCTOU.
+2. PostgreSQL `BEFORE INSERT` trigger `trg_a_physical_attempt_organization_epoch_v72` — авторитетная
+   проверка `organization.enabled`, `auth_version`, immutable ChatTurn epoch и совпадения
+   `organization_id`; берёт organization row `FOR SHARE` и удерживает lock до commit INSERT.
+3. Остальные триггеры V53/V54/V65/V67 сохраняют свои дополнительные запреты: attempt ordering/retry,
+   exact governed binding v2, live `PROCESSING` turn, lease и `processingToken`.
+4. Только успешно закоммиченный физический `STARTED` даёт право перейти к provider I/O. С ним
+   одновременно фиксируется `provider_call_started_at`; отдельного публичного
+   `ChatTurnFinalizationService.markProviderCallStarted()` в актуальном патче нет.
 
-**Линеаризация по БД:** конкурентный Disable (`FOR UPDATE` на той же организации) не может закоммититься между V72 проверкой организации и commit разрешённого STARTED. После commit Disable новые STARTED не проходят; после Enable старый ChatTurn также не проходит из-за старого epoch.
+**Линеаризация по БД:** конкурентный Disable (`FOR UPDATE` на той же организации) не может
+закоммититься между V72 проверкой организации и commit разрешённого STARTED. После commit Disable
+новые STARTED не проходят; после Enable старый ChatTurn также не проходит из-за старого epoch.
 
-**Граница внешнего эффекта:** attempt с разрешением, полученным **до** Disable, может уже выполнять HTTP либо дойти до сетевой отправки **после** Disable. Такой вызов нельзя считать автоматически отменённым. Для более строгой гарантии «никаких сетевых send после commit Disable» понадобятся дополнительные dispatch permits/draining/in-flight coordination; текущая реализация гарантирует **транзакционный допуск**, а не физическую отмену provider I/O.
+**Граница внешнего эффекта:** attempt с разрешением, полученным **до** Disable, может уже выполнять
+HTTP либо дойти до сетевой отправки **после** Disable. Такой вызов нельзя считать автоматически
+отменённым. Для более строгой гарантии «никаких сетевых send после commit Disable» понадобятся
+дополнительные dispatch permits/draining/in-flight coordination; текущая реализация гарантирует
+**транзакционный допуск**, а не физическую отмену provider I/O.
 
-**Execution evidence не теряется:** `STARTED`, `SUCCEEDED`/`FAILED`/`AMBIGUOUS`, outcome certainty, usage/pricing и retry-safety сохраняются по существующим договорам. Отказы до STARTED и неопределённость после STARTED не объединяются в одно состояние.
+**Execution evidence не теряется:** `STARTED`, `SUCCEEDED`/`FAILED`/`AMBIGUOUS`, outcome certainty,
+usage/pricing и retry-safety сохраняются по существующим договорам. Отказы до STARTED и
+неопределённость после STARTED не объединяются в одно состояние.
 
 
 ## Physical target identity
@@ -2919,7 +3305,8 @@ Attempt фиксирует target:
 - requested physical model;
 - allowed resolved models.
 
-Текущий runtime использует transitional static target identity; полноценный versioned provider registry ещё не реализован.
+Текущий runtime использует transitional static target identity; полноценный versioned provider
+registry ещё не реализован.
 
 ## Outcome certainty
 
@@ -2954,14 +3341,16 @@ HARD monthly budget
 OR policy.max_request_cost_usd
 ```
 
-Таким образом cost upper-bound reservation не может быть нарушен скрытым retry. Blind retry/fallback после
+Таким образом cost upper-bound reservation не может быть нарушен скрытым retry. Blind retry/fallback
+после
 `AMBIGUOUS`, `SUCCEEDED` или physically executed protocol rejection не допускается.
 
 ## Resolved model validation
 
 Provider response model сверяется с approved target.
 
-Если provider фактически выполнил запрос, но вернул неразрешённый resolved model, физическое evidence сохраняется до governance rejection.
+Если provider фактически выполнил запрос, но вернул неразрешённый resolved model, физическое
+evidence сохраняется до governance rejection.
 
 ## HTTP hardening
 
@@ -3009,10 +3398,13 @@ LEGACY_FLAT_UNVERIFIED_V1
 UNSUPPORTED_COMPLEX_V1
 ```
 
-Legacy `CONFIGURED` pricing после migration не должен автоматически считаться доказуемым современным расчетом:
-governed path обязан fail closed, пока новая audited catalog version не выберет поддерживаемую scheme.
+Legacy `CONFIGURED` pricing после migration не должен автоматически считаться доказуемым современным
+расчетом:
+governed path обязан fail closed, пока новая audited catalog version не выберет поддерживаемую
+scheme.
 
-`StaticConfigurationPricingResolver` остаётся compatibility/dev path, а governed resolution должен использовать
+`StaticConfigurationPricingResolver` остаётся compatibility/dev path, а governed resolution должен
+использовать
 versioned catalog evidence.
 
 ## Usage / response evidence
@@ -3027,7 +3419,8 @@ V66 отдельно фиксирует факт физически наблюд
 - `protocol_failure_code`;
 - `PROTOCOL_REJECTED` outcome.
 
-Это позволяет сохранить billable `KNOWN_EXECUTED` evidence даже когда ответ нельзя принять на application/protocol layer.
+Это позволяет сохранить billable `KNOWN_EXECUTED` evidence даже когда ответ нельзя принять на
+application/protocol layer.
 Pricing/usage evidence остаётся на physical attempt для reconciliation.
 
 ---
@@ -3263,7 +3656,8 @@ CLEANING
 
 Принцип:
 
-> Нельзя автоматически считать historical/uncertain S3 object orphan-ом только потому, что SQL row не найден.
+> Нельзя автоматически считать historical/uncertain S3 object orphan-ом только потому, что SQL row
+  не найден.
 
 Cleanup разрешён только для positively known `STORED` unlinked object с fencing.
 
@@ -3427,8 +3821,10 @@ evidence flags
 
 Это provenance document, а не обещание семантической истинности ответа.
 
-V64 добавляет более раннюю execution-time proof-точку — immutable `knowledge_rag_context_receipts_v64`.
-Она доказывает, что exact retrieval/context assembly был связан с exact final prepared AI request **до**
+V64 добавляет более раннюю execution-time proof-точку — immutable
+`knowledge_rag_context_receipts_v64`.
+Она доказывает, что exact retrieval/context assembly был связан с exact final prepared AI request
+**до**
 физического provider execution.
 
 ## Index generations — V57/V59/V63
@@ -3462,7 +3858,8 @@ COLLECTED
 ---
 # Ключевые backend contracts
 
-Ниже — основные публичные API groups. Controllers остаются source of truth для exact query/body shape.
+Ниже — основные публичные API groups. Controllers остаются source of truth для exact query/body
+shape.
 
 ## Auth
 
@@ -3516,10 +3913,13 @@ POST  /api/organizations/{id}/enable
 ## Audit
 
 ```http
-GET /api/admin/audit-events
+GET  /api/admin/audit-events
+POST /api/admin/audit-events/outbox/dead-letters/{eventId}/recover
 ```
 
 Также есть directory/filter endpoints для UI.
+Второй endpoint относится к подготовленному Audit hardening;
+он требует Java-сервис и V75, а не только миграцию.
 
 ## Usage
 
@@ -3534,6 +3934,13 @@ GET /api/admin/usage/by-organization/{organizationId}/users
 GET /api/admin/usage/by-organization/{organizationId}/models
 GET /api/admin/usage/by-organization/{organizationId}/daily
 GET /api/admin/usage/data-quality
+```
+
+Новые отчёты физического учёта (пакет V74):
+
+```http
+GET /api/admin/usage/physical-attempts
+GET /api/admin/usage/physical-attempts/reconciliation
 ```
 
 ## Model Control Plane
@@ -3607,7 +4014,7 @@ Answer Passport читается по chat/turn identity через `AnswerPassp
 
 ---
 
-# Database / Flyway V1–V72
+# Database / Flyway V1–V75
 
 Production migrations:
 
@@ -3633,61 +4040,219 @@ local seed != production reference data
 
 ## Evolution map
 
-| Version   | Назначение |
-|-----------|--|
-| `V1–V10`  | base schema, tenant denormalization, timestamps, quotas/rollups, indexes |
-| `V11–V19` | audit/user/chat identity and integrity evolution |
-| `V20–V23` | production integrity, canonical identity/name hardening, concurrent indexes |
-| `V24`     | exactly-one-role, user security hardening, audit outbox |
-| `V25`     | organization `auth_version` + refresh organization epoch |
-| `V26–V27` | audit retry/dead-letter/details bounds/query indexes |
-| `V28–V31` | usage/pricing quality model and query indexes |
-| `V32`     | durable `ChatTurn` state machine |
-| `V33–V36` | ChatTurn indexes, ambiguity quality, composite tenant integrity |
-| `V37`     | immutable target organization audit snapshots |
-| `V38–V42` | Knowledge Base, versions, ingestion, retrieval, RAG, Answer Passport |
-| `V43`     | chat archive lifecycle |
-| `V44`     | Knowledge production integrity hardening |
-| `V45`     | Model Control Plane baseline |
-| `V46`     | Model Control Plane hardening |
-| `V47`     | Knowledge chunk-generation uniqueness |
-| `V48`     | input-accounting provenance / route integrity v3 |
-| `V49`     | strict routing + generic pricing semantics |
-| `V50`     | AI execution plans/attempts + usage evidence |
-| `V51`     | execution attempt integrity hardening |
-| `V52`     | strict execution + modality integrity |
-| `V53`     | physical attempt transition + pricing integrity |
-| `V54`     | provider identity + reconciliation safety |
-| `V55`     | Knowledge Russian lexical profile |
-| `V56`     | durable Knowledge storage upload intents |
-| `V57`     | Knowledge index generations + fenced publication/GC |
-| `V58`     | deterministic chat title lifecycle |
-| `V59`     | governance integrity: canonical model keys, bounded-cost single-attempt rule, reconciliation/title/generation hardening |
-| `V60`     | UTC monthly physical cost commitment ledger: actual, reserved, unknown liability, carry-forward |
-| `V61`     | model-policy allow/deny array uniqueness |
-| `V62`     | budget representability fix, final prepared-request receipt, capability canonicality, commitment ledger v2 |
-| `V63`     | Knowledge searchable-version publication, generation lifecycle hardening, review-time semantics |
-| `V64`     | immutable route-time budget commitments, RAG context receipt, prepared-request binding v2 |
-| `V65`     | post-rollout binding v2 enforcement and DB physical-execution fence |
-| `V66`     | physical response/protocol rejection evidence + explicit fail-closed pricing scheme provenance |
-| `V67`     | ChatTurn state/evidence hardening, live STARTED fencing, quota provenance, physical-spend view, DB clock |
-| `V68`     | audit event/outbox integrity: canonical snapshots, typed payload, immutable evidence/intent, terminal dead-letter state |
-| `V69`     | audit actor-link FK detachment: отделение исторического actor snapshot от ссылочной зависимости на удаляемую учётную запись |
-| `V70`     | audit live-user link separation: разделение живой ссылки на пользователя и исторических данных audit actor; сохранение audit evidence при изменении жизненного цикла пользователя |
-| `V71`     | Usage dirty-date queue и повторный расчёт UTC-дней: учёт поздних изменений источников, выборка ожидающих дат и управляемая переагрегация без отката последовательного watermark |
-| `V72`     | immutable authorization epoch у ChatTurn; organization `FOR SHARE` при reservation и каждом физическом `STARTED`; DB-serialized AI kill-switch и запрет оживления старых turns |
+- **`V1–V10`**
+  - **Назначение:** base schema, tenant denormalization, timestamps, quotas/rollups, indexes
+- **`V11–V19`**
+  - **Назначение:** audit/user/chat identity and integrity evolution
+- **`V20–V23`**
+  - **Назначение:** production integrity, canonical identity/name hardening, concurrent indexes
+- **`V24`**
+  - **Назначение:** exactly-one-role, user security hardening, audit outbox
+- **`V25`**
+  - **Назначение:** organization `auth_version` + refresh organization epoch
+- **`V26–V27`**
+  - **Назначение:** audit retry/dead-letter/details bounds/query indexes
+- **`V28–V31`**
+  - **Назначение:** usage/pricing quality model and query indexes
+- **`V32`**
+  - **Назначение:** durable `ChatTurn` state machine
+- **`V33–V36`**
+  - **Назначение:** ChatTurn indexes, ambiguity quality, composite tenant integrity
+- **`V37`**
+  - **Назначение:** immutable target organization audit snapshots
+- **`V38–V42`**
+  - **Назначение:** Knowledge Base, versions, ingestion, retrieval, RAG, Answer Passport
+- **`V43`**
+  - **Назначение:** chat archive lifecycle
+- **`V44`**
+  - **Назначение:** Knowledge production integrity hardening
+- **`V45`**
+  - **Назначение:** Model Control Plane baseline
+- **`V46`**
+  - **Назначение:** Model Control Plane hardening
+- **`V47`**
+  - **Назначение:** Knowledge chunk-generation uniqueness
+- **`V48`**
+  - **Назначение:** input-accounting provenance / route integrity v3
+- **`V49`**
+  - **Назначение:** strict routing + generic pricing semantics
+- **`V50`**
+  - **Назначение:** AI execution plans/attempts + usage evidence
+- **`V51`**
+  - **Назначение:** execution attempt integrity hardening
+- **`V52`**
+  - **Назначение:** strict execution + modality integrity
+- **`V53`**
+  - **Назначение:** physical attempt transition + pricing integrity
+- **`V54`**
+  - **Назначение:** provider identity + reconciliation safety
+- **`V55`**
+  - **Назначение:** Knowledge Russian lexical profile
+- **`V56`**
+  - **Назначение:** durable Knowledge storage upload intents
+- **`V57`**
+  - **Назначение:** Knowledge index generations + fenced publication/GC
+- **`V58`**
+  - **Назначение:** deterministic chat title lifecycle
+- **`V59`**
+  - **Назначение:** governance integrity: canonical model keys, bounded-cost single-attempt rule,
+    reconciliation/title/generation hardening
+- **`V60`**
+  - **Назначение:** UTC monthly physical cost commitment ledger: actual, reserved, unknown
+    liability, carry-forward
+- **`V61`**
+  - **Назначение:** model-policy allow/deny array uniqueness
+- **`V62`**
+  - **Назначение:** budget representability fix, final prepared-request receipt, capability
+    canonicality, commitment ledger v2
+- **`V63`**
+  - **Назначение:** Knowledge searchable-version publication, generation lifecycle hardening,
+    review-time semantics
+- **`V64`**
+  - **Назначение:** immutable route-time budget commitments, RAG context receipt, prepared-request
+    binding v2
+- **`V65`**
+  - **Назначение:** post-rollout binding v2 enforcement and DB physical-execution fence
+- **`V66`**
+  - **Назначение:** physical response/protocol rejection evidence + explicit fail-closed pricing
+    scheme provenance
+- **`V67`**
+  - **Назначение:** ChatTurn state/evidence hardening, live STARTED fencing, quota provenance,
+    physical-spend view, DB clock
+- **`V68`**
+  - **Назначение:** audit event/outbox integrity: canonical snapshots, typed payload, immutable
+    evidence/intent, terminal dead-letter state
+- **`V69`**
+  - **Назначение:** audit actor-link FK detachment: отделение исторического actor snapshot от
+    ссылочной зависимости на удаляемую учётную запись
+- **`V70`**
+  - **Назначение:** audit live-user link separation: разделение живой ссылки на пользователя и
+    исторических данных audit actor; сохранение audit evidence при изменении жизненного цикла
+    пользователя
+- **`V71`**
+  - **Назначение:** Usage dirty-date queue и повторный расчёт UTC-дней: учёт поздних изменений
+    источников, выборка ожидающих дат и управляемая переагрегация без отката последовательного
+    watermark
+- **`V72`**
+  - **Назначение:** immutable authorization epoch у ChatTurn; organization `FOR SHARE` при
+    reservation и каждом физическом `STARTED`; DB-serialized AI kill-switch и запрет оживления
+    старых turns
+- **`V73`**
+  - **Назначение:** Организации: Unicode whitespace + коллизии имён
+- **`V74`**
+  - **Назначение:** Usage: dirty date на UTC-полуночи + physical indexes
+- **`V75`**
+  - **Назначение:** Audit: тип события recovery terminal dead-letter
+
+
+
+## V73 — Canonical names организаций
+
+Полное имя файла:
+
+```text
+V73__organization_unicode_whitespace_canonicalization.sql
+```
+
+Транзакционно заменяет тела существующих функций V20,
+не удаляя их CHECK/trigger и уникальный индекс V23.
+
+1. `SHARE ROW EXCLUSIVE` блокирует конкурирующие изменения
+   организаций до завершения preflight и UPDATE.
+2. Проверяются V20 functions/constraints/trigger и V23
+   `UNIQUE`, `VALID`, `READY` индекс `normalized_name`.
+3. Канонизация переводит 24 символа пробелов в ASCII SPACE,
+   схлопывает подряд идущие пробелы и удаляет крайние.
+4. `organization_name_has_iso_controls_v73` исключает
+   управляющие C0/C1; контролируется UTF-16 длина имени.
+5. Collision preflight проверяет фактический PostgreSQL key:
+   `lower(canonical_organization_name_v73(name))`.
+6. При наличии коллизий миграция аварийно останавливается.
+   Tenant merge/delete не допускается.
+7. При реальной корректировке имени сохраняется `auth_version`,
+   увеличивается optimistic `version`.
+
+**Риск внедрения:** полный preflight / UPDATE может удерживать
+блокировки. Применять сначала на populated backup clone.
+Сверить Java `OrganizationNameNormalizer` с финальной V73;
+проверить Unicode, ISO controls, emoji и SQL collation.
+
+## V74 — Usage: midnight dirty-date и physical indexes
+
+```text
+V74__usage_midnight_dirty_date_and_physical_indexes.sql
+```
+
+Миграция переопределяет функцию V71
+`safeai_mark_usage_date_dirty_v71(date)`; исходные
+триггеры dirty-date tracking сохраняются.
+
+- Теперь в очередь попадает и сегодняшний UTC-день:
+  транзакция, завершившаяся после полуночи, не должна
+  оставить предыдущий день без перерасчёта.
+- Перерасчёт выполняется только при достижении
+  соответствующего закрытого дня/watermark.
+- Индекс `(started_at, execution_plan_id)` оптимизирует
+  диапазонную выборку физических попыток.
+- Индекс `(organization_id, id)` на `model_execution_plans`
+  помогает tenant-scoped joins.
+- Индексы не уникальны и не меняют semantics retry.
+
+**Риск:** ежедневная dirty row может стать точкой
+конкурентной записи. Нужны нагрузочные замеры и мониторинг
+lock waits на production-like PostgreSQL.
+
+## V75 — Регистрация типа Audit recovery
+
+```text
+V75__audit_dead_letter_recovery_event_type.sql
+```
+
+Миграция добавляет `AUDIT_OUTBOX_DEAD_LETTER_RECOVERED`
+в справочник `public.audit_event_types` идемпотентно,
+не редактируя применённую V68 и не заменяя terminal
+`dead_lettered_at` на повторно запланированное событие.
+
+**V75 не создаёт endpoint, восстановление или алерты.**
+Для восстановления нужны согласованные Java-классы
+`AuditOutboxRecoveryService`,
+`AuditOutboxRecoveryController`, `AuditDeadLetterRecoveryDetails`,
+`AuditEventType` и тесты.
+
+## Порядок внедрения
+
+```text
+V1–V72  →  V73 (Organization)
+        →  V74 (Usage)
+        →  V75 (Audit event type)
+```
+
+Не копировать ранний конфликтный
+`V73__audit_dead_letter_recovery_event_type.sql`:
+этот номер уже занят миграцией организаций.
+
+В текущем публичном `main` проверено только наличие
+**V1–V72**. Отображение V73–V75 в этом README — описание
+подготовленного целевого пакета, не подтверждение применённой
+схемы. Истину об установке даёт `flyway_schema_history`.
 
 ## V72 — границы транзакционного допуска и обратная совместимость
 
 Новая migration **`V72__organization_auth_epoch_physical_attempt_gate.sql`** добавляет:
 
-| DB-объект | Назначение |
-|---|---|
-| `chat_turns.authorized_organization_auth_version` (`bigint`, исторически nullable) | Неподменяемый epoch авторизации из момента reservation |
-| `chk_chat_turn_authorized_org_auth_epoch_v72` | Запрет отрицательной версии |
-| `guard_chat_turn_reservation_epoch_v72()` + `trg_a_chat_turn_reservation_epoch_v72` | На `INSERT chat_turns`: tenant `FOR SHARE`, `enabled`, exact epoch |
-| `guard_chat_turn_epoch_immutable_v72()` + `trg_a_chat_turn_epoch_immutable_v72` | Запрет изменения authorization epoch после INSERT |
-| `guard_physical_attempt_organization_epoch_v72()` + `trg_a_physical_attempt_organization_epoch_v72` | На каждый `INSERT model_execution_attempts`: tenant `FOR SHARE` + live security epoch |
+- **`chat_turns.authorized_organization_auth_version` (`bigint`, исторически nullable)**
+  - **Назначение:** Неподменяемый epoch авторизации из момента reservation
+- **`chk_chat_turn_authorized_org_auth_epoch_v72`**
+  - **Назначение:** Запрет отрицательной версии
+- **`guard_chat_turn_reservation_epoch_v72()` + `trg_a_chat_turn_reservation_epoch_v72`**
+  - **Назначение:** На `INSERT chat_turns`: tenant `FOR SHARE`, `enabled`, exact epoch
+- **`guard_chat_turn_epoch_immutable_v72()` + `trg_a_chat_turn_epoch_immutable_v72`**
+  - **Назначение:** Запрет изменения authorization epoch после INSERT
+- **`guard_physical_attempt_organization_epoch_v72()` +
+  `trg_a_physical_attempt_organization_epoch_v72`**
+  - **Назначение:** На каждый `INSERT model_execution_attempts`: tenant `FOR SHARE` + live security
+    epoch
+
 
 ```text
 Organization Disable                       Physical STARTED
@@ -3697,11 +4262,20 @@ set enabled=false, auth_version++           check enabled + exact epoch
 commit                                     attempt commit (before provider I/O)
 ```
 
-Операции сериализуются по строке организации: победившая транзакция определяет допустимость нового STARTED. **Нет гарантий отмены** уже допущенного сетевого вызова; нельзя менять/удалять его исторический attempt evidence.
+Операции сериализуются по строке организации: победившая транзакция определяет допустимость нового
+STARTED. **Нет гарантий отмены** уже допущенного сетевого вызова; нельзя менять/удалять его
+исторический attempt evidence.
 
-Миграция V72 сохраняет `NULL` в исторических строках ChatTurn и даёт `DEFAULT 0` лишь новым SQL-вставкам, которые не передали значение. Такие исторические turns не могут открыть новую physical attempt. Загрузка старых версий backend в смешанном rollout может приводить к fail-closed отказам из-за отсутствующего principal epoch: требуется согласованный cutover. Изменять ранее применённые V1–V71 вместо нового SQL-файла запрещено.
+Миграция V72 сохраняет `NULL` в исторических строках ChatTurn и даёт `DEFAULT 0` лишь новым
+SQL-вставкам, которые не передали значение. Такие исторические turns не могут открыть новую physical
+attempt. Загрузка старых версий backend в смешанном rollout может приводить к fail-closed отказам
+из-за отсутствующего principal epoch: требуется согласованный cutover. Изменять ранее применённые
+V1–V71 вместо нового SQL-файла запрещено.
 
-**Статус проверки:** исторический PostgreSQL Testcontainers log подтверждает применение V1–V72 с нуля. Позднее получен успешный локальный прогон `./mvnw test` (2259 tests) и трех выбранных PostgreSQL/Redis concurrency/integration suites (27 tests). Это не равно проверке всех возможных блокировок и не подтверждает upgrade населенной базы V71→V72 или production rollout.
+**Статус проверки:** исторический PostgreSQL Testcontainers log подтверждает применение V1–V72 с
+нуля. Позднее получен успешный локальный прогон `./mvnw test` (2259 tests) и трех выбранных
+PostgreSQL/Redis concurrency/integration suites (27 tests). Это не равно проверке всех возможных
+блокировок и не подтверждает upgrade населенной базы V71→V72 или production rollout.
 
 
 ## Важные DB boundaries
@@ -3757,7 +4331,8 @@ commit                                     attempt commit (before provider I/O)
 
 Production Flyway должен сохранять совместимую PostgreSQL transactional-lock configuration.
 
-Release runbook также должен проверять `pg_index.indisvalid/indisready` для critical unique/business indexes после аварийного interrupted migration.
+Release runbook также должен проверять `pg_index.indisvalid/indisready` для critical unique/business
+indexes после аварийного interrupted migration.
 
 ---
 
@@ -3779,6 +4354,49 @@ Structured log context включает server request ID и, где приме�
 - full provider responses;
 - raw document chunks;
 - OCR/embedding credentials.
+
+## Audit Outbox: метрики и оповещения
+
+Файл правил размещается **не в Spring `application.yml`**:
+
+```text
+infra/prometheus/rules/safeai-audit-outbox.yml
+```
+
+`infra/prometheus/prometheus.yml` загружает
+`/etc/prometheus/rules/*.yml`; каталог rules должен быть
+смонтирован в контейнер Prometheus. Scrape target использует
+внутренний `backend:9091/actuator/prometheus`.
+
+Главные сигналы:
+
+- `safeai_audit_outbox_dead_letter_rows` — dead-letter count;
+- `safeai_audit_outbox_oldest_age_seconds` — возраст backlog;
+- `safeai_audit_outbox_metrics_refresh_failures_total` —
+  сбой обновления метрик;
+- `safeai_audit_outbox_processor_failures_total` —
+  сбои фоновой обработки;
+- `up{job="safeai-backend"}` — доступность scrape.
+
+Конфигурация подготовлена с семью оповещениями, включая
+отсутствующую целевую метрику и отсутствие scrape target.
+Несколько инстансов публикуют общую DB backlog метрику:
+использовать `max`, не `sum` для gauge общих строк БД.
+
+**Важный gap:** одни лишь alert rules не доставляют
+уведомления. Необходим реальный Alertmanager, маршруты,
+секреты получателей и проверенный test firing → delivery.
+Без него «firing в Prometheus» не означает извещения
+дежурного. См. `docs/RUNBOOK_AUDIT.md`.
+
+## Безопасное логирование ошибок
+
+Audit best-effort/scheduler/metrics должны логировать
+без `Throwable`, `exception.toString()` и сырого
+`getMessage()`: сообщения SQL/provider способны содержать
+PII и bind values. Допустим ограниченный safe failure type.
+Required audit failure при этом **не проглатывается**:
+иначе теряется transactional evidence.
 
 ## Metrics
 
@@ -3803,7 +4421,8 @@ Prometheus endpoint должен быть internal/network-protected.
 - Knowledge storage reconciliation;
 - Knowledge generation GC.
 
-Multi-instance job должен иметь DB/distributed coordination там, где duplicate work нарушит semantics.
+Multi-instance job должен иметь DB/distributed coordination там, где duplicate work нарушит
+semantics.
 
 ---
 
@@ -3811,30 +4430,46 @@ Multi-instance job должен иметь DB/distributed coordination там, �
 
 README не утверждает `BUILD SUCCESS` без фактического запуска конкретного commit.
 
-## Статус проверок на 11.10.2026
+## Исторические проверки на 11.10.2026
 
 Проверки выполнены пользователем локально перед merge PR #8; это **конкретные команды и их вывод**,
 а не заявление о статусе независимого CI, production или `clean` сборки.
 
-| Запуск | Фактический результат |
-|---|---|
-| `./mvnw -Dtest=CommonDependencyArchitectureTest test` | 1 test / 0 failures / 0 errors / `BUILD SUCCESS` |
-| Negative control: temporary `common → auth` dependency | Expected `Architecture Violation` / `BUILD FAILURE`; нарушение найдено по типу поля |
-| Повторный positive test после удаления probe | 1 test / 0 failures / 0 errors / `BUILD SUCCESS` |
-| `./mvnw test` | **2259 tests / 0 failures / 0 errors / 3 skipped / `BUILD SUCCESS`** |
-| `./mvnw -Dtest=AuthPostgresConcurrencyIT,OrganizationSecurityGateConcurrencyIT,RedisFixedWindowRateLimiterIT test` | **27 tests / 0 failures / 0 errors / `BUILD SUCCESS`** (15 + 5 + 7) |
-| `git merge-base --is-ancestor 103c587 main` | Подтверждено: исходный коммит PR #8 в истории `main` |
-| `git status -sb` | `## main...origin/main` без изменений |
+- **`./mvnw -Dtest=CommonDependencyArchitectureTest test`**
+  - **Фактический результат:** 1 test / 0 failures / 0 errors / `BUILD SUCCESS`
+- **Negative control: temporary `common → auth` dependency**
+  - **Фактический результат:** Expected `Architecture Violation` / `BUILD FAILURE`; нарушение
+    найдено по типу поля
+- **Повторный positive test после удаления probe**
+  - **Фактический результат:** 1 test / 0 failures / 0 errors / `BUILD SUCCESS`
+- **`./mvnw test`**
+  - **Фактический результат:** **2259 tests / 0 failures / 0 errors / 3 skipped / `BUILD SUCCESS`**
+- **Целевые Auth/Organization/Redis integration tests**
+  - Команда: `./mvnw -Dtest=... test`
+  - Классы: `AuthPostgresConcurrencyIT`,
+    `OrganizationSecurityGateConcurrencyIT`,
+    `RedisFixedWindowRateLimiterIT`.
+  - **Фактический результат:** **27 tests / 0 failures / 0 errors / `BUILD SUCCESS`** (15 + 5 + 7)
+- **`git merge-base --is-ancestor 103c587 main`**
+  - **Фактический результат:** Подтверждено: исходный коммит PR #8 в истории `main`
+- **`git status -sb`**
+  - **Фактический результат:** `## main...origin/main` без изменений
+
 
 Число `2259` — summary из Maven для **основного прогона**; запуск 27 целевых интеграционных
 тестов учитывается отдельно, не нужно автоматически складывать их с общим числом.
 
 ### Важно различать уровни доказательств
 
-- **Пройдено:** локальный `./mvnw test` на коде PR #8; targeted PostgreSQL/Redis integration tests; positive/negative ArchUnit test; Git ancestry.
-- **Подтверждено по репозиторию:** наличие миграций Flyway V1–V72, `pom.xml`, классов и архитектурного теста в `main` на `fdcff62`.
-- **Историческое свидетельство:** прежний успешный старт Testcontainers PostgreSQL с применением 72 миграций.
-- **Пока не подтверждено предоставленными материалами:** `./mvnw clean test` после merge, CI на merge SHA, populated upgrade V71→V72, продакшен-запуск, backup/restore drill, всесторонний security/performance/load review.
+- **Пройдено:** локальный `./mvnw test` на коде PR #8; targeted PostgreSQL/Redis integration tests;
+  positive/negative ArchUnit test; Git ancestry.
+- **Подтверждено по репозиторию:** наличие миграций Flyway V1–V72, `pom.xml`, классов и
+  архитектурного теста в `main` на `fdcff62`.
+- **Историческое свидетельство:** прежний успешный старт Testcontainers PostgreSQL с применением 72
+  миграций.
+- **Пока не подтверждено предоставленными материалами:** `./mvnw clean test` после merge, CI на
+  merge SHA, populated upgrade V71→V72, продакшен-запуск, backup/restore drill, всесторонний
+  security/performance/load review.
 
 ### Исторические сбои V71/V72 и их уроки (НЕ текущий статус сборки)
 
@@ -3859,7 +4494,7 @@ cd backend
 
 ## Карта размещения backend-тестов
 
-Текущее дерево `backend/src/test/java/ru/safeai/gateway/` содержит следующие Java-файлы
+Дерево baseline `backend/src/test/java/ru/safeai/gateway/` содержит следующие Java-файлы
 тестовых пакетов (количество **файлов**, а не JUnit test cases):
 
 | Пакет | Java-файлов | Что проверять при изменениях |
@@ -3938,11 +4573,21 @@ cd backend
 ./mvnw clean test
 ```
 
-> Названия классов относятся к исходным V72-патчам; фактическое существование/расположение тестов в текущем checkout необходимо проверить. Некоторые integration suites могут запускаться через отдельный Maven Failsafe-профиль; тогда дополнительно выполните `./mvnw verify` в соответствии с `pom.xml`.
+> Названия классов относятся к исходным V72-патчам; фактическое существование/расположение тестов в
+  текущем checkout необходимо проверить. Некоторые integration suites могут запускаться через
+  отдельный Maven Failsafe-профиль; тогда дополнительно выполните `./mvnw verify` в соответствии с
+  `pom.xml`.
 
-**Конкурентные сценарии, которые должны завершиться без deadlock и без выдачи действительной сессии после Disable:** Login ↔ Disable, Refresh ↔ Disable, несколько concurrent Refresh одного token family, ожидание `FOR SHARE`/`FOR UPDATE`, epoch change + re-enable, authorization при отказах и повторах. Для AI проверить оба порядка гонки: Disable first → попытка запрещена; STARTED first → Disable ждёт commit, evidence сохраняется. Добавить проверку deadlock SQLSTATE `40P01`, statement/lock timeout и соответствующих retry/fail-closed решений.
+**Конкурентные сценарии, которые должны завершиться без deadlock и без выдачи действительной сессии
+после Disable:** Login ↔ Disable, Refresh ↔ Disable, несколько concurrent Refresh одного token
+family, ожидание `FOR SHARE`/`FOR UPDATE`, epoch change + re-enable, authorization при отказах и
+повторах. Для AI проверить оба порядка гонки: Disable first → попытка запрещена; STARTED first →
+Disable ждёт commit, evidence сохраняется. Добавить проверку deadlock SQLSTATE `40P01`,
+statement/lock timeout и соответствующих retry/fail-closed решений.
 
-**Для временных инвариантов** отдельно проверять timestamp ordering с реальными PostgreSQL clock и тестовым `Clock`. Нельзя добиться зелёной сборки удалением `chk_chat_turns_timestamps`, смягчением V67/V72-триггеров или возвратом service-level `markProviderCallStarted()`.
+**Для временных инвариантов** отдельно проверять timestamp ordering с реальными PostgreSQL clock и
+тестовым `Clock`. Нельзя добиться зелёной сборки удалением `chk_chat_turns_timestamps`, смягчением
+V67/V72-триггеров или возвратом service-level `markProviderCallStarted()`.
 
 
 ## Фактически присутствующие test categories
@@ -4047,13 +4692,18 @@ cd backend
 ./mvnw clean test
 ```
 
-Интеграционные тесты с `@Testcontainers` требуют Docker. Если сборка падает, ищите **первый** `Caused by`, а не только каскадное `ApplicationContext failure threshold exceeded`. Для проверки V71 полезны: выборка earliest UTC date (включая `AMBIGUOUS`), последовательность backfill, повторный расчёт dirty dates, монотонность watermark, lock contention, идемпотентность aggregate rebuild. Не подавляйте проверки SQL-целостности ради зелёного результата.
+Интеграционные тесты с `@Testcontainers` требуют Docker. Если сборка падает, ищите **первый**
+`Caused by`, а не только каскадное `ApplicationContext failure threshold exceeded`. Для проверки V71
+полезны: выборка earliest UTC date (включая `AMBIGUOUS`), последовательность backfill, повторный
+расчёт dirty dates, монотонность watermark, lock contention, идемпотентность aggregate rebuild. Не
+подавляйте проверки SQL-целостности ради зелёного результата.
 
 ## Архитектурные регрессии и CI
 
 Текущий пакет `architecture` содержит **один** ArchUnit test. Следующие архитектурные правила
 добавляются отдельными PR, только после проверки реальных dependencies/allowed edges.
-Без новых тестов в `common` нельзя возвращать `JwtService`, auth exceptions или BCrypt configuration.
+Без новых тестов в `common` нельзя возвращать `JwtService`, auth exceptions или BCrypt
+configuration.
 
 Для запуска всех backend-тестов из корня проекта:
 
@@ -4071,15 +4721,41 @@ npm run check
 ```
 
 `npm run check` выполняет lint, Vitest и build (с проверкой typecheck/production bundle).
-Команды приведены как воспроизводимые проверки; успешный frontend run **не подтвержден** данным срезом.
+Команды приведены как воспроизводимые проверки; успешный frontend run **не подтвержден** данным
+срезом.
+
+## Дополнительная регрессия V73–V75
+
+Перед релизом обязательны новые проверки, **не входившие**
+в исторические 2259/27 прогонов PR #8:
+
+- Java ↔ PostgreSQL normalizer: все 24 whitespace,
+  ISO controls, UTF-16 длина и названия-коллизии.
+- V73 на базе с данными: конфликт индекса, конкурирующий
+  UPDATE, version semantics, rollback при preflight error.
+- V74: транзакция через UTC-полночь, revision/ack,
+  повторный расчёт старого UTC-дня, нагрузка на dirty row.
+- Physical spend/reconciliation: ADMIN tenant fence,
+  complete/incomplete flags, retries и cross-boundary plans.
+- Usage отчёты: локальный/распределённый permit,
+  `REPEATABLE_READ`, HTTP 429/422 и лимит OFFSET.
+- Audit: typed serializer, `MANDATORY` rollback,
+  privacy-safe logs, dead-letter recovery atomicity,
+  повторный recovery, immutable V68 contract.
+- Audit metrics: отсутствие gauge, failure counter,
+  реальные Prometheus alerts и получатель Alertmanager.
+- Retention: `AuditRetentionPoolLoadIT`, Hikari pool,
+  advisory lock release, lock timeout/deadlock и TPS.
+- Полные Maven/backend и frontend проверки на одном
+  релизном commit, CI, backup/restore и smoke tests.
 
 ## Release candidate checks
 
 Перед серьёзным deployment:
 
 ```text
-fresh V1 → V72
-representative populated upgrade V71 → V72
+fresh V1 → V75 (при наличии всех трёх патчей)
+populated upgrade V72 → V75; порядок/lock-timeouts
 Flyway history validation
 critical index validity check
 backend clean test
@@ -4228,15 +4904,42 @@ Production Knowledge требует:
 - production role имеет необходимые extension/index privileges;
 - `pgvector` доступен до применения Knowledge vector migrations.
 
+## V73–V75: порядок release и rollback
+
+V73–V75 должны находиться в одном согласованном release
+наборе, если включаются все три функциональности.
+Перед Flyway: backup, preflight существующих организаций,
+учёт DDL locks, проверка миграционной истории и совместимости
+версий Java-кода с ожидаемой схемой.
+
+Для V75 обязательно деплоить recovery Java-классы
+с правильным `AuditEventType`; регистрация event type
+без API не заменяет управляемого восстановления.
+
+Для V74 проверить, что rollup worker не обрабатывает
+открытый UTC-день и что повторные dirty revisions не теряются.
+
+По умолчанию Flyway не откатывает применённый production SQL
+автоматически. Rollback приложения допустим лишь при
+подтверждённой совместимости со схемой; иначе нужен
+подготовленный forward-fix и staged cutover.
+
 ## V72 rollout — согласованное внедрение security epoch и AI kill-switch
 
-V72 нельзя считать обычной независимой SQL-миграцией: новая схема требует от reservation path явно записывать `authorized_organization_auth_version`, а physical executor должен уважать database rejection. Перед выпуском нужны:
+V72 нельзя считать обычной независимой SQL-миграцией: новая схема требует от reservation path явно
+записывать `authorized_organization_auth_version`, а physical executor должен уважать database
+rejection. Перед выпуском нужны:
 
-1. Согласованное обновление backend и Flyway V72: не оставлять старые workers, которые создают ChatTurn без текущего epoch.
-2. Migration rehearsal на пустой БД V1–V72 **и** на копии населённой V71 с upgrade до V72. Исторические `NULL` ChatTurn нельзя backfill-ить придуманной версией.
-3. PostgreSQL concurrent races: Login/Refresh/Disable; физический `STARTED` против Disable; Disable→Enable без reactivation старого turn.
-4. Корректный finalization уже начатого provider I/O: сохранять `outcome_certainty`, usage/cost, audit и `AMBIGUOUS` при неопределённости; не выполнять blind retry.
-5. Проверка latency и блокировок `organizations FOR SHARE/FOR UPDATE`, retry policy при SQLSTATE `40P01` и мониторинг времени ожидания транзакций.
+1. Согласованное обновление backend и Flyway V72: не оставлять старые workers, которые создают
+   ChatTurn без текущего epoch.
+2. Migration rehearsal на пустой БД V1–V72 **и** на копии населённой V71 с upgrade до V72.
+   Исторические `NULL` ChatTurn нельзя backfill-ить придуманной версией.
+3. PostgreSQL concurrent races: Login/Refresh/Disable; физический `STARTED` против Disable;
+   Disable→Enable без reactivation старого turn.
+4. Корректный finalization уже начатого provider I/O: сохранять `outcome_certainty`, usage/cost,
+   audit и `AMBIGUOUS` при неопределённости; не выполнять blind retry.
+5. Проверка latency и блокировок `organizations FOR SHARE/FOR UPDATE`, retry policy при SQLSTATE
+   `40P01` и мониторинг времени ожидания транзакций.
 
 Успешный локальный `./mvnw test` (2259 тестов) подтвержден отдельно и не подменяет
 `clean test`, CI на релизном коммите, populated V71→V72 upgrade rehearsal, production-like
@@ -4253,6 +4956,13 @@ Backup не считается готовым только потому, что 
 ## Prometheus
 
 `/actuator/prometheus` / management endpoints — internal-only.
+Production management слушает отдельный приватный адрес;
+блокировать публичный ingress и проверять reachability из
+сети мониторинга. Используются правила в `infra/prometheus`,
+**не** `deploy/prometheus` и **не** `application-prod.yml`.
+
+Alertmanager и реальную маршрутизацию необходимо настроить
+отдельно: готовый YAML не является доставленным уведомлением.
 
 ## Provider egress
 
@@ -4264,25 +4974,42 @@ Redirect following с credentials запрещён.
 
 # Текущие ограничения и production-readiness gaps
 
-Этот раздел фиксирует ограничения и риски, выявленные в ранее проанализированном коде, с обновленным статусом проверок на 11.10.2026. Некоторые тезисы требуют повторного code audit перед изменением production behavior; их наличие в README не подтверждает незакрытый дефект текущего `main`. Пункты, закрытые `V59–V68`,
-из списка удалены: budget-state representability закрыт `V62/V64`, final-request/RAG binding — `V62/V64/V65`,
+Здесь собраны старые риски и новые release gaps по состоянию
+на 17.10.2026. Некоторые тезисы требуют повторного code audit перед изменением production behavior;
+их наличие в README не подтверждает незакрытый дефект текущего `main`. Пункты, закрытые `V59–V68`,
+из списка удалены: budget-state representability закрыт `V62/V64`, final-request/RAG binding —
+`V62/V64/V65`,
 searchable Knowledge publication — `V63`, physical response vs protocol rejection — `V66`,
 а Chat/Audit evidence получил дополнительные DB backstops в `V67/V68`.
 
-## P0 до production — release validation V72 и эксплуатационная готовность
+## P0 до production — release validation V72–V75 и мониторинг
 
-- **Текущий локальный baseline зеленый:** `./mvnw test` — 2259/0/0/3; целевые PostgreSQL/Redis IT — 27/27. Исторический сбой clock fixture не является текущим выводом Maven.
-- По-прежнему **нет предоставленного доказательства** отдельного `./mvnw clean test`, CI на merge SHA, populated V71→V72 migration rehearsal и полного production-like concurrency/chaos validation. Успешные локальные тесты нельзя объявлять достаточным release gate.
-- Kill-switch синхронизирует **разрешение STARTED**, но не обещает физическую отмену уже допущенного HTTP I/O; если нужен сетевой hard-stop, требуется отдельный dispatch/draining протокол.
-- Старые application instances без нового epoch contract при смешанной раскатке могут получить fail-closed ошибки. Важно описать rollback/runbook и последовательность остановки workers.
+- **Текущий локальный baseline зеленый:** `./mvnw test` — 2259/0/0/3; целевые PostgreSQL/Redis IT —
+  27/27. Исторический сбой clock fixture не является текущим выводом Maven.
+- Нет подтверждения нового полного `./mvnw clean test`,
+  CI на релизном SHA и populated V72→V75 upgrade rehearsal.
+- Для Audit ещё необходимо доказать Alertmanager delivery,
+  atomic recovery и отсутствие секретов в exception-логах.
+- Для Usage необходимы midnight-race и high-contention
+  тесты dirty-date queue, physical spend и Hikari slots.
+- Для Organization V73 требуется rehearsal блокировок и
+  проверка коллизий на реальном наборе tenant names. Успешные локальные тесты нельзя объявлять
+  достаточным release gate.
+- Kill-switch синхронизирует **разрешение STARTED**, но не обещает физическую отмену уже допущенного
+  HTTP I/O; если нужен сетевой hard-stop, требуется отдельный dispatch/draining протокол.
+- Старые application instances без нового epoch contract при смешанной раскатке могут получить
+  fail-closed ошибки. Важно описать rollback/runbook и последовательность остановки workers.
 
-Это **release gates**, а не повод ослаблять блокировки, DB triggers, idempotency, durable evidence или прежнюю логику recovery.
+Это **release gates**, а не повод ослаблять блокировки, DB triggers, idempotency, durable evidence
+или прежнюю логику recovery.
 
 
 ## P1 — Governed provider entry point
 
-DB уже не разрешает новый physical attempt без v2 final-request binding, а `STARTED` требует live fenced `PROCESSING`
-turn. При этом provider adapter implementation всё равно должен оставаться недоступным для произвольного application
+DB уже не разрешает новый physical attempt без v2 final-request binding, а `STARTED` требует live
+fenced `PROCESSING`
+turn. При этом provider adapter implementation всё равно должен оставаться недоступным для
+произвольного application
 call-site в обход governed execution scope.
 
 Целевой invariant:
@@ -4292,7 +5019,8 @@ no governed execution identity
     → no credential-bearing provider I/O
 ```
 
-Это желательно подкреплять package/module visibility, explicit execution capability/token и integration tests.
+Это желательно подкреплять package/module visibility, explicit execution capability/token и
+integration tests.
 
 ## P1 — ExecutionPlan recovery
 
@@ -4308,20 +5036,25 @@ Attempt #1 ещё не создан
 
 остаётся безопасно recoverable, потому что durable physical `STARTED` evidence отсутствует.
 
-Нужен явный, хорошо протестированный application recovery path, который возобновляет именно эту операцию,
+Нужен явный, хорошо протестированный application recovery path, который возобновляет именно эту
+операцию,
 а не создаёт новую route/request identity.
 
 ## P1 — Provider token/context estimation
 
-Governance input units (`UTF8_STRUCTURAL_UNITS_V2`) и provider-native context tokens — разные величины.
+Governance input units (`UTF8_STRUCTURAL_UNITS_V2`) и provider-native context tokens — разные
+величины.
 
-Deterministic governance accounting полезен для policy/budget envelopes, но char/structural heuristic нельзя выдавать
-за математически строгий upper bound provider tokenizer. Для моделей с критичным context fit нужен provider-aware
+Deterministic governance accounting полезен для policy/budget envelopes, но char/structural
+heuristic нельзя выдавать
+за математически строгий upper bound provider tokenizer. Для моделей с критичным context fit нужен
+provider-aware
 tokenizer либо консервативный fail-closed bound.
 
 ## P1 — Pricing scheme breadth
 
-V66 вводит explicit `pricing_scheme` и fail-closed legacy/unsupported states, однако текущая поддерживаемая схема
+V66 вводит explicit `pricing_scheme` и fail-closed legacy/unsupported states, однако текущая
+поддерживаемая схема
 не покрывает весь рынок provider billing semantics.
 
 Отдельного versioned model требуют, например:
@@ -4333,11 +5066,13 @@ V66 вводит explicit `pricing_scheme` и fail-closed legacy/unsupported sta
 - tool/search/image/audio dimensions;
 - cache read/write variants разных providers.
 
-Неподдерживаемая схема должна оставаться `UNPRICED`/unverifiable, а не аппроксимироваться как flat-token pricing.
+Неподдерживаемая схема должна оставаться `UNPRICED`/unverifiable, а не аппроксимироваться как
+flat-token pricing.
 
 ## P1 — Billing-grade settlement
 
-`model_cost_commitment_ledger_v62` и `chat_physical_spend_v67` дают provider-evidenced accounting и unknown-liability
+`model_cost_commitment_ledger_v62` и `chat_physical_spend_v67` дают provider-evidenced accounting и
+unknown-liability
 semantics, но это ещё не бухгалтерский/invoice settlement subsystem.
 
 Для billing-grade слоя потребуются:
@@ -4354,7 +5089,8 @@ semantics, но это ещё не бухгалтерский/invoice settlement
 
 ## P1 — Knowledge evidence retention / GC
 
-Retrieval evidence защищает referenced chunks/generations от уничтожения, но без bounded retention/legal-hold policy
+Retrieval evidence защищает referenced chunks/generations от уничтожения, но без bounded
+retention/legal-hold policy
 historical evidence может удерживать storage indefinitely.
 
 Нужен lifecycle:
@@ -4367,34 +5103,41 @@ historical evidence может удерживать storage indefinitely.
 
 ## P1 — Mixed scanned PDF fail-closed
 
-Для mixed PDF OCR-required pages не должны тихо подменяться native-only extraction, если OCR disabled/unavailable.
+Для mixed PDF OCR-required pages не должны тихо подменяться native-only extraction, если OCR
+disabled/unavailable.
 
 Strict `KNOWLEDGE_ONLY` не должен публиковать заведомо partial document как полностью готовый.
 
 ## P1 — Parser isolation
 
-Extraction имеет timeout/thread bounds, но untrusted PDF/OOXML всё ещё парсится внутри application JVM.
+Extraction имеет timeout/thread bounds, но untrusted PDF/OOXML всё ещё парсится внутри application
+JVM.
 
-Для hardened enterprise deployment parsing стоит вынести в отдельный worker/container sandbox boundary
+Для hardened enterprise deployment parsing стоит вынести в отдельный worker/container sandbox
+boundary
 с memory/CPU/time/filesystem/network limits.
 
 ## P1 — Knowledge provider attempt/cost evidence
 
-OCR/embedding external calls пока не имеют такого же полного durable physical-attempt ledger, как Chat AI execution.
+OCR/embedding external calls пока не имеют такого же полного durable physical-attempt ledger, как
+Chat AI execution.
 
-При partial batch success + process crash возможны повторные billable calls. Нужны durable operation identity,
+При partial batch success + process crash возможны повторные billable calls. Нужны durable operation
+identity,
 attempt evidence и reconciliation semantics для embedding/OCR pipeline.
 
 ## P1/P2 — Concurrent index recovery
 
 Interrupted `CREATE INDEX CONCURRENTLY` может оставить invalid index.
 
-Для critical business indexes нужен release assertion по PostgreSQL catalogs (`pg_index.indisvalid` /
+Для critical business indexes нужен release assertion по PostgreSQL catalogs (`pg_index.indisvalid`
+/
 `indisready`), а не только `IF NOT EXISTS`.
 
 ## P2 — Human review workflow for Knowledge storage reconciliation
 
-V63 корректно разделяет `needs_review_at` и `reviewed_at`, но сама полноценная operator workflow вокруг
+V63 корректно разделяет `needs_review_at` и `reviewed_at`, но сама полноценная operator workflow
+вокруг
 `NEEDS_REVIEW` должна иметь:
 
 - assignee/claim;
@@ -4406,10 +5149,25 @@ V63 корректно разделяет `needs_review_at` и `reviewed_at`, н
 
 ## P2 — V58 legacy title ambiguity
 
-До появления `title_source` невозможно доказать, был ли historical title `Новый чат` placeholder-ом или осознанным user title.
+До появления `title_source` невозможно доказать, был ли historical title `Новый чат` placeholder-ом
+или осознанным user title.
 
-V58 deterministic backfill принимает это как migration trade-off; V59 защищает дальнейшее движение provenance назад,
+V58 deterministic backfill принимает это как migration trade-off; V59 защищает дальнейшее движение
+provenance назад,
 но не может ретроспективно восстановить утраченное историческое намерение пользователя.
+
+## Audit / Usage — остаточные эксплуатационные риски
+
+- **P1:** даже при безопасном Audit logging отдельных
+  классов нужно проверить все handlers/logger call sites.
+- **P1:** мёртвые события нельзя восстанавливать без
+  устранения root cause, операторского журнала и алерта.
+- **P2:** исторические справочники с `DISTINCT` и substring
+  search могут оставаться тяжёлыми при больших объёмах.
+- **P2:** Hikari/advisory-lock нагрузка и масштабирование
+  мониторинга должны быть измерены в production-like среде.
+- **P2:** Usage dirty-date current UTC day создаёт hot row;
+  при высоком TPS может понадобиться иной journal design.
 
 ## Текущие product boundaries
 
@@ -4439,13 +5197,18 @@ V58 deterministic backfill принимает это как migration trade-off;
 
 ## Короткое техническое описание
 
-> **SafeAI Desk — modular-monolith корпоративного AI Gateway с organization multi-tenancy, exactly-one-role RBAC, cookie JWT + CSRF, refresh rotation/reuse detection, user/org security epochs, durable idempotent ChatTurn с lease/fencing/ambiguity protection, versioned Model Control Plane, durable physical AI attempt evidence, Knowledge/RAG provenance + Answer Passport, transactional audit outbox и usage/pricing quality analytics.**
+> **SafeAI Desk — modular-monolith корпоративного AI Gateway с organization multi-tenancy,
+  exactly-one-role RBAC, cookie JWT + CSRF, refresh rotation/reuse detection, user/org security
+  epochs, durable idempotent ChatTurn с lease/fencing/ambiguity protection, versioned Model Control
+  Plane, durable physical AI attempt evidence, Knowledge/RAG provenance + Answer Passport,
+  transactional audit outbox и usage/pricing quality analytics.**
 
 ## Архитектурная идея
 
 SafeAI Desk не пытается сделать LLM deterministic.
 
-Вместо этого платформа делает deterministic/auditable **обвязку вокруг недетерминированного provider**:
+Вместо этого платформа делает deterministic/auditable **обвязку вокруг недетерминированного
+provider**:
 
 ```text
 кто запросил
@@ -4474,7 +5237,8 @@ SafeAI Desk не пытается сделать LLM deterministic.
 
 требуют сильных transactional boundaries.
 
-Переход к микросервисам имеет смысл только после появления реальной независимой scaling/ownership необходимости и должен сохранять эти invariants.
+Переход к микросервисам имеет смысл только после появления реальной независимой scaling/ownership
+необходимости и должен сохранять эти invariants.
 
 ---
 
@@ -4487,7 +5251,7 @@ SafeAI Desk не пытается сделать LLM deterministic.
 frontend/
 ├── package.json
 ├── src/
-│   ├── api/               # typed HTTP clients, response parsers, auth/CSRF, chat, model, Knowledge, admin
+│   ├── api/               # HTTP clients, parsers, CSRF, chat, model, Knowledge
 │   ├── auth/              # AuthContext, auth context definition, useAuth
 │   ├── components/
 │   │   ├── admin/         # admin tables/forms/controls
@@ -4496,7 +5260,7 @@ frontend/
 │   ├── constants/         # audit event presentation constants
 │   ├── domain/            # UI-level role/policy helpers
 │   ├── hooks/
-│   ├── pages/             # Login, Chat, Knowledge, admin Users/Organizations/Audit/Usage/Models
+│   ├── pages/             # Login, Chat, Knowledge, Users, Audit, Usage, Models
 │   ├── styles/
 │   ├── test/              # Vitest setup
 │   ├── utils/
@@ -4531,7 +5295,8 @@ Frontend routes/API contracts в точности определяются ак�
 
 # Поддержание документации в актуальном состоянии
 
-README предназначен для **реализованных и проверяемых** контрактов. `ROADMAP.md` — для будущих возможностей.
+README предназначен для **реализованных и проверяемых** контрактов. `ROADMAP.md` — для будущих
+возможностей.
 Связанные документы: `docs/00_PROJECT_OVERVIEW.md`, `docs/01_LOCAL_RUNBOOK.md`,
 `docs/02_DOCKER_RUNBOOK.md`, `docs/03_AUTH_JWT_VERIFICATION.md`,
 `docs/04_ORGANIZATION_USER_API.md`, `docs/05_CHAT_CORE_VERIFICATION.md`,
@@ -4539,18 +5304,26 @@ README предназначен для **реализованных и пров�
 `docs/10_TROUBLESHOOTING.md`, `docs/12_KNOWLEDGE_BASE_CORE_VERIFICATION.md`,
 `backend/src/main/resources/db/README_DB.md`, `docs/runMacBook/LOCAL_DEVELOPMENT_MACOS.md`.
 Эти вспомогательные документы существуют в дереве, но их актуальность по отношению к README
-нужно сверять перед выполнением критических команд; они не переопределяют source code. Новая миграция требует синхронного обновления: migration map, entity/repository contract, API flows, state-machine diagrams, runbook, known-failure status и тестовой матрицы.
+нужно сверять перед выполнением критических команд; они не переопределяют source code. Новая
+миграция требует синхронного обновления: migration map, entity/repository contract, API flows,
+state-machine diagrams, runbook, known-failure status и тестовой матрицы.
 
 При обновлении проекта сверяйте прежде всего:
 
-- `backend/src/main/resources/db/migration/` и `flyway_schema_history` — реально применённая schema/version;
-- актуальные Java-классы, repository signatures и controller mappings — точные backend/API contracts;
+- `backend/src/main/resources/db/migration/` и `flyway_schema_history` — реально применённая
+  schema/version;
+- актуальные Java-классы, repository signatures и controller mappings — точные backend/API
+  contracts;
 - `backend/pom.xml`, `frontend/package.json` — версии инструментов/библиотек;
-- Surefire/Failsafe XML и последние полные логи — **реальный** статус тестов, а не исторические counts;
+- Surefire/Failsafe XML и последние полные логи — **реальный** статус тестов, а не исторические
+  counts;
 - деплойные профили — фактические security constraints и secret handling;
-- concurrency/DB evidence — подтверждение, что ограничения выдерживают не только happy path, но и гонки/отказоустойчивость.
+- concurrency/DB evidence — подтверждение, что ограничения выдерживают не только happy path, но и
+  гонки/отказоустойчивость.
 
-Никакие сведения о наличии класса, метода или SQL-файла сами по себе не являются доказательством прохождения теста. Статусы «реализовано в исходном патче», «применено в тестовой PostgreSQL», «проверено интеграционным тестом» и «выпущено в production» следует документировать **раздельно**.
+Никакие сведения о наличии класса, метода или SQL-файла сами по себе не являются доказательством
+прохождения теста. Статусы «реализовано в исходном патче», «применено в тестовой PostgreSQL»,
+«проверено интеграционным тестом» и «выпущено в production» следует документировать **раздельно**.
 
 ---
 
@@ -4618,7 +5391,7 @@ usage / physical spend / Answer Passport / audit
 Этот раздел предназначен для продолжения работы над SafeAI Desk в **новом диалоге** без повторного
 обсуждения восьми уже завершенных PR. Он фиксирует workflow, а не заменяет чтение исходников.
 
-## Контекст проекта на 11.10.2026
+## Исторический baseline PR #8 и целевой пакет 17.10.2026
 
 ```text
 Repository:  https://github.com/Amid-1/Safeai-desk
@@ -4626,7 +5399,7 @@ Base:        main / origin/main
 Main HEAD:   fdcff62fc32131474cbc2639b1fa636edffd45bc (merge PR #8)
 Java:        21
 Spring Boot: 4.1.1
-DB:          PostgreSQL, Flyway V1–V72, Redis, S3-compatible Knowledge storage
+DB:          PostgreSQL, GitHub main Flyway V1–V72, target V73–V75
 Structure:   modular monolith; common, identity, auth, user, organization,
              ratelimit, audit, usage, chat, model, ai, knowledge
 PRs merged:  #1–#8; latest adds ArchUnit 1.5.1 architecture rule for common
@@ -4640,7 +5413,7 @@ production startup guards, general infrastructure. PR #8 добавил `CommonD
 
 **Проверено до merge PR #8:** `./mvnw test`: 2259 tests, 0 failures, 0 errors, 3 skipped;
 дополнительно 27/27 PostgreSQL/Redis IT, ArchUnit positive/negative test.
-После merge локальный `main` синхронизирован и чистый. Это **не** статус CI или доказательство
+Чистый `main` относился к историческому PR #8. Это **не** статус текущей ветки или доказательство
 того, что другие модули уже архитектурно изолированы.
 
 ## Как вести следующий архитектурный PR
@@ -4650,7 +5423,8 @@ production startup guards, general infrastructure. PR #8 добавил `CommonD
 3. Проверить bean registration, auto-configuration, package visibility, DTO/error contracts,
    transaction propagation, lock order, events, retention, DB constraints, тесты.
 4. Разделить *общий контракт*, *владельца реализации*, *адаптер*, *оркестрацию*;
-   не переносить классы механически и не формировать новый общий `common` для устранения import errors.
+   не переносить классы механически и не формировать новый общий `common` для устранения import
+   errors.
 5. При обнаружении real boundary violation выбрать минимальный безопасный PR и понятный rollback.
 6. Добавить/скорректировать ArchUnit правило только для **проверенной** архитектурной границы;
    создать negative control, не фиксируя его в Git.
@@ -4700,17 +5474,43 @@ Spring wiring, database triggers и concurrency.
 Приоритет — **не массовый перенос Java-файлов**, а доказуемое выравнивание ownership
 и направление зависимостей в текущем модульном монолите.
 
-| Этап | Цель | Что должно получиться |
-|---|---|---|
-| 1. Identity | Аудит `identity.session` и consumers | Узкий стабильный порт без imports из application modules; ArchUnit при подтверждении чистоты |
-| 2. Auth / User / Organization | Инвентаризация cyclic compile/runtime coupling | Security-state contracts и session revocation без обратных ссылок на auth implementation |
-| 3. Rate limit | Выделить наружу только policy/service contracts | Redis/Lua/HMAC внутри реализации; callers не зависят от storage details |
-| 4. Audit | Проверить outbox API + transactional guarantees | Domain modules depend on audit contract, storage/retention stays audit-owned |
-| 5. Usage | Отделить event/fact contracts от reporting implementation | Ограничение heavy queries, корректность watermark/dirty dates, независимость от UI |
-| 6. Model / AI | Разделить governance permission и physical provider execution | Exact sealed request/attempt evidence; запрет bypass provider I/O; целевые ArchUnit tests |
-| 7. Knowledge | Отделить ACL/ingestion/retrieval/RAG adapters | Контракты не раскрывают storage internals; сохранены provenance/fenced publication |
-| 8. Chat | Оркестратор без обратных зависимостей от нижележащих модулей | Durable ChatTurn и recovery остаются центром workflow без циклического ownership |
-| 9. Frontend / API | Сопоставить DTO, ошибки, RBAC и frontend runtime parsers | Проверяемая end-to-end совместимость, без ослабления backend authorization |
+- **1. Identity**
+  - **Цель:** Аудит `identity.session` и consumers
+  - **Что должно получиться:** Узкий стабильный порт без imports из application modules; ArchUnit
+    при подтверждении чистоты
+- **2. Auth / User / Organization**
+  - **Цель:** Инвентаризация cyclic compile/runtime coupling
+  - **Что должно получиться:** Security-state contracts и session revocation без обратных ссылок на
+    auth implementation
+- **3. Rate limit**
+  - **Цель:** Выделить наружу только policy/service contracts
+  - **Что должно получиться:** Redis/Lua/HMAC внутри реализации; callers не зависят от storage
+    details
+- **4. Audit**
+  - **Цель:** Проверить outbox API + transactional guarantees
+  - **Что должно получиться:** Domain modules depend on audit contract, storage/retention stays
+    audit-owned
+- **5. Usage**
+  - **Цель:** Отделить event/fact contracts от reporting implementation
+  - **Что должно получиться:** Ограничение heavy queries, корректность watermark/dirty dates,
+    независимость от UI
+- **6. Model / AI**
+  - **Цель:** Разделить governance permission и physical provider execution
+  - **Что должно получиться:** Exact sealed request/attempt evidence; запрет bypass provider I/O;
+    целевые ArchUnit tests
+- **7. Knowledge**
+  - **Цель:** Отделить ACL/ingestion/retrieval/RAG adapters
+  - **Что должно получиться:** Контракты не раскрывают storage internals; сохранены
+    provenance/fenced publication
+- **8. Chat**
+  - **Цель:** Оркестратор без обратных зависимостей от нижележащих модулей
+  - **Что должно получиться:** Durable ChatTurn и recovery остаются центром workflow без
+    циклического ownership
+- **9. Frontend / API**
+  - **Цель:** Сопоставить DTO, ошибки, RBAC и frontend runtime parsers
+  - **Что должно получиться:** Проверяемая end-to-end совместимость, без ослабления backend
+    authorization
+
 
 Порядок — гипотеза для **аудита**, а не разрешение сразу вводить все dependency rules.
 Сначала строится фактический dependency graph; архитектура и контракты согласуются с
@@ -4718,6 +5518,49 @@ Spring wiring, database triggers и concurrency.
 
 ---
 
-**Актуализация:** 11 октября 2026 года; дерево GitHub `main` `fdcff62` и локальные
-результаты PR #8. Полный production release gate, populated upgrade и deployment
-не подтверждены и не подразумеваются данным README.
+**Актуализация:** 17 октября 2026 года. Сохранён исторический baseline PR #8;
+учтены подготовленные V73–V75 и Audit/Usage/production hardening.
+GitHub `main` всё ещё содержит V1–V72 на момент проверки;
+локальный checkout и реальная схема БД не прочитаны.
+Полный release gate и deployment не заявляются.
+---
+
+# Релизный контроль V73–V75
+
+Выполнить перед внесением README и патчей в основную ветку:
+
+```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk
+
+git status -sb
+git diff --check
+git diff --stat
+
+find backend/src/main/resources/db/migration \
+  -maxdepth 1 -name 'V7[345]__*.sql' -print
+
+cd backend
+./mvnw clean test
+```
+
+Сравнить `flyway_schema_history` с именами новых SQL:
+
+```sql
+SELECT installed_rank, version, script, success
+FROM public.flyway_schema_history
+WHERE version IN ('72', '73', '74', '75')
+ORDER BY installed_rank;
+```
+
+После миграции проверить canonical names, dirty queue,
+`audit_event_types` и PostgreSQL index validity. Проверить
+два экземпляра backend, Redis/DB failures, retention contention
+и реальные события `firing` плюс получение уведомления.
+
+Для коммита документации использовать отдельную осмысленную
+запись, а не объявлять «проверено в production» без evidence.
+
+**Неизменяемое правило:** миграции V1–V72 не переписывать;
+если V73–V75 уже присутствуют в `flyway_schema_history`,
+изменять их checksum нельзя. Новые corrections — новой
+версией миграции после проверки занятой нумерации.

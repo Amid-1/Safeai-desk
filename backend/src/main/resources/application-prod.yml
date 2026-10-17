@@ -1,4 +1,6 @@
 # SafeAI-Desk/backend/src/main/resources/application-prod.yml
+# Production profile only: shared defaults are defined in application.yml.
+# This file preserves all original production settings and explanatory comments.
 
 spring:
   datasource:
@@ -72,9 +74,12 @@ logging:
 
 # RSA key-ring material is intentionally not declared here.
 # Production supplies it through deployment secret configuration.
+# infra/docker-compose.yml adds /run/secrets/jwt-keys.yml as Spring config.
 safeai:
   # Canonical production marker. Keep it fixed in the production profile
-  # rather than allowing an environment override to downgrade the mode.
+  # rather than allowing a normal application.yml default to downgrade mode.
+  # NOTE: an environment variable or higher-priority property source can still
+  # override YAML; deployment controls must also enforce the prod profile.
   environment: production
 
   ai:
@@ -131,6 +136,7 @@ safeai:
 
     # HSTS is emitted by the trusted TLS edge / reverse proxy.
     # Keep application-managed HSTS disabled in this deployment.
+    # The HTTPS edge MUST send Strict-Transport-Security on real responses.
     hsts:
       enabled: ${SAFEAI_HSTS_ENABLED:false}
       edge-managed: ${SAFEAI_HSTS_EDGE_MANAGED:false}
@@ -138,3 +144,16 @@ safeai:
   cors:
     # Required in production; there is intentionally no localhost fallback.
     allowed-origins: ${SAFEAI_CORS_ALLOWED_ORIGINS}
+
+  audit:
+    outbox:
+      # Delivery remains durable via the transactional audit outbox.
+      # Failures must not silently discard evidence; exhausted items move to
+      # dead-letter and require monitored, controlled recovery.
+      # Batch size and poll delay are inherited from application.yml.
+      # These properties are validated by AuditOutboxProperties.
+      max-attempts: ${SAFEAI_AUDIT_OUTBOX_MAX_ATTEMPTS:10}
+      initial-backoff: ${SAFEAI_AUDIT_OUTBOX_INITIAL_BACKOFF:2s}
+      max-backoff: ${SAFEAI_AUDIT_OUTBOX_MAX_BACKOFF:1h}
+      # Store only a safe exception descriptor, never raw SQL/error payloads.
+      max-error-length: ${SAFEAI_AUDIT_OUTBOX_MAX_ERROR_LENGTH:256}

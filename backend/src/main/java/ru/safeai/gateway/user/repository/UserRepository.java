@@ -427,4 +427,18 @@ public interface UserRepository
             @Param("role")
             String role
     );
+
+    /** Counts active accounts with the given role in one organization. */
+    @Query("""
+            select count(distinct user.id)
+            from UserEntity user
+            join user.roles role
+            where user.organization.id = :organizationId
+              and user.enabled = true
+              and role.name = :role
+            """)
+    long countEnabledByOrganizationIdAndRole(
+            @Param("organizationId") UUID organizationId,
+            @Param("role") String role
+    );
 }

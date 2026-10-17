@@ -1,25 +1,22 @@
-# SafeAI-Desk/docs/config/application-security-example.yaml
-
+# # SafeAI-Desk/docs/config/application-security-example.yaml
+# Documentation ONLY, not a production config file.
+# Examples must never be copied into the live application.yml without review.
 safeai:
   security:
     client-ip:
-      # Trust only networks controlled by your reverse proxy tier.
+      # Only the single trusted container-edge proxy is allowed.
       trusted-proxy-cidrs:
-        - 172.28.0.0/24
-
+        - 172.28.0.10/32
   cors:
     allowed-origins:
       - https://desk.example.com
       - https://admin.example.com
 
+# Production JWT signing keys MUST come from /run/secrets/jwt-keys.yml,
+# not from a checked-in file or plain-text environment variables.
 app:
   security:
     jwt:
       expiration-minutes: ${SAFEAI_JWT_EXPIRATION_MINUTES:15}
       issuer: ${SAFEAI_JWT_ISSUER}
       audience: ${SAFEAI_JWT_AUDIENCE:safeai-desk-api}
-      active-key-id: ${SAFEAI_JWT_ACTIVE_KEY_ID}
-      keys:
-        - id: ${SAFEAI_JWT_ACTIVE_KEY_ID}
-          public-key: ${SAFEAI_JWT_PUBLIC_KEY}
-          private-key: ${SAFEAI_JWT_PRIVATE_KEY}

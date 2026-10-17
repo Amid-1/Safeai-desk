@@ -1,5 +1,6 @@
 package ru.safeai.gateway.chat.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +50,7 @@ public class ChatTurnFinalizationService {
     private final ChatMapper mapper;
     private final ChatMetrics metrics;
     private final Clock clock;
+    private final ChatDatabaseClockRepository databaseClock;
     private final AnswerPassportService answerPassportService;
     private final ChatTurnReadSupport readSupport;
 
@@ -64,6 +66,24 @@ public class ChatTurnFinalizationService {
             Clock clock,
             AnswerPassportService answerPassportService
     ) {
+        this(turnRepository, messageRepository, sessionRepository, quotaService,
+                auditEventService, mapper, metrics, clock, answerPassportService, null);
+    }
+
+    @Autowired
+    public ChatTurnFinalizationService(
+            ChatTurnRepository turnRepository,
+            ChatMessageRepository messageRepository,
+            ChatSessionRepository sessionRepository,
+            ChatQuotaService quotaService,
+            AuditEventService auditEventService,
+            ChatMapper mapper,
+            ChatMetrics metrics,
+            Clock clock,
+            AnswerPassportService answerPassportService,
+            ChatDatabaseClockRepository databaseClock
+    ) {
+        this.databaseClock = databaseClock;
         this.turnRepository = Objects.requireNonNull(
                 turnRepository,
                 "turnRepository не должен быть null"
@@ -109,7 +129,7 @@ public class ChatTurnFinalizationService {
         Objects.requireNonNull(context, "context не должен быть null");
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
-        Instant now = clock.instant();
+        Instant now = (databaseClock == null ? clock.instant() : databaseClock.now());
         int updated = turnRepository.markFailedBeforeProviderCall(
                 context.turnId(),
                 context.processingToken(),
@@ -176,7 +196,7 @@ public class ChatTurnFinalizationService {
                 "response не должен быть null"
         );
 
-        Instant now = clock.instant();
+        Instant now = (databaseClock == null ? clock.instant() : databaseClock.now());
         UUID assistantMessageId = UUID.randomUUID();
 
         ChatTurnEntity current = readSupport.ownedTurn(context, currentUser);
@@ -286,7 +306,7 @@ public class ChatTurnFinalizationService {
         Objects.requireNonNull(exception, "exception не должен быть null");
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
-        Instant now = clock.instant();
+        Instant now = (databaseClock == null ? clock.instant() : databaseClock.now());
         String failureCode = "AI_PROVIDER_" + exception.getErrorType().name();
 
         int updated = turnRepository.markFailed(
@@ -335,7 +355,7 @@ public class ChatTurnFinalizationService {
         Objects.requireNonNull(context, "context не должен быть null");
         Objects.requireNonNull(currentUser, "currentUser не должен быть null");
 
-        Instant now = clock.instant();
+        Instant now = (databaseClock == null ? clock.instant() : databaseClock.now());
         int updated = turnRepository.markAmbiguous(
                 context.turnId(),
                 context.processingToken(),

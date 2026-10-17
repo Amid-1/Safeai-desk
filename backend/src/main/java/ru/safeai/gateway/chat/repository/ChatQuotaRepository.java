@@ -8,6 +8,7 @@ import ru.safeai.gateway.chat.config.ChatQuotaProperties;
 import ru.safeai.gateway.chat.entity.ChatQuotaReservationState;
 import ru.safeai.gateway.chat.quota.ChatQuotaConsumption;
 import ru.safeai.gateway.chat.quota.ChatQuotaPolicy;
+import ru.safeai.gateway.chat.quota.ChatQuotaReservation;
 
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -118,94 +119,144 @@ public class ChatQuotaRepository {
 
     private static final String ORGANIZATION_CONSUMPTION_SQL = """
             select
-                count(*) filter (
-                    where state <> 'RELEASED'
-                )::bigint as requests,
-                coalesce(
-                    sum(
-                        case
-                            when state = 'RELEASED' then 0
-                            else coalesce(
-                                actual_input_tokens,
-                                reserved_input_tokens
-                            )
-                        end
-                    ),
-                    0
-                )::bigint as input_tokens,
-                coalesce(
-                    sum(
-                        case
-                            when state = 'RELEASED' then 0
-                            else coalesce(
-                                actual_output_tokens,
-                                reserved_output_tokens
-                            )
-                        end
-                    ),
-                    0
-                )::bigint as output_tokens,
-                coalesce(
-                    sum(
-                        case
-                            when state = 'RELEASED' then 0
-                            else coalesce(
-                                actual_cost_usd,
-                                reserved_cost_usd
-                            )
-                        end
-                    ),
-                    0
-                )::numeric(30, 12) as cost_usd
-            from chat_quota_reservations
-            where organization_id = ?
-              and period_start = ?
+                count(*) filter (where r.state <> 'RELEASED')::bigint as requests,
+                coalesce(sum(case
+                    when r.state = 'RELEASED' then coalesce(p.known_input_tokens, 0)
+                    when r.state in ('SETTLED', 'UNPRICED') then
+                        greatest(coalesce(p.known_input_tokens, 0), coalesce(r.actual_input_tokens, 0))
+                    else greatest(coalesce(p.known_input_tokens, 0),
+                                  coalesce(r.actual_input_tokens, r.reserved_input_tokens))
+                end), 0)::bigint as input_tokens,
+                coalesce(sum(case
+                    when r.state = 'RELEASED' then coalesce(p.known_output_tokens, 0)
+                    when r.state in ('SETTLED', 'UNPRICED') then
+                        greatest(coalesce(p.known_output_tokens, 0), coalesce(r.actual_output_tokens, 0))
+                    else greatest(coalesce(p.known_output_tokens, 0),
+                                  coalesce(r.actual_output_tokens, r.reserved_output_tokens))
+                end), 0)::bigint as output_tokens,
+                coalesce(sum(case
+                    when r.state = 'RELEASED' then coalesce(p.known_cost_usd, 0)
+                    when r.state in ('SETTLED', 'UNPRICED') then
+                        greatest(coalesce(p.known_cost_usd, 0), coalesce(r.actual_cost_usd, 0))
+                    else greatest(coalesce(p.known_cost_usd, 0),
+                                  coalesce(r.actual_cost_usd, r.reserved_cost_usd))
+                end), 0)::numeric(30,12) as cost_usd,
+                coalesce(bool_or(
+                    coalesce(p.usage_unverifiable, false)
+                    or exists (
+                        select 1 from model_execution_plans ep
+                        join model_execution_attempts ea on ea.execution_plan_id = ep.id
+                        where ep.chat_turn_id = r.turn_id
+                          and ea.outcome in ('STARTED', 'AMBIGUOUS')
+                    )
+                    or (r.state <> 'RELEASED' and (
+                        r.state = 'AMBIGUOUS'
+                        or (r.reservation_version <> 2 and r.state = 'RESERVED')
+                        or (r.state in ('SETTLED', 'UNPRICED')
+                            and r.usage_status is distinct from 'AVAILABLE')
+                    ))
+                ), false) as usage_unverifiable,
+                coalesce(bool_or(
+                    coalesce(p.cost_unverifiable, false)
+                    or exists (
+                        select 1 from model_execution_plans ep
+                        join model_execution_attempts ea
+                          on ea.execution_plan_id = ep.id
+                        where ep.chat_turn_id = r.turn_id
+                          and (ea.outcome in ('STARTED', 'AMBIGUOUS')
+                               or (ea.outcome_certainty is distinct from 'KNOWN_NOT_EXECUTED'
+                                   and ea.outcome is distinct from 'SUCCEEDED'
+                                   and ea.pricing_status is distinct from 'PRICED'
+                                   and ea.pricing_status is distinct from 'FREE'))
+                    )
+                    or (r.state <> 'RELEASED' and (
+                        r.state in ('AMBIGUOUS', 'UNPRICED')
+                        or not r.cost_verifiable
+                        or (r.state = 'RESERVED' and (
+                            r.reservation_version <> 2
+                            or r.model_route_decision_id is null
+                            or not r.cost_verifiable))
+                        or (r.state = 'SETTLED' and
+                            (r.actual_cost_usd is null
+                             or (r.pricing_status is distinct from 'PRICED'
+                                 and r.pricing_status is distinct from 'FREE')))
+                    ))
+                ), false) as cost_unverifiable
+            from chat_quota_reservations r
+            left join chat_physical_spend_v67 p on p.turn_id = r.turn_id
+            where r.organization_id = ?
+              and r.period_start = ?
             """;
 
     private static final String USER_CONSUMPTION_SQL = """
             select
-                count(*) filter (
-                    where state <> 'RELEASED'
-                )::bigint as requests,
-                coalesce(
-                    sum(
-                        case
-                            when state = 'RELEASED' then 0
-                            else coalesce(
-                                actual_input_tokens,
-                                reserved_input_tokens
-                            )
-                        end
-                    ),
-                    0
-                )::bigint as input_tokens,
-                coalesce(
-                    sum(
-                        case
-                            when state = 'RELEASED' then 0
-                            else coalesce(
-                                actual_output_tokens,
-                                reserved_output_tokens
-                            )
-                        end
-                    ),
-                    0
-                )::bigint as output_tokens,
-                coalesce(
-                    sum(
-                        case
-                            when state = 'RELEASED' then 0
-                            else coalesce(
-                                actual_cost_usd,
-                                reserved_cost_usd
-                            )
-                        end
-                    ),
-                    0
-                )::numeric(30, 12) as cost_usd
-            from chat_quota_reservations
-            where user_id = ?
-              and period_start = ?
+                count(*) filter (where r.state <> 'RELEASED')::bigint as requests,
+                coalesce(sum(case
+                    when r.state = 'RELEASED' then coalesce(p.known_input_tokens, 0)
+                    when r.state in ('SETTLED', 'UNPRICED') then
+                        greatest(coalesce(p.known_input_tokens, 0), coalesce(r.actual_input_tokens, 0))
+                    else greatest(coalesce(p.known_input_tokens, 0),
+                                  coalesce(r.actual_input_tokens, r.reserved_input_tokens))
+                end), 0)::bigint as input_tokens,
+                coalesce(sum(case
+                    when r.state = 'RELEASED' then coalesce(p.known_output_tokens, 0)
+                    when r.state in ('SETTLED', 'UNPRICED') then
+                        greatest(coalesce(p.known_output_tokens, 0), coalesce(r.actual_output_tokens, 0))
+                    else greatest(coalesce(p.known_output_tokens, 0),
+                                  coalesce(r.actual_output_tokens, r.reserved_output_tokens))
+                end), 0)::bigint as output_tokens,
+                coalesce(sum(case
+                    when r.state = 'RELEASED' then coalesce(p.known_cost_usd, 0)
+                    when r.state in ('SETTLED', 'UNPRICED') then
+                        greatest(coalesce(p.known_cost_usd, 0), coalesce(r.actual_cost_usd, 0))
+                    else greatest(coalesce(p.known_cost_usd, 0),
+                                  coalesce(r.actual_cost_usd, r.reserved_cost_usd))
+                end), 0)::numeric(30,12) as cost_usd,
+                coalesce(bool_or(
+                    coalesce(p.usage_unverifiable, false)
+                    or exists (
+                        select 1 from model_execution_plans ep
+                        join model_execution_attempts ea on ea.execution_plan_id = ep.id
+                        where ep.chat_turn_id = r.turn_id
+                          and ea.outcome in ('STARTED', 'AMBIGUOUS')
+                    )
+                    or (r.state <> 'RELEASED' and (
+                        r.state = 'AMBIGUOUS'
+                        or (r.reservation_version <> 2 and r.state = 'RESERVED')
+                        or (r.state in ('SETTLED', 'UNPRICED')
+                            and r.usage_status is distinct from 'AVAILABLE')
+                    ))
+                ), false) as usage_unverifiable,
+                coalesce(bool_or(
+                    coalesce(p.cost_unverifiable, false)
+                    or exists (
+                        select 1 from model_execution_plans ep
+                        join model_execution_attempts ea
+                          on ea.execution_plan_id = ep.id
+                        where ep.chat_turn_id = r.turn_id
+                          and (ea.outcome in ('STARTED', 'AMBIGUOUS')
+                               or (ea.outcome_certainty is distinct from 'KNOWN_NOT_EXECUTED'
+                                   and ea.outcome is distinct from 'SUCCEEDED'
+                                   and ea.pricing_status is distinct from 'PRICED'
+                                   and ea.pricing_status is distinct from 'FREE'))
+                    )
+                    or (r.state <> 'RELEASED' and (
+                        r.state in ('AMBIGUOUS', 'UNPRICED')
+                        or not r.cost_verifiable
+                        or (r.state = 'RESERVED' and (
+                            r.reservation_version <> 2
+                            or r.model_route_decision_id is null
+                            or not r.cost_verifiable))
+                        or (r.state = 'SETTLED' and
+                            (r.actual_cost_usd is null
+                             or (r.pricing_status is distinct from 'PRICED'
+                                 and r.pricing_status is distinct from 'FREE')))
+                    ))
+                ), false) as cost_unverifiable
+            from chat_quota_reservations r
+            left join chat_physical_spend_v67 p on p.turn_id = r.turn_id
+            where r.user_id = ?
+              and r.period_start = ?
             """;
 
     private static final ChatQuotaConsumption EMPTY_CONSUMPTION =
@@ -297,6 +348,7 @@ public class ChatQuotaRepository {
         );
     }
 
+    @Deprecated // legacy v1 fixture/API. Production calls the route-bound overload.
     public void insertReservation(
             UUID turnId,
             UUID organizationId,
@@ -359,6 +411,71 @@ public class ChatQuotaRepository {
                 "insertReservation",
                 turnId
         );
+    }
+
+    /** V66 scheme identity is mandatory for hard monetary quota evidence. */
+    public boolean hasVerifiedRoutePricingScheme(UUID decisionId) {
+        Objects.requireNonNull(decisionId, "decisionId не должен быть null");
+        Boolean verified = jdbcTemplate.queryForObject("""
+                select exists (
+                    select 1 from model_route_decisions d
+                      join model_catalog_entries e
+                        on e.id = d.selected_catalog_entry_id
+                       and e.version = d.selected_catalog_version
+                     where d.id = ?
+                       and d.outcome = 'ALLOWED'
+                       and d.pricing_complete = true
+                       and e.pricing_complete = true
+                       and e.pricing_scheme = 'FLAT_TOKEN_V1'
+                       and e.provider = d.selected_provider
+                       and e.provider_model_id = d.selected_provider_model_id
+                )
+                """, Boolean.class, decisionId);
+        return Boolean.TRUE.equals(verified);
+    }
+
+    /** New reservations use the immutable V67 route-binding format. */
+    public void insertReservation(
+            UUID turnId,
+            UUID organizationId,
+            UUID userId,
+            LocalDate periodStart,
+            ChatQuotaReservation reservation,
+            Instant now
+    ) {
+        Objects.requireNonNull(turnId, "turnId не должен быть null");
+        Objects.requireNonNull(organizationId, "organizationId не должен быть null");
+        Objects.requireNonNull(userId, "userId не должен быть null");
+        Objects.requireNonNull(periodStart, "periodStart не должен быть null");
+        Objects.requireNonNull(reservation, "reservation не должен быть null");
+        Objects.requireNonNull(now, "now не должен быть null");
+
+        Timestamp timestamp = Timestamp.from(now);
+        int updated = jdbcTemplate.update("""
+                insert into chat_quota_reservations (
+                    turn_id, organization_id, user_id, period_start, state,
+                    model_route_decision_id, reservation_version, cost_verifiable,
+                    reserved_input_tokens, reserved_output_tokens, reserved_cost_usd,
+                    created_at, updated_at
+                ) select ?, ?, ?, ?, 'RESERVED', d.id, 2, ?, ?, ?, ?, ?, ?
+                  from model_route_decisions d
+                 where d.id = ? and d.chat_turn_id = ?
+                   and d.organization_id = ? and d.user_id = ?
+                   and d.outcome = 'ALLOWED'
+                   and d.estimated_input_tokens = ?
+                   and d.estimated_output_tokens = ?
+                   and (not ? or (d.pricing_complete = true
+                       and d.estimated_max_cost_usd is not null
+                       and d.estimated_max_cost_usd <= ?))
+                """,
+                turnId, organizationId, userId, Date.valueOf(periodStart),
+                reservation.costVerifiable(),
+                reservation.inputUnits(), reservation.outputUnits(),
+                reservation.databaseReservedCostUsd(), timestamp, timestamp,
+                reservation.modelRouteDecisionId(), turnId, organizationId, userId,
+                reservation.inputUnits(), reservation.outputUnits(),
+                reservation.costVerifiable(), reservation.databaseReservedCostUsd());
+        requireExactlyOneUpdate(updated, "insertRouteReservation", turnId);
     }
 
     public void settleSuccess(
@@ -544,7 +661,9 @@ public class ChatQuotaRepository {
                 resultSet.getLong("requests"),
                 resultSet.getLong("input_tokens"),
                 resultSet.getLong("output_tokens"),
-                resultSet.getBigDecimal("cost_usd")
+                resultSet.getBigDecimal("cost_usd"),
+                resultSet.getBoolean("usage_unverifiable"),
+                resultSet.getBoolean("cost_unverifiable")
         );
     }
 

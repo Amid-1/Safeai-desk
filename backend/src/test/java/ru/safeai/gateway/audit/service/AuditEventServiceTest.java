@@ -1,3 +1,4 @@
+// SafeAI-Desk/backend/src/test/java/ru/safeai/gateway/audit/service/AuditEventServiceTest.java
 package ru.safeai.gateway.audit.service;
 
 import org.junit.jupiter.api.Test;
@@ -7,9 +8,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import ru.safeai.gateway.audit.AuditEventType;
+import ru.safeai.gateway.audit.details.AuditDetails;
 import ru.safeai.gateway.audit.model.AuditActor;
-import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 import ru.safeai.gateway.audit.spi.AuditActorSnapshotProvider;
+import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
 
 import java.time.Instant;
 import java.util.List;
@@ -22,11 +24,23 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * Unit tests for the mandatory audit command pipeline.
+ *
+ * <p>The typed entry point MUST use AuditCommandFactory#createTyped,
+ * whereas the legacy map entry point MUST retain its original create route.
+ * Neither command-construction nor outbox-write failures may be swallowed.</p>
+ *
+ * <p>These are mock-based contract tests. Database transaction/flush/rollback
+ * behavior is covered by separate PostgreSQL integration tests.</p>
+ */
 @ExtendWith(MockitoExtension.class)
 class AuditEventServiceTest {
 
@@ -48,35 +62,34 @@ class AuditEventServiceTest {
     void requiredRecordFromPrincipalBuildsImmutableActorSnapshot() {
         AuditEventService service = service();
         SafeAiUserPrincipal principal = principal();
-        AuditCommand command = command();
         UUID targetUserId = UUID.randomUUID();
-        Map<String, Object> details = Map.of("targetUserId", targetUserId);
+        Map<String, Object> expectedDetails = Map.of("targetUserId", targetUserId);
+        AuditDetails details = () -> expectedDetails;
 
-        // The current typed API resolves email and displayName from the
-        // tenant-scoped user row rather than trusting JWT claims.
-        stubActorUserWithName("Admin Name");
+        AuditActor expectedActor = stubActorUserWithName(principal, "Admin Name");
+        AuditCommand command = command(expectedActor);
 
-        when(commandFactory.create(
+        when(commandFactory.createTyped(
                 any(AuditActor.class),
                 eq(TARGET_ORGANIZATION_ID),
                 eq(AuditEventType.USER_UPDATED),
-                anyMap()
+                same(details)
         )).thenReturn(command);
 
         service.recordPrincipalSnapshot(
                 principal,
                 TARGET_ORGANIZATION_ID,
                 AuditEventType.USER_UPDATED,
-                () -> details
+                details
         );
 
         ArgumentCaptor<AuditActor> actorCaptor =
                 ArgumentCaptor.forClass(AuditActor.class);
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, Object>> detailsCaptor =
-                ArgumentCaptor.forClass(Map.class);
+        ArgumentCaptor<AuditDetails> detailsCaptor =
+                ArgumentCaptor.forClass(AuditDetails.class);
 
-        verify(commandFactory).create(
+        verify(actorSnapshotProvider).resolve(same(principal), isNull());
+        verify(commandFactory).createTyped(
                 actorCaptor.capture(),
                 eq(TARGET_ORGANIZATION_ID),
                 eq(AuditEventType.USER_UPDATED),
@@ -84,66 +97,151 @@ class AuditEventServiceTest {
         );
 
         AuditActor actor = actorCaptor.getValue();
+        assertThat(actor).isSameAs(expectedActor);
         assertThat(actor.userId()).isEqualTo(USER_ID);
         assertThat(actor.organizationId()).isEqualTo(ACTOR_ORGANIZATION_ID);
         assertThat(actor.email()).isEqualTo(ACTOR_EMAIL);
         assertThat(actor.displayName()).isEqualTo("Admin Name");
-        assertThat(detailsCaptor.getValue()).containsExactlyInAnyOrderEntriesOf(details);
 
-        verify(outboxWriter).writeRequiredInCurrentTransaction(command);
+        assertThat(command.actor()).isSameAs(expectedActor);
+        assertThat(detailsCaptor.getValue()).isSameAs(details);
+        assertThat(detailsCaptor.getValue().toMap())
+                .containsExactlyInAnyOrderEntriesOf(expectedDetails);
+
+        verify(outboxWriter).writeRequiredInCurrentTransaction(same(command));
+        verifyNoMoreInteractions(commandFactory, outboxWriter, actorSnapshotProvider);
     }
 
     @Test
-    void serializationFailureDoesNotCreatePartialOutboxIntent() {
+    void typedCommandFactoryFailureDoesNotCreatePartialOutboxIntent() {
         AuditEventService service = service();
-        stubActorUserWithName("Admin");
+        SafeAiUserPrincipal principal = principal();
+        AuditDetails details = () -> Map.of("safe", "value");
+        stubActorUserWithName(principal, "Admin");
 
-        doThrow(new IllegalArgumentException(
+        IllegalArgumentException failure = new IllegalArgumentException(
                 "Sanitized audit details не сериализуется в JSON"
-        )).when(commandFactory).create(
+        );
+
+        when(commandFactory.createTyped(
                 any(AuditActor.class),
                 eq(TARGET_ORGANIZATION_ID),
                 eq(AuditEventType.USER_UPDATED),
-                anyMap()
-        );
+                same(details)
+        )).thenThrow(failure);
 
         assertThatThrownBy(() -> service.recordPrincipalSnapshot(
-                principal(),
+                principal,
                 TARGET_ORGANIZATION_ID,
                 AuditEventType.USER_UPDATED,
-                () -> Map.of("safe", "value")
-        )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("не сериализуется в JSON");
+                details
+        )).isSameAs(failure);
 
+        verify(actorSnapshotProvider).resolve(same(principal), isNull());
+        verify(commandFactory).createTyped(
+                any(AuditActor.class),
+                eq(TARGET_ORGANIZATION_ID),
+                eq(AuditEventType.USER_UPDATED),
+                same(details)
+        );
         verifyNoInteractions(outboxWriter);
+        verifyNoMoreInteractions(commandFactory, actorSnapshotProvider);
     }
 
     @Test
     void requiredWriterFailureIsNotSwallowed() {
         AuditEventService service = service();
+        SafeAiUserPrincipal principal = principal();
+        AuditDetails details = () -> Map.of();
         AuditCommand command = command();
-        stubActorUserWithName("Admin");
+        stubActorUserWithName(principal, "Admin");
+
+        when(commandFactory.createTyped(
+                any(AuditActor.class),
+                eq(TARGET_ORGANIZATION_ID),
+                eq(AuditEventType.USER_UPDATED),
+                same(details)
+        )).thenReturn(command);
+
+        IllegalStateException failure =
+                new IllegalStateException("audit database unavailable");
+        doThrow(failure)
+                .when(outboxWriter)
+                .writeRequiredInCurrentTransaction(same(command));
+
+        assertThatThrownBy(() -> service.recordPrincipalSnapshot(
+                principal,
+                TARGET_ORGANIZATION_ID,
+                AuditEventType.USER_UPDATED,
+                details
+        )).isSameAs(failure);
+
+        verify(actorSnapshotProvider).resolve(same(principal), isNull());
+        verify(commandFactory).createTyped(
+                any(AuditActor.class),
+                eq(TARGET_ORGANIZATION_ID),
+                eq(AuditEventType.USER_UPDATED),
+                same(details)
+        );
+        verify(outboxWriter).writeRequiredInCurrentTransaction(same(command));
+        verifyNoMoreInteractions(commandFactory, outboxWriter, actorSnapshotProvider);
+    }
+
+    @Test
+    void actorSnapshotFailureStopsMandatoryAuditBeforeBuildingCommand() {
+        AuditEventService service = service();
+        SafeAiUserPrincipal principal = principal();
+        AuditDetails details = () -> Map.of("safe", "value");
+        IllegalStateException failure =
+                new IllegalStateException("actor snapshot unavailable");
+
+        when(actorSnapshotProvider.resolve(same(principal), isNull()))
+                .thenThrow(failure);
+
+        assertThatThrownBy(() -> service.recordPrincipalSnapshot(
+                principal,
+                TARGET_ORGANIZATION_ID,
+                AuditEventType.USER_UPDATED,
+                details
+        )).isSameAs(failure);
+
+        verify(actorSnapshotProvider).resolve(same(principal), isNull());
+        verifyNoInteractions(commandFactory, outboxWriter);
+        verifyNoMoreInteractions(actorSnapshotProvider);
+    }
+
+    @Test
+    @SuppressWarnings("removal")
+    void legacyMapEntryPointKeepsRequiredAuditContract() {
+        AuditEventService service = service();
+        SafeAiUserPrincipal principal = principal();
+        Map<String, Object> details = Map.of("targetUserId", UUID.randomUUID());
+        AuditCommand command = command();
+        stubActorUserWithName(principal, "Admin");
 
         when(commandFactory.create(
                 any(AuditActor.class),
                 eq(TARGET_ORGANIZATION_ID),
                 eq(AuditEventType.USER_UPDATED),
-                anyMap()
+                same(details)
         )).thenReturn(command);
 
-        doThrow(new IllegalStateException("audit database unavailable"))
-                .when(outboxWriter)
-                .writeRequiredInCurrentTransaction(command);
-
-        assertThatThrownBy(() -> service.recordPrincipalSnapshot(
-                principal(),
+        service.record(
+                principal,
                 TARGET_ORGANIZATION_ID,
                 AuditEventType.USER_UPDATED,
-                Map::of
-        )).isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("audit database unavailable");
+                details
+        );
 
-        verify(outboxWriter).writeRequiredInCurrentTransaction(command);
+        verify(actorSnapshotProvider).resolve(same(principal), isNull());
+        verify(commandFactory).create(
+                any(AuditActor.class),
+                eq(TARGET_ORGANIZATION_ID),
+                eq(AuditEventType.USER_UPDATED),
+                same(details)
+        );
+        verify(outboxWriter).writeRequiredInCurrentTransaction(same(command));
+        verifyNoMoreInteractions(commandFactory, outboxWriter, actorSnapshotProvider);
     }
 
     private AuditEventService service() {
@@ -155,14 +253,18 @@ class AuditEventServiceTest {
     }
 
     private AuditCommand command() {
+        return command(new AuditActor(
+                USER_ID,
+                ACTOR_ORGANIZATION_ID,
+                ACTOR_EMAIL,
+                "Admin"
+        ));
+    }
+
+    private AuditCommand command(AuditActor actor) {
         return new AuditCommand(
                 UUID.randomUUID(),
-                new AuditActor(
-                        USER_ID,
-                        ACTOR_ORGANIZATION_ID,
-                        ACTOR_EMAIL,
-                        "Admin"
-                ),
+                actor,
                 TARGET_ORGANIZATION_ID,
                 AuditEventType.USER_UPDATED,
                 Map.of(),
@@ -170,16 +272,20 @@ class AuditEventServiceTest {
         );
     }
 
-    private void stubActorUserWithName(String fullName) {
-        when(actorSnapshotProvider.resolve(
-                any(SafeAiUserPrincipal.class),
-                isNull()
-        )).thenReturn(new AuditActor(
+    private AuditActor stubActorUserWithName(
+            SafeAiUserPrincipal principal,
+            String fullName
+    ) {
+        AuditActor actor = new AuditActor(
                 USER_ID,
                 ACTOR_ORGANIZATION_ID,
                 ACTOR_EMAIL,
                 fullName
-        ));
+        );
+
+        when(actorSnapshotProvider.resolve(same(principal), isNull()))
+                .thenReturn(actor);
+        return actor;
     }
 
     private SafeAiUserPrincipal principal() {

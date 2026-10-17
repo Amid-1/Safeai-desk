@@ -29,18 +29,17 @@ public class AuditEventQueryService {
     private static final int DEFAULT_PAGE_SIZE = 50;
     private static final int MAX_PAGE_SIZE = 100;
 
+    /** Hard upper bound on OFFSET rows scanned for legacy numbered pages. */
+    private static final long MAX_AUDIT_OFFSET = 10_000L;
+
     private static final Sort DEFAULT_SORT = Sort.by(
             Sort.Order.desc("createdAt"),
             Sort.Order.desc("id")
     );
 
-    private static final Set<String> ALLOWED_SORT_PROPERTIES =
-            Set.of(
-                    "createdAt",
-                    "eventType",
-                    "organizationId",
-                    "id"
-            );
+    private static final Set<String> ALLOWED_SORT_PROPERTIES = Set.of(
+            "createdAt", "eventType", "organizationId", "id"
+    );
 
     private final AuditEventRepository repository;
 
@@ -51,23 +50,12 @@ public class AuditEventQueryService {
             Pageable pageable
     ) {
         AuditEventQueryPolicy.QueryScope scope =
-                AuditEventQueryPolicy.resolve(
-                        currentUser,
-                        filter
-                );
-
+                AuditEventQueryPolicy.resolve(currentUser, filter);
+        // Reject expensive pages BEFORE any repository access.
+        Pageable safePageable = sanitizeAuditPageable(pageable);
         Specification<AuditEventEntity> specification =
-                AuditEventCriteria.specification(
-                        scope.organizationId(),
-                        scope.filter()
-                );
-
-        return repository
-                .findAll(
-                        specification,
-                        sanitizeAuditPageable(pageable)
-                )
-                .map(this::toResponse);
+                AuditEventCriteria.specification(scope.organizationId(), scope.filter());
+        return repository.findAll(specification, safePageable).map(this::toResponse);
     }
 
     @Transactional(readOnly = true)
@@ -76,127 +64,63 @@ public class AuditEventQueryService {
             SafeAiUserPrincipal currentUser,
             Pageable pageable
     ) {
-        Objects.requireNonNull(
-                userId,
-                "userId не должен быть null"
-        );
-
+        Objects.requireNonNull(userId, "userId не должен быть null");
         return findAll(
                 currentUser,
-                new AuditEventFilter(
-                        null,
-                        null,
-                        userId,
-                        null,
-                        null,
-                        null
-                ),
+                new AuditEventFilter(null, null, userId, null, null, null),
                 pageable
         );
     }
 
-    private Pageable sanitizeAuditPageable(
-            Pageable pageable
-    ) {
+    private Pageable sanitizeAuditPageable(Pageable pageable) {
         if (pageable == null || pageable.isUnpaged()) {
-            return PageRequest.of(
-                    0,
-                    DEFAULT_PAGE_SIZE,
-                    DEFAULT_SORT
+            return PageRequest.of(0, DEFAULT_PAGE_SIZE, DEFAULT_SORT);
+        }
+        int page = pageable.getPageNumber();
+        int size = Math.clamp(pageable.getPageSize(), 1, MAX_PAGE_SIZE);
+        if (page < 0) {
+            throw new BadRequestException("page не может быть отрицательным");
+        }
+        long offset = (long) page * size;
+        if (offset > MAX_AUDIT_OFFSET) {
+            throw new BadRequestException(
+                    "Слишком глубокая OFFSET-пагинация аудита; используйте /api/admin/audit-events/cursor"
             );
         }
-
-        return PageRequest.of(
-                Math.max(
-                        pageable.getPageNumber(),
-                        0
-                ),
-                Math.clamp(
-                        pageable.getPageSize(),
-                        1,
-                        MAX_PAGE_SIZE
-                ),
-                sanitizeSort(
-                        pageable.getSort()
-                )
-        );
+        return PageRequest.of(page, size, sanitizeSort(pageable.getSort()));
     }
 
-    private Sort sanitizeSort(
-            Sort sort
-    ) {
+    private Sort sanitizeSort(Sort sort) {
         if (sort == null || sort.isUnsorted()) {
             return DEFAULT_SORT;
         }
-
-        List<String> unsupported =
-                sort.stream()
-                        .map(Sort.Order::getProperty)
-                        .filter(property ->
-                                !ALLOWED_SORT_PROPERTIES.contains(
-                                        property
-                                )
-                        )
-                        .distinct()
-                        .toList();
-
+        List<String> unsupported = sort.stream()
+                .map(Sort.Order::getProperty)
+                .filter(property -> !ALLOWED_SORT_PROPERTIES.contains(property))
+                .distinct()
+                .toList();
         if (!unsupported.isEmpty()) {
             throw new BadRequestException(
-                    "Сортировка по полю не разрешена: "
-                            + String.join(
-                                    ", ",
-                                    unsupported
-                            )
+                    "Сортировка по полю не разрешена: " + String.join(", ", unsupported)
             );
         }
-
-        List<Sort.Order> orders =
-                sort.stream()
-                        .map(order ->
-                                new Sort.Order(
-                                        order.getDirection(),
-                                        order.getProperty(),
-                                        order.getNullHandling()
-                                )
-                        )
-                        .toList();
-
-        boolean containsId =
-                orders.stream()
-                        .anyMatch(order ->
-                                "id".equals(
-                                        order.getProperty()
-                                )
-                        );
-
+        List<Sort.Order> orders = sort.stream()
+                .map(order -> new Sort.Order(
+                        order.getDirection(), order.getProperty(), order.getNullHandling()))
+                .toList();
+        boolean containsId = orders.stream()
+                .anyMatch(order -> "id".equals(order.getProperty()));
         if (containsId) {
             return Sort.by(orders);
         }
-
-        List<Sort.Order> deterministic =
-                new ArrayList<>(orders);
-
-        deterministic.add(
-                Sort.Order.desc("id")
-        );
-
+        List<Sort.Order> deterministic = new ArrayList<>(orders);
+        deterministic.add(Sort.Order.desc("id"));
         return Sort.by(deterministic);
     }
 
-    /**
-     * Общий mapper для audit read-path.
-     * <p>
-     * Используется как обычной пагинацией, так и cursor-based выборкой,
-     * поэтому метод намеренно public.
-     */
-    public AuditEventResponse toResponse(
-            AuditEventEntity entity
-    ) {
-        Objects.requireNonNull(
-                entity,
-                "entity не должен быть null"
-        );
-
+    /** Shared response mapping for offset and cursor endpoints. */
+    public AuditEventResponse toResponse(AuditEventEntity entity) {
+        Objects.requireNonNull(entity, "entity не должен быть null");
         return new AuditEventResponse(
                 entity.getId(),
                 entity.getActorUserId(),
