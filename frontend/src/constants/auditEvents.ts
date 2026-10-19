@@ -187,5 +187,9 @@ export function getAuditEventTypeLabel(
         ]
     }
 
+    if (eventType === 'AUDIT_OUTBOX_DEAD_LETTER_RECOVERED') {
+        return 'Восстановлено событие аудита из очереди ошибок'
+    }
+
     return eventType
 }

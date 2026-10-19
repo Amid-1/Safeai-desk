@@ -701,3 +701,138 @@
         padding-block: 9px;
     }
 }
+
+/* SafeAI audit production UX refinements — scoped to the audit page. */
+.audit-page .audit-filter-field--event-type {
+    display: grid;
+    align-content: start;
+    gap: 4px;
+}
+.audit-page .audit-filter-field--event-type label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+}
+.audit-page .audit-filter-field--event-type select {
+    width: 100%;
+}
+.audit-page .audit-actor-picker {
+    grid-column: span 8;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px 10px;
+    min-width: 0;
+    padding: 7px 10px;
+    border: 1px solid #dbe4f2;
+    border-radius: 10px;
+    background: #f8fbff;
+}
+.audit-page .audit-actor-picker__title {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 12px;
+    font-weight: 750;
+}
+.audit-page .audit-actor-picker__help {
+    grid-column: 1 / -1;
+    font-size: 11px;
+}
+.audit-page .audit-actor-picker label {
+    grid-column: auto;
+}
+.audit-page .audit-filter-submit {
+    grid-column: span 6;
+    display: grid;
+    justify-content: stretch;
+    gap: 6px;
+    align-self: center;
+}
+.audit-page .audit-filter-submit .audit-filter-notice {
+    font-size: 12px;
+}
+.audit-page .audit-filter-submit .filter-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    margin: 0;
+}
+.audit-page .audit-date-presets__actions .audit-date-preset--active {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #ffffff;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+.audit-page .audit-table-card {
+    padding-bottom: 0;
+}
+.audit-page .resizable-scroll-region__viewport {
+    padding-bottom: 0;
+}
+.audit-page .admin-table-wrapper {
+    scroll-padding-bottom: 24px;
+    padding-bottom: 32px;
+    box-sizing: border-box;
+}
+.audit-page .audit-table tbody tr:last-child td {
+    padding-bottom: 22px;
+}
+.audit-page .resizable-scroll-region__footer {
+    z-index: 1;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 9px;
+}
+.audit-page .audit-row--administrative td:first-child {
+    box-shadow: inset 3px 0 0 #d97706;
+}
+.audit-page .audit-row--risk td:first-child {
+    box-shadow: inset 3px 0 0 #dc2626;
+}
+.audit-page .event-type-badge--admin {
+    border-color: #fed7aa !important;
+    background: #fff7ed !important;
+    color: #9a3412 !important;
+}
+.audit-page .audit-identity__historical-note {
+    font-size: 11px;
+    line-height: 1.35;
+    color: #64748b;
+}
+.audit-page .audit-copy-uuid {
+    display: inline-block;
+    min-height: 26px;
+    margin-left: 4px;
+    padding: 3px 7px;
+    border: 1px solid #c7d7f4;
+    border-radius: 6px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+.audit-page .audit-copy-uuid:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+.audit-page .audit-copy-status {
+    margin-left: 4px;
+    font-size: 11px;
+}
+.audit-page .audit-csv-unapplied {
+    display: inline;
+    color: #8a530c;
+    font-weight: 650;
+}
+@media (max-width: 1100px) {
+    .audit-page .audit-actor-picker { grid-column: span 8; }
+    .audit-page .audit-filter-submit { grid-column: span 12; }
+}
+@media (max-width: 760px) {
+    .audit-page .audit-actor-picker {
+        grid-column: 1 / -1;
+        grid-template-columns: 1fr;
+    }
+    .audit-page .audit-actor-picker__title,
+    .audit-page .audit-actor-picker__help { grid-column: 1; }
+    .audit-page .audit-filter-submit { grid-column: 1 / -1; }
+    .audit-page .audit-filter-submit .filter-actions { justify-content: flex-start; }
+}

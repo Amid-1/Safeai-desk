@@ -31,6 +31,7 @@ describe('AdminUsersQuickActions', () => {
                 editable
                 disabled={false}
                 onEdit={onEdit}
+                onInfo={() => undefined}
             />,
         )
 
@@ -49,14 +50,18 @@ describe('AdminUsersQuickActions', () => {
         ).toHaveBeenCalledTimes(1)
     })
 
-    it('ADMIN role cell remains read-only when role mutation is forbidden', () => {
+    it('ADMIN role cell explains the restriction without allowing a mutation', async () => {
+        const user = userEvent.setup()
+        const onInfo = vi.fn()
+        const onEdit = vi.fn()
         render(
             <UserRoleQuickAction
                 role="USER"
                 email="user@test.com"
                 editable={false}
                 disabled={false}
-                onEdit={() => undefined}
+                onEdit={onEdit}
+                onInfo={onInfo}
             />,
         )
 
@@ -75,6 +80,52 @@ describe('AdminUsersQuickActions', () => {
                 'Пользователь',
             ),
         ).toBeInTheDocument()
+
+        await user.click(screen.getByRole('button', {
+            name: 'Информация о роли пользователя user@test.com',
+        }))
+        expect(onInfo).toHaveBeenCalledTimes(1)
+        expect(onEdit).not.toHaveBeenCalled()
+    })
+
+
+    it('a pending operation disables both role interactions', async () => {
+        const onInfo = vi.fn()
+        const onEdit = vi.fn()
+        const user = userEvent.setup()
+        const {rerender} = render(
+            <UserRoleQuickAction
+                role="USER"
+                email="user@test.com"
+                editable={false}
+                disabled
+                onEdit={onEdit}
+                onInfo={onInfo}
+            />,
+        )
+        const infoButton = screen.getByRole('button', {
+            name: 'Информация о роли пользователя user@test.com',
+        })
+        expect(infoButton).toBeDisabled()
+        await user.click(infoButton)
+        expect(onInfo).not.toHaveBeenCalled()
+
+        rerender(
+            <UserRoleQuickAction
+                role="USER"
+                email="user@test.com"
+                editable
+                disabled
+                onEdit={onEdit}
+                onInfo={onInfo}
+            />,
+        )
+        const editButton = screen.getByRole('button', {
+            name: 'Изменить роль пользователя user@test.com',
+        })
+        expect(editButton).toBeDisabled()
+        await user.click(editButton)
+        expect(onEdit).not.toHaveBeenCalled()
     })
 
     it('status cell exposes the allowed enable/disable mutation', async () => {

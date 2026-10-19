@@ -61,23 +61,23 @@
         color 0.15s ease;
 }
 
-.users-inline-action:hover:not(:disabled)
+.users-inline-action:hover:not(:disabled),
 .users-inline-action__edit {
     background: var(--users-primary-soft);
     color: var(--users-primary);
 }
 
-.users-inline-action--status:hover:not(:disabled)
+.users-inline-action--status:hover:not(:disabled),
 .status-chip--enabled {
     border-color: #a9e5bf;
 }
 
-.users-inline-action--status:hover:not(:disabled)
+.users-inline-action--status:hover:not(:disabled),
 .status-chip--disabled {
     border-color: #ffb8b8;
 }
 
-.users-inline-action--role:hover:not(:disabled)
+.users-inline-action--role:hover:not(:disabled),
 .role-chip {
     box-shadow:
         0 0 0 2px rgba(37, 99, 235, 0.06);
@@ -110,4 +110,51 @@
         height: 18px;
         flex-basis: 18px;
     }
+}
+
+/* Reduce action cell after moving edit into overflow menu. */
+.users-page .actions-cell {width: 152px; min-width: 152px;}
+
+/* Role chips are discoverable without exposing privileged mutations to ADMIN. */
+.users-inline-action--role-info {
+    gap: 7px;
+}
+
+.users-inline-action__info {
+    display: inline-grid;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    place-items: center;
+    border: 1px solid #c8d5e9;
+    border-radius: 50%;
+    color: #52647d;
+    background: #f1f5fb;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.users-inline-action--role-info:hover:not(:disabled),
+.users-inline-action__info {
+    color: var(--users-primary);
+    border-color: #a4bdf1;
+}
+
+.users-role-info-dialog {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+}
+
+.users-role-info-dialog__current {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.users-role-info-dialog .modal-actions {
+    margin-top: 4px;
 }

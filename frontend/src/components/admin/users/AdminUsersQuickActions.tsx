@@ -14,6 +14,7 @@ type UserRoleQuickActionProps = {
     editable: boolean
     disabled: boolean
     onEdit: () => void
+    onInfo: () => void
 }
 
 export function UserRoleQuickAction({
@@ -22,12 +23,34 @@ export function UserRoleQuickAction({
     editable,
     disabled,
     onEdit,
+    onInfo,
 }: UserRoleQuickActionProps) {
     if (!editable) {
+        // An ADMIN may inspect the role policy but cannot elevate privileges.
+        // Mutation is still guarded separately by SUPER_ADMIN on the server.
         return (
-            <UserRoleBadge
-                role={role}
-            />
+            <button
+                type="button"
+                className={
+                    'users-inline-action '
+                    + 'users-inline-action--role-info'
+                }
+                disabled={disabled}
+                title="Информация о системной роли и правах на изменение"
+                aria-label={
+                    `Информация о роли пользователя ${email}`
+                }
+                aria-haspopup="dialog"
+                onClick={onInfo}
+            >
+                <UserRoleBadge role={role} />
+                <span
+                    className="users-inline-action__info"
+                    aria-hidden="true"
+                >
+                    i
+                </span>
+            </button>
         )
     }
 
@@ -39,7 +62,8 @@ export function UserRoleQuickAction({
                 + 'users-inline-action--role'
             }
             disabled={disabled}
-            title="Изменить роль"
+            title="Изменить системную роль"
+            aria-haspopup="dialog"
             aria-label={
                 `Изменить роль пользователя ${email}`
             }

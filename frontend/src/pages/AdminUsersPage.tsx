@@ -121,9 +121,15 @@ function AdminUsersPageContent({
                 totalPages={
                     directory.totalPages
                 }
-                filter={
-                    directory.filter
-                }
+                filter={directory.filter}
+                status={directory.status}
+                searchDraft={directory.searchDraft}
+                appliedSearch={directory.appliedSearch}
+                totalMatched={directory.totalMatched}
+                onSearchDraftChange={directory.setSearchDraft}
+                onApplySearch={directory.applySearch}
+                onClearSearch={directory.clearSearch}
+                onStatusChange={directory.changeStatus}
                 detailsLoadingUserId={
                     directory.detailsLoadingUserId
                 }
@@ -217,6 +223,8 @@ function AdminUsersPageContent({
                 editUser={
                     mutations.editUser
                 }
+                editVersionConflict={mutations.editVersionConflict}
+                refreshEditedUser={mutations.refreshEditedUser}
                 editEmail={
                     mutations.editEmail
                 }

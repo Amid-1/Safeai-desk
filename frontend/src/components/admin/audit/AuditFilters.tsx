@@ -19,6 +19,7 @@ import type {
 import {
     getAuditEventTypeLabel,
 } from '../../../constants/auditEvents'
+import { groupAuditEventTypes } from './auditEventGroups'
 
 import type {
     AuditDraftFilter,
@@ -104,6 +105,9 @@ function AuditFilters({
         setActorQuery,
     ] = useState('')
 
+    const [eventTypeSearch, setEventTypeSearch] = useState('')
+    const [activePreset, setActivePreset] = useState<DatePreset | null>(null)
+
     const organizationSearchTimerRef =
         useRef<number | null>(null)
 
@@ -122,11 +126,9 @@ function AuditFilters({
         }
     }, [])
 
-    const visibleEventTypes =
-        buildVisibleEventTypes(
-            eventTypes,
-            draftFilter.eventType,
-        )
+    const groupedEventTypes = groupAuditEventTypes(
+        eventTypes, eventTypeSearch, draftFilter.eventType,
+    )
 
     const visibleActors =
         buildVisibleActors(
@@ -206,10 +208,25 @@ function AuditFilters({
             </p>
 
             <div className="form">
-                <label className="audit-filter-field audit-filter-field--event-type">
-                    Тип события
-
+                <div className="audit-filter-field audit-filter-field--event-type">
+                    <label htmlFor="audit-event-type-search">
+                        Поиск типа события
+                    </label>
+                    <input
+                        id="audit-event-type-search"
+                        type="search"
+                        value={eventTypeSearch}
+                        maxLength={128}
+                        autoComplete="off"
+                        disabled={loading}
+                        placeholder="Название или технический код"
+                        onChange={(event) => setEventTypeSearch(event.target.value)}
+                    />
+                    <label htmlFor="audit-event-type-select">
+                        Тип события
+                    </label>
                     <select
+                        id="audit-event-type-select"
                         value={
                             draftFilter.eventType
                         }
@@ -230,22 +247,23 @@ function AuditFilters({
                             Все события
                         </option>
 
-                        {visibleEventTypes.map(
-                            (eventType) => (
-                                <option
-                                    key={eventType}
-                                    value={eventType}
-                                >
-                                    {
-                                        getAuditEventTypeLabel(
-                                            eventType,
-                                        )
-                                    }
-                                </option>
-                            ),
-                        )}
+                        {groupedEventTypes.map(({ group, types }) => (
+                            <optgroup key={group} label={group}>
+                                {types.map((eventType) => (
+                                    <option key={eventType} value={eventType}>
+                                        {getAuditEventTypeLabel(eventType)}
+                                        {' — '}{eventType}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        ))}
                     </select>
-                </label>
+                    {eventTypeSearch && groupedEventTypes.length === 0 && (
+                        <small className="muted" role="status">
+                            Совпадений нет. Очистите строку поиска.
+                        </small>
+                    )}
+                </div>
 
                 <DirectoryWarning
                     message={
@@ -343,77 +361,48 @@ function AuditFilters({
                     </>
                 )}
 
-                <label className="audit-filter-field audit-filter-field--actor-search">
-                    Найти пользователя
+                <div className="audit-actor-picker" role="group" aria-label="Инициатор события">
+                    <p className="audit-actor-picker__title">Инициатор события</p>
 
-                    <input
-                        type="search"
-                        value={actorQuery}
-                        maxLength={320}
-                        disabled={loading}
-                        autoComplete="off"
-                        placeholder={
-                            'Email, имя или UUID'
-                        }
-                        onChange={(event) =>
-                            scheduleActorSearch(
-                                event.target.value,
-                            )
-                        }
-                    />
+                    <label className="audit-filter-field audit-filter-field--actor-search">
+                        Найти пользователя
+                        <input
+                            type="search"
+                            value={actorQuery}
+                            maxLength={320}
+                            disabled={loading}
+                            autoComplete="off"
+                            placeholder="Email, имя или UUID"
+                            onChange={(event) => scheduleActorSearch(event.target.value)}
+                        />
+                    </label>
 
-                </label>
-
-                <label className="audit-filter-field audit-filter-field--actor">
-                    Инициатор
-
-                    <select
-                        value={
-                            draftFilter.actorUserId
-                        }
-                        disabled={
-                            loading
-                            || directoriesLoading
-                        }
-                        onChange={(event) => {
-                            const actorUserId =
-                                event.target.value
-
-                            onFilterChange(
-                                (current) => ({
-                                    ...current,
-                                    actorUserId,
-                                }),
-                            )
-                        }}
-                    >
-                        <option value="">
-                            Все инициаторы
-                        </option>
-
-                        {visibleActors.map(
-                            (actor) => (
-                                <option
-                                    key={
-                                        actor.actorUserId
-                                    }
-                                    value={
-                                        actor.actorUserId
-                                    }
-                                >
-                                    {
-                                        formatActorOption(
-                                            actor,
-                                        )
-                                    }
+                    <label className="audit-filter-field audit-filter-field--actor">
+                        Инициатор
+                        <select
+                            value={draftFilter.actorUserId}
+                            disabled={loading || directoriesLoading}
+                            onChange={(event) => {
+                                const actorUserId = event.target.value
+                                onFilterChange((current) => ({ ...current, actorUserId }))
+                            }}
+                        >
+                            <option value="">Все инициаторы</option>
+                            {visibleActors.map((actor) => (
+                                <option key={actor.actorUserId} value={actor.actorUserId}>
+                                    {formatActorOption(actor)}
                                 </option>
-                            ),
-                        )}
-                    </select>
-                </label>
+                            ))}
+                        </select>
+                    </label>
+
+                    <small className="audit-actor-picker__help muted">
+                        Поиск уточняет список; фильтр применится после выбора UUID.
+                    </small>
+                </div>
 
                 <label className="audit-filter-field audit-filter-field--email">
-                    Email пользователя
+                    Email инициатора или префикс
 
                     <input
                         type="search"
@@ -463,51 +452,51 @@ function AuditFilters({
                         <PresetButton
                             label="Сегодня"
                             disabled={loading}
-                            onClick={() =>
-                                onDatePreset(
-                                    'today',
-                                )
-                            }
+                            active={activePreset === 'today'}
+                            onClick={() => {
+                                setActivePreset('today')
+                                onDatePreset('today')
+                            }}
                         />
 
                         <PresetButton
                             label="Вчера"
                             disabled={loading}
-                            onClick={() =>
-                                onDatePreset(
-                                    'yesterday',
-                                )
-                            }
+                            active={activePreset === 'yesterday'}
+                            onClick={() => {
+                                setActivePreset('yesterday')
+                                onDatePreset('yesterday')
+                            }}
                         />
 
                         <PresetButton
                             label="7 дней"
                             disabled={loading}
-                            onClick={() =>
-                                onDatePreset(
-                                    'last7Days',
-                                )
-                            }
+                            active={activePreset === 'last7Days'}
+                            onClick={() => {
+                                setActivePreset('last7Days')
+                                onDatePreset('last7Days')
+                            }}
                         />
 
                         <PresetButton
                             label="30 дней"
                             disabled={loading}
-                            onClick={() =>
-                                onDatePreset(
-                                    'last30Days',
-                                )
-                            }
+                            active={activePreset === 'last30Days'}
+                            onClick={() => {
+                                setActivePreset('last30Days')
+                                onDatePreset('last30Days')
+                            }}
                         />
 
                         <PresetButton
                             label="365 дней"
                             disabled={loading}
-                            onClick={() =>
-                                onDatePreset(
-                                    'last365Days',
-                                )
-                            }
+                            active={activePreset === 'last365Days'}
+                            onClick={() => {
+                                setActivePreset('last365Days')
+                                onDatePreset('last365Days')
+                            }}
                         />
                     </div>
                 </div>
@@ -529,6 +518,7 @@ function AuditFilters({
                         onChange={(event) => {
                             const dateFrom =
                                 event.target.value
+                            setActivePreset(null)
 
                             onFilterChange(
                                 (current) => ({
@@ -557,6 +547,7 @@ function AuditFilters({
                         onChange={(event) => {
                             const dateTo =
                                 event.target.value
+                            setActivePreset(null)
 
                             onFilterChange(
                                 (current) => ({
@@ -571,18 +562,6 @@ function AuditFilters({
                 <small className="muted audit-date-help">
                     Обе даты включены в отчёт.
                 </small>
-
-                {filtersDirty && (
-                    <div
-                        className={
-                            'audit-filter-notice'
-                        }
-                        role="status"
-                        aria-live="polite"
-                    >
-                        Есть несохранённые изменения фильтров.
-                    </div>
-                )}
 
                 {directoriesLoading && (
                     <div
@@ -605,7 +584,13 @@ function AuditFilters({
                     </div>
                 )}
 
-                <div className="filter-actions">
+                <div className="audit-filter-submit">
+                    {filtersDirty && (
+                        <div className="audit-filter-notice" role="status" aria-live="polite">
+                            Фильтры изменены — результаты еще не обновлены.
+                        </div>
+                    )}
+                    <div className="filter-actions">
                     <button
                         type="button"
                         disabled={
@@ -623,10 +608,15 @@ function AuditFilters({
                             'secondary-button'
                         }
                         disabled={loading}
-                        onClick={onReset}
+                        onClick={() => {
+                            setActivePreset('last30Days')
+                            setEventTypeSearch('')
+                            onReset()
+                        }}
                     >
                         Последние 30 дней
                     </button>
+                    </div>
                 </div>
             </div>
         </section>
@@ -636,18 +626,21 @@ function AuditFilters({
 type PresetButtonProps = {
     label: string
     disabled: boolean
+    active: boolean
     onClick: () => void
 }
 
 function PresetButton({
     label,
     disabled,
+    active,
     onClick,
 }: PresetButtonProps) {
     return (
         <button
             type="button"
-            className="secondary-button"
+            className={active ? 'secondary-button audit-date-preset--active' : 'secondary-button'}
+            aria-pressed={active}
             disabled={disabled}
             onClick={onClick}
         >
@@ -672,38 +665,6 @@ function DirectoryWarning({
             {message}
         </div>
     ) : null
-}
-
-function buildVisibleEventTypes(
-    eventTypes: readonly string[],
-    selectedEventType: string,
-): string[] {
-    const uniqueEventTypes =
-        new Set<string>(
-            eventTypes,
-        )
-
-    if (selectedEventType) {
-        uniqueEventTypes.add(
-            selectedEventType,
-        )
-    }
-
-    return [...uniqueEventTypes].sort(
-        (first, second) =>
-            getAuditEventTypeLabel(
-                first,
-            ).localeCompare(
-                getAuditEventTypeLabel(
-                    second,
-                ),
-                'ru',
-                {
-                    sensitivity:
-                        'base',
-                },
-            ),
-    )
 }
 
 function buildVisibleActors(

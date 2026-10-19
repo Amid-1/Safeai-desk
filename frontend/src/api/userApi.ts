@@ -146,6 +146,35 @@ export async function getUsers(
     )
 }
 
+/** Tenant-scoped server search: ALL filters applied before pagination. */
+export async function searchUsers(
+    page = 0,
+    size = 50,
+    filters: {
+        role?: UserListRoleFilter
+        enabled?: boolean
+        query?: string
+    } = {},
+    options: RequestOptions = {},
+): Promise<PageResponse<User>> {
+    const queryString = buildQueryString({
+        page: normalizePage(page),
+        size: normalizePageSize(size, 50, 100),
+        role: filters.role,
+        enabled: filters.enabled,
+        query: filters.query || undefined,
+    })
+    const response = await apiRequest<unknown>(
+        `/api/users/search${queryString}`,
+        {
+            method: 'GET',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+    return parsePageResponse(response, parseUser)
+}
+
 export async function getUserDetails(
     userId: string,
     options: RequestOptions = {},

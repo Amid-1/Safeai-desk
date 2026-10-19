@@ -9,9 +9,7 @@ import type {
 import type {
     AssignableRole,
 } from '../../../pages/adminUsersSupport'
-import {
-    formatDateTime,
-} from '../../../utils/format'
+import {UserExactDate, UserUuidCopy} from './UserDetailExtras'
 import Modal
     from '../../Modal'
 import ConfirmDialog
@@ -54,6 +52,8 @@ export type AdminUsersDialogsProps = {
     detailsUser: UserDetails | null
     detailsError: string
     editUser: User | null
+    editVersionConflict: boolean
+    refreshEditedUser: () => void | Promise<void>
     editEmail: string
     editFullName: string
     rolesUser: User | null
@@ -131,6 +131,8 @@ export function AdminUsersDialogs(
         detailsUser,
         detailsError,
         editUser,
+        editVersionConflict,
+        refreshEditedUser,
         editEmail,
         editFullName,
         rolesUser,
@@ -435,6 +437,13 @@ export function AdminUsersDialogs(
                             'user-details'
                         }
                     >
+                        {currentUserIsSuperAdmin && (
+                            <Detail
+                                term="UUID пользователя"
+                                value={<UserUuidCopy value={detailsUser.id} label="UUID пользователя" />}
+                            />
+                        )}
+
                         <Detail
                             term="Email"
                             value={
@@ -475,15 +484,10 @@ export function AdminUsersDialogs(
 
                                     {currentUserIsSuperAdmin
                                         && (
-                                            <span
-                                                className={
-                                                    'user-details__organization-id'
-                                                }
-                                            >
-                                                {
-                                                    detailsUser.organizationId
-                                                }
-                                            </span>
+                                            <UserUuidCopy
+                                                value={detailsUser.organizationId}
+                                                label="UUID организации"
+                                            />
                                         )}
                                 </div>
                             }
@@ -514,9 +518,7 @@ export function AdminUsersDialogs(
                         <Detail
                             term="Дата создания"
                             value={
-                                formatDateTime(
-                                    detailsUser.createdAt,
-                                )
+                                <UserExactDate value={detailsUser.createdAt} />
                             }
                         />
 
@@ -525,20 +527,14 @@ export function AdminUsersDialogs(
                                 'Последнее обновление записи'
                             }
                             value={
-                                formatDateTime(
-                                    detailsUser.updatedAt,
-                                )
+                                <UserExactDate value={detailsUser.updatedAt} />
                             }
                         />
 
                         <Detail
                             term="Последний вход"
                             value={
-                                detailsUser.lastLoginAt
-                                    ? formatDateTime(
-                                        detailsUser.lastLoginAt,
-                                    )
-                                    : 'Ещё не входил'
+                                <UserExactDate value={detailsUser.lastLoginAt} />
                             }
                         />
                     </dl>
@@ -615,6 +611,31 @@ export function AdminUsersDialogs(
                             />
                         </label>
 
+                        {normalizeEmail(editEmail) !== normalizeEmail(editUser.email) && (
+                            <p className="users-edit-email-note" role="note">
+                                Изменение email изменит логин пользователя.
+                                После сохранения backend отзовет его активные сессии.
+                            </p>
+                        )}
+
+                        {editVersionConflict && (
+                            <div className="users-edit-email-note" role="alert">
+                                Запись была изменена другим администратором.
+                                Сохранение заблокировано до получения новой версии.
+                                После обновления текущие несохраненные изменения формы будут сброшены.
+                                <div style={{marginTop: 10}}>
+                                    <button
+                                        type="button"
+                                        className="secondary-button"
+                                        disabled={hasPendingMutation}
+                                        onClick={() => void refreshEditedUser()}
+                                    >
+                                        Загрузить актуальные данные
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         <ModalError
                             message={
                                 modalError
@@ -629,7 +650,12 @@ export function AdminUsersDialogs(
                                 closeMutationModals
                             }
                             submitLabel={
-                                'Сохранить email и имя'
+                                'Сохранить изменения'
+                            }
+                            submitDisabled={
+                                editVersionConflict
+                                || (normalizeEmail(editEmail) === normalizeEmail(editUser.email)
+                                && (editFullName.trim() || '') === (editUser.fullName?.trim() || ''))
                             }
                         />
                     </form>
@@ -726,6 +752,12 @@ export function AdminUsersDialogs(
                                     </label>
                                 )}
 
+                            <p className="users-security-note" role="note">
+                                После изменения роли сервер отзовет активные
+                                сессии пользователя. Новые права будут
+                                доступны только после повторного входа.
+                            </p>
+
                             <ModalError
                                 message={
                                     modalError
@@ -741,6 +773,12 @@ export function AdminUsersDialogs(
                                 }
                                 submitLabel={
                                     'Сохранить роль'
+                                }
+                                submitDisabled={
+                                    selectedRole === rolesUser.roles[0]
+                                    || (selectedRole === 'ADMIN'
+                                        && !rolesUser.roles.includes('ADMIN')
+                                        && !adminElevationConfirmed)
                                 }
                             />
                         </form>
@@ -821,6 +859,10 @@ export function AdminUsersDialogs(
                             }
                             submitLabel={
                                 'Установить новый пароль'
+                            }
+                            submitDisabled={
+                                resetPasswordValue !== resetPasswordConfirm
+                                || new TextEncoder().encode(resetPasswordValue).length > 72
                             }
                         />
                     </form>
@@ -927,7 +969,8 @@ export function AdminUsersDialogs(
                             : (
                                 `Отключить ${confirmState.user.email}? `
                                 + 'Пользователь потеряет доступ, '
-                                + 'а его активные сессии будут отозваны.'
+                                + 'а его активные сессии будут отозваны. '
+                                + 'Учётная запись и история действий сохранятся.'
                             )
                     }
                     confirmText={

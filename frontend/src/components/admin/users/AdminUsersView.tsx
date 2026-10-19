@@ -1,3 +1,4 @@
+import {useState} from 'react'
 // frontend/src/components/admin/users/AdminUsersView.tsx
 import type {
     AuthUser,
@@ -9,6 +10,8 @@ import type {
     User,
     UserStatistics,
 } from '../../../api/userApi'
+import Modal from '../../Modal'
+import UserRoleBadge from '../UserRoleBadge'
 import ResizableScrollRegion
     from '../../ResizableScrollRegion'
 import {
@@ -54,6 +57,14 @@ type AdminUsersViewProps = {
     page: number
     totalPages: number
     filter: AdminUsersFilter
+    status: 'ALL' | 'ACTIVE' | 'DISABLED'
+    searchDraft: string
+    appliedSearch: string
+    totalMatched: number
+    onSearchDraftChange: (value: string) => void
+    onApplySearch: () => void
+    onClearSearch: () => void
+    onStatusChange: (value: 'ALL' | 'ACTIVE' | 'DISABLED') => void
     detailsLoadingUserId: string | null
     currentUser: AuthUser
     currentUserIsSuperAdmin: boolean
@@ -99,6 +110,14 @@ export function AdminUsersView({
     page,
     totalPages,
     filter,
+    status,
+    searchDraft,
+    appliedSearch,
+    totalMatched,
+    onSearchDraftChange,
+    onApplySearch,
+    onClearSearch,
+    onStatusChange,
     detailsLoadingUserId,
     currentUser,
     currentUserIsSuperAdmin,
@@ -115,6 +134,14 @@ export function AdminUsersView({
     canManageUser,
     canPermanentlyDelete,
 }: AdminUsersViewProps) {
+    const [roleInfoUser, setRoleInfoUser] =
+        useState<User | null>(null)
+
+    const roleInfoIsSelf =
+        roleInfoUser?.id === currentUser.id
+    const roleInfoIsProtected =
+        roleInfoUser?.roles.includes('SUPER_ADMIN') ?? false
+
     return (
         <>
             <ResizableScrollRegion
@@ -144,7 +171,9 @@ export function AdminUsersView({
                                         'users-page-subtitle'
                                     }
                                 >
-                                    Управление пользователями системы
+                                    {currentUserIsSuperAdmin
+                                        ? 'Управление пользователями всех организаций'
+                                        : 'Управление сотрудниками вашей организации'}
                                 </p>
                             </div>
 
@@ -252,6 +281,66 @@ export function AdminUsersView({
                             />
                         </div>
 
+                        <form
+                            className="users-directory-search"
+                            role="search"
+                            onSubmit={(event) => {
+                                event.preventDefault()
+                                onApplySearch()
+                            }}
+                        >
+                            <label htmlFor="users-directory-query">
+                                Поиск по email или имени
+                            </label>
+                            <div className="users-directory-search__row">
+                                <input
+                                    id="users-directory-query"
+                                    type="search"
+                                    maxLength={120}
+                                    value={searchDraft}
+                                    onChange={(event) =>
+                                        onSearchDraftChange(event.target.value)
+                                    }
+                                    placeholder="Введите email или имя"
+                                    disabled={hasPendingMutation}
+                                />
+                                <label htmlFor="users-directory-status" className="users-directory-search__status-label">
+                                    Статус
+                                </label>
+                                <select
+                                    id="users-directory-status"
+                                    value={status}
+                                    onChange={(event) => onStatusChange(
+                                        event.target.value as 'ALL' | 'ACTIVE' | 'DISABLED',
+                                    )}
+                                    disabled={hasPendingMutation}
+                                >
+                                    <option value="ALL">Все статусы</option>
+                                    <option value="ACTIVE">Активные</option>
+                                    <option value="DISABLED">Отключенные</option>
+                                </select>
+                                <button type="submit" disabled={hasPendingMutation || loading}>
+                                    Найти
+                                </button>
+                                {(searchDraft || appliedSearch) && (
+                                    <button
+                                        type="button"
+                                        className="secondary-button"
+                                        onClick={onClearSearch}
+                                        disabled={hasPendingMutation}
+                                    >
+                                        Очистить
+                                    </button>
+                                )}
+                            </div>
+                            <span className="users-directory-search__summary" role="status">
+                                Найдено: {totalMatched}
+                                {searchDraft.trim() !== appliedSearch && (
+                                    <> · Поиск изменен, нажмите «Найти»</>
+                                )}
+                            </span>
+                        </form>
+
                         <span
                             className={
                                 'resizable-scroll-region__upper-boundary-marker'
@@ -341,6 +430,11 @@ export function AdminUsersView({
                     'users-table-scroll'
                 }
                 defaultHeight={430}
+                autoFitHeight={
+                    !loading && !loadError && users.length > 0
+                        ? 15 + 59 + users.length * 73 + 56
+                        : undefined
+                }
                 minHeight={72}
                 maxHeight={760}
                 minUpperHeight={112}
@@ -480,6 +574,9 @@ export function AdminUsersView({
                                                                     user,
                                                                 )
                                                             }
+                                                            onInfo={() =>
+                                                                setRoleInfoUser(user)
+                                                            }
                                                         />
                                                     </div>
                                                 </td>
@@ -600,6 +697,45 @@ export function AdminUsersView({
                         </table>
                     )}
             </ResizableScrollRegion>
+
+            {roleInfoUser && (
+                <Modal
+                    title="Системная роль пользователя"
+                    size="sm"
+                    onClose={() => setRoleInfoUser(null)}
+                >
+                    <div className="users-role-info-dialog">
+                        <p className="modal-subtitle">
+                            {roleInfoUser.email}
+                        </p>
+                        <div className="users-role-info-dialog__current">
+                            <strong>Текущая роль</strong>
+                            <UserRoleBadge role={roleInfoUser.roles[0]} />
+                        </div>
+                        <p role="note" className="users-security-note">
+                            {!currentUserIsSuperAdmin
+                                ? 'Изменять системные роли пользователей может только SUPER_ADMIN. Обратитесь к администратору платформы для назначения роли ADMIN.'
+                                : roleInfoIsSelf
+                                    ? 'Собственную системную роль нельзя изменять через управление пользователями.'
+                                    : roleInfoIsProtected
+                                        ? 'Роль SUPER_ADMIN защищена и не изменяется через обычное управление пользователями.'
+                                        : 'Изменение системной роли этой учетной записи сейчас недоступно.'}
+                        </p>
+                        <p className="muted">
+                            Проверка прав выполняется на сервере. Просмотр роли не изменяет учетную запись и не отзывает сессии.
+                        </p>
+                        <div className="modal-actions">
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => setRoleInfoUser(null)}
+                            >
+                                Закрыть
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
         </>
     )
 }

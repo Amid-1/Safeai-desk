@@ -54,6 +54,8 @@ type ResizableScrollRegionProps = {
     defaultHeight?: number
     minHeight?: number
     maxHeight?: number
+    /** Optional fitted panel height until the user explicitly resizes it. */
+    autoFitHeight?: number
 
     /**
      * Минимальный резерв для верхней области.
@@ -207,6 +209,7 @@ function ResizableScrollRegion({
     defaultHeight = 420,
     minHeight = 220,
     maxHeight = 760,
+    autoFitHeight,
 
     minUpperHeight = 100,
     preserveUpperContent = false,
@@ -277,6 +280,30 @@ function ResizableScrollRegion({
         useRef(
             requestedHeight,
         )
+
+    // A manual height preference is recorded separately from the historic
+    // requestedHeight key. Short lists use auto-fit unless manually resized.
+    const [manualHeight, setManualHeight] = useState(() => {
+        try {
+            return window.localStorage.getItem(`${storageKey}:manual`) === '1'
+        } catch {
+            return false
+        }
+    })
+
+    useEffect(() => {
+        if (autoFitHeight == null) return
+        try {
+            if (manualHeight) {
+                window.localStorage.setItem(`${storageKey}:manual`, '1')
+            } else {
+                window.localStorage.removeItem(`${storageKey}:manual`)
+            }
+        } catch {
+            // Resizing must remain functional when storage is unavailable.
+        }
+    }, [autoFitHeight, manualHeight, storageKey])
+
 
     const measureLayout =
         useCallback(() => {
@@ -506,7 +533,9 @@ function ResizableScrollRegion({
 
     const renderedHeight =
         clamp(
-            requestedHeight,
+            autoFitHeight != null && !manualHeight
+                ? autoFitHeight
+                : requestedHeight,
             effectiveMinHeight,
             effectiveMaxHeight,
         )
@@ -529,12 +558,12 @@ function ResizableScrollRegion({
                     effectiveMaxHeight,
                 )
 
-            setRequestedHeight(
-                next,
-            )
+            setRequestedHeight(next)
+            if (autoFitHeight != null) setManualHeight(true)
         }, [
             effectiveMinHeight,
             effectiveMaxHeight,
+            autoFitHeight,
         ])
 
     useEffect(() => {
@@ -703,7 +732,8 @@ function ResizableScrollRegion({
      * and persists the preference through the existing localStorage effect.
      */
     function resetHeight() {
-        setUserHeight(defaultHeight)
+        setRequestedHeight(defaultHeight)
+        if (autoFitHeight != null) setManualHeight(false)
     }
 
     function handleKeyDown(
@@ -770,6 +800,9 @@ function ResizableScrollRegion({
                 'resizable-scroll-region',
                 preserveUpperContent
                     ? 'resizable-scroll-region--preserve-upper'
+                    : '',
+                autoFitHeight != null && !manualHeight && autoFitHeight < defaultHeight
+                    ? 'resizable-scroll-region--auto-fit'
                     : '',
                 className,
             ]

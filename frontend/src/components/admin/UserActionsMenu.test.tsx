@@ -45,18 +45,30 @@ function renderMenu(
 }
 
 describe('UserActionsMenu', () => {
-    it('makes the profile-edit action explicit', () => {
-        renderMenu()
+    it('keeps only the details button visible and moves editing into a portal', async () => {
+        const user = userEvent.setup()
+        const actions = renderMenu()
+        expect(screen.queryByRole('button', {name: 'Изменить email и имя'})).toBeNull()
+        const trigger = screen.getByRole('button', {
+            name: 'Дополнительные действия для user@test.com',
+        })
+        await user.click(trigger)
+        const edit = screen.getByRole('button', {name: 'Изменить email и имя'})
+        expect(document.body.contains(edit)).toBe(true)
+        await user.click(edit)
+        expect(actions.onEdit).toHaveBeenCalledTimes(1)
+        expect(edit).not.toBeInTheDocument()
+    })
 
-        expect(
-            screen.getByRole(
-                'button',
-                {
-                    name:
-                        'Email и имя',
-                },
-            ),
-        ).toBeInTheDocument()
+    it('closes on an outside click without triggering an operation', async () => {
+        const user = userEvent.setup()
+        const actions = renderMenu()
+        await user.click(screen.getByRole('button', {
+            name: 'Дополнительные действия для user@test.com',
+        }))
+        await user.click(document.body)
+        expect(screen.queryByRole('button', {name: 'Установить новый пароль'})).toBeNull()
+        expect(actions.onResetPassword).not.toHaveBeenCalled()
     })
 
     it('uses a normal popover and shows role mutation only when authorized', async () => {

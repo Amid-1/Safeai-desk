@@ -13,6 +13,7 @@ import {
     parseUserDetails,
     parseUserStatistics,
     updateUserRoles,
+    searchUsers,
 } from './userApi'
 import { apiRequest } from './http'
 
@@ -50,6 +51,21 @@ const USER = {
 describe('userApi', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+    })
+
+    it('searches server-side before pagination with status and role filters', async () => {
+        requestMock.mockResolvedValue({
+            content: [USER], page: 0, size: 50,
+            totalElements: 101, totalPages: 3,
+        })
+        const result = await searchUsers(0, 50, {
+            query: 'user', role: 'USER', enabled: false,
+        })
+        expect(result.totalElements).toBe(101)
+        expect(requestMock).toHaveBeenCalledWith(
+            '/api/users/search?enabled=false&page=0&query=user&role=USER&size=50',
+            expect.objectContaining({method: 'GET'}),
+        )
     })
 
     it('runtime parser отклоняет неизвестную роль', () => {

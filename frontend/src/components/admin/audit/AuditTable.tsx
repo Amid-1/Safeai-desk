@@ -75,7 +75,7 @@ function AuditTable({
             <tbody>
                 {events.map(
                     (event) => (
-                        <tr key={event.id}>
+                        <tr key={event.id} className={getAuditRowClass(event.eventType)}>
                             <td>
                                 {
                                     formatDateTime(
@@ -250,11 +250,37 @@ function shortAuditIdentifier(
         : value
 }
 
+/** Row accents complement, never replace, the human-readable label. */
+function getAuditRowClass(eventType: string): string {
+    if (isSecurityOrFailureEvent(eventType)) return 'audit-row--risk'
+    if (isAdministrativeEvent(eventType)) return 'audit-row--administrative'
+    return 'audit-row--information'
+}
+
+function isSecurityOrFailureEvent(type: string): boolean {
+    return type.includes('FAILED') || type.includes('DENIED')
+        || type.includes('EXCEEDED') || type.startsWith('SECURITY_')
+        || type === 'USER_LOGIN_FAILED' || type.includes('DEAD_LETTER')
+}
+
+function isAdministrativeEvent(type: string): boolean {
+    return (
+        (type.startsWith('USER_') && ![
+            'USER_LOGIN_SUCCESS', 'USER_LOGOUT', 'USER_LOGIN_FAILED',
+        ].includes(type))
+        || type.startsWith('ORGANIZATION_')
+        || type.startsWith('KNOWLEDGE_BASE_MEMBER_')
+        || type.startsWith('MODEL_POLICY_')
+        || type.startsWith('MODEL_CATALOG_')
+    )
+}
+
 function getEventToneClass(
     eventType: string,
 ): string {
     if (
-        eventType.includes(
+        isSecurityOrFailureEvent(eventType)
+        || eventType.includes(
             'FAILED',
         )
         || eventType.includes(
@@ -270,6 +296,10 @@ function getEventToneClass(
         return (
             'event-type-badge--danger'
         )
+    }
+
+    if (isAdministrativeEvent(eventType)) {
+        return 'event-type-badge--admin'
     }
 
     if (

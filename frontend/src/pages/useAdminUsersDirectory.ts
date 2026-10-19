@@ -6,7 +6,7 @@ import {
 import {
     getUserDetails,
     getUserStatistics,
-    getUsers,
+    searchUsers,
 } from '../api/userApi'
 import type {
     User,
@@ -76,6 +76,11 @@ export function useAdminUsersDirectory(
         useState(0)
     const [filter, setFilter] =
         useState<AdminUsersFilter>('ALL')
+    const [status, setStatus] =
+        useState<'ALL' | 'ACTIVE' | 'DISABLED'>('ALL')
+    const [searchDraft, setSearchDraft] = useState('')
+    const [appliedSearch, setAppliedSearch] = useState('')
+    const [totalMatched, setTotalMatched] = useState(0)
 
     const [detailsUser, setDetailsUser] =
         useState<UserDetails | null>(null)
@@ -113,16 +118,17 @@ export function useAdminUsersDirectory(
                     response,
                     loadedStatistics,
                 ] = await Promise.all([
-                    getUsers(
+                    searchUsers(
                         page,
                         PAGE_SIZE,
-                        filter === 'ALL'
-                            ? undefined
-                            : filter,
                         {
-                            signal:
-                                controller.signal,
+                            role: filter === 'ALL' ? undefined : filter,
+                            enabled: status === 'ALL'
+                                ? undefined
+                                : status === 'ACTIVE',
+                            query: appliedSearch || undefined,
                         },
+                        {signal: controller.signal},
                     ),
                     getUserStatistics({
                         signal:
@@ -160,6 +166,7 @@ export function useAdminUsersDirectory(
                 }
 
                 setUsers(normalized.content)
+                setTotalMatched(normalized.totalElements)
                 setTotalPages(
                     normalized.totalPages,
                 )
@@ -173,6 +180,7 @@ export function useAdminUsersDirectory(
                     && !isRequestAborted(error)
                 ) {
                     setUsers([])
+                    setTotalMatched(0)
                     setTotalPages(0)
                     setStatistics(
                         EMPTY_STATISTICS,
@@ -204,6 +212,8 @@ export function useAdminUsersDirectory(
         page,
         reloadToken,
         filter,
+        status,
+        appliedSearch,
     ])
 
     useEffect(() => {
@@ -313,6 +323,26 @@ export function useAdminUsersDirectory(
         setPage(0)
     }
 
+    function changeStatus(next: 'ALL' | 'ACTIVE' | 'DISABLED') {
+        setStatus(next)
+        setPage(0)
+    }
+
+    function applySearch() {
+        const next = searchDraft.trim()
+        if (next.length > 120) {
+            return
+        }
+        setAppliedSearch(next)
+        setPage(0)
+    }
+
+    function clearSearch() {
+        setSearchDraft('')
+        setAppliedSearch('')
+        setPage(0)
+    }
+
     async function openDetailsModal(
         user: User,
     ) {
@@ -398,6 +428,14 @@ export function useAdminUsersDirectory(
         page,
         totalPages,
         filter,
+        status,
+        searchDraft,
+        appliedSearch,
+        totalMatched,
+        setSearchDraft,
+        changeStatus,
+        applySearch,
+        clearSearch,
         detailsUser,
         detailsLoadingUserId,
         detailsError,

@@ -2,6 +2,7 @@
 // frontend/src/components/admin/audit/AuditActor.tsx
 // ============================================================
 
+import { useState } from 'react'
 import type {
     AuditEvent,
 } from '../../../api/adminApi'
@@ -15,6 +16,18 @@ function AuditActor({
     event,
     showIds = false,
 }: AuditActorProps) {
+    const [copyStatus, setCopyStatus] = useState('')
+
+    async function copyUserId() {
+        if (!event.actorUserId) return
+        try {
+            await navigator.clipboard.writeText(event.actorUserId)
+            setCopyStatus('UUID скопирован')
+        } catch {
+            setCopyStatus('Не удалось скопировать UUID')
+        }
+    }
+
     const displayName =
         event.actorDisplayName?.trim()
         || null
@@ -70,6 +83,12 @@ function AuditActor({
                 {primaryText}
             </strong>
 
+            {!hasReadableIdentity && (
+                <span className="audit-identity__historical-note">
+                    Имя инициатора не сохранено в исторической записи.
+                </span>
+            )}
+
             {secondaryText && (
                 <span
                     className={
@@ -88,10 +107,21 @@ function AuditActor({
                             'audit-identity__meta '
                             + 'audit-monospace'
                         }
+                        title={event.actorUserId}
                     >
-                        Пользователь ID:
-                        {' '}
+                        Пользователь ID: {' '}
                         {shortAuditIdentifier(event.actorUserId)}
+                        {' '}
+                        <button
+                            type="button"
+                            className="audit-copy-uuid"
+                            aria-label="Скопировать полный UUID инициатора"
+                            title="Скопировать полный UUID инициатора"
+                            onClick={() => void copyUserId()}
+                        >
+                            Копировать UUID
+                        </button>
+                        {copyStatus && <span role="status" className="audit-copy-status">{copyStatus}</span>}
                     </span>
                 )}
 

@@ -4,6 +4,7 @@ import {
     useState,
 } from 'react'
 import {
+    getUserDetails,
     permanentlyDeleteUser,
     resetUserPassword,
     updateUser,
@@ -80,6 +81,7 @@ export function useAdminUserMutations({
 
     const [editUser, setEditUser] =
         useState<User | null>(null)
+    const [editVersionConflict, setEditVersionConflict] = useState(false)
     const [editEmail, setEditEmail] =
         useState('')
     const [editFullName, setEditFullName] =
@@ -147,6 +149,7 @@ export function useAdminUserMutations({
 
         clearMutationSensitiveFields()
         setEditUser(null)
+        setEditVersionConflict(false)
         setRolesUser(null)
         setResetPasswordUser(null)
         setDeleteUser(null)
@@ -190,6 +193,7 @@ export function useAdminUserMutations({
 
         closeMutationModals()
         setEditUser(user)
+        setEditVersionConflict(false)
         setEditEmail(user.email)
         setEditFullName(user.fullName ?? '')
         setModalError('')
@@ -282,6 +286,9 @@ export function useAdminUserMutations({
             }
 
             if (isVersionConflict(error)) {
+                if (mutation.type === 'EDIT') {
+                    setEditVersionConflict(true)
+                }
                 requestReloadFromFirstPage()
             }
         } finally {
@@ -290,8 +297,45 @@ export function useAdminUserMutations({
         }
     }
 
+    async function refreshEditedUser() {
+        if (!editUser || pendingMutationRef.current) return
+        const previousId = editUser.id
+        const loadingMutation: Exclude<PendingMutation, null> = {
+            userId: previousId,
+            type: 'EDIT',
+        }
+        pendingMutationRef.current = loadingMutation
+        setPendingMutation(loadingMutation)
+        try {
+            const fresh = await getUserDetails(previousId)
+            if (fresh.id !== previousId) {
+                // Reject an inconsistent response without updating the edit target.
+                // A locally thrown exception would be caught below anyway.
+                setEditVersionConflict(true)
+                setModalError(
+                    'Backend вернул данные другого пользователя. '
+                    + 'Редактирование заблокировано до повторной загрузки.',
+                )
+                return
+            }
+            setEditUser(fresh)
+            setEditEmail(fresh.email)
+            setEditFullName(fresh.fullName ?? '')
+            setEditVersionConflict(false)
+            setModalError('')
+        } catch (error) {
+            setModalError(getMutationErrorMessage(
+                error,
+                'Не удалось получить актуальные данные пользователя.',
+            ))
+        } finally {
+            pendingMutationRef.current = null
+            setPendingMutation(null)
+        }
+    }
+
     async function submitEditUser() {
-        if (!editUser) {
+        if (!editUser || editVersionConflict) {
             return
         }
 
@@ -620,6 +664,8 @@ export function useAdminUserMutations({
         success,
         hasPendingMutation,
         editUser,
+        editVersionConflict,
+        refreshEditedUser,
         editEmail,
         editFullName,
         rolesUser,

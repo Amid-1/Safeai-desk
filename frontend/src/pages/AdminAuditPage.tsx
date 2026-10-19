@@ -599,6 +599,11 @@ function AdminAuditPageContent() {
                                         .
                                         {' '}
                                         CSV содержит только события этой страницы.
+                                        {filtersDirty && (
+                                            <span className="audit-csv-unapplied">
+                                                {' '}Не примененные изменения фильтров в файл не входят.
+                                            </span>
+                                        )}
                                     </p>
 
                                     <button

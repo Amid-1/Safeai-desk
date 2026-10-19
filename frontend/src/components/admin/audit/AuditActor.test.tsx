@@ -118,3 +118,20 @@ describe('AuditActor', () => {
         ).toBeInTheDocument()
     })
 })
+
+// The actor snapshot stays untouched; copying exposes the full historic ID.
+describe('AuditActor historical identity actions', () => {
+    it('explains missing historical identity and retains the full ID in a title', () => {
+        render(
+            <AuditActor event={{
+                ...BASE_EVENT,
+                actorUserId: '11111111-1111-1111-1111-111111111111',
+            }} />,
+        )
+        expect(screen.getByText(/Имя инициатора не сохранено/)).toBeInTheDocument()
+        expect(screen.getByTitle('11111111-1111-1111-1111-111111111111'))
+            .toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Скопировать полный UUID инициатора' }))
+            .toBeInTheDocument()
+    })
+})

@@ -1,3 +1,4 @@
+import {useId, useState} from 'react'
 // frontend/src/components/admin/users/AdminUsersUi.tsx
 import type {
     ReactNode,
@@ -134,63 +135,86 @@ export function PasswordFields({
     disabled,
     passwordLabel = 'Пароль',
 }: PasswordFieldsProps) {
+    const id = useId()
+    const [showPassword, setShowPassword] = useState(false)
+    const [showConfirm, setShowConfirm] = useState(false)
+    const bytes = new TextEncoder().encode(password).length
+    const mismatch = passwordConfirm.length > 0 && password !== passwordConfirm
     return (
         <>
-            <label>
-                {passwordLabel}
-
-                <input
-                    value={
-                        password
-                    }
-                    onChange={(event) =>
-                        onPasswordChange(
-                            event.target.value,
-                        )
-                    }
-                    type="password"
-                    minLength={12}
-                    autoComplete={
-                        'new-password'
-                    }
-                    required
-                    disabled={
-                        disabled
-                    }
-                />
-            </label>
-
-            <label>
-                Повторите пароль
-
-                <input
-                    value={
-                        passwordConfirm
-                    }
-                    onChange={(event) =>
-                        onPasswordConfirmChange(
-                            event.target.value,
-                        )
-                    }
-                    type="password"
-                    minLength={12}
-                    autoComplete={
-                        'new-password'
-                    }
-                    required
-                    disabled={
-                        disabled
-                    }
-                />
-            </label>
-
-            <small
-                className="muted"
+            <div className="users-password-field">
+                <label htmlFor={`${id}-password`}>{passwordLabel}</label>
+                <span className="users-password-input">
+                    <input
+                        id={`${id}-password`}
+                        value={password}
+                        onChange={(event) => onPasswordChange(event.target.value)}
+                        type={showPassword ? 'text' : 'password'}
+                        minLength={12}
+                        autoComplete="new-password"
+                        required
+                        disabled={disabled}
+                        aria-describedby={`${id}-byte-count`}
+                    />
+                    <button
+                        type="button"
+                        disabled={disabled}
+                        aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                        aria-pressed={showPassword}
+                        onClick={() => setShowPassword((shown) => !shown)}
+                    >
+                        {showPassword ? 'Скрыть' : 'Показать'}
+                    </button>
+                </span>
+            </div>
+            <span
+                id={`${id}-byte-count`}
+                className={bytes > 72
+                    ? 'users-password-feedback users-password-feedback--error'
+                    : 'users-password-feedback'}
+                role="status"
             >
-                Минимум 12 символов:
-                строчная и заглавная буква,
-                цифра и спецсимвол.
-                Не более 72 байт UTF-8;
+                Длина пароля: {bytes} из 72 байт UTF-8
+                {bytes > 72 ? ' — превышен допустимый предел' : ''}
+            </span>
+            <div className="users-password-field">
+                <label htmlFor={`${id}-confirmation`}>Повторите пароль</label>
+                <span className="users-password-input">
+                    <input
+                        id={`${id}-confirmation`}
+                        value={passwordConfirm}
+                        onChange={(event) => onPasswordConfirmChange(event.target.value)}
+                        type={showConfirm ? 'text' : 'password'}
+                        minLength={12}
+                        autoComplete="new-password"
+                        required
+                        disabled={disabled}
+                        aria-invalid={mismatch}
+                        aria-describedby={mismatch ? `${id}-mismatch` : undefined}
+                    />
+                    <button
+                        type="button"
+                        disabled={disabled}
+                        aria-label={showConfirm ? 'Скрыть подтверждение' : 'Показать подтверждение'}
+                        aria-pressed={showConfirm}
+                        onClick={() => setShowConfirm((shown) => !shown)}
+                    >
+                        {showConfirm ? 'Скрыть' : 'Показать'}
+                    </button>
+                </span>
+            </div>
+            {mismatch && (
+                <span
+                    id={`${id}-mismatch`}
+                    className="users-password-feedback users-password-feedback--error"
+                    role="alert"
+                >
+                    Пароли не совпадают.
+                </span>
+            )}
+            <small className="muted">
+                Минимум 12 символов: строчная и заглавная буква,
+                цифра и спецсимвол. Не более 72 байт UTF-8;
                 управляющие символы запрещены.
             </small>
         </>
