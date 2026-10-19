@@ -1,6 +1,7 @@
 import {API_TIMEOUTS, apiRequest} from './http'
 import {uuidPathSegment, buildQueryString, normalizePage, normalizePageSize} from './query'
 import {
+    contractError,
     expectBoolean,
     expectEnum,
     expectInstant,
@@ -24,6 +25,8 @@ export type KnowledgeDocument = {
     enabled: boolean;
     version: number;
     currentVersionId: string | null;
+    /** Published search pointer, distinct from the latest uploaded version. */
+    searchableVersionId: string | null;
     versionNumber: number | null;
     originalFilename: string | null;
     mediaType: string | null;
@@ -333,6 +336,11 @@ function parseKnowledgeDocumentCore(
             nestedField,
         )
 
+    // The backend has exposed this pointer since V63. Missing is a contract error.
+    if (record.searchableVersionId === undefined) {
+        throw contractError(`${field}.searchableVersionId отсутствует`)
+    }
+
     const nullableInt = (
         nestedValue: unknown,
         nestedField: string,
@@ -381,6 +389,10 @@ function parseKnowledgeDocumentCore(
         currentVersionId: nullableUuid(
             record.currentVersionId,
             `${field}.currentVersionId`,
+        ),
+        searchableVersionId: nullableUuid(
+            record.searchableVersionId,
+            `${field}.searchableVersionId`,
         ),
         versionNumber: nullableInt(
             record.versionNumber,

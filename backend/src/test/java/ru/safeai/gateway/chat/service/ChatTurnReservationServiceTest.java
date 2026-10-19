@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import ru.safeai.gateway.audit.service.AuditEventService;
 import ru.safeai.gateway.chat.config.ChatProperties;
 import ru.safeai.gateway.chat.dto.SendMessageRequest;
+import ru.safeai.gateway.chat.entity.ChatSessionEntity;
 import ru.safeai.gateway.chat.entity.ChatTurnEntity;
 import ru.safeai.gateway.chat.entity.ChatTurnState;
 import ru.safeai.gateway.chat.exception.AiOutcomeAmbiguousException;
@@ -18,6 +19,7 @@ import ru.safeai.gateway.chat.exception.ChatTurnFailedException;
 import ru.safeai.gateway.chat.exception.ChatTurnInProgressException;
 import ru.safeai.gateway.chat.exception.IdempotencyKeyReusedException;
 import ru.safeai.gateway.chat.observability.ChatMetrics;
+import ru.safeai.gateway.chat.quota.ChatQuotaReservation;
 import ru.safeai.gateway.chat.repository.ChatHistoryRepository;
 import ru.safeai.gateway.chat.repository.ChatHistoryTurn;
 import ru.safeai.gateway.chat.repository.ChatMessageRepository;
@@ -25,6 +27,8 @@ import ru.safeai.gateway.chat.repository.ChatSessionRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnMutexRepository;
 import ru.safeai.gateway.chat.repository.ChatTurnRepository;
 import ru.safeai.gateway.chat.testsupport.ChatTestFixtures;
+import ru.safeai.gateway.chat.title.ChatTitlePolicy;
+import ru.safeai.gateway.chat.title.ChatTitleSource;
 import ru.safeai.gateway.ai.dto.AiChatRequest;
 import ru.safeai.gateway.chat.exception.ChatBusyException;
 import ru.safeai.gateway.common.security.SafeAiUserPrincipal;
@@ -589,6 +593,9 @@ class ChatTurnReservationServiceTest {
                         ChatTestFixtures.principal()
                 );
 
+        ArgumentCaptor<ChatQuotaReservation> reservationCaptor =
+                ArgumentCaptor.forClass(ChatQuotaReservation.class);
+
         InOrder order =
                 inOrder(
                         mutexRepository,
@@ -650,8 +657,23 @@ class ChatTurnReservationServiceTest {
                 ),
                 eq(
                         ChatTestFixtures.USER_ID
-                )
+                ),
+                reservationCaptor.capture()
         );
+
+        ChatQuotaReservation reservation =
+                reservationCaptor.getValue();
+
+        assertThat(reservation.modelRouteDecisionId())
+                .isEqualTo(MODEL_ROUTE_DECISION_ID);
+        assertThat(reservation.inputUnits())
+                .isEqualTo(64L);
+        assertThat(reservation.outputUnits())
+                .isEqualTo(256L);
+        assertThat(reservation.costVerifiable())
+                .isTrue();
+        assertThat(reservation.maxCostUsd())
+                .isEqualByComparingTo("0.001000000000");
 
         order.verify(
                 modelRoutingService
@@ -783,7 +805,7 @@ class ChatTurnReservationServiceTest {
     void quotaRejectionOccursBeforeRateLimitConsumption() {
         stubNewTurn();
 
-        org.mockito.Mockito.doThrow(
+        doThrow(
                 new ChatQuotaExceededException(
                         ChatTestFixtures.CHAT_ID,
                         ChatTestFixtures.TURN_ID,
@@ -807,7 +829,8 @@ class ChatTurnReservationServiceTest {
                 ),
                 eq(
                         ChatTestFixtures.USER_ID
-                )
+                ),
+                any(ChatQuotaReservation.class)
         );
 
         assertThatThrownBy(
@@ -820,6 +843,23 @@ class ChatTurnReservationServiceTest {
         ).isInstanceOf(
                 ChatQuotaExceededException.class
         );
+
+        ArgumentCaptor<ChatQuotaReservation> reservationCaptor =
+                ArgumentCaptor.forClass(ChatQuotaReservation.class);
+
+        verify(quotaService).reserve(
+                eq(ChatTestFixtures.CHAT_ID),
+                any(UUID.class),
+                eq(ChatTestFixtures.CLIENT_REQUEST_ID),
+                eq(ChatTestFixtures.ORGANIZATION_ID),
+                eq(ChatTestFixtures.USER_ID),
+                reservationCaptor.capture()
+        );
+
+        assertThat(reservationCaptor.getValue().modelRouteDecisionId())
+                .isEqualTo(MODEL_ROUTE_DECISION_ID);
+        assertThat(reservationCaptor.getValue().costVerifiable())
+                .isTrue();
 
         verify(
                 rateLimitService,
@@ -834,6 +874,105 @@ class ChatTurnReservationServiceTest {
                 any(ModelRouteRequest.class),
                 any(SafeAiUserPrincipal.class)
         );
+        verify(reservedRequestService, never()).seal(
+                any(UUID.class),
+                any(UUID.class),
+                any(UUID.class),
+                any(AiChatRequest.class),
+                isNull(),
+                any(KnowledgeMode.class)
+        );
+        verify(metrics, never()).recordReservedAfterCommit();
+    }
+
+    @Test
+    void firstAcceptedMessageNamesOnlyDefaultChat() {
+        ChatSessionEntity session = ChatSessionEntity.create(
+                ChatTestFixtures.user(),
+                null,
+                ChatTestFixtures.NOW.minusSeconds(120)
+        );
+        session.setId(ChatTestFixtures.CHAT_ID);
+        stubNewTurn(session, allowedRoute());
+
+        assertThat(session.getTitleSource()).isEqualTo(ChatTitleSource.DEFAULT);
+
+        ChatProcessingContext result = service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello\r\nworld"),
+                ChatTestFixtures.principal()
+        );
+
+        assertThat(result.replay()).isFalse();
+        assertThat(session.getTitleSource()).isEqualTo(ChatTitleSource.AUTO);
+        assertThat(session.getTitle())
+                .isEqualTo(ChatTitlePolicy.automaticTitle("Hello\nworld"));
+    }
+
+    @Test
+    void firstMessageNeverOverwritesExplicitUserTitle() {
+        ChatSessionEntity session = ChatTestFixtures.session();
+        stubNewTurn(session, allowedRoute());
+
+        assertThat(session.getTitleSource()).isEqualTo(ChatTitleSource.USER);
+        String userTitle = session.getTitle();
+
+        ChatProcessingContext result = service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("First user message"),
+                ChatTestFixtures.principal()
+        );
+
+        assertThat(result.replay()).isFalse();
+        assertThat(session.getTitle()).isEqualTo(userTitle);
+        assertThat(session.getTitleSource()).isEqualTo(ChatTitleSource.USER);
+    }
+
+    @Test
+    void unverifiableRoutePricingIsNotPresentedAsFreeOrVerified() {
+        ModelRouteResult route = new ModelRouteResult(
+                MODEL_ROUTE_DECISION_ID,
+                MODEL_CATALOG_ENTRY_ID,
+                1,
+                MODEL_POLICY_ID,
+                1,
+                "safeai-test",
+                "openai",
+                "gpt-safeai-test",
+                64,
+                256,
+                null,
+                false,
+                false,
+                ModelRouteReason.POLICY_DEFAULT
+        );
+        stubNewTurn(ChatTestFixtures.session(), route);
+
+        service.reserveOrReplay(
+                ChatTestFixtures.CHAT_ID,
+                request("Hello"),
+                ChatTestFixtures.principal()
+        );
+
+        ArgumentCaptor<ChatQuotaReservation> reservationCaptor =
+                ArgumentCaptor.forClass(ChatQuotaReservation.class);
+
+        verify(quotaService).reserve(
+                eq(ChatTestFixtures.CHAT_ID),
+                any(UUID.class),
+                eq(ChatTestFixtures.CLIENT_REQUEST_ID),
+                eq(ChatTestFixtures.ORGANIZATION_ID),
+                eq(ChatTestFixtures.USER_ID),
+                reservationCaptor.capture()
+        );
+
+        ChatQuotaReservation reservation = reservationCaptor.getValue();
+        assertThat(reservation.modelRouteDecisionId())
+                .isEqualTo(MODEL_ROUTE_DECISION_ID);
+        assertThat(reservation.inputUnits()).isEqualTo(64L);
+        assertThat(reservation.outputUnits()).isEqualTo(256L);
+        assertThat(reservation.costVerifiable()).isFalse();
+        assertThat(reservation.maxCostUsd()).isNull();
     }
 
     @Test
@@ -894,7 +1033,14 @@ class ChatTurnReservationServiceTest {
     }
 
     private void stubNewTurn() {
-        stubOwnedSession();
+        stubNewTurn(ChatTestFixtures.session(), allowedRoute());
+    }
+
+    private void stubNewTurn(
+            ChatSessionEntity session,
+            ModelRouteResult route
+    ) {
+        stubOwnedSession(session);
 
         when(
                 turnRepository.findByIdempotencyKeyForUpdate(
@@ -972,7 +1118,7 @@ class ChatTurnReservationServiceTest {
                         )
                 )
         ).thenReturn(
-                allowedRoute()
+                route
         );
     }
 
@@ -998,6 +1144,10 @@ class ChatTurnReservationServiceTest {
     }
 
     private void stubOwnedSession() {
+        stubOwnedSession(ChatTestFixtures.session());
+    }
+
+    private void stubOwnedSession(ChatSessionEntity session) {
         when(
                 sessionRepository
                         .findByIdAndUser_IdAndOrganization_IdAndArchivedAtIsNull(
@@ -1006,9 +1156,7 @@ class ChatTurnReservationServiceTest {
                                 ChatTestFixtures.ORGANIZATION_ID
                         )
         ).thenReturn(
-                Optional.of(
-                        ChatTestFixtures.session()
-                )
+                Optional.of(session)
         );
     }
 

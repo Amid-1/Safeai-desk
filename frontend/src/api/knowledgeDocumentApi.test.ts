@@ -15,6 +15,7 @@ const DOCUMENT = {
     enabled: true,
     version: 0,
     currentVersionId: '38b67b2f-5f44-44a2-bb53-d5545da08dd2',
+    searchableVersionId: null,
     versionNumber: 1,
     originalFilename: 'runbook.txt',
     mediaType: 'text/plain',
@@ -29,6 +30,18 @@ describe('knowledgeDocumentApi contract', () => {
         expect(
             parseKnowledgeDocument(DOCUMENT).status,
         ).toBe('CHUNKING')
+    })
+
+    it('читает published search pointer и отвергает его повреждение', () => {
+        const pointer = 'c71b7a7c-1d83-4cf6-bcb1-98916981c41c'
+        expect(parseKnowledgeDocument({ ...DOCUMENT, searchableVersionId: pointer })
+            .searchableVersionId).toBe(pointer)
+        expect(() => parseKnowledgeDocument({
+            ...DOCUMENT,
+            searchableVersionId: 'not-uuid',
+        })).toThrow()
+        const { searchableVersionId: _ignored, ...withoutPointer } = DOCUMENT
+        expect(() => parseKnowledgeDocument(withoutPointer)).toThrow()
     })
 
     it('принимает immutable evidence исторической версии', () => {

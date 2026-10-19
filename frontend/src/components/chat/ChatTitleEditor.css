@@ -103,3 +103,9 @@
         font-size: 11px;
     }
 }
+
+/* Long Unicode titles must never push the edit control or status offscreen. */
+.chat-title-view { width: 100%; max-width: 100%; }
+.chat-title-view h2 { flex: 0 1 auto; max-width: 100%; }
+.chat-title-edit-button { margin-left: auto; }
+.chat-title-editor { width: 100%; max-width: 680px; }

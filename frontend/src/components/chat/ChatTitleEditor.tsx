@@ -17,14 +17,20 @@ const MAX_TITLE_LENGTH = 255
 type ChatTitleEditorProps = {
     title: string
     onSave: (title: string) => Promise<void>
+    initiallyEditing?: boolean
+    onCancelEditing?: () => void
+    onSaved?: () => void
 }
 
 function ChatTitleEditor({
     title,
     onSave,
+    initiallyEditing = false,
+    onCancelEditing,
+    onSaved,
 }: ChatTitleEditorProps) {
     const [editing, setEditing] =
-        useState(false)
+        useState(initiallyEditing)
     const [draft, setDraft] =
         useState(title)
     const [saving, setSaving] =
@@ -61,6 +67,7 @@ function ChatTitleEditor({
         setDraft(title)
         setError('')
         setEditing(false)
+        onCancelEditing?.()
     }
 
     async function save() {
@@ -77,7 +84,7 @@ function ChatTitleEditor({
             return
         }
 
-        if (normalized.length > MAX_TITLE_LENGTH) {
+        if (Array.from(normalized).length > MAX_TITLE_LENGTH) {
             setError(
                 `Название не должно превышать ${MAX_TITLE_LENGTH} символов.`,
             )
@@ -87,6 +94,7 @@ function ChatTitleEditor({
         if (normalized === title) {
             setEditing(false)
             setError('')
+            onSaved?.()
             return
         }
 
@@ -96,6 +104,7 @@ function ChatTitleEditor({
         try {
             await onSave(normalized)
             setEditing(false)
+            onSaved?.()
         } catch (saveError) {
             setError(
                 getApiErrorMessage(
@@ -113,6 +122,7 @@ function ChatTitleEditor({
     ) {
         if (event.key === 'Escape') {
             event.preventDefault()
+            event.stopPropagation()
             cancelEditing()
             return
         }
@@ -146,7 +156,8 @@ function ChatTitleEditor({
                 <input
                     ref={inputRef}
                     value={draft}
-                    maxLength={MAX_TITLE_LENGTH}
+                    // Unicode code points are validated above and on the backend.
+                    maxLength={MAX_TITLE_LENGTH * 2}
                     autoComplete="off"
                     aria-label="Название чата"
                     aria-invalid={Boolean(error)}

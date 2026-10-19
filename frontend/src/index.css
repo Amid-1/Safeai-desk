@@ -2386,3 +2386,121 @@ a[href]:hover {
         max-width: 320px;
     }
 }
+
+
+/* Chat UX refinements: preserve title, actions, provider context and composer. */
+.content--chat .chat-panel__header {
+    min-width: 0;
+}
+
+.content--chat .chat-panel__header > div:first-child {
+    min-width: 0;
+    flex: 1 1 0;
+}
+
+.chat-panel__indicators {
+    display: flex;
+    min-width: 0;
+    flex: 0 0 auto;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.chat-panel__model-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 9px;
+    border: 1px solid #c7d2fe;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #4338ca;
+    font-size: 11px;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.chat-panel__model-badge--mock {
+    border-color: #fcd34d;
+    background: #fffbeb;
+    color: #92400e;
+}
+
+.chat-rename-description {
+    margin: 0 0 14px;
+    color: #64748b;
+    line-height: 1.5;
+}
+
+.content--chat .message-form__composer textarea {
+    display: block;
+    width: 100%;
+    min-width: 0;
+}
+
+/* Form settings stay discoverable while the text field gets the full row. */
+@media (min-width: 769px) {
+    .content--chat .message-form {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-rows: auto auto;
+        gap: 8px 12px;
+    }
+
+    .content--chat .message-form__controls {
+        display: flex;
+        grid-column: 1 / -1;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+    }
+
+    .content--chat .message-form__controls > label,
+    .content--chat .message-form__controls select + label {
+        margin: 0;
+    }
+
+    .content--chat .message-form__controls select {
+        width: auto;
+        max-width: min(300px, 100%);
+        min-width: 180px;
+    }
+
+    .content--chat .message-form__composer {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .content--chat .message-send-button {
+        grid-column: 2;
+        grid-row: 2;
+        align-self: end;
+    }
+}
+
+@media (max-width: 768px) {
+    .content--chat .chat-panel__header {
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .chat-panel__indicators {
+        gap: 5px;
+    }
+
+    .chat-panel__model-badge {
+        padding: 5px 7px;
+        font-size: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    .content--chat .chat-panel__header > div:first-child {
+        flex-basis: 100%;
+    }
+
+    .chat-panel__indicators {
+        flex: 1 1 100%;
+        justify-content: flex-start;
+    }
+}

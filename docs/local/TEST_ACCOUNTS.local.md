@@ -1,803 +1,416 @@
-# SafeAI Desk — локальная памятка для тестовых аккаунтов
+# SafeAI Desk — локальный справочник разработки и тестирования
 
-> **Важно:** файл предназначен только для локальной разработки и ручного тестирования.  
-> Не коммитить в Git. Не использовать в production. Не хранить здесь реальные пароли, токены, API-ключи или production secrets.
+> **Личный файл, не для Git.** Содержит тестовые пароли в открытом виде.
+> Только локальная/изолированная среда. Не размещать в issue, CI-логах, чатах команды,
+> публичных репозиториях и production. Не использовать эти пароли в реальных аккаунтах.
+> **Источник:** существующая памятка. Логины, пароли, написание имён сохранены как в источнике;
+> наличие записей в текущей БД и актуальность паролей необходимо проверить.
+
+## Навигация
+
+1. [Безопасность и расположение](#1-безопасность-и-расположение)
+2. [Адреса и быстрый старт](#2-адреса-и-быстрый-старт)
+3. [Реестр организаций](#3-реестр-организаций)
+4. [Реестр аккаунтов и паролей](#4-реестр-аккаунтов-и-паролей)
+5. [Правила тестирования ролей](#5-правила-тестирования-ролей)
+6. [Проверка PostgreSQL](#6-проверка-postgresql)
+7. [Диагностика авторизации](#7-диагностика-авторизации)
+8. [Запуск, тесты и Redis](#8-запуск-тесты-и-redis)
+9. [Проверки API через curl](#9-проверки-api-через-curl)
+10. [Регрессионный чек-лист](#10-регрессионный-чек-лист)
+11. [Перед коммитом](#11-перед-коммитом)
+12. [Журнал изменений тестовых данных](#12-журнал-изменений-тестовых-данных)
 
 ---
 
-## 1. Где хранить файл
+## 1. Безопасность и расположение
 
-Рекомендуемый путь внутри проекта:
+**Расположение:** `docs/local/TEST_ACCOUNTS.local.md` от корня SafeAI-Desk.
 
-```text
-Safeai-desk/docs/local/TEST_ACCOUNTS.local.md
-```
-
-Рекомендуемое правило в `.gitignore`:
+Добавить в корневой `.gitignore`:
 
 ```gitignore
-# Local development notes and test credentials
+# Локальные данные и пароли; никогда не публиковать
 docs/local/
 ```
 
-Перед каждым коммитом проверяй, что файл не попал в staged:
+Проверить перед коммитом:
 
-```bat
-git status
+```bash
+git check-ignore -v docs/local/TEST_ACCOUNTS.local.md
+git ls-files --error-unmatch docs/local/TEST_ACCOUNTS.local.md
+# Вторая команда должна завершиться ошибкой: файл не отслеживается Git.
+git diff --cached --name-only
 ```
 
-Если файл случайно добавлен в staged:
+Если файл уже отслеживается, **после создания резервной копии** выполнить:
 
-```bat
-git restore --staged docs/local/TEST_ACCOUNTS.local.md
+```bash
+git rm --cached -- docs/local/TEST_ACCOUNTS.local.md
 ```
 
----
+Это прекращает отслеживание, но **не удаляет пароли из прошлой истории Git**.
+Если секреты когда-либо попадали в удалённый Git, считать их раскрытыми и сменить.
+На macOS/Linux ограничить доступ к личному файлу: `chmod 600 docs/local/TEST_ACCOUNTS.local.md`.
+Старайся не отправлять эту памятку в AI-чаты целиком: она содержит открытые пароли.
 
-## 2. Локальные адреса
+## 2. Адреса и быстрый старт
 
-```text
-Frontend: http://localhost:5173
-Backend:  http://localhost:8080
-Health:   http://localhost:8080/actuator/health
-```
+| Назначение | Адрес |
+|---|---|
+| Frontend | `http://localhost:5173` |
+| Backend API | `http://localhost:8080` |
+| Health | `http://localhost:8080/actuator/health` |
+| PostgreSQL | `localhost:5432`, БД `safeai` |
 
----
+**Порядок:** инфраструктура → backend → frontend → login → `GET /api/auth/me`.
+Убедиться, что включён локальный профиль, а не production.
 
-## 3. Организации
+## 3. Реестр организаций
 
-### SafeAI Platform
+`UUID` ниже сохранены только там, где были известны в исходном документе.
+У остальных организаций ID следует скопировать из UI/БД и записать вручную.
 
-```text
-Organization name: SafeAI Platform
-Organization ID:   00000000-0000-0000-0000-000000000001
-```
+| Организация | UUID / идентификатор | Назначение |
+|---|---|---|
+| SafeAI Platform | `00000000-0000-0000-0000-000000000001` | Platform / SUPER_ADMIN |
+| Demo Company | `aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa` | Демонстрационный tenant |
+| ООО "Клевер" | — | Тестовый tenant |
+| ООО "Ромашка" | — | Тестовый tenant |
+| ООО "Сокол" | — | Тестовый tenant |
+| ООО "Зил" | — | Тестовый tenant |
+| ООО "Космос" | — | Тестовый tenant |
+| Organization A | — | Проверка tenant isolation |
+| Organization B | — | Проверка tenant isolation |
+| [новая организация] | — | [для чего создана] |
+| [новая организация] | — | [для чего создана] |
+| [новая организация] | — | [для чего создана] |
+| [новая организация] | — | [для чего создана] |
+| [новая организация] | — | [для чего создана] |
 
-Назначение:
+**Важно:** SafeAI Platform — служебная организация. Не проверять на ней обычные
+операции создания пользователей, переименования или отключения tenant.
 
-```text
-SafeAI Platform — служебная платформенная организация для SUPER_ADMIN.
-Через обычный organization-management flow ее нельзя отключать или переименовывать.
-Через обычный user-management flow в нее нельзя создавать пользователей.
-```
+## 4. Реестр аккаунтов и паролей
 
-### Demo Company
+Таблицы сохранены в исходном формате: `№ / Email / Password / Role / Организация / Комментарий`.
+Внутри каждой роли записи сгруппированы по организации. Номера последовательные и уникальные.
+Все существующие значения перенесены без изменений; `—` означает неизвестную организацию.
 
-```text
-Organization name: Demo Company
-Organization ID:   aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
-```
-
-Назначение:
-
-```text
-Demo Company — тестовая customer organization для локальной разработки.
-```
-
-### Дополнительные локальные организации
-
-Организации, созданные вручную через UI, могут отличаться после пересоздания БД.
-
-| Организация     | Комментарий |
-|-----------------|---|
-| `ООО "Клевер"`  | Тестовая customer organization |
-| `ООО "Ромашка"` | Тестовая customer organization |
-
----
-
-## 4. Тестовые аккаунты
+> После **Reset password** нужно обновить пароль в этом локальном файле. Записи в памятке
+> не подтверждают наличие аккаунтов в текущей базе и актуальность указанных паролей.
 
 ### 4.1 SUPER_ADMIN
 
-| Email | Password | Role | Организация | Комментарий |
-|---|---|---|---|---|
-| `superadmin@test.com` | `Admin_Dev_2026!Strong#91` | `SUPER_ADMIN` | `SafeAI Platform` | Платформенный администратор. Используется для создания организаций и администраторов. |
+| № | Email                 | Password                   | Role          | Организация       | Полное имя / комментарий     |
+|:--|-----------------------|----------------------------|---------------|-------------------|------------------------------|
+| 1 | `superadmin@test.com` | `Admin_Dev_2026!Strong#91` | `SUPER_ADMIN` | `SafeAI Platform` | Платформенный администратор. |
+
 
 ### 4.2 ADMIN
 
-> Если для аккаунта выполнялся **Reset password** через UI, актуальным является последний заданный пароль.  
-> Старый пароль из этой таблицы после reset password больше не подойдет.
-
-| № | Email         | Password             | Role | Организация    | Полное имя / комментарий                                               |
-|---:|---------------|----------------------|---|----------------|------------------------------------------------------------------------|
-| 1 | `admin@test.com` | `bvhgSI*7&@)++!@$HJ` | `ADMIN` | `Demo Company` | AdminTest AdminTestov. Seed/local admin.                               |
-| 2 | `admin@klever.ru` | `bvhgSI*7&@)++!@$`   | `ADMIN` | `ООО "Клевер"` | AdminKlever AdminKleverov. Создан вручную через frontend/admin users.  |
-| 3 | `ivanRomashka@mail.com` | `v2F4r1C4@$aD`       | `ADMIN` | `ООО "Ромашка"` | InanRomashka IvanRomashkov. Создан вручную через frontend/admin users. |
-| 4 | `vladSokol@mail.ru` | `fhgkJFG@3%^&%`      | `ADMIN` | `ООО "Сокол"`  | VladSokol VladSokolov. В БД email нормализуется к lower-case.          |
-| 5 | `mishaZil@proton.net` | `bvhgSI*7&@)++`      | `ADMIN` | `ООО "Зил"`    | MishaZil MichaZilov. В БД email нормализуется к lower-case.            |
-| 5 | `nikitaZil@proton.net` | `bvhgSI*7&@)=_`      | `ADMIN` | `ООО "Космос"` | NikitaKosmos NikitaKosmosov. В БД email нормализуется к lower-case.    |
-| 5 | `ADMIN-A@proton.net` | `bvhgSI*7&@)=_@#`    | `ADMIN` | `Organization A`  | ADMIN-A  |
-| 5 | `ADMIN-B@proton.net` | `bvhgSI*7&@)=_*)`    | `ADMIN` | `Organization B`  |  ADMIN-B  |
-| 5 | `@proton.net` | `bvhgSI*7&@)=_((`    | `ADMIN` | `` |    |
-| 5 | `@proton.net` | `bvhgSI*7&@)=_*^`    | `ADMIN` | `` |    |
+| № | Email                   | Password             | Role    | Организация      | Полное имя / комментарий     |
+|:--|-------------------------|----------------------|---------|------------------|------------------------------|
+| 1 | `admin@test.com`        | `bvhgSI*7&@)++!@$HJ` | `ADMIN` | `Demo Company`   | AdminTest AdminTestov.       |
+| 2 | `ADMIN-A@proton.net`    | `bvhgSI*7&@)=_@#`    | `ADMIN` | `Organization A` | ADMIN-A                      |
+| 3 | `ADMIN-B@proton.net`    | `bvhgSI*7&@)=_*)`    | `ADMIN` | `Organization B` | ADMIN-B                      |
+| 4 | `mishaZil@proton.net`   | `bvhgSI*7&@)++`      | `ADMIN` | `ООО "Зил"`      | MishaZil MichaZilov.         |
+| 5 | `nikitaZil@proton.net`  | `bvhgSI*7&@)=_`      | `ADMIN` | `ООО "Космос"`   | NikitaKosmos NikitaKosmosov. |
+| 6 | `admin@klever.ru`       | `bvhgSI*7&@)++!@$`   | `ADMIN` | `ООО "Клевер"`   | AdminKlever AdminKleverov.   |
+| 7 | `ivanRomashka@mail.com` | `v2F4r1C4@$aD`       | `ADMIN` | `ООО "Ромашка"`  | InanRomashka IvanRomashkov.  |
+| 8 | `vladSokol@mail.ru`     | `fhgkJFG@3%^&%`      | `ADMIN` | `ООО "Сокол"`    | VladSokol VladSokolov.       |
+|   | `@proton.net` | `bvhgSI*7&@)=_((`      | `ADMIN` | `` |    |
+|   | `@proton.net` | `bvhgSI*7&@)=_*^`      | `ADMIN` | `` |    |
 
 ### 4.3 USER
 
-| № | Email                 | Password                  | Role | Организация     | Полное имя / комментарий                                                                  |
-|--:|-----------------------|---------------------------|---|-----------------|-------------------------------------------------------------------------------------------|
-| 1 | `dimac@mail.com`      | `v2F4r1C4!#SD`            | `USER` | `Demo Company`  | Dima Dmitriev. Создан вручную через frontend/admin users.                                 |
-| 2 | `user@test.com`       | `useR12345678%^A`         | `USER` | `Demo Company`  | UserTest UserTestov. Если пароль менялся через reset password, использовать новый пароль. |
-| 3 | `vasiya@gmail.com`    | `dfghjGH75!+Sdd`          | `USER` | `ООО "Сокол"`   | VasiyaSokol VasiyaSokolov. В БД email нормализуется к lower-case.                         |
-| 4 | `petiyadf@yandex.com` | `DGFGFNjghj&*46`          | `USER` | `ООО "Ромашка"` | PetiyaRomashka PetiyaRomashkov. В БД email нормализуется к lower-case.                    |
-| 5 | `user1@klever.ru`     | `DGFGFNjghj&*46Dfg`       | `USER` | `ООО "Клевер"`  | User1Klever User1Kleverov. В БД email нормализуется к lower-case.                         |
-| 6 | `user2@klever.ru`     | `DGFGFNjghj&*46Dfg!@`     | `USER` | `ООО "Клевер"`  | User2Klever User2Kleverov. В БД email нормализуется к lower-case.                         |
-| 6 | `use12@zil.ru`        | `DGFGFNjghj&*46Dfg**`     | `USER` | `ООО "Зил"`     | User1Zil User1Zilov. В БД email нормализуется к lower-case.                               |
-| 6 | `user2@zil.ru`        | `DGFGFNjghj&*46Df*&(`     | `USER` | `ООО "Зил"`     | User2Zil User2Zilov. В БД email нормализуется к lower-case.                               |
-| 6 | `USER-A1@proton.ru`   | `DGFGFNjghj&*46Df&&&`     | `USER` | ``     | USER-A1                                                                                   |
-| 6 | `USER-A2@proton.ru`   | `DGFGFNjghj&*46Df***`     | `USER` | ``     | USER-A2                                                                                   |
-| 6 | `USER-B1@mail.ru`     | `DGFGFNjghj&*46D))*`      | `USER` | ``     | USER-B1                                                                                   |
-| 6 | `user2@test.com`      | `DGFGFNjghj&*46Df*&df`    | `USER` | `Demo Company`     | UserTest2 UserTestov                                                                      |
-| 6 | `user3@test.com`      | `DGFGFNjghj&*46Df*&(dd`   | `USER` | `Demo Company`     | UserTest3 UserTestov                                                                      |
-| 6 | `user4@test.com`      | `DGFGFNjghj&*46Df*&++`    | `USER` | `Demo Company`     | UserTest4 UserTestov                                                                      |
-| 6 | `user5@test.com`      | `DGFGFNjghj&*46Df*&+++`   | `USER` | `Demo Company`     | UserTest5 UserTestov                                                                      |
-| 6 | `user6@test.com`      | `DGFGFNjghj&*46Df*===`    | `USER` | `Demo Company`     | UserTest6 UserTestov                                                                      |
-| 6 | `user7@test.com`      | `DGFGFNjghj&*46Df++--))`  | `USER` | `Demo Company`     | UserTest7 UserTestov                                                                      |
-| 6 | `user8@test.com`      | `DGFGFNjghj&*46Df====+++` | `USER` | `Demo Company`     | UserTest8 UserTestov                                                                      |
+|  № | Email                 | Password                  | Role   | Организация     | Полное имя / комментарий        |
+|:---|-----------------------|---------------------------|--------|-----------------|---------------------------------|
+|  1 | `dimac@mail.com`      | `v2F4r1C4!#SD`            | `USER` | `Demo Company`  | Dima Dmitriev.                  |
+|  2 | `user@test.com`       | `useR12345678%^A`         | `USER` | `Demo Company`  | UserTest UserTestov.            |
+|  3 | `user2@test.com`      | `DGFGFNjghj&*46Df*&df`    | `USER` | `Demo Company`  | UserTest2 UserTestov            |
+|  4 | `user3@test.com`      | `DGFGFNjghj&*46Df*&(dd`   | `USER` | `Demo Company`  | UserTest3 UserTestov            |
+|  5 | `user4@test.com`      | `DGFGFNjghj&*46Df*&++`    | `USER` | `Demo Company`  | UserTest4 UserTestov            |
+|  6 | `user5@test.com`      | `DGFGFNjghj&*46Df*&+++`   | `USER` | `Demo Company`  | UserTest5 UserTestov            |
+|  7 | `user6@test.com`      | `DGFGFNjghj&*46Df*===`    | `USER` | `Demo Company`  | UserTest6 UserTestov            |
+|  8 | `user7@test.com`      | `DGFGFNjghj&*46Df++--))`  | `USER` | `Demo Company`  | UserTest7 UserTestov            |
+|  9 | `user8@test.com`      | `DGFGFNjghj&*46Df====+++` | `USER` | `Demo Company`  | UserTest8 UserTestov            |
+| 10 | `USER-A1@proton.ru`   | `DGFGFNjghj&*46Df&&&`     | `USER` | —               | USER-A1                         |
+| 11 | `USER-A2@proton.ru`   | `DGFGFNjghj&*46Df***`     | `USER` | —               | USER-A2                         |
+| 12 | `USER-B1@mail.ru`     | `DGFGFNjghj&*46D))*`      | `USER` | —               | USER-B1                         |
+| 13 | `use12@zil.ru`        | `DGFGFNjghj&*46Dfg**`     | `USER` | `ООО "Зил"`     | User1Zil User1Zilov.            |
+| 14 | `user2@zil.ru`        | `DGFGFNjghj&*46Df*&(`     | `USER` | `ООО "Зил"`     | User2Zil User2Zilov.            |
+| 15 | `user1@klever.ru`     | `DGFGFNjghj&*46Dfg`       | `USER` | `ООО "Клевер"`  | User1Klever User1Kleverov.      |
+| 16 | `user2@klever.ru`     | `DGFGFNjghj&*46Dfg!@`     | `USER` | `ООО "Клевер"`  | User2Klever User2Kleverov.      |
+| 17 | `petiyadf@yandex.com` | `DGFGFNjghj&*46`          | `USER` | `ООО "Ромашка"` | PetiyaRomashka PetiyaRomashkov. |
+| 18 | `vasiya@gmail.com`    | `dfghjGH75!+Sdd`          | `USER` | `ООО "Сокол"`   | VasiyaSokol VasiyaSokolov.      |
 
 ---
 
-## 5. Быстрый вход
+### 4.4 Новые аккаунты (для расширения)
 
-### SUPER_ADMIN
+| № | Email | Password | Role | Организация | Полное имя / комментарий |
+|---:|---|---|---|---|---|
+| 1 | — | — | `ADMIN` | — | — |
+| 2 | — | — | `ADMIN` | — | — |
+| 3 | — | — | `ADMIN` | — | — |
+| 4 | — | — | `USER` | — | — |
+| 5 | — | — | `USER` | — | — |
+| 6 | — | — | `USER` | — | — |
+| 7 | — | — | `USER` | — | — |
+| 8 | — | — | `USER` | — | — |
 
-```text
-Email:    superadmin@test.com
-Password: Admin_Dev_2026!Strong#91
-```
+Если нужен ещё один аккаунт, добавляй строку в таблицу соответствующей роли и организации.
+Для нового tenant предварительно заполни реестр организаций в разделе 3.
 
-### ADMIN Demo Company
+Пароли здесь **только тестовые**. В БД хранятся BCrypt-хеши; исходный пароль
+из хеша восстановить нельзя. Для забытого пароля нужен reset.
+Точный контракт длины: BCrypt ограничивает **72 байтами UTF-8**, не 72 символами.
+Перед созданием проверять актуальную `PasswordPolicy` в backend.
 
-```text
-Email:    admin@test.com
-Password: bvhgSI*7&@)++!@$HJ
-```
+## 5. Правила тестирования ролей
 
-### ADMIN ООО "Клевер"
+| Проверка | SUPER_ADMIN | ADMIN | USER |
+|---|---|---|---|
+| Чат обычного пользователя | нет (tenant-chat закрыт) | да | да |
+| Организации (управление) | да | нет | нет |
+| Пользователи других tenants | по правам платформы | нет | нет |
+| Создание tenant USER | да | в своём tenant | нет |
+| Глобальный audit / usage | да | нет | нет |
+| Audit / usage своего tenant | глобальный scope | да | нет |
 
-```text
-Email:    admin@klever.ru
-Password: bvhgSI*7&@)++!@$
-```
+- Проверить **API-отказ 403**, а не только скрытую кнопку интерфейса.
+- Пользователь организации A не видит чаты, документы и отчёты организации B.
+- ADMIN не создаёт SUPER_ADMIN и не меняет чужую организацию.
+- Роль и включённость проверяются backend; frontend-guard — лишь UX.
+- Отключённый пользователь / tenant не должен получить новую рабочую сессию.
+- При изменении auth/security epoch прежняя сессия не должна оставаться действующей.
 
-### USER Demo Company
+## 6. Проверка PostgreSQL
 
-```text
-Email:    dimac@mail.com
-Password: v2F4r1C4!#SD
-```
+Подключение к локальному контейнеру (имя контейнера проверить через `docker ps`):
 
----
-
-## 6. Проверка ролей через UI
-
-### SUPER_ADMIN должен видеть
-
-```text
-/chat
-/admin/users
-/admin/organizations
-/admin/audit
-/admin/usage
-```
-
-SUPER_ADMIN может:
-
-```text
-- создавать организации;
-- видеть все организации;
-- создавать ADMIN и USER в customer organizations;
-- смотреть audit по всей платформе;
-- смотреть usage по всей платформе;
-- фильтровать audit/usage по organizationId;
-- управлять USER и ADMIN, но не SUPER_ADMIN.
-```
-
-SUPER_ADMIN не должен:
-
-```text
-- создавать еще одного SUPER_ADMIN через обычную форму;
-- создавать пользователей в SafeAI Platform;
-- отключать или переименовывать SafeAI Platform;
-- редактировать platform admin через обычный user-management flow.
-```
-
-### ADMIN должен видеть
-
-```text
-/chat
-/admin/users
-/admin/audit
-/admin/usage
-```
-
-ADMIN может:
-
-```text
-- видеть пользователей только своей организации;
-- создавать USER внутри своей организации;
-- редактировать USER своей организации;
-- сбрасывать пароль USER своей организации;
-- включать/отключать USER своей организации;
-- смотреть audit только своей организации;
-- смотреть usage только своей организации;
-- пользоваться чатом.
-```
-
-ADMIN не должен:
-
-```text
-- видеть /admin/organizations;
-- создавать организации;
-- видеть пользователей другой организации;
-- смотреть audit/usage другой организации;
-- назначать SUPER_ADMIN;
-- создавать ADMIN;
-- управлять другим ADMIN.
-```
-
-### USER должен видеть
-
-```text
-/chat
-```
-
-USER не должен иметь доступ к:
-
-```text
-/admin/users
-/admin/organizations
-/admin/audit
-/admin/usage
-```
-
-Ожидаемая backend-реакция при прямом запросе к admin endpoints:
-
-```text
-403 FORBIDDEN
-```
-
----
-
-## 7. SQL-проверки
-
-### Зайти в PostgreSQL
-
-```bat
+```bash
 docker exec -it safeai-postgres psql -U safeai -d safeai
 ```
 
-### Проверить конкретных пользователей
+**Организации:**
 
 ```sql
-select
-    u.email,
-    u.enabled as user_enabled,
-    u.token_version,
-    o.name as organization_name,
-    o.enabled as organization_enabled,
-    array_agg(r.name order by r.name) as roles
-from users u
-join organizations o on o.id = u.organization_id
-join user_roles ur on ur.user_id = u.id
-join roles r on r.id = ur.role_id
-where lower(u.email) in (
-    lower('admin@test.com'),
-    lower('admin@klever.ru'),
-    lower('superadmin@test.com')
-)
-group by
-    u.email,
-    u.enabled,
-    u.token_version,
-    o.name,
-    o.enabled
-order by u.email;
+SELECT id, name, enabled, auth_version, version
+FROM public.organizations
+ORDER BY name;
 ```
 
-Ожидаемо для активного ADMIN:
-
-```text
-user_enabled = true
-organization_enabled = true
-roles содержит ADMIN
-```
-
-### Проверить список пользователей
+**Пользователи, роли и владельцы:**
 
 ```sql
-select
-    u.email,
-    u.enabled,
-    u.token_version,
-    o.name as organization_name,
-    o.enabled as organization_enabled,
-    string_agg(r.name, ', ' order by r.name) as roles
-from users u
-join organizations o on o.id = u.organization_id
-left join user_roles ur on ur.user_id = u.id
-left join roles r on r.id = ur.role_id
-group by
-    u.email,
-    u.enabled,
-    u.token_version,
-    o.name,
-    o.enabled
-order by u.email;
+SELECT u.id, u.email, u.enabled AS user_enabled, u.token_version,
+       o.name AS organization, o.enabled AS organization_enabled,
+       string_agg(r.name, ', ' ORDER BY r.name) AS roles
+FROM public.users u
+JOIN public.organizations o ON o.id = u.organization_id
+LEFT JOIN public.user_roles ur ON ur.user_id = u.id
+LEFT JOIN public.roles r ON r.id = ur.role_id
+GROUP BY u.id, u.email, u.enabled, u.token_version, o.name, o.enabled
+ORDER BY o.name, u.email;
 ```
 
-### Проверить superadmin
+**Flyway V77 и последняя установленная версия:**
 
 ```sql
-select
-    u.id,
-    u.email,
-    u.enabled,
-    u.organization_id,
-    o.name as organization_name,
-    o.enabled as organization_enabled,
-    u.token_version
-from users u
-join organizations o on o.id = u.organization_id
-where lower(u.email) = lower('superadmin@test.com');
+SELECT installed_rank, version, description, success
+FROM public.flyway_schema_history
+ORDER BY installed_rank DESC
+LIMIT 12;
 ```
 
-### Проверить роль superadmin
+**Состояние названий чатов:**
 
 ```sql
-select
-    u.email,
-    r.name as role
-from users u
-join user_roles ur on ur.user_id = u.id
-join roles r on r.id = ur.role_id
-where lower(u.email) = lower('superadmin@test.com');
+SELECT title_source, title, count(*) AS chats
+FROM public.chat_sessions
+GROUP BY title_source, title
+ORDER BY chats DESC, title_source, title
+LIMIT 30;
 ```
 
-Ожидаемый результат:
+Не использовать прямой SQL `UPDATE` для сброса паролей: backend должен
+обеспечить BCrypt, security epoch, аудит и отзыв старых сессий.
 
-```text
-superadmin@test.com | SUPER_ADMIN
+## 7. Диагностика авторизации
+
+| Симптом | Что проверить |
+|---|---|
+| Login `401` | Email/пароль, статус аккаунта, rate-limit |
+| Login `200`, затем `/me` `401/403` | Cookie, CSRF, user/org enabled, security epochs |
+| ADMIN видит чужих пользователей | Backend tenant scope, RBAC и фильтры SQL |
+| Чат не переименовывается | `title_source`, первый USER turn, V77, обновление UI |
+| Ошибка Flyway | Первая SQL-ошибка в логе и `flyway_schema_history` |
+| Запрос AI завис / дублируется | ChatTurn state, idempotency, lease/fencing |
+
+При auth-проблеме сначала проверить серверный ответ в DevTools → Network.
+Не выполнять `FLUSHALL` как стандартное решение: это удаляет **весь Redis state**.
+После локального reset пользовательского пароля обновить таблицу и журнал.
+
+## 8. Запуск, тесты и Redis
+
+### macOS / Linux (текущий путь проекта)
+
+```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk
+docker compose -f infra/docker-compose.local.yml up -d postgres redis
+
+cd backend
+set -a
+source ./.env
+set +a
+export SAFEAI_JWT_PUBLIC_KEY="$(cat .local-secrets/jwt-public.pem)"
+export SAFEAI_JWT_PRIVATE_KEY="$(cat .local-secrets/jwt-private.pem)"
+./mvnw spring-boot:run
 ```
 
-### Проверить Flyway migrations
+В другом терминале:
 
-```sql
-select
-    installed_rank,
-    version,
-    description,
-    success
-from flyway_schema_history
-order by installed_rank;
-```
-
----
-
-## 8. Диагностика проблем входа
-
-### Ситуация: неверный пароль
-
-В DevTools → Network:
-
-```text
-POST /api/auth/login = 401
-```
-
-Типичный response:
-
-```json
-{
-  "status": 401,
-  "error": "UNAUTHORIZED",
-  "message": "Требуется авторизация",
-  "path": "/api/auth/login"
-}
-```
-
-Что означает:
-
-```text
-email/password не приняты backend.
-Нужно проверить пароль или сделать Reset password через SUPER_ADMIN.
-```
-
-Решение:
-
-```text
-1. Войти под SUPER_ADMIN.
-2. Открыть /admin/users.
-3. Нажать Reset password у нужного пользователя.
-4. Задать новый пароль.
-5. Войти под этим пользователем с новым паролем.
-```
-
-### Ситуация: login прошел, но пользователя выбрасывает обратно
-
-В DevTools → Network:
-
-```text
-POST /api/auth/login = 200
-GET  /api/auth/me    = 401 или 403
-```
-
-Возможные причины:
-
-```text
-- пользователь отключен;
-- организация отключена;
-- tokenVersion в JWT не совпадает с БД;
-- устаревший Redis cache security-state;
-- cookie/CSRF mismatch после ручных тестов.
-```
-
-Проверить состояние в БД:
-
-```sql
-select
-    u.email,
-    u.enabled as user_enabled,
-    u.token_version,
-    o.name as organization_name,
-    o.enabled as organization_enabled,
-    array_agg(r.name order by r.name) as roles
-from users u
-join organizations o on o.id = u.organization_id
-join user_roles ur on ur.user_id = u.id
-join roles r on r.id = ur.role_id
-where lower(u.email) = lower('ВСТАВЬ_EMAIL')
-group by
-    u.email,
-    u.enabled,
-    u.token_version,
-    o.name,
-    o.enabled;
-```
-
-Очистить Redis в local/dev:
-
-```bat
-docker exec -it safeai-redis redis-cli -a safeai_redis_password FLUSHALL
-```
-
-После этого перезапустить backend.
-
----
-
-## 9. Redis
-
-### Проверить переменные контейнера Redis
-
-```bat
-docker inspect safeai-redis --format "{{range .Config.Env}}{{println .}}{{end}}"
-```
-
-### Проверить команду запуска Redis
-
-```bat
-docker inspect safeai-redis --format "{{json .Config.Cmd}}"
-```
-
-### Очистить Redis полностью
-
-```bat
-docker exec -it safeai-redis redis-cli -a safeai_redis_password FLUSHALL
-```
-
-### Очистить только текущую Redis DB
-
-```bat
-docker exec -it safeai-redis redis-cli -a safeai_redis_password FLUSHDB
-```
-
-Для local/dev допустимо использовать `FLUSHALL`, если Redis не содержит ничего важного.
-
----
-
-## 10. Пароли
-
-Пароли в БД хранятся как BCrypt hash, а не как обычный текст.
-
-Это значит:
-
-```text
-- настоящий пароль из БД восстановить нельзя;
-- можно только проверить введенный пароль через backend login;
-- если пароль забыт — нужно задать новый пароль через Reset password или создать нового пользователя.
-```
-
-Минимальные требования password policy:
-
-```text
-минимум 12 символов
-строчная буква
-заглавная буква
-цифра
-спецсимвол
-не более 72 символов
-```
-
-Примеры локальных паролей:
-
-```text
-Admin_Dev_2026!Strong#91
-v2F4r1C4!#SD
-v2F4r1C4@$aD
-```
-
----
-
-## 11. Полезные команды
-
-### Запустить инфраструктуру
-
-```bat
-cd /d "D:\Java projects\Safeai-desk"
-docker compose -f infra/docker-compose.yml up -d postgres redis
-```
-
-Если используется local compose из папки `infra`:
-
-```bat
-cd /d "D:\Java projects\Safeai-desk\infra"
-docker compose -f docker-compose.local.yml up -d postgres redis
-```
-
-### Остановить инфраструктуру без удаления данных
-
-```bat
-cd /d "D:\Java projects\Safeai-desk\infra"
-docker compose -f docker-compose.local.yml down
-```
-
-### Пересоздать local DB и Redis volume
-
-```bat
-cd /d "D:\Java projects\Safeai-desk\infra"
-docker compose -f docker-compose.local.yml down -v
-docker compose -f docker-compose.local.yml up -d postgres redis
-```
-
-### Запустить backend локально
-
-```bat
-cd /d "D:\Java projects\Safeai-desk\backend"
-
-set SPRING_PROFILES_ACTIVE=local
-set SAFEAI_JWT_SECRET=safeai-local-development-secret-key-change-this-value-please-123456789
-set REDIS_PASSWORD=safeai_redis_password
-
-mvnw.cmd spring-boot:run
-```
-
-### Запустить frontend локально
-
-```bat
-cd /d "D:\Java projects\Safeai-desk\frontend"
-npm install
+```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk/frontend
+npm ci
 npm run dev
 ```
 
-### Проверить backend tests
+**Команды проверки:**
 
-```bat
-cd /d "D:\Java projects\Safeai-desk\backend"
-mvnw.cmd test
-```
+```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk/backend
+./mvnw test
+./mvnw -DskipTests compile
 
-### Проверить frontend build
-
-```bat
-cd /d "D:\Java projects\Safeai-desk\frontend"
+cd ../frontend
 npm run build
+npm test
 ```
 
----
-
-## 12. API-проверки через curl
-
-Browser-flow использует cookies и CSRF. Для ручной проверки через curl удобно сохранять cookies в файл.
-
-### Получить CSRF cookie
+### Windows (старый путь из оригинальной памятки)
 
 ```bat
-curl -i -c cookies.txt http://localhost:8080/api/auth/csrf
+cd /d "D:\Java projects\Safeai-desk\infra"
+docker compose -f docker-compose.local.yml up -d postgres redis
+cd /d "D:\Java projects\Safeai-desk\backend"
+mvnw.cmd spring-boot:run
 ```
 
-После этого нужно взять значение `XSRF-TOKEN` из `cookies.txt` и подставить в header `X-XSRF-TOKEN`.
+### Redis — только диагностика
 
-### Login через cookie jar
-
-```bat
-curl -i -b cookies.txt -c cookies.txt ^
-  -X POST http://localhost:8080/api/auth/login ^
-  -H "Content-Type: application/json" ^
-  -H "X-XSRF-TOKEN: ВСТАВЬ_XSRF_TOKEN" ^
-  -d "{\"email\":\"superadmin@test.com\",\"password\":\"Admin_Dev_2026!Strong#91\"}"
+```bash
+docker ps
+docker exec -it safeai-redis redis-cli PING
 ```
 
-### Проверить текущего пользователя через cookies
+Для Redis с аутентификацией использовать подходящие credentials из local `.env`.
+Не выводить пароль в history/логи без необходимости и не использовать публичный Redis.
+`FLUSHDB`/`FLUSHALL` — **разрушительные команды**, только для выделенной local БД
+после проверки номера базы, контейнера и того, что данные не нужны.
 
-```bat
-curl -i -b cookies.txt http://localhost:8080/api/auth/me
+### Пересоздание инфраструктуры
+
+```bash
+# НЕ ВЫПОЛНЯТЬ без проверки томов и бэкапа:
+# docker compose -f infra/docker-compose.local.yml down -v
 ```
 
-### Проверить список пользователей через cookies
+`down` без `-v` останавливает контейнеры без намеренного удаления volume.
 
-```bat
-curl -i -b cookies.txt http://localhost:8080/api/users
+## 9. Проверки API через curl
+
+Browser-flow использует HttpOnly cookie и CSRF. Cookie-файлы — локальные секреты;
+не добавлять их в Git. Ниже шаблон без пароля в аргументах shell.
+
+```bash
+# В локальной среде:
+curl -i -c /tmp/safeai-cookies.txt http://localhost:8080/api/auth/csrf
+# Затем извлечь XSRF-TOKEN из cookie jar и передать как X-XSRF-TOKEN.
+# Не копировать чужие cookies и токены в документацию.
 ```
 
----
-
-## 13. Быстрый regression checklist
-
-### Auth
+Ключевые endpoints для ручной диагностики:
 
 ```text
-[ ] SUPER_ADMIN входит успешно.
-[ ] ADMIN входит успешно.
-[ ] USER входит успешно.
-[ ] Неверный пароль возвращает понятную ошибку.
-[ ] После нескольких неверных попыток срабатывает login rate-limit.
-[ ] Logout очищает сессию.
+POST  /api/auth/login
+GET   /api/auth/me
+POST  /api/auth/logout
+GET   /api/chats
+POST  /api/chats
+POST  /api/chats/{chatId}/messages
+GET   /api/chats/{chatId}
 ```
 
-### Organizations
+Проверять формы и названия маршрутов по актуальным controllers в checkout.
 
-```text
-[ ] SUPER_ADMIN видит Organizations.
-[ ] SUPER_ADMIN создает новую организацию.
-[ ] SafeAI Platform не имеет кнопок Rename/Disable.
-[ ] ADMIN не видит Organizations в меню.
-[ ] USER не видит Organizations в меню.
-```
+## 10. Регрессионный чек-лист
 
-### Users
+### Auth / tenants
 
-```text
-[ ] SUPER_ADMIN видит пользователей всех организаций.
-[ ] SUPER_ADMIN вручную выбирает organization при создании пользователя.
-[ ] ADMIN видит только пользователей своей организации.
-[ ] ADMIN может создать только USER.
-[ ] USER не видит Users.
-[ ] Details работает.
-[ ] Edit user работает.
-[ ] Reset password работает.
-[ ] Enable/Disable работает.
-[ ] Make ADMIN доступен только SUPER_ADMIN.
-[ ] Make USER доступен только SUPER_ADMIN для ADMIN.
-[ ] Platform admin защищен от обычных действий.
-[ ] Success-сообщение исчезает через несколько секунд.
-```
+- [ ] SUPER_ADMIN входит и видит платформенный scope.
+- [ ] ADMIN и USER входят в свой tenant.
+- [ ] Неверный пароль и rate-limit дают ожидаемую ошибку.
+- [ ] Logout завершает сессию; старый refresh нельзя использовать.
+- [ ] ADMIN не получает чужих пользователей или tenant-данные.
+- [ ] Disable user/tenant блокирует доступ и новые разрешения на provider I/O.
 
-### Chat
+### Chat / V77
 
-```text
-[ ] USER создает чат.
-[ ] USER отправляет сообщение.
-[ ] ASSISTANT response появляется.
-[ ] При ошибке AI provider появляется FAILED assistant message.
-[ ] USER не видит чужие чаты.
-```
+- [ ] Пустой новый чат отображается как «Новый чат».
+- [ ] После первого принятого USER message появляется осмысленное название.
+- [ ] Последующие сообщения не перезаписывают `AUTO`.
+- [ ] Ручное переименование защищает `USER` от автоматической замены.
+- [ ] Retry с тем же `clientRequestId` не создаёт второе переименование.
+- [ ] При rollback название и turn меняются атомарно.
+- [ ] Записи со старым «Новый чат» обработаны согласно безопасной политике V77.
+- [ ] V77 не отключила trigger V59 и не изменила другие title.
+- [ ] Изоляция чатов по пользователю и организации работает.
 
-### Audit / Usage
+### AI / квоты / lease
 
-```text
-[ ] ADMIN видит audit только своей организации.
-[ ] SUPER_ADMIN видит global audit.
-[ ] ADMIN видит usage только своей организации.
-[ ] SUPER_ADMIN видит global usage.
-[ ] Фильтры dateFrom/dateTo работают как UTC inclusive/exclusive range.
-```
+- [ ] Route-bound `ChatQuotaReservation` сохраняет доказуемость upper bound.
+- [ ] Unknown pricing не превращается в FREE или стоимость `$0`.
+- [ ] Watchdog продлевает lease по времени PostgreSQL.
+- [ ] Stale `processing_token` не продлевает lease и не финализирует turn.
+- [ ] `AMBIGUOUS` не приводит к blind retry provider.
 
----
+### Docs / usage / audit
 
-## 14. Коммит и пуш с файлом длинного сообщения
+- [ ] Required audit не превращён в best-effort.
+- [ ] Knowledge ACL не открывает cross-tenant документы.
+- [ ] Отчёты usage не смешивают организации.
+- [ ] Список чатов в UI обновляет заголовок после отправки сообщения.
 
-Если есть файл `commit-message.txt`:
+## 11. Перед коммитом
 
-```bat
-cd /d "D:\Java projects\Safeai-desk"
-
+```bash
+cd ~/Workspace/Projects/Products/SafeAI-Desk
 git status
-git add .
-
-git restore --staged backend/.env
-git restore --staged docs/local/TEST_ACCOUNTS.local.md
-
+git check-ignore -v docs/local/TEST_ACCOUNTS.local.md
+git add -A
+git restore --staged commit-message.txt
+git diff --cached --name-only
+git diff --cached --stat
+git diff --cached
 git commit -F commit-message.txt
+git log -1 --stat
 git push
 ```
 
-Если ветка новая:
+Не продолжать, если `git diff --cached --name-only` содержит `.env`, приватные ключи,
+локальные cookie-файлы, эту памятку или иные credentials.
 
-```bat
-git branch --show-current
-git push -u origin ИМЯ_ВЕТКИ
-```
+## 12. Журнал изменений тестовых данных
 
----
+| Дата | Объект / email | Действие | Результат / замечание |
+|---|---|---|---|
+| — | — | — | — |
+| — | — | — | — |
+| — | — | — | — |
+| — | — | — | — |
 
-## 15. Важно перед коммитом
-
-В staged не должно быть:
-
-```text
-backend/.env
-backend/.env.prod
-docs/local/TEST_ACCOUNTS.local.md
-```
-
-Проверить:
-
-```bat
-git status
-```
-
-Убрать из staged:
-
-```bat
-git restore --staged backend/.env
-git restore --staged backend/.env.prod
-git restore --staged docs/local/TEST_ACCOUNTS.local.md
-```
-
-Если файл с тестовыми аккаунтами уже был случайно закоммичен, его нужно удалить из Git tracking:
-
-```bat
-git rm --cached docs/local/TEST_ACCOUNTS.local.md
-git commit -m "chore: убрать локальную памятку с тестовыми аккаунтами из git"
-```
-
----
-
-## 16. Короткая памятка
-
-```text
-SUPER_ADMIN создает организации и первых ADMIN.
-ADMIN создает USER только внутри своей организации.
-USER работает только с Chat.
-SafeAI Platform — только для SUPER_ADMIN.
-Пароль нельзя восстановить из БД, только сбросить.
-POST /api/auth/login = 401 означает неверные credentials.
-POST /api/auth/login = 200, затем /api/auth/me = 401/403 означает проблему security-state/cookies/cache.
-```
-
-
-
-Выполни по порядку:
-
-cd /d "D:\Java projects\Safeai-desk\frontend"
-
-Удалить старые зависимости:
-
-rmdir /s /q node_modules
-
-Удалить старый lock-файл:
-
-del package-lock.json
-
-Установить всё заново:
-
-npm install
-
-После установки проверить Vitest:
-
-npm list vitest
-
-Должно появиться примерно:
-
-safeai-desk-frontend@0.0.1
-└── vitest@4.1.10
-
-Затем:
-
-npm run build
-
-и:
-
-npm test
-
-Также проверь расположение setup.ts:
-
-dir /s setup.ts
+**Порядок ведения:** после изменения пароля, роли, организации или статуса
+сразу обновить строку в реестре и добавить короткую запись в этот журнал.

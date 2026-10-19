@@ -1,3 +1,4 @@
+/* frontend/src/components/chat/ChatMessageViews.tsx */
 import type { KnowledgeMode } from '../../api/chatApi'
 import type { AnswerPassport } from '../../api/chatApi'
 import type { DisplayMessage, PendingTurn } from '../../pages/chatPage.helpers'
@@ -52,8 +53,11 @@ export function MessageView({
                             : 'Система'}
                 </strong>
                 {message.role === 'ASSISTANT' && mockModel && (
-                    <span className="message__demo-badge">
-                        Демо-режим
+                    <span
+                        className="message__demo-badge"
+                        title="Тестовый mock-провайдер, не внешняя языковая модель"
+                    >
+                        Тестовый ответ · mock
                     </span>
                 )}
             </div>

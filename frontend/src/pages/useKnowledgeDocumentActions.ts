@@ -1,4 +1,5 @@
 import {
+    useRef,
     useState,
 } from 'react'
 import {
@@ -33,6 +34,8 @@ export function useKnowledgeDocumentActions({
         reindexingDocumentId,
         setReindexingDocumentId,
     ] = useState('')
+    const reindexInFlightRef = useRef(false)
+    const [reindexNotice, setReindexNotice] = useState('')
     const [
         openingDocumentId,
         setOpeningDocumentId,
@@ -174,13 +177,20 @@ export function useKnowledgeDocumentActions({
         document: KnowledgeDocument,
     ) {
         if (
-            reindexingDocumentId
+            reindexInFlightRef.current
             || !canEditDocuments
+            || !document.currentVersionId
+            || document.status === 'PENDING'
+            || document.status === 'VALIDATING'
+            || document.status === 'EXTRACTING'
+            || document.status === 'CHUNKING'
         ) {
             return
         }
 
+        reindexInFlightRef.current = true
         setReindexingDocumentId(document.id)
+        setReindexNotice('')
         setError('')
 
         try {
@@ -188,10 +198,21 @@ export function useKnowledgeDocumentActions({
                 knowledgeBaseId,
                 document.id,
             )
-            await Promise.all([
+            setReindexNotice(
+                `Переиндексация «${document.name}» поставлена в очередь. `
+                + 'Статусы обновляются после загрузки данных с сервера.',
+            )
+            const refresh = await Promise.allSettled([
                 loadOverview(),
                 loadDocuments(documentPage),
             ])
+            if (refresh.some((result) => result.status === 'rejected')) {
+                setError(
+                    'Переиндексация принята сервером, но обновить состояние '
+                    + 'не удалось. Обновите список документов. '
+                    + 'Не запускайте операцию повторно без проверки статуса.',
+                )
+            }
         } catch (reindexFailure) {
             setError(
                 getApiErrorMessage(
@@ -200,12 +221,14 @@ export function useKnowledgeDocumentActions({
                 ),
             )
         } finally {
+            reindexInFlightRef.current = false
             setReindexingDocumentId('')
         }
     }
 
     return {
         reindexingDocumentId,
+        reindexNotice,
         openingDocumentId,
         downloadingDocumentId,
         openDocumentPreview,

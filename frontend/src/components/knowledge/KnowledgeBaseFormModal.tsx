@@ -8,10 +8,12 @@ import type {
 } from '../../api/knowledgeApi'
 
 import {
+    ApiError,
     getApiErrorMessage,
 } from '../../api/http'
 
 import Modal from '../Modal'
+import './KnowledgeBaseFormModal.css'
 
 export type KnowledgeBaseFormValue = {
     name: string
@@ -27,6 +29,7 @@ type KnowledgeBaseFormModalProps = {
     busy: boolean
     allowEnabled?: boolean
     onClose: () => void
+    onReload?: () => Promise<void>
     onSubmit:
         (
             form: KnowledgeBaseFormValue,
@@ -43,6 +46,7 @@ function KnowledgeBaseFormModal({
     busy,
     allowEnabled = false,
     onClose,
+    onReload,
     onSubmit,
 }: KnowledgeBaseFormModalProps) {
     const [
@@ -56,6 +60,17 @@ function KnowledgeBaseFormModal({
         error,
         setError,
     ] = useState('')
+    const [conflict, setConflict] = useState(false)
+    const [reloading, setReloading] = useState(false)
+    const [submitting, setSubmitting] = useState(false)
+    const reloadInFlightRef = useRef(false)
+
+    const visibilityNarrowed =
+        allowEnabled
+        && initial.visibility === 'ORGANIZATION'
+        && form.visibility === 'MEMBERS'
+    const disabling =
+        allowEnabled && initial.enabled && !form.enabled
 
     /*
      * busy приходит от parent и может обновиться
@@ -71,13 +86,15 @@ function KnowledgeBaseFormModal({
         form.name.trim()
 
     const submitDisabled =
-        busy
+        busy || submitting || reloading || conflict
         || normalizedName.length === 0
 
     async function submitForm():
         Promise<void> {
         if (
             busy
+            || reloading
+            || conflict
             || submitInFlightRef.current
         ) {
             return
@@ -114,6 +131,7 @@ function KnowledgeBaseFormModal({
         }
 
         submitInFlightRef.current = true
+        setSubmitting(true)
         setError('')
 
         try {
@@ -127,15 +145,51 @@ function KnowledgeBaseFormModal({
                     form.enabled,
             })
         } catch (submitError) {
-            setError(
-                getApiErrorMessage(
+            // Duplicate name also returns 409: only stale optimistic-version
+            // conflicts require a reload and block accidental resubmission.
+            if (
+                onReload
+                && submitError instanceof ApiError
+                && submitError.status === 409
+                && /expectedVersion|верси|измен[её]н другим запросом/iu.test(
+                    submitError.message,
+                )
+            ) {
+                setConflict(true)
+                setError(
+                    'База знаний была изменена параллельно. '
+                    + 'Сохранение не выполнено. Обновите данные '
+                    + 'перед повторным редактированием.',
+                )
+            } else {
+                setError(getApiErrorMessage(
                     submitError,
                     'Не удалось сохранить базу знаний.',
-                ),
-            )
+                ))
+            }
         } finally {
-            submitInFlightRef.current =
-                false
+            submitInFlightRef.current = false
+            setSubmitting(false)
+        }
+    }
+
+    async function reloadAfterConflict(): Promise<void> {
+        if (!onReload || reloadInFlightRef.current || busy || submitting) {
+            return
+        }
+        reloadInFlightRef.current = true
+        setReloading(true)
+        try {
+            await onReload()
+            // Parent remounts this form using the new resource version.
+        } catch (reloadError) {
+            setError(getApiErrorMessage(
+                reloadError,
+                'Не удалось загрузить актуальные настройки. Повторите попытку.',
+            ))
+        } finally {
+            reloadInFlightRef.current = false
+            setReloading(false)
         }
     }
 
@@ -207,7 +261,7 @@ function KnowledgeBaseFormModal({
         <Modal
             title={title}
             onClose={onClose}
-            closeDisabled={busy}
+            closeDisabled={busy || submitting || reloading}
             size="md"
         >
             <form
@@ -235,7 +289,7 @@ function KnowledgeBaseFormModal({
                         maxLength={
                             MAX_NAME_LENGTH
                         }
-                        disabled={busy}
+                        disabled={busy || submitting || reloading}
                         required
                         autoFocus
                         autoComplete="off"
@@ -265,7 +319,7 @@ function KnowledgeBaseFormModal({
                             MAX_DESCRIPTION_LENGTH
                         }
                         rows={5}
-                        disabled={busy}
+                        disabled={busy || submitting || reloading}
                         onChange={(event) =>
                             updateDescription(
                                 event.target.value,
@@ -297,7 +351,7 @@ function KnowledgeBaseFormModal({
                             name="knowledge-base-visibility"
                             value="ORGANIZATION"
                             checked={form.visibility === 'ORGANIZATION'}
-                            disabled={busy}
+                            disabled={busy || submitting || reloading}
                             onChange={(event) =>
                                 updateVisibility(event.target.value)
                             }
@@ -306,8 +360,9 @@ function KnowledgeBaseFormModal({
                         <span>
                             <strong>Все сотрудники организации</strong>
                             <small>
-                                Любой активный сотрудник вашей организации может
-                                находить и использовать эту базу в AI-чате.
+                                Активные сотрудники получают доступ к чтению,
+                                скачиванию и использованию документов в AI-чате.
+                                Загрузка и управление требуют отдельно назначенных прав.
                             </small>
                         </span>
                     </label>
@@ -324,7 +379,7 @@ function KnowledgeBaseFormModal({
                             name="knowledge-base-visibility"
                             value="MEMBERS"
                             checked={form.visibility === 'MEMBERS'}
-                            disabled={busy}
+                            disabled={busy || submitting || reloading}
                             onChange={(event) =>
                                 updateVisibility(event.target.value)
                             }
@@ -333,12 +388,38 @@ function KnowledgeBaseFormModal({
                         <span>
                             <strong>Только приглашённые сотрудники</strong>
                             <small>
-                                Базу видят только сотрудники, которых добавили
-                                на вкладке «Доступ».
+                                Новые обращения разрешены приглашённым участникам
+                                с соответствующими правами. Администраторы организации
+                                сохраняют административный доступ.
                             </small>
                         </span>
                     </label>
                 </fieldset>
+
+                <p className="knowledge-base-form__access-note">
+                    Изменение видимости применяется к новым обращениям к базе
+                    и документам. Уже сохранённые сообщения чатов и история
+                    ответов не удаляются. Доступ к будущему поиску проверяет backend.
+                </p>
+
+                {(visibilityNarrowed || disabling) && (
+                    <div className="knowledge-base-form__warning" role="note">
+                        <strong>Изменение доступности</strong>
+                        {visibilityNarrowed && (
+                            <p>
+                                Сотрудники без приглашения больше не смогут
+                                обращаться к базе в новых запросах.
+                            </p>
+                        )}
+                        {disabling && (
+                            <p>
+                                Отключённая база станет недоступна обычным
+                                сотрудникам для новых операций.
+                            </p>
+                        )}
+                        <p>Ранее сохранённые ответы останутся в истории чатов.</p>
+                    </div>
+                )}
 
                 {allowEnabled && (
                     <label
@@ -351,7 +432,7 @@ function KnowledgeBaseFormModal({
                             checked={
                                 form.enabled
                             }
-                            disabled={busy}
+                            disabled={busy || submitting || reloading}
                             onChange={(event) =>
                                 updateEnabled(
                                     event.target
@@ -376,6 +457,23 @@ function KnowledgeBaseFormModal({
                     </div>
                 )}
 
+                {conflict && onReload && (
+                    <div className="knowledge-base-form__conflict" role="status">
+                        <p>
+                            При обновлении несохранённые изменения этой формы
+                            будут заменены актуальными данными с сервера.
+                        </p>
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={busy || submitting || reloading}
+                            onClick={() => void reloadAfterConflict()}
+                        >
+                            {reloading ? 'Обновляем…' : 'Загрузить актуальные настройки'}
+                        </button>
+                    </div>
+                )}
+
                 <div
                     className={
                         'modal-actions'
@@ -386,7 +484,7 @@ function KnowledgeBaseFormModal({
                         className={
                             'secondary-button'
                         }
-                        disabled={busy}
+                        disabled={busy || submitting || reloading}
                         onClick={onClose}
                     >
                         Отмена
@@ -398,7 +496,7 @@ function KnowledgeBaseFormModal({
                             submitDisabled
                         }
                     >
-                        {busy
+                        {busy || submitting
                             ? 'Сохранение...'
                             : submitText}
                     </button>

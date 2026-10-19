@@ -107,6 +107,7 @@ function KnowledgeDetailsPage() {
                 reindexingDocumentId={
                     documentActions.reindexingDocumentId
                 }
+                reindexNotice={documentActions.reindexNotice}
                 openingDocumentId={
                     documentActions.openingDocumentId
                 }

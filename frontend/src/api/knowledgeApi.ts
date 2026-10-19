@@ -135,6 +135,37 @@ type RequestOptions = {
     signal?: AbortSignal
 }
 
+/** Applied by the server before pagination; not a client-side page filter. */
+export type KnowledgeBaseListFilters = {
+    query?: string
+    enabled?: boolean
+    visibility?: KnowledgeBaseVisibility
+}
+
+export async function searchKnowledgeBases(
+    page: number,
+    size: number,
+    filters: KnowledgeBaseListFilters,
+    options: RequestOptions = {},
+): Promise<PageResponse<KnowledgeBase>> {
+    const response = await apiRequest<unknown>(
+        `${BASE_PATH}/search` + buildQueryString({
+            page: normalizePage(page),
+            size: normalizePageSize(size, 12, 100),
+            query: filters.query?.trim() || undefined,
+            enabled: filters.enabled,
+            visibility: filters.visibility,
+        }),
+        {
+            method: 'GET',
+            signal: options.signal,
+            timeoutMs: API_TIMEOUTS.default,
+        },
+    )
+
+    return parsePageResponse(response, parseKnowledgeBase)
+}
+
 /*
  * Возвращает доступные текущему пользователю
  * Knowledge Bases.

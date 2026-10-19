@@ -1118,3 +1118,242 @@
         transition: none;
     }
 }
+
+/* ============================================================
+   DOCUMENT UX: readable names, one lower viewport, inline actions
+   No modifications to ResizableScrollRegion or shared tables.
+   ============================================================ */
+
+.knowledge-details-page .knowledge-documents-scroll {
+    /* One dedicated viewport handles X and Y: no nested scroll container. */
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+.knowledge-documents-section__tools {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.knowledge-documents-section__tools > strong {
+    display: inline-flex;
+    min-width: 34px;
+    min-height: 34px;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    border: 1px solid #c7d2fe;
+    border-radius: 9px;
+    background: #eef2ff;
+    color: #4338ca;
+    font-size: 14px;
+}
+
+.knowledge-documents-section__refresh {
+    min-height: 34px;
+    padding: 7px 10px;
+    font-size: 12px;
+}
+
+.knowledge-documents__notice {
+    margin: 10px 12px;
+    padding: 10px 12px;
+    border: 1px solid #bbf7d0;
+    border-radius: 10px;
+    background: #f0fdf4;
+    color: #166534;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.knowledge-document-name__title strong {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+}
+
+.knowledge-document-file-link {
+    min-width: 0;
+    max-width: 100%;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-document-file-link::after {
+    /* This opens a preview, while the separate action downloads the file. */
+    content: "↗";
+}
+
+.knowledge-document-status-cell {
+    display: grid;
+    justify-items: start;
+    gap: 5px;
+    max-width: 245px;
+}
+
+.knowledge-document-status-cell small {
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.knowledge-document-status-cell__issue {
+    color: #9f1239 !important;
+}
+
+.document-actions {
+    align-items: flex-start;
+    gap: 7px;
+}
+
+.knowledge-document-more {
+    min-width: 148px;
+    max-width: 100%;
+}
+
+.knowledge-document-more > summary {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #1e293b;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+.knowledge-document-more > summary::-webkit-details-marker {
+    display: none;
+}
+
+.knowledge-document-more > summary::after {
+    content: "▾";
+    font-size: 11px;
+}
+
+.knowledge-document-more[open] > summary::after {
+    content: "▴";
+}
+
+.knowledge-document-more > summary:hover,
+.knowledge-document-more > summary:focus-visible {
+    border-color: #60a5fa;
+    background: #eff6ff;
+}
+
+.knowledge-document-more__content {
+    display: grid;
+    justify-items: stretch;
+    gap: 6px;
+    min-width: 170px;
+    max-width: 100%;
+    margin-top: 7px;
+    padding: 8px;
+    border: 1px solid #dbe4ef;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+
+.knowledge-document-more__content .secondary-button {
+    justify-content: flex-start;
+    white-space: normal;
+    text-align: left;
+}
+
+/* At intermediate widths the single table viewport scrolls horizontally.
+   No second scrollbar is introduced inside the Actions cell. */
+@media (max-width: 760px) {
+    .knowledge-documents-section__tools {
+        justify-content: flex-start;
+    }
+
+    .knowledge-details-page .knowledge-documents-scroll {
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    .knowledge-documents {
+        display: block;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .knowledge-documents thead {
+        display: none;
+    }
+
+    .knowledge-documents tbody {
+        display: grid;
+        gap: 12px;
+        padding: 10px;
+    }
+
+    .knowledge-documents tbody tr {
+        display: grid;
+        min-width: 0;
+        padding: 10px;
+        border: 1px solid #dbe4ef;
+        border-radius: 12px;
+        background: #ffffff;
+    }
+
+    .knowledge-documents td,
+    .knowledge-documents td:first-child {
+        display: grid;
+        grid-template-columns: minmax(95px, 34%) minmax(0, 1fr);
+        gap: 10px;
+        min-width: 0;
+        padding: 9px 3px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .knowledge-documents td:last-child {
+        border-bottom: 0;
+    }
+
+    .knowledge-documents td::before {
+        content: attr(data-label);
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .knowledge-document-status-cell {
+        min-width: 0;
+    }
+
+    .document-actions {
+        flex-direction: column;
+    }
+
+    .knowledge-document-more {
+        width: 100%;
+    }
+
+    .knowledge-document-more__content {
+        min-width: 0;
+    }
+}
+
+@media (max-width: 440px) {
+    .knowledge-documents-section__tools {
+        width: 100%;
+    }
+
+    .knowledge-documents td,
+    .knowledge-documents td:first-child {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 5px;
+    }
+}

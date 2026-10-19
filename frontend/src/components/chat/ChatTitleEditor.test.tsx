@@ -80,4 +80,45 @@ describe('ChatTitleEditor', () => {
             .toHaveTextContent('Введите название чата.')
         expect(onSave).not.toHaveBeenCalled()
     })
+
+    it('opens directly from history and closes only after a successful rename', async () => {
+        const onSave = vi.fn().mockResolvedValue(undefined)
+        const onSaved = vi.fn()
+        const onCancelEditing = vi.fn()
+        render(
+            <ChatTitleEditor
+                title="Предыдущее название"
+                onSave={onSave}
+                initiallyEditing
+                onSaved={onSaved}
+                onCancelEditing={onCancelEditing}
+            />,
+        )
+
+        const input = screen.getByRole('textbox', { name: 'Название чата' })
+        fireEvent.change(input, { target: { value: 'Новое название' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+        await waitFor(() => {
+            expect(onSave).toHaveBeenCalledWith('Новое название')
+            expect(onSaved).toHaveBeenCalledTimes(1)
+        })
+        expect(onCancelEditing).not.toHaveBeenCalled()
+    })
+
+    it('does not modify a title when the history dialog is cancelled', () => {
+        const onSave = vi.fn().mockResolvedValue(undefined)
+        const onCancelEditing = vi.fn()
+        render(
+            <ChatTitleEditor
+                title="Ручное название"
+                onSave={onSave}
+                initiallyEditing
+                onCancelEditing={onCancelEditing}
+            />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+        expect(onSave).not.toHaveBeenCalled()
+        expect(onCancelEditing).toHaveBeenCalledTimes(1)
+    })
+
 })

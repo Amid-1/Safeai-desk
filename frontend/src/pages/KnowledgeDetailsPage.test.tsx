@@ -122,6 +122,8 @@ const DOCUMENT:
         1,
     currentVersionId:
         'ce73e260-0e85-47f0-9d3e-4bab1a833150',
+    searchableVersionId:
+        'ce73e260-0e85-47f0-9d3e-4bab1a833150',
     versionNumber:
         1,
     originalFilename:
@@ -323,6 +325,35 @@ describe(
             })
         })
 
+        it('не запускает reindex, пока документ обрабатывается', async () => {
+            getKnowledgeDocumentsMock.mockResolvedValue({
+                content: [{ ...DOCUMENT, status: 'CHUNKING' }],
+                page: 0, size: 50, totalElements: 1, totalPages: 1,
+            })
+            renderPage()
+            fireEvent.click(await screen.findByText('Другие действия'))
+            expect(screen.getByRole('button', {
+                name: 'Переиндексировать',
+            })).toBeDisabled()
+            expect(reindexKnowledgeDocumentMock).not.toHaveBeenCalled()
+        })
+
+        it('различает текущую и ранее опубликованную поисковую версию', async () => {
+            getKnowledgeDocumentsMock.mockResolvedValue({
+                content: [{
+                    ...DOCUMENT,
+                    status: 'FAILED',
+                    searchableVersionId: 'f728ad87-e91f-4db5-a1c5-c83d88dc6a27',
+                }],
+                page: 0, size: 50, totalElements: 1, totalPages: 1,
+            })
+            renderPage()
+            expect(await screen.findByText(/Предыдущая поисковая версия сохранена/))
+                .toBeInTheDocument()
+            expect(screen.getByText(/Точная причина не передаётся этим API/))
+                .toBeInTheDocument()
+        })
+
         it(
             'file picker разрешает production whitelist из 10 форматов',
             async () => {
@@ -453,6 +484,10 @@ describe(
         it(
             'показывает здоровье индекса и запускает reindex текущей версии',
             async () => {
+                getKnowledgeDocumentsMock.mockResolvedValue({
+                    content: [{ ...DOCUMENT, status: 'READY' }],
+                    page: 0, size: 50, totalElements: 1, totalPages: 1,
+                })
                 renderPage()
 
                 expect(
@@ -468,6 +503,7 @@ describe(
                 ).toBeInTheDocument()
                 expect(screen.getByText('12')).toBeInTheDocument()
 
+                fireEvent.click(screen.getByText('Другие действия'))
                 fireEvent.click(screen.getByRole('button', {
                     name: 'Переиндексировать',
                 }))

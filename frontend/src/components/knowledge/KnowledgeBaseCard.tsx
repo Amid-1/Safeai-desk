@@ -62,7 +62,14 @@ function KnowledgeBaseCard({
         >
             <div className="knowledge-card__top">
                 <div>
-                    <h2><Link to={`/knowledge/${knowledgeBase.id}`}>{knowledgeBase.name}</Link></h2>
+                    <h2>
+                        <Link
+                            to={`/knowledge/${knowledgeBase.id}`}
+                            title={knowledgeBase.name}
+                        >
+                            {knowledgeBase.name}
+                        </Link>
+                    </h2>
 
                     <span
                         className={
@@ -95,7 +102,10 @@ function KnowledgeBaseCard({
                 </span>
             </div>
 
-            <p className="knowledge-card__description">
+            <p
+                className="knowledge-card__description"
+                title={knowledgeBase.description ?? undefined}
+            >
                 {
                     knowledgeBase.description
                     ?? 'Описание не задано.'

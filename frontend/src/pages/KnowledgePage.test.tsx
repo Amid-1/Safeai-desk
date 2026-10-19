@@ -1,20 +1,15 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AuthUser } from '../api/authApi'
+import { ApiError } from '../api/http'
 import {
-    render,
-    screen,
-} from '@testing-library/react'
-import {
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi,
-} from 'vitest'
-import type {
-    AuthUser,
-} from '../api/authApi'
-import {
+    getKnowledgeBase,
     getKnowledgeBases,
+    searchKnowledgeBases,
+    updateKnowledgeBase,
 } from '../api/knowledgeApi'
+import type { KnowledgeBase } from '../api/knowledgeApi'
 import KnowledgePage from './KnowledgePage'
 
 const authMock = vi.hoisted(() => ({
@@ -27,86 +22,206 @@ vi.mock('../auth/useAuth', () => ({
 
 vi.mock('../api/knowledgeApi', () => ({
     getKnowledgeBases: vi.fn(),
+    getKnowledgeBase: vi.fn(),
+    searchKnowledgeBases: vi.fn(),
     createKnowledgeBase: vi.fn(),
     updateKnowledgeBase: vi.fn(),
     getKnowledgeBaseMembers: vi.fn(),
-    searchKnowledgeMemberCandidates:
-        vi.fn(),
+    searchKnowledgeMemberCandidates: vi.fn(),
     addKnowledgeBaseMember: vi.fn(),
     updateKnowledgeBaseMember: vi.fn(),
     removeKnowledgeBaseMember: vi.fn(),
 }))
 
-const getKnowledgeBasesMock =
-    vi.mocked(getKnowledgeBases)
+vi.mock('../api/knowledgeDocumentApi', () => ({
+    getKnowledgeHealth: vi.fn().mockResolvedValue({
+        totalDocuments: 4,
+        searchableDocuments: 3,
+        pendingDocuments: 1,
+        processingDocuments: 0,
+    }),
+}))
 
-function user(
-    role: 'ADMIN' | 'USER',
-): AuthUser {
+const listMock = vi.mocked(getKnowledgeBases)
+const detailMock = vi.mocked(getKnowledgeBase)
+const updateMock = vi.mocked(updateKnowledgeBase)
+const searchMock = vi.mocked(searchKnowledgeBases)
+
+function currentUser(role: 'ADMIN' | 'USER'): AuthUser {
     return {
-        id:
-            '11111111-1111-4111-8111-111111111111',
-        organizationId:
-            'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        email:
-            'user@safeai.test',
+        id: '11111111-1111-4111-8111-111111111111',
+        organizationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        email: 'user@safeai.test',
         fullName: null,
         enabled: true,
         roles: [role],
     }
 }
 
+const testBase: KnowledgeBase = {
+    id: '11111111-1111-4111-8111-111111111111',
+    organizationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    name: 'Тестовая база',
+    description: 'Документы для проверки',
+    visibility: 'ORGANIZATION',
+    enabled: true,
+    createdByUserId: '11111111-1111-4111-8111-111111111111',
+    version: 1,
+    createdAt: '2026-10-17T00:00:00Z',
+    updatedAt: '2026-10-17T00:00:00Z',
+}
+
+function displayPage() {
+    return render(
+        <MemoryRouter>
+            <KnowledgePage />
+        </MemoryRouter>,
+    )
+}
+
 describe('KnowledgePage', () => {
     beforeEach(() => {
         vi.clearAllMocks()
-
-        getKnowledgeBasesMock
-            .mockResolvedValue({
-                content: [],
-                page: 0,
-                size: 24,
-                totalElements: 0,
-                totalPages: 0,
-            })
+        authMock.currentUser = currentUser('ADMIN')
+        listMock.mockResolvedValue({
+            content: [], page: 0, size: 12,
+            totalElements: 0, totalPages: 0,
+        })
+        searchMock.mockResolvedValue({
+            content: [], page: 0, size: 12,
+            totalElements: 0, totalPages: 0,
+        })
     })
 
-    it('ADMIN видит создание базы знаний', async () => {
-        authMock.currentUser =
-            user('ADMIN')
+    it('ADMIN sees create action and filter toolbar', async () => {
+        displayPage()
+        expect(await screen.findByRole('button', {
+            name: 'Создать базу знаний',
+        })).toBeInTheDocument()
+        expect(screen.getByRole('searchbox', {
+            name: 'Поиск по названию',
+        })).toBeInTheDocument()
+        expect(listMock).toHaveBeenCalledWith(0, 12, expect.any(Object))
+    })
 
-        render(<KnowledgePage />)
+    it('USER sees only read-only actions and no disabled filter', async () => {
+        authMock.currentUser = currentUser('USER')
+        displayPage()
+        expect(await screen.findByText(
+            'Вам пока не доступна ни одна база знаний.',
+        )).toBeInTheDocument()
+        expect(screen.queryByRole('button', {
+            name: 'Создать базу знаний',
+        })).not.toBeInTheDocument()
+        expect(screen.queryByRole('option', {
+            name: 'Отключённые',
+        })).not.toBeInTheDocument()
+    })
 
-        expect(
-            await screen.findByRole(
-                'button',
+    it('filters all server pages, not just the visible 12 cards', async () => {
+        displayPage()
+        await screen.findByText('Баз знаний пока нет')
+        fireEvent.change(screen.getByRole('searchbox', {
+            name: 'Поиск по названию',
+        }), { target: { value: 'Тестовая' } })
+
+        await waitFor(() => {
+            expect(searchMock).toHaveBeenCalledWith(
+                0, 12,
                 {
-                    name:
-                        'Создать базу знаний',
+                    query: 'Тестовая',
+                    enabled: undefined,
+                    visibility: undefined,
                 },
-            ),
-        ).toBeInTheDocument()
+                expect.objectContaining({ signal: expect.any(AbortSignal) }),
+            )
+        })
+        expect(await screen.findByText('Ничего не найдено')).toBeInTheDocument()
     })
 
-    it('USER получает read-only Knowledge UI', async () => {
-        authMock.currentUser =
-            user('USER')
+    it('filters by activity and visibility; reset restores old listing', async () => {
+        displayPage()
+        await screen.findByText('Баз знаний пока нет')
 
-        render(<KnowledgePage />)
+        fireEvent.change(screen.getByRole('combobox', { name: 'Активность' }), {
+            target: { value: 'disabled' },
+        })
+        fireEvent.change(screen.getByRole('combobox', { name: 'Доступность' }), {
+            target: { value: 'MEMBERS' },
+        })
+        await waitFor(() => {
+            expect(searchMock).toHaveBeenCalledWith(
+                0, 12,
+                { query: undefined, enabled: false, visibility: 'MEMBERS' },
+                expect.any(Object),
+            )
+        })
 
-        expect(
-            await screen.findByText(
-                'Вам пока не доступна ни одна база знаний.',
-            ),
-        ).toBeInTheDocument()
-
-        expect(
-            screen.queryByRole(
-                'button',
-                {
-                    name:
-                        'Создать базу знаний',
-                },
-            ),
-        ).not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Сбросить фильтры' }))
+        await waitFor(() => {
+            expect(listMock.mock.calls.length).toBeGreaterThan(1)
+        })
     })
+
+    it('renders paginated cards with their original access/settings controls', async () => {
+        listMock.mockResolvedValue({
+            content: [testBase], page: 0, size: 12,
+            totalElements: 13, totalPages: 2,
+        })
+        displayPage()
+        expect(await screen.findByRole('link', {
+            name: 'Тестовая база',
+        })).toBeInTheDocument()
+        expect(screen.getByRole('button', {
+            name: /Доступ/i,
+        })).toBeInTheDocument()
+        expect(screen.getByRole('button', {
+            name: /Настройки/i,
+        })).toBeInTheDocument()
+        expect(screen.getByRole('navigation', {
+            name: 'Пагинация баз знаний',
+        })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Вперёд' }))
+        await waitFor(() => {
+            expect(listMock).toHaveBeenCalledWith(1, 12, expect.any(Object))
+        })
+    })
+    it('обновляет expectedVersion после конкурентного редактирования', async () => {
+        listMock.mockResolvedValue({
+            content: [testBase], page: 0, size: 12,
+            totalElements: 1, totalPages: 1,
+        })
+        updateMock.mockRejectedValueOnce(new ApiError(
+            'База знаний уже изменён другим запросом: expectedVersion=1, actualVersion=2',
+            { status: 409, error: 'CONFLICT' },
+            409,
+        ))
+        detailMock.mockResolvedValue({
+            ...testBase,
+            name: 'Настройки после правки другого ADMIN',
+            version: 2,
+        })
+        updateMock.mockResolvedValue({ ...testBase, version: 3 })
+
+        displayPage()
+        fireEvent.click(await screen.findByRole('button', { name: /Настройки/i }))
+        fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+        expect(await screen.findByText(/База знаний была изменена параллельно/))
+            .toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', {
+            name: 'Загрузить актуальные настройки',
+        }))
+        await waitFor(() => expect(detailMock).toHaveBeenCalledWith(testBase.id))
+        await waitFor(() => expect(screen.getByRole('textbox', {
+            name: 'Название',
+        })).toHaveValue('Настройки после правки другого ADMIN'))
+
+        fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+        await waitFor(() => expect(updateMock).toHaveBeenLastCalledWith(
+            testBase.id,
+            expect.objectContaining({ expectedVersion: 2 }),
+        ))
+    })
+
 })

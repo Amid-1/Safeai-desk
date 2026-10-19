@@ -1,0 +1,46 @@
+/* Component-scoped settings explanations; other modal styles remain unchanged. */
+.knowledge-base-form__access-note {
+    margin: 2px 0 0;
+    padding: 10px 12px;
+    border: 1px solid #dbeafe;
+    border-radius: 10px;
+    background: #f8fbff;
+    color: #475569;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.knowledge-base-form__warning {
+    display: grid;
+    gap: 5px;
+    padding: 11px 13px;
+    border: 1px solid #fcd34d;
+    border-radius: 10px;
+    background: #fffbeb;
+    color: #78350f;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.knowledge-base-form__warning p,
+.knowledge-base-form__conflict p {
+    margin: 0;
+}
+
+.knowledge-base-form__conflict {
+    display: grid;
+    justify-items: start;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid #fcd34d;
+    border-radius: 10px;
+    background: #fffbeb;
+    color: #78350f;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.knowledge-base-form__conflict button {
+    max-width: 100%;
+    white-space: normal;
+}

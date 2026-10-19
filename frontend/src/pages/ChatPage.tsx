@@ -60,6 +60,7 @@ import {
     mergeChatDetails,
     mergeChats,
     mergeMessages,
+    isMockModel,
     moveChatToTop,
     normalizeMessageContent,
 } from './chatPage.helpers'
@@ -69,18 +70,14 @@ import type {
 import {
     createSecureUuid,
 } from '../utils/secureUuid'
-import {
-    formatDateTime,
-} from '../utils/format'
-
 import ChatTitleEditor from '../components/chat/ChatTitleEditor'
+import ChatHistoryRow from '../components/chat/ChatHistoryRow'
 
 import { MessageView, PendingTurnState } from '../components/chat/ChatMessageViews'
 import {
     delay,
     failureMessage,
     getPendingLabel,
-    getPendingShortLabel,
     getRetryAfterSeconds,
     isRequestAborted,
 } from './chatPageSupport'
@@ -211,6 +208,10 @@ function ChatPageContent() {
         useState(false)
     const [chatToArchive, setChatToArchive] =
         useState<Chat | null>(null)
+    const [chatToRename, setChatToRename] =
+        useState<Chat | null>(null)
+    const [renamingChatId, setRenamingChatId] =
+        useState<string | null>(null)
     const [archivingChatId, setArchivingChatId] =
         useState<string | null>(null)
     const [openingChatId, setOpeningChatId] =
@@ -305,6 +306,18 @@ function ChatPageContent() {
             : [],
         [activeChat, activePendingTurn],
     )
+
+    // Provider information describes the latest known assistant response,
+    // not the security level of the chat and not an unverified future reply.
+    const lastAssistantModel = useMemo(() => {
+        for (let index = displayMessages.length - 1; index >= 0; index--) {
+            const message = displayMessages[index]
+            if (message.role === 'ASSISTANT') {
+                return message.model
+            }
+        }
+        return null
+    }, [displayMessages])
 
     const activeChatHasPending =
         Boolean(activePendingTurn)
@@ -742,11 +755,7 @@ function ChatPageContent() {
         }
     }
 
-    async function handleRenameChat(title: string): Promise<void> {
-        const chatId = activeChatRef.current?.id
-        if (!chatId) {
-            throw new Error('Чат не выбран')
-        }
+    async function renameChatById(chatId: string, title: string): Promise<void> {
         const updated = await updateChatTitle(chatId, title)
         setChats((items) => items.map((item) =>
             item.id === chatId ? updated : item,
@@ -755,6 +764,27 @@ function ChatPageContent() {
             ? { ...current, ...updated }
             : current,
         )
+    }
+
+    async function handleRenameChat(title: string): Promise<void> {
+        const chatId = activeChatRef.current?.id
+        if (!chatId) {
+            throw new Error('Чат не выбран')
+        }
+        await renameChatById(chatId, title)
+    }
+
+    async function handleRenameFromHistory(title: string): Promise<void> {
+        const chatId = chatToRename?.id
+        if (!chatId || renamingChatId) {
+            throw new Error('Переименование чата недоступно')
+        }
+        setRenamingChatId(chatId)
+        try {
+            await renameChatById(chatId, title)
+        } finally {
+            setRenamingChatId(null)
+        }
     }
 
     async function refreshChatTitle(chatId: string): Promise<void> {
@@ -1765,59 +1795,20 @@ function ChatPageContent() {
                                 <p>Чатов пока нет.</p>
                             )}
 
-                        {chats.map((chat) => {
-                            const pending =
-                                pendingTurns[chat.id]
-
-                            return (
-                                <div
-                                    key={chat.id}
-                                    className={
-                                        activeChat?.id === chat.id
-                                            ? 'chat-list-row active'
-                                            : 'chat-list-row'
-                                    }
-                                >
-                                    <button
-                                        type="button"
-                                        className="chat-item"
-                                        disabled={openingChatId === chat.id}
-                                        onClick={() => void openChat(chat.id)}
-                                        title={`Открыть чат «${chat.title}»`}
-                                    >
-                                        <span className="chat-item__icon" aria-hidden="true">✦</span>
-                                        <span className="chat-item__body">
-                                            <strong>
-                                                {openingChatId === chat.id
-                                                    ? 'Открытие...'
-                                                    : chat.title}
-                                            </strong>
-                                            <small>{formatDateTime(chat.updatedAt)}</small>
-                                            {pending && (
-                                                <span
-                                                    className="chat-item__pending"
-                                                    aria-label={getPendingLabel(pending, clock)}
-                                                >
-                                                    {getPendingShortLabel(pending)}
-                                                </span>
-                                            )}
-                                        </span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="chat-archive-button"
-                                        aria-label={`Убрать чат «${chat.title}» из списка`}
-                                        title={pending
-                                            ? 'Дождитесь завершения запроса'
-                                            : 'Убрать из списка'}
-                                        disabled={Boolean(pending) || archivingChatId === chat.id}
-                                        onClick={() => setChatToArchive(chat)}
-                                    >
-                                        ×
-                                    </button>
-                                </div>
-                            )
-                        })}
+                        {chats.map((chat) => (
+                            <ChatHistoryRow
+                                key={chat.id}
+                                chat={chat}
+                                active={activeChat?.id === chat.id}
+                                pending={pendingTurns[chat.id]}
+                                now={clock}
+                                opening={openingChatId === chat.id}
+                                archiving={archivingChatId === chat.id}
+                                onOpen={(chatId) => void openChat(chatId)}
+                                onRename={setChatToRename}
+                                onArchive={setChatToArchive}
+                            />
+                        ))}
 
                         {chatHasNext && (
                             <button
@@ -1864,16 +1855,33 @@ function ChatPageContent() {
                                         onSave={handleRenameChat}
                                     />
                                 </div>
-                                <button
-                                    type="button"
-                                    className="chat-panel__status"
-                                    onClick={() => setSelectedTrustItem(
-                                        CHAT_TRUST_ITEMS[0],
+                                <div className="chat-panel__indicators">
+                                    {lastAssistantModel && (
+                                        <span
+                                            className={
+                                                isMockModel(lastAssistantModel)
+                                                    ? 'chat-panel__model-badge chat-panel__model-badge--mock'
+                                                    : 'chat-panel__model-badge'
+                                            }
+                                            title={`Модель последнего ответа: ${lastAssistantModel}`}
+                                        >
+                                            {isMockModel(lastAssistantModel)
+                                                ? 'Тестовый ответ · mock'
+                                                : 'Ответ AI-модели'}
+                                        </span>
                                     )}
-                                >
-                                    <span aria-hidden="true">●</span>
-                                    Защищённый режим
-                                </button>
+                                    <button
+                                        type="button"
+                                        className="chat-panel__status"
+                                        onClick={() => setSelectedTrustItem(
+                                            CHAT_TRUST_ITEMS[0],
+                                        )}
+                                        title="Информация об изоляции и защите данных"
+                                    >
+                                        <span aria-hidden="true">●</span>
+                                        Защита данных
+                                    </button>
+                                </div>
                             </div>
 
                             {chatError && (
@@ -2119,6 +2127,29 @@ function ChatPageContent() {
                     )}
                 </section>
             </div>
+
+            {chatToRename && (
+                <Modal
+                    title="Переименовать чат"
+                    size="sm"
+                    onClose={() => setChatToRename(null)}
+                    closeDisabled={renamingChatId === chatToRename.id}
+                    closeOnBackdrop={renamingChatId !== chatToRename.id}
+                >
+                    <p className="chat-rename-description">
+                        Изменится только название чата. Сообщения и история
+                        запросов сохранятся.
+                    </p>
+                    <ChatTitleEditor
+                        key={chatToRename.id}
+                        title={chatToRename.title}
+                        onSave={handleRenameFromHistory}
+                        initiallyEditing
+                        onSaved={() => setChatToRename(null)}
+                        onCancelEditing={() => setChatToRename(null)}
+                    />
+                </Modal>
+            )}
 
             {chatToArchive && (
                 <ConfirmDialog
