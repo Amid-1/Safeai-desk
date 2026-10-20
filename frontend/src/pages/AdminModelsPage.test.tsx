@@ -238,6 +238,13 @@ describe('AdminModelsPage', () => {
 
         expect(screen.getByText('Каталог изменяет SUPER_ADMIN.'))
             .toBeInTheDocument()
+        expect(screen.getByRole('button', {name: 'Изменить правила'}))
+            .toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', {name: 'Создать модель'}))
+        expect(screen.getByText(/Создание и изменение версий каталога доступно только SUPER_ADMIN/))
+            .toHaveAttribute('role', 'status')
+        expect(screen.queryByRole('dialog', {name: 'Модель каталога'}))
+            .not.toBeInTheDocument()
         expect(screen.getByRole('heading', {name: 'Модель доступна для запросов?'}))
             .toBeInTheDocument()
         expect(screen.getByText('Нужна проверка запроса'))
@@ -354,6 +361,8 @@ describe('AdminModelsPage', () => {
             .not.toBeInTheDocument()
         expect(screen.getByRole('button', {name: 'Создать модель'}))
             .toBeInTheDocument()
+        expect(screen.getByRole('button', {name: 'Изменить правила'}))
+            .toBeInTheDocument()
 
         fireEvent.click(importButton)
 
@@ -362,6 +371,17 @@ describe('AdminModelsPage', () => {
                 importRuntimeMock,
             ).toHaveBeenCalledTimes(1)
         })
+    })
+
+    it('SUPER_ADMIN открывает создание каталожной версии из закрепленной верхней панели', async () => {
+        authMock.currentUser = currentUser('SUPER_ADMIN')
+        render(<AdminModelsPage />)
+        fireEvent.click(await screen.findByRole('button', {name: 'Создать модель'}))
+        expect(screen.getByRole('dialog', {name: 'Добавление модели в каталог'}))
+            .toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
+        expect(screen.queryByRole('dialog', {name: 'Добавление модели в каталог'}))
+            .not.toBeInTheDocument()
     })
 
     it('не сообщает об ошибке mutation, если Runtime уже сохранён, а refresh упал', async () => {
@@ -437,7 +457,7 @@ describe('AdminModelsPage', () => {
         ).toBeInTheDocument()
     })
 
-    it('нижнюю область каталога можно почти полностью опустить вниз', async () => {
+    it('нижнюю область каталога можно изменить без полного перекрытия содержимого', async () => {
         authMock.currentUser =
             currentUser('ADMIN')
 
@@ -458,8 +478,20 @@ describe('AdminModelsPage', () => {
         expect(separator)
             .toHaveAttribute(
                 'aria-valuemin',
-                '64',
+                '170',
             )
+    })
+
+    it('показывает окно правил по явной кнопке и закрывает его крестиком', async () => {
+        authMock.currentUser = currentUser('ADMIN')
+        render(<AdminModelsPage />)
+        await screen.findByRole('button', {name: 'Изменить правила'})
+        fireEvent.click(screen.getByRole('button', {name: 'Изменить правила'}))
+        expect(screen.getByRole('dialog', {name: 'Правила использования моделей'}))
+            .toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
+        expect(screen.queryByRole('dialog', {name: 'Правила использования моделей'}))
+            .not.toBeInTheDocument()
     })
 
     it('диагностика маршрутизации проверяет UUID до запроса к backend', async () => {

@@ -57,6 +57,7 @@ import { ModelPolicyModal } from '../components/admin/models/ModelPolicyModal'
 import './AdminModelsPage.css'
 import './AdminModelsPageVisualRefresh.css'
 import './AdminModelsProductionEnhancements.css'
+import './ModelControlPlaneReadability.css'
 import { ModelAvailabilitySummary } from '../components/admin/models/ModelAvailabilitySummary'
 
 const UUID_PATTERN =
@@ -221,6 +222,9 @@ function AdminModelsPage() {
 
     const [notice, setNotice] =
         useState('')
+
+    const [catalogPermissionNotice, setCatalogPermissionNotice] =
+        useState(false)
 
     const [catalogModal, setCatalogModal] =
         useState<{
@@ -768,7 +772,42 @@ function AdminModelsPage() {
                     </p>
                 </div>
 
-                <div className="models-runtime-badge">
+                <div className="models-hero__side">
+                    <div className="models-hero__actions" aria-label="Управление моделями">
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={mutationPending}
+                            onClick={() => setPolicyModalOpen(true)}
+                        >
+                            Изменить правила
+                        </button>
+                        {isSuperAdmin && (
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                disabled={mutationPending}
+                                onClick={() => { void handleImportRuntime() }}
+                            >
+                                Добавить Runtime в каталог
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            className={isSuperAdmin ? 'btn-primary' : 'secondary-button'}
+                            disabled={mutationPending}
+                            onClick={() => {
+                                if (!isSuperAdmin) {
+                                    setCatalogPermissionNotice(true)
+                                    return
+                                }
+                                setCatalogModal({ base: null })
+                            }}
+                        >
+                            Создать модель
+                        </button>
+                    </div>
+                    <div className="models-runtime-badge">
                     <span>Runtime настроен на</span>
                     <strong>
                         {runtime.provider} · {runtime.model}
@@ -778,8 +817,20 @@ function AdminModelsPage() {
                             runtime.routingMode,
                         )}
                     </small>
+                    </div>
+                    {!isSuperAdmin && catalogPermissionNotice && (
+                        <p className="models-hero__permission-notice" role="status">
+                            Создание и изменение версий каталога доступно только SUPER_ADMIN.
+                            Администратор организации может менять правила своей организации.
+                        </p>
+                    )}
                 </div>
             </header>
+            <span
+                className="resizable-scroll-region__upper-boundary-marker"
+                data-resizable-upper-boundary
+                aria-hidden="true"
+            />
 
             {error && (
                 <ErrorState
@@ -875,32 +926,6 @@ function AdminModelsPage() {
                     )}
                 </div>
 
-                {isSuperAdmin && (
-                    <div className="models-control-row__actions">
-                        <button
-                            type="button"
-                            disabled={mutationPending}
-                            onClick={() => {
-                                void handleImportRuntime()
-                            }}
-                        >
-                            Добавить Runtime в каталог
-                        </button>
-
-                        <button
-                            type="button"
-                            className="btn-primary"
-                            disabled={mutationPending}
-                            onClick={() => {
-                                setCatalogModal({
-                                    base: null,
-                                })
-                            }}
-                        >
-                            Создать модель
-                        </button>
-                    </div>
-                )}
             </section>
 
             <details className="models-evidence-panel">
@@ -996,7 +1021,7 @@ function AdminModelsPage() {
             <ResizableScrollRegion
                 upper={upper}
                 footer={footer}
-                storageKey="safeai:models-catalog-height:v5"
+                storageKey="safeai:models-catalog-height:v6"
                 label="каталог моделей"
                 upperClassName="models-page__upper"
                 lowerClassName="models-page__lower"
@@ -1004,10 +1029,12 @@ function AdminModelsPage() {
                 footerClassName="models-page__footer"
                 defaultHeight={280}
                 autoFitHeight={catalog.length === 0
-                    ? 370
-                    : Math.min(680, 110 + catalog.length * 158)}
-                minHeight={64}
-                maxHeight={980}
+                    ? 310
+                    : Math.min(540, 148 + catalog.length * 150)}
+                minHeight={170}
+                maxHeight={760}
+                preserveUpperContent
+                upperBoundaryPadding={12}
                 minUpperHeight={catalogMinUpperHeight}
             >
                 {catalog.length === 0 ? (

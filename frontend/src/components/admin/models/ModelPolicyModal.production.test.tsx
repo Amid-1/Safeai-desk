@@ -129,6 +129,27 @@ describe('ModelPolicyModal production safety', () => {
         expect(document.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(8)
     })
 
+    it('closes clean form with the close button while keeping eight resize handles', () => {
+        const onClose = vi.fn()
+        render(<ModelPolicyModal
+            policy={UNCONFIGURED}
+            catalog={[ENTRY]}
+            effectiveCatalog={[ENTRY]}
+            runtime={RUNTIME}
+            organizationId={ORGANIZATION_ID}
+            organizationName="Demo Company"
+            pending={false}
+            onClose={onClose}
+            onPreview={unusedPreview}
+            onSubmit={vi.fn<PolicySubmit>()}
+        />)
+        expect(screen.getByRole('dialog', {name: 'Правила использования моделей'}))
+            .toBeInTheDocument()
+        expect(document.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(8)
+        fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
+        expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
     it('preserves unsaved draft on maximize and requires confirmation on close', () => {
         const onClose = vi.fn()
         const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)

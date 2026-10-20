@@ -1,5 +1,6 @@
 // frontend/src/components/admin/usage/AdminUsageControls.tsx
 
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { ChangeEvent, ReactNode } from 'react'
 import {
     EmptyState,
@@ -50,6 +51,9 @@ type AdminUsageControlsProps = {
     error: string
     showEmptyReport: boolean
     summaryContent?: ReactNode
+    canExpandResults?: boolean
+    onExpandResults?: () => void
+    onRestoreFilters?: () => void
 
     onDateFromChange: (value: string) => void
     onDateToChange: (value: string) => void
@@ -89,6 +93,9 @@ export function AdminUsageControls({
     error,
     showEmptyReport,
     summaryContent,
+    canExpandResults = false,
+    onExpandResults,
+    onRestoreFilters,
     onDateFromChange,
     onDateToChange,
     onModelChange,
@@ -99,8 +106,71 @@ export function AdminUsageControls({
     onSelectTab,
     onReload,
 }: AdminUsageControlsProps) {
+    const contentRef = useRef<HTMLDivElement>(null)
+    const [compact, setCompact] = useState(false)
+
+    // Observe the split pane, not the browser window. The pane may be
+    // resized by dragging without changing the viewport dimensions.
+    useLayoutEffect(() => {
+        const content = contentRef.current
+        const pane = content?.closest('.resizable-scroll-region__upper')
+        if (!(pane instanceof HTMLElement)) return
+        const measure = () => {
+            const height = pane.getBoundingClientRect().height
+            // Keep full controls in the DOM: only their presentation changes.
+            setCompact(height > 0 && height < 220)
+        }
+        measure()
+        if (typeof ResizeObserver === 'undefined') {
+            window.addEventListener('resize', measure)
+            return () => window.removeEventListener('resize', measure)
+        }
+        const observer = new ResizeObserver(measure)
+        observer.observe(pane)
+        return () => observer.disconnect()
+    }, [])
+
     return (
-        <div className="usage-page__upper">
+        <div
+            className="usage-page__upper"
+            ref={contentRef}
+            data-compact={compact ? 'true' : 'false'}
+        >
+            <div className="usage-compact-rail" hidden={!compact}>
+                <div className="usage-compact-rail__summary">
+                    <strong>Использование AI · {reportTitle(tab)}</strong>
+                    <span>{appliedDateFrom} — {appliedDateTo} UTC · {scopeLabel}</span>
+                </div>
+                <nav
+                    className="usage-compact-rail__tabs"
+                    role="tablist"
+                    aria-label="Переключить отчет в расширенной области"
+                >
+                    {([
+                        ['summary', 'Сводка'],
+                        ['users', 'По пользователям'],
+                        ['models', 'По моделям'],
+                        ['daily', 'По дням'],
+                    ] as const).map(([name, label]) => (
+                        <TabButton
+                            key={name}
+                            active={tab === name}
+                            onClick={() => onSelectTab(name)}
+                        >
+                            {label}
+                        </TabButton>
+                    ))}
+                </nav>
+                {onRestoreFilters && (
+                    <button
+                        className="secondary-button usage-compact-rail__restore"
+                        type="button"
+                        onClick={onRestoreFilters}
+                    >
+                        Показать фильтры
+                    </button>
+                )}
+            </div>
             <header className="usage-page__header page-hero page-hero--usage">
                 <div>
                     <span className="page-hero__eyebrow">
@@ -303,6 +373,7 @@ export function AdminUsageControls({
                 </div>
 
                 <div className="usage-report-heading">
+                    <div className="usage-report-heading__title">
                     <h2 id="usage-report-title">
                         {reportTitle(tab)}
                     </h2>
@@ -314,6 +385,17 @@ export function AdminUsageControls({
                         <p className="usage-chart-discovery">
                             Ниже фильтров отображаются KPI и график «Динамика по дням UTC»; таблица с точными значениями сохранена.
                         </p>
+                    )}
+                    </div>
+                    {canExpandResults && onExpandResults && (
+                        <button
+                            type="button"
+                            className="secondary-button usage-expand-results"
+                            onClick={onExpandResults}
+                            title="Развернуть результаты почти до навигации; фильтры можно вернуть одним нажатием"
+                        >
+                            Развернуть результаты
+                        </button>
                     )}
                 </div>
 

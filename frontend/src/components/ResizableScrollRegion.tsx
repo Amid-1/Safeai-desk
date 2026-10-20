@@ -58,6 +58,17 @@ type ResizableScrollRegionProps = {
     autoFitHeight?: number
 
     /**
+     * Optional command counters, used by workspace actions.
+     * A changed counter expands the report or restores the filters;
+     * initial values are never treated as commands.
+     * Existing consumers without these props are unchanged.
+     */
+    showLowerRequest?: number
+    showUpperRequest?: number
+    /** Reset only the lower viewport on report/tab/page/filter changes. */
+    viewportResetKey?: string | number
+
+    /**
      * Минимальный резерв для верхней области.
      * Используется всегда как абсолютный fallback.
      */
@@ -210,6 +221,9 @@ function ResizableScrollRegion({
     minHeight = 220,
     maxHeight = 760,
     autoFitHeight,
+    showLowerRequest,
+    showUpperRequest,
+    viewportResetKey,
 
     minUpperHeight = 100,
     preserveUpperContent = false,
@@ -236,6 +250,17 @@ function ResizableScrollRegion({
         useRef<HTMLDivElement | null>(
             null,
         )
+
+    const viewportRef = useRef<HTMLDivElement | null>(null)
+    const previousViewportResetKey = useRef(viewportResetKey)
+
+    // A tab/filter/page switch starts at the beginning of the new report.
+    // Plain drag/keyboard resize does NOT change scroll position.
+    useLayoutEffect(() => {
+        if (previousViewportResetKey.current === viewportResetKey) return
+        previousViewportResetKey.current = viewportResetKey
+        if (viewportRef.current) viewportRef.current.scrollTop = 0
+    }, [viewportResetKey])
 
     const dragRef =
         useRef<DragState | null>(
@@ -290,6 +315,37 @@ function ResizableScrollRegion({
             return false
         }
     })
+
+    /** Programmatic resize requests are opt-in and edge-triggered. */
+    const lastPanelRequests = useRef({
+        showLowerRequest,
+        showUpperRequest,
+    })
+
+    useEffect(() => {
+        if (lastPanelRequests.current.showLowerRequest === showLowerRequest) {
+            return
+        }
+        lastPanelRequests.current.showLowerRequest = showLowerRequest
+        if (showLowerRequest === undefined) return
+
+        // The rendered height remains clamped to the real viewport.
+        // A deliberately large requested preference is preserved on resize.
+        setRequestedHeight(normalizedMaxHeight)
+        if (autoFitHeight != null) setManualHeight(true)
+    }, [showLowerRequest, normalizedMaxHeight, autoFitHeight])
+
+    useEffect(() => {
+        if (lastPanelRequests.current.showUpperRequest === showUpperRequest) {
+            return
+        }
+        lastPanelRequests.current.showUpperRequest = showUpperRequest
+        if (showUpperRequest === undefined) return
+
+        // Restore maximum room for filter inputs, without unmounting them.
+        setRequestedHeight(normalizedMinHeight)
+        if (autoFitHeight != null) setManualHeight(true)
+    }, [showUpperRequest, normalizedMinHeight, autoFitHeight])
 
     useEffect(() => {
         if (autoFitHeight == null) return
@@ -894,6 +950,7 @@ function ResizableScrollRegion({
                     ]
                         .filter(Boolean)
                         .join(' ')}
+                    ref={viewportRef}
                 >
                     {children}
                 </div>

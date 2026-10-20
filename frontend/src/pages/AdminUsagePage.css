@@ -356,3 +356,187 @@
 @media (max-width: 640px) {
   .usage-report-insights { padding: 10px 10px 8px; }
 }
+
+
+/* Usage full-height analytics workspace, isolated from other split panes. */
+.usage-page .usage-compact-rail[hidden] { display: none !important; }
+.usage-page .usage-compact-rail {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    min-height: 74px;
+    padding: 10px 14px;
+    border: 1px solid #d7e3f7;
+    border-radius: 12px;
+    background: linear-gradient(120deg, #f9fbff 0%, #eef3ff 100%);
+}
+.usage-page .usage-compact-rail__summary {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+.usage-page .usage-compact-rail__summary strong {
+    color: #172a46;
+    font-size: 15px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.usage-page .usage-compact-rail__summary span {
+    overflow: hidden;
+    color: #586e8c;
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.usage-page .usage-compact-rail__restore { flex: 0 0 auto; min-height: 39px; }
+/* Keep React state and form drafts intact: collapse visually, don't unmount. */
+.usage-page .usage-page__upper[data-compact="true"] {
+    gap: 0;
+    padding: 5px 7px;
+    overflow: hidden;
+}
+.usage-page .usage-page__upper[data-compact="true"] > :not(.usage-compact-rail) {
+    display: none !important;
+}
+.usage-page .usage-report-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.usage-page .usage-report-heading__title { display: grid; gap: 4px; min-width: 0; }
+.usage-page .usage-expand-results { flex: 0 0 auto; min-height: 39px; }
+.usage-page .resizable-scroll-region__handle {
+    height: 17px;
+    min-height: 17px;
+    flex-basis: 17px;
+    background: #f8faff;
+}
+.usage-page .resizable-scroll-region__handle span { width: 56px; height: 4px; }
+.usage-page .resizable-scroll-region__handle:hover span,
+.usage-page .resizable-scroll-region__handle:focus-visible span { width: 72px; }
+@media (max-width: 680px) {
+    .usage-page .usage-compact-rail { gap: 8px; padding: 8px; }
+    .usage-page .usage-compact-rail__summary strong { font-size: 13px; }
+    .usage-page .usage-compact-rail__summary span { font-size: 11px; }
+    .usage-page .usage-compact-rail__restore { min-height: 36px; padding-inline: 8px; font-size: 12px; }
+    .usage-page .usage-expand-results { width: 100%; }
+}
+
+/* Consistent report workspace for all four tabs.
+   A compact rail allows switching reports without restoring the filter form. */
+.usage-page .usage-compact-rail__tabs {
+    display: flex;
+    flex: 1 1 180px;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    overflow-x: auto;
+    padding: 3px 1px;
+    scrollbar-width: thin;
+}
+.usage-page .usage-compact-rail__tabs .filter-button {
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.usage-page .usage-compact-rail__summary { flex: 0 1 310px; }
+/* In the normal split view, the first result and the fixed footer remain
+   visually distinct. Native vertical scrolling preserves all report rows. */
+.usage-page .usage-report-results {
+    display: flow-root;
+    padding-bottom: 6px;
+}
+.usage-page .usage-report-results .usage-table {
+    margin-bottom: 4px;
+}
+.usage-page .resizable-scroll-region__footer {
+    position: relative;
+    z-index: 1;
+    padding-top: 6px;
+    box-shadow: 0 -4px 10px rgb(255 255 255 / 82%);
+}
+@media (max-width: 600px) {
+    .usage-page .usage-compact-rail__tabs .filter-button { font-size: 11px; }
+    .usage-page .usage-compact-rail__tabs { gap: 4px; }
+}
+
+
+/* -------------------------------------------------------------------------
+   Usage report layout v5.
+
+   In the ordinary view use ONE document-level vertical scroller. A row must
+   never disappear behind the split footer because an earlier drag preference
+   happened to be stored in localStorage. The user can opt into the focused
+   resizable split with "Развернуть результаты" and return with "Показать
+   фильтры". Only the usage page receives these rules; other split regions
+   are not touched.
+   ------------------------------------------------------------------------- */
+.usage-page--flow {
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+}
+
+.usage-page--flow .resizable-scroll-region {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+}
+
+.usage-page--flow .resizable-scroll-region__upper {
+    min-height: 0;
+    flex: 0 0 auto;
+    overflow: visible;
+}
+
+.usage-page--flow .usage-page__upper {
+    overflow: visible;
+    flex: 0 0 auto;
+}
+
+.usage-page--flow .resizable-scroll-region__lower {
+    height: auto;
+    flex: 0 0 auto;
+    overflow: visible;
+}
+
+.usage-page--flow .resizable-scroll-region__handle {
+    /* No pointless draggable divider in a natural-height document. */
+    display: none;
+}
+
+.usage-page--flow .resizable-scroll-region__viewport.usage-table-scroll {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: auto;
+    padding-bottom: 4px;
+}
+
+.usage-page--flow .resizable-scroll-region__footer {
+    position: static;
+    box-shadow: none;
+    padding-top: 10px;
+}
+
+/* The focused view retains the existing keyboard/pointer split controls. */
+.usage-page--focused {
+    height: 100%;
+    overflow: hidden;
+}
+
+@media (max-width: 640px) {
+    .usage-page--flow { scrollbar-gutter: auto; }
+}

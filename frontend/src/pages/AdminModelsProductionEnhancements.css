@@ -81,3 +81,59 @@
 @media (prefers-reduced-motion: reduce) {
     .models-page .models-evidence-panel > summary::after { transition: none; }
 }
+
+/* Models workspace regression fixes: toolbar actions stay reachable even
+   when a large catalog pane has been restored or manually stretched. */
+.models-page__upper .models-hero {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: linear-gradient(110deg, #ffffff 0%, #f0f3ff 100%);
+    box-shadow: 0 6px 20px rgb(15 23 42 / 8%);
+}
+.models-page .models-hero__side {
+    display: flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 10px;
+}
+.models-page .models-hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.models-page .models-hero__actions button {
+    min-height: 36px;
+    white-space: normal;
+    font-size: 12px;
+    line-height: 1.2;
+}
+.models-page .models-hero__side .models-runtime-badge { max-width: 100%; }
+.models-page .models-catalog-toolbar { align-items: start; }
+.models-page .models-catalog-permission-hint { max-width: 900px; }
+.models-page .models-page__lower { min-height: 0; }
+.models-page .models-catalog-scroll { min-height: 0; }
+@media (max-width: 1050px) {
+    .models-page .models-hero { align-items: stretch; flex-direction: column; }
+    .models-page .models-hero__side { align-items: stretch; }
+    .models-page .models-hero__actions { justify-content: flex-start; }
+}
+@media (max-width: 600px) {
+    .models-page .models-hero__actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+    .models-page .models-hero__actions button { width: 100%; }
+}
+
+.models-page .models-hero__permission-notice {
+    margin: 0;
+    max-width: 480px;
+    padding: 8px 11px;
+    border: 1px solid #dfcfad;
+    border-radius: 9px;
+    background: #fff9e9;
+    color: #754c12;
+    font-size: 12px;
+    line-height: 1.4;
+}

@@ -14,11 +14,12 @@ import {
 import {
     useAdminUsageReport,
 } from './useAdminUsageReport'
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { UsageDailySummary } from '../api/usageApi'
 import { UsageKpis } from '../components/admin/usage/UsageKpis'
 import { UsageDailyChart } from '../components/admin/usage/UsageDailyChart'
 import { downloadUsageCsv } from '../components/admin/usage/usageCsv'
+import { autoFitUsageHeight } from './usagePanelHeight'
 import './AdminUsagePage.css'
 
 function AdminUsagePage() {
@@ -32,6 +33,18 @@ function AdminUsagePage() {
 function AdminUsagePageContent() {
     const report = useAdminUsageReport()
     const [exportError, setExportError] = useState('')
+    // The normal view is one continuous page: no clipped table rows.
+    // A focused, resizable split is entered only on explicit user request.
+    const [focusedResults, setFocusedResults] = useState(false)
+    const pageRef = useRef<HTMLDivElement | null>(null)
+    const [showLowerRequest, setShowLowerRequest] = useState(0)
+    const [showUpperRequest, setShowUpperRequest] = useState(0)
+    const resultsRef = useRef<HTMLDivElement | null>(null)
+
+    useLayoutEffect(() => {
+        if (pageRef.current) pageRef.current.scrollTop = 0
+    }, [focusedResults])
+    const [naturalResultHeight, setNaturalResultHeight] = useState<number | null>(null)
 
     const showReportRows =
         !report.loading
@@ -43,12 +56,69 @@ function AdminUsagePageContent() {
         && !report.error
         && report.rows.length === 0
 
+    // Measure actual KPI/chart/export/table content instead of estimating
+    // required space from the number of rows. Keep the user-adjusted height
+    // authoritative: ResizableScrollRegion applies autoFit only until the
+    // first manual resize and restores it on double click.
+    useLayoutEffect(() => {
+        const content = resultsRef.current
+        if (!showReportRows || !content) {
+            setNaturalResultHeight(null)
+            return
+        }
+
+        const measure = () => {
+            const footer = content.closest('.resizable-scroll-region')
+                ?.querySelector<HTMLElement>('.resizable-scroll-region__footer')
+            const desired = Math.ceil(
+                Math.max(content.scrollHeight, content.getBoundingClientRect().height)
+                + (footer?.getBoundingClientRect().height ?? 45)
+                + 32, // divider, viewport padding and a small breathing room
+            )
+            setNaturalResultHeight(old => old === desired ? old : desired)
+        }
+
+        measure()
+        if (typeof ResizeObserver === 'undefined') {
+            window.addEventListener('resize', measure)
+            return () => window.removeEventListener('resize', measure)
+        }
+        const observer = new ResizeObserver(measure)
+        observer.observe(content)
+        const footer = content.closest('.resizable-scroll-region')
+            ?.querySelector<HTMLElement>('.resizable-scroll-region__footer')
+        if (footer) observer.observe(footer)
+        return () => observer.disconnect()
+    }, [showReportRows, report.tab, report.rows.length])
+
+    // The automatic initial layout remains compact on laptop screens;
+    // the expand action and drag handle can still use the whole viewport.
+    const fittedResultsHeight = showReportRows
+        ? autoFitUsageHeight(naturalResultHeight, report.tab)
+        : 200
+
+    const viewportResetKey = [
+        report.tab,
+        report.page,
+        report.appliedDateFrom,
+        report.appliedDateTo,
+        report.appliedModel,
+        report.scopeLabel,
+    ].join('|')
+
     return (
-        <div className="page usage-page">
+        <div
+            ref={pageRef}
+            className={focusedResults
+                ? 'page usage-page usage-page--focused'
+                : 'page usage-page usage-page--flow'}
+        >
             <ResizableScrollRegion
-                storageKey="safeai:usage-report-height:v3"
-                label="таблица использования"
-                preserveUpperContent
+                storageKey="safeai:usage-report-height:v4"
+                label="область результатов использования AI"
+                showLowerRequest={showLowerRequest}
+                showUpperRequest={showUpperRequest}
+                viewportResetKey={viewportResetKey}
                 upper={(
                     <AdminUsageControls
                         tab={report.tab}
@@ -128,12 +198,18 @@ function AdminUsagePageContent() {
                             report.selectTab
                         }
                         onReload={report.reload}
+                        canExpandResults={showReportRows}
+                        onExpandResults={() => {
+                            setFocusedResults(true)
+                            setShowLowerRequest(value => value + 1)
+                        }}
+                        onRestoreFilters={() => {
+                            setFocusedResults(false)
+                            setShowUpperRequest(value => value + 1)
+                        }}
                     />
                 )}
-                autoFitHeight={showReportRows
-                    ? Math.min(710, 265 + report.rows.length * 75
-                        + (report.tab === 'daily' ? 350 : 0))
-                    : 100}
+                autoFitHeight={fittedResultsHeight}
                 footer={
                     showReportRows
                         ? (
@@ -161,13 +237,13 @@ function AdminUsagePageContent() {
                 }
                 lowerClassName="card table-card usage-report-card"
                 viewportClassName="usage-table-scroll"
-                defaultHeight={430}
-                minHeight={72}
-                maxHeight={760}
-                minUpperHeight={112}
+                defaultHeight={370}
+                minHeight={170}
+                maxHeight={4096}
+                minUpperHeight={92}
             >
                 {showReportRows ? (
-                    <div className="usage-report-results">
+                    <div ref={resultsRef} className="usage-report-results">
                         <div className="usage-report-insights">
 
                                 <UsageKpis rows={report.rows} tab={report.tab} />

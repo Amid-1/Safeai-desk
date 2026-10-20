@@ -471,3 +471,35 @@ body.modal-dragging {
 :is(.models-policy-modal, .models-catalog-modal, .models-history-modal).modal-card--resizable .modal-resize-handle--sw::after { border-right: 0; border-top: 0; }
 :is(.models-policy-modal, .models-catalog-modal, .models-history-modal).modal-card--resizable .modal-resize-handle--ne::after { border-left: 0; border-bottom: 0; }
 :is(.models-policy-modal, .models-catalog-modal, .models-history-modal).modal-card--resizable .modal-resize-handle--nw::after { border-right: 0; border-bottom: 0; }
+
+/* Modal overlay resilience. Dialogs are portal-rendered outside the inert
+   application root; never allow another workspace layer to cover them. */
+#modal-root:has(> .modal-backdrop > :is(.models-policy-modal, .models-catalog-modal, .models-history-modal)) {
+    position: relative;
+    z-index: 2147482000;
+    isolation: isolate;
+}
+#modal-root > .modal-backdrop:has(> :is(.models-policy-modal, .models-catalog-modal, .models-history-modal)) {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: auto;
+    background: rgb(15 23 42 / 64%);
+}
+#modal-root > .modal-backdrop > :is(.models-policy-modal, .models-catalog-modal, .models-history-modal) {
+    position: relative;
+    isolation: isolate;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    background-color: #fff;
+    box-shadow: 0 24px 84px rgb(15 23 42 / 38%);
+}
+#modal-root > .modal-backdrop > :is(.models-policy-modal, .models-catalog-modal, .models-history-modal) :is(.modal-header, .modal-body, .modal-footer) {
+    opacity: 1;
+}
+#modal-root > .modal-backdrop > :is(.models-policy-modal, .models-catalog-modal, .models-history-modal) .modal-window-actions {
+    position: relative;
+    z-index: 90;
+    pointer-events: auto;
+}
