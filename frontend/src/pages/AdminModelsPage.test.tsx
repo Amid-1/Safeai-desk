@@ -236,6 +236,13 @@ describe('AdminModelsPage', () => {
             ),
         ).not.toBeInTheDocument()
 
+        expect(screen.getByText('Каталог изменяет SUPER_ADMIN.'))
+            .toBeInTheDocument()
+        expect(screen.getByRole('heading', {name: 'Модель доступна для запросов?'}))
+            .toBeInTheDocument()
+        expect(screen.getByText('Нужна проверка запроса'))
+            .toBeInTheDocument()
+
         expect(
             screen.queryByRole(
                 'button',
@@ -342,6 +349,11 @@ describe('AdminModelsPage', () => {
                 version: 2,
             },
         ])
+
+        expect(screen.queryByText('Каталог изменяет SUPER_ADMIN.'))
+            .not.toBeInTheDocument()
+        expect(screen.getByRole('button', {name: 'Создать модель'}))
+            .toBeInTheDocument()
 
         fireEvent.click(importButton)
 

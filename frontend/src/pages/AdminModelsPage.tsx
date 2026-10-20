@@ -56,6 +56,8 @@ import { ModelCatalogVersionModal } from '../components/admin/models/ModelCatalo
 import { ModelPolicyModal } from '../components/admin/models/ModelPolicyModal'
 import './AdminModelsPage.css'
 import './AdminModelsPageVisualRefresh.css'
+import './AdminModelsProductionEnhancements.css'
+import { ModelAvailabilitySummary } from '../components/admin/models/ModelAvailabilitySummary'
 
 const UUID_PATTERN =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -795,6 +797,14 @@ function AdminModelsPage() {
                 </div>
             )}
 
+            <ModelAvailabilitySummary
+                runtime={runtime}
+                effectiveCatalog={effectiveCatalog}
+                policy={policy}
+                organizationName={selectedOrganizationName}
+                onOpenPolicy={() => setPolicyModalOpen(true)}
+            />
+
             <section className="models-overview-grid">
                 <RuntimeCard
                     runtime={runtime}
@@ -851,12 +861,18 @@ function AdminModelsPage() {
                 <div className="models-catalog-toolbar__copy">
                     <h2>Каталог моделей</h2>
                     <p>
-                        В таблице показана последняя версия каждой модели;
-                        полная цепочка открывается через «История версий».
-                        Каталог не подключает провайдера к серверу:
-                        в маршрутизации участвует действующая версия,
-                        определённая сервером и совместимая с Runtime.
+                        Последняя сохраненная версия и действующая версия могут различаться.
+                        Детали и полная цепочка доступны через «История версий».
                     </p>
+                    {!isSuperAdmin && (
+                        <p className="models-catalog-permission-hint" role="note">
+                            <strong>Каталог изменяет SUPER_ADMIN.</strong>{' '}
+                            Администратор организации может просматривать версии
+                            и настраивать правила своей организации.
+                            «Создать модель» и «Добавить Runtime в каталог»
+                            доступны только платформенному администратору.
+                        </p>
+                    )}
                 </div>
 
                 {isSuperAdmin && (
@@ -889,12 +905,13 @@ function AdminModelsPage() {
 
             <details className="models-evidence-panel">
                 <summary>
-                    <span>
-                        Диагностика маршрутизации
+                    <span className="models-evidence-panel__title">
+                        <strong>Диагностика маршрутизации</strong>
+                        <small>Проверить решение по ID из аудита или ошибки запроса</small>
                     </span>
-                    <small>
-                        Для разбора конкретного запроса
-                    </small>
+                    <span className="models-evidence-panel__action" aria-hidden="true">
+                        Открыть диагностику
+                    </span>
                 </summary>
 
                 <p className="models-evidence-panel__hint">
@@ -979,13 +996,16 @@ function AdminModelsPage() {
             <ResizableScrollRegion
                 upper={upper}
                 footer={footer}
-                storageKey="safeai:models-catalog-height:v4"
+                storageKey="safeai:models-catalog-height:v5"
                 label="каталог моделей"
                 upperClassName="models-page__upper"
                 lowerClassName="models-page__lower"
                 viewportClassName="models-catalog-scroll"
                 footerClassName="models-page__footer"
-                defaultHeight={180}
+                defaultHeight={280}
+                autoFitHeight={catalog.length === 0
+                    ? 370
+                    : Math.min(680, 110 + catalog.length * 158)}
                 minHeight={64}
                 maxHeight={980}
                 minUpperHeight={catalogMinUpperHeight}

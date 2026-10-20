@@ -453,3 +453,21 @@ body.modal-dragging {
         transition: none;
     }
 }
+
+
+/* Visible corner affordances in all three Model Control Plane modals.
+   Purely decorative: pointer events and geometry are still owned by Modal.tsx. */
+:is(.models-policy-modal, .models-catalog-modal, .models-history-modal).modal-card--resizable,
+:is(.modal-resize-handle--ne, .modal-resize-handle--nw, .modal-resize-handle--se, .modal-resize-handle--sw)::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border: 2px solid #8298bd;
+    border-radius: 3px;
+    opacity: .65;
+    pointer-events: none;
+}
+:is(.models-policy-modal, .models-catalog-modal, .models-history-modal).modal-card--resizable .modal-resize-handle--se::after { border-left: 0; border-top: 0; }
+:is(.models-policy-modal, .models-catalog-modal, .models-history-modal).modal-card--resizable .modal-resize-handle--sw::after { border-right: 0; border-top: 0; }
+:is(.models-policy-modal, .models-catalog-modal, .models-history-modal).modal-card--resizable .modal-resize-handle--ne::after { border-left: 0; border-bottom: 0; }
+:is(.models-policy-modal, .models-catalog-modal, .models-history-modal).modal-card--resizable .modal-resize-handle--nw::after { border-right: 0; border-bottom: 0; }

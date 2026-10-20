@@ -44,9 +44,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -151,7 +152,10 @@ class UsageControllerSecurityTest {
             "/api/admin/usage/daily",
             "/api/admin/usage/data-quality",
             "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
     })
     void protectedEndpointsReturn4xxForAnonymous(
             String url
@@ -168,7 +172,10 @@ class UsageControllerSecurityTest {
             "/api/admin/usage/daily",
             "/api/admin/usage/data-quality",
             "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
     })
     void protectedEndpointsReturn403ForUserRole(
             String url
@@ -181,6 +188,8 @@ class UsageControllerSecurityTest {
                                 )
                 )
                 .andExpect(status().isForbidden());
+
+        verifyNoInteractions(usageQueryService);
     }
 
     @ParameterizedTest
@@ -191,7 +200,10 @@ class UsageControllerSecurityTest {
             "/api/admin/usage/daily",
             "/api/admin/usage/data-quality",
             "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
     })
     void protectedEndpointsReturn200ForAdmin(
             String url
@@ -219,7 +231,10 @@ class UsageControllerSecurityTest {
             "/api/admin/usage/daily",
             "/api/admin/usage/data-quality",
             "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
-            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
     })
     void protectedEndpointsReturn200ForSuperAdmin(
             String url
@@ -365,6 +380,7 @@ class UsageControllerSecurityTest {
         when(usageQueryService.getUsageByUsers(
                 eq(DATE_FROM),
                 eq(DATE_TO),
+                isNull(),
                 any(Pageable.class),
                 eq(principal)
         )).thenReturn(emptyUserSlice());
@@ -395,6 +411,7 @@ class UsageControllerSecurityTest {
         verify(usageQueryService).getUsageByUsers(
                 eq(DATE_FROM),
                 eq(DATE_TO),
+                isNull(),
                 pageableCaptor.capture(),
                 eq(principal)
         );
@@ -406,6 +423,63 @@ class UsageControllerSecurityTest {
         assertThat(
                 pageableCaptor.getValue().getPageSize()
         ).isEqualTo(20);
+
+        assertThat(pageableCaptor.getValue().getSort().isUnsorted())
+                .isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ROLE_ADMIN", "ROLE_SUPER_ADMIN"})
+    void modelFilterIsForwardedToEveryReportWithoutChangingTenantScope(
+            String role
+    ) throws Exception {
+        SafeAiUserPrincipal principal = "ROLE_SUPER_ADMIN".equals(role)
+                ? superAdminPrincipal() : adminPrincipal();
+        stubServiceResponses();
+
+        String base = "/api/admin/usage";
+        String organizationPath = base + "/by-organization/" + ORGANIZATION_ID;
+        for (String route : List.of(
+                base + "/summary", base + "/users", base + "/models", base + "/daily",
+                base + "/by-user/" + USER_ID,
+                organizationPath, organizationPath + "/users",
+                organizationPath + "/models", organizationPath + "/daily"
+        )) {
+            mockMvc.perform(
+                            get(route)
+                                    .param("dateFrom", DATE_FROM.toString())
+                                    .param("dateTo", DATE_TO.toString())
+                                    .param("model", "  mock-safeai  ")
+                                    .with(authentication(authToken(principal)))
+                    )
+                    .andExpect(status().isOk());
+        }
+
+        verify(usageQueryService).getUsageSummary(
+                eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+                any(Pageable.class), eq(principal));
+        verify(usageQueryService).getUsageByUsers(
+                eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+                any(Pageable.class), eq(principal));
+        verify(usageQueryService).getUsageByModels(
+                eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"), eq(principal));
+        verify(usageQueryService).getUsageDaily(
+                eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"), eq(principal));
+        verify(usageQueryService).getUsageByUserId(
+                eq(USER_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+                any(Pageable.class), eq(principal));
+        verify(usageQueryService).getUsageByOrganizationId(
+                eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+                any(Pageable.class), eq(principal));
+        verify(usageQueryService).getUsageByUsersForOrganization(
+                eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+                any(Pageable.class), eq(principal));
+        verify(usageQueryService).getUsageByModelsForOrganization(
+                eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+                eq(principal));
+        verify(usageQueryService).getUsageDailyForOrganization(
+                eq(ORGANIZATION_ID), eq(DATE_FROM), eq(DATE_TO), eq("mock-safeai"),
+                eq(principal));
     }
 
     @Test
@@ -525,12 +599,14 @@ class UsageControllerSecurityTest {
         when(usageQueryService.getUsageByModels(
                 nullable(Instant.class),
                 nullable(Instant.class),
+                isNull(),
                 eq(principal)
         )).thenReturn(List.of());
 
         when(usageQueryService.getUsageDaily(
                 nullable(Instant.class),
                 nullable(Instant.class),
+                isNull(),
                 eq(principal)
         )).thenReturn(List.of());
 
@@ -555,6 +631,19 @@ class UsageControllerSecurityTest {
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray());
+
+        verify(usageQueryService).getUsageByModels(
+                nullable(Instant.class),
+                nullable(Instant.class),
+                isNull(),
+                eq(principal)
+        );
+        verify(usageQueryService).getUsageDaily(
+                nullable(Instant.class),
+                nullable(Instant.class),
+                isNull(),
+                eq(principal)
+        );
     }
 
     @ParameterizedTest
@@ -569,29 +658,21 @@ class UsageControllerSecurityTest {
         String[] pair =
                 query.split("=", 2);
 
-        mockMvc.perform(
-                        get("/api/admin/usage/summary")
-                                .param(pair[0], pair[1])
-                                .with(
-                                        authentication(
-                                                authToken(
-                                                        adminPrincipal()
-                                                )
-                                        )
-                                )
-                )
-                .andExpect(status().isBadRequest());
+        for (String route : List.of(
+                "/api/admin/usage/summary",
+                "/api/admin/usage/users",
+                "/api/admin/usage/by-organization/" + ORGANIZATION_ID,
+                "/api/admin/usage/by-organization/" + ORGANIZATION_ID + "/users"
+        )) {
+            mockMvc.perform(
+                            get(route)
+                                    .param(pair[0], pair[1])
+                                    .with(authentication(authToken(adminPrincipal())))
+                    )
+                    .andExpect(status().isBadRequest());
+        }
 
-        verify(
-                usageQueryService,
-                never()
-        ).getUsageSummary(
-                any(),
-                any(),
-                any(),
-                any(Pageable.class),
-                any()
-        );
+        verifyNoInteractions(usageQueryService);
     }
 
     @Test
@@ -613,16 +694,32 @@ class UsageControllerSecurityTest {
                 )
                 .andExpect(status().isBadRequest());
 
-        verify(
-                usageQueryService,
-                never()
-        ).getUsageSummary(
-                any(),
-                any(),
-                any(),
-                any(Pageable.class),
-                any()
-        );
+        verifyNoInteractions(usageQueryService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api/admin/usage/summary",
+            "/api/admin/usage/users",
+            "/api/admin/usage/models",
+            "/api/admin/usage/daily",
+            "/api/admin/usage/by-user/cccccccc-cccc-cccc-cccc-cccccccccccc",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/users",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/models",
+            "/api/admin/usage/by-organization/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/daily"
+    })
+    void oversizedModelFilterIsRejectedBeforeServiceInvocation(
+            String route
+    ) throws Exception {
+        mockMvc.perform(
+                        get(route)
+                                .param("model", "x".repeat(101))
+                                .with(authentication(authToken(adminPrincipal())))
+                )
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(usageQueryService);
     }
 
     @Test
@@ -643,6 +740,8 @@ class UsageControllerSecurityTest {
                                 )
                 )
                 .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(usageQueryService);
     }
 
     @ParameterizedTest
@@ -679,6 +778,7 @@ class UsageControllerSecurityTest {
         when(usageQueryService.getUsageByUsers(
                 nullable(Instant.class),
                 nullable(Instant.class),
+                nullable(String.class),
                 any(Pageable.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(emptyUserSlice());
@@ -686,12 +786,39 @@ class UsageControllerSecurityTest {
         when(usageQueryService.getUsageByModels(
                 nullable(Instant.class),
                 nullable(Instant.class),
+                nullable(String.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 
         when(usageQueryService.getUsageDaily(
                 nullable(Instant.class),
                 nullable(Instant.class),
+                nullable(String.class),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(List.of());
+
+        when(usageQueryService.getUsageByUsersForOrganization(
+                any(UUID.class),
+                nullable(Instant.class),
+                nullable(Instant.class),
+                nullable(String.class),
+                any(Pageable.class),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(emptyUserSlice());
+
+        when(usageQueryService.getUsageByModelsForOrganization(
+                any(UUID.class),
+                nullable(Instant.class),
+                nullable(Instant.class),
+                nullable(String.class),
+                any(SafeAiUserPrincipal.class)
+        )).thenReturn(List.of());
+
+        when(usageQueryService.getUsageDailyForOrganization(
+                any(UUID.class),
+                nullable(Instant.class),
+                nullable(Instant.class),
+                nullable(String.class),
                 any(SafeAiUserPrincipal.class)
         )).thenReturn(List.of());
 

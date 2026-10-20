@@ -14,6 +14,11 @@ import {
 import {
     useAdminUsageReport,
 } from './useAdminUsageReport'
+import { useState } from 'react'
+import type { UsageDailySummary } from '../api/usageApi'
+import { UsageKpis } from '../components/admin/usage/UsageKpis'
+import { UsageDailyChart } from '../components/admin/usage/UsageDailyChart'
+import { downloadUsageCsv } from '../components/admin/usage/usageCsv'
 import './AdminUsagePage.css'
 
 function AdminUsagePage() {
@@ -26,6 +31,7 @@ function AdminUsagePage() {
 
 function AdminUsagePageContent() {
     const report = useAdminUsageReport()
+    const [exportError, setExportError] = useState('')
 
     const showReportRows =
         !report.loading
@@ -40,7 +46,7 @@ function AdminUsagePageContent() {
     return (
         <div className="page usage-page">
             <ResizableScrollRegion
-                storageKey="safeai:usage-report-height:v2"
+                storageKey="safeai:usage-report-height:v3"
                 label="таблица использования"
                 preserveUpperContent
                 upper={(
@@ -88,6 +94,10 @@ function AdminUsagePageContent() {
                         filterError={
                             report.filterError
                         }
+                        filtersDirty={report.filtersDirty}
+                        appliedModel={report.appliedModel}
+                        appliedDateFrom={report.appliedDateFrom}
+                        appliedDateTo={report.appliedDateTo}
                         loading={report.loading}
                         error={report.error}
                         showEmptyReport={
@@ -120,6 +130,10 @@ function AdminUsagePageContent() {
                         onReload={report.reload}
                     />
                 )}
+                autoFitHeight={showReportRows
+                    ? Math.min(710, 265 + report.rows.length * 75
+                        + (report.tab === 'daily' ? 350 : 0))
+                    : 100}
                 footer={
                     showReportRows
                         ? (
@@ -152,14 +166,43 @@ function AdminUsagePageContent() {
                 maxHeight={760}
                 minUpperHeight={112}
             >
-                {showReportRows
-                    ? (
+                {showReportRows ? (
+                    <div className="usage-report-results">
+                        <div className="usage-report-insights">
+
+                                <UsageKpis rows={report.rows} tab={report.tab} />
+                                {report.tab === 'daily' && (
+                                    <UsageDailyChart rows={report.rows as UsageDailySummary[]} />
+                                )}
+                                <div className="usage-export-toolbar">
+                                    <div>
+                                        <strong>Экспорт результатов</strong>
+                                        <small>
+                                            {report.tab === 'summary' || report.tab === 'users'
+                                                ? 'Только загруженная страница (до 50 строк).'
+                                                : 'Все строки текущего ограниченного отчета.'}
+                                            {report.filtersDirty && ' Не применяется измененный черновик фильтров.'}
+                                        </small>
+                                    </div>
+                                    <button type="button" className="secondary-button" onClick={() => {
+                                        try {
+                                            downloadUsageCsv(report.tab, report.rows)
+                                            setExportError('')
+                                        } catch {
+                                            setExportError('Не удалось создать CSV. Попробуйте повторно.')
+                                        }
+                                    }}>
+                                        Скачать CSV
+                                    </button>
+                                </div>
+                                {exportError && <p role="alert" className="usage-export-error">{exportError}</p>}
+                        </div>
                         <UsageRows
                             tab={report.tab}
                             rows={report.rows}
                         />
-                    )
-                    : null}
+                    </div>
+                ) : null}
             </ResizableScrollRegion>
         </div>
     )

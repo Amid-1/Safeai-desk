@@ -845,7 +845,7 @@ export function CatalogTable({
                     const effectiveStateLabel =
                         isEffectiveVersion
                             ? 'Действует сейчас'
-                            : 'Запланирована'
+                            : 'Последняя версия пока не действует'
 
                     const effectiveStateTone: StatusTone =
                         isEffectiveVersion
@@ -861,19 +861,19 @@ export function CatalogTable({
                                 <div className="models-catalog-version-flags">
                                     <StatusPill
                                         tone="neutral"
-                                        label="Последняя версия"
+                                        label={`Последняя сохраненная · v${entry.version}`}
                                     />
 
                                     {isEffectiveVersion && (
                                         <StatusPill
                                             tone="success"
-                                            label="Действующая версия"
+                                            label={`Действующая · v${entry.version}`}
                                         />
                                     )}
                                 </div>
 
                                 <small>
-                                    Версия {entry.version}
+                                    Запись каталога v{entry.version}
                                     {' · '}
                                     {catalogSourceLabel(entry.source)}
                                 </small>

@@ -130,7 +130,7 @@ export function useAdminUsageReport() {
         })
 
     const models = useAdminUsageModelOptions({
-        enabled: tab === 'summary',
+        enabled: currentUser !== null,
         isSuperAdmin,
         dateFrom: draftDateFrom,
         dateTo: draftDateTo,
@@ -347,6 +347,13 @@ export function useAdminUsageReport() {
         loading: query.loading,
         error: query.error,
         filterError,
+        filtersDirty: draftDateFrom !== appliedDateFrom
+            || draftDateTo !== appliedDateTo
+            || draftModel !== appliedModel
+            || (isSuperAdmin && draftOrganizationId !== appliedOrganizationId),
+        appliedModel,
+        appliedDateFrom,
+        appliedDateTo,
         isSuperAdmin,
         scopeLabel,
 

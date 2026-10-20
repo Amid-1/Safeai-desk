@@ -112,7 +112,7 @@ export function getUsageSummary(
 export function getUsageByUsers(
     page = 0,
     size = 50,
-    filter: UsageDateRangeFilter = {},
+    filter: UsageSummaryFilter = {},
     options: RequestOptions = {},
 ): Promise<PageResponse<UsageUserSummary>> {
     return getUsagePage(
@@ -147,7 +147,7 @@ export function getOrganizationUsageUsers(
     organizationId: string,
     page = 0,
     size = 50,
-    filter: UsageDateRangeFilter = {},
+    filter: UsageSummaryFilter = {},
     options: RequestOptions = {},
 ): Promise<PageResponse<UsageUserSummary>> {
     return getUsagePage(
@@ -161,7 +161,7 @@ export function getOrganizationUsageUsers(
 }
 
 export function getUsageByModels(
-    filter: UsageDateRangeFilter = {},
+    filter: UsageSummaryFilter = {},
     options: RequestOptions = {},
 ): Promise<UsageModelSummary[]> {
     return getUsageArray(
@@ -174,7 +174,7 @@ export function getUsageByModels(
 
 export function getOrganizationUsageModels(
     organizationId: string,
-    filter: UsageDateRangeFilter = {},
+    filter: UsageSummaryFilter = {},
     options: RequestOptions = {},
 ): Promise<UsageModelSummary[]> {
     return getUsageArray(
@@ -186,7 +186,7 @@ export function getOrganizationUsageModels(
 }
 
 export function getUsageDaily(
-    filter: UsageDateRangeFilter = {},
+    filter: UsageSummaryFilter = {},
     options: RequestOptions = {},
 ): Promise<UsageDailySummary[]> {
     return getUsageArray(
@@ -199,7 +199,7 @@ export function getUsageDaily(
 
 export function getOrganizationUsageDaily(
     organizationId: string,
-    filter: UsageDateRangeFilter = {},
+    filter: UsageSummaryFilter = {},
     options: RequestOptions = {},
 ): Promise<UsageDailySummary[]> {
     return getUsageArray(
@@ -716,13 +716,14 @@ export function parseUsagePageResponse<T>(
 
 async function getUsageArray<T>(
     path: string,
-    filter: UsageDateRangeFilter,
+    filter: UsageSummaryFilter,
     parser: (value: unknown, field?: string) => T,
     options: RequestOptions,
 ): Promise<T[]> {
     const query = buildQueryString({
         dateFrom: normalizeOptionalString(filter.dateFrom),
         dateTo: normalizeOptionalString(filter.dateTo),
+        model: normalizeOptionalString(filter.model),
     })
 
     const response = await apiRequest<unknown>(

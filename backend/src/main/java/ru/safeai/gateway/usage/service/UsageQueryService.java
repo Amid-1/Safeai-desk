@@ -144,6 +144,121 @@ public class UsageQueryService {
                         organizationCriteria(range, organizationId), buildPlan(range)));
     }
 
+
+    /**
+     * Model-aware reports apply the same exact model filter to usage facts
+     * BEFORE aggregation; the old overloads stay binary/source compatible.
+     */
+    public Slice<UsageUserSummaryResponse> getUsageByUsers(
+            Instant dateFrom, Instant dateTo, String model,
+            Pageable pageable, SafeAiUserPrincipal currentUser
+    ) {
+        // A missing model means the established unfiltered contract.
+        // Reuse it so both entry points retain identical scope and limits.
+        if (model == null || model.isBlank()) {
+            return getUsageByUsers(dateFrom, dateTo, pageable, currentUser);
+        }
+        requireCurrentUser(currentUser);
+        requirePageable(pageable);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(), range.to(), scope(currentUser), null, normalizeModel(model));
+        return reportExecutor.execute("users", () ->
+                usageQueryRepository.findUsers(criteria, buildPlan(range), pageable));
+    }
+
+    public List<UsageModelSummaryResponse> getUsageByModels(
+            Instant dateFrom, Instant dateTo, String model,
+            SafeAiUserPrincipal currentUser
+    ) {
+        // A missing model means the established unfiltered contract.
+        // Reuse it so both entry points retain identical scope and limits.
+        if (model == null || model.isBlank()) {
+            return getUsageByModels(dateFrom, dateTo, currentUser);
+        }
+        requireCurrentUser(currentUser);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(), range.to(), scope(currentUser), null, normalizeModel(model));
+        return reportExecutor.execute("models", () ->
+                usageQueryRepository.findModels(criteria, buildPlan(range)));
+    }
+
+    public List<UsageDailySummaryResponse> getUsageDaily(
+            Instant dateFrom, Instant dateTo, String model,
+            SafeAiUserPrincipal currentUser
+    ) {
+        // A missing model means the established unfiltered contract.
+        // Reuse it so both entry points retain identical scope and limits.
+        if (model == null || model.isBlank()) {
+            return getUsageDaily(dateFrom, dateTo, currentUser);
+        }
+        requireCurrentUser(currentUser);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        requireBoundedDailyRange(range);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(), range.to(), scope(currentUser), null, normalizeModel(model));
+        return reportExecutor.execute("daily", () ->
+                usageQueryRepository.findDaily(criteria, buildPlan(range)));
+    }
+
+    /** Explicit organization selection retains the existing tenant policy. */
+    public Slice<UsageUserSummaryResponse> getUsageByUsersForOrganization(
+            UUID organizationId, Instant dateFrom, Instant dateTo, String model,
+            Pageable pageable, SafeAiUserPrincipal currentUser
+    ) {
+        // A missing model means the established unfiltered contract.
+        // Reuse it so both entry points retain identical scope and limits.
+        if (model == null || model.isBlank()) {
+            return getUsageByUsersForOrganization(
+                    organizationId, dateFrom, dateTo, pageable, currentUser);
+        }
+        requireOrganizationAccess(organizationId, currentUser);
+        requirePageable(pageable);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(), range.to(), organizationId, null, normalizeModel(model));
+        return reportExecutor.execute("organization-users", () ->
+                usageQueryRepository.findUsers(criteria, buildPlan(range), pageable));
+    }
+
+    public List<UsageModelSummaryResponse> getUsageByModelsForOrganization(
+            UUID organizationId, Instant dateFrom, Instant dateTo, String model,
+            SafeAiUserPrincipal currentUser
+    ) {
+        // A missing model means the established unfiltered contract.
+        // Reuse it so both entry points retain identical scope and limits.
+        if (model == null || model.isBlank()) {
+            return getUsageByModelsForOrganization(
+                    organizationId, dateFrom, dateTo, currentUser);
+        }
+        requireOrganizationAccess(organizationId, currentUser);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(), range.to(), organizationId, null, normalizeModel(model));
+        return reportExecutor.execute("organization-models", () ->
+                usageQueryRepository.findModels(criteria, buildPlan(range)));
+    }
+
+    public List<UsageDailySummaryResponse> getUsageDailyForOrganization(
+            UUID organizationId, Instant dateFrom, Instant dateTo, String model,
+            SafeAiUserPrincipal currentUser
+    ) {
+        // A missing model means the established unfiltered contract.
+        // Reuse it so both entry points retain identical scope and limits.
+        if (model == null || model.isBlank()) {
+            return getUsageDailyForOrganization(
+                    organizationId, dateFrom, dateTo, currentUser);
+        }
+        requireOrganizationAccess(organizationId, currentUser);
+        UsageDateRange range = normalizeRange(dateFrom, dateTo);
+        requireBoundedDailyRange(range);
+        UsageQueryCriteria criteria = new UsageQueryCriteria(
+                range.from(), range.to(), organizationId, null, normalizeModel(model));
+        return reportExecutor.execute("organization-daily", () ->
+                usageQueryRepository.findDaily(criteria, buildPlan(range)));
+    }
+
     public Slice<UsageSummaryResponse> getUsageByUserId(
             UUID userId, Instant dateFrom, Instant dateTo, String model,
             Pageable pageable, SafeAiUserPrincipal currentUser

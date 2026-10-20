@@ -109,6 +109,57 @@ const UNCONFIGURED: OrganizationModelPolicy = {
 }
 
 describe('ModelPolicyModal production safety', () => {
+    it('explains absent monthly budget without inventing a spending limit', () => {
+        render(<ModelPolicyModal
+            policy={UNCONFIGURED}
+            catalog={[ENTRY]}
+            effectiveCatalog={[ENTRY]}
+            runtime={RUNTIME}
+            organizationId={ORGANIZATION_ID}
+            organizationName="Demo Company"
+            pending={false}
+            onClose={vi.fn()}
+            onPreview={unusedPreview}
+            onSubmit={vi.fn<PolicySubmit>()}
+        />)
+        expect(screen.getByText(/Бюджет не установлен: месячного порога нет/))
+            .toBeInTheDocument()
+        expect(screen.getByRole('button', {name: 'Развернуть окно на весь экран'}))
+            .toBeInTheDocument()
+        expect(document.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(8)
+    })
+
+    it('preserves unsaved draft on maximize and requires confirmation on close', () => {
+        const onClose = vi.fn()
+        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+        try {
+            render(<ModelPolicyModal
+                policy={UNCONFIGURED}
+                catalog={[ENTRY]}
+                effectiveCatalog={[ENTRY]}
+                runtime={RUNTIME}
+                organizationId={ORGANIZATION_ID}
+                organizationName="Demo Company"
+                pending={false}
+                onClose={onClose}
+                onPreview={unusedPreview}
+                onSubmit={vi.fn<PolicySubmit>()}
+            />)
+            fireEvent.click(screen.getByRole('button', {name: 'Развернуть окно на весь экран'}))
+            expect(confirm).not.toHaveBeenCalled()
+            fireEvent.change(screen.getByPlaceholderText('Например: 32000'), {
+                target: {value: '1500'},
+            })
+            expect(screen.getByText('Есть несохраненные изменения'))
+                .toBeInTheDocument()
+            fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
+            expect(confirm).toHaveBeenCalledTimes(1)
+            expect(onClose).not.toHaveBeenCalled()
+        } finally {
+            confirm.mockRestore()
+        }
+    })
+
     it('explains NOT_DECLARED and displays the server training rejection without changing the draft', async () => {
         const onPreview = vi.fn<PolicyPreviewFn>().mockResolvedValue({
             organizationId: ORGANIZATION_ID,

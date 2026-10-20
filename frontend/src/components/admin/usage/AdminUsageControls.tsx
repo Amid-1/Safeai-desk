@@ -1,8 +1,6 @@
 // frontend/src/components/admin/usage/AdminUsageControls.tsx
 
-import type {
-    ChangeEvent,
-} from 'react'
+import type { ChangeEvent, ReactNode } from 'react'
 import {
     EmptyState,
     ErrorState,
@@ -44,9 +42,14 @@ type AdminUsageControlsProps = {
     modelOptionsError: string
 
     filterError: string
+    filtersDirty: boolean
+    appliedModel: string
+    appliedDateFrom: string
+    appliedDateTo: string
     loading: boolean
     error: string
     showEmptyReport: boolean
+    summaryContent?: ReactNode
 
     onDateFromChange: (value: string) => void
     onDateToChange: (value: string) => void
@@ -78,9 +81,14 @@ export function AdminUsageControls({
     modelOptionsLoading,
     modelOptionsError,
     filterError,
+    filtersDirty,
+    appliedModel,
+    appliedDateFrom,
+    appliedDateTo,
     loading,
     error,
     showEmptyReport,
+    summaryContent,
     onDateFromChange,
     onDateToChange,
     onModelChange,
@@ -133,7 +141,7 @@ export function AdminUsageControls({
                         </h2>
 
                         <p className="muted">
-                            Обе даты включены в отчёт.
+                            Календарные дни UTC (00:00–24:00). Начальная и конечная даты включены в отчёт.
                         </p>
                     </div>
                 </div>
@@ -167,8 +175,7 @@ export function AdminUsageControls({
                         />
                     </label>
 
-                    {tab === 'summary' && (
-                        <UsageFilterCombobox
+                    <UsageFilterCombobox
                             id="usage-model-filter"
                             label="Модель"
                             value={draftModel}
@@ -179,12 +186,11 @@ export function AdminUsageControls({
                             maxQueryLength={100}
                             loading={modelOptionsLoading}
                             error={modelOptionsError}
-                            helperText="Показываются точные модели, встречавшиеся в выбранном периоде и области отчёта."
+                            helperText="Фильтр применяется сервером ко всем четырем видам отчета. Список моделей соответствует указанному периоду и организации."
                             onChange={(value) => {
                                 onModelChange(value)
                             }}
-                        />
-                    )}
+                    />
 
                     {isSuperAdmin && (
                         <UsageFilterCombobox
@@ -226,6 +232,11 @@ export function AdminUsageControls({
                 )}
 
                 <div className="usage-filter-actions">
+                    {filtersDirty && (
+                        <span role="status" className="usage-filter-dirty">
+                            Фильтры изменены — результаты еще не обновлены.
+                        </span>
+                    )}
                     <button
                         type="button"
                         disabled={loading}
@@ -299,6 +310,17 @@ export function AdminUsageControls({
                     <p className="muted">
                         {reportDescription(tab)}
                     </p>
+                    {tab === 'daily' && (
+                        <p className="usage-chart-discovery">
+                            Ниже фильтров отображаются KPI и график «Динамика по дням UTC»; таблица с точными значениями сохранена.
+                        </p>
+                    )}
+                </div>
+
+                <div className="usage-applied-filters" aria-label="Примененные фильтры">
+                    <span>Период UTC: {appliedDateFrom} — {appliedDateTo}</span>
+                    <span>Модель: {appliedModel || 'Все модели'}</span>
+                    <span>Область: {scopeLabel}</span>
                 </div>
 
                 <span
@@ -306,6 +328,8 @@ export function AdminUsageControls({
                     data-resizable-upper-boundary
                     aria-hidden="true"
                 />
+
+                {summaryContent}
 
                 {loading && (
                     <LoadingState

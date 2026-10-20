@@ -314,3 +314,45 @@
         transition: none;
     }
 }
+
+/* Usage production workspace: clear filters, bounded tables, exact scope. */
+.usage-page .usage-filters { padding: 16px 20px; }
+.usage-page .usage-section-heading { margin-bottom: 12px; }
+.usage-page .usage-filter-grid { gap: 12px; }
+.usage-page .usage-filter-actions { margin-top: 12px; align-items: center; }
+.usage-filter-dirty { margin-right: auto; padding: 8px 12px; border: 1px solid #f0d49b; border-radius: 9px; background: #fffbeb; color: #824b0d; font-size: 12px; font-weight: 650; }
+.usage-applied-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.usage-applied-filters span { padding: 5px 9px; border: 1px solid #d8e2f2; border-radius: 999px; background: #f8fbff; color: #445670; font-size: 11px; font-weight: 650; }
+.usage-page .resizable-scroll-region__viewport.usage-table-scroll { padding-bottom: 12px; }
+.usage-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.usage-kpi { min-width: 0; padding: 13px 16px; border: 1px solid #dce5f5; border-radius: 13px; background: #ffffff; box-shadow: 0 5px 14px rgb(15 23 42 / 3%); }
+.usage-kpi__label { display: block; color: #607086; font-size: 11px; font-weight: 700; }
+.usage-kpi__value { display: block; margin-top: 5px; color: #172237; font-size: clamp(17px, 1.7vw, 25px); font-weight: 780; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.usage-kpi__hint { display: block; margin-top: 5px; color: #64748b; font-size: 11px; line-height: 1.35; }
+.usage-kpi--attention { border-color: #eed49c; background: #fffcf6; }
+.usage-chart-card { min-width: 0; padding: 16px; border: 1px solid #dce5f5; border-radius: 14px; background: #ffffff; }
+.usage-chart-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.usage-chart-heading h3 { margin: 0; font-size: 16px; }
+.usage-chart-heading p { margin: 5px 0 0; color: #64748b; font-size: 12px; }
+.usage-chart-select { display: grid; gap: 4px; color: #43536a; font-size: 11px; font-weight: 750; }
+.usage-chart-select select { padding: 7px 10px; border: 1px solid #cedaeb; border-radius: 9px; background: white; }
+.usage-chart-viewport { width: 100%; height: 290px; min-width: 0; }
+.usage-chart-note { margin: 8px 0 0; color: #64748b; font-size: 11px; }
+.usage-export-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 10px 12px; border: 1px solid #dce5f5; border-radius: 12px; background: #f8fbff; }
+.usage-export-toolbar > div { display: grid; gap: 4px; }
+.usage-export-toolbar strong { font-size: 12px; }
+.usage-export-toolbar small { color: #64748b; font-size: 11px; }
+.usage-export-error { margin: 0; color: #b91c1c; }
+@media (max-width: 1250px) { .usage-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media (max-width: 1050px) { .usage-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 600px) { .usage-kpis { grid-template-columns: 1fr; } .usage-filter-dirty { width: 100%; } .usage-chart-viewport { height: 250px; } .usage-export-toolbar > button { width: 100%; } }
+
+.usage-chart-discovery { margin-top: 6px; color: #3554a0; font-size: 12px; line-height: 1.45; }
+
+/* KPI and day chart live within the result viewport, visible before the table. */
+.usage-report-results { min-width: 0; }
+.usage-report-insights { display: grid; gap: 12px; padding: 14px 14px 10px; }
+.usage-report-results .usage-table { width: 100%; }
+@media (max-width: 640px) {
+  .usage-report-insights { padding: 10px 10px 8px; }
+}

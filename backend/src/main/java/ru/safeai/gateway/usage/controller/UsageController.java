@@ -55,7 +55,7 @@ public class UsageController {
 
     @GetMapping("/users")
     public PagedResponse<UsageUserSummaryResponse> users(
-            @Valid @ModelAttribute UsageDateFilter filter,
+            @Valid @ModelAttribute UsageDateModelFilter filter,
             @Valid @ModelAttribute UsagePageRequest pageRequest,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
@@ -63,6 +63,7 @@ public class UsageController {
                 usageQueryService.getUsageByUsers(
                         filter.dateFrom(),
                         filter.dateTo(),
+                        filter.normalizedModel(),
                         pageRequest.toPageable(),
                         currentUser
                 )
@@ -71,12 +72,13 @@ public class UsageController {
 
     @GetMapping("/models")
     public List<UsageModelSummaryResponse> models(
-            @Valid @ModelAttribute UsageDateFilter filter,
+            @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return usageQueryService.getUsageByModels(
                 filter.dateFrom(),
                 filter.dateTo(),
+                filter.normalizedModel(),
                 currentUser
         );
     }
@@ -84,7 +86,7 @@ public class UsageController {
     @GetMapping("/by-organization/{organizationId}/users")
     public PagedResponse<UsageUserSummaryResponse> usersByOrganization(
             @PathVariable UUID organizationId,
-            @Valid @ModelAttribute UsageDateFilter filter,
+            @Valid @ModelAttribute UsageDateModelFilter filter,
             @Valid @ModelAttribute UsagePageRequest pageRequest,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
@@ -93,6 +95,7 @@ public class UsageController {
                         organizationId,
                         filter.dateFrom(),
                         filter.dateTo(),
+                        filter.normalizedModel(),
                         pageRequest.toPageable(),
                         currentUser
                 )
@@ -102,13 +105,14 @@ public class UsageController {
     @GetMapping("/by-organization/{organizationId}/models")
     public List<UsageModelSummaryResponse> modelsByOrganization(
             @PathVariable UUID organizationId,
-            @Valid @ModelAttribute UsageDateFilter filter,
+            @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return usageQueryService.getUsageByModelsForOrganization(
                 organizationId,
                 filter.dateFrom(),
                 filter.dateTo(),
+                filter.normalizedModel(),
                 currentUser
         );
     }
@@ -116,12 +120,13 @@ public class UsageController {
     /** Daily usage is grouped by UTC calendar date. */
     @GetMapping("/daily")
     public List<UsageDailySummaryResponse> daily(
-            @Valid @ModelAttribute UsageDateFilter filter,
+            @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return usageQueryService.getUsageDaily(
                 filter.dateFrom(),
                 filter.dateTo(),
+                filter.normalizedModel(),
                 currentUser
         );
     }
@@ -129,13 +134,14 @@ public class UsageController {
     @GetMapping("/by-organization/{organizationId}/daily")
     public List<UsageDailySummaryResponse> dailyByOrganization(
             @PathVariable UUID organizationId,
-            @Valid @ModelAttribute UsageDateFilter filter,
+            @Valid @ModelAttribute UsageDateModelFilter filter,
             @AuthenticationPrincipal SafeAiUserPrincipal currentUser
     ) {
         return usageQueryService.getUsageDailyForOrganization(
                 organizationId,
                 filter.dateFrom(),
                 filter.dateTo(),
+                filter.normalizedModel(),
                 currentUser
         );
     }

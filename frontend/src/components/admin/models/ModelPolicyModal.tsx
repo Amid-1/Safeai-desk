@@ -50,18 +50,18 @@ import type {
 } from './modelControlPlaneSupport'
 import './ModelControlPlaneModalShell.css'
 import './ModelPolicyModal.css'
+import './ModelPolicyProductionEnhancements.css'
 
 const POLICY_MODAL_RESIZE:
     ModalResizeOptions = {
         initialWidth: 1480,
         initialHeight: 900,
 
-        minWidth: 620,
+        minWidth: 420,
         minHeight: 440,
 
-        scaleContent: true,
-        minScale: 0.72,
-        maxScale: 1.08,
+        // Never shrink policy text; narrow layouts reflow and body scrolls.
+        scaleContent: false,
         maximizable: true,
     }
 
@@ -553,11 +553,12 @@ export function ModelPolicyModal({
                 )
 
     const modalFooter = (
-        <div
-            className={
-                'models-policy-modal__footer'
-            }
-        >
+        <div className="models-policy-modal__footer">
+            {isDirty && (
+                <span className="models-policy-modal__dirty-notice" role="status">
+                    Есть несохраненные изменения
+                </span>
+            )}
             <button
                 type="button"
                 disabled={
@@ -919,6 +920,13 @@ export function ModelPolicyModal({
                     />
                 )}
 
+                {policyPreview && !currentPreview && (
+                    <p className="models-policy-form__preview-stale" role="status">
+                        Правила изменены после предыдущей проверки.
+                        Запустите «Проверить правила» заново перед сохранением.
+                    </p>
+                )}
+
                 {currentPreview && (
                     <section
                         className={
@@ -936,6 +944,8 @@ export function ModelPolicyModal({
                                     Runtime: {currentPreview.runtimeProvider}/{currentPreview.runtimeModel}
                                     {' · '}
                                     Исполняемых моделей: {currentPreview.executableModelCount}
+                                    {' · '}
+                                    Проверено сервером: {new Date(currentPreview.evaluatedAt).toLocaleString('ru-RU')}
                                 </small>
                             </div>
 
@@ -964,6 +974,13 @@ export function ModelPolicyModal({
                                         {item.reason
                                             ? previewReasonLabel(item.reason)
                                             : 'Проходит все проверки'}
+                                        {' · '}
+                                        Лимиты: {item.effectiveInputLimit.toLocaleString('ru-RU')}
+                                        {' / '}{item.effectiveOutputLimit.toLocaleString('ru-RU')}
+                                        {' · '}
+                                        {item.pricingComplete
+                                            ? 'Тариф подтвержден'
+                                            : 'Данные о стоимости неполные'}
                                     </small>
                                 </div>
                             ))}
@@ -1106,7 +1123,10 @@ export function ModelPolicyModal({
                                 text={
                                     'Используется, если запрос не выбрал модель явно. '
                                     + 'Статус рядом показывает связь последней и действующей '
-                                    + 'версий каталога с текущим Runtime.'
+                                    + 'версий каталога с текущим Runtime. '
+                                    + 'Автоматический режим следует текущему Runtime; '
+                                    + 'закрепленный ключ останется выбранным после смены Runtime '
+                                    + 'и может перестать быть исполняемым.'
                                 }
                             />
                         </span>
@@ -1147,6 +1167,11 @@ export function ModelPolicyModal({
                                 )
                             }}
                         />
+                        <p className="models-policy-form__field-explainer">
+                            Автоматически — использовать текущую модель сервера при каждом запросе.
+                            Закрепить модель — сохранить ключ каталога; при смене Runtime
+                            совместимость будет проверяться заново, а запрос может быть отклонен.
+                        </p>
                     </div>
 
                     <label id={`${formId}-budget`} data-policy-block="budget" className="models-policy-form__setting-field models-policy-form__setting-field--budget">
@@ -1308,6 +1333,20 @@ export function ModelPolicyModal({
                                 )
                             }}
                         />
+                        {!draft.monthlyBudgetUsd.trim() && (
+                            <p className="models-policy-form__field-explainer">
+                                Бюджет не установлен: месячного порога нет.
+                                Режим «{budgetEnforcementLabel(draft.budgetEnforcement)}»
+                                начнет влиять на лимит после задания суммы.
+                            </p>
+                        )}
+                        {draft.monthlyBudgetUsd.trim() && draft.budgetEnforcement === 'HARD' && (
+                            <p className="models-policy-form__field-explainer">
+                                Жесткий контроль проверяется сервером до исполнения запроса;
+                                запросы с непроверяемой стоимостью могут отклоняться.
+                                Итог проверьте через «Проверить правила».
+                            </p>
+                        )}
                     </div>
                 </div>
 

@@ -1,0 +1,123 @@
+/* Policy modal: readable at every size. Modal.tsx still owns geometry, drag,
+   keyboard focus, close behavior, maximize and all eight resize handles. */
+.modal-card.models-policy-modal.modal-card--resizable {
+    --modal-resize-font-size: 14px;
+    --modal-resize-small-font-size: 12px;
+    --modal-resize-hint-font-size: 13px;
+    --modal-resize-control-font-size: 14px;
+    --modal-resize-strong-font-size: 16px;
+    --modal-resize-title-font-size: 21px;
+    --modal-resize-control-height: 42px;
+    --modal-resize-checkbox-size: 16px;
+    --modal-resize-gap: 12px;
+}
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form {
+    align-content: start;
+    height: auto;
+    min-height: 100%;
+    padding-bottom: 14px;
+}
+.modal-card.models-policy-modal.modal-card--resizable .models-form__hint,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch-copy small,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle-note {
+    line-height: 1.5;
+}
+.modal-card.models-policy-modal .models-policy-form__scope,
+.modal-card.models-policy-modal .models-policy-form__toggle,
+.modal-card.models-policy-modal .models-policy-form__access-grid > *,
+.modal-card.models-policy-modal .models-policy-form__setting-field {
+    background: #f9fbfe;
+    border-color: #e3eaf3;
+}
+.modal-card.models-policy-modal .models-policy-form__setting-field--budget,
+.modal-card.models-policy-modal .models-policy-form__setting-field--limits,
+.modal-card.models-policy-modal .models-policy-form__setting-field--access { background: #f9fbfe; border-color: #e3eaf3; }
+.modal-card.models-policy-modal .models-policy-form__toggle--enabled { background: #f1faf5; border-color: #c9e8d5; }
+.modal-card.models-policy-modal .models-policy-form__scope-tags { gap: 6px; }
+.modal-card.models-policy-modal .models-policy-form__scope-tag { font-weight: 700; }
+.modal-card.models-policy-modal .models-policy-form__field-explainer {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #536884;
+    overflow-wrap: anywhere;
+}
+.modal-card.models-policy-modal .models-policy-form__preview-stale {
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid #dfcfa7;
+    border-radius: 9px;
+    color: #795a19;
+    background: #fff9ea;
+    font-size: 13px;
+}
+.modal-card.models-policy-modal .models-policy-modal__dirty-notice {
+    margin-right: auto;
+    font-size: 12px;
+    color: #775819;
+    overflow-wrap: anywhere;
+}
+.modal-card.models-policy-modal .models-policy-form__preview-row small { line-height: 1.5; }
+@container model-policy-modal (max-width: 1120px) {
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__overview-grid,
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__access-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__settings-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@container model-policy-modal (max-width: 780px) {
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__settings-grid,
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements .models-form__checks {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (max-width: 540px) {
+    .modal-card.models-policy-modal.modal-card--resizable {
+        --modal-resize-font-size: 14px;
+        --modal-resize-hint-font-size: 12px;
+        --modal-resize-control-font-size: 14px;
+    }
+    .modal-card.models-policy-modal .models-policy-modal__footer {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+}
+
+/* Modal.tsx provides inline scale variables; explicit property minimums avoid
+   overriding shared geometry or forcing global font changes. */
+.modal-card.models-policy-modal.modal-card--resizable .models-form label,
+.modal-card.models-policy-modal.modal-card--resizable .models-label-row,
+.modal-card.models-policy-modal.modal-card--resizable .models-model-selector__label {
+    font-size: max(14px, var(--modal-resize-font-size, 13px));
+}
+.modal-card.models-policy-modal.modal-card--resizable .models-form__hint,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch-copy small,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle-note {
+    font-size: max(12px, var(--modal-resize-hint-font-size, 12px));
+}
+.modal-card.models-policy-modal.modal-card--resizable input,
+.modal-card.models-policy-modal.modal-card--resizable select,
+.modal-card.models-policy-modal.modal-card--resizable textarea,
+.modal-card.models-policy-modal.modal-card--resizable button {
+    font-size: max(14px, var(--modal-resize-control-font-size, 12px));
+}
+.modal-card.models-policy-modal.modal-card--resizable input:not([type='checkbox']),
+.modal-card.models-policy-modal.modal-card--resizable select,
+.modal-card.models-policy-modal.modal-card--resizable button {
+    min-height: max(42px, var(--modal-resize-control-height, 38px));
+}
+.modal-card.models-policy-modal.modal-card--resizable .models-form input[type='checkbox'] {
+    width: max(16px, var(--modal-resize-checkbox-size, 14px));
+    min-width: max(16px, var(--modal-resize-checkbox-size, 14px));
+    height: max(16px, var(--modal-resize-checkbox-size, 14px));
+    min-height: max(16px, var(--modal-resize-checkbox-size, 14px));
+}
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__meta-label,
+.modal-card.models-policy-modal.modal-card--resizable .models-model-selector__count,
+.modal-card.models-policy-modal.modal-card--resizable .models-model-selector__description,
+.modal-card.models-policy-modal.modal-card--resizable .models-model-selector__hint,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-row small {
+    font-size: max(12px, var(--modal-resize-small-font-size, 11px));
+}

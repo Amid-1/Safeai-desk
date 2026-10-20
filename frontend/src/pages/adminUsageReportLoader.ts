@@ -86,24 +86,19 @@ export async function loadUsageReport({
         }
     }
 
-    const dateFilter = {
-        dateFrom: filter.dateFrom,
-        dateTo: filter.dateTo,
-    }
-
     if (tab === 'users') {
         const response = scopedOrganizationId
             ? await getOrganizationUsageUsers(
                 scopedOrganizationId,
                 page,
                 ADMIN_USAGE_PAGE_SIZE,
-                dateFilter,
+                filter,
                 { signal },
             )
             : await getUsageByUsers(
                 page,
                 ADMIN_USAGE_PAGE_SIZE,
-                dateFilter,
+                filter,
                 { signal },
             )
 
@@ -121,11 +116,11 @@ export async function loadUsageReport({
         const rows = scopedOrganizationId
             ? await getOrganizationUsageModels(
                 scopedOrganizationId,
-                dateFilter,
+                filter,
                 { signal },
             )
             : await getUsageByModels(
-                dateFilter,
+                filter,
                 { signal },
             )
 
@@ -139,11 +134,11 @@ export async function loadUsageReport({
     const rows = scopedOrganizationId
         ? await getOrganizationUsageDaily(
             scopedOrganizationId,
-            dateFilter,
+            filter,
             { signal },
         )
         : await getUsageDaily(
-            dateFilter,
+            filter,
             { signal },
         )
 

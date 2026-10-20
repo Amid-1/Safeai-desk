@@ -1065,6 +1065,9 @@ export function DefaultModelSelector({
                 className="models-default-selector__button"
                 disabled={disabled}
                 aria-haspopup="listbox"
+                aria-label={selectedKey
+                    ? undefined
+                    : 'Использовать подключённую модель — автоматически, текущий Runtime'}
                 aria-expanded={expanded}
                 aria-controls={listboxId}
                 onClick={() => {
@@ -1076,9 +1079,8 @@ export function DefaultModelSelector({
                 <span>
                     <strong>
                         {selectedKey
-                            ? selectedEntry?.displayName
-                                ?? selectedKey
-                            : 'Использовать подключённую модель'}
+                            ? `Закреплена — ${selectedEntry?.displayName ?? selectedKey}`
+                            : 'Автоматически — текущий Runtime'}
                     </strong>
                     <small>
                         {selectedKey
@@ -1166,6 +1168,7 @@ export function DefaultModelSelector({
                             id={`${listboxId}-option-0`}
                             type="button"
                             role="option"
+                            aria-label="Использовать подключённую модель — автоматически, текущий Runtime"
                             aria-selected={!selectedKey}
                             className={[
                                 'models-default-selector__option',
@@ -1182,7 +1185,7 @@ export function DefaultModelSelector({
                         >
                             <span>
                                 <strong>
-                                    Подключённая модель
+                                    Автоматически — текущий Runtime
                                 </strong>
                                 <small>
                                     {runtimeExecutionLabel(
