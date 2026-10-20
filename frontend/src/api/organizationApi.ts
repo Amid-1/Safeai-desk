@@ -62,6 +62,11 @@ export type OrganizationDisableImpact = {
     administrators: number
     activeRefreshSessions: number
     activeChatOperations: number
+    /** Older API responses omit this entire group. Missing is not zero. */
+    startedPhysicalAttempts?: number
+    uncertainPhysicalAttempts?: number
+    /** Present only for the extended advisory response; always true. */
+    advisoryOnly?: true
 }
 
 export type CreateOrganizationRequest = {
@@ -446,40 +451,71 @@ function validateProtectionContract(
 function parseOrganizationDisableImpact(
     value: unknown,
 ): OrganizationDisableImpact {
-    const record = expectRecord(
-        value,
-        'organizationDisableImpact',
-    )
+    const field = 'organizationDisableImpact'
+    const record = expectRecord(value, field)
 
-    return {
+    // The backend returns all three fields together. Old backend versions
+    // return none of them. A partial expansion is an invalid API response.
+    const hasStarted = record.startedPhysicalAttempts !== undefined
+    const hasUncertain = record.uncertainPhysicalAttempts !== undefined
+    const hasAdvisory = record.advisoryOnly !== undefined
+    const legacy = !hasStarted && !hasUncertain && !hasAdvisory
+
+    if (!legacy && !(hasStarted && hasUncertain && hasAdvisory)) {
+        throw contractError(
+            `${field}: неполный набор полей предварительной проверки`,
+        )
+    }
+
+    // Parsed core fields are ALWAYS required, even for a legacy response.
+    const impact: OrganizationDisableImpact = {
         organizationId: expectUuid(
             record.organizationId,
-            'organizationDisableImpact.organizationId',
+            `${field}.organizationId`,
         ),
-        organizationVersion:
-            expectNonNegativeInteger(
-                record.organizationVersion,
-                'organizationDisableImpact.organizationVersion',
-            ),
-        enabledUsers:
-            expectNonNegativeInteger(
-                record.enabledUsers,
-                'organizationDisableImpact.enabledUsers',
-            ),
-        administrators:
-            expectNonNegativeInteger(
-                record.administrators,
-                'organizationDisableImpact.administrators',
-            ),
-        activeRefreshSessions:
-            expectNonNegativeInteger(
-                record.activeRefreshSessions,
-                'organizationDisableImpact.activeRefreshSessions',
-            ),
-        activeChatOperations:
-            expectNonNegativeInteger(
-                record.activeChatOperations,
-                'organizationDisableImpact.activeChatOperations',
-            ),
+        organizationVersion: expectNonNegativeInteger(
+            record.organizationVersion,
+            `${field}.organizationVersion`,
+        ),
+        enabledUsers: expectNonNegativeInteger(
+            record.enabledUsers,
+            `${field}.enabledUsers`,
+        ),
+        administrators: expectNonNegativeInteger(
+            record.administrators,
+            `${field}.administrators`,
+        ),
+        activeRefreshSessions: expectNonNegativeInteger(
+            record.activeRefreshSessions,
+            `${field}.activeRefreshSessions`,
+        ),
+        activeChatOperations: expectNonNegativeInteger(
+            record.activeChatOperations,
+            `${field}.activeChatOperations`,
+        ),
     }
+
+    if (!legacy) {
+        const advisoryOnly = expectBoolean(
+            record.advisoryOnly,
+            `${field}.advisoryOnly`,
+        )
+        if (!advisoryOnly) {
+            throw contractError(
+                `${field}.advisoryOnly: серверная проверка должна быть предварительной`,
+            )
+        }
+
+        impact.startedPhysicalAttempts = expectNonNegativeInteger(
+            record.startedPhysicalAttempts,
+            `${field}.startedPhysicalAttempts`,
+        )
+        impact.uncertainPhysicalAttempts = expectNonNegativeInteger(
+            record.uncertainPhysicalAttempts,
+            `${field}.uncertainPhysicalAttempts`,
+        )
+        impact.advisoryOnly = true
+    }
+
+    return impact
 }

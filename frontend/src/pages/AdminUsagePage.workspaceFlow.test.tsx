@@ -49,8 +49,14 @@ vi.mock('../components/ResizableScrollRegion', () => ({
             data-restore-requests={showUpperRequest}
         >
             {upper}
-            {children}
-            {footer}
+            <div className="resizable-scroll-region__lower">
+                <div className="resizable-scroll-region__handle"
+                     role="separator" aria-label="Изменить размер области результатов">
+                    <span aria-hidden="true" />
+                </div>
+                {children}
+                {footer}
+            </div>
         </div>
     ),
 }))
@@ -106,6 +112,13 @@ vi.mock('../components/admin/usage/UsageKpis', () => {
     return Object.fromEntries(entries)
 })
 
+vi.mock('../components/admin/usage/UsageBreakdownChart', () => {
+    const entries = [
+        ['UsageBreakdownChart', () => <div>Сравнение расхода токенов</div>],
+    ] satisfies ReadonlyArray<readonly [keyof typeof import('../components/admin/usage/UsageBreakdownChart'), unknown]>
+    return Object.fromEntries(entries)
+})
+
 vi.mock('../components/admin/usage/UsageDailyChart', () => {
     const entries = [
         ['UsageDailyChart', () => <div>График</div>],
@@ -127,6 +140,16 @@ vi.mock('../components/admin/usage/usageCsv', () => {
 })
 
 describe('Usage page does not clip short reports', () => {
+    it('keeps a real drag entry point in normal flow', () => {
+        const { container } = render(<AdminUsagePage />)
+        const page = container.querySelector('.usage-page')
+        expect(page?.classList.contains('usage-page--flow')).toBe(true)
+        fireEvent.pointerDown(screen.getByRole('separator', {
+            name: 'Изменить размер области результатов',
+        }), { button: 0 })
+        expect(page?.classList.contains('usage-page--focused')).toBe(true)
+    })
+
     it('starts in full flow, expands the workspace and restores filters', () => {
         const { container } = render(<AdminUsagePage />)
         const page = container.querySelector('.usage-page')
@@ -138,6 +161,7 @@ describe('Usage page does not clip short reports', () => {
         expect(screen.getByText('Показатели')).toBeTruthy()
         expect(screen.getByText('Данные отчета')).toBeTruthy()
         expect(screen.getByText('Итоговая строка')).toBeTruthy()
+        expect(screen.getByText('Сравнение расхода токенов')).toBeTruthy()
 
         fireEvent.click(screen.getByRole('button', {
             name: 'Развернуть результаты',
@@ -147,6 +171,7 @@ describe('Usage page does not clip short reports', () => {
         expect(workspace.getAttribute('data-expand-requests')).toBe('1')
         expect(screen.getByText('Данные отчета')).toBeTruthy()
         expect(screen.getByText('Итоговая строка')).toBeTruthy()
+        expect(screen.getByText('Сравнение расхода токенов')).toBeTruthy()
 
         fireEvent.click(screen.getByRole('button', {
             name: 'Показать фильтры',
@@ -157,5 +182,6 @@ describe('Usage page does not clip short reports', () => {
         expect(screen.getByText('Показатели')).toBeTruthy()
         expect(screen.getByText('Данные отчета')).toBeTruthy()
         expect(screen.getByText('Итоговая строка')).toBeTruthy()
+        expect(screen.getByText('Сравнение расхода токенов')).toBeTruthy()
     })
 })

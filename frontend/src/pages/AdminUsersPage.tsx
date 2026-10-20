@@ -129,6 +129,7 @@ function AdminUsersPageContent({
                 onSearchDraftChange={directory.setSearchDraft}
                 onApplySearch={directory.applySearch}
                 onClearSearch={directory.clearSearch}
+                onSelectSearchSuggestion={directory.selectSearchSuggestion}
                 onStatusChange={directory.changeStatus}
                 detailsLoadingUserId={
                     directory.detailsLoadingUserId

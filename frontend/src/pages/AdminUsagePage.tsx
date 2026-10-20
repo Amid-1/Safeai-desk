@@ -15,9 +15,11 @@ import {
     useAdminUsageReport,
 } from './useAdminUsageReport'
 import { useLayoutEffect, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { UsageDailySummary } from '../api/usageApi'
 import { UsageKpis } from '../components/admin/usage/UsageKpis'
 import { UsageDailyChart } from '../components/admin/usage/UsageDailyChart'
+import { UsageBreakdownChart } from '../components/admin/usage/UsageBreakdownChart'
 import { downloadUsageCsv } from '../components/admin/usage/usageCsv'
 import { autoFitUsageHeight } from './usagePanelHeight'
 import './AdminUsagePage.css'
@@ -45,6 +47,31 @@ function AdminUsagePageContent() {
         if (pageRef.current) pageRef.current.scrollTop = 0
     }, [focusedResults])
     const [naturalResultHeight, setNaturalResultHeight] = useState<number | null>(null)
+
+    // In ordinary document flow the divider is visible and draggable.
+    // Enter the bounded split BEFORE ResizableScrollRegion starts handling
+    // the pointer. Its native pointer capture, movement and keyboard
+    // implementation remain authoritative; no parallel drag system.
+    const onWorkspacePointerDownCapture = (
+        event: ReactPointerEvent<HTMLDivElement>,
+    ) => {
+        if (focusedResults || !showReportRows || event.button !== 0) return
+        const target = event.target
+        if (!(target instanceof Element)) return
+        if (!target.closest('.resizable-scroll-region__handle')) return
+        setFocusedResults(true)
+    }
+
+    const onWorkspaceKeyDownCapture = (
+        event: ReactKeyboardEvent<HTMLDivElement>,
+    ) => {
+        if (focusedResults || !showReportRows) return
+        if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+        const target = event.target
+        if (!(target instanceof Element)) return
+        if (!target.closest('.resizable-scroll-region__handle')) return
+        setFocusedResults(true)
+    }
 
     const showReportRows =
         !report.loading
@@ -109,6 +136,8 @@ function AdminUsagePageContent() {
     return (
         <div
             ref={pageRef}
+            onPointerDownCapture={onWorkspacePointerDownCapture}
+            onKeyDownCapture={onWorkspaceKeyDownCapture}
             className={focusedResults
                 ? 'page usage-page usage-page--focused'
                 : 'page usage-page usage-page--flow'}
@@ -247,8 +276,13 @@ function AdminUsagePageContent() {
                         <div className="usage-report-insights">
 
                                 <UsageKpis rows={report.rows} tab={report.tab} />
-                                {report.tab === 'daily' && (
+                                {report.tab === 'daily' ? (
                                     <UsageDailyChart rows={report.rows as UsageDailySummary[]} />
+                                ) : (
+                                    <UsageBreakdownChart
+                                        tab={report.tab}
+                                        rows={report.rows}
+                                    />
                                 )}
                                 <div className="usage-export-toolbar">
                                     <div>

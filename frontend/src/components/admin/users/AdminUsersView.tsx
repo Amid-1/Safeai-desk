@@ -1,5 +1,5 @@
-import {useState} from 'react'
 // frontend/src/components/admin/users/AdminUsersView.tsx
+import { useState } from 'react'
 import type {
     AuthUser,
 } from '../../../api/authApi'
@@ -15,7 +15,6 @@ import UserRoleBadge from '../UserRoleBadge'
 import ResizableScrollRegion
     from '../../ResizableScrollRegion'
 import {
-    EmptyState,
     ErrorState,
     LoadingState,
 } from '../../StateBlock'
@@ -64,6 +63,7 @@ type AdminUsersViewProps = {
     onSearchDraftChange: (value: string) => void
     onApplySearch: () => void
     onClearSearch: () => void
+    onSelectSearchSuggestion: (user: User) => void
     onStatusChange: (value: 'ALL' | 'ACTIVE' | 'DISABLED') => void
     detailsLoadingUserId: string | null
     currentUser: AuthUser
@@ -117,6 +117,7 @@ export function AdminUsersView({
     onSearchDraftChange,
     onApplySearch,
     onClearSearch,
+    onSelectSearchSuggestion,
     onStatusChange,
     detailsLoadingUserId,
     currentUser,
@@ -134,14 +135,28 @@ export function AdminUsersView({
     canManageUser,
     canPermanentlyDelete,
 }: AdminUsersViewProps) {
-    const [roleInfoUser, setRoleInfoUser] =
-        useState<User | null>(null)
-
-    const roleInfoIsSelf =
-        roleInfoUser?.id === currentUser.id
+    // Информация о роли — только для чтения. Права на изменение
+    // остаются у серверного SUPER_ADMIN, включая защиту своей роли.
+    const [roleInfoUser, setRoleInfoUser] = useState<User | null>(null)
+    const roleInfoIsSelf = roleInfoUser?.id === currentUser.id
     const roleInfoIsProtected =
         roleInfoUser?.roles.includes('SUPER_ADMIN') ?? false
 
+    const [suggestionsOpen, setSuggestionsOpen] = useState(false)
+    const showSuggestions = suggestionsOpen
+        && !loading && !loadError
+        && searchDraft.trim().length >= 2
+        && searchDraft.trim() === appliedSearch
+        && users.length > 0
+    const suggestionRank = (user: User): number => {
+        const fragment = searchDraft.trim().toLocaleLowerCase()
+        if (user.email.toLocaleLowerCase().startsWith(fragment)) return 0
+        if ((user.fullName || '').toLocaleLowerCase().split(/\s+/)
+            .some(part => part.startsWith(fragment))) return 1
+        return 2
+    }
+    const suggestions = [...users].sort((a, b) =>
+        suggestionRank(a) - suggestionRank(b)).slice(0, 8)
     return (
         <>
             <ResizableScrollRegion
@@ -225,6 +240,7 @@ export function AdminUsersView({
                             aria-label={
                                 'Фильтр пользователей по роли'
                             }
+                            title="Общие количества в выбранной организации или области доступа; поиск и статус на эти числа не влияют."
                         >
                             <FilterButton
                                 active={
@@ -284,13 +300,22 @@ export function AdminUsersView({
                         <form
                             className="users-directory-search"
                             role="search"
+                            onBlur={(event) => {
+                                if (!event.currentTarget.contains(event.relatedTarget)) {
+                                    setSuggestionsOpen(false)
+                                }
+                            }}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Escape') setSuggestionsOpen(false)
+                            }}
                             onSubmit={(event) => {
+                                setSuggestionsOpen(false)
                                 event.preventDefault()
                                 onApplySearch()
                             }}
                         >
                             <label htmlFor="users-directory-query">
-                                Поиск по email или имени
+                                Поиск по имени, фамилии или email
                             </label>
                             <div className="users-directory-search__row">
                                 <input
@@ -298,10 +323,13 @@ export function AdminUsersView({
                                     type="search"
                                     maxLength={120}
                                     value={searchDraft}
-                                    onChange={(event) =>
-                                        onSearchDraftChange(event.target.value)
-                                    }
-                                    placeholder="Введите email или имя"
+                                    onChange={(event) => {
+                                        const value = event.target.value
+                                        onSearchDraftChange(value)
+                                        setSuggestionsOpen(Boolean(value.trim()))
+                                    }}
+                                    onFocus={() => setSuggestionsOpen(true)}
+                                    placeholder="Имя, фамилия или email"
                                     disabled={hasPendingMutation}
                                 />
                                 <label htmlFor="users-directory-status" className="users-directory-search__status-label">
@@ -316,8 +344,8 @@ export function AdminUsersView({
                                     disabled={hasPendingMutation}
                                 >
                                     <option value="ALL">Все статусы</option>
-                                    <option value="ACTIVE">Активные</option>
-                                    <option value="DISABLED">Отключенные</option>
+                                    <option value="ACTIVE">Включённые</option>
+                                    <option value="DISABLED">Отключённые</option>
                                 </select>
                                 <button type="submit" disabled={hasPendingMutation || loading}>
                                     Найти
@@ -333,11 +361,40 @@ export function AdminUsersView({
                                     </button>
                                 )}
                             </div>
+                            {showSuggestions && (
+                                <div
+                                    id="users-directory-suggestions"
+                                    className="users-directory-search__suggestions"
+                                    aria-label="Подходящие зарегистрированные пользователи"
+                                >
+                                    <span className="users-directory-search__suggestions-heading">
+                                        Совпадения · выберите пользователя
+                                    </span>
+                                    {suggestions.map(user => (
+                                        <button
+                                            key={user.id}
+                                            type="button"
+                                            className="users-directory-search__suggestion"
+                                            onClick={() => {
+                                                onSelectSearchSuggestion(user)
+                                                setSuggestionsOpen(false)
+                                            }}
+                                        >
+                                            <strong>{user.fullName || user.email}</strong>
+                                            {user.fullName && <small>{user.email}</small>}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             <span className="users-directory-search__summary" role="status">
-                                Найдено: {totalMatched}
+                                Найдено по фильтрам: {totalMatched}
+                                {' · Всего пользователей: '}{statistics.total}
                                 {searchDraft.trim() !== appliedSearch && (
-                                    <> · Поиск изменен, нажмите «Найти»</>
+                                    <> · {searchDraft.trim().length === 1
+                                        ? 'Введите ещё символ или нажмите «Найти»'
+                                        : 'Обновляем результаты поиска…'}</>
                                 )}
+                                {' · Сначала недавно созданные'}
                             </span>
                         </form>
 
@@ -380,16 +437,6 @@ export function AdminUsersView({
                                 />
                             )}
 
-                        {!loading
-                            && !loadError
-                            && users.length === 0
-                            && (
-                                <EmptyState
-                                    message={
-                                        'Пользователи не найдены.'
-                                    }
-                                />
-                            )}
                     </div>
                 }
                 footer={
@@ -424,21 +471,41 @@ export function AdminUsersView({
                         : null
                 }
                 lowerClassName={
-                    'users-table-card'
+                    users.length === 0 ? 'users-table-card users-table-card--empty' : 'users-table-card'
                 }
                 viewportClassName={
                     'users-table-scroll'
                 }
                 defaultHeight={430}
                 autoFitHeight={
-                    !loading && !loadError && users.length > 0
-                        ? 15 + 59 + users.length * 73 + 56
+                    !loading && !loadError
+                        ? users.length > 0
+                            ? 15 + 59 + users.length * 73 + 56
+                            : 175
                         : undefined
                 }
                 minHeight={72}
                 maxHeight={760}
                 minUpperHeight={112}
             >
+                {!loading && !loadError && users.length === 0 && (
+                    <div className="users-directory-empty" role="status">
+                        <strong>
+                            {appliedSearch
+                                ? 'По вашему запросу пользователи не найдены'
+                                : 'В выбранной категории пользователей нет'}
+                        </strong>
+                        <p>
+                            {appliedSearch
+                                ? `Нет совпадений для «${appliedSearch}». Проверьте имя, фамилию или email.`
+                                : 'Попробуйте изменить роль или статус пользователя.'}
+                        </p>
+                        {(appliedSearch || searchDraft) && (
+                            <button type="button" className="secondary-button"
+                                onClick={onClearSearch}>Сбросить поиск</button>
+                        )}
+                    </div>
+                )}
                 {!loading
                     && !loadError
                     && users.length > 0

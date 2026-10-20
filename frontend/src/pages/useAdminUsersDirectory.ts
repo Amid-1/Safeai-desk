@@ -82,6 +82,19 @@ export function useAdminUsersDirectory(
     const [appliedSearch, setAppliedSearch] = useState('')
     const [totalMatched, setTotalMatched] = useState(0)
 
+    // Query is applied automatically after a pause. Deleting the text
+    // must immediately clear the previous server-side filter.
+    useEffect(() => {
+        const query = searchDraft.trim()
+        if (query === appliedSearch) return
+        if (query.length < 2 || query.length > 120) return
+        const timeout = window.setTimeout(() => {
+            setAppliedSearch(query)
+            setPage(0)
+        }, 350)
+        return () => window.clearTimeout(timeout)
+    }, [searchDraft, appliedSearch])
+
     const [detailsUser, setDetailsUser] =
         useState<UserDetails | null>(null)
     const [detailsLoadingUserId, setDetailsLoadingUserId] =
@@ -328,6 +341,15 @@ export function useAdminUsersDirectory(
         setPage(0)
     }
 
+    function changeSearchDraft(value: string) {
+        setSearchDraft(value)
+        // The native clear icon must reset the applied server query immediately.
+        if (!value.trim()) {
+            setAppliedSearch('')
+            setPage(0)
+        }
+    }
+
     function applySearch() {
         const next = searchDraft.trim()
         if (next.length > 120) {
@@ -340,6 +362,13 @@ export function useAdminUsersDirectory(
     function clearSearch() {
         setSearchDraft('')
         setAppliedSearch('')
+        setPage(0)
+    }
+
+    function selectSearchSuggestion(user: User) {
+        // Exact email is unambiguous even for users sharing full names.
+        setSearchDraft(user.email)
+        setAppliedSearch(user.email)
         setPage(0)
     }
 
@@ -432,10 +461,11 @@ export function useAdminUsersDirectory(
         searchDraft,
         appliedSearch,
         totalMatched,
-        setSearchDraft,
+        setSearchDraft: changeSearchDraft,
         changeStatus,
         applySearch,
         clearSearch,
+        selectSearchSuggestion,
         detailsUser,
         detailsLoadingUserId,
         detailsError,

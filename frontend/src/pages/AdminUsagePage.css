@@ -540,3 +540,103 @@
 @media (max-width: 640px) {
     .usage-page--flow { scrollbar-gutter: auto; }
 }
+
+/* Usage reports v6: the grip remains usable in normal document flow.
+   The lower card must take its NATURAL content height outside focus:
+   neither the old saved panel height nor the fixed footer may cut a row. */
+.usage-page--flow .resizable-scroll-region__handle {
+    display: grid;
+    flex: 0 0 18px;
+    min-height: 18px;
+    margin-block: 7px 3px;
+    cursor: ns-resize;
+    touch-action: none;
+    background: #f5f8ff;
+    border-radius: 10px;
+}
+.usage-page--flow .resizable-scroll-region__handle:focus-visible {
+    outline: 2px solid #2563eb;
+}
+.usage-page--flow .resizable-scroll-region__lower.usage-report-card {
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+    overflow: visible;
+}
+.usage-page--flow .resizable-scroll-region__viewport.usage-table-scroll {
+    display: block;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    flex: none;
+    overflow-x: auto;
+    overflow-y: visible;
+}
+.usage-page--flow .usage-report-results {
+    display: flow-root;
+    min-height: 0;
+    overflow: visible;
+}
+.usage-page--flow .resizable-scroll-region__footer {
+    position: static;
+    flex: none;
+    padding-top: 10px;
+    margin-top: 6px;
+    overflow: visible;
+    box-shadow: none;
+}
+/* In focused workspace scrolling is intentional and the footer is fixed
+   outside the scroll viewport. This is NOT applied to the flow layout. */
+.usage-page--focused .resizable-scroll-region__lower.usage-report-card {
+    min-height: 0;
+    overflow: hidden;
+}
+.usage-page--focused .resizable-scroll-region__viewport.usage-table-scroll {
+    min-height: 0;
+    overflow: auto;
+}
+.usage-breakdown-chart {
+    min-width: 0;
+    padding: 16px;
+    background: #fff;
+    border: 1px solid #dbe5f4;
+    border-radius: 13px;
+}
+.usage-breakdown-chart__top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin-bottom: 10px;
+}
+.usage-breakdown-chart__top h3 { margin: 0; font-size: 16px; color: #1e293b; }
+.usage-breakdown-chart__top p { margin: 5px 0 0; font-size: 12px; line-height: 1.45; color: #64748b; }
+.usage-breakdown-chart__top button {
+    min-height: 35px;
+    padding: 7px 12px;
+    border-radius: 9px;
+    border: 1px solid #cdd9ea;
+    background: #f8fbff;
+    color: #1e293b;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.usage-breakdown-chart__plot { width: 100%; min-width: 0; }
+.usage-breakdown-chart__legend { display: flex; flex-wrap: wrap; gap: 16px; color: #53647f; font-size: 12px; }
+.usage-breakdown-chart__legend span::before {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    margin-right: 6px;
+    border-radius: 3px;
+    content: '';
+    background: #4d92ef;
+}
+.usage-breakdown-chart__legend span:last-child::before { background: #58bd7c; }
+.usage-breakdown-chart__warning { margin: 8px 0 0; font-size: 12px; color: #8a4b11; }
+@media(max-width: 680px) {
+    .usage-breakdown-chart { padding: 11px; }
+}

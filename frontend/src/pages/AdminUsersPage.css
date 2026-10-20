@@ -1340,3 +1340,61 @@ body.modal-open {
 
 .users-password-field {display: grid; gap: 7px; font-weight: 700;}
 .users-password-field > label {display: block; font-weight: 700;}
+
+/* Users directory: safe inline suggestions and explicit empty result. */
+.users-directory-search__suggestions {
+    display: grid;
+    gap: 2px;
+    max-height: 254px;
+    overflow-y: auto;
+    border: 1px solid #d4dff2;
+    border-radius: 12px;
+    padding: 5px;
+    background: #fff;
+    box-shadow: 0 7px 22px rgba(15,23,42,.07);
+}
+.users-directory-search__suggestions-heading {
+    padding: 7px 9px;
+    color: #53637a;
+    font-size: 12px;
+    font-weight: 700;
+}
+.users-directory-search__suggestion {
+    display: grid;
+    gap: 3px;
+    width: 100%;
+    padding: 9px 12px;
+    text-align: left;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #172033;
+    cursor: pointer;
+}
+.users-directory-search__suggestion:hover,
+.users-directory-search__suggestion:focus-visible {
+    background: #ecf3ff;
+    outline-offset: 1px;
+}
+.users-directory-search__suggestion small {
+    color: #62738b;
+}
+.users-directory-empty {
+    display: grid;
+    justify-items: start;
+    align-content: center;
+    gap: 8px;
+    padding: 20px 22px;
+    min-height: 150px;
+    box-sizing: border-box;
+    color: #26364e;
+}
+.users-directory-empty strong {font-size: 15px;}
+.users-directory-empty p {margin: 0; font-size: 13px; color: #62738b;}
+.users-directory-empty .secondary-button {margin-top: 4px; padding: 9px 12px;}
+.users-page .users-table-card--empty {
+    height: 195px !important;
+    max-height: 195px;
+    flex: 0 0 195px !important;
+    padding-bottom: 8px;
+}
