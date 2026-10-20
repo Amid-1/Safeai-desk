@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { apiRequest } from './http'
+import { apiRequest, API_TIMEOUTS } from './http'
 import {
     getOrganizationDisableImpact,
     type OrganizationDisableImpact,
@@ -7,11 +7,16 @@ import {
 
 vi.mock('./http', async (importOriginal) => {
     const actual = await importOriginal<typeof import('./http')>()
-    return { ...actual, apiRequest: vi.fn() }
+
+    return {
+        ...actual,
+        apiRequest: vi.fn(),
+    }
 })
 
 const ORG_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-const serverResponse = {
+
+const fullResponse = {
     organizationId: ORG_ID,
     organizationVersion: 3,
     enabledUsers: 0,
@@ -23,7 +28,7 @@ const serverResponse = {
     advisoryOnly: true,
 } as const satisfies OrganizationDisableImpact
 
-// An old server legitimately returns only the original six fields.
+// Older server versions return only the six required core fields.
 const legacyResponse = {
     organizationId: ORG_ID,
     organizationVersion: 3,
@@ -33,25 +38,49 @@ const legacyResponse = {
     activeChatOperations: 0,
 } as const satisfies OrganizationDisableImpact
 
+const requestMock = vi.mocked(apiRequest)
+
 beforeEach(() => {
     vi.resetAllMocks()
 })
 
-describe('Organization disable-impact contract', () => {
-    it('passes the full advisory response through without inventing values', async () => {
-        vi.mocked(apiRequest).mockResolvedValue(serverResponse)
+describe('Organization disable-impact API contract', () => {
+    it('returns the complete advisory snapshot without changing server values', async () => {
+        requestMock.mockResolvedValue(fullResponse)
 
         const impact = await getOrganizationDisableImpact(ORG_ID)
 
-        expect(impact).toEqual(serverResponse)
-        expect(apiRequest).toHaveBeenCalledWith(
+        expect(impact).toEqual(fullResponse)
+        expect(requestMock).toHaveBeenCalledTimes(1)
+        expect(requestMock).toHaveBeenCalledWith(
             `/api/organizations/${ORG_ID}/disable-impact`,
-            expect.objectContaining({ method: 'GET' }),
+            {
+                method: 'GET',
+                signal: undefined,
+                timeoutMs: API_TIMEOUTS.default,
+            },
         )
     })
 
-    it('keeps legacy absence distinguishable from genuine zero counts', async () => {
-        vi.mocked(apiRequest).mockResolvedValue(legacyResponse)
+    it('forwards cancellation to the HTTP layer', async () => {
+        requestMock.mockResolvedValue(fullResponse)
+        const controller = new AbortController()
+
+        await getOrganizationDisableImpact(ORG_ID, {
+            signal: controller.signal,
+        })
+
+        expect(requestMock).toHaveBeenCalledWith(
+            `/api/organizations/${ORG_ID}/disable-impact`,
+            expect.objectContaining({
+                method: 'GET',
+                signal: controller.signal,
+            }),
+        )
+    })
+
+    it('preserves legacy absence instead of manufacturing zero counters', async () => {
+        requestMock.mockResolvedValue(legacyResponse)
 
         const impact = await getOrganizationDisableImpact(ORG_ID)
 
@@ -59,12 +88,18 @@ describe('Organization disable-impact contract', () => {
         expect(impact.startedPhysicalAttempts).toBeUndefined()
         expect(impact.uncertainPhysicalAttempts).toBeUndefined()
         expect(impact.advisoryOnly).toBeUndefined()
-        expect(Object.prototype.hasOwnProperty.call(impact, 'startedPhysicalAttempts')).toBe(false)
+        for (const key of [
+            'startedPhysicalAttempts',
+            'uncertainPhysicalAttempts',
+            'advisoryOnly',
+        ]) {
+            expect(Object.hasOwn(impact, key)).toBe(false)
+        }
     })
 
-    it('retains confirmed zeros in a complete extended response', async () => {
-        vi.mocked(apiRequest).mockResolvedValue({
-            ...serverResponse,
+    it('preserves genuine zero counts in a complete advisory response', async () => {
+        requestMock.mockResolvedValue({
+            ...fullResponse,
             startedPhysicalAttempts: 0,
             uncertainPhysicalAttempts: 0,
         })
@@ -77,17 +112,21 @@ describe('Organization disable-impact contract', () => {
     })
 
     it.each([
-        { ...serverResponse, startedPhysicalAttempts: -1 },
-        { ...serverResponse, uncertainPhysicalAttempts: '1' },
-        { ...serverResponse, startedPhysicalAttempts: Number.MAX_SAFE_INTEGER + 1 },
-        { ...serverResponse, advisoryOnly: 'true' },
-        { ...serverResponse, advisoryOnly: false },
-        { ...serverResponse, startedPhysicalAttempts: null },
-        { ...serverResponse, uncertainPhysicalAttempts: NaN },
-        { ...serverResponse, organizationVersion: -1 },
-        { ...serverResponse, activeChatOperations: '0' },
-    ])('rejects malformed advisory snapshot (fail closed)', async invalid => {
-        vi.mocked(apiRequest).mockResolvedValue(invalid)
+        { ...fullResponse, startedPhysicalAttempts: -1 },
+        { ...fullResponse, startedPhysicalAttempts: 1.5 },
+        { ...fullResponse, startedPhysicalAttempts: null },
+        { ...fullResponse, startedPhysicalAttempts: Infinity },
+        { ...fullResponse, startedPhysicalAttempts: Number.MAX_SAFE_INTEGER + 1 },
+        { ...fullResponse, uncertainPhysicalAttempts: '1' },
+        { ...fullResponse, uncertainPhysicalAttempts: NaN },
+        { ...fullResponse, advisoryOnly: 'true' },
+        { ...fullResponse, advisoryOnly: false },
+        { ...fullResponse, organizationVersion: -1 },
+        { ...fullResponse, activeChatOperations: '0' },
+        { ...fullResponse, enabledUsers: -1 },
+        { ...fullResponse, organizationId: 'not-a-uuid' },
+    ])('rejects malformed response values without falling back to defaults', async (invalid) => {
+        requestMock.mockResolvedValue(invalid)
 
         await expect(getOrganizationDisableImpact(ORG_ID)).rejects.toThrow()
     })
@@ -96,11 +135,36 @@ describe('Organization disable-impact contract', () => {
         { ...legacyResponse, startedPhysicalAttempts: 0 },
         { ...legacyResponse, uncertainPhysicalAttempts: 0 },
         { ...legacyResponse, advisoryOnly: true },
-        { ...serverResponse, advisoryOnly: undefined },
-        { ...serverResponse, startedPhysicalAttempts: undefined },
-    ])('rejects incomplete extended contract instead of assuming legacy', async incomplete => {
-        vi.mocked(apiRequest).mockResolvedValue(incomplete)
+        { ...fullResponse, startedPhysicalAttempts: undefined },
+        { ...fullResponse, uncertainPhysicalAttempts: undefined },
+        { ...fullResponse, advisoryOnly: undefined },
+        { ...legacyResponse, startedPhysicalAttempts: undefined },
+        { ...legacyResponse, uncertainPhysicalAttempts: undefined },
+        { ...legacyResponse, advisoryOnly: undefined },
+    ])('rejects partial or explicitly undefined extended fields', async (incomplete) => {
+        requestMock.mockResolvedValue(incomplete)
 
         await expect(getOrganizationDisableImpact(ORG_ID)).rejects.toThrow()
+    })
+
+    it.each([
+        { invalid: null },
+        { invalid: [] },
+        { invalid: {} },
+        { invalid: { ...legacyResponse, organizationId: undefined } },
+        { invalid: { ...legacyResponse, organizationVersion: undefined } },
+        { invalid: { ...legacyResponse, administrators: null } },
+        { invalid: { ...legacyResponse, activeRefreshSessions: 0.5 } },
+    ])('rejects malformed core snapshots, including legacy ones', async ({ invalid }) => {
+        requestMock.mockResolvedValue(invalid)
+
+        await expect(getOrganizationDisableImpact(ORG_ID)).rejects.toThrow()
+    })
+
+    it('does not swallow a failure from the HTTP layer', async () => {
+        const failure = new Error('Network unavailable')
+        requestMock.mockRejectedValue(failure)
+
+        await expect(getOrganizationDisableImpact(ORG_ID)).rejects.toBe(failure)
     })
 })

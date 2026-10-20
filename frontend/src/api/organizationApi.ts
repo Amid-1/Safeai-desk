@@ -456,9 +456,12 @@ function parseOrganizationDisableImpact(
 
     // The backend returns all three fields together. Old backend versions
     // return none of them. A partial expansion is an invalid API response.
-    const hasStarted = record.startedPhysicalAttempts !== undefined
-    const hasUncertain = record.uncertainPhysicalAttempts !== undefined
-    const hasAdvisory = record.advisoryOnly !== undefined
+    // Distinguish an absent legacy field from a present but invalid value.
+    // In particular, `undefined` must not silently turn an incomplete
+    // extended response into a valid legacy response.
+    const hasStarted = Object.hasOwn(record, 'startedPhysicalAttempts')
+    const hasUncertain = Object.hasOwn(record, 'uncertainPhysicalAttempts')
+    const hasAdvisory = Object.hasOwn(record, 'advisoryOnly')
     const legacy = !hasStarted && !hasUncertain && !hasAdvisory
 
     if (!legacy && !(hasStarted && hasUncertain && hasAdvisory)) {
