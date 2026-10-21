@@ -1,0 +1,544 @@
+/* frontend/src/features/models/ui/ModelCatalogVersionModal.css */
+/* ============================================================
+   frontend/src/features/models/ui/ModelCatalogVersionModal.css
+
+   Оформление изменяемого по размеру окна каталога моделей.
+   Modal.tsx отвечает за геометрию и масштаб содержимого.
+   Этот файл отвечает только за визуальное оформление и адаптивную компоновку.
+   ============================================================ */
+
+.modal-card.models-catalog-modal.modal-card--resizable {
+    --catalog-panel-bg: #fbfdff;
+    --catalog-panel-border: #d9e4f3;
+    --catalog-primary-soft: #eef4ff;
+    --catalog-success-soft: #effbf5;
+    --catalog-pricing-soft: #f7f4ff;
+
+    /*
+     * Локальные значения по умолчанию позволяют проверять CSS автономно.
+     * Modal.tsx может переопределять переменные при изменении размера.
+     */
+    --modal-resize-small-font-size: 11px;
+    --modal-resize-strong-font-size: 15px;
+
+    container-name: model-catalog-modal;
+    container-type: inline-size;
+}
+
+.models-catalog-modal__footer button {
+    min-width: 126px;
+    min-height: var(--modal-resize-control-height, 38px);
+}
+
+.models-catalog-form {
+    min-height: 0;
+    height: auto;
+    grid-template-rows: auto;
+    gap: var(--modal-resize-gap, 10px);
+}
+
+.models-catalog-form__intro {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--modal-resize-gap, 10px);
+    padding: var(--modal-resize-body-padding-y, 13px);
+    border: 1px solid #dfe5ff;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #f5f7ff 0%, #ffffff 100%);
+}
+
+.models-catalog-form__intro-badge {
+    display: grid;
+    width: var(--modal-resize-control-height, 38px);
+    height: var(--modal-resize-control-height, 38px);
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 10px;
+    background: #edf3ff;
+}
+
+.models-catalog-form__intro-badge::before {
+    color: var(--models-accent);
+    content: '◇';
+    font-size: var(--modal-resize-title-font-size, 22px);
+    font-weight: 900;
+}
+
+.models-catalog-form__intro > div {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+}
+
+.models-catalog-form__intro strong {
+    font-size: var(--modal-resize-strong-font-size, 15px);
+}
+
+.models-catalog-form__intro p {
+    font-size: var(--modal-resize-hint-font-size, 12px);
+}
+
+.models-catalog-form__layout {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+    height: auto;
+    grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+    grid-template-areas: "identity limits" "data capabilities" "pricing pricing";
+    grid-auto-rows: min-content;
+    align-content: start;
+    gap: var(--modal-resize-gap, 10px);
+}
+
+.models-catalog-form__panel {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: var(--modal-resize-gap, 10px);
+    padding: var(--modal-resize-body-padding-y, 13px);
+    border: 1px solid var(--catalog-panel-border);
+    border-radius: 13px;
+    background: var(--catalog-panel-bg);
+}
+
+.models-catalog-form__panel--identity,
+.models-catalog-form__panel--limits,
+.models-catalog-form__panel--data {
+    grid-template-rows: auto auto;
+}
+
+.models-catalog-form__panel--identity .models-form__grid,
+.models-catalog-form__panel--limits .models-form__grid,
+.models-catalog-form__panel--data .models-form__grid {
+    align-content: start;
+}
+
+.models-catalog-form__panel--capabilities {
+    align-content: space-between;
+}
+
+.models-catalog-form__panel--identity {
+    grid-area: identity;
+}
+
+.models-catalog-form__panel--limits {
+    grid-area: limits;
+}
+
+.models-catalog-form__panel--data {
+    grid-area: data;
+}
+
+.models-catalog-form__panel--capabilities {
+    grid-area: capabilities;
+}
+
+.models-catalog-form__panel--pricing {
+    grid-area: pricing;
+    background: linear-gradient(180deg, var(--catalog-pricing-soft) 0%, #ffffff 58%);
+}
+
+.models-catalog-form__section-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--modal-resize-gap, 10px);
+}
+
+.models-catalog-form__section-heading > div {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+}
+
+.models-catalog-form__section-heading h3,
+.models-catalog-form__section-heading p {
+    margin: 0;
+}
+
+.models-catalog-form__section-heading h3 {
+    font-size: var(--modal-resize-strong-font-size, 15px);
+    line-height: 1.2;
+}
+
+.models-catalog-form__section-heading p {
+    color: var(--models-muted);
+    font-size: var(--modal-resize-small-font-size, 11px);
+    line-height: 1.25;
+}
+
+.models-catalog-form__section-icon {
+    display: grid;
+    width: calc(30px * var(--modal-resize-scale, 1));
+    height: calc(30px * var(--modal-resize-scale, 1));
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 9px;
+    background: var(--catalog-primary-soft);
+}
+
+.models-catalog-form__section-icon::before {
+    color: var(--models-accent);
+    content: '◆';
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+.models-catalog-form__section-heading--success .models-catalog-form__section-icon {
+    background: var(--catalog-success-soft);
+}
+
+.models-catalog-form__section-heading--success .models-catalog-form__section-icon::before {
+    color: #1b8d55;
+}
+
+.models-catalog-form__section-heading--neutral .models-catalog-form__section-icon::before {
+    content: '↕';
+}
+
+.models-catalog-form__section-heading--pricing .models-catalog-form__section-icon {
+    background: var(--catalog-pricing-soft);
+}
+
+.models-catalog-form__section-heading--pricing .models-catalog-form__section-icon::before {
+    content: '$';
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .models-form__grid,
+.modal-card.models-catalog-modal.modal-card--resizable .models-form__two-columns {
+    gap: var(--modal-resize-gap, 10px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .models-form label,
+.modal-card.models-catalog-modal.modal-card--resizable .models-check-row {
+    gap: 4px;
+    font-size: var(--modal-resize-font-size, 13px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable input,
+.modal-card.models-catalog-modal.modal-card--resizable select,
+.modal-card.models-catalog-modal.modal-card--resizable button {
+    min-height: var(--modal-resize-control-height, 38px);
+    font-size: var(--modal-resize-control-font-size, 12px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable textarea {
+    min-height: var(--modal-resize-textarea-height, 76px);
+    font-size: var(--modal-resize-control-font-size, 12px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable fieldset {
+    padding: var(--modal-resize-body-padding-y, 13px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable legend {
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .models-form__checks {
+    gap: 6px 12px;
+}
+
+.modal-card.models-catalog-modal.modal-card--resizable .models-form input[type='checkbox'] {
+    width: var(--modal-resize-checkbox-size, 14px);
+    min-width: var(--modal-resize-checkbox-size, 14px);
+    height: var(--modal-resize-checkbox-size, 14px);
+    min-height: var(--modal-resize-checkbox-size, 14px);
+}
+
+.models-catalog-form__pricing-complete {
+    width: fit-content;
+}
+
+.models-catalog-form__pricing-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+}
+
+.models-catalog-form__panel--pricing .models-form__advanced {
+    padding-top: 5px;
+}
+
+.models-catalog-form__panel--pricing .models-form__advanced > summary {
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+/* Обработчики изменения размера действуют только внутри окна каталога. */
+.models-catalog-modal .modal-resize-layer {
+    position: absolute;
+    z-index: 70;
+    inset: 0;
+    pointer-events: none;
+}
+
+.models-catalog-modal .modal-resize-handle {
+    position: absolute;
+    pointer-events: auto;
+    touch-action: none;
+}
+
+.models-catalog-modal .modal-resize-handle--n,
+.models-catalog-modal .modal-resize-handle--s {
+    right: 18px;
+    left: 18px;
+    height: 10px;
+    cursor: ns-resize;
+}
+
+.models-catalog-modal .modal-resize-handle--n {
+    top: 0;
+}
+
+.models-catalog-modal .modal-resize-handle--s {
+    bottom: 0;
+}
+
+.models-catalog-modal .modal-resize-handle--e,
+.models-catalog-modal .modal-resize-handle--w {
+    top: 18px;
+    bottom: 18px;
+    width: 10px;
+    cursor: ew-resize;
+}
+
+.models-catalog-modal .modal-resize-handle--e {
+    right: 0;
+}
+
+.models-catalog-modal .modal-resize-handle--w {
+    left: 0;
+}
+
+.models-catalog-modal .modal-resize-handle--ne,
+.models-catalog-modal .modal-resize-handle--nw,
+.models-catalog-modal .modal-resize-handle--se,
+.models-catalog-modal .modal-resize-handle--sw {
+    z-index: 2;
+    width: 20px;
+    height: 20px;
+}
+
+.models-catalog-modal .modal-resize-handle--ne {
+    top: 0;
+    right: 0;
+    cursor: nesw-resize;
+}
+
+.models-catalog-modal .modal-resize-handle--nw {
+    top: 0;
+    left: 0;
+    cursor: nwse-resize;
+}
+
+.models-catalog-modal .modal-resize-handle--se {
+    right: 0;
+    bottom: 0;
+    cursor: nwse-resize;
+}
+
+.models-catalog-modal .modal-resize-handle--sw {
+    bottom: 0;
+    left: 0;
+    cursor: nesw-resize;
+}
+
+@container model-catalog-modal (max-width: 980px) {
+    .models-catalog-form__layout {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas: "identity identity" "limits data" "capabilities capabilities" "pricing pricing";
+    }
+
+    .models-catalog-form__pricing-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+}
+
+@container model-catalog-modal (min-width: 1400px) {
+    .models-catalog-form__layout {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-areas:
+            "identity limits data capabilities"
+            "pricing pricing pricing pricing";
+        align-items: stretch;
+        grid-template-rows: auto auto;
+    }
+
+    .models-catalog-form__panel--identity,
+    .models-catalog-form__panel--limits,
+    .models-catalog-form__panel--data,
+    .models-catalog-form__panel--capabilities {
+        height: 100%;
+    }
+
+    .models-catalog-form__panel--identity .models-form__grid,
+    .models-catalog-form__panel--data .models-form__grid,
+    .models-catalog-form__panel--limits .models-form__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .models-catalog-form__panel--capabilities .models-form__two-columns {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .models-catalog-form__panel--capabilities .models-form__checks {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@container model-catalog-modal (min-width: 981px) and (max-width: 1399px) {
+    .models-catalog-form__layout {
+        grid-template-rows: repeat(3, auto);
+    }
+}
+
+@container model-catalog-modal (max-width: 760px) {
+    .models-catalog-form__layout {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "identity" "limits" "data" "capabilities" "pricing";
+    }
+
+    .models-catalog-form__pricing-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .models-catalog-form__panel--capabilities .models-form__two-columns {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .models-catalog-modal__footer {
+        justify-content: stretch;
+    }
+
+    .models-catalog-modal__footer button {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+}
+
+/* ============================================================
+   СЕМАНТИЧЕСКИЕ ЦВЕТА
+   Идентичность — синий, лимиты — голубой, данные — зелёный,
+   возможности — индиго, тарификация — янтарный и фиолетовый.
+   ============================================================ */
+
+.modal-card.models-catalog-modal.modal-card--resizable {
+    --catalog-identity: #4057f2;
+    --catalog-identity-soft: #f2f5ff;
+    --catalog-limits: #237da8;
+    --catalog-limits-soft: #f0f9fd;
+    --catalog-data: #178a55;
+    --catalog-data-soft: #effaf4;
+    --catalog-capabilities: #6654d8;
+    --catalog-capabilities-soft: #f6f3ff;
+    --catalog-pricing: #9a6812;
+    --catalog-pricing-soft-2: #fff8e8;
+}
+
+.models-catalog-form__intro {
+    border-color: #dbe3ff;
+    background: linear-gradient(135deg, #f3f6ff 0%, #ffffff 72%);
+}
+
+.models-catalog-form__panel {
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 14px rgb(15 23 42 / 3%);
+}
+
+.models-catalog-form__panel::before {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+    border-radius: 0 4px 4px 0;
+    content: '';
+}
+
+.models-catalog-form__panel--identity {
+    border-color: #d7defe;
+    background: linear-gradient(180deg, #ffffff 0%, var(--catalog-identity-soft) 100%);
+}
+
+.models-catalog-form__panel--identity::before {
+    background: var(--catalog-identity);
+}
+
+.models-catalog-form__panel--limits {
+    border-color: #cce5f0;
+    background: linear-gradient(180deg, #ffffff 0%, var(--catalog-limits-soft) 100%);
+}
+
+.models-catalog-form__panel--limits::before {
+    background: var(--catalog-limits);
+}
+
+.models-catalog-form__panel--data {
+    border-color: #c8e7d6;
+    background: linear-gradient(180deg, #ffffff 0%, var(--catalog-data-soft) 100%);
+}
+
+.models-catalog-form__panel--data::before {
+    background: var(--catalog-data);
+}
+
+.models-catalog-form__panel--capabilities {
+    border-color: #dbd3f7;
+    background: linear-gradient(180deg, #ffffff 0%, var(--catalog-capabilities-soft) 100%);
+}
+
+.models-catalog-form__panel--capabilities::before {
+    background: var(--catalog-capabilities);
+}
+
+.models-catalog-form__panel--pricing {
+    border-color: #ecd9a8;
+    background: linear-gradient(180deg, #fffdf8 0%, var(--catalog-pricing-soft-2) 100%);
+}
+
+.models-catalog-form__panel--pricing::before {
+    background: linear-gradient(180deg, var(--catalog-pricing) 0%, #8a58d0 100%);
+}
+
+.models-catalog-form__panel--identity .models-catalog-form__section-icon {
+    background: #e9eeff;
+}
+
+.models-catalog-form__panel--limits .models-catalog-form__section-icon {
+    background: #e7f6fc;
+}
+
+.models-catalog-form__panel--limits .models-catalog-form__section-icon::before {
+    color: var(--catalog-limits);
+}
+
+.models-catalog-form__panel--data .models-catalog-form__section-icon {
+    background: #e7f8ef;
+}
+
+.models-catalog-form__panel--capabilities .models-catalog-form__section-icon {
+    background: #eeeaff;
+}
+
+.models-catalog-form__panel--capabilities .models-catalog-form__section-icon::before {
+    color: var(--catalog-capabilities);
+}
+
+.models-catalog-form__panel--pricing .models-catalog-form__section-icon {
+    background: #fff1c9;
+}
+
+.models-catalog-form__panel--pricing .models-catalog-form__section-icon::before {
+    color: var(--catalog-pricing);
+}
+
+.models-catalog-form__panel fieldset {
+    background: rgb(255 255 255 / 62%);
+}
+
+/* Панели сохраняют естественную высоту, прокруткой управляет тело окна. */
+.modal-card.models-catalog-modal.modal-card--resizable .modal-body > .models-catalog-form {
+    height: auto;
+    min-height: min-content;
+    align-self: flex-start;
+    align-content: start;
+}

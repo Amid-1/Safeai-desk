@@ -18,9 +18,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "check": "npm run lint && npm run test && npm run build",
-    "ci": "npm run lint && npm run test:coverage && npm run build",
-    "audit:prod": "npm audit --omit=dev --audit-level=high"
+    "check": "npm run architecture:check && npm run lint && npm run test && npm run build",
+    "ci": "npm run architecture:check && npm run lint && npm run test:coverage && npm run build",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "architecture:check": "node scripts/check-architecture.cjs && node scripts/verify-source-layout.cjs"
   },
   "dependencies": {
     "react": "19.2.7",

@@ -1,3 +1,5 @@
+// frontend/vite.config.ts
+// Сборка Vite, локальный proxy и изолированные тесты Vitest.
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 

@@ -1,26 +1,42 @@
 {
-  "css_parse_errors": {},
-  "missing_internal_java_imports": [
-    "ru.safeai.gateway.chat.testsupport.ChatTestFixtures"
+  "project": "SafeAI-Desk/frontend",
+  "snapshot_date": "2026-10-21",
+  "source_archive": "Архив(20261021-184852).zip",
+  "original_source_files": 427,
+  "final_source_files": 421,
+  "by_extension": {
+    ".ts": 232,
+    ".tsx": 162,
+    ".css": 27
+  },
+  "by_layer": {
+    "vite-env.d.ts": 1,
+    "main.tsx": 1,
+    "pages": 17,
+    "app": 2,
+    "test": 4,
+    "features": 301,
+    "shared": 55,
+    "entities": 40
+  },
+  "test_file_count": 116,
+  "baseline_unresolved_import_references": 47,
+  "final_unresolved_import_references": 0,
+  "resolved_import_references": 1280,
+  "static_typescript_parse_diagnostics": 0,
+  "smoke_assertions_passed": 14,
+  "root_config_origin": "Reconstructed from prior ARCHITECTURE-STAGE1 snapshot and user-provided ESLint content; user archive contained src only",
+  "implemented_safety": [
+    "same-origin blob preview gated by raster MIME and magic bytes; unsafe types download",
+    "react submit-in-flight ref for knowledge uploads",
+    "calendar years 0000..0099",
+    "string-preserving monetary formatting"
   ],
-  "java_model_route_reasons": [
-    "CAPABILITY_UNSUPPORTED",
-    "INPUT_LIMIT_EXCEEDED",
-    "LEGACY_RUNTIME_FALLBACK",
-    "MODEL_DENIED",
-    "MODEL_DISABLED",
-    "MODEL_NOT_ALLOWED",
-    "MODEL_NOT_FOUND",
-    "MONTHLY_BUDGET_EXCEEDED",
-    "MONTHLY_BUDGET_UNVERIFIABLE",
-    "OUTPUT_LIMIT_EXCEEDED",
-    "POLICY_DEFAULT",
-    "PRICING_INCOMPLETE",
-    "REQUEST_COST_LIMIT_EXCEEDED",
-    "RETENTION_POLICY_UNSATISFIED",
-    "RUNTIME_MISMATCH",
-    "RUNTIME_ONLY_MATCH",
-    "TRAINING_POLICY_UNSATISFIED"
+  "validation_limits": [
+    "Full dependency installation unavailable (Node 22/npm 10; requires Node 24/npm 11; offline cache empty)",
+    "Full Vitest, full TypeScript6, lint and production bundle not executed",
+    "No backend endpoint was provided for frontend incident transport",
+    "Server-side auth refresh token rotation and recovery not changed"
   ],
-  "java_reasons_missing_from_sql": []
+  "root_verify_bundle_dependency": "Existing package.json runs ../scripts/verify-build.mjs, external to this src-only upload"
 }

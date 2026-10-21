@@ -1,12 +1,13 @@
-import PageErrorBoundary from '../components/PageErrorBoundary'
-import { AdminOrganizationsView } from '../components/admin/organizations/AdminOrganizationsView'
-import { AdminOrganizationDialogs } from '../components/admin/organizations/AdminOrganizationDialogs'
-import { useAdminOrganizationsDirectory } from './useAdminOrganizationsDirectory'
-import { useAdminOrganizationCreate } from './useAdminOrganizationCreate'
-import { useAdminOrganizationMutations } from './useAdminOrganizationMutations'
-import './AdminOrganizationsPage.css'
-import './AdminOrganizationsWorkspace.css'
-import './AdminOrganizationsClarity.css'
+// frontend/src/pages/AdminOrganizationsPage.tsx
+import PageErrorBoundary from '../shared/ui/PageErrorBoundary'
+import { AdminOrganizationsView } from '../features/admin-organizations/ui/AdminOrganizationsView'
+import { AdminOrganizationDialogs } from '../features/admin-organizations/ui/AdminOrganizationDialogs'
+import { useAdminOrganizationsDirectory } from '../features/admin-organizations/lib/useAdminOrganizationsDirectory'
+import { useAdminOrganizationCreate } from '../features/admin-organizations/lib/useAdminOrganizationCreate'
+import { useAdminOrganizationMutations } from '../features/admin-organizations/lib/useAdminOrganizationMutations'
+import '../features/admin-organizations/styles/AdminOrganizationsPage.css'
+import '../features/admin-organizations/styles/AdminOrganizationsWorkspace.css'
+import '../features/admin-organizations/styles/AdminOrganizationsClarity.css'
 
 function AdminOrganizationsPage() {
     return <PageErrorBoundary><AdminOrganizationsPageContent /></PageErrorBoundary>

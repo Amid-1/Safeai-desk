@@ -1,3 +1,5 @@
+// frontend/src/pages/KnowledgeDetailsPage.test.tsx
+// Регрессии управления документами, границ доступа, операций и обработки ошибок.
 import {
     fireEvent,
     render,
@@ -18,14 +20,14 @@ import {
 } from 'vitest'
 import {
     ApiError,
-} from '../api/http'
+} from '../shared/api/http'
 import {
     getKnowledgeBase,
     getKnowledgeBaseAccess,
-} from '../api/knowledgeApi'
+} from '../entities/knowledge/api/knowledgeApi'
 import type {
     KnowledgeBase,
-} from '../api/knowledgeApi'
+} from '../entities/knowledge/api/knowledgeApi'
 import {
     fetchKnowledgeDocumentBlob,
     getKnowledgeDocuments,
@@ -33,15 +35,15 @@ import {
     reindexKnowledgeDocument,
     uploadKnowledgeDocument,
     uploadKnowledgeDocumentVersion,
-} from '../api/knowledgeDocumentApi'
+} from '../entities/knowledge/api/knowledgeDocumentApi'
 import type {
     KnowledgeDocument,
-} from '../api/knowledgeDocumentApi'
+} from '../entities/knowledge/api/knowledgeDocumentApi'
 import KnowledgeDetailsPage
     from './KnowledgeDetailsPage'
 
 vi.mock(
-    '../api/knowledgeApi',
+    '../entities/knowledge/api/knowledgeApi',
     () => ({
         getKnowledgeBase:
             vi.fn(),
@@ -51,12 +53,12 @@ vi.mock(
 )
 
 vi.mock(
-    '../api/knowledgeDocumentApi',
+    '../entities/knowledge/api/knowledgeDocumentApi',
     async (importOriginal) => {
         const actual =
             await importOriginal<
                 typeof import(
-                    '../api/knowledgeDocumentApi'
+                    '../entities/knowledge/api/knowledgeDocumentApi'
                 )
             >()
 
@@ -776,5 +778,32 @@ describe(
                     )
             },
         )
+
+        it('для просмотра без права редактирования не открывает диалог загрузки', async () => {
+            getKnowledgeBaseAccessMock.mockResolvedValueOnce({
+                knowledgeBaseId: KNOWLEDGE_BASE_ID,
+                accessLevel: 'VIEWER', administrator: false,
+                canEditDocuments: false, canManageBase: false, canManageMembers: false,
+            })
+            renderPage()
+            await screen.findByRole('heading', { name: 'Загруженные документы' })
+            expect(screen.queryByRole('button', { name: 'Загрузить документ' }))
+                .not.toBeInTheDocument()
+            expect(uploadKnowledgeDocumentMock).not.toHaveBeenCalled()
+            expect(reindexKnowledgeDocumentMock).not.toHaveBeenCalled()
+        })
+
+        it('загрузка не выполняется, если файл превышает 25 МБ', async () => {
+            renderPage()
+            fireEvent.click(await screen.findByRole('button', { name: 'Загрузить документ' }))
+            const large = new File(['oversized'], 'oversized.pdf', { type: 'application/pdf' })
+            Object.defineProperty(large, 'size', { value: 25 * 1024 * 1024 + 1 })
+            fireEvent.change(screen.getByLabelText('Файл'), {
+                target: { files: [large] },
+            })
+            expect(screen.getByText('Размер файла превышает 25 МБ.')).toBeInTheDocument()
+            expect(screen.getByRole('button', { name: 'Загрузить' })).toBeDisabled()
+            expect(uploadKnowledgeDocumentMock).not.toHaveBeenCalled()
+        })
     },
 )

@@ -1,0 +1,111 @@
+/* frontend/src/features/chat/ui/ChatTitleEditor.css */
+
+.chat-panel__header > div:first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.chat-title-view {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+}
+
+.chat-title-view h2 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-title-edit-button {
+    display: inline-grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid #dbe4f0;
+    border-radius: 9px;
+    background: #fff;
+    color: #64748b;
+    font-size: 15px;
+    line-height: 1;
+}
+
+.chat-title-edit-button:hover:not(:disabled) {
+    border-color: #a9c4f8;
+    background: #f8faff;
+    color: #4f46e5;
+    transform: none;
+}
+
+.chat-title-editor {
+    width: min(680px, 100%);
+    min-width: 0;
+}
+
+.chat-title-editor__row {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto auto;
+    align-items: center;
+    gap: 7px;
+}
+
+.chat-title-editor input {
+    min-width: 0;
+    height: 38px;
+    border-color: #a9c4f8;
+    background: #fff;
+    font-size: 16px;
+    font-weight: 750;
+}
+
+.chat-title-save-button,
+.chat-title-cancel-button {
+    min-height: 36px;
+    padding: 7px 10px;
+    white-space: nowrap;
+}
+
+.chat-title-save-button {
+    background: linear-gradient(135deg, #2563eb, #4f46e5);
+    color: #fff;
+}
+
+.chat-title-cancel-button {
+    background: #eef2f7;
+    color: #334155;
+}
+
+.chat-title-editor__error {
+    display: block;
+    margin-top: 5px;
+    color: #b91c1c;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+@media (max-width: 680px) {
+    .chat-title-editor__row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .chat-title-cancel-button {
+        grid-column: 1 / -1;
+        width: fit-content;
+    }
+
+    .chat-title-save-button,
+    .chat-title-cancel-button {
+        padding-inline: 8px;
+        font-size: 11px;
+    }
+}
+
+/* Long Unicode titles must never push the edit control or status offscreen. */
+.chat-title-view { width: 100%; max-width: 100%; }
+.chat-title-view h2 { flex: 0 1 auto; max-width: 100%; }
+.chat-title-edit-button { margin-left: auto; }
+.chat-title-editor { width: 100%; max-width: 680px; }

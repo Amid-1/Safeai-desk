@@ -1,0 +1,473 @@
+/* frontend/src/features/models/ui/ModelPolicyModal.css */
+/* ============================================================
+   frontend/src/features/models/ui/ModelPolicyModal.css
+
+   Production theme for the resizable organization-policy modal.
+   Header and footer are fixed flex siblings; only modal-body scrolls.
+   Colors are semantic and intentionally restrained:
+   access = blue, limits = cyan, budget = violet, data = green.
+   ============================================================ */
+
+.modal-card.models-policy-modal.modal-card--resizable {
+    --policy-blue: #4057f2;
+    --policy-blue-soft: #f2f5ff;
+    --policy-cyan: #237da8;
+    --policy-cyan-soft: #f0f9fd;
+    --policy-violet: #6f52d9;
+    --policy-violet-soft: #f7f3ff;
+    --policy-green: #178a55;
+    --policy-green-soft: #effaf4;
+    --policy-amber: #996a16;
+    --policy-amber-soft: #fff8e9;
+
+    /*
+     * Local static defaults keep this stylesheet self-contained for
+     * CSS tooling. Modal.tsx may override them inline while resizing.
+     */
+    --modal-resize-small-font-size: 11px;
+    --modal-resize-strong-font-size: 15px;
+
+    container-name: model-policy-modal;
+    container-type: inline-size;
+}
+
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form {
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    align-content: space-between;
+    gap: var(--modal-resize-gap, 10px);
+    padding-bottom: 8px;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__overview-grid {
+    display: grid;
+    min-width: 0;
+    gap: var(--modal-resize-gap, 10px);
+}
+
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-modal__footer button {
+    min-width: 11.5em;
+    min-height: var(--modal-resize-control-height, 38px);
+    margin: 0;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-form label,
+.modal-card.models-policy-modal.modal-card--resizable .models-label-row,
+.modal-card.models-policy-modal.modal-card--resizable .models-model-selector__label {
+    font-size: var(--modal-resize-font-size, 13px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-form__hint,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch-copy small,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle-note {
+    font-size: var(--modal-resize-hint-font-size, 12px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__meta-label,
+.modal-card.models-policy-modal.modal-card--resizable .models-model-selector__count,
+.modal-card.models-policy-modal.modal-card--resizable .models-model-selector__description,
+.modal-card.models-policy-modal.modal-card--resizable .models-model-selector__hint,
+.modal-card.models-policy-modal.modal-card--resizable .models-model-selector__error,
+.modal-card.models-policy-modal.modal-card--resizable .models-form__code {
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch-copy strong,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-copy strong {
+    font-size: var(--modal-resize-strong-font-size, 15px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable input,
+.modal-card.models-policy-modal.modal-card--resizable select,
+.modal-card.models-policy-modal.modal-card--resizable textarea,
+.modal-card.models-policy-modal.modal-card--resizable button {
+    font-size: var(--modal-resize-control-font-size, 12px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable input,
+.modal-card.models-policy-modal.modal-card--resizable select,
+.modal-card.models-policy-modal.modal-card--resizable button {
+    min-height: var(--modal-resize-control-height, 38px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable textarea {
+    min-height: var(--modal-resize-textarea-height, 76px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-form input[type='checkbox'] {
+    width: var(--modal-resize-checkbox-size, 14px);
+    min-width: var(--modal-resize-checkbox-size, 14px);
+    height: var(--modal-resize-checkbox-size, 14px);
+    min-height: var(--modal-resize-checkbox-size, 14px);
+}
+
+/* Organization + purpose */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__intro {
+    padding: calc(10px * var(--modal-resize-scale, 1)) calc(12px * var(--modal-resize-scale, 1));
+    border: 1px solid #dce4f2;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__organization {
+    padding-left: 10px;
+    border-left: 3px solid var(--policy-blue);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope {
+    padding: calc(12px * var(--modal-resize-scale, 1)) calc(14px * var(--modal-resize-scale, 1));
+    border: 1px solid #dce3ff;
+    border-radius: 13px;
+    background: linear-gradient(135deg, var(--policy-blue-soft) 0%, #ffffff 72%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag {
+    min-height: 2.35em;
+    padding-inline: 0.9em;
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 10px;
+    background: #ffffff;
+    font-size: var(--modal-resize-small-font-size, 11px);
+    font-weight: 800;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag--access {
+    border-color: #bdc8ff;
+    color: var(--policy-blue);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag--limits {
+    border-color: #b9dfef;
+    color: var(--policy-cyan);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag--budget {
+    border-color: #d5c7f6;
+    color: var(--policy-violet);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag--data {
+    border-color: #bee6d0;
+    color: var(--policy-green);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag:hover,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag:focus-visible {
+    box-shadow: 0 4px 12px rgb(35 56 99 / 8%);
+}
+
+/* Enable/disable state */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle {
+    padding: calc(12px * var(--modal-resize-scale, 1)) calc(14px * var(--modal-resize-scale, 1));
+    border: 1px solid #dce5f1;
+    border-radius: 13px;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle--disabled {
+    background: #f8fafc;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle--enabled {
+    border-color: #bfe5d0;
+    background: var(--policy-green-soft);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch-track {
+    width: 4.25em;
+    height: 2.45em;
+    padding: 0.3em;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch-thumb {
+    width: 1.75em;
+    height: 1.75em;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__switch input:checked + .models-policy-form__switch-track .models-policy-form__switch-thumb {
+    transform: translateX(1.8em);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__warning {
+    border-color: #efd49a;
+    background: var(--policy-amber-soft);
+    color: #6e5119;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__warning--danger {
+    border-color: #efb8bd;
+    background: #fff3f4;
+    color: #8f2731;
+    box-shadow: 0 0 0 1px rgb(180 35 48 / 5%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__warning--danger strong {
+    color: #b42332;
+}
+
+/* Access lists */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__access-grid > * {
+    padding: calc(10px * var(--modal-resize-scale, 1)) calc(11px * var(--modal-resize-scale, 1));
+    border: 1px solid #dce3ff;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #fbfcff 0%, var(--policy-blue-soft) 100%);
+}
+
+/* Settings: semantic classes keep color meaning stable if fields move. */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__setting-field {
+    min-width: 0;
+    padding: calc(9px * var(--modal-resize-scale, 1)) calc(10px * var(--modal-resize-scale, 1));
+    border: 1px solid #e0e6ef;
+    border-radius: 11px;
+    background: #ffffff;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__setting-field--access {
+    border-color: #d7defe;
+    background: var(--policy-blue-soft);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__setting-field--budget {
+    border-color: #dfd3f8;
+    background: var(--policy-violet-soft);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__setting-field--limits {
+    border-color: #cce6f2;
+    background: var(--policy-cyan-soft);
+}
+
+/* Data requirements */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements {
+    padding: calc(10px * var(--modal-resize-scale, 1)) calc(12px * var(--modal-resize-scale, 1));
+    border-color: #c8e7d6;
+    background: linear-gradient(180deg, #ffffff 0%, var(--policy-green-soft) 100%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements legend {
+    color: #226b49;
+    font-weight: 850;
+}
+
+@container model-policy-modal (max-width: 980px) {
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__intro,
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope,
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tags {
+        justify-content: flex-start;
+    }
+
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__access-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__settings-grid,
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements .models-form__checks {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@container model-policy-modal (min-width: 1260px) {
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__overview-grid {
+        grid-template-columns: minmax(0, 1.25fr) minmax(420px, 0.75fr);
+        align-items: stretch;
+    }
+
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope,
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle {
+        height: 100%;
+    }
+
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle-note {
+        padding: calc(7px * var(--modal-resize-scale, 1)) calc(10px * var(--modal-resize-scale, 1));
+    }
+}
+
+@container model-policy-modal (max-width: 760px) {
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__settings-grid,
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements .models-form__checks {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tags {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag {
+        width: 100%;
+        white-space: normal;
+        line-height: 1.2;
+    }
+}
+
+@container model-policy-modal (max-width: 660px) {
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tags {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-modal__footer {
+        justify-content: stretch;
+    }
+
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-modal__footer button {
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__toggle {
+        transition: none;
+    }
+}
+
+
+/* Backend-driven draft policy preview. */
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview {
+    display: grid;
+    gap: var(--modal-resize-gap, 10px);
+    padding: 11px 12px;
+    border: 1px solid #cfe0f4;
+    border-radius: 12px;
+    background: #f8fbff;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview--ok {
+    border-color: #bfe5d0;
+    background: var(--policy-green-soft);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview--danger {
+    border-color: #efc5c5;
+    background: #fff5f5;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-summary {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px 14px;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-summary > div {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-summary small,
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-row small {
+    color: var(--models-muted);
+    font-size: var(--modal-resize-small-font-size, 11px);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-list {
+    display: grid;
+    gap: 6px;
+    max-height: 220px;
+    overflow: auto;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) auto minmax(180px, 1.2fr);
+    gap: 8px;
+    align-items: center;
+    padding: 7px 8px;
+    border: 1px solid rgb(148 163 184 / 24%);
+    border-radius: 9px;
+    background: rgb(255 255 255 / 72%);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-row code {
+    overflow-wrap: anywhere;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__lockout-confirm {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #efc5c5;
+    color: #8d2f36;
+    font-weight: 750;
+}
+
+@container model-policy-modal (max-width: 760px) {
+    .modal-card.models-policy-modal.modal-card--resizable .models-policy-form__preview-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* Navigation highlights the complete semantic group without changing its geometry. */
+.modal-card.models-policy-modal .models-policy-form [data-policy-block] {
+    scroll-margin-block: 16px;
+}
+
+.modal-card.models-policy-modal .models-policy-form[data-active-section='access'] [data-policy-block='access'],
+.modal-card.models-policy-modal .models-policy-form[data-active-section='limits'] [data-policy-block='limits'],
+.modal-card.models-policy-modal .models-policy-form[data-active-section='budget'] [data-policy-block='budget'],
+.modal-card.models-policy-modal .models-policy-form[data-active-section='data'] [data-policy-block='data'] {
+    outline: 3px solid var(--policy-section-color);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 6px var(--policy-section-soft);
+}
+
+.modal-card.models-policy-modal [data-policy-block='access'] {
+    --policy-section-color: var(--policy-blue);
+    --policy-section-soft: var(--policy-blue-soft);
+}
+
+.modal-card.models-policy-modal [data-policy-block='limits'] {
+    --policy-section-color: var(--policy-cyan);
+    --policy-section-soft: var(--policy-cyan-soft);
+}
+
+.modal-card.models-policy-modal [data-policy-block='budget'] {
+    --policy-section-color: var(--policy-violet);
+    --policy-section-soft: var(--policy-violet-soft);
+}
+
+.modal-card.models-policy-modal [data-policy-block='data'] {
+    --policy-section-color: var(--policy-green);
+    --policy-section-soft: var(--policy-green-soft);
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__scope-tag[aria-pressed='true'] {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.modal-card.models-policy-modal.modal-card--resizable .models-policy-form__requirements input:focus-visible {
+    outline: 2px solid var(--policy-green);
+    outline-offset: 3px;
+}
+
+@media (forced-colors: active) {
+    .modal-card.models-policy-modal .models-policy-form [data-policy-block] {
+        --policy-section-color: Highlight;
+    }
+}
+
+.modal-card.models-policy-modal .models-policy-form__access-grid[data-policy-block] {
+    border-radius: 12px;
+}
+

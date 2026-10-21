@@ -1,3 +1,4 @@
+// frontend/src/pages/AdminModelsPage.test.tsx
 // ============================================================
 // frontend/src/pages/AdminModelsPage.test.tsx
 // ============================================================
@@ -16,7 +17,7 @@ import {
 } from 'vitest'
 import type {
     AuthUser,
-} from '../api/authApi'
+} from '../features/auth/api/authApi'
 import {
     getEffectiveModelCatalog,
     getModelCatalog,
@@ -25,23 +26,23 @@ import {
     getRuntimeModelStatus,
     importRuntimeModelCatalog,
     probeRuntimeModel,
-} from '../api/modelApi'
+} from '../entities/model/api/modelApi'
 import {
     getOrganizationDetails,
-} from '../api/organizationApi'
+} from '../entities/organization/api/organizationApi'
 import AdminModelsPage from './AdminModelsPage'
 
 const authMock = vi.hoisted(() => ({
     currentUser: null as AuthUser | null,
 }))
 
-vi.mock('../auth/useAuth', () => ({
+vi.mock('../features/auth/state/useAuth', () => ({
     useAuth: () => authMock,
 }))
 
-vi.mock('../api/modelApi', async (importOriginal) => {
+vi.mock('../entities/model/api/modelApi', async (importOriginal) => {
     const actual =
-        await importOriginal<typeof import('../api/modelApi')>()
+        await importOriginal<typeof import('../entities/model/api/modelApi')>()
 
     return {
         ...actual,
@@ -58,9 +59,9 @@ vi.mock('../api/modelApi', async (importOriginal) => {
     }
 })
 
-vi.mock('../api/organizationApi', async (importOriginal) => {
+vi.mock('../entities/organization/api/organizationApi', async (importOriginal) => {
     const actual =
-        await importOriginal<typeof import('../api/organizationApi')>()
+        await importOriginal<typeof import('../entities/organization/api/organizationApi')>()
 
     return {
         ...actual,

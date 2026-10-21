@@ -3,8 +3,8 @@
 // ============================================================
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AuthUser } from '../api/authApi'
-import type { ModelRouteDecision, OrganizationModelPolicy } from '../api/modelApi'
+import type { AuthUser } from '../features/auth/api/authApi'
+import type { ModelRouteDecision, OrganizationModelPolicy } from '../entities/model/api/modelApi'
 import {
     createOrganizationModelPolicyVersion,
     getEffectiveModelCatalog,
@@ -14,19 +14,19 @@ import {
     getRuntimeModelStatus,
     importRuntimeModelCatalog,
     probeRuntimeModel,
-} from '../api/modelApi'
-import { getOrganizationDetails, searchOrganizationDirectory } from '../api/organizationApi'
+} from '../entities/model/api/modelApi'
+import { getOrganizationDetails, searchOrganizationDirectory } from '../entities/organization/api/organizationApi'
 import {
     createModelCatalogEntry,
     createOrganizationModelPolicy,
     createRuntimeModelStatus,
-} from '../components/admin/models/ModelControlPlaneTestFixtures'
+} from '../test/fixtures/modelControlPlaneTestFixtures'
 import AdminModelsPage from './AdminModelsPage'
 
 const auth = vi.hoisted(() => ({ currentUser: null as AuthUser | null }))
-vi.mock('../auth/useAuth', () => ({ useAuth: () => auth }))
-vi.mock('../api/modelApi', async (importOriginal) => ({
-    ...await importOriginal<typeof import('../api/modelApi')>(),
+vi.mock('../features/auth/state/useAuth', () => ({ useAuth: () => auth }))
+vi.mock('../entities/model/api/modelApi', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../entities/model/api/modelApi')>(),
     getRuntimeModelStatus: vi.fn(),
     getModelCatalog: vi.fn(),
     getEffectiveModelCatalog: vi.fn(),
@@ -38,8 +38,8 @@ vi.mock('../api/modelApi', async (importOriginal) => ({
     getModelRouteDecision: vi.fn(),
     previewOrganizationModelPolicy: vi.fn(),
 }))
-vi.mock('../api/organizationApi', async (importOriginal) => ({
-    ...await importOriginal<typeof import('../api/organizationApi')>(),
+vi.mock('../entities/organization/api/organizationApi', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../entities/organization/api/organizationApi')>(),
     getOrganizationDetails: vi.fn(),
     searchOrganizationDirectory: vi.fn(),
 }))

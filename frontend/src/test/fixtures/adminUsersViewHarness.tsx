@@ -6,10 +6,10 @@
 
 import { render } from '@testing-library/react'
 import { vi } from 'vitest'
-import type { AuthUser } from '../../api/authApi'
-import type { User, UserStatistics } from '../../api/userApi'
-import { AdminUsersView } from '../../components/admin/users/AdminUsersView'
-import type { AdminUsersViewProps } from '../../components/admin/users/adminUsersViewTypes'
+import type { AuthUser } from '../../features/auth/api/authApi'
+import type { User, UserStatistics } from '../../entities/user/api/userApi'
+import { AdminUsersView } from '../../features/admin-users/ui/AdminUsersView'
+import type { AdminUsersViewProps } from '../../features/admin-users/ui/adminUsersViewTypes'
 
 export const TEST_CURRENT_USER: AuthUser = {
     id: '11111111-1111-4111-8111-111111111111',

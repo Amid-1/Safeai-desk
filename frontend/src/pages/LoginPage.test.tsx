@@ -1,3 +1,5 @@
+// frontend/src/pages/LoginPage.test.tsx
+// Регрессионные тесты аутентификации: ввод, блокировки, ошибки и состояния сессии.
 import {
     render,
     screen,
@@ -10,10 +12,10 @@ import {
     it,
     vi,
 } from 'vitest'
-import { ApiError } from '../api/http'
+import { ApiError } from '../shared/api/http'
 import type {
     AuthStatus,
-} from '../auth/AuthContext'
+} from '../features/auth/state/AuthContext'
 import LoginPage from './LoginPage'
 
 const authMock = vi.hoisted(() => ({
@@ -27,7 +29,7 @@ const authMock = vi.hoisted(() => ({
     reloadCurrentUser: vi.fn(),
 }))
 
-vi.mock('../auth/useAuth', () => ({
+vi.mock('../features/auth/state/useAuth', () => ({
     useAuth: () => authMock,
 }))
 
@@ -263,5 +265,37 @@ describe('LoginPage', () => {
             'aria-invalid',
             'true',
         )
+    })
+
+    it('показывает проверку доступа без формы при незавершённой авторизации', () => {
+        authMock.authStatus = 'loading'
+        render(<LoginPage />)
+        expect(screen.getByText('Проверка доступа...')).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Войти' })).not.toBeInTheDocument()
+        expect(authMock.loginUser).not.toHaveBeenCalled()
+    })
+
+    it('после неподтверждённого выхода не показывает форму и позволяет повторить logout', async () => {
+        authMock.authStatus = 'logout-unconfirmed'
+        const message = 'Сервер ещё не подтвердил завершение сессии.'
+        authMock.authError = message
+        authMock.logoutUser.mockResolvedValueOnce(undefined)
+        const user = userEvent.setup()
+        render(<LoginPage />)
+        expect(screen.getByText('Выход не подтверждён')).toBeInTheDocument()
+        expect(screen.getByText(message)).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Войти' })).not.toBeInTheDocument()
+        await user.click(screen.getByRole('button', { name: 'Повторить выход' }))
+        expect(authMock.logoutUser).toHaveBeenCalledTimes(1)
+    })
+
+    it('не отправляет пустой пароль и переводит фокус на него', async () => {
+        const user = userEvent.setup()
+        render(<LoginPage />)
+        await user.type(screen.getByLabelText('Email'), 'user@safeai.test')
+        await user.click(screen.getByRole('button', { name: 'Войти' }))
+        expect(screen.getByRole('alert')).toHaveTextContent('Введите пароль.')
+        expect(screen.getByLabelText('Пароль')).toHaveFocus()
+        expect(authMock.loginUser).not.toHaveBeenCalled()
     })
 })

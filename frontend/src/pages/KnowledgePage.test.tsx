@@ -1,26 +1,28 @@
+// frontend/src/pages/KnowledgePage.test.tsx
+// Регрессии каталога знаний: доступ, поиск, пагинация, конфликты и отмена запросов.
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AuthUser } from '../api/authApi'
-import { ApiError } from '../api/http'
+import type { AuthUser } from '../features/auth/api/authApi'
+import { ApiError } from '../shared/api/http'
 import {
     getKnowledgeBase,
     getKnowledgeBases,
     searchKnowledgeBases,
     updateKnowledgeBase,
-} from '../api/knowledgeApi'
-import type { KnowledgeBase } from '../api/knowledgeApi'
+} from '../entities/knowledge/api/knowledgeApi'
+import type { KnowledgeBase } from '../entities/knowledge/api/knowledgeApi'
 import KnowledgePage from './KnowledgePage'
 
 const authMock = vi.hoisted(() => ({
     currentUser: null as AuthUser | null,
 }))
 
-vi.mock('../auth/useAuth', () => ({
+vi.mock('../features/auth/state/useAuth', () => ({
     useAuth: () => authMock,
 }))
 
-vi.mock('../api/knowledgeApi', () => ({
+vi.mock('../entities/knowledge/api/knowledgeApi', () => ({
     getKnowledgeBases: vi.fn(),
     getKnowledgeBase: vi.fn(),
     searchKnowledgeBases: vi.fn(),
@@ -33,7 +35,7 @@ vi.mock('../api/knowledgeApi', () => ({
     removeKnowledgeBaseMember: vi.fn(),
 }))
 
-vi.mock('../api/knowledgeDocumentApi', () => ({
+vi.mock('../entities/knowledge/api/knowledgeDocumentApi', () => ({
     getKnowledgeHealth: vi.fn().mockResolvedValue({
         totalDocuments: 4,
         searchableDocuments: 3,
@@ -224,4 +226,29 @@ describe('KnowledgePage', () => {
         ))
     })
 
+
+    it('при ошибке чтения не отображает устаревшие карточки и предлагает повтор', async () => {
+        listMock.mockRejectedValueOnce(new Error('Временный отказ API'))
+        displayPage()
+        expect(await screen.findByText('Не удалось загрузить базы знаний.'))
+            .toBeInTheDocument()
+        expect(screen.queryByRole('link', { name: 'Тестовая база' }))
+            .not.toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+        await waitFor(() => expect(listMock).toHaveBeenCalledTimes(2))
+        expect(await screen.findByText('Баз знаний пока нет')).toBeInTheDocument()
+    })
+
+    it('после ухода со страницы отменяет начальный запрос каталога', async () => {
+        let signal: AbortSignal | undefined
+        listMock.mockImplementationOnce(async (_page, _size, options) => {
+            signal = options?.signal
+            return new Promise<Awaited<ReturnType<typeof getKnowledgeBases>>>(() => undefined)
+        })
+        const page = displayPage()
+        await waitFor(() => expect(listMock).toHaveBeenCalled())
+        expect(signal?.aborted).toBe(false)
+        page.unmount()
+        expect(signal?.aborted).toBe(true)
+    })
 })

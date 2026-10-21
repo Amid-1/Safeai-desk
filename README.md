@@ -508,6 +508,71 @@ TypeScript 6.0.3, Vite 8.0.16, Vitest 4.1.10;
 
 ---
 
+# Структура frontend
+
+```text       
+frontend/
+├── .gitignore
+├── eslint.config.mjs
+├── index.html
+├── install-and-check.cmd
+├── install-and-check.sh
+├── package.json
+├── package-lock.json
+├── STATIC_CHECK_REPORT.json
+├── tsconfig.app.json
+├── tsconfig.test.json
+├── tsconfig.node.json
+├── tsconfig.json
+├── vite.config.ts
+├── scripts/
+│   ├── check-architecture.cjs
+│   └── verify-source-layout.cjs
+└── src/
+    ├── main.tsx
+    ├── vite-env.d.ts
+    ├── app/
+    ├── shared/
+    │   ├── api/
+    │   ├── lib/
+    │   │   └── hooks/
+    │   ├── styles/
+    │   └── ui/
+    ├── entities/
+    │   ├── knowledge/
+    │   ├── model/
+    │   ├── organization/
+    │   └── user/
+    ├── features/
+    │   ├── admin/
+    │   ├── admin-organizations/
+    │   ├── admin-users/
+    │   ├── audit/
+    │   ├── auth/
+    │   ├── chat/
+    │   │   ├── api/
+    │   │   ├── controller/
+    │   │   ├── lib/
+    │   │   └── ui/
+    │   ├── knowledge/
+    │   │   ├── controller/
+    │   │   ├── lib/
+    │   │   ├── styles/
+    │   │   └── ui/
+    │   ├── models/
+    │   └── usage/
+    │       ├── api/
+    │       ├── controller/
+    │       ├── lib/
+    │       ├── styles/
+    │       └── ui/
+    ├── pages/
+    └── test/
+        └── fixtures/
+```
+
+
+
 # Структура backend
 
 ### Краткая карта backend

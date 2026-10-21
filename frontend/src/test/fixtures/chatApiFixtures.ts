@@ -8,7 +8,7 @@ import type {
     ChatMessage,
     ChatTurnStatus,
     SendMessageResponse,
-} from '../../api/chatApi'
+} from '../../features/chat/api/chatApi'
 
 export const IDS = {
     chat: '33333333-3333-4333-8333-333333333333',

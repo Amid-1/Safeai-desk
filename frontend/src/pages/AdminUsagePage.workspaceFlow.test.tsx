@@ -1,6 +1,9 @@
+// frontend/src/pages/AdminUsagePage.workspaceFlow.test.tsx
+// Регрессии рабочего пространства: клавиатура, resize, переключение режимов и экспорт.
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { downloadUsageCsv } from '../features/usage/ui/usageCsv'
 import AdminUsagePage from './AdminUsagePage'
 
 /**
@@ -8,11 +11,11 @@ import AdminUsagePage from './AdminUsagePage'
  * Геометрия ResizeObserver/JSDOM намеренно не подменяется фиктивными пикселями.
  * Имена именованных мок-экспортов проверяются по настоящим модулям.
  */
-vi.mock('../components/PageErrorBoundary', () => ({
+vi.mock('../shared/ui/PageErrorBoundary', () => ({
     default: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 
-vi.mock('./useAdminUsageReport', () => {
+vi.mock('../features/usage/controller/useAdminUsageReport', () => {
     const entries = [
         ['useAdminUsageReport', () => ({
             tab: 'summary',
@@ -29,13 +32,13 @@ vi.mock('./useAdminUsageReport', () => {
             filtersDirty: false,
         })],
     ] satisfies ReadonlyArray<
-        readonly [keyof typeof import('./useAdminUsageReport'), unknown]
+        readonly [keyof typeof import('../features/usage/controller/useAdminUsageReport'), unknown]
     >
 
     return Object.fromEntries(entries)
 })
 
-vi.mock('../components/ResizableScrollRegion', () => ({
+vi.mock('../shared/ui/ResizableScrollRegion', () => ({
     default: ({ children, upper, footer, showLowerRequest, showUpperRequest }: {
         children: ReactNode
         upper: ReactNode
@@ -61,7 +64,7 @@ vi.mock('../components/ResizableScrollRegion', () => ({
     ),
 }))
 
-vi.mock('../components/admin/usage/AdminUsageControls', () => {
+vi.mock('../features/usage/ui/AdminUsageControls', () => {
     const entries = [
         ['AdminUsageControls', ({ onExpandResults, onRestoreFilters }: {
             onExpandResults: () => void
@@ -77,13 +80,13 @@ vi.mock('../components/admin/usage/AdminUsageControls', () => {
             </>
         )],
     ] satisfies ReadonlyArray<
-        readonly [keyof typeof import('../components/admin/usage/AdminUsageControls'), unknown]
+        readonly [keyof typeof import('../features/usage/ui/AdminUsageControls'), unknown]
     >
 
     return Object.fromEntries(entries)
 })
 
-vi.mock('../components/admin/usage/UsageReportView', () => {
+vi.mock('../features/usage/ui/UsageReportView', () => {
     const entries = [
         ['UsageReportFooter', () => <div>Итоговая строка</div>],
         ['UsageRows', () => (
@@ -96,50 +99,51 @@ vi.mock('../components/admin/usage/UsageReportView', () => {
             </table>
         )],
     ] satisfies ReadonlyArray<
-        readonly [keyof typeof import('../components/admin/usage/UsageReportView'), unknown]
+        readonly [keyof typeof import('../features/usage/ui/UsageReportView'), unknown]
     >
 
     return Object.fromEntries(entries)
 })
 
-vi.mock('../components/admin/usage/UsageKpis', () => {
+vi.mock('../features/usage/ui/UsageKpis', () => {
     const entries = [
         ['UsageKpis', () => <div>Показатели</div>],
     ] satisfies ReadonlyArray<
-        readonly [keyof typeof import('../components/admin/usage/UsageKpis'), unknown]
+        readonly [keyof typeof import('../features/usage/ui/UsageKpis'), unknown]
     >
 
     return Object.fromEntries(entries)
 })
 
-vi.mock('../components/admin/usage/UsageBreakdownChart', () => {
+vi.mock('../features/usage/ui/UsageBreakdownChart', () => {
     const entries = [
         ['UsageBreakdownChart', () => <div>Сравнение расхода токенов</div>],
-    ] satisfies ReadonlyArray<readonly [keyof typeof import('../components/admin/usage/UsageBreakdownChart'), unknown]>
+    ] satisfies ReadonlyArray<readonly [keyof typeof import('../features/usage/ui/UsageBreakdownChart'), unknown]>
     return Object.fromEntries(entries)
 })
 
-vi.mock('../components/admin/usage/UsageDailyChart', () => {
+vi.mock('../features/usage/ui/UsageDailyChart', () => {
     const entries = [
         ['UsageDailyChart', () => <div>График</div>],
     ] satisfies ReadonlyArray<
-        readonly [keyof typeof import('../components/admin/usage/UsageDailyChart'), unknown]
+        readonly [keyof typeof import('../features/usage/ui/UsageDailyChart'), unknown]
     >
 
     return Object.fromEntries(entries)
 })
 
-vi.mock('../components/admin/usage/usageCsv', () => {
+vi.mock('../features/usage/ui/usageCsv', () => {
     const entries = [
         ['downloadUsageCsv', vi.fn()],
     ] satisfies ReadonlyArray<
-        readonly [keyof typeof import('../components/admin/usage/usageCsv'), unknown]
+        readonly [keyof typeof import('../features/usage/ui/usageCsv'), unknown]
     >
 
     return Object.fromEntries(entries)
 })
 
 describe('Usage page does not clip short reports', () => {
+    beforeEach(() => { vi.clearAllMocks() })
     it('keeps a real drag entry point in normal flow', () => {
         const { container } = render(<AdminUsagePage />)
         const page = container.querySelector('.usage-page')
@@ -183,5 +187,51 @@ describe('Usage page does not clip short reports', () => {
         expect(screen.getByText('Данные отчета')).toBeTruthy()
         expect(screen.getByText('Итоговая строка')).toBeTruthy()
         expect(screen.getByText('Сравнение расхода токенов')).toBeTruthy()
+    })
+
+    it('экспортирует ровно отображаемый набор данных и выбранную вкладку', () => {
+        render(<AdminUsagePage />)
+        fireEvent.click(screen.getByRole('button', { name: 'Скачать CSV' }))
+        expect(vi.mocked(downloadUsageCsv)).toHaveBeenCalledTimes(1)
+        expect(vi.mocked(downloadUsageCsv)).toHaveBeenCalledWith(
+            'summary', [{ id: 'visible' }],
+        )
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('не скрывает таблицу при ошибке формирования CSV и позволяет повторить', () => {
+        vi.mocked(downloadUsageCsv).mockImplementationOnce(() => {
+            throw new Error('Ошибка записи CSV')
+        })
+        render(<AdminUsagePage />)
+        fireEvent.click(screen.getByRole('button', { name: 'Скачать CSV' }))
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'Не удалось создать CSV. Попробуйте повторно.',
+        )
+        expect(screen.getByText('Данные отчета')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Скачать CSV' }))
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+        expect(vi.mocked(downloadUsageCsv)).toHaveBeenCalledTimes(2)
+    })
+
+    it.each(['ArrowDown', 'ArrowUp', 'Home', 'End'])(
+        'активирует управляемую область с клавиатуры: %s', (key) => {
+            const { container } = render(<AdminUsagePage />)
+            fireEvent.keyDown(screen.getByRole('separator', {
+                name: 'Изменить размер области результатов',
+            }), { key })
+            expect(container.querySelector('.usage-page'))
+                .toHaveClass('usage-page--focused')
+        },
+    )
+
+    it('не включает режим разделения правой кнопкой и по посторонним клавишам', () => {
+        const { container } = render(<AdminUsagePage />)
+        const handle = screen.getByRole('separator', {
+            name: 'Изменить размер области результатов',
+        })
+        fireEvent.pointerDown(handle, { button: 2 })
+        fireEvent.keyDown(handle, { key: 'Enter' })
+        expect(container.querySelector('.usage-page')).toHaveClass('usage-page--flow')
     })
 })
