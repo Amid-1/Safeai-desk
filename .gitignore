@@ -113,7 +113,12 @@ commit-message.txt
 **/src/main/resources/twitter4j.properties
 
 ### Local/unmanaged libraries ###
+# Игнорируем сторонние локальные библиотеки в остальных частях проекта.
 lib/
+
+# Не игнорируем исходный код Frontend в каталогах lib.
+!frontend/src/**/lib/
+!frontend/src/**/lib/**
 
 .com/
 .company/
