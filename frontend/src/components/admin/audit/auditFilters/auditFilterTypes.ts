@@ -1,0 +1,49 @@
+// ============================================================
+// frontend/src/components/admin/audit/auditFilters/auditFilterTypes.ts
+// ============================================================
+import type { Dispatch, SetStateAction } from 'react'
+import type { AuditActorDirectoryItem, AuditTargetOrganizationDirectoryItem } from '../../../../api/adminApi'
+import type { AuditDraftFilter, DatePreset } from '../types'
+
+export type AuditFiltersProps = {
+    draftFilter: AuditDraftFilter
+
+    eventTypes: string[]
+
+    organizations:
+        AuditTargetOrganizationDirectoryItem[]
+
+    actors:
+        AuditActorDirectoryItem[]
+
+    superAdmin: boolean
+    loading: boolean
+    directoriesLoading: boolean
+
+    eventTypesError: string
+    organizationsError: string
+    actorsError: string
+    filterError: string
+    filtersDirty: boolean
+
+    onFilterChange:
+        Dispatch<
+            SetStateAction<
+                AuditDraftFilter
+            >
+        >
+
+    onActorSearch: (
+        query: string,
+        targetOrganizationId?: string,
+    ) => Promise<void>
+
+    onOrganizationSearch:
+        (query: string) => Promise<void>
+
+    onDatePreset:
+        (preset: DatePreset) => void
+
+    onApply: () => void
+    onReset: () => void
+}

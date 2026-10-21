@@ -1,16 +1,14 @@
-import {
-    useEffect,
-    useRef,
-    useState,
-} from 'react'
-import {
-    getUserDetails,
-    permanentlyDeleteUser,
-    resetUserPassword,
-    updateUser,
-    updateUserEnabled,
-    updateUserRoles,
-} from '../api/userApi'
+// ============================================================
+// frontend/src/pages/useAdminUserMutations.ts
+// ============================================================
+import { useRef, useState } from 'react'
+import type { MutationContext, PendingMutation, WorkingMutation, AdminUsersConfirmState } from './adminUserMutations/mutationTypes'
+export type { AdminUsersConfirmState } from './adminUserMutations/mutationTypes'
+import { createEditMutations } from './adminUserMutations/editMutations'
+import { createRoleMutations } from './adminUserMutations/roleMutations'
+import { createPasswordMutations } from './adminUserMutations/passwordMutations'
+import { createDeleteMutations } from './adminUserMutations/deleteMutations'
+import { createEnabledMutations } from './adminUserMutations/enabledMutations'
 import type {
     User,
 } from '../api/userApi'
@@ -24,17 +22,11 @@ import type {
     OrganizationDirectoryItem,
 } from '../api/organizationApi'
 import {
-    validatePassword,
-} from '../utils/password'
-import {
     useAutoClearMessage,
 } from '../hooks/useAutoClearMessage'
 import {
-    getAssignableRole,
     getMutationErrorMessage,
     isVersionConflict,
-    normalizeEmail,
-    normalizeOptionalText,
 } from './adminUsersSupport'
 import type {
     AssignableRole,
@@ -42,22 +34,7 @@ import type {
 
 const SUCCESS_MESSAGE_TIMEOUT_MS = 4_000
 
-type PendingMutation = {
-    userId: string
-    type:
-        | 'EDIT'
-        | 'ROLES'
-        | 'RESET_PASSWORD'
-        | 'ENABLED'
-        | 'DELETE'
-} | null
-
-export type AdminUsersConfirmState = {
-    user: User
-    nextEnabled: boolean
-} | null
-
-type UseAdminUserMutationsOptions = {
+export type UseAdminUserMutationsOptions = {
     currentUser: AuthUser
     currentUserIsSuperAdmin: boolean
     organizations: OrganizationDirectoryItem[]
@@ -125,11 +102,7 @@ export function useAdminUserMutations({
     const hasPendingMutation =
         pendingMutation !== null
 
-    useEffect(() => {
-        pendingMutationRef.current =
-            pendingMutation
-    }, [pendingMutation])
-
+    // Ref устанавливается синхронно: эффект мог бы перезаписать блокировку старым состоянием.
     useAutoClearMessage(
         success,
         setSuccess,
@@ -160,7 +133,7 @@ export function useAdminUserMutations({
     function ensureVersionAvailable(
         user: User,
     ): boolean {
-        if (user.version !== null) {
+        if (Number.isSafeInteger(user.version) && user.version !== null && user.version >= 0) {
             return true
         }
 
@@ -175,7 +148,7 @@ export function useAdminUserMutations({
     function requireVersion(
         user: User,
     ): number | null {
-        if (user.version !== null) {
+        if (Number.isSafeInteger(user.version) && user.version !== null && user.version >= 0) {
             return user.version
         }
 
@@ -186,73 +159,8 @@ export function useAdminUserMutations({
         return null
     }
 
-    function openEditModal(user: User) {
-        if (!ensureVersionAvailable(user)) {
-            return
-        }
-
-        closeMutationModals()
-        setEditUser(user)
-        setEditVersionConflict(false)
-        setEditEmail(user.email)
-        setEditFullName(user.fullName ?? '')
-        setModalError('')
-    }
-
-    function openRolesModal(user: User) {
-        if (!currentUserIsSuperAdmin) {
-            setMutationError(
-                'Только SUPER_ADMIN может изменять системную роль пользователя.',
-            )
-            return
-        }
-
-        if (!ensureVersionAvailable(user)) {
-            return
-        }
-
-        const role = getAssignableRole(user)
-
-        if (!role) {
-            setMutationError(
-                'Роль пользователя недоступна для изменения через user-management.',
-            )
-            return
-        }
-
-        closeMutationModals()
-        setRolesUser(user)
-        setSelectedRole(role)
-        setAdminElevationConfirmed(false)
-        setModalError('')
-    }
-
-    function openResetPasswordModal(
-        user: User,
-    ) {
-        if (!ensureVersionAvailable(user)) {
-            return
-        }
-
-        closeMutationModals()
-        setResetPasswordUser(user)
-        clearMutationSensitiveFields()
-        setModalError('')
-    }
-
-    function openDeleteModal(user: User) {
-        if (!ensureVersionAvailable(user)) {
-            return
-        }
-
-        closeMutationModals()
-        setDeleteUser(user)
-        setDeleteConfirmationEmail('')
-        setModalError('')
-    }
-
     async function runUserMutation(
-        mutation: Exclude<PendingMutation, null>,
+        mutation: WorkingMutation,
         fallbackError: string,
         action: () => Promise<void>,
         modal = true,
@@ -289,7 +197,7 @@ export function useAdminUserMutations({
                 if (mutation.type === 'EDIT') {
                     setEditVersionConflict(true)
                 }
-                requestReloadFromFirstPage()
+                requestReloadAfterMutation()
             }
         } finally {
             pendingMutationRef.current = null
@@ -297,366 +205,55 @@ export function useAdminUserMutations({
         }
     }
 
-    async function refreshEditedUser() {
-        if (!editUser || pendingMutationRef.current) return
-        const previousId = editUser.id
-        const loadingMutation: Exclude<PendingMutation, null> = {
-            userId: previousId,
-            type: 'EDIT',
-        }
-        pendingMutationRef.current = loadingMutation
-        setPendingMutation(loadingMutation)
-        try {
-            const fresh = await getUserDetails(previousId)
-            if (fresh.id !== previousId) {
-                // Reject an inconsistent response without updating the edit target.
-                // A locally thrown exception would be caught below anyway.
-                setEditVersionConflict(true)
-                setModalError(
-                    'Backend вернул данные другого пользователя. '
-                    + 'Редактирование заблокировано до повторной загрузки.',
-                )
-                return
-            }
-            setEditUser(fresh)
-            setEditEmail(fresh.email)
-            setEditFullName(fresh.fullName ?? '')
-            setEditVersionConflict(false)
-            setModalError('')
-        } catch (error) {
-            setModalError(getMutationErrorMessage(
-                error,
-                'Не удалось получить актуальные данные пользователя.',
-            ))
-        } finally {
-            pendingMutationRef.current = null
-            setPendingMutation(null)
-        }
-    }
-
-    async function submitEditUser() {
-        if (!editUser || editVersionConflict) {
-            return
-        }
-
-        const expectedVersion =
-            requireVersion(editUser)
-
-        if (expectedVersion === null) {
-            return
-        }
-
-        const normalizedEmail =
-            normalizeEmail(editEmail)
-
-        if (!normalizedEmail) {
-            setModalError(
-                'Введите email пользователя.',
-            )
-            return
-        }
-
-        await runUserMutation(
-            {
-                userId: editUser.id,
-                type: 'EDIT',
-            },
-            'Не удалось обновить пользователя.',
-            async () => {
-                await updateUser(
-                    editUser.id,
-                    {
-                        email: normalizedEmail,
-                        fullName:
-                            normalizeOptionalText(
-                                editFullName,
-                            ),
-                        expectedVersion,
-                    },
-                )
-
-                setEditUser(null)
-                setSuccess(
-                    `Пользователь ${normalizedEmail} обновлён.`,
-                )
-                requestReloadFromFirstPage()
-            },
-        )
-    }
-
-    async function submitRoles() {
-        if (!rolesUser) {
-            return
-        }
-
-        const expectedVersion =
-            requireVersion(rolesUser)
-
-        if (expectedVersion === null) {
-            return
-        }
-
-        if (!currentUserIsSuperAdmin) {
-            setModalError(
-                'Только SUPER_ADMIN может изменять системную роль пользователя.',
-            )
-            return
-        }
-
-        const addingAdmin =
-            selectedRole === 'ADMIN'
-            && !rolesUser.roles.includes(
-                'ADMIN',
-            )
-
-        if (
-            addingAdmin
-            && !adminElevationConfirmed
-        ) {
-            setModalError(
-                'Подтвердите повышение привилегий до ADMIN.',
-            )
-            return
-        }
-
-        await runUserMutation(
-            {
-                userId: rolesUser.id,
-                type: 'ROLES',
-            },
-            'Не удалось изменить роли пользователя.',
-            async () => {
-                await updateUserRoles(
-                    rolesUser.id,
-                    {
-                        roles: [selectedRole],
-                        expectedVersion,
-                    },
-                )
-
-                const userEmail = rolesUser.email
-                setRolesUser(null)
-                setAdminElevationConfirmed(false)
-                setSuccess(
-                    `Роль пользователя ${userEmail} изменена. `
-                    + 'Активные сессии должны быть завершены backend.',
-                )
-                requestReloadFromFirstPage()
-            },
-        )
-    }
-
-    async function submitResetPassword() {
-        if (!resetPasswordUser) {
-            return
-        }
-
-        const expectedVersion =
-            requireVersion(resetPasswordUser)
-
-        if (expectedVersion === null) {
-            return
-        }
-
-        const passwordError =
-            validatePassword(resetPasswordValue)
-
-        if (passwordError) {
-            setModalError(passwordError)
-            return
-        }
-
-        if (
-            resetPasswordValue
-            !== resetPasswordConfirm
-        ) {
-            setModalError('Пароли не совпадают.')
-            return
-        }
-
-        await runUserMutation(
-            {
-                userId: resetPasswordUser.id,
-                type: 'RESET_PASSWORD',
-            },
-            'Не удалось установить новый пароль.',
-            async () => {
-                await resetUserPassword(
-                    resetPasswordUser.id,
-                    {
-                        password:
-                            resetPasswordValue,
-                        expectedVersion,
-                    },
-                )
-
-                const emailValue =
-                    resetPasswordUser.email
-
-                clearMutationSensitiveFields()
-                setResetPasswordUser(null)
-                setSuccess(
-                    `Для ${emailValue} установлен новый пароль. `
-                    + 'Активные сессии должны быть завершены backend.',
-                )
-                requestReloadFromFirstPage()
-            },
-        )
-    }
-
-    function canManageUser(
-        user: User,
-    ): boolean {
-        const targetIsAdmin =
-            user.roles.includes('ADMIN')
-
-        return !user.roles.includes(
-            'SUPER_ADMIN',
-        )
+    function canManageUser(user: User): boolean {
+        const targetIsAdmin = user.roles.includes('ADMIN')
+        return (currentUserIsSuperAdmin || user.organizationId === currentUser.organizationId)
+            && !user.roles.includes('SUPER_ADMIN')
             && user.id !== currentUser.id
-            && (
-                !targetIsAdmin
-                || currentUserIsSuperAdmin
-            )
+            && (!targetIsAdmin || currentUserIsSuperAdmin)
     }
 
-    function canPermanentlyDelete(
-        user: User,
-    ): boolean {
-        if (
-            !currentUserIsSuperAdmin
-            || !canManageUser(user)
-            || user.enabled
-            || user.version === null
-        ) {
-            return false
-        }
-
-        const organization = organizations.find(
-            (item) =>
-                item.id === user.organizationId,
-        )
-
-        return Boolean(
-            organization
-            && !isProtectedOrganization({
-                type: organization.type,
-                protected:
-                    organization.protected,
-            }),
-        )
+    function canPermanentlyDelete(user: User): boolean {
+        if (!currentUserIsSuperAdmin || !canManageUser(user)
+            || user.enabled || !Number.isSafeInteger(user.version)
+            || user.version === null || user.version < 0) return false
+        const organization = organizations.find(item => item.id === user.organizationId)
+        return Boolean(organization && !isProtectedOrganization({
+            type: organization.type, protected: organization.protected,
+        }))
     }
 
-    async function submitPermanentDelete() {
-        if (!deleteUser) {
-            return
+    function requestReloadAfterMutation() {
+        try {
+            requestReloadFromFirstPage()
+        } catch {
+            // Серверная мутация могла завершиться успешно; повторять POST недопустимо.
+            setMutationError('Изменение выполнено, но не удалось обновить список пользователей.')
         }
-
-        if (!canPermanentlyDelete(deleteUser)) {
-            setModalError(
-                'Удаление недоступно. '
-                + 'Сначала отключите пользователя '
-                + 'и убедитесь, что его организация не защищена.',
-            )
-            return
-        }
-
-        const expectedVersion =
-            requireVersion(deleteUser)
-
-        if (expectedVersion === null) {
-            return
-        }
-
-        const canonicalConfirmation =
-            normalizeEmail(
-                deleteConfirmationEmail,
-            )
-
-        if (
-            canonicalConfirmation
-            !== normalizeEmail(deleteUser.email)
-        ) {
-            setModalError(
-                'Введите email пользователя полностью и без ошибок.',
-            )
-            return
-        }
-
-        await runUserMutation(
-            {
-                userId: deleteUser.id,
-                type: 'DELETE',
-            },
-            'Не удалось удалить пользователя.',
-            async () => {
-                await permanentlyDeleteUser(
-                    deleteUser.id,
-                    {
-                        confirmationEmail:
-                            canonicalConfirmation,
-                        expectedVersion,
-                    },
-                )
-
-                const deletedEmail =
-                    deleteUser.email
-
-                clearMutationSensitiveFields()
-                setDeleteUser(null)
-                setSuccess(
-                    `Пользователь ${deletedEmail} удалён навсегда.`,
-                )
-                requestReloadFromFirstPage()
-            },
-        )
     }
 
-    async function confirmEnabledChange() {
-        if (!confirmState) {
-            return
-        }
+    // Единая контекстная граница операций — все фабрики используют один lock и одни версии.
+    const context = {
+        currentUser, currentUserIsSuperAdmin, organizations,
+        requestReloadFromFirstPage: requestReloadAfterMutation,
+        pendingMutationRef, setPendingMutation, setMutationError, setModalError, setSuccess,
+        editUser, setEditUser, editVersionConflict, setEditVersionConflict,
+        editEmail, setEditEmail, editFullName, setEditFullName,
+        rolesUser, setRolesUser, selectedRole, setSelectedRole,
+        adminElevationConfirmed, setAdminElevationConfirmed,
+        resetPasswordUser, setResetPasswordUser, resetPasswordValue, setResetPasswordValue,
+        resetPasswordConfirm, setResetPasswordConfirm,
+        confirmState, setConfirmState, deleteUser, setDeleteUser,
+        deleteConfirmationEmail, setDeleteConfirmationEmail,
+        clearMutationSensitiveFields, closeMutationModals, ensureVersionAvailable,
+        requireVersion, canManageUser, canPermanentlyDelete, runUserMutation,
+    } satisfies MutationContext
 
-        const expectedVersion =
-            requireVersion(confirmState.user)
-
-        if (expectedVersion === null) {
-            return
-        }
-
-        const target = confirmState.user
-        const nextEnabled =
-            confirmState.nextEnabled
-
-        await runUserMutation(
-            {
-                userId: target.id,
-                type: 'ENABLED',
-            },
-            'Не удалось изменить статус пользователя.',
-            async () => {
-                await updateUserEnabled(
-                    target.id,
-                    {
-                        enabled: nextEnabled,
-                        expectedVersion,
-                    },
-                )
-
-                setConfirmState(null)
-                setSuccess(
-                    nextEnabled
-                        ? `Пользователь ${target.email} включён.`
-                        : (
-                            `Пользователь ${target.email} отключён. `
-                            + 'Запущен отзыв активных сессий.'
-                        ),
-                )
-                requestReloadFromFirstPage()
-            },
-            false,
-        )
-    }
+    const { openEditModal, refreshEditedUser, submitEditUser } = createEditMutations(context)
+    const { openRolesModal, submitRoles } = createRoleMutations(context)
+    const { openResetPasswordModal, submitResetPassword } = createPasswordMutations(context)
+    const { openDeleteModal, submitPermanentDelete } = createDeleteMutations(context)
+    const { confirmEnabledChange } = createEnabledMutations(context)
 
     return {
         mutationError,

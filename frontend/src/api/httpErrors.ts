@@ -1,11 +1,14 @@
+// ============================================================
+// frontend/src/api/httpErrors.ts
+// ============================================================
 
 
 export type ApiErrorBody = {
     timestamp?: string
     status?: number
-    /** Standard application error code used by the common API envelope. */
+    /** Код ошибки из общего серверного ответа. */
     error?: string
-    /** Domain error code used by ChatErrorResponse and newer endpoints. */
+    /** Доменный код ошибки из ChatErrorResponse и новых API. */
     code?: string
     message?: string
     path?: string

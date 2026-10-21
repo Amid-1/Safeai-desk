@@ -1,95 +1,96 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+// ============================================================
+// frontend/src/components/admin/users/AdminUsersView.search.test.tsx
+// Регрессионные проверки поиска, статусов и чтения системных ролей.
+// ============================================================
+
+import { fireEvent, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AuthUser } from '../../../api/authApi'
 import type { User, UserStatistics } from '../../../api/userApi'
-import { AdminUsersView } from './AdminUsersView'
+import {
+    mountAdminUsersView,
+    TEST_CURRENT_USER,
+    TEST_DIRECTORY_USER,
+} from '../../../test/fixtures/adminUsersViewHarness'
 
 vi.mock('../../ResizableScrollRegion', () => ({
-    default: ({ upper, children, footer }: { upper: ReactNode, children: ReactNode, footer?: ReactNode }) => (
-        <div>{upper}{children}{footer}</div>
-    ),
+    default: ({ upper, children, footer }: {
+        upper: ReactNode
+        children: ReactNode
+        footer?: ReactNode
+    }) => <div>{upper}{children}{footer}</div>,
 }))
 vi.mock('../UserActionsMenu', () => ({ default: () => null }))
 vi.mock('../UserIdentityCell', () => ({ default: () => <span>Пользователь</span> }))
 
+// Эти значения намеренно отличаются от production-набора:
+// регрессии проверяются на двух независимых комбинациях пользователей и статистики.
 const auth: AuthUser = {
-    id: '11111111-1111-1111-1111-111111111111',
+    ...TEST_CURRENT_USER,
     organizationId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    email: 'admin@test.com', fullName: null, enabled: true, roles: ['ADMIN'],
+    email: 'admin@test.com',
 }
+
 const row: User = {
-    ...auth,
+    ...TEST_DIRECTORY_USER,
     id: '22222222-2222-2222-2222-222222222222',
+    organizationId: auth.organizationId,
     email: 'ivan.petrov@example.com',
     fullName: 'Иван Петров',
-    roles: ['USER'],
     version: 1,
     createdAt: '2026-08-21T15:07:59Z',
     updatedAt: '2026-08-21T15:07:59Z',
-    lastLoginAt: null,
 }
+
 const statistics: UserStatistics = {
-    total: 10, administrators: 1, users: 9, enabled: 10, disabled: 0,
+    total: 10,
+    administrators: 1,
+    users: 9,
+    enabled: 10,
+    disabled: 0,
 }
-const callbacks = {
-    onSearchDraftChange: vi.fn(),
-    onApplySearch: vi.fn(),
-    onClearSearch: vi.fn(),
-    onSelectSearchSuggestion: vi.fn(),
-    onStatusChange: vi.fn(),
-    onCreate: vi.fn(),
-    onFilterChange: vi.fn(),
-    onPageChange: vi.fn(),
-    onReload: vi.fn(),
-    onDetails: vi.fn(),
-    onEdit: vi.fn(),
-    onRoles: vi.fn(),
-    onResetPassword: vi.fn(),
-    onEnabledChange: vi.fn(),
-    onDelete: vi.fn(),
-    canManageUser: () => false,
-    canPermanentlyDelete: () => false,
-}
+
 function view(users: User[], appliedSearch: string, searchDraft = appliedSearch) {
-    return render(<AdminUsersView
-        users={users}
-        statistics={statistics}
-        organizations={[]}
-        loadError="" mutationError="" success=""
-        loading={false} creating={false} hasPendingMutation={false}
-        page={0} totalPages={users.length ? 1 : 0} filter="ALL" status="ALL"
-        searchDraft={searchDraft} appliedSearch={appliedSearch}
-        totalMatched={users.length} detailsLoadingUserId={null}
-        currentUser={auth} currentUserIsSuperAdmin={false}
-        {...callbacks}
-    />)
+    return mountAdminUsersView({
+        currentUser: auth,
+        users,
+        statistics,
+        page: 0,
+        totalPages: users.length ? 1 : 0,
+        searchDraft,
+        appliedSearch,
+        totalMatched: users.length,
+    })
 }
 
 describe('Users directory search UI', () => {
-    beforeEach(() => vi.clearAllMocks())
     it('explains empty search without hiding overall user count', () => {
-        view([], 'does-not-exist')
-        expect(screen.getByText(/По вашему запросу пользователи не найдены/)).toBeTruthy()
-        expect(screen.getByText(/Всего пользователей: /).textContent).toContain('10')
+        const { callbacks } = view([], 'does-not-exist')
+        expect(screen.getByText(/По вашему запросу пользователи не найдены/))
+            .toBeInTheDocument()
+        expect(screen.getByText(/Всего пользователей: /))
+            .toHaveTextContent('10')
         fireEvent.click(screen.getByRole('button', { name: 'Сбросить поиск' }))
-        expect(callbacks.onClearSearch).toHaveBeenCalled()
+        expect(callbacks.onClearSearch).toHaveBeenCalledOnce()
     })
 
     it('offers a registered user and selects exact email', () => {
-        view([row], 'Иван')
+        const { callbacks } = view([row], 'Иван')
         const search = screen.getByRole('searchbox')
         fireEvent.focus(search)
-        expect(screen.getByText('Совпадения · выберите пользователя')).toBeTruthy()
+        expect(screen.getByText('Совпадения · выберите пользователя'))
+            .toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', { name: /Иван Петров/ }))
+        expect(callbacks.onSelectSearchSuggestion).toHaveBeenCalledOnce()
         expect(callbacks.onSelectSearchSuggestion).toHaveBeenCalledWith(row)
     })
 
     it('keeps role read-only for ADMIN, opens the real security explanation and closes it', () => {
-        view([row], '')
+        const { callbacks } = view([row], '')
         expect(screen.queryByRole('button', {
             name: `Изменить роль пользователя ${row.email}`,
-        })).toBeNull()
+        })).not.toBeInTheDocument()
 
         fireEvent.click(screen.getByRole('button', {
             name: `Информация о роли пользователя ${row.email}`,
@@ -98,32 +99,70 @@ describe('Users directory search UI', () => {
         const dialog = screen.getByRole('dialog', {
             name: 'Системная роль пользователя',
         })
-        expect(dialog.textContent).toContain(row.email)
-        expect(dialog.textContent).toContain('Текущая роль')
-        expect(dialog.textContent).toContain('только SUPER_ADMIN')
-        expect(dialog.textContent).toContain('Просмотр роли не изменяет')
+        expect(dialog).toHaveTextContent(row.email)
+        expect(dialog).toHaveTextContent('Текущая роль')
+        expect(dialog).toHaveTextContent('только SUPER_ADMIN')
+        expect(dialog).toHaveTextContent('Просмотр роли не изменяет')
         expect(callbacks.onRoles).not.toHaveBeenCalled()
 
         fireEvent.click(within(dialog).getByRole('button', { name: /^Закрыть$/ }))
         expect(screen.queryByRole('dialog', {
             name: 'Системная роль пользователя',
-        })).toBeNull()
+        })).not.toBeInTheDocument()
     })
 
     it('renders protected enabled status without allowing unauthorized mutation', () => {
-        view([row], '')
-        expect(screen.getByText('Включён')).toBeTruthy()
+        const { callbacks } = view([row], '')
+        expect(screen.getByText('Включён')).toBeInTheDocument()
         expect(screen.queryByRole('button', {
             name: `Отключить пользователя ${row.email}`,
-        })).toBeNull()
+        })).not.toBeInTheDocument()
         expect(callbacks.onEnabledChange).not.toHaveBeenCalled()
     })
 
     it('provides exactly the defined enable/disable status choices', () => {
         view([], '')
-        const options = Array.from(screen.getByLabelText('Статус').querySelectorAll('option'))
-        expect(options.map(option => option.textContent)).toEqual([
+        const select = screen.getByLabelText('Статус') as HTMLSelectElement
+        expect(Array.from(select.options, (option) => option.textContent)).toEqual([
             'Все статусы', 'Включённые', 'Отключённые',
         ])
+    })
+
+    it('не применяет поисковый фильтр автоматически при вводе или фокусе', () => {
+        const { callbacks } = view([row], '')
+        const search = screen.getByRole('searchbox')
+        fireEvent.focus(search)
+        fireEvent.change(search, { target: { value: 'Иван' } })
+        expect(callbacks.onSearchDraftChange).toHaveBeenCalledWith('Иван')
+        expect(callbacks.onApplySearch).not.toHaveBeenCalled()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Найти' }))
+        expect(callbacks.onApplySearch).toHaveBeenCalledOnce()
+    })
+
+    it.each([
+        { reason: 'идёт загрузка', overrides: { loading: true } },
+        { reason: 'есть ошибка загрузки', overrides: { loadError: 'Ошибка' } },
+        { reason: 'введён один символ', overrides: { searchDraft: 'И', appliedSearch: 'И' } },
+        { reason: 'поиск ещё не применён', overrides: { appliedSearch: 'Другое' } },
+    ])('не раскрывает подсказки, если $reason', ({ overrides }) => {
+        const { rerenderWith } = view([row], 'Иван')
+        rerenderWith(overrides)
+        fireEvent.focus(screen.getByRole('searchbox'))
+        expect(screen.queryByText('Совпадения · выберите пользователя'))
+            .not.toBeInTheDocument()
+    })
+
+    it('закрывает подсказки клавишей Escape без отправки запроса', () => {
+        const { callbacks } = view([row], 'Иван')
+        const search = screen.getByRole('searchbox')
+        fireEvent.focus(search)
+        expect(screen.getByText('Совпадения · выберите пользователя'))
+            .toBeInTheDocument()
+
+        fireEvent.keyDown(search, { key: 'Escape' })
+        expect(screen.queryByText('Совпадения · выберите пользователя'))
+            .not.toBeInTheDocument()
+        expect(callbacks.onApplySearch).not.toHaveBeenCalled()
     })
 })

@@ -1,6 +1,6 @@
-/*
- * Scoped styles: preserve the shared Modal, admin tables and KB list page.
- * Compatible with KnowledgePage.css (including the searchable-list patch).
+/* frontend/src/components/knowledge/KnowledgeMembersModal.css
+ * Локальные стили окна участников: не изменяют общий Modal, таблицы администратора
+ * и страницу баз знаний. Совместимы с KnowledgePage.css.
  */
 .modal-card.knowledge-members-modal {
     width: min(760px, calc(100vw - 32px));

@@ -1,9 +1,9 @@
 /* ============================================================
    frontend/src/components/admin/models/ModelCatalogVersionModal.css
 
-   Resizable Model Catalog modal.
-   Modal.tsx owns resize math and content scale variables.
-   This stylesheet owns only catalog presentation/reflow.
+   Оформление изменяемого по размеру окна каталога моделей.
+   Modal.tsx отвечает за геометрию и масштаб содержимого.
+   Этот файл отвечает только за визуальное оформление и адаптивную компоновку.
    ============================================================ */
 
 .modal-card.models-catalog-modal.modal-card--resizable {
@@ -14,8 +14,8 @@
     --catalog-pricing-soft: #f7f4ff;
 
     /*
-     * Local static defaults make the stylesheet self-contained for CSS tooling.
-     * Modal.tsx may override these custom properties inline while resizing.
+     * Локальные значения по умолчанию позволяют проверять CSS автономно.
+     * Modal.tsx может переопределять переменные при изменении размера.
      */
     --modal-resize-small-font-size: 11px;
     --modal-resize-strong-font-size: 15px;
@@ -261,7 +261,7 @@
     font-size: var(--modal-resize-small-font-size, 11px);
 }
 
-/* Resize handles are scoped to the catalog modal only. */
+/* Обработчики изменения размера действуют только внутри окна каталога. */
 .models-catalog-modal .modal-resize-layer {
     position: absolute;
     z-index: 70;
@@ -414,9 +414,9 @@
 }
 
 /* ============================================================
-   SEMANTIC COLOR SYSTEM
-   Identity = blue, limits = cyan, data = green,
-   capabilities = indigo, pricing = amber/violet.
+   СЕМАНТИЧЕСКИЕ ЦВЕТА
+   Идентичность — синий, лимиты — голубой, данные — зелёный,
+   возможности — индиго, тарификация — янтарный и фиолетовый.
    ============================================================ */
 
 .modal-card.models-catalog-modal.modal-card--resizable {
@@ -534,7 +534,7 @@
     background: rgb(255 255 255 / 62%);
 }
 
-/* Panels keep their intrinsic height; the modal body owns vertical scrolling. */
+/* Панели сохраняют естественную высоту, прокруткой управляет тело окна. */
 .modal-card.models-catalog-modal.modal-card--resizable .modal-body > .models-catalog-form {
     height: auto;
     min-height: min-content;
