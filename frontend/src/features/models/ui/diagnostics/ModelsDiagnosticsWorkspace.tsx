@@ -27,14 +27,16 @@ export function ModelsDiagnosticsWorkspace({ controller }: { controller: AdminMo
                     event.preventDefault(); void handleRouteLookup()
                 }}>
                     <label htmlFor="models-route-decision-id">ID решения</label>
-                    <input id="models-route-decision-id" type="text" autoComplete="off"
+                    <input id="models-route-decision-id" type="text" autoComplete="off" inputMode="text" spellCheck={false}
                         value={routeDecisionId} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                         onChange={(event) => handleRouteDecisionIdChange(event.target.value)} />
                     <button type="submit" disabled={routePending}>
                         {routePending ? 'Проверяем...' : 'Проверить'}
                     </button>
                 </form>
-                {routeError && <ErrorState message={routeError} variant="inline" />}
+                {routeError && (routeError === 'Введите корректный ID решения (UUID).'
+                    ? <p className="models-diagnostics-validation" role="alert">Некорректный идентификатор решения. Укажите UUID из журнала аудита.</p>
+                    : <ErrorState message={routeError} variant="inline" />)}
                 {routeDecision && <RouteDecisionEvidence decision={routeDecision} />}
             </div>
         </section>

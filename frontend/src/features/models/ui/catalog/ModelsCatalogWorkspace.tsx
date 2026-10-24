@@ -1,15 +1,19 @@
 // frontend/src/features/models/ui/catalog/ModelsCatalogWorkspace.tsx
+// Управление каталогом и изолированный viewport таблицы с доступным изменением высоты.
 import type { AdminModelsController } from '../../controller/useAdminModelsController'
 import { CatalogTable } from '../ModelControlPlaneViews'
 import CatalogEmptyState from '../CatalogEmptyState'
+import { CATALOG_PANEL_MIN_HEIGHT, useCatalogPanelHeight } from './useCatalogPanelHeight'
 
 export function ModelsCatalogWorkspace({ controller }: { controller: AdminModelsController }) {
     const { catalog, effectiveCatalog, runtime, isSuperAdmin, mutationPending,
         handleImportRuntime, setCatalogModal, setHistoryModalEntry,
         catalogPermissionNotice, setCatalogPermissionNotice, importError } = controller
+    const panel = useCatalogPanelHeight()
     if (!runtime) return null
+
     return (
-        <section className="models-section-stack" aria-labelledby="models-catalog-title">
+        <section className="models-section-stack models-catalog-workspace" aria-labelledby="models-catalog-title">
             <header className="models-section-heading models-section-heading--actions">
                 <div>
                     <span className="models-eyebrow">ВЕРСИИ И ХАРАКТЕРИСТИКИ</span>
@@ -38,7 +42,32 @@ export function ModelsCatalogWorkspace({ controller }: { controller: AdminModels
                 Создание и изменение версий каталога доступно только SUPER_ADMIN.
                 Администратор организации может менять правила своей организации.
             </p>}
-            <div className="models-catalog-table-region" role="region" aria-label="Таблица каталога моделей" tabIndex={0}>
+
+            {/* Размер меняется только на десктопе; на телефоне таблица преобразуется в полные карточки. */}
+            {catalog.length > 0 && (
+                <div className="models-catalog-resize-handle" role="separator"
+                    aria-label="Изменить высоту таблицы каталога"
+                    aria-orientation="horizontal"
+                    aria-valuemin={CATALOG_PANEL_MIN_HEIGHT}
+                    aria-valuemax={panel.maxHeight}
+                    aria-valuenow={panel.height}
+                    aria-controls="models-catalog-table-viewport"
+                    tabIndex={0}
+                    onPointerDown={panel.onPointerDown}
+                    onPointerMove={panel.onPointerMove}
+                    onPointerUp={panel.onPointerUp}
+                    onPointerCancel={panel.onPointerCancel}
+                    onKeyDown={panel.onKeyDown}
+                    onDoubleClick={panel.onDoubleClick}
+                    title="Потяните вверх, чтобы увеличить таблицу, вниз — чтобы уменьшить. Стрелки ↑/↓ также меняют высоту; двойной щелчок возвращает автоматическую высоту."
+                ><span className="models-catalog-resize-handle__grip" aria-hidden="true" />
+                    <span className="models-catalog-resize-handle__label" aria-hidden="true">Размер таблицы</span>
+                </div>
+            )}
+            <div id="models-catalog-table-viewport" ref={panel.regionRef}
+                className={`models-catalog-table-region${catalog.length === 0 ? ' models-catalog-table-region--empty' : ''}`}
+                role="region" aria-label="Таблица каталога моделей" tabIndex={0}
+                style={catalog.length > 0 ? { height: `${panel.height}px` } : undefined}>
                 {catalog.length === 0 ? <CatalogEmptyState isSuperAdmin={isSuperAdmin} mutationPending={mutationPending}
                     onImportRuntime={() => { void handleImportRuntime() }} onCreateModel={() => setCatalogModal({ base: null })} />
                     : <CatalogTable entries={catalog} effectiveEntries={effectiveCatalog} runtime={runtime}

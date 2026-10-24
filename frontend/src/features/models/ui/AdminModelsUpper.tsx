@@ -8,7 +8,7 @@ export function AdminModelsUpper({ runtime }: { runtime: RuntimeModelStatus }) {
             <div className="models-hero__content">
                 <span className="models-eyebrow">SAFEAI DESK / УПРАВЛЕНИЕ</span>
                 <h1>Модели и доступ</h1>
-                <p>Подключённая модель, версии в каталоге, правила организаций и проверка запросов — в отдельных разделах.</p>
+                <p>Подключение, каталог, правила организаций и диагностика.</p>
             </div>
             <div className="models-runtime-badge" aria-label="Подключённая модель">
                 <span>Сейчас настроена модель</span>

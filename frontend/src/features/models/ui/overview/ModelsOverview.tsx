@@ -1,6 +1,6 @@
 // frontend/src/features/models/ui/overview/ModelsOverview.tsx
 import type { AdminModelsController } from '../../controller/useAdminModelsController'
-import { ModelAvailabilitySummary } from '../ModelAvailabilitySummary'
+import { ModelAvailabilitySummary, modelConfigurationReadiness } from '../ModelAvailabilitySummary'
 import type { ModelsSection } from '../AdminModelsNavigation'
 
 export function ModelsOverview({ controller, navigate }: {
@@ -9,8 +9,9 @@ export function ModelsOverview({ controller, navigate }: {
 }) {
     const { runtime, policy, catalog, effectiveCatalog, selectedOrganizationName, setPolicyModalOpen } = controller
     if (!runtime || !policy) return null
+    const readiness = modelConfigurationReadiness(runtime, effectiveCatalog, policy)
     return (
-        <div className="models-section-stack">
+        <div className="models-section-stack models-overview-workspace">
             <div className="models-section-heading">
                 <div>
                     <span className="models-eyebrow">ОБЩАЯ КАРТИНА</span>
@@ -24,8 +25,18 @@ export function ModelsOverview({ controller, navigate }: {
                 <div><span>Правила доступа</span><strong>{policy.configured ? `Версия ${policy.version}` : 'Не настроены'}</strong><small>{selectedOrganizationName ?? policy.organizationId}</small></div>
                 <div><span>Проверка соединения</span><strong>{runtime.healthStatus === 'AVAILABLE' ? 'Доступна' : runtime.healthStatus === 'UNAVAILABLE' ? 'Недоступна' : 'Не подтверждена'}</strong><small>Проверка запускается отдельно</small></div>
             </section>
-            <ModelAvailabilitySummary runtime={runtime} policy={policy} effectiveCatalog={effectiveCatalog}
-                organizationName={selectedOrganizationName} onOpenPolicy={() => setPolicyModalOpen(true)} />
+            {/* Security-relevant blockers remain visible when the advisory details are collapsed. */}
+            {readiness.blockers.length > 0 && (
+                <div className="models-overview-alert" role="status">
+                    <strong>Конфигурация требует внимания</strong>
+                    {readiness.blockers.map((message) => <p key={message}>{message}</p>)}
+                </div>
+            )}
+            <details className="models-overview-readiness">
+                <summary>Предварительная проверка совместимости <span>Показать подробности</span></summary>
+                <ModelAvailabilitySummary runtime={runtime} policy={policy} effectiveCatalog={effectiveCatalog}
+                    organizationName={selectedOrganizationName} onOpenPolicy={() => setPolicyModalOpen(true)} />
+            </details>
             <div className="models-section-links" aria-label="Перейти к управлению">
                 <button type="button" className="secondary-button" onClick={() => navigate('catalog')}>Каталог моделей</button>
                 <button type="button" className="secondary-button" onClick={() => navigate('access')}>Доступ организаций</button>

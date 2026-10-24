@@ -273,6 +273,7 @@ describe('AdminModelsPage', () => {
         expect(screen.queryByRole('dialog', {name: 'Модель каталога'}))
             .not.toBeInTheDocument()
         fireEvent.click(screen.getByRole('tab', { name: 'Обзор' }))
+        fireEvent.click(screen.getByText(/Предварительная проверка совместимости/))
         expect(screen.getByRole('heading', {name: 'Проверка доступности модели'})).toBeInTheDocument()
         expect(screen.getByText('Нужна проверка запроса')).toBeInTheDocument()
 
@@ -454,13 +455,13 @@ describe('AdminModelsPage', () => {
         ).toBeInTheDocument()
     })
 
-    it('каталог занимает собственную прокручиваемую область без перекрывающей шторки', async () => {
+    it('каталог предоставляет собственный viewport и доступную ручку высоты без перекрытия остальной страницы', async () => {
         authMock.currentUser = currentUser('ADMIN')
         render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         await screen.findByRole('tab', { name: 'Каталог' })
         fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
         expect(screen.getByRole('region', { name: 'Таблица каталога моделей' })).toBeInTheDocument()
-        expect(screen.queryByRole('separator', { name: /Изменить размер области/ })).not.toBeInTheDocument()
+        expect(screen.getByRole('separator', { name: 'Изменить высоту таблицы каталога' })).toBeInTheDocument()
     })
 
     it('показывает окно правил по явной кнопке и закрывает его крестиком', async () => {
@@ -505,7 +506,7 @@ describe('AdminModelsPage', () => {
 
         expect(
             await screen.findByText(
-                'Введите корректный ID решения (UUID).',
+                'Некорректный идентификатор решения. Укажите UUID из журнала аудита.',
             ),
         ).toBeInTheDocument()
 

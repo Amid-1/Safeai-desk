@@ -35,7 +35,7 @@ export function CatalogTable({
             <thead>
                 <tr>
                     <th>Модель</th>
-                    <th>Runtime</th>
+                    <th scope="col">Подключение</th>
                     <th>Статус каталога</th>
                     <th>Лимиты</th>
                     <th>Возможности каталога</th>
@@ -91,7 +91,7 @@ export function CatalogTable({
 
                     return (
                         <tr key={entry.id}>
-                            <td>
+                            <td data-label="Модель">
                                 <strong>{entry.displayName}</strong>
                                 <code>{entry.modelKey}</code>
 
@@ -116,7 +116,7 @@ export function CatalogTable({
                                 </small>
                             </td>
 
-                            <td>
+                            <td data-label="Подключение">
                                 <span>
                                     {entry.provider}
                                     {' / '}
@@ -131,44 +131,44 @@ export function CatalogTable({
                                     }
                                     label={
                                         runtimeMatches
-                                            ? 'Совпадает с Runtime'
-                                            : 'Текущий Runtime другой'
+                                            ? 'Совпадает с подключением'
+                                            : 'Подключённая модель отличается'
                                     }
                                 />
 
                                 {executableByCurrentRuntime && (
                                     <small>
                                         Действующая версия физически
-                                        исполнима текущим Runtime
+                                        совместима с подключённой моделью
                                     </small>
                                 )}
                             </td>
 
-                            <td>
+                            <td data-label="Статус каталога">
                                 <StatusPill
                                     tone={lifecycleTone(entry.lifecycle)}
                                     label={lifecycleLabel(entry.lifecycle)}
                                 />
                             </td>
 
-                            <td>
+                            <td data-label="Лимиты">
                                 {entry.maxInputTokens.toLocaleString('ru-RU')}
                                 {' / '}
                                 {entry.maxOutputTokens.toLocaleString('ru-RU')}
                                 <small>вход / выход</small>
                             </td>
 
-                            <td>
+                            <td data-label="Возможности каталога">
                                 {catalogCapabilities(entry)}
                                 {entry.capabilities.length > 0 && (
                                     <small>
                                         Сведения каталога; фактическое исполнение
-                                        проверяется Runtime отдельно
+                                        проверяется у провайдера отдельно
                                     </small>
                                 )}
                             </td>
 
-                            <td>
+                            <td data-label="Стоимость">
                                 <strong>
                                     {pricingStatusLabel(entry.pricingStatus)}
                                 </strong>
@@ -182,7 +182,7 @@ export function CatalogTable({
                                 </small>
                             </td>
 
-                            <td>
+                            <td data-label="Политика данных">
                                 <span>
                                     Хранение: {' '}
                                     {retentionLabel(entry.retentionStatus)}
@@ -193,7 +193,7 @@ export function CatalogTable({
                                 </small>
                             </td>
 
-                            <td>
+                            <td data-label="Действует с">
                                 {formatDateTime(entry.effectiveFrom)}
 
                                 <div className="models-catalog-effective-state">
@@ -218,7 +218,7 @@ export function CatalogTable({
                                 )}
                             </td>
 
-                            <td>
+                            <td data-label="Действия">
                                 <div className="models-catalog-row-actions">
                                     <button
                                         type="button"
