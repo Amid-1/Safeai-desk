@@ -51,6 +51,7 @@ type DecimalInputProps = {
     label: string
     value: string
     placeholder?: string
+    disabled?: boolean
     onChange: (
         value: string,
     ) => void
@@ -60,6 +61,7 @@ export function DecimalInput({
     label,
     value,
     placeholder,
+    disabled = false,
     onChange,
 }: DecimalInputProps) {
     return (
@@ -69,6 +71,7 @@ export function DecimalInput({
                 inputMode="decimal"
                 value={value}
                 placeholder={placeholder}
+                disabled={disabled}
                 onChange={(event) => {
                     onChange(
                         event.target.value,

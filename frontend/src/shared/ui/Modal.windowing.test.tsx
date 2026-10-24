@@ -25,6 +25,34 @@ function renderWindow() {
 }
 
 describe('Управление окном указателем', () => {
+    it('позволяет отключить перемещение окна, сохраняя resize и максимизацию', () => {
+        render(
+            <Modal
+                title="Без перемещения"
+                onClose={vi.fn()}
+                resize={dimensions}
+                dragEnabled={false}
+            >
+                Содержимое
+            </Modal>,
+        )
+        const dialog = screen.getByRole('dialog', {name: 'Без перемещения'})
+        const header = dialog.querySelector<HTMLElement>('.modal-header')!
+        const initialLeft = dialog.style.left
+        const initialTop = dialog.style.top
+        expect(dialog.querySelector('[data-modal-drag-handle]')).toBeNull()
+        fireEvent.pointerDown(header, {pointerId: 1, button: 0, clientX: 100, clientY: 100})
+        fireEvent.pointerMove(header, {pointerId: 1, clientX: 200, clientY: 200})
+        expect(dialog.style.left).toBe(initialLeft)
+        expect(dialog.style.top).toBe(initialTop)
+        expect(document.body).not.toHaveClass('modal-dragging')
+        expect(dialog.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(8)
+        fireEvent.click(screen.getByRole('button', {name: 'Развернуть окно на весь экран'}))
+        expect(dialog).toHaveClass('modal-card--maximized')
+        fireEvent.click(screen.getByRole('button', {name: 'Восстановить размер окна'}))
+        expect(dialog.querySelectorAll('[data-modal-resize-handle]')).toHaveLength(8)
+    })
+
     it('не начинает перетаскивание правой кнопкой, с кнопки или из тела окна', () => {
         const dialog = renderWindow()
         const handle = dialog.querySelector<HTMLElement>('[data-modal-drag-handle="true"]')!

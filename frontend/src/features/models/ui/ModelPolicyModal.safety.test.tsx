@@ -109,7 +109,9 @@ describe('ModelPolicyModal: безопасность изменения прав
         enablePolicy()
         clickPreview()
         await screen.findByText('Серверная проверка черновика')
+        fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
         fireEvent.change(screen.getByPlaceholderText('Например: 32000'), {target: {value: '16384'}})
+        fireEvent.click(screen.getByRole('tab', {name: /Проверка/}))
         expect(screen.getByText(/Правила изменены после предыдущей проверки/)).toBeInTheDocument()
         clickSubmit()
         expect(onSubmit).not.toHaveBeenCalled()
@@ -203,8 +205,10 @@ describe('ModelPolicyModal: безопасность изменения прав
         const {onSubmit} = setup({onPreview})
         enablePolicy()
         clickPreview()
+        fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
         fireEvent.change(screen.getByPlaceholderText('Например: 32000'), {target: {value: '8096'}})
         await act(async () => resolve(preview()))
+        fireEvent.click(screen.getByRole('tab', {name: /Проверка/}))
         expect(screen.getByText(/Правила изменены после предыдущей проверки/)).toBeInTheDocument()
         clickSubmit()
         expect(onSubmit).not.toHaveBeenCalled()
@@ -231,7 +235,10 @@ describe('ModelPolicyModal: безопасность изменения прав
         rerender(ui(1))
         clickSubmit()
         expect(onSubmit).not.toHaveBeenCalled()
-        expect(screen.getByText(/Перед сохранением включённых правил выполните/)).toBeInTheDocument()
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'На сервере изменилась версия правил',
+        )
+        expect(screen.getByRole('button', {name: 'Сохранить правила'})).toBeDisabled()
     })
 
     it('показывает отказ серверной проверки и не разрешает сохранение', async () => {
@@ -246,6 +253,7 @@ describe('ModelPolicyModal: безопасность изменения прав
     it('показывает ошибку сохранения и позволяет повторную попытку без потери черновика', async () => {
         const onSubmit = vi.fn(async () => {throw new Error('Конфликт версии')})
         setup({onSubmit})
+        fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
         fireEvent.change(screen.getByPlaceholderText('Например: 32000'), {target: {value: '32000'}})
         clickSubmit()
         await screen.findByText('Конфликт версии')

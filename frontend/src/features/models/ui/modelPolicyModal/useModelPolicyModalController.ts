@@ -26,6 +26,15 @@ export function useModelPolicyModalController({
     onPreview,
     onSubmit,
 }: ModelPolicyModalControllerInput) {
+    // Исходная версия фиксируется на весь сеанс редактирования. Нельзя
+    // сохранять старый черновик под новой optimistic-lock версией после
+    // фонового обновления политики другой административной операцией.
+    const openedPolicyVersionRef = useRef(policy.version)
+    const openedPolicyIdRef = useRef(policy.id)
+    const policyChangedExternally =
+        openedPolicyVersionRef.current !== policy.version
+        || openedPolicyIdRef.current !== policy.id
+
     // Защищаем запросы от повторных действий до следующего обновления React.
     const previewInFlightRef = useRef(false)
     const submitInFlightRef = useRef(false)
@@ -127,7 +136,7 @@ export function useModelPolicyModalController({
         )
 
     const [activeSection, setActiveSection] =
-        useState<'access' | 'limits' | 'budget' | 'data' | null>(null)
+        useState<'access' | 'limits' | 'budget' | 'data' | 'preview'>('access')
 
     // Локально поясняем только метаданные каталога: решения о маршрутизации и блокировке принимает сервер.
     const undeclaredTrainingModels = effectiveCatalog.filter((entry) =>
@@ -243,41 +252,19 @@ export function useModelPolicyModalController({
         onClose()
     }
 
-    const focusShortcut = (
-        section: NonNullable<typeof activeSection>,
-        target:
-            HTMLElement | null,
-    ) => {
-        if (
-            !target
-        ) {
-            return
-        }
-
-        setActiveSection(section)
-
-        target.focus({
-            preventScroll:
-                true,
-        })
-
-        const block = target.closest<HTMLElement>('[data-policy-block]') ?? target
-        if (typeof block.scrollIntoView === 'function') {
-            block.scrollIntoView({
-                behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-                    ? 'instant'
-                    : 'smooth',
-                block:
-                    'center',
-                inline:
-                    'nearest',
-            })
-        }
-    }
-
     const buildCurrentRequest =
         (): CreateOrganizationModelPolicyVersionRequest | null => {
             setFormError('')
+
+            if (policyChangedExternally) {
+                setActiveSection('preview')
+                setFormError(
+                    'Правила организации изменились после открытия окна. '
+                    + 'Чтобы не перезаписать чужие изменения, закройте окно '
+                    + 'и откройте актуальную версию правил заново.',
+                )
+                return null
+            }
 
             // Не отправляем правила, если отображаемая организация и загруженная
             // политика относятся к разным tenant.
@@ -290,6 +277,7 @@ export function useModelPolicyModalController({
                 allowSelectorState.hasError
                 || denySelectorState.hasError
             ) {
+                setActiveSection('access')
                 setFormError(
                     'Исправьте ошибки в списках моделей перед сохранением.',
                 )
@@ -300,6 +288,7 @@ export function useModelPolicyModalController({
                 allowSelectorState.hasPendingInput
                 || denySelectorState.hasPendingInput
             ) {
+                setActiveSection('access')
                 setFormError(
                     'Завершите добавление модели: выберите её из списка, нажмите Enter для ручного ключа или очистите строку поиска.',
                 )
@@ -331,10 +320,19 @@ export function useModelPolicyModalController({
         }
 
         const fingerprint = draftFingerprint
+        setActiveSection('preview')
         previewInFlightRef.current = true
         setPreviewPending(true)
         setPreviewError('')
         setLockoutAcknowledged(false)
+
+        // Единый путь отказа: неверный ответ сервера и сбой запроса
+        // одинаково аннулируют preview, не разрешая сохранение по нему.
+        const invalidatePreview = (message: string): void => {
+            setPolicyPreview(null)
+            setPreviewFingerprint('')
+            setPreviewError(message)
+        }
 
         try {
             const result = await onPreview(request)
@@ -346,15 +344,16 @@ export function useModelPolicyModalController({
                 || result.basePolicyVersion !== policy.version
                 || result.enabled !== request.enabled
             ) {
-                throw new Error('Сервер вернул проверку для другого состояния правил.')
+                // Это ошибка контракта ответа, а не исключение HTTP-запроса.
+                // Не бросаем исключение, которое тут же поймает этот catch.
+                invalidatePreview('Сервер вернул проверку для другого состояния правил.')
+                return
             }
 
             setPolicyPreview(result)
             setPreviewFingerprint(fingerprint)
         } catch (failure) {
-            setPolicyPreview(null)
-            setPreviewFingerprint('')
-            setPreviewError(
+            invalidatePreview(
                 failure instanceof Error
                     ? getApiErrorMessage(failure, failure.message)
                     : 'Не удалось проверить правила.',
@@ -375,6 +374,7 @@ export function useModelPolicyModalController({
         }
 
         if (draft.enabled && currentPreview === null) {
+            setActiveSection('preview')
             setFormError(
                 'Перед сохранением включённых правил выполните «Проверить правила». Проверка должна соответствовать текущему черновику.',
             )
@@ -386,6 +386,7 @@ export function useModelPolicyModalController({
             && currentPreview?.wouldLockOutOrganization
             && !lockoutAcknowledged
         ) {
+            setActiveSection('preview')
             setFormError(
                 'Проверка показала, что правила заблокируют все исполняемые модели. Подтвердите осознанную блокировку перед сохранением.',
             )
@@ -443,13 +444,13 @@ export function useModelPolicyModalController({
                 )
 
     return {
-        formId, draft, setDraft, formError,
+        formId, draft, setDraft, formError, pending,
         policyPreview, currentPreview, previewPending, previewError,
         lockoutAcknowledged, setLockoutAcknowledged,
         allowSelectorState, setAllowSelectorState,
         denySelectorState, setDenySelectorState,
         accessControlRef, limitsControlRef, budgetControlRef, dataControlRef,
-        activeSection, setActiveSection, focusShortcut,
+        activeSection, setActiveSection, policyChangedExternally,
         undeclaredTrainingModels, activationWarning,
         serverConfirmedTrainingLockout, serverTrainingRejectedModelKeys,
         isDirty, requestClose, handlePreview, handleSubmit,

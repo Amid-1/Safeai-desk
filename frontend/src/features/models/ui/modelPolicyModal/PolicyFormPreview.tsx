@@ -26,7 +26,7 @@ export function PolicyFormPreview({control}: Props) {
                                 {' '}
                                 записи каталога,
                                 {' '}
-                                совпадающей с Runtime.
+                                совпадающей с подключённой моделью.
                             </strong>
 
                             <p>
@@ -71,7 +71,7 @@ export function PolicyFormPreview({control}: Props) {
                             <div>
                                 <strong>Серверная проверка черновика</strong>
                                 <small>
-                                    Runtime: {currentPreview.runtimeProvider}/{currentPreview.runtimeModel}
+                                    Подключение: {currentPreview.runtimeProvider}/{currentPreview.runtimeModel}
                                     {' · '}
                                     Исполняемых моделей: {currentPreview.executableModelCount}
                                     {' · '}

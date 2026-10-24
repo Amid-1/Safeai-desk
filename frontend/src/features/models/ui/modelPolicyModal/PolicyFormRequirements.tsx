@@ -5,9 +5,10 @@ import type {ModelPolicyModalController} from './useModelPolicyModalController'
 
 type Props = {
     control: ModelPolicyModalController
+    pending?: boolean
 }
 
-export function PolicyFormRequirements({control}: Props) {
+export function PolicyFormRequirements({control, pending = false}: Props) {
     const {formId, draft, setDraft, dataControlRef, undeclaredTrainingModels, serverConfirmedTrainingLockout, serverTrainingRejectedModelKeys, currentPreview} = control
     return (
         <>
@@ -87,6 +88,7 @@ export function PolicyFormRequirements({control}: Props) {
                                     dataControlRef
                                 }
                                 type="checkbox"
+                                disabled={pending}
                                 checked={
                                     draft.requireCompletePricing
                                 }
@@ -113,6 +115,7 @@ export function PolicyFormRequirements({control}: Props) {
                         <label>
                             <input
                                 type="checkbox"
+                                disabled={pending}
                                 checked={
                                     draft.requireNoTraining
                                 }
@@ -142,6 +145,7 @@ export function PolicyFormRequirements({control}: Props) {
                         <label>
                             <input
                                 type="checkbox"
+                                disabled={pending}
                                 checked={
                                     draft.requireZeroDataRetention
                                 }

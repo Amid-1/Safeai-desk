@@ -115,7 +115,7 @@ export function modelExecutionLabel(
 
         return runtimeMatch
             ? 'Используется сейчас'
-            : 'Есть в каталоге, но runtime сейчас другой'
+            : 'Есть в каталоге, но сейчас подключена другая модель'
     }
 
     const latest =
@@ -149,5 +149,5 @@ export function runtimeExecutionLabel(
 
     return match
         ? `${match.modelKey} · используется сейчас`
-        : `${runtime.provider}/${runtime.model} · нет matching effective catalog entry`
+        : `${runtime.provider}/${runtime.model} · нет соответствующей действующей версии в каталоге`
 }

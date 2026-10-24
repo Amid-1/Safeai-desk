@@ -123,6 +123,7 @@ describe('ModelPolicyModal production safety', () => {
             onPreview={unusedPreview}
             onSubmit={vi.fn<PolicySubmit>()}
         />)
+        fireEvent.click(screen.getByRole('tab', {name: /Бюджет/}))
         expect(screen.getByText(/Бюджет не установлен: месячного порога нет/))
             .toBeInTheDocument()
         expect(screen.getByRole('button', {name: 'Развернуть окно на весь экран'}))
@@ -169,10 +170,11 @@ describe('ModelPolicyModal production safety', () => {
             />)
             fireEvent.click(screen.getByRole('button', {name: 'Развернуть окно на весь экран'}))
             expect(confirm).not.toHaveBeenCalled()
+            fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
             fireEvent.change(screen.getByPlaceholderText('Например: 32000'), {
                 target: {value: '1500'},
             })
-            expect(screen.getByText('Есть несохраненные изменения'))
+            expect(screen.getByText('Есть несохранённые изменения'))
                 .toBeInTheDocument()
             fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
             expect(confirm).toHaveBeenCalledTimes(1)
@@ -225,7 +227,9 @@ describe('ModelPolicyModal production safety', () => {
             onPreview={onPreview}
             onSubmit={vi.fn<PolicySubmit>()}
         />)
-        const localTrainingWarning = screen.getByRole('status')
+        fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
+        const localTrainingWarning = screen.getByText('Несовместимость с требованием запрета обучения')
+            .closest('.models-policy-form__warning')
         expect(localTrainingWarning).toHaveTextContent(
             'Несовместимость с требованием запрета обучения',
         )
@@ -237,13 +241,9 @@ describe('ModelPolicyModal production safety', () => {
 
         fireEvent.click(screen.getByRole('button', {name: 'Проверить правила'}))
 
-        await waitFor(() => {
-            expect(screen.getByRole('alert')).toHaveTextContent(
-                'Исполняемых моделей: 0',
-            )
-        })
-        expect(screen.getAllByText(/Запрет обучения не подтверждён/)).toHaveLength(2)
-
+        await screen.findByText('Серверная проверка черновика')
+        expect(screen.getByText(/Исполняемых моделей: 0/)).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
         const confirmedTrainingLockout = screen.getByRole('alert')
         expect(confirmedTrainingLockout).toHaveClass(
             'models-policy-form__warning--danger',
@@ -340,9 +340,8 @@ describe('ModelPolicyModal production safety', () => {
             ),
         )
 
-        expect(
-            screen.getByRole('alert'),
-        ).toHaveTextContent(
+        fireEvent.click(screen.getByRole('tab', {name: /Проверка/}))
+        expect(screen.getByRole('alert')).toHaveTextContent(
             'нет действующей записи каталога',
         )
     })

@@ -23,6 +23,8 @@ type ModalProps = {
     size?: 'sm' | 'md' | 'lg'
     className?: string
     resize?: ModalResizeOptions
+    // Разрешать перемещение мышью за заголовок (по умолчанию — да).
+    dragEnabled?: boolean
 
     descriptionId?: string
     initialFocusRef?:
@@ -46,6 +48,7 @@ function Modal({
     size = 'md',
     className = '',
     resize,
+    dragEnabled = true,
     descriptionId,
     initialFocusRef,
 }: ModalProps) {
@@ -121,14 +124,14 @@ function Modal({
                 <div
                     className={[
                         'modal-header',
-                        resizeState.enabled
+                        resizeState.enabled && dragEnabled
                             ? 'modal-drag-handle'
                             : '',
                     ]
                         .filter(Boolean)
                         .join(' ')}
                     data-modal-drag-handle={
-                        resizeState.enabled
+                        resizeState.enabled && dragEnabled
                             ? 'true'
                             : undefined
                     }
@@ -138,21 +141,25 @@ function Modal({
                             : 'false'
                     }
                     onPointerDown={
-                        handleDragPointerDown
+                        dragEnabled ? handleDragPointerDown : undefined
                     }
                     onPointerMove={
-                        handleDragPointerMove
+                        dragEnabled ? handleDragPointerMove : undefined
                     }
                     onPointerUp={
-                        handleDragPointerEnd
+                        dragEnabled ? handleDragPointerEnd : undefined
                     }
                     onPointerCancel={
-                        handleDragPointerEnd
+                        dragEnabled ? handleDragPointerEnd : undefined
                     }
                     onLostPointerCapture={
-                        handleDragPointerEnd
+                        dragEnabled ? handleDragPointerEnd : undefined
                     }
                     onDoubleClick={(event) => {
+                        if (!dragEnabled) {
+                            return
+                        }
+
                         const eventTarget =
                             event.target
 

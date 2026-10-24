@@ -1,5 +1,5 @@
 // frontend/src/features/models/ui/modelPolicyModal/PolicyFormSettings.tsx
-// Секция формы настройки правил без изменения HTML и CSS-классов.
+// Контролируемые поля политики: разделение по назначению без изменений backend-контрактов.
 
 import type {ModelPolicyModalController} from './useModelPolicyModalController'
 import type {ModelPolicyModalProps} from './policyModalTypes'
@@ -15,17 +15,15 @@ type Props = {
     effectiveCatalog: ModelPolicyModalProps['effectiveCatalog']
     runtime: ModelPolicyModalProps['runtime']
     pending: ModelPolicyModalProps['pending']
+    section: 'access' | 'limits' | 'budget'
 }
 
-export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime, pending}: Props) {
+export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime, pending, section}: Props) {
     const {formId, draft, limitsControlRef, budgetControlRef, setDraft} = control
     return (
-        <>
-                <div
-                    className={
-                        'models-policy-form__settings-grid'
-                    }
-                >
+        <div className={`models-policy-form__settings-grid models-policy-form__settings-grid--${section}`}>
+            {section === 'access' && (
+                <>
                     <div
                         id={`${formId}-default`}
                         data-policy-block="access"
@@ -44,9 +42,9 @@ export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime,
                                 text={
                                     'Используется, если запрос не выбрал модель явно. '
                                     + 'Статус рядом показывает связь последней и действующей '
-                                    + 'версий каталога с текущим Runtime. '
-                                    + 'Автоматический режим следует текущему Runtime; '
-                                    + 'закрепленный ключ останется выбранным после смены Runtime '
+                                    + 'версий каталога с текущим подключением. '
+                                    + 'Автоматический режим следует текущему подключению; '
+                                    + 'закреплённый ключ останется выбранным после смены подключения '
                                     + 'и может перестать быть исполняемым.'
                                 }
                             />
@@ -90,11 +88,75 @@ export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime,
                         />
                         <p className="models-policy-form__field-explainer">
                             Автоматически — использовать текущую модель сервера при каждом запросе.
-                            Закрепить модель — сохранить ключ каталога; при смене Runtime
-                            совместимость будет проверяться заново, а запрос может быть отклонен.
+                            Закрепить модель — сохранить ключ каталога; при смене подключения
+                            совместимость будет проверяться заново, а запрос может быть отклонён.
                         </p>
                     </div>
+                </>
+            )}
+            {section === 'limits' && (
+                <>
+                    <label id={`${formId}-input`} data-policy-block="limits" className="models-policy-form__setting-field models-policy-form__setting-field--limits">
+                        Входные токены, максимум
 
+                        <input
+                            ref={
+                                limitsControlRef
+                            }
+                            inputMode="numeric"
+                            disabled={pending}
+                            placeholder="Например: 32000"
+                            value={
+                                draft.maxInputTokens
+                            }
+                            onChange={(
+                                event,
+                            ) => {
+                                setDraft(
+                                    (
+                                        current,
+                                    ) => ({
+                                        ...current,
+                                        maxInputTokens:
+                                            event
+                                                .target
+                                                .value,
+                                    }),
+                                )
+                            }}
+                        />
+                    </label>
+                    <label id={`${formId}-output`} data-policy-block="limits" className="models-policy-form__setting-field models-policy-form__setting-field--limits">
+                        Выходные токены, максимум
+
+                        <input
+                            inputMode="numeric"
+                            disabled={pending}
+                            placeholder="Например: 4096"
+                            value={
+                                draft.maxOutputTokens
+                            }
+                            onChange={(
+                                event,
+                            ) => {
+                                setDraft(
+                                    (
+                                        current,
+                                    ) => ({
+                                        ...current,
+                                        maxOutputTokens:
+                                            event
+                                                .target
+                                                .value,
+                                    }),
+                                )
+                            }}
+                        />
+                    </label>
+                </>
+            )}
+            {section === 'budget' && (
+                <>
                     <label id={`${formId}-budget`} data-policy-block="budget" className="models-policy-form__setting-field models-policy-form__setting-field--budget">
                         <span
                             className={
@@ -118,6 +180,7 @@ export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime,
                             value={
                                 draft.budgetEnforcement
                             }
+                            disabled={pending}
                             onChange={(
                                 event,
                             ) => {
@@ -152,66 +215,9 @@ export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime,
                             )}
                         </select>
                     </label>
-
-                    <label id={`${formId}-input`} data-policy-block="limits" className="models-policy-form__setting-field models-policy-form__setting-field--limits">
-                        Входные токены, максимум
-
-                        <input
-                            ref={
-                                limitsControlRef
-                            }
-                            inputMode="numeric"
-                            placeholder="Например: 32000"
-                            value={
-                                draft.maxInputTokens
-                            }
-                            onChange={(
-                                event,
-                            ) => {
-                                setDraft(
-                                    (
-                                        current,
-                                    ) => ({
-                                        ...current,
-                                        maxInputTokens:
-                                            event
-                                                .target
-                                                .value,
-                                    }),
-                                )
-                            }}
-                        />
-                    </label>
-
-                    <label id={`${formId}-output`} data-policy-block="limits" className="models-policy-form__setting-field models-policy-form__setting-field--limits">
-                        Выходные токены, максимум
-
-                        <input
-                            inputMode="numeric"
-                            placeholder="Например: 4096"
-                            value={
-                                draft.maxOutputTokens
-                            }
-                            onChange={(
-                                event,
-                            ) => {
-                                setDraft(
-                                    (
-                                        current,
-                                    ) => ({
-                                        ...current,
-                                        maxOutputTokens:
-                                            event
-                                                .target
-                                                .value,
-                                    }),
-                                )
-                            }}
-                        />
-                    </label>
-
                     <div id={`${formId}-request-cost`} data-policy-block="budget" className="models-policy-form__setting-field models-policy-form__setting-field--budget">
                         <DecimalInput
+                            disabled={pending}
                             label="Стоимость запроса, USD"
                             placeholder="Без лимита"
                             value={
@@ -232,9 +238,9 @@ export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime,
                             }}
                         />
                     </div>
-
                     <div id={`${formId}-monthly-budget`} data-policy-block="budget" className="models-policy-form__setting-field models-policy-form__setting-field--budget">
                         <DecimalInput
+                            disabled={pending}
                             label="Бюджет на месяц, USD"
                             placeholder="Не задан"
                             value={
@@ -258,19 +264,19 @@ export function PolicyFormSettings({control, catalog, effectiveCatalog, runtime,
                             <p className="models-policy-form__field-explainer">
                                 Бюджет не установлен: месячного порога нет.
                                 Режим «{budgetEnforcementLabel(draft.budgetEnforcement)}»
-                                начнет влиять на лимит после задания суммы.
+                                начнёт влиять на лимит после задания суммы.
                             </p>
                         )}
                         {draft.monthlyBudgetUsd.trim() && draft.budgetEnforcement === 'HARD' && (
                             <p className="models-policy-form__field-explainer">
-                                Жесткий контроль проверяется сервером до исполнения запроса;
+                                Жёсткий контроль проверяется сервером до исполнения запроса;
                                 запросы с непроверяемой стоимостью могут отклоняться.
                                 Итог проверьте через «Проверить правила».
                             </p>
                         )}
                     </div>
-                </div>
-
-        </>
+                </>
+            )}
+        </div>
     )
 }

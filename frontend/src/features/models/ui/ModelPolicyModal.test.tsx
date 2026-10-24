@@ -162,6 +162,7 @@ describe('ModelPolicyModal', () => {
             ),
         ).toBeInTheDocument()
 
+        fireEvent.click(screen.getByRole('tab', {name: /Бюджет/}))
         expect(
             screen.getByRole(
                 'option',
@@ -180,6 +181,7 @@ describe('ModelPolicyModal', () => {
             ),
         ).toBeInTheDocument()
 
+        fireEvent.click(screen.getByRole('tab', {name: /Доступ/}))
         expect(
             screen.getByRole(
                 'button',
@@ -269,97 +271,37 @@ describe('ModelPolicyModal', () => {
         ).toBeInTheDocument()
     })
 
-    it('быстрые разделы переводят фокус к соответствующим настройкам', () => {
+    it('переключает вкладки семантически, а поля скрытых разделов недоступны', () => {
         renderPolicyModal()
+        expect(screen.getByRole('tab', {name: /Доступ/})).toHaveAttribute('aria-selected', 'true')
+        expect(screen.queryByPlaceholderText('Например: 32000')).not.toBeVisible()
 
-        const allowedModelsInput =
-            screen.getByRole(
-                'combobox',
-                {name: 'Разрешённые модели'},
-            )
+        fireEvent.click(screen.getByRole('tab', {name: /Лимиты/}))
+        expect(screen.getByRole('tab', {name: /Лимиты/})).toHaveAttribute('aria-selected', 'true')
+        expect(screen.getByPlaceholderText('Например: 32000')).toBeVisible()
+        expect(screen.queryByRole('combobox', {name: 'Разрешённые модели'})).not.toBeInTheDocument()
 
-        fireEvent.click(
-            screen.getByRole(
-                'button',
-                {name: 'Доступ'},
-            ),
-        )
-        expect(allowedModelsInput)
-            .toHaveFocus()
+        fireEvent.click(screen.getByRole('tab', {name: /Бюджет/}))
+        expect(screen.getByLabelText(/Контроль бюджета/)).toBeVisible()
 
-        fireEvent.click(
-            screen.getByRole(
-                'button',
-                {name: 'Лимиты'},
-            ),
-        )
-        expect(
-            screen.getByPlaceholderText(
-                'Например: 32000',
-            ),
-        ).toHaveFocus()
-
-        fireEvent.click(
-            screen.getByRole(
-                'button',
-                {name: 'Бюджет'},
-            ),
-        )
-        expect(
-            screen.getByLabelText(
-                /Контроль бюджета/,
-            ),
-        ).toHaveFocus()
-
-        fireEvent.click(
-            screen.getByRole(
-                'button',
-                {name: 'Требования к данным'},
-            ),
-        )
-        expect(
-            screen.getByRole(
-                'checkbox',
-                {
-                    name: 'Полные данные о стоимости',
-                },
-            ),
-        ).toHaveFocus()
+        fireEvent.click(screen.getByRole('tab', {name: /Требования к данным/}))
+        expect(screen.getByRole('checkbox', {name: 'Полные данные о стоимости'})).toBeVisible()
     })
 
-    it('highlights every controlled block and scrolls the data fieldset with reduced motion', () => {
-        const scroll = vi.fn()
-        const originalScroll = HTMLElement.prototype.scrollIntoView
-        const originalMatchMedia = window.matchMedia
-        HTMLElement.prototype.scrollIntoView = scroll
-        window.matchMedia = vi.fn().mockReturnValue({matches: true})
-        try {
-            renderPolicyModal()
-            for (const name of ['Доступ', 'Лимиты', 'Бюджет', 'Требования к данным']) {
-                const button = screen.getByRole('button', {name})
-                fireEvent.click(button)
-                expect(button).toHaveAttribute('aria-pressed', 'true')
-                const ids = button.getAttribute('aria-controls')!.split(' ')
-                for (const id of ids) {
-                    const block = document.getElementById(id)!
-                    expect(block).toBeInTheDocument()
-                    expect(block.closest('form')).toHaveAttribute(
-                        'data-active-section', block.dataset.policyBlock,
-                    )
-                }
-            }
-            expect(scroll).toHaveBeenLastCalledWith({
-                behavior: 'instant', block: 'center', inline: 'nearest',
-            })
-            expect(scroll.mock.instances.at(-1)).toBe(
-                screen.getByRole('group', {name: 'Дополнительные требования'}),
-            )
-            expect(screen.getByRole('button', {name: 'Доступ'}))
-                .toHaveAttribute('aria-pressed', 'false')
-        } finally {
-            HTMLElement.prototype.scrollIntoView = originalScroll
-            window.matchMedia = originalMatchMedia
-        }
+    it('стрелки, Home и End переключают вкладки без потери фокуса', () => {
+        renderPolicyModal()
+        const access = screen.getByRole('tab', {name: /Доступ/})
+        access.focus()
+        fireEvent.keyDown(access, {key: 'ArrowRight'})
+        const limits = screen.getByRole('tab', {name: /Лимиты/})
+        expect(limits).toHaveFocus()
+        expect(limits).toHaveAttribute('aria-selected', 'true')
+        fireEvent.keyDown(limits, {key: 'End'})
+        const preview = screen.getByRole('tab', {name: /Проверка/})
+        expect(preview).toHaveFocus()
+        expect(preview).toHaveAttribute('aria-selected', 'true')
+        fireEvent.keyDown(preview, {key: 'Home'})
+        expect(access).toHaveFocus()
     })
 
     it('сохраняет первую версию правил с optimistic version 0', async () => {
