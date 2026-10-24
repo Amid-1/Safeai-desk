@@ -32,7 +32,9 @@ const policyProps = {
     policy, catalog: [entry], effectiveCatalog: [entry], runtime,
     organizationId: policy.organizationId, organizationName: 'Компания',
     isSuperAdmin: false, organizationQuery: '', organizationResults: [],
-    organizationSearchPending: false, onOrganizationQueryChange: vi.fn(),
+    organizationSearchPending: false,
+    organizationSearchStatus: 'idle' as const,
+    organizationSearchError: '', onOrganizationQueryChange: vi.fn(),
     onOrganizationSearch: vi.fn(), onOrganizationSelect: vi.fn(), onEdit: vi.fn(),
 }
 const routeDecision: ModelRouteDecision = {
@@ -77,8 +79,8 @@ describe('RuntimeCard: достоверность сведений', () => {
         render(<RuntimeCard runtime={runtime}
             effectiveCatalog={[createModelCatalogEntry({capabilities: ['TOOLS','VISION','STRUCTURED_OUTPUT']})]}
             probe={null} probePending={false} canProbe={false} onProbe={vi.fn()} />)
-        expect(screen.getByText('Исполняемые возможности')).toBeInTheDocument()
-        const dt = screen.getByText('Исполняемые возможности').closest('dt')!
+        expect(screen.getByText('Поддерживаемые возможности')).toBeInTheDocument()
+        const dt = screen.getByText('Поддерживаемые возможности').closest('dt')!
         expect(dt.nextElementSibling).toHaveTextContent('Текст')
         expect(dt.nextElementSibling).not.toHaveTextContent('Инструменты')
         expect(screen.queryByRole('button', {name: 'Проверить доступность'})).not.toBeInTheDocument()
@@ -118,12 +120,12 @@ describe('PolicyCard: права и смысл политики', () => {
         const onSelect = vi.fn()
         const organization = {id:'00000000-0000-0000-0000-000000000088', name:'Дочерняя компания', enabled:true, type:'TENANT' as const, protected:false, version:1}
         const {rerender} = render(<PolicyCard {...policyProps} />)
-        expect(screen.queryByPlaceholderText('Название или UUID')).not.toBeInTheDocument()
+        expect(screen.queryByPlaceholderText('Начните вводить название или UUID')).not.toBeInTheDocument()
         rerender(<PolicyCard {...policyProps} isSuperAdmin
             organizationQuery="Доч" organizationResults={[organization]}
             onOrganizationQueryChange={onQueryChange} onOrganizationSearch={onSearch}
             onOrganizationSelect={onSelect} />)
-        fireEvent.change(screen.getByPlaceholderText('Название или UUID'), {target:{value:'Дочерняя'}})
+        fireEvent.change(screen.getByPlaceholderText('Начните вводить название или UUID'), {target:{value:'Дочерняя'}})
         expect(onQueryChange).toHaveBeenCalledWith('Дочерняя')
         fireEvent.click(screen.getByRole('button', {name:'Найти'}))
         expect(onSearch).toHaveBeenCalledTimes(1)

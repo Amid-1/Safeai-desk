@@ -1,0 +1,82 @@
+/* frontend/src/features/models/styles/AdminModelsSections.css */
+/* Only the /admin/models tabbed layout. The shared resizable region remains unchanged. */
+.models-page.models-page--sections {
+    width: 100%; max-width: 1560px; height: auto; min-height: 0;
+    overflow: visible; display: flex; flex-direction: column; gap: 20px;
+    padding-bottom: 44px; color: var(--models-ink);
+}
+.models-page--sections .models-sections-hero { padding: 26px 32px; align-items: center; }
+.models-page--sections .models-hero p { font-size: 16px; line-height: 1.6; max-width: 830px; }
+.models-page--sections .models-hero h1 { font-size: clamp(30px, 3vw, 40px); }
+.models-sections-nav { padding: 8px 12px 12px; border: 1px solid var(--models-border);
+    border-radius: 16px; background: #fff; box-shadow: var(--models-shadow-soft); }
+.models-sections-nav__tabs { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
+.models-page--sections .models-sections-nav__tab {
+    min-width: 0; min-height: 50px; padding: 12px 18px; border: 1px solid transparent;
+    border-radius: 11px; background: transparent; color: #4f617b;
+    font-size: 16px; font-weight: 750; text-align: center; transition: background .16s, border-color .16s;
+}
+.models-page--sections .models-sections-nav__tab:hover { background: #f0f4ff; }
+.models-page--sections .models-sections-nav__tab.is-active { background: #edf1ff; border-color: #c5d0ff; color: #293fda; }
+.models-sections-nav__description { margin: 9px 7px 0; color: #53677e; font-size: 14px; line-height: 1.5; }
+.models-section-panel { min-width: 0; outline-offset: 6px; }
+.models-section-stack { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.models-section-heading { display: flex; flex-direction: column; gap: 8px; }
+.models-section-heading--actions { flex-direction: row; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.models-section-heading h2 { margin: 0; color: #1b273b; font-size: clamp(25px,2.4vw,32px); line-height: 1.2; }
+.models-section-heading p { margin: 4px 0 0; max-width: 850px; color: #506681; font-size: 16px; line-height: 1.55; }
+.models-section-actions, .models-section-links { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.models-page--sections .models-section-actions button,
+.models-page--sections .models-section-links button,
+.models-page--sections .models-section-heading button { font-size: 15px; min-height: 44px; padding: 10px 17px; }
+.models-overview-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; }
+.models-overview-stats > div { display: flex; flex-direction: column; gap: 9px;
+    min-width: 0; padding: 20px; border: 1px solid var(--models-border);
+    border-radius: 16px; background: white; box-shadow: var(--models-shadow-soft); }
+.models-overview-stats span { color: #576b85; font-size: 14px; font-weight: 700; }
+.models-overview-stats strong { overflow-wrap: anywhere; font-size: 20px; line-height: 1.4; }
+.models-overview-stats small { font-size: 14px; color: #53677e; line-height: 1.5; }
+.models-guide, .models-diagnostics-decision { border: 1px solid var(--models-border); background: white; border-radius: 16px; padding: 20px 24px; }
+.models-guide summary { font-size: 16px; font-weight: 750; cursor: pointer; }
+.models-guide p, .models-diagnostics-decision p { font-size: 15px; color: #506681; line-height: 1.55; }
+.models-access-grid { display: block; }
+.models-page--sections .models-access-grid .models-card--policy { max-width: none; }
+.models-page--sections .models-access-grid .models-kv-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.models-diagnostics-runtime .models-card--runtime { width: 100%; }
+.models-page--sections .models-diagnostics-runtime .models-kv-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
+.models-diagnostics-decision h3 { margin: 0; font-size: 22px; }
+.models-page--sections .models-evidence-search { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.models-page--sections .models-evidence-search input { flex: 1 1 300px; }
+.models-page--sections .models-evidence-search label { width: 100%; font-weight: 700; }
+.models-page--sections .models-evidence-search button { min-height: 43px; }
+.models-page--sections .models-catalog-table-region { width: 100%; max-width: 100%; min-width: 0;
+    overflow-x: auto; overflow-y: visible; background: white; border: 1px solid var(--models-border);
+    border-radius: 16px; scrollbar-gutter: stable; }
+.models-page--sections .models-catalog-table { width: 100%; min-width: 1250px; }
+.models-page--sections .models-catalog-table th { position: static; font-size: 13px; padding: 15px 16px; }
+.models-page--sections .models-catalog-table td { font-size: 14px; padding: 16px; line-height: 1.5; }
+.models-catalog-summary { padding: 12px 16px; border-radius: 10px; background: #eff3fb; color: #4f627d; font-size: 14px; }
+.models-page--sections .models-notice, .models-mutation-error { border-radius: 12px; padding: 15px 18px; font-size: 15px; line-height: 1.55; }
+.models-mutation-error { border: 1px solid #f2c1bc; background: #fff6f3; color: #8e2e27; }
+.models-mutation-error p { margin: 7px 0 0; }
+.models-page--sections .models-readiness { padding: 23px; }
+.models-page--sections .models-readiness__steps { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.models-page--sections .models-kv-grid dd { font-size: 16px; }
+.models-page--sections .models-kv-grid small { font-size: 14px; }
+@media (max-width: 1100px) {
+    .models-overview-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .models-page--sections .models-diagnostics-runtime .models-kv-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 740px) {
+    .models-page--sections .models-sections-hero { flex-direction: column; align-items: stretch; padding: 22px; }
+    .models-sections-nav__tabs { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .models-section-heading--actions { flex-direction: column; }
+    .models-overview-stats { grid-template-columns: 1fr; }
+    .models-page--sections .models-readiness__steps { grid-template-columns: 1fr; }
+    .models-page--sections .models-access-grid .models-kv-grid,
+    .models-page--sections .models-diagnostics-runtime .models-kv-grid { grid-template-columns: 1fr; }
+    .models-page--sections .models-runtime-badge { max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .models-page--sections .models-sections-nav__tab { transition: none; }
+}

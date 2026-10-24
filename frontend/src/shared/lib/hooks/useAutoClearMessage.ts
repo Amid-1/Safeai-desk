@@ -1,3 +1,4 @@
+// frontend/src/shared/lib/hooks/useAutoClearMessage.ts
 // ============================================================
 // frontend/src/shared/lib/hooks/useAutoClearMessage.ts
 // ============================================================

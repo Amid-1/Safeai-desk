@@ -508,6 +508,24 @@ TypeScript 6.0.3, Vite 8.0.16, Vitest 4.1.10;
 
 ---
 
+├──
+├──
+├──
+├──
+├──
+├──
+├──
+├──
+├──
+├──
+├──
+├──
+├──
+├──
+├──
+└──
+
+
 # Структура frontend
 
 ```text       
@@ -525,48 +543,105 @@ frontend/
 ├── tsconfig.node.json
 ├── tsconfig.json
 ├── vite.config.ts
+│
 ├── scripts/
 │   ├── check-architecture.cjs
 │   └── verify-source-layout.cjs
 └── src/
     ├── main.tsx
+    │
     ├── vite-env.d.ts
+    │
     ├── app/
+    │   │
+    │   ├──
+    │   │
+    │   └──
+    │
+    │
     ├── shared/
+    │   │
     │   ├── api/
+    │   │   │   
+    │   │   ├── http/ 
+    │   │   │   ├──
+    │   │   │   ├──
+    │   │   │   ├──
+    │   │   │   ├──    
+    │   │   │   └──                                       
+    │   │   │
+    │   │   └──
+    │   │
     │   ├── lib/
+    │   │   │
     │   │   └── hooks/
+    │   │
     │   ├── styles/
+    │   │
     │   └── ui/
+    │
+    │
     ├── entities/
+    │   │
     │   ├── knowledge/
+    │   │
     │   ├── model/
+    │   │
     │   ├── organization/
+    │   │
     │   └── user/
+    │
+    │
     ├── features/
+    │   │
     │   ├── admin/
+    │   │
     │   ├── admin-organizations/
+    │   │
     │   ├── admin-users/
+    │   │
     │   ├── audit/
+    │   │
     │   ├── auth/
+    │   │
     │   ├── chat/
+    │   │   │
     │   │   ├── api/
+    │   │   │
     │   │   ├── controller/
+    │   │   │
     │   │   ├── lib/
+    │   │   │
     │   │   └── ui/
+    │   │
     │   ├── knowledge/
+    │   │   │
     │   │   ├── controller/
+    │   │   │
     │   │   ├── lib/
+    │   │   │
     │   │   ├── styles/
+    │   │   │
     │   │   └── ui/
+    │   │
     │   ├── models/
+    │   │
     │   └── usage/
+    │       │
     │       ├── api/
+    │       │
     │       ├── controller/
+    │       │
     │       ├── lib/
+    │       │
     │       ├── styles/
+    │       │
     │       └── ui/
+    │
+    │
     ├── pages/
+    │
+    │
     └── test/
         └── fixtures/
 ```

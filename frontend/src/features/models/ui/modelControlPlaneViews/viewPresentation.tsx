@@ -166,7 +166,7 @@ export function catalogSourceLabel(
 ): string {
     switch (source) {
         case 'RUNTIME_IMPORT':
-            return 'Добавлена из Runtime'
+            return 'Добавлена из подключённой модели'
         case 'MANUAL':
             return 'Создана вручную'
         case 'MIGRATED':

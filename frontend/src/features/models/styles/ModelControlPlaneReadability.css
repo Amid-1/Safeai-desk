@@ -380,3 +380,226 @@
     min-height: 42px;
     font-size: 14px;
 }
+
+/* ============================================================
+   Улучшение читаемости Model Control Plane, 24.10.2026.
+   Последние правила относятся только к странице моделей и сознательно
+   переопределяют её прежние компактные desktop-режимы.
+   ============================================================ */
+/* Экран «Модели и правила доступа»: читабельность, масштабирование,
+   понятные состояния поиска. Импорт ПОСЛЕ существующих стилей.
+   Стили не изменяют права, модель данных и работу API. */
+
+.models-page {
+    --models-ui-body: 16px;
+    --models-ui-secondary: 14px;
+    --models-ui-label: 13px;
+    --models-ui-value: 18px;
+    --models-ui-focus: #425cf2;
+    --models-ui-shadow: 0 12px 34px rgb(22 42 87 / 7%);
+}
+
+/* Шапка сохраняет доступные действия, но не сокращает объяснение до микротекста. */
+.models-page .models-hero {
+    gap: 28px;
+    padding: clamp(20px, 2.2vw, 32px);
+    align-items: flex-start;
+    border: 1px solid #d5dff4;
+    background: linear-gradient(114deg, #fff 1%, #f5f7ff 68%, #edf2ff);
+    box-shadow: var(--models-ui-shadow);
+}
+.models-page .models-hero__content { flex: 1 1 540px; min-width: 0; }
+.models-page .models-hero h1 {
+    font-size: clamp(30px, 2.55vw, 40px);
+    line-height: 1.16;
+    letter-spacing: -.025em;
+}
+.models-page .models-hero p {
+    max-width: 800px;
+    color: #455875;
+    font-size: var(--models-ui-body);
+    line-height: 1.65;
+}
+.models-page .models-hero__side { flex: 0 1 530px; min-width: 0; }
+.models-page .models-hero__actions { gap: 10px; }
+.models-page .models-hero__actions button {
+    min-height: 46px;
+    padding: 10px 16px;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.4;
+    white-space: normal;
+}
+.models-page .models-runtime-badge { padding: 15px 18px; min-width: 220px; }
+.models-page .models-runtime-badge strong { font-size: 19px; line-height: 1.35; }
+.models-page .models-runtime-badge span,
+.models-page .models-runtime-badge small { font-size: var(--models-ui-secondary); line-height: 1.5; }
+
+/* Предварительная конфигурационная сводка — не утверждение о доступе. */
+.models-page .models-readiness { padding: 25px 27px; gap: 19px; }
+.models-page .models-readiness__heading { gap: 16px; }
+.models-page .models-readiness h2 { font-size: clamp(23px, 2vw, 29px); line-height: 1.22; }
+.models-page .models-readiness__heading p {
+    max-width: 1050px;
+    font-size: var(--models-ui-body);
+    line-height: 1.6;
+    color: #455875;
+}
+.models-page .models-readiness__eyebrow { font-size: 13px; }
+.models-page .models-readiness__status { font-size: 14px; padding: 9px 14px; }
+.models-page .models-readiness__steps { gap: 15px; }
+.models-page .models-readiness__steps > div {
+    padding: 18px 19px;
+    gap: 8px;
+    background: linear-gradient(145deg, #f8faff, #f3f6fd);
+    border-color: #dce5f6;
+}
+.models-page .models-readiness__steps small { font-size: var(--models-ui-label); }
+.models-page .models-readiness__steps strong { font-size: 18px; line-height: 1.4; }
+.models-page .models-readiness__steps span { font-size: 14px; line-height: 1.55; }
+.models-page .models-readiness__footer { gap: 18px; padding-top: 15px; }
+.models-page .models-readiness__footer > span {
+    font-size: var(--models-ui-secondary);
+    line-height: 1.6;
+    color: #4c607a;
+}
+.models-page .models-readiness__footer button { min-height: 46px; font-size: 15px; }
+.models-page .models-readiness__warnings p { font-size: 15px; }
+
+/* Сведения модели: комфортное чтение, автоматический перенос при росте контента. */
+.models-page .models-overview-grid { gap: 18px; }
+.models-page .models-card {
+    padding: 24px;
+    gap: 18px;
+    box-shadow: var(--models-ui-shadow);
+}
+.models-page .models-card__heading h2 { font-size: clamp(23px, 1.8vw, 28px); }
+.models-page .models-card__heading > div > span { font-size: 13px; }
+.models-page .models-kv-grid { gap: 12px; }
+.models-page .models-kv-grid > div {
+    padding: 18px;
+    min-height: 130px;
+    border: 1px solid #dfe7f4;
+    border-radius: 15px;
+    background: #f9fbff;
+    transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+}
+.models-page .models-kv-grid > div:hover {
+    border-color: #b4c7f6;
+    background: #f6f9ff;
+    box-shadow: 0 7px 19px rgb(40 69 137 / 8%);
+}
+.models-page .models-kv-grid dt {
+    font-size: var(--models-ui-label);
+    line-height: 1.45;
+    letter-spacing: .025em;
+    color: #526782;
+}
+.models-page .models-kv-grid dd {
+    font-size: var(--models-ui-value);
+    line-height: 1.43;
+    font-weight: 750;
+    overflow-wrap: anywhere;
+}
+.models-page .models-kv-grid small {
+    display: block;
+    font-size: var(--models-ui-secondary);
+    line-height: 1.58;
+    color: #536785;
+}
+.models-page .models-help { min-width: 27px; min-height: 27px; font-size: 15px; }
+.models-page .models-help::after {
+    width: min(300px, 82vw);
+    padding: 13px 15px;
+    font-size: 14px;
+    line-height: 1.55;
+    box-shadow: 0 15px 34px rgb(15 23 42 / 25%);
+}
+.models-page .models-status { font-size: 14px; padding: 7px 11px; }
+.models-page :is(input, select, button) { font-size: 15px; }
+.models-page :is(input, select) { min-height: 46px; }
+.models-page .models-runtime-probe strong { font-size: 16px; }
+.models-page .models-runtime-probe small,
+.models-page .models-policy-card__note { font-size: 14px; line-height: 1.55; }
+.models-page .models-runtime-probe button,
+.models-page .models-policy-action { min-height: 46px; font-size: 15px; }
+
+/* Поиск: результат/ошибка не должны появляться без объяснения. */
+.models-page .models-org-picker {
+    padding: 17px;
+    gap: 12px;
+    border: 1px solid #cbdaf4;
+    border-radius: 16px;
+    background: #f6f9ff;
+}
+.models-page .models-org-picker label { font-size: 16px; line-height: 1.4; gap: 9px; }
+.models-page .models-org-picker__description {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.55;
+    font-weight: 400;
+    color: #4b607b;
+}
+.models-page .models-org-picker__input-row { gap: 10px; }
+.models-page .models-org-picker__input-row input { min-width: 0; padding: 11px 13px; }
+.models-page .models-org-picker__input-row button { min-height: 46px; padding-inline: 18px; }
+.models-page .models-org-picker__status {
+    min-height: 21px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #48617e;
+}
+.models-page .models-org-picker__status--error { color: #a33342; }
+.models-page .models-org-results { max-height: 245px; gap: 8px; }
+.models-page .models-org-results button {
+    padding: 13px 15px;
+    border-radius: 10px;
+    border: 1px solid #d5e1f4;
+    background: white;
+    font-size: 15px;
+    transition: border-color .16s ease, background-color .16s ease;
+}
+.models-page .models-org-results button:hover { background: #eef4ff; border-color: #92b2ec; }
+.models-page .models-org-results button:focus-visible,
+.models-page :is(input, button, select, summary):focus-visible {
+    outline: 3px solid var(--models-ui-focus);
+    outline-offset: 3px;
+}
+.models-page .models-policy-organization-summary strong { font-size: 18px; }
+.models-page .models-policy-organization-summary code { overflow-wrap: anywhere; }
+.models-page .models-catalog-toolbar h2 { font-size: 25px; }
+.models-page .models-catalog-toolbar p,
+.models-page .models-evidence-panel__title small { font-size: 15px; line-height: 1.6; }
+.models-page .models-catalog-table th { font-size: 13px; }
+.models-page .models-catalog-table td { font-size: 15px; }
+.models-page .models-catalog-table :is(small, code) { font-size: 13px; }
+.models-page .models-evidence-panel > summary { min-height: 62px; }
+
+@media (max-width: 1700px) {
+    .models-page .models-overview-grid { grid-template-columns: minmax(0, 1fr); }
+    .models-page .models-card--runtime .models-kv-grid,
+    .models-page .models-card--policy .models-kv-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (max-width: 1040px) {
+    .models-page .models-hero { flex-direction: column; align-items: stretch; }
+    .models-page .models-hero__side { flex: initial; align-items: stretch; }
+    .models-page .models-hero__actions { justify-content: flex-start; }
+    .models-page .models-readiness__steps { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 680px) {
+    .models-page .models-hero { padding: 20px; }
+    .models-page .models-readiness { padding: 19px; }
+    .models-page .models-card { padding: 18px; }
+    .models-page .models-card--runtime .models-kv-grid,
+    .models-page .models-card--policy .models-kv-grid { grid-template-columns: minmax(0, 1fr); }
+    .models-page .models-readiness__heading,
+    .models-page .models-readiness__footer { flex-direction: column; align-items: flex-start; }
+    .models-page .models-org-picker__input-row { grid-template-columns: minmax(0, 1fr); }
+    .models-page .models-hero__actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .models-page .models-kv-grid > div,
+    .models-page .models-org-results button { transition: none; }
+}

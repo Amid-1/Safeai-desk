@@ -1,3 +1,4 @@
+// frontend/src/shared/api/http/httpPaths.ts
 // ============================================================
 // frontend/src/shared/api/http/httpPaths.ts
 // ============================================================

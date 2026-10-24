@@ -1,6 +1,6 @@
-// frontend/src/pages/AdminModelsPage.test.tsx
 // ============================================================
 // frontend/src/pages/AdminModelsPage.test.tsx
+// Тесты навигации, прав доступа, каталога и диагностики.
 // ============================================================
 import {
     fireEvent,
@@ -31,6 +31,7 @@ import {
     getOrganizationDetails,
 } from '../entities/organization/api/organizationApi'
 import AdminModelsPage from './AdminModelsPage'
+import { MemoryRouter } from 'react-router-dom'
 
 const authMock = vi.hoisted(() => ({
     currentUser: null as AuthUser | null,
@@ -198,22 +199,54 @@ function stubLoadedState() {
     })
 }
 
+// Общие действия тестов: реальный компонент и MemoryRouter,
+// без мокирования бизнес-контроллера или модальных окон.
+async function openCatalogAsSuperAdmin(): Promise<HTMLElement> {
+    authMock.currentUser = currentUser('SUPER_ADMIN')
+
+    render(
+        <MemoryRouter initialEntries={['/admin/models']}>
+            <AdminModelsPage />
+        </MemoryRouter>,
+    )
+
+    const catalogTab = await screen.findByRole('tab', { name: 'Каталог' })
+    fireEvent.click(catalogTab)
+
+    return screen.findByRole('button', {
+        name: 'Добавить подключённую модель в каталог',
+    })
+}
+
 describe('AdminModelsPage', () => {
     beforeEach(() => {
-        vi.clearAllMocks()
+        vi.resetAllMocks()
         authMock.currentUser = null
         stubLoadedState()
+    })
+
+    it('открывает каталог напрямую по URL и переключает разделы без нового GET', async () => {
+        authMock.currentUser = currentUser('SUPER_ADMIN')
+        render(<MemoryRouter initialEntries={['/admin/models?section=catalog']}><AdminModelsPage /></MemoryRouter>)
+        await screen.findByRole('heading', { name: 'Каталог моделей' })
+        expect(screen.getByRole('tab', { name: 'Каталог' })).toHaveAttribute('aria-selected', 'true')
+        expect(screen.getByRole('region', { name: 'Таблица каталога моделей' })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
+        expect(screen.getByRole('heading', { name: 'Доступ организаций' })).toBeInTheDocument()
+        expect(screen.queryByRole('region', { name: 'Таблица каталога моделей' })).not.toBeInTheDocument()
+        expect(runtimeMock).toHaveBeenCalledTimes(1)
+        expect(policyMock).toHaveBeenCalledTimes(1)
     })
 
     it('ADMIN видит подключённую модель и правила, но не может менять глобальный каталог', async () => {
         authMock.currentUser =
             currentUser('ADMIN')
 
-        render(<AdminModelsPage />)
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
 
         expect(
             await screen.findByText(
-                'Модели и маршрутизация',
+                'Модели и доступ',
             ),
         ).toBeInTheDocument()
 
@@ -223,33 +256,25 @@ describe('AdminModelsPage', () => {
             ).length,
         ).toBeGreaterThan(0)
 
-        expect(
-            screen.getByRole(
-                'button',
-                {name: 'Настроить правила'},
-            ),
-        ).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
 
         expect(
             screen.queryByRole(
                 'button',
-                {name: 'Добавить Runtime в каталог'},
+                {name: 'Добавить подключённую модель в каталог'},
             ),
         ).not.toBeInTheDocument()
 
         expect(screen.getByText('Каталог изменяет SUPER_ADMIN.'))
-            .toBeInTheDocument()
-        expect(screen.getByRole('button', {name: 'Изменить правила'}))
             .toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', {name: 'Создать модель'}))
         expect(screen.getByText(/Создание и изменение версий каталога доступно только SUPER_ADMIN/))
             .toHaveAttribute('role', 'status')
         expect(screen.queryByRole('dialog', {name: 'Модель каталога'}))
             .not.toBeInTheDocument()
-        expect(screen.getByRole('heading', {name: 'Модель доступна для запросов?'}))
-            .toBeInTheDocument()
-        expect(screen.getByText('Нужна проверка запроса'))
-            .toBeInTheDocument()
+        fireEvent.click(screen.getByRole('tab', { name: 'Обзор' }))
+        expect(screen.getByRole('heading', {name: 'Проверка доступности модели'})).toBeInTheDocument()
+        expect(screen.getByText('Нужна проверка запроса')).toBeInTheDocument()
 
         expect(
             screen.queryByRole(
@@ -263,10 +288,10 @@ describe('AdminModelsPage', () => {
         authMock.currentUser =
             currentUser('ADMIN')
 
-        render(<AdminModelsPage />)
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
 
         await screen.findByText(
-            'Модели и маршрутизация',
+            'Модели и доступ',
         )
 
         expect(runtimeMock)
@@ -300,25 +325,17 @@ describe('AdminModelsPage', () => {
         catalogMock.mockResolvedValueOnce([])
         effectiveCatalogMock.mockResolvedValueOnce([])
 
-        render(<AdminModelsPage />)
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
 
         expect(
             await screen.findByText(
-                'Модели и маршрутизация',
+                'Модели и доступ',
             ),
         ).toBeInTheDocument()
 
-        expect(
-            screen.getByText(
-                'Каталог моделей пока пуст',
-            ),
-        ).toBeInTheDocument()
-
-        expect(
-            screen.getByText(
-                'Не настроены',
-            ),
-        ).toBeInTheDocument()
+        expect(screen.getAllByText('Не настроены').length).toBeGreaterThan(0)
+        fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
+        expect(screen.getByText('Каталог моделей пока пуст')).toBeInTheDocument()
 
         expect(
             screen.queryByText(
@@ -328,16 +345,7 @@ describe('AdminModelsPage', () => {
     })
 
     it('SUPER_ADMIN получает управление каталогом', async () => {
-        authMock.currentUser =
-            currentUser('SUPER_ADMIN')
-
-        render(<AdminModelsPage />)
-
-        const importButton =
-            await screen.findByRole(
-                'button',
-                {name: 'Добавить Runtime в каталог'},
-            )
+        const importButton = await openCatalogAsSuperAdmin()
 
         importRuntimeMock.mockResolvedValueOnce({
             ...CATALOG_ENTRY,
@@ -362,9 +370,6 @@ describe('AdminModelsPage', () => {
             .not.toBeInTheDocument()
         expect(screen.getByRole('button', {name: 'Создать модель'}))
             .toBeInTheDocument()
-        expect(screen.getByRole('button', {name: 'Изменить правила'}))
-            .toBeInTheDocument()
-
         fireEvent.click(importButton)
 
         await waitFor(() => {
@@ -376,8 +381,9 @@ describe('AdminModelsPage', () => {
 
     it('SUPER_ADMIN открывает создание каталожной версии из закрепленной верхней панели', async () => {
         authMock.currentUser = currentUser('SUPER_ADMIN')
-        render(<AdminModelsPage />)
-        fireEvent.click(await screen.findByRole('button', {name: 'Создать модель'}))
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
+        fireEvent.click(await screen.findByRole('tab', { name: 'Каталог' }))
+        fireEvent.click(screen.getByRole('button', {name: 'Создать модель'}))
         expect(screen.getByRole('dialog', {name: 'Добавление модели в каталог'}))
             .toBeInTheDocument()
         fireEvent.click(screen.getByRole('button', {name: 'Закрыть окно'}))
@@ -386,16 +392,7 @@ describe('AdminModelsPage', () => {
     })
 
     it('не сообщает об ошибке mutation, если Runtime уже сохранён, а refresh упал', async () => {
-        authMock.currentUser =
-            currentUser('SUPER_ADMIN')
-
-        render(<AdminModelsPage />)
-
-        const importButton =
-            await screen.findByRole(
-                'button',
-                {name: 'Добавить Runtime в каталог'},
-            )
+        const importButton = await openCatalogAsSuperAdmin()
 
         importRuntimeMock.mockResolvedValueOnce({
             ...CATALOG_ENTRY,
@@ -412,13 +409,13 @@ describe('AdminModelsPage', () => {
 
         expect(
             await screen.findByText(
-                /Runtime сохранён в каталоге:.*повторно добавлять Runtime не нужно/i,
+                /Подключённая модель сохранена в каталоге:.*повторно добавлять модель не нужно/i,
             ),
         ).toBeInTheDocument()
 
         expect(
             screen.queryByText(
-                'Не удалось добавить Runtime в каталог.',
+                'Не удалось добавить подключённую модель в каталог.',
             ),
         ).not.toBeInTheDocument()
     })
@@ -437,12 +434,11 @@ describe('AdminModelsPage', () => {
             message: 'Локальный mock provider доступен',
         })
 
-        render(<AdminModelsPage />)
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
 
-        const button = await screen.findByRole(
-            'button',
-            {name: 'Проверить доступность'},
-        )
+        await screen.findByRole('tab', { name: 'Диагностика' })
+        fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
+        const button = screen.getByRole('button', {name: 'Проверить доступность'})
 
         fireEvent.click(button)
 
@@ -458,35 +454,20 @@ describe('AdminModelsPage', () => {
         ).toBeInTheDocument()
     })
 
-    it('нижнюю область каталога можно изменить без полного перекрытия содержимого', async () => {
-        authMock.currentUser =
-            currentUser('ADMIN')
-
-        render(<AdminModelsPage />)
-
-        await screen.findByText(
-            'Модели и маршрутизация',
-        )
-
-        const separator =
-            screen.getByRole(
-                'separator',
-                {
-                    name: 'Изменить размер области: каталог моделей',
-                },
-            )
-
-        expect(separator)
-            .toHaveAttribute(
-                'aria-valuemin',
-                '170',
-            )
+    it('каталог занимает собственную прокручиваемую область без перекрывающей шторки', async () => {
+        authMock.currentUser = currentUser('ADMIN')
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
+        await screen.findByRole('tab', { name: 'Каталог' })
+        fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
+        expect(screen.getByRole('region', { name: 'Таблица каталога моделей' })).toBeInTheDocument()
+        expect(screen.queryByRole('separator', { name: /Изменить размер области/ })).not.toBeInTheDocument()
     })
 
     it('показывает окно правил по явной кнопке и закрывает его крестиком', async () => {
         authMock.currentUser = currentUser('ADMIN')
-        render(<AdminModelsPage />)
-        await screen.findByRole('button', {name: 'Изменить правила'})
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
+        await screen.findByRole('tab', { name: 'Доступ' })
+        fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
         fireEvent.click(screen.getByRole('button', {name: 'Изменить правила'}))
         expect(screen.getByRole('dialog', {name: 'Правила использования моделей'}))
             .toBeInTheDocument()
@@ -499,14 +480,10 @@ describe('AdminModelsPage', () => {
         authMock.currentUser =
             currentUser('ADMIN')
 
-        render(<AdminModelsPage />)
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
 
-        const summary =
-            await screen.findByText(
-                'Диагностика маршрутизации',
-            )
-
-        fireEvent.click(summary)
+        await screen.findByRole('tab', { name: 'Диагностика' })
+        fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
 
         fireEvent.change(
             screen.getByLabelText(

@@ -24,7 +24,6 @@ import type {
 import { getApiErrorMessage } from '../../../shared/api/http'
 import { useAdminModelsOrganizationSearch } from './useAdminModelsOrganizationSearch'
 import { useAdminModelsDiagnostics } from './useAdminModelsDiagnostics'
-import { useAdminModelsLayout } from './useAdminModelsLayout'
 import { getOrganizationDetails } from '../../../entities/organization/api/organizationApi'
 import { useAuth } from '../../auth/state/useAuth'
 
@@ -86,6 +85,8 @@ export function useAdminModelsController() {
     const [notice, setNotice] =
         useState('')
 
+    const [importError, setImportError] = useState('')
+
     const [catalogPermissionNotice, setCatalogPermissionNotice] =
         useState(false)
 
@@ -115,8 +116,8 @@ export function useAdminModelsController() {
     const {
         organizationQuery, setOrganizationQuery, handleOrganizationQueryChange,
         cancelOrganizationSearch, organizationResults, setOrganizationResults,
-        organizationSearchPending, handleOrganizationSearch,
-    } = useAdminModelsOrganizationSearch(isSuperAdmin, setError)
+        organizationSearchPending, organizationSearchStatus, organizationSearchError, handleOrganizationSearch,
+    } = useAdminModelsOrganizationSearch(isSuperAdmin)
 
     const {
         routeDecisionId, handleRouteDecisionIdChange, routeDecision,
@@ -124,7 +125,6 @@ export function useAdminModelsController() {
         handleRuntimeProbe, handleRouteLookup,
     } = useAdminModelsDiagnostics(isSuperAdmin, setError)
 
-    const { heroRef, catalogMinUpperHeight } = useAdminModelsLayout(runtime, policy)
 
     useEffect(() => {
         if (!currentUser) {
@@ -285,7 +285,7 @@ export function useAdminModelsController() {
             }
             mutationInFlightRef.current = true
             setMutationPending(true)
-            setError('')
+            setImportError('')
             setNotice('')
 
             let imported: ModelCatalogEntry
@@ -294,12 +294,10 @@ export function useAdminModelsController() {
                 imported =
                     await importRuntimeModelCatalog()
             } catch (failure) {
-                setError(
-                    getApiErrorMessage(
-                        failure,
-                        'Не удалось добавить Runtime в каталог.',
-                    ),
-                )
+                setImportError(getApiErrorMessage(
+                    failure,
+                    'Не удалось добавить подключённую модель в каталог.',
+                ))
                 mutationInFlightRef.current = false
                 setMutationPending(false)
                 return
@@ -309,11 +307,11 @@ export function useAdminModelsController() {
                 await refreshCatalog()
 
                 setNotice(
-                    `Runtime добавлен или синхронизирован с каталогом: ${imported.modelKey}, версия ${imported.version}.`,
+                    `Подключённая модель добавлена или синхронизирована с каталогом: ${imported.modelKey}, версия ${imported.version}.`,
                 )
             } catch {
                 setNotice(
-                    `Runtime сохранён в каталоге: ${imported.modelKey}, версия ${imported.version}. Обновить представление каталога не удалось — перезагрузите данные страницы. Повторно добавлять Runtime не нужно.`,
+                    `Подключённая модель сохранена в каталоге: ${imported.modelKey}, версия ${imported.version}. Не удалось обновить список — перезагрузите страницу. Повторно добавлять модель не нужно.`,
                 )
             } finally {
                 mutationInFlightRef.current = false
@@ -428,6 +426,7 @@ export function useAdminModelsController() {
         loadedOrganizationId,
         error,
         notice,
+        importError,
         catalogPermissionNotice,
         setCatalogPermissionNotice,
         catalogModal,
@@ -444,6 +443,8 @@ export function useAdminModelsController() {
         organizationResults,
         setOrganizationResults,
         organizationSearchPending,
+        organizationSearchStatus,
+        organizationSearchError,
         routeDecisionId,
         handleRouteDecisionIdChange,
         routeDecision,
@@ -451,8 +452,6 @@ export function useAdminModelsController() {
         routeError,
         runtimeProbe,
         runtimeProbePending,
-        heroRef,
-        catalogMinUpperHeight,
         catalogByKey,
         handleImportRuntime,
         handleCreateCatalogVersion,

@@ -99,7 +99,7 @@ describe('Model Control Plane configuration summary (non-authoritative)', () => 
         ], policy)
 
         expect(result.compatibleCount).toBe(0)
-        expect(result.blockers.join(' ')).toContain('действующей записи')
+        expect(result.blockers.join(' ')).toContain('действующей версии')
     })
 
     it('does not match the same model ID under a different provider', () => {
@@ -120,7 +120,7 @@ describe('Model Control Plane configuration summary (non-authoritative)', () => 
 
         expect(result.runtimeEnabled).toBe(false)
         expect(result.blockers).toHaveLength(2)
-        expect(result.blockers.join(' ')).toContain('Runtime отключен')
+        expect(result.blockers.join(' ')).toContain('Подключённая модель отключена')
         expect(result.blockers.join(' ')).toContain('неуспешно')
     })
 
@@ -171,7 +171,7 @@ describe('Model Control Plane configuration summary (non-authoritative)', () => 
             )
 
             expect(result.compatibleCount).toBe(0)
-            expect(result.blockers.join(' ')).toContain('действующей записи')
+            expect(result.blockers.join(' ')).toContain('действующей версии')
         },
     )
 

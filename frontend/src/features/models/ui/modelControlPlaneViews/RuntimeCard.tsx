@@ -1,5 +1,5 @@
 // frontend/src/features/models/ui/modelControlPlaneViews/RuntimeCard.tsx
-// Назначение: показ текущего Runtime и проверки доступности.
+// Назначение: сводка подключённой модели и безопасная проверка соединения.
 
 import type {
     ModelCatalogEntry,
@@ -64,7 +64,7 @@ export function RuntimeCard({
                     <dt>
                         <span className="models-label-row">
                             Провайдер / модель
-                            <InfoHint text="Фактическая конфигурация Runtime на сервере. Правила организации её не переключают." />
+                            <InfoHint text="Модель, физически настроенная на сервере. Правила организации не изменяют это подключение." />
                         </span>
                     </dt>
                     <dd>
@@ -78,8 +78,8 @@ export function RuntimeCard({
                 <div>
                     <dt>
                         <span className="models-label-row">
-                            Режим Runtime
-                            <InfoHint text="Текущий способ физического исполнения моделей. Это не правила организации." />
+                            Режим подключения
+                            <InfoHint text="Способ подключения модели к провайдеру. Он не зависит от правил организаций." />
                         </span>
                     </dt>
                     <dd>
@@ -91,14 +91,14 @@ export function RuntimeCard({
                 </div>
 
                 <div>
-                    <dt>Проверка доступности</dt>
+                    <dt>Проверка подключения</dt>
                     <dd>
                         {runtimeHealthLabel(runtime, probe)}
                     </dd>
                     <small>
                         {probe
                             ? `${formatDateTime(probe.checkedAt)} · ${probe.latencyMs.toLocaleString('ru-RU')} мс`
-                            : 'Соединение отдельно ещё не проверялось'}
+                            : 'Отдельная проверка подключения ещё не запускалась'}
                     </small>
                 </div>
 
@@ -120,8 +120,8 @@ export function RuntimeCard({
                 <div>
                     <dt>
                         <span className="models-label-row">
-                            Исполняемые возможности
-                            <InfoHint text="Показываются только возможности, которые Runtime действительно умеет выполнять. Сведения каталога сами по себе не включают возможность." />
+                            Поддерживаемые возможности
+                            <InfoHint text="Перечислены возможности подключённой модели. Запись в каталоге сама по себе не активирует дополнительные функции." />
                         </span>
                     </dt>
                     <dd>{runtimeCapabilities(runtime)}</dd>
@@ -140,12 +140,12 @@ export function RuntimeCard({
                 </div>
 
                 <div>
-                    <dt>Хранение данных</dt>
+                    <dt>Условия хранения данных</dt>
                     <dd>
                         {retentionLabel(runtime.dataRetentionStatus)}
                     </dd>
                     <small>
-                        Сведения об использовании данных для обучения в Runtime сейчас не предоставляются
+                        Сведения об использовании данных для обучения здесь не предоставляются
                     </small>
                 </div>
 
@@ -153,7 +153,7 @@ export function RuntimeCard({
                     <dt>
                         <span className="models-label-row">
                             Запись в каталоге
-                            <InfoHint text="Действующая версия каталога, совпадающая с фактическим провайдером и моделью Runtime." />
+                            <InfoHint text="Действующая версия каталога, совпадающая с подключённым провайдером и моделью." />
                         </span>
                     </dt>
                     <dd>

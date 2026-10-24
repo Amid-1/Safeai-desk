@@ -292,7 +292,6 @@ function AppLayout() {
             '/admin/organizations',
             '/admin/audit',
             '/admin/usage',
-            '/admin/models',
         ].includes(location.pathname)
     const appClassName = [
         'app',

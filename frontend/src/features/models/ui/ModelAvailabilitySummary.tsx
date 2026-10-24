@@ -38,15 +38,15 @@ export function modelConfigurationReadiness(
 
     const blockers: string[] = []
     if (!runtime.enabled) {
-        blockers.push('Runtime отключен в конфигурации сервера.')
+        blockers.push('Подключённая модель отключена в настройках сервера.')
     }
     if (compatible.length === 0) {
-        blockers.push('Нет действующей записи каталога, совместимой с текущим Runtime.')
+        blockers.push('В каталоге нет действующей версии, совпадающей с подключённой моделью.')
     } else if (policy.enabled && allowed.length === 0) {
-        blockers.push('Списки доступа правил исключают совпадающие с Runtime модели.')
+        blockers.push('Правила доступа исключают совпадающие версии подключённой модели.')
     }
     if (runtime.healthStatus === 'UNAVAILABLE') {
-        blockers.push('Последняя проверка доступности Runtime завершилась неуспешно.')
+        blockers.push('Последняя проверка подключения завершилась неуспешно.')
     }
 
     return {
@@ -78,11 +78,11 @@ export function ModelAvailabilitySummary({
             <div className="models-readiness__heading">
                 <div>
                     <span className="models-readiness__eyebrow">ПРОВЕРКА КОНФИГУРАЦИИ</span>
-                    <h2 id="models-readiness-heading">Модель доступна для запросов?</h2>
+                    <h2 id="models-readiness-heading">Проверка доступности модели</h2>
                     <p>
                         {hasWarnings
                             ? 'Есть условия, которые могут препятствовать выполнению запросов.'
-                            : 'Явных несоответствий Runtime и каталога не найдено. Итоговое разрешение определяет сервер для каждого запроса.'}
+                            : 'Явных расхождений между подключённой моделью и каталогом не обнаружено. Окончательный доступ определяется сервером для каждого запроса.'}
                     </p>
                 </div>
                 <span className={`models-readiness__status ${hasWarnings ? 'models-readiness__status--warning' : ''}`}>
@@ -91,20 +91,20 @@ export function ModelAvailabilitySummary({
             </div>
             <div className="models-readiness__steps">
                 <div>
-                    <small>1 · Исполнение</small>
-                    <strong>{runtime.enabled ? 'Runtime включен' : 'Runtime отключен'}</strong>
+                    <small>1 · Подключение</small>
+                    <strong>{runtime.enabled ? 'Модель включена в настройках' : 'Модель отключена'}</strong>
                     <span>{runtime.provider} / {runtime.model}</span>
                 </div>
                 <div>
-                    <small>2 · Версии каталога</small>
+                    <small>2 · Каталог версий</small>
                     <strong>{result.compatibleCount > 0
-                        ? `Совпадающих действующих: ${result.compatibleCount}`
+                        ? `Совпадающих действующих версий: ${result.compatibleCount}`
                         : 'Совпадающих версий нет'}</strong>
-                    <span>Используются действующие, а не последние сохраненные версии.</span>
+                    <span>Учитываются действующие версии каталога, а не только последние сохранённые.</span>
                 </div>
                 <div>
-                    <small>3 · Правила организации</small>
-                    <strong>{policy.enabled ? `Включены · версия ${policy.version}` : 'Отключены'}</strong>
+                    <small>3 · Правила доступа</small>
+                    <strong>{!policy.configured ? 'Не настроены' : policy.enabled ? `Включены · версия ${policy.version}` : 'Отключены'}</strong>
                     <span>{organizationName ?? 'Выбранная организация'}</span>
                 </div>
             </div>
@@ -115,9 +115,9 @@ export function ModelAvailabilitySummary({
             )}
             <div className="models-readiness__footer">
                 <span>
-                    Эта сводка не проверяет стоимость, бюджет, возможности и условия данных.
-                    Для окончательного вывода выполните серверную проверку правил
-                    или откройте диагностику конкретного решения ниже.
+                    Это предварительная проверка конфигурации. Стоимость, бюджет, возможности
+                    и условия обработки данных проверяются отдельно. Для окончательного
+                    решения используйте серверную проверку правил или диагностику ниже.
                 </span>
                 <button type="button" className="secondary-button" onClick={onOpenPolicy}>
                     Открыть проверку правил

@@ -323,6 +323,14 @@ describe(
             },
         )
 
+        it('для каталога моделей использует обычную прокрутку, не viewport workspace', async () => {
+            setAuth(SUPER_ADMIN, 'authenticated')
+            renderAt('/admin/models')
+            const modelsPage = await screen.findByTestId('admin-models-page')
+            expect(modelsPage.closest('.app')).not.toHaveClass('app--workspace')
+            expect(modelsPage.closest('main')).not.toHaveClass('content--workspace')
+        })
+
         it(
             'запрещает USER доступ к /admin/users',
             async () => {

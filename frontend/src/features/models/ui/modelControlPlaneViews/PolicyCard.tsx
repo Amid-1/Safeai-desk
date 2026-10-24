@@ -27,6 +27,8 @@ export function PolicyCard({
     organizationQuery,
     organizationResults,
     organizationSearchPending,
+    organizationSearchStatus,
+    organizationSearchError,
     onOrganizationQueryChange,
     onOrganizationSearch,
     onOrganizationSelect,
@@ -42,6 +44,8 @@ export function PolicyCard({
     organizationQuery: string
     organizationResults: OrganizationDirectoryItem[]
     organizationSearchPending: boolean
+    organizationSearchStatus: 'idle' | 'pending' | 'success' | 'empty' | 'error'
+    organizationSearchError: string
     onOrganizationQueryChange: (value: string) => void
     onOrganizationSearch: () => void | Promise<void>
     onOrganizationSelect: (organization: OrganizationDirectoryItem) => void
@@ -103,13 +107,22 @@ export function PolicyCard({
                         void onOrganizationSearch()
                     }}
                 >
-                    <label>
-                        Выбрать другую организацию
-                        <div className="models-org-picker__input-row">
+                    <label htmlFor="models-organization-search">
+                        Проверить другую организацию
+                    </label>
+                    <p className="models-org-picker__description">
+                            Найдите организацию по названию или UUID, затем выберите её
+                            из результатов, чтобы посмотреть действующие правила доступа.
+                    </p>
+                    <div className="models-org-picker__input-row">
                             <input
+                                id="models-organization-search"
                                 type="search"
+                                autoComplete="off"
+                                aria-controls={organizationResults.length > 0 ? 'models-org-results' : undefined}
+                                aria-describedby="models-org-search-status"
                                 value={organizationQuery}
-                                placeholder="Название или UUID"
+                                placeholder="Начните вводить название или UUID"
                                 onChange={(event) => {
                                     onOrganizationQueryChange(
                                         event.target.value,
@@ -124,11 +137,22 @@ export function PolicyCard({
                                     ? 'Поиск...'
                                     : 'Найти'}
                             </button>
-                        </div>
-                    </label>
+                    </div>
 
+                    <div
+                        id="models-org-search-status"
+                        className={`models-org-picker__status${organizationSearchStatus === 'error' ? ' models-org-picker__status--error' : ''}`}
+                        role="status"
+                        aria-live="polite"
+                    >
+                        {organizationSearchStatus === 'pending' && 'Ищем организации…'}
+                        {organizationSearchStatus === 'empty' && 'Ничего не найдено. Уточните название или проверьте UUID.'}
+                        {organizationSearchStatus === 'error' && organizationSearchError}
+                        {organizationSearchStatus === 'success' && `Найдено организаций: ${organizationResults.length}. Выберите нужную из списка.`}
+                        {organizationSearchStatus === 'idle' && 'Поиск начнётся после ввода двух символов. Можно также нажать «Найти».'}
+                    </div>
                     {organizationResults.length > 0 && (
-                        <div className="models-org-results">
+                        <div className="models-org-results" id="models-org-results" aria-label="Результаты поиска организаций">
                             {organizationResults.map((organization) => (
                                 <button
                                     key={organization.id}
@@ -151,7 +175,7 @@ export function PolicyCard({
                     <dt>Модель по умолчанию</dt>
                     <dd>
                         {policy.defaultModelKey
-                            ?? 'Подключённая Runtime-модель'}
+                            ?? 'Подключённая модель'}
                     </dd>
                     {defaultEntry && (
                         <small>
@@ -166,7 +190,7 @@ export function PolicyCard({
                     <dt>
                         <span className="models-label-row">
                             Списки доступа
-                            <InfoHint text="Если список разрешённых пуст, доступны все модели, которые не запрещены явно и проходят остальные проверки правил и Runtime." />
+                            <InfoHint text="Если список разрешённых пуст, доступны все модели, которые не запрещены явно и проходят остальные проверки правил и настроек подключения." />
                         </span>
                     </dt>
                     <dd>
@@ -217,7 +241,7 @@ export function PolicyCard({
                         {policyTokenLimits(policy)}
                     </dd>
                     <small>
-                        Runtime: {' '}
+                        Подключённая модель: {' '}
                         {runtime.maxInputTokens.toLocaleString('ru-RU')}
                         {' / '}
                         {runtime.maxOutputTokens.toLocaleString('ru-RU')}
@@ -242,7 +266,7 @@ export function PolicyCard({
             <div className="models-policy-card__footer">
                 <p className="models-policy-card__note">
                     Правила ограничивают использование моделей этой
-                    организацией. Физическое подключение Runtime
+                    организацией. Подключение модели к провайдеру
                     настраивается отдельно.
                 </p>
 

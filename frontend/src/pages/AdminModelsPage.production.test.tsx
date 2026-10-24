@@ -1,3 +1,4 @@
+// frontend/src/pages/AdminModelsPage.production.test.tsx
 // ============================================================
 // frontend/src/pages/AdminModelsPage.production.test.tsx
 // ============================================================
@@ -22,6 +23,7 @@ import {
     createRuntimeModelStatus,
 } from '../test/fixtures/modelControlPlaneTestFixtures'
 import AdminModelsPage from './AdminModelsPage'
+import { MemoryRouter } from 'react-router-dom'
 
 const auth = vi.hoisted(() => ({ currentUser: null as AuthUser | null }))
 vi.mock('../features/auth/state/useAuth', () => ({ useAuth: () => auth }))
@@ -90,8 +92,8 @@ function configureApi() {
 }
 
 async function loadPage() {
-    render(<AdminModelsPage />)
-    await screen.findByRole('heading', { name: 'Модели и маршрутизация' })
+    render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
+    await screen.findByRole('heading', { name: 'Модели и доступ' })
 }
 
 describe('AdminModelsPage — контрактные и регрессионные сценарии', () => {
@@ -103,9 +105,9 @@ describe('AdminModelsPage — контрактные и регрессионны
 
     it('показывает ошибку начальной загрузки, а не частично сформированную страницу', async () => {
         vi.mocked(getRuntimeModelStatus).mockRejectedValueOnce(new Error('runtime unavailable'))
-        render(<AdminModelsPage />)
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(await screen.findByText('Не удалось загрузить настройки моделей.')).toBeInTheDocument()
-        expect(screen.queryByRole('heading', { name: 'Модели и маршрутизация' }))
+        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
             .not.toBeInTheDocument()
     })
 
@@ -113,10 +115,10 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getOrganizationModelPolicy).mockResolvedValueOnce(
             createOrganizationModelPolicy({ organizationId: SECOND_ORG }),
         )
-        render(<AdminModelsPage />)
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(await screen.findByText(/Сервер вернул правила другой организации/))
             .toBeInTheDocument()
-        expect(screen.queryByRole('heading', { name: 'Модели и маршрутизация' }))
+        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
             .not.toBeInTheDocument()
     })
 
@@ -138,18 +140,19 @@ describe('AdminModelsPage — контрактные и регрессионны
         }] as Awaited<ReturnType<typeof searchOrganizationDirectory>>)
 
         await loadPage()
-        fireEvent.change(screen.getByPlaceholderText('Название или UUID'), {
+        fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
+        fireEvent.change(screen.getByPlaceholderText('Начните вводить название или UUID'), {
             target: { value: 'Second' },
         })
         fireEvent.click(screen.getByRole('button', { name: 'Найти' }))
         fireEvent.click(await screen.findByRole('button', { name: /Second Organization/ }))
 
-        expect(screen.queryByRole('heading', { name: 'Модели и маршрутизация' }))
+        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
             .not.toBeInTheDocument()
         expect(screen.getByText('Загрузка настроек моделей...')).toBeInTheDocument()
 
         secondPolicy.resolve(createOrganizationModelPolicy({ organizationId: SECOND_ORG }))
-        await screen.findByRole('heading', { name: 'Модели и маршрутизация' })
+        await screen.findByRole('heading', { name: 'Модели и доступ' })
         await waitFor(() => {
             expect(screen.getAllByText(SECOND_ORG).length).toBeGreaterThan(0)
         })
@@ -169,7 +172,8 @@ describe('AdminModelsPage — контрактные и регрессионны
                 version: 1,
             }])
         await loadPage()
-        const query = screen.getByPlaceholderText('Название или UUID')
+        fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
+        const query = screen.getByPlaceholderText('Начните вводить название или UUID')
         fireEvent.change(query, { target: { value: 'first' } })
         fireEvent.click(screen.getByRole('button', { name: 'Найти' }))
         await waitFor(() => {
@@ -234,7 +238,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         }
         vi.mocked(getModelRouteDecision).mockResolvedValueOnce(decision)
         await loadPage()
-        fireEvent.click(screen.getByText('Диагностика маршрутизации'))
+        fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
         fireEvent.change(screen.getByLabelText('ID решения'), {
             target: { value: ROUTE_ID },
         })
@@ -250,7 +254,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         const request = deferred<ModelRouteDecision>()
         vi.mocked(getModelRouteDecision).mockReturnValue(request.promise)
         await loadPage()
-        fireEvent.click(screen.getByText('Диагностика маршрутизации'))
+        fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
         const input = screen.getByLabelText('ID решения')
         fireEvent.change(input, { target: { value: ROUTE_ID } })
         fireEvent.click(screen.getByRole('button', { name: 'Проверить' }))
@@ -277,8 +281,8 @@ describe('AdminModelsPage — контрактные и регрессионны
         vi.mocked(getEffectiveModelCatalog).mockRejectedValueOnce(
             new Error('effective failed'),
         )
-        fireEvent.click(screen.getByRole('button', { name: 'Добавить Runtime в каталог' }))
-        expect(await screen.findByText(/повторно добавлять Runtime не нужно/i))
+        fireEvent.click(screen.getByRole('button', { name: 'Добавить подключённую модель в каталог' }))
+        expect(await screen.findByText(/повторно добавлять модель не нужно/i))
             .toBeInTheDocument()
         // Обе таблицы остаются на предыдущем согласованном срезе.
         expect(screen.getByText('Последняя сохраненная · v1')).toBeInTheDocument()
@@ -289,9 +293,13 @@ describe('AdminModelsPage — контрактные и регрессионны
         auth.currentUser = user('SUPER_ADMIN')
         vi.mocked(importRuntimeModelCatalog).mockRejectedValueOnce(new Error('POST rejected'))
         await loadPage()
-        const button = screen.getByRole('button', { name: 'Добавить Runtime в каталог' })
+        fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
+        const button = screen.getByRole('button', { name: 'Добавить подключённую модель в каталог' })
         fireEvent.click(button)
-        expect(await screen.findByText('Не удалось добавить Runtime в каталог.')).toBeInTheDocument()
+        expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось добавить подключённую модель в каталог')
+        // Ошибка POST не должна скрывать согласованную ранее таблицу и версию.
+        expect(screen.getByRole('region', { name: 'Таблица каталога моделей' })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: 'Каталог' })).toHaveAttribute('aria-selected', 'true')
         await waitFor(() => expect(button).not.toBeDisabled())
         expect(importRuntimeModelCatalog).toHaveBeenCalledTimes(1)
     })
@@ -308,6 +316,7 @@ describe('AdminModelsPage — контрактные и регрессионны
             }),
         )
         await loadPage()
+        fireEvent.click(screen.getByRole('tab', { name: 'Доступ' }))
         fireEvent.click(screen.getByRole('button', { name: 'Изменить правила' }))
         fireEvent.click(screen.getByRole('button', { name: 'Сохранить правила' }))
         expect(await screen.findByText(/Ответ сервера относится к другой организации/))
@@ -321,6 +330,7 @@ describe('AdminModelsPage — контрактные и регрессионны
         auth.currentUser = user('SUPER_ADMIN')
         vi.mocked(probeRuntimeModel).mockRejectedValueOnce(new Error('Probe failed'))
         await loadPage()
+        fireEvent.click(screen.getByRole('tab', { name: 'Диагностика' }))
         fireEvent.click(screen.getByRole('button', { name: 'Проверить доступность' }))
         expect(await screen.findByText('Не удалось проверить доступность runtime-модели.')).toBeInTheDocument()
         expect(screen.queryByText('Доступна')).not.toBeInTheDocument()
@@ -328,17 +338,17 @@ describe('AdminModelsPage — контрактные и регрессионны
 
     it('не делает сетевые запросы, если пользователь не авторизован', () => {
         auth.currentUser = null
-        render(<AdminModelsPage />)
+        render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         expect(getRuntimeModelStatus).not.toHaveBeenCalled()
         expect(getOrganizationModelPolicy).not.toHaveBeenCalled()
-        expect(screen.queryByRole('heading', { name: 'Модели и маршрутизация' }))
+        expect(screen.queryByRole('heading', { name: 'Модели и доступ' }))
             .not.toBeInTheDocument()
     })
 
     it('отменяет первоначальную загрузку и запрос названия организации при unmount', async () => {
         const pending = deferred<ReturnType<typeof createRuntimeModelStatus>>()
         vi.mocked(getRuntimeModelStatus).mockReturnValueOnce(pending.promise)
-        const { unmount } = render(<AdminModelsPage />)
+        const { unmount } = render(<MemoryRouter initialEntries={['/admin/models']}><AdminModelsPage /></MemoryRouter>)
         await waitFor(() => expect(getOrganizationDetails).toHaveBeenCalledTimes(1))
         const runtimeSignal = vi.mocked(getRuntimeModelStatus).mock.calls[0]?.[0]
         const organizationSignal = vi.mocked(getOrganizationDetails).mock.calls[0]?.[1]?.signal
@@ -355,7 +365,8 @@ describe('AdminModelsPage — контрактные и регрессионны
         const pending = deferred<ReturnType<typeof createModelCatalogEntry>>()
         vi.mocked(importRuntimeModelCatalog).mockReturnValueOnce(pending.promise)
         await loadPage()
-        const button = screen.getByRole('button', { name: 'Добавить Runtime в каталог' })
+        fireEvent.click(screen.getByRole('tab', { name: 'Каталог' }))
+        const button = screen.getByRole('button', { name: 'Добавить подключённую модель в каталог' })
         fireEvent.click(button)
         expect(button).toBeDisabled()
         fireEvent.click(button)

@@ -50,6 +50,8 @@ describe('ModelControlPlaneViews semantics', () => {
                     organizationQuery=""
                     organizationResults={[]}
                     organizationSearchPending={false}
+                    organizationSearchStatus="idle"
+                    organizationSearchError=""
                     onOrganizationQueryChange={vi.fn()}
                     onOrganizationSearch={vi.fn()}
                     onOrganizationSelect={vi.fn()}
@@ -78,7 +80,7 @@ describe('ModelControlPlaneViews semantics', () => {
         )
 
         expect(
-            screen.getByText('Режим Runtime'),
+            screen.getByText('Режим подключения'),
         ).toBeInTheDocument()
 
         expect(
@@ -86,7 +88,7 @@ describe('ModelControlPlaneViews semantics', () => {
         ).toBeInTheDocument()
 
         expect(
-            screen.getByText('Исполняемые возможности'),
+            screen.getByText('Поддерживаемые возможности'),
         ).toBeInTheDocument()
 
         expect(
@@ -115,6 +117,8 @@ describe('ModelControlPlaneViews semantics', () => {
                 organizationQuery=""
                 organizationResults={[]}
                 organizationSearchPending={false}
+                    organizationSearchStatus="idle"
+                    organizationSearchError=""
                 onOrganizationQueryChange={vi.fn()}
                 onOrganizationSearch={vi.fn()}
                 onOrganizationSelect={vi.fn()}

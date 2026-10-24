@@ -1,3 +1,4 @@
+// frontend/src/shared/api/http.production.test.ts
 // ============================================================
 // frontend/src/shared/api/http.production.test.ts
 // Регрессии безопасного HTTP-клиента и представления ошибок.

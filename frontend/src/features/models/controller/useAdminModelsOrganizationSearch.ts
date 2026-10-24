@@ -1,91 +1,104 @@
 // frontend/src/features/models/controller/useAdminModelsOrganizationSearch.ts
 // ============================================================
 // frontend/src/features/models/controller/useAdminModelsOrganizationSearch.ts
+// Поиск организаций: debounced GET, явные состояния, отмена и защита от гонок.
 // ============================================================
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Dispatch, SetStateAction } from 'react'
 import { searchOrganizationDirectory } from '../../../entities/organization/api/organizationApi'
 import type { OrganizationDirectoryItem } from '../../../entities/organization/api/organizationApi'
 import { getApiErrorMessage } from '../../../shared/api/http'
 
-export function useAdminModelsOrganizationSearch(
-    isSuperAdmin: boolean,
-    setError: Dispatch<SetStateAction<string>>,
-) {
-    const [
-        organizationQuery,
-        setOrganizationQuery,
-    ] = useState('')
+export type OrganizationSearchStatus = 'idle' | 'pending' | 'success' | 'empty' | 'error'
 
-    const [
-        organizationResults,
-        setOrganizationResults,
-    ] = useState<
-        OrganizationDirectoryItem[]
-    >([])
+const SEARCH_DEBOUNCE_MS = 300
+const SEARCH_LIMIT = 12
 
-    const [
-        organizationSearchPending,
-        setOrganizationSearchPending,
-    ] = useState(false)
-
+export function useAdminModelsOrganizationSearch(isSuperAdmin: boolean) {
+    const [organizationQuery, setOrganizationQuery] = useState('')
+    const [organizationResults, setOrganizationResults] = useState<OrganizationDirectoryItem[]>([])
+    const [organizationSearchStatus, setOrganizationSearchStatus] = useState<OrganizationSearchStatus>('idle')
+    const [organizationSearchError, setOrganizationSearchError] = useState('')
     const organizationSearchControllerRef = useRef<AbortController | null>(null)
-
-    useEffect(() => () => {
-        organizationSearchControllerRef.current?.abort()
-    }, [])
+    // Номер поколения необходим даже для API/mocks, не выполняющих AbortSignal.
+    const generationRef = useRef(0)
+    const queryRef = useRef('')
+    const lastSearchedQueryRef = useRef('')
 
     const cancelOrganizationSearch = useCallback(() => {
+        generationRef.current += 1
         organizationSearchControllerRef.current?.abort()
         organizationSearchControllerRef.current = null
-        setOrganizationSearchPending(false)
         setOrganizationResults([])
+        setOrganizationSearchError('')
+        setOrganizationSearchStatus('idle')
     }, [])
 
     const handleOrganizationQueryChange = useCallback((value: string) => {
+        queryRef.current = value
+        lastSearchedQueryRef.current = ''
         cancelOrganizationSearch()
         setOrganizationQuery(value)
     }, [cancelOrganizationSearch])
 
-    const handleOrganizationSearch =
-        useCallback(async () => {
-            const query =
-                organizationQuery.trim()
+    const handleOrganizationSearch = useCallback(async () => {
+        const query = queryRef.current.trim()
+        lastSearchedQueryRef.current = query
+        generationRef.current += 1
+        const generation = generationRef.current
+        organizationSearchControllerRef.current?.abort()
+        organizationSearchControllerRef.current = null
+        setOrganizationResults([])
+        setOrganizationSearchError('')
 
-            organizationSearchControllerRef.current?.abort()
-            if (!query || !isSuperAdmin) {
-                setOrganizationResults([])
-                setOrganizationSearchPending(false)
-                return
-            }
-            const controller = new AbortController()
-            organizationSearchControllerRef.current = controller
-            setOrganizationSearchPending(true)
-            setError('')
+        if (!isSuperAdmin || query.length < 2) {
+            setOrganizationSearchStatus('idle')
+            return
+        }
 
-            try {
-                const results = await searchOrganizationDirectory(
-                    query,
-                    12,
-                    { signal: controller.signal },
-                )
-                if (!controller.signal.aborted) {
-                    setOrganizationResults(results)
-                }
-            } catch (failure) {
-                if (!controller.signal.aborted) {
-                    setError(getApiErrorMessage(
-                        failure,
-                        'Не удалось найти организацию.',
-                    ))
-                }
-            } finally {
-                if (organizationSearchControllerRef.current === controller) {
-                    organizationSearchControllerRef.current = null
-                    setOrganizationSearchPending(false)
-                }
+        const controller = new AbortController()
+        organizationSearchControllerRef.current = controller
+        setOrganizationSearchStatus('pending')
+
+        try {
+            const results = await searchOrganizationDirectory(query, SEARCH_LIMIT, {
+                signal: controller.signal,
+            })
+            if (generationRef.current !== generation || controller.signal.aborted) return
+            setOrganizationResults(results)
+            setOrganizationSearchStatus(results.length ? 'success' : 'empty')
+        } catch (failure) {
+            if (generationRef.current !== generation || controller.signal.aborted) return
+            setOrganizationSearchError(getApiErrorMessage(
+                failure,
+                'Не удалось выполнить поиск организаций. Повторите попытку.',
+            ))
+            setOrganizationSearchStatus('error')
+        } finally {
+            if (generationRef.current === generation) {
+                organizationSearchControllerRef.current = null
             }
-        }, [organizationQuery, isSuperAdmin])
+        }
+    }, [isSuperAdmin])
+
+    // Подсказки при вводе без лишних запросов и без «пустых» результатов.
+    useEffect(() => {
+        if (!isSuperAdmin || organizationQuery.trim().length < 2
+            || lastSearchedQueryRef.current === organizationQuery.trim()) return
+        const timeoutId = window.setTimeout(() => {
+            void handleOrganizationSearch()
+        }, SEARCH_DEBOUNCE_MS)
+        return () => window.clearTimeout(timeoutId)
+    }, [handleOrganizationSearch, isSuperAdmin, organizationQuery])
+
+    // При потере права SUPER_ADMIN прекращаем поиск и скрываем tenant-данные.
+    useEffect(() => {
+        if (!isSuperAdmin) cancelOrganizationSearch()
+    }, [isSuperAdmin, cancelOrganizationSearch])
+
+    useEffect(() => () => {
+        generationRef.current += 1
+        organizationSearchControllerRef.current?.abort()
+    }, [])
 
     return {
         organizationQuery,
@@ -94,7 +107,9 @@ export function useAdminModelsOrganizationSearch(
         cancelOrganizationSearch,
         organizationResults,
         setOrganizationResults,
-        organizationSearchPending,
+        organizationSearchPending: organizationSearchStatus === 'pending',
+        organizationSearchStatus,
+        organizationSearchError,
         handleOrganizationSearch,
     }
 }
