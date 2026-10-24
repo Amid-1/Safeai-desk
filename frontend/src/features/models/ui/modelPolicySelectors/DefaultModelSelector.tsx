@@ -28,6 +28,7 @@ export function DefaultModelSelector({
         useRef<HTMLButtonElement | null>(null)
     const searchRef =
         useRef<HTMLInputElement | null>(null)
+    const popoverRef = useRef<HTMLDivElement | null>(null)
     const listboxId = useId()
     const [expanded, setExpanded] =
         useState(false)
@@ -94,7 +95,7 @@ export function DefaultModelSelector({
         value,
     ])
 
-    const filteredKeys = useMemo(() => {
+    const matchingKeys = useMemo(() => {
         const normalized = query.trim().toLowerCase()
 
         return selectableKeys
@@ -110,12 +111,12 @@ export function DefaultModelSelector({
 
                 return haystack.includes(normalized)
             })
-            .slice(0, MAX_VISIBLE_OPTIONS)
     }, [
         lookup,
         query,
         selectableKeys,
     ])
+    const filteredKeys = matchingKeys.slice(0, MAX_VISIBLE_OPTIONS)
 
     const defaultOptionCount = 1 + filteredKeys.length
     const activeDefaultOptionId = expanded
@@ -174,8 +175,17 @@ export function DefaultModelSelector({
     useEffect(() => {
         if (expanded) {
             searchRef.current?.focus()
+            // Выпадающий список участвует в потоке документа, не перекрывает footer.
+            // После открытия браузер прокручивает тело модального окна при необходимости.
+            popoverRef.current?.scrollIntoView?.({block: 'start'})
         }
     }, [expanded])
+
+    useEffect(() => {
+        if (!expanded) return
+        const active = document.getElementById(`${listboxId}-option-${activeIndex}`)
+        active?.scrollIntoView?.({block: 'nearest'})
+    }, [expanded, activeIndex, listboxId])
 
     useEffect(() => {
         setActiveIndex((current) =>
@@ -248,7 +258,7 @@ export function DefaultModelSelector({
             </button>
 
             {expanded && (
-                <div className="models-default-selector__popover">
+                <div className="models-default-selector__popover" ref={popoverRef}>
                     <div className="models-default-selector__search">
                         <span aria-hidden="true">⌕</span>
                         <input
@@ -264,8 +274,10 @@ export function DefaultModelSelector({
                             aria-activedescendant={activeDefaultOptionId}
                             placeholder="Найти модель"
                             onChange={(event) => {
-                                setQuery(event.target.value)
-                                setActiveIndex(0)
+                                const nextQuery = event.target.value
+                                setQuery(nextQuery)
+                                // При поиске Enter выбирает первое совпадение, а не режим «Автоматически».
+                                setActiveIndex(nextQuery.trim() ? 1 : 0)
                             }}
                             onKeyDown={(event) => {
                                 if (event.key === 'ArrowDown') {
@@ -302,6 +314,11 @@ export function DefaultModelSelector({
                         />
                     </div>
 
+                    <p className="models-default-selector__result-count" role="status">
+                        {matchingKeys.length > filteredKeys.length
+                            ? `Показаны первые ${filteredKeys.length} из ${matchingKeys.length}. Уточните поиск.`
+                            : `Доступных моделей: ${matchingKeys.length}. Автоматический режим всегда доступен.`}
+                    </p>
                     <div
                         id={listboxId}
                         role="listbox"

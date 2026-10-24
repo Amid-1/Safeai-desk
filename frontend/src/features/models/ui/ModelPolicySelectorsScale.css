@@ -1,0 +1,160 @@
+/* frontend/src/features/models/ui/ModelPolicySelectorsScale.css
+ * Масштабируемый выбор моделей в правилах организации.
+ * Применяется только к ModelPolicyModal, не изменяет общий Modal и другие экраны.
+ */
+
+.modal-card.models-policy-modal .models-model-selector__chips--dense {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    flex-wrap: initial;
+    max-height: min(232px, 31dvh);
+    overflow-y: auto;
+    overflow-x: hidden;
+    gap: 7px;
+    padding: 5px 8px 5px 3px;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+    border-radius: 8px;
+}
+
+.modal-card.models-policy-modal .models-model-selector__chips--dense:focus-visible {
+    outline: 2px solid #4057f2;
+    outline-offset: 2px;
+}
+
+.modal-card.models-policy-modal .models-model-selector__chips--dense .models-model-chip {
+    min-width: 0;
+    max-width: none;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name remove" "key remove";
+    padding: 8px 9px;
+    gap: 3px 8px;
+    background: #f3f7ff;
+}
+
+.modal-card.models-policy-modal .models-model-selector__chips--dense .models-model-chip__state {
+    /* Длинное описание остаётся в title карточки, не раздувая 200 позиций. */
+    display: none;
+}
+
+.modal-card.models-policy-modal .models-model-selector__chips--dense .models-model-chip strong {
+    font-size: 13px;
+}
+
+.modal-card.models-policy-modal .models-model-selector__chips--dense .models-model-chip code {
+    font-size: 12px;
+}
+
+.modal-card.models-policy-modal .models-model-selector__chips--dense .models-model-chip > button {
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+}
+
+.modal-card.models-policy-modal .models-model-selector__selected-search {
+    display: grid;
+    gap: 5px;
+    font-size: 13px;
+    font-weight: 650;
+    color: #475e7f;
+}
+
+.modal-card.models-policy-modal .models-model-selector__selected-search input {
+    width: 100%;
+    min-height: 40px;
+    border-radius: 9px;
+    border: 1px solid #bfcee7;
+    padding: 7px 12px;
+    color: #192b46;
+    background: white;
+}
+
+.modal-card.models-policy-modal .models-model-selector__scroll-hint,
+.modal-card.models-policy-modal .models-model-selector__selected-empty {
+    margin: 0;
+    color: #526785;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+/* Фокус и раскрытие прокручивают до поля поиска, не скрывая список за footer. */
+.modal-card.models-policy-modal .models-model-selector__search-row input,
+.modal-card.models-policy-modal .models-default-selector__popover {
+    scroll-margin-top: 10px;
+}
+
+/* Выпадающие результаты являются частью прокручиваемого содержимого окна,
+ * поэтому не перекрывают закреплённый footer при низком экране/масштабе 200%. */
+.modal-card.models-policy-modal .models-model-selector__results,
+.modal-card.models-policy-modal .models-default-selector__popover {
+    position: static;
+    display: grid;
+    min-width: 0;
+    width: 100%;
+    margin-top: 6px;
+    padding: 8px;
+    border-radius: 12px;
+    border: 1px solid #c7d5ee;
+    background: #ffffff;
+    box-shadow: 0 5px 15px rgb(29 61 120 / 7%);
+}
+
+.modal-card.models-policy-modal .models-model-selector__menu {
+    position: static;
+    max-height: min(280px, 32dvh);
+    overflow: auto;
+    overscroll-behavior: contain;
+    box-shadow: none;
+    border: 0;
+    border-radius: 8px;
+    padding: 3px;
+}
+
+.modal-card.models-policy-modal .models-default-selector__options {
+    max-height: min(330px, 36dvh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.modal-card.models-policy-modal .models-model-selector__result-count,
+.modal-card.models-policy-modal .models-default-selector__result-count {
+    margin: 0 0 6px;
+    padding: 4px 8px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #4a6082;
+}
+
+.modal-card.models-policy-modal .models-model-selector__option,
+.modal-card.models-policy-modal .models-default-selector__option {
+    min-height: 52px !important;
+}
+
+.modal-card.models-policy-modal .models-model-selector__option strong,
+.modal-card.models-policy-modal .models-default-selector__option strong {
+    font-size: 14px;
+}
+
+.modal-card.models-policy-modal .models-model-selector__option code,
+.modal-card.models-policy-modal .models-model-selector__option small,
+.modal-card.models-policy-modal .models-default-selector__option code,
+.modal-card.models-policy-modal .models-default-selector__option small {
+    font-size: 12px;
+}
+
+@container model-policy-modal (max-width: 760px) {
+    .modal-card.models-policy-modal .models-model-selector__chips--dense {
+        grid-template-columns: minmax(0, 1fr);
+        max-height: min(220px, 28dvh);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .modal-card.models-policy-modal .models-model-selector__results,
+    .modal-card.models-policy-modal .models-default-selector__popover {
+        scroll-behavior: auto;
+    }
+}

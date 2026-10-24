@@ -1,6 +1,7 @@
 // frontend/src/features/models/ui/modelPolicySelectors/ModelKeySelector.tsx
 // Доступный интерфейс выбора allowlist и denylist моделей.
 
+import {useEffect, useMemo, useState} from 'react'
 import {useModelKeySelector} from './useModelKeySelector'
 import type {ModelKeySelectorProps} from './selectorTypes'
 import {
@@ -25,17 +26,38 @@ export function ModelKeySelector({
     onChange,
     onInteractionStateChange,
 }: ModelKeySelectorProps) {
+    const [selectedSearch, setSelectedSearch] = useState('')
     const {
         controlRef, query, setQuery, error, setError,
         expanded, setExpanded, activeIndex, setActiveIndex,
         selectedKeys, conflictingKeys, catalogLookup,
-        filteredCatalog, manualCandidate, commitKey, commitMany,
+        filteredCatalog, matchingCatalogCount, manualCandidate, commitKey, commitMany,
         removeKey, optionCount, activeOptionId, inputId, listboxId,
     } = useModelKeySelector({
         label, hint, kind, catalog, effectiveCatalog, runtime,
         value, conflictingValue, disabled, inputRef,
         onChange, onInteractionStateChange,
     })
+    useEffect(() => {
+        if (!expanded) return
+        document.getElementById(inputId)?.scrollIntoView?.({block: 'start'})
+    }, [expanded, inputId])
+
+    useEffect(() => {
+        if (!expanded || !activeOptionId) return
+        document.getElementById(activeOptionId)?.scrollIntoView?.({block: 'nearest'})
+    }, [expanded, activeOptionId])
+
+    const dense = selectedKeys.length >= 5
+    const selectedQuery = selectedSearch.trim().toLowerCase()
+    const visibleSelectedKeys = useMemo(() => selectedKeys.filter((key) => {
+        if (!selectedQuery) return true
+        const entry = catalogLookup.get(key)
+        return key.includes(selectedQuery)
+            || Boolean(entry?.displayName.toLowerCase().includes(selectedQuery))
+            || Boolean(entry?.provider.toLowerCase().includes(selectedQuery))
+    }), [selectedKeys, selectedQuery, catalogLookup])
+
     return (
         <div className="models-model-selector">
             <div className="models-model-selector__heading">
@@ -66,17 +88,35 @@ export function ModelKeySelector({
                         : '',
                 ].filter(Boolean).join(' ')}
             >
+                {selectedKeys.length >= 12 && (
+                    <label className="models-model-selector__selected-search">
+                        <span>Поиск среди выбранных ({selectedKeys.length})</span>
+                        <input
+                            type="search"
+                            value={selectedSearch}
+                            disabled={disabled}
+                            onChange={(event) => setSelectedSearch(event.target.value)}
+                            placeholder="Найти в выбранных моделях"
+                        />
+                    </label>
+                )}
                 {selectedKeys.length > 0 && (
                     <div
-                        className="models-model-selector__chips"
+                        className={[
+                            'models-model-selector__chips',
+                            dense ? 'models-model-selector__chips--dense' : '',
+                        ].filter(Boolean).join(' ')}
+                        role="list"
                         aria-label={`${label}: выбранные модели`}
+                        tabIndex={dense ? 0 : undefined}
                     >
-                        {selectedKeys.map((key) => {
+                        {visibleSelectedKeys.map((key) => {
                             const entry = catalogLookup.get(key)
 
                             return (
                                 <span
                                     key={key}
+                                    role="listitem"
                                     className={[
                                         'models-model-chip',
                                         !entry
@@ -121,7 +161,19 @@ export function ModelKeySelector({
                                 </span>
                             )
                         })}
+                        {visibleSelectedKeys.length === 0 && (
+                            <p className="models-model-selector__selected-empty">
+                                Среди выбранных моделей совпадений нет.
+                            </p>
+                        )}
                     </div>
+                )}
+                {dense && (
+                    <p className="models-model-selector__scroll-hint">
+                        {selectedSearch.trim()
+                            ? `Найдено среди выбранных: ${visibleSelectedKeys.length} из ${selectedKeys.length}.`
+                            : `Выбрано ${selectedKeys.length} моделей. Список прокручивается внутри этой области.`}
+                    </p>
                 )}
 
                 <div className="models-model-selector__search-row">
@@ -271,12 +323,18 @@ export function ModelKeySelector({
                 </div>
 
                 {expanded && (
-                    <div
-                        id={listboxId}
-                        className="models-model-selector__menu"
-                        role="listbox"
-                        aria-label={`${label}: модели из каталога`}
-                    >
+                    <div className="models-model-selector__results">
+                        <p className="models-model-selector__result-count" role="status">
+                            {matchingCatalogCount > filteredCatalog.length
+                                ? `Показаны первые ${filteredCatalog.length} из ${matchingCatalogCount}. Уточните поиск для остальных.`
+                                : `Найдено в каталоге: ${matchingCatalogCount}.`}
+                        </p>
+                        <div
+                            id={listboxId}
+                            className="models-model-selector__menu"
+                            role="listbox"
+                            aria-label={`${label}: модели из каталога`}
+                        >
                         {filteredCatalog.map((entry, index) => {
                             const conflict =
                                 conflictingKeys.has(
@@ -401,6 +459,7 @@ export function ModelKeySelector({
                                         : 'Начните вводить название, провайдера или ключ модели.'}
                                 </div>
                             )}
+                        </div>
                     </div>
                 )}
             </div>

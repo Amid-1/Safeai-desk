@@ -6,7 +6,7 @@ import {normalizeModelKey} from '../modelControlPlaneSupport'
 import type {NormalizedModelKey, SelectorKind} from './selectorTypes'
 
 export const MAX_POLICY_MODEL_KEYS = 200
-export const MAX_VISIBLE_OPTIONS = 8
+export const MAX_VISIBLE_OPTIONS = 200 // Безопасный предел элементов DOM; сверх лимита — уточнение поиска
 
 export function splitDraftModelKeys(
     value: string,

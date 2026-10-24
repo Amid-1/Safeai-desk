@@ -17,6 +17,7 @@ import './ModelPolicyModal.css'
 import './ModelPolicyProductionEnhancements.css'
 import '../styles/ModelControlPlaneReadability.css'
 import './ModelPolicyTabs.css'
+import './ModelPolicySelectorsScale.css'
 
 const POLICY_MODAL_RESIZE: ModalResizeOptions = {
     initialWidth: 1120,

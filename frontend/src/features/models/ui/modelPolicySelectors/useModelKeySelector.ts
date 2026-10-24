@@ -71,7 +71,7 @@ export function useModelKeySelector({
     const normalizedQuery =
         query.trim().toLowerCase()
 
-    const filteredCatalog = useMemo(() => {
+    const availableCatalog = useMemo(() => {
         const selected = new Set(selectedKeys)
 
         return catalog
@@ -85,12 +85,14 @@ export function useModelKeySelector({
                 || catalogSearchText(entry)
                     .includes(normalizedQuery),
             )
-            .slice(0, MAX_VISIBLE_OPTIONS)
     }, [
         catalog,
         normalizedQuery,
         selectedKeys,
     ])
+
+    const matchingCatalogCount = availableCatalog.length
+    const filteredCatalog = availableCatalog.slice(0, MAX_VISIBLE_OPTIONS)
 
     const manualCandidate = useMemo(() => {
         if (!query.trim()) {
@@ -279,7 +281,7 @@ export function useModelKeySelector({
         controlRef, query, setQuery, error, setError,
         expanded, setExpanded, activeIndex, setActiveIndex,
         selectedKeys, conflictingKeys, catalogLookup,
-        filteredCatalog, manualCandidate, commitKey, commitMany,
+        filteredCatalog, matchingCatalogCount, manualCandidate, commitKey, commitMany,
         removeKey, optionCount, activeOptionId, inputId, listboxId,
     }
 }
