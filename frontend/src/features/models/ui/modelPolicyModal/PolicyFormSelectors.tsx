@@ -4,6 +4,7 @@
 import type {ModelPolicyModalController} from './useModelPolicyModalController'
 import type {ModelPolicyModalProps} from './policyModalTypes'
 import {ModelKeySelector} from '../ModelPolicyModelSelectors'
+import {movePolicyModelKey} from '../modelPolicySelectors/selectorSupport'
 
 type Props = {
     control: ModelPolicyModalController
@@ -55,6 +56,9 @@ export function PolicyFormSelectors({control, catalog, effectiveCatalog, runtime
                         onInteractionStateChange={
                             setAllowSelectorState
                         }
+                        onTransferFromOppositeList={(modelKey) => {
+                            setDraft(current => movePolicyModelKey(current, modelKey, 'allow'))
+                        }}
                         onChange={(
                             value,
                         ) => {
@@ -98,6 +102,9 @@ export function PolicyFormSelectors({control, catalog, effectiveCatalog, runtime
                         onInteractionStateChange={
                             setDenySelectorState
                         }
+                        onTransferFromOppositeList={(modelKey) => {
+                            setDraft(current => movePolicyModelKey(current, modelKey, 'deny'))
+                        }}
                         onChange={(
                             value,
                         ) => {

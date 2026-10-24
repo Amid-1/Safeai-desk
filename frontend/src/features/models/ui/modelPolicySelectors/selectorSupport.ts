@@ -151,3 +151,36 @@ export function runtimeExecutionLabel(
         ? `${match.modelKey} · используется сейчас`
         : `${runtime.provider}/${runtime.model} · нет соответствующей действующей версии в каталоге`
 }
+
+/**
+ * Atomic allow/deny move. Unlike two independent onChange calls it cannot
+ * transiently produce overlapping lists or lose another draft update.
+ * A pinned default becomes invalid when its model is denied, so reset it.
+ */
+export function movePolicyModelKey<T extends {
+    allowModelKeys: string
+    denyModelKeys: string
+    defaultModelKey: string
+}>(draft: T, rawKey: string, destination: SelectorKind): T {
+    const key = normalizeModelKey(rawKey)
+    const allow = uniqueModelKeys(splitDraftModelKeys(draft.allowModelKeys))
+    const deny = uniqueModelKeys(splitDraftModelKeys(draft.denyModelKeys))
+    const source = destination === 'deny' ? allow : deny
+    const target = destination === 'deny' ? deny : allow
+
+    // Only explicitly selected source entries may be transferred.
+    // Both lists retain the same 200-key contract.
+    if (!source.includes(key) || target.length >= MAX_POLICY_MODEL_KEYS) {
+        return draft
+    }
+
+    const nextSource = source.filter(item => item !== key)
+    const nextTarget = [...target, key]
+    return {
+        ...draft,
+        allowModelKeys: (destination === 'allow' ? nextTarget : nextSource).join('\n'),
+        denyModelKeys: (destination === 'deny' ? nextTarget : nextSource).join('\n'),
+        defaultModelKey: destination === 'deny' && draft.defaultModelKey.trim().toLowerCase() === key
+            ? '' : draft.defaultModelKey,
+    }
+}

@@ -181,10 +181,22 @@ export function useModelPolicyModalController({
         [draft],
     )
 
+    // A server preview is valid only for the exact runtime and effective catalog
+    // used to request it. Reordering catalog entries must not invalidate it.
+    const previewContextFingerprint = JSON.stringify({
+        runtime,
+        effectiveCatalog: [...effectiveCatalog].sort((a, b) =>
+            a.modelKey.localeCompare(b.modelKey) || a.version - b.version,
+        ),
+    })
+    const [verifiedContextFingerprint, setVerifiedContextFingerprint] = useState('')
+
     // Повторная версия политики делает прежний preview недействительным,
     // даже если текст черновика не изменился.
     const currentPreview =
         previewFingerprint === draftFingerprint
+        && verifiedContextFingerprint === previewContextFingerprint
+        && !policyChangedExternally
         && policyPreview?.organizationId === policy.organizationId
         && policyPreview.basePolicyVersion === policy.version
         && policyPreview.enabled === draft.enabled
@@ -230,7 +242,7 @@ export function useModelPolicyModalController({
     useEffect(() => {
         setPreviewError('')
         setLockoutAcknowledged(false)
-    }, [draftFingerprint])
+    }, [draftFingerprint, previewContextFingerprint])
 
     const isDirty =
         draftFingerprint !== initialDraftFingerprint
@@ -320,9 +332,14 @@ export function useModelPolicyModalController({
         }
 
         const fingerprint = draftFingerprint
+        const contextFingerprint = previewContextFingerprint
         setActiveSection('preview')
         previewInFlightRef.current = true
         setPreviewPending(true)
+        // Hide the previous decision while a new server evaluation is in flight.
+        setPolicyPreview(null)
+        setPreviewFingerprint('')
+        setVerifiedContextFingerprint('')
         setPreviewError('')
         setLockoutAcknowledged(false)
 
@@ -331,6 +348,7 @@ export function useModelPolicyModalController({
         const invalidatePreview = (message: string): void => {
             setPolicyPreview(null)
             setPreviewFingerprint('')
+            setVerifiedContextFingerprint('')
             setPreviewError(message)
         }
 
@@ -343,6 +361,8 @@ export function useModelPolicyModalController({
                 result.organizationId !== policy.organizationId
                 || result.basePolicyVersion !== policy.version
                 || result.enabled !== request.enabled
+                || result.runtimeProvider !== runtime.provider
+                || result.runtimeModel !== runtime.model
             ) {
                 // Это ошибка контракта ответа, а не исключение HTTP-запроса.
                 // Не бросаем исключение, которое тут же поймает этот catch.
@@ -352,6 +372,7 @@ export function useModelPolicyModalController({
 
             setPolicyPreview(result)
             setPreviewFingerprint(fingerprint)
+            setVerifiedContextFingerprint(contextFingerprint)
         } catch (failure) {
             invalidatePreview(
                 failure instanceof Error

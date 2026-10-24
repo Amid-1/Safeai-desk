@@ -18,6 +18,7 @@ import './ModelPolicyProductionEnhancements.css'
 import '../styles/ModelControlPlaneReadability.css'
 import './ModelPolicyTabs.css'
 import './ModelPolicySelectorsScale.css'
+import './ModelPolicyCheck.css'
 
 const POLICY_MODAL_RESIZE: ModalResizeOptions = {
     initialWidth: 1120,
@@ -54,7 +55,9 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
             <button
                 type="button"
                 disabled={pending || previewPending || policyChangedExternally}
-                onClick={() => {void handlePreview()}}
+                onClick={() => {
+                    void handlePreview()
+                }}
             >
                 {previewPending ? 'Проверяем...' : 'Проверить правила'}
             </button>
@@ -74,26 +77,13 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
         access: (
             <>
                 <PolicyFormSelectors {...selectorProps} />
-                <PolicyFormSettings {...selectorProps} section="access" />
+                <PolicyFormSettings {...selectorProps} section="access"/>
             </>
         ),
-        limits: <PolicyFormSettings {...selectorProps} section="limits" />,
-        budget: <PolicyFormSettings {...selectorProps} section="budget" />,
-        data: <PolicyFormRequirements control={control} pending={pending} />,
-        preview: (
-            <>
-                <div className="models-policy-tabs__preview-intro">
-                    Проверка выполняется сервером для текущего черновика и действующей версии правил.
-                    При изменении любого параметра проверку необходимо повторить.
-                </div>
-                <PolicyFormPreview control={control} />
-                {!policyPreview && !control.previewError && !control.activationWarning && (
-                    <p className="models-policy-tabs__empty-preview">
-                        Проверка ещё не запускалась. Нажмите «Проверить правила» внизу окна.
-                    </p>
-                )}
-            </>
-        ),
+        limits: <PolicyFormSettings {...selectorProps} section="limits"/>,
+        budget: <PolicyFormSettings {...selectorProps} section="budget"/>,
+        data: <PolicyFormRequirements control={control} pending={pending}/>,
+        preview: <PolicyFormPreview control={control}/>,
     }
 
     return (
@@ -127,7 +117,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
                     <p className="models-form__hint">{versionMessage}</p>
                 </header>
 
-                <PolicyFormOverview control={control} />
+                <PolicyFormOverview control={control}/>
 
                 {policyChangedExternally && (
                     <div className="models-policy-tabs__concurrent-warning" role="alert">
@@ -138,7 +128,7 @@ function ModelPolicyModalSession(props: ModelPolicyModalProps) {
 
                 {formError && (
                     <div className="models-policy-tabs__error" role="status">
-                        <ErrorState message={formError} variant="inline" />
+                        <ErrorState message={formError} variant="inline"/>
                     </div>
                 )}
 

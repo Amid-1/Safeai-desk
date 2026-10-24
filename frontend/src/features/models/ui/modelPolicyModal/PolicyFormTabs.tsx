@@ -12,7 +12,7 @@ const TAB_DETAILS: Readonly<Record<PolicyTab, {label: string; subtitle: string}>
     limits: {label: 'Лимиты', subtitle: 'Максимум входных и выходных токенов'},
     budget: {label: 'Бюджет', subtitle: 'Стоимость запроса и месячный бюджет'},
     data: {label: 'Требования к данным', subtitle: 'Стоимость, обучение и хранение данных'},
-    preview: {label: 'Проверка', subtitle: 'Фактическая оценка правил сервером'},
+    preview: {label: 'Проверка', subtitle: 'Предварительная оценка доступности моделей для организации'},
 }
 
 type Props = {

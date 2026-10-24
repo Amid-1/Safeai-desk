@@ -24,9 +24,11 @@ export function ModelKeySelector({
     disabled = false,
     inputRef,
     onChange,
+    onTransferFromOppositeList,
     onInteractionStateChange,
 }: ModelKeySelectorProps) {
     const [selectedSearch, setSelectedSearch] = useState('')
+    const [pendingTransferKey, setPendingTransferKey] = useState<string | null>(null)
     const {
         controlRef, query, setQuery, error, setError,
         expanded, setExpanded, activeIndex, setActiveIndex,
@@ -49,6 +51,16 @@ export function ModelKeySelector({
     }, [expanded, activeOptionId])
 
     const dense = selectedKeys.length >= 5
+    const conflictingCatalogEntries = filteredCatalog.filter(entry =>
+        conflictingKeys.has(entry.modelKey.toLowerCase()),
+    )
+    const transferEntry = pendingTransferKey
+        ? conflictingCatalogEntries.find(entry => entry.modelKey.toLowerCase() === pendingTransferKey)
+        : undefined
+    const sourceWillBecomeEmpty = conflictingKeys.size === 1
+    const destinationLabel = kind === 'deny' ? 'запрещённые' : 'разрешённые'
+    const sourceLabel = kind === 'deny' ? 'разрешённых' : 'запрещённых'
+
     const selectedQuery = selectedSearch.trim().toLowerCase()
     const visibleSelectedKeys = useMemo(() => selectedKeys.filter((key) => {
         if (!selectedQuery) return true
@@ -203,6 +215,7 @@ export function ModelKeySelector({
                             setExpanded(true)
                         }}
                         onChange={(event) => {
+                            setPendingTransferKey(null)
                             setQuery(event.target.value)
                             setError('')
                             setExpanded(true)
@@ -357,7 +370,7 @@ export function ModelKeySelector({
                                             runtime,
                                         ),
                                         conflict
-                                            ? 'уже в противоположном списке'
+                                            ? `уже в списке ${sourceLabel}`
                                             : '',
                                     ].filter(Boolean).join(' · ')}
                                     aria-selected={activeIndex === index}
@@ -404,7 +417,7 @@ export function ModelKeySelector({
                                             runtime,
                                         )}
                                         {conflict
-                                            ? ' · уже в противоположном списке'
+                                            ? ` · уже в списке ${sourceLabel}`
                                             : ''}
                                     </small>
                                 </button>
@@ -460,6 +473,57 @@ export function ModelKeySelector({
                                 </div>
                             )}
                         </div>
+                        {onTransferFromOppositeList && conflictingCatalogEntries.length > 0 && (
+                            <div className="models-model-selector__conflicts">
+                                {conflictingCatalogEntries.map(entry => (
+                                    <div key={entry.modelKey} className="models-model-selector__conflict-row">
+                                        <span>
+                                            <strong>{entry.displayName}</strong> уже в списке {sourceLabel}.
+                                        </span>
+                                        <button
+                                            type="button"
+                                            disabled={disabled || selectedKeys.length >= MAX_POLICY_MODEL_KEYS}
+                                            aria-label={`Перенести ${entry.modelKey} в ${destinationLabel}`}
+                                            onClick={() => setPendingTransferKey(entry.modelKey.toLowerCase())}
+                                        >
+                                            Перенести в {destinationLabel}
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {selectedKeys.length >= MAX_POLICY_MODEL_KEYS && conflictingCatalogEntries.length > 0 && (
+                            <p className="models-model-selector__scroll-hint" role="status">
+                                Список {destinationLabel} заполнен (200 моделей). Для переноса освободите место.
+                            </p>
+                        )}
+                        {transferEntry && onTransferFromOppositeList && (
+                            <div className="models-model-selector__transfer-confirm" role="group"
+                                 aria-label={`Подтверждение переноса ${transferEntry.modelKey}`}>
+                                <strong>Перенести «{transferEntry.displayName}» в {destinationLabel}?</strong>
+                                <p>Модель будет удалена из списка {sourceLabel} и добавлена в {destinationLabel} одним изменением черновика.</p>
+                                {kind === 'deny' && sourceWillBecomeEmpty && (
+                                    <p className="models-model-selector__transfer-risk">
+                                        Важно: список разрешённых станет пустым. Это означает, что другие модели
+                                        не будут ограничены этим списком; останутся только явные запреты и остальные правила.
+                                    </p>
+                                )}
+                                {kind === 'deny' && (
+                                    <p>Если модель закреплена по умолчанию, этот выбор будет сброшен.</p>
+                                )}
+                                <div className="models-model-selector__transfer-actions">
+                                    <button type="button" disabled={disabled} onClick={() => {
+                                        onTransferFromOppositeList(transferEntry.modelKey)
+                                        setPendingTransferKey(null)
+                                        setExpanded(false)
+                                        setQuery('')
+                                        setError('')
+                                        setActiveIndex(0)
+                                    }}>Подтвердить перенос</button>
+                                    <button type="button" onClick={() => setPendingTransferKey(null)}>Отмена</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

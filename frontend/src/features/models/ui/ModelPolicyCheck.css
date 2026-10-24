@@ -1,0 +1,204 @@
+/* frontend/src/features/models/ui/ModelPolicyCheck.css
+ * Localized production UX for the server preview, allow/deny transfer and data-policy hints.
+ * No global modal, shared CSS, or backend payloads are changed.
+ */
+.modal-card.models-policy-modal .models-policy-check {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+}
+.modal-card.models-policy-modal .models-policy-check__intro {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.modal-card.models-policy-modal .models-policy-check__intro > div {
+    flex: 1 1 300px;
+    min-width: 0;
+}
+.modal-card.models-policy-modal .models-policy-check__intro strong {
+    color: #1b2c47;
+    font-size: 17px;
+}
+.modal-card.models-policy-modal .models-policy-check__intro p,
+.modal-card.models-policy-modal .models-policy-check__empty p,
+.modal-card.models-policy-modal .models-policy-check__disclaimer {
+    margin: 6px 0 0;
+    color: #526581;
+    font-size: 14px;
+    line-height: 1.55;
+}
+.modal-card.models-policy-modal .models-policy-check__status {
+    flex: 0 0 auto;
+    padding: 7px 11px;
+    border: 1px solid #c8d6f1;
+    border-radius: 999px;
+    background: #f3f6ff;
+    color: #334e86;
+    font-size: 13px;
+    font-weight: 750;
+}
+.modal-card.models-policy-modal .models-policy-check__criteria {
+    padding: 16px;
+    border: 1px solid #e0e8f4;
+    border-radius: 13px;
+    background: #f7f9fe;
+}
+.modal-card.models-policy-modal .models-policy-check__criteria h4 {
+    margin: 0 0 12px;
+    color: #1c304b;
+    font-size: 15px;
+}
+.modal-card.models-policy-modal .models-policy-check__criteria-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+.modal-card.models-policy-modal .models-policy-check__criterion {
+    display: grid;
+    gap: 3px;
+    padding: 12px;
+    border: 1px solid #e1e9f6;
+    border-radius: 10px;
+    background: white;
+}
+.modal-card.models-policy-modal .models-policy-check__criterion strong {
+    color: #1a2e4b;
+    font-size: 14px;
+}
+.modal-card.models-policy-modal .models-policy-check__criterion small {
+    color: #526784;
+    font-size: 13px;
+    line-height: 1.5;
+}
+.modal-card.models-policy-modal .models-policy-check__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 24px 18px;
+    border: 1px dashed #bcccec;
+    border-radius: 13px;
+    background: linear-gradient(180deg, white, #f8faff);
+    text-align: center;
+}
+.modal-card.models-policy-modal .models-policy-check__empty strong {
+    color: #203455;
+    font-size: 17px;
+}
+.modal-card.models-policy-modal .models-policy-check__empty button {
+    margin-top: 8px;
+    min-height: 44px;
+    padding-inline: 20px;
+}
+.modal-card.models-policy-modal .models-policy-check__pending,
+.modal-card.models-policy-modal .models-policy-check__no-models {
+    margin: 0;
+    padding: 14px;
+    border-radius: 10px;
+    background: #edf3ff;
+    color: #345485;
+    font-size: 14px;
+}
+.modal-card.models-policy-modal .models-policy-check__disclaimer {
+    padding: 12px 14px;
+    border-top: 1px solid #dce5ee;
+}
+.modal-card.models-policy-modal .models-model-selector__conflicts {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+.modal-card.models-policy-modal .models-model-selector__conflict-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid #d4ddf0;
+    border-radius: 10px;
+    background: #f7f9fe;
+    color: #415675;
+    font-size: 14px;
+}
+.modal-card.models-policy-modal .models-model-selector__conflict-row button,
+.modal-card.models-policy-modal .models-model-selector__transfer-actions button {
+    min-height: 38px;
+    padding: 7px 13px;
+    border: 1px solid #bacbf0;
+    border-radius: 9px;
+    background: #ffffff;
+    color: #2948a9;
+    font-weight: 700;
+    cursor: pointer;
+}
+.modal-card.models-policy-modal .models-model-selector__transfer-confirm {
+    margin-top: 10px;
+    padding: 14px;
+    border: 1px solid #ecd09a;
+    border-radius: 11px;
+    background: #fff9ee;
+    color: #624713;
+}
+.modal-card.models-policy-modal .models-model-selector__transfer-confirm > strong {
+    font-size: 15px;
+}
+.modal-card.models-policy-modal .models-model-selector__transfer-confirm p {
+    margin: 7px 0;
+    font-size: 13px;
+    line-height: 1.55;
+}
+.modal-card.models-policy-modal .models-model-selector__transfer-risk {
+    padding: 10px;
+    border-left: 3px solid #cb8b1a;
+    background: #fff0cf;
+    font-weight: 650;
+}
+.modal-card.models-policy-modal .models-model-selector__transfer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+.modal-card.models-policy-modal .models-model-selector__transfer-actions button:first-child {
+    background: #3048dc;
+    color: white;
+    border-color: #3048dc;
+}
+.modal-card.models-policy-modal .models-model-selector__conflict-row button:hover,
+.modal-card.models-policy-modal .models-model-selector__transfer-actions button:hover {
+    border-color: #5369ea;
+}
+.modal-card.models-policy-modal .models-model-selector__conflict-row button:focus-visible,
+.modal-card.models-policy-modal .models-model-selector__transfer-actions button:focus-visible,
+.modal-card.models-policy-modal .models-policy-check__empty button:focus-visible {
+    outline: 3px solid #5369ee;
+    outline-offset: 2px;
+}
+.modal-card.models-policy-modal .models-policy-form__warning p {
+    line-height: 1.55;
+}
+.modal-card.models-policy-modal .models-policy-form__warning-action {
+    padding-top: 9px;
+    border-top: 1px solid rgb(147 104 23 / 19%);
+}
+@container model-policy-modal (max-width: 640px) {
+    .modal-card.models-policy-modal .models-policy-check__criteria-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .modal-card.models-policy-modal .models-policy-check__intro {
+        flex-direction: column;
+    }
+    .modal-card.models-policy-modal .models-policy-check__intro > div {
+        flex-basis: auto;
+    }
+    .modal-card.models-policy-modal .models-model-selector__conflict-row {
+        align-items: stretch;
+    }
+    .modal-card.models-policy-modal .models-model-selector__conflict-row button {
+        width: 100%;
+    }
+}

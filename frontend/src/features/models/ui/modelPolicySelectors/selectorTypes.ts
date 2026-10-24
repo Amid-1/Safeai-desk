@@ -28,6 +28,8 @@ export type ModelKeySelectorProps = RoutingContextProps & {
     disabled?: boolean
     inputRef?: RefObject<HTMLInputElement | null>
     onChange: (value: string) => void
+    /** Optional explicit atomic migration from the opposite list. */
+    onTransferFromOppositeList?: (modelKey: string) => void
     onInteractionStateChange?: (
         state: ModelKeySelectorInteractionState,
     ) => void
